@@ -1,560 +1,239 @@
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Compass, Keyboard, RotateCcw } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
-
-const WORLD_SIZE = 100;
-const MAX_STAMINA = 100;
-const REST_RECOVERY = 20;
-const LOCAL_GRID_SIZE = 11;
-const LOCAL_GRID_CENTER = Math.floor(LOCAL_GRID_SIZE / 2);
-
-type GameMode = 'overworld' | 'tile';
-type LocalTerrain = 'floor' | 'water' | 'tree' | 'rock' | 'path' | 'feature';
-const ZOOM_OPTIONS = [
-  { id: 'close', label: 'Close', width: 21, height: 15, panStep: 5, showMarks: true },
-  { id: 'region', label: 'Region', width: 39, height: 27, panStep: 7, showMarks: true },
-  { id: 'survey', label: 'Survey', width: 61, height: 41, panStep: 10, showMarks: false },
-  { id: 'world', label: 'World', width: 100, height: 100, panStep: 15, showMarks: false },
-] as const;
-
-type ZoomId = (typeof ZOOM_OPTIONS)[number]['id'];
+import { Compass, LocateFixed, Map, Maximize2, Mountain, Trees, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Position = { x: number; y: number };
-type Direction = 'north' | 'south' | 'east' | 'west';
-type Terrain = 'water' | 'shore' | 'grass' | 'meadow' | 'woodland' | 'autumn' | 'rock' | 'path' | 'town';
-type MoveVector = { dx: number; dy: number; direction: Direction };
+type Direction = "north" | "south" | "east" | "west";
+type Terrain = "water" | "shore" | "grass" | "meadow" | "woodland" | "autumn" | "rock" | "path" | "town";
 type Town = { x: number; y: number; name: string; kind: string; color: string };
 
-type GameState = {
-  position: Position;
-  direction: Direction;
-  steps: number;
-  message: string;
-  messages: string[];
-  moveTick: number;
-  stamina: number;
-};
+const WORLD_WIDTH = 48;
+const WORLD_HEIGHT = 34;
+const LOCAL_WIDTH = 13;
+const LOCAL_HEIGHT = 9;
+const START: Position = { x: 24, y: 18 };
 
 const towns: Town[] = [
-  { x: 16, y: 22, name: 'Brackenford', kind: 'river village', color: 'ochre' },
-  { x: 77, y: 18, name: 'Cinder Vale', kind: 'highland town', color: 'coral' },
-  { x: 31, y: 73, name: 'Mossmere', kind: 'woodland village', color: 'moss' },
-  { x: 79, y: 76, name: 'Amberlow', kind: 'harvest town', color: 'orange' },
-  { x: 53, y: 48, name: 'Larkspur', kind: 'central crossing', color: 'rose' },
-  { x: 15, y: 56, name: 'Saltwick', kind: 'shore settlement', color: 'blue' },
+  { x: 7, y: 7, name: "Brackenford", kind: "river village", color: "ochre" },
+  { x: 35, y: 6, name: "Cinder Vale", kind: "highland town", color: "coral" },
+  { x: 14, y: 25, name: "Mossmere", kind: "woodland village", color: "moss" },
+  { x: 36, y: 25, name: "Amberlow", kind: "harvest town", color: "orange" },
+  { x: 24, y: 17, name: "Larkspur", kind: "central crossing", color: "rose" },
+  { x: 6, y: 19, name: "Saltwick", kind: "shore settlement", color: "blue" },
 ];
 
-const initialState: GameState = {
-  position: { x: 50, y: 52 },
-  direction: 'south',
-  steps: 0,
-  message: 'The continent opens in every direction.',
-  messages: ['The continent opens in every direction.'],
-  moveTick: 0,
-  stamina: MAX_STAMINA,
+const directionLabels: Record<Direction, string> = {
+  north: "NORTH",
+  south: "SOUTH",
+  east: "EAST",
+  west: "WEST",
 };
 
-const directionKeys: Record<string, MoveVector> = {
-  ArrowUp: { dx: 0, dy: -1, direction: 'north' },
-  KeyW: { dx: 0, dy: -1, direction: 'north' },
-  w: { dx: 0, dy: -1, direction: 'north' },
-  ArrowDown: { dx: 0, dy: 1, direction: 'south' },
-  KeyS: { dx: 0, dy: 1, direction: 'south' },
-  s: { dx: 0, dy: 1, direction: 'south' },
-  ArrowLeft: { dx: -1, dy: 0, direction: 'west' },
-  KeyA: { dx: -1, dy: 0, direction: 'west' },
-  a: { dx: -1, dy: 0, direction: 'west' },
-  ArrowRight: { dx: 1, dy: 0, direction: 'east' },
-  KeyD: { dx: 1, dy: 0, direction: 'east' },
-  d: { dx: 1, dy: 0, direction: 'east' },
+const terrainLabels: Record<Terrain, string> = {
+  water: "deep water",
+  shore: "shoreline",
+  grass: "open grassland",
+  meadow: "wildflower meadow",
+  woodland: "old woodland",
+  autumn: "amber woodland",
+  rock: "mountain pass",
+  path: "stone trail",
+  town: "town",
 };
 
-const directionLabel: Record<Direction, string> = {
-  north: 'NORTH',
-  south: 'SOUTH',
-  east: 'EAST',
-  west: 'WEST',
+const directionKeys: Record<string, { dx: number; dy: number; direction: Direction }> = {
+  KeyW: { dx: 0, dy: -1, direction: "north" },
+  KeyA: { dx: -1, dy: 0, direction: "west" },
+  KeyS: { dx: 0, dy: 1, direction: "south" },
+  KeyD: { dx: 1, dy: 0, direction: "east" },
 };
-
-function positionLabel(position: Position) {
-  return `(${String(position.x).padStart(2, '0')}, ${String(position.y).padStart(2, '0')})`;
-}
 
 function hash(x: number, y: number) {
   const value = Math.sin(x * 127.1 + y * 311.7 + 19.19) * 43758.5453;
   return value - Math.floor(value);
 }
 
-function townAt(x: number, y: number) {
-  return towns.find((town) => town.x === x && town.y === y);
-}
-
-function nearestTownDistance(position: Position) {
-  return Math.min(...towns.map((town) => Math.abs(town.x - position.x) + Math.abs(town.y - position.y)));
-}
-
-function terrainStaminaCost(terrain: Terrain) {
-  if (terrain === 'water') return 4;
-  if (terrain === 'rock') return 3;
-  if (terrain === 'woodland' || terrain === 'autumn') return 2;
-  if (terrain === 'shore') return 2;
-  return 1;
-}
-
-function movementStaminaCost(position: Position) {
-  const terrain = terrainAt(position.x, position.y);
-  const distance = nearestTownDistance(position);
-  const distanceSurcharge = distance >= 45 ? 2 : distance >= 25 ? 1 : 0;
-  return terrainStaminaCost(terrain) + distanceSurcharge;
-}
-
-function terrainLabel(terrain: Terrain) {
-  return terrain.charAt(0).toUpperCase() + terrain.slice(1);
+function townForTile(x: number, y: number) {
+  return towns.find((town) => x >= town.x && x < town.x + 2 && y >= town.y && y < town.y + 2);
 }
 
 function terrainAt(x: number, y: number): Terrain {
-  const islandDistance = Math.sqrt(((x - 50) / 46) ** 2 + ((y - 49) / 42) ** 2);
-  if (islandDistance > 1.06) return 'water';
-  if (islandDistance > 0.94) return 'shore';
-
-  const town = townAt(x, y);
-  if (town) return 'town';
-
-  const lake = ((x - 54) / 11) ** 2 + ((y - 25) / 9) ** 2 < 1;
-  const mainRiver = Math.abs(y - (47 + Math.sin(x * 0.13) * 5)) < 1.05 && x > 22 && x < 88;
-  const southernCreek = Math.abs(x - (57 + Math.sin(y * 0.16) * 8)) < 0.78 && y > 42 && y < 91;
-  const easternRiver = Math.abs(y - (35 + Math.sin(x * 0.1) * 5)) < 0.7 && x > 68;
-  if (lake || mainRiver || southernCreek || easternRiver) return 'water';
-
-  const mountainRange = (x < 43 && y < 42 && x + y < 71) || (x > 41 && x < 60 && y < 24 && hash(x, y) > 0.28);
-  if (mountainRange) return 'rock';
-
-  const autumnRegion = x > 65 && y < 65;
-  if (autumnRegion && (hash(x, y) > 0.13 || y < 25)) return 'autumn';
-
-  const woodlandRegion = y > 54 && x > 17 && x < 68;
-  if (woodlandRegion && hash(x, y) > 0.2) return 'woodland';
-
-  const path = Math.abs(y - (48 + Math.sin(x * 0.12) * 5)) < 1.7 && x > 18 && x < 88;
-  if (path) return 'path';
-  if (hash(x, y) > 0.74) return 'meadow';
-  return 'grass';
+  if (x < 0 || y < 0 || x >= WORLD_WIDTH || y >= WORLD_HEIGHT) return "rock";
+  if (townForTile(x, y)) return "town";
+  const riverX = 20 + Math.sin(y / 4.6) * 5 + Math.sin(y / 1.7) * 1.2;
+  if (Math.abs(x - riverX) < 1.1 && y > 2 && y < WORLD_HEIGHT - 2) return "water";
+  if (Math.abs(x - riverX) < 2.1 && y > 2 && y < WORLD_HEIGHT - 2) return "shore";
+  const mountainRidge = x > 29 && y < 14 && hash(x * 0.7, y * 0.8) > 0.3;
+  const westernCliffs = x < 9 && y > 26 && hash(x + 9, y) > 0.55;
+  if (mountainRidge || westernCliffs) return hash(x + 4, y + 8) > 0.34 ? "rock" : "grass";
+  const value = hash(x, y);
+  if (value < 0.1) return "water";
+  if (value < 0.17) return "shore";
+  if (value < 0.3) return "woodland";
+  if (value < 0.4) return "autumn";
+  if (value < 0.58) return "meadow";
+  if (value > 0.9) return "path";
+  return "grass";
 }
 
-function terrainMark(terrain: Terrain) {
-  if (terrain === 'water') return '≈';
-  if (terrain === 'rock') return '⌃';
-  if (terrain === 'woodland') return '♠';
-  if (terrain === 'autumn') return '✦';
-  if (terrain === 'shore') return '·';
-  if (terrain === 'meadow') return '·';
-  if (terrain === 'path') return '·';
-  return '';
+function regionAt(position: Position) {
+  if (position.x > 28 && position.y < 15) return "The Crownspine";
+  if (position.x < 17 && position.y > 21) return "Mosswood";
+  if (position.y > 23) return "Amberlow Fields";
+  if (position.x < 14) return "The Salt Coast";
+  return "The Green March";
 }
 
-function localTerrainAt(x: number, y: number, outerTerrain: Terrain, worldTile: Position): LocalTerrain {
-  const edge = x === 0 || y === 0 || x === LOCAL_GRID_SIZE - 1 || y === LOCAL_GRID_SIZE - 1;
-  if (edge && outerTerrain === 'water') return 'water';
-  const value = hash(x + worldTile.x * 1.73, y + worldTile.y * 2.41);
-  if (outerTerrain === 'water') return value > 0.46 ? 'water' : value > 0.2 ? 'feature' : 'path';
-  if (outerTerrain === 'rock') return value > 0.38 ? 'rock' : value > 0.18 ? 'feature' : 'path';
-  if (outerTerrain === 'woodland' || outerTerrain === 'autumn') return value > 0.3 ? 'tree' : value > 0.12 ? 'feature' : 'path';
-  if (outerTerrain === 'shore') return value > 0.6 ? 'water' : value > 0.22 ? 'feature' : 'path';
-  return value > 0.8 ? 'feature' : value > 0.35 ? 'floor' : 'path';
+function positionLabel(position: Position) {
+  return "(" + String(position.x).padStart(2, "0") + ", " + String(position.y).padStart(2, "0") + ")";
 }
 
-function localTerrainMark(terrain: LocalTerrain) {
-  if (terrain === 'water') return '≈';
-  if (terrain === 'tree') return '♠';
-  if (terrain === 'rock') return '⌃';
-  if (terrain === 'feature') return '✦';
-  return '';
+function movementCost(terrain: Terrain) {
+  if (terrain === "water") return 3;
+  if (terrain === "rock") return 2;
+  if (terrain === "woodland" || terrain === "autumn") return 2;
+  return 1;
 }
 
-function gameReducer(state: GameState, action: { type: 'travel'; target: Position } | { type: 'reset' } | { type: 'rest' }): GameState {
-  if (action.type === 'reset') return initialState;
-  if (action.type === 'rest') {
-    if (state.stamina >= MAX_STAMINA) {
-      const message = 'Stamina is already full.';
-      return { ...state, message, messages: [message, ...state.messages].slice(0, 5) };
+function Tile({ x, y, compact, position, onSelect }: { x: number; y: number; compact?: boolean; position: Position; onSelect?: (x: number, y: number) => void }) {
+  const terrain = terrainAt(x, y);
+  const town = townForTile(x, y);
+  const isPlayer = x === position.x && y === position.y;
+  const isTownAnchor = town && x === town.x && y === town.y;
+  const asset = terrain === "woodland" || terrain === "autumn" ? "/assets/tree.svg" : terrain === "rock" ? "/assets/mountain.svg" : terrain === "town" ? "/assets/town.svg" : "";
+  return (
+    <button
+      type="button"
+      className={"hex hex-" + terrain + (isPlayer ? " is-player" : "") + (town ? " is-town" : "")}
+      title={town ? town.name + " · " + terrainLabels[terrain] : terrainLabels[terrain]}
+      aria-label={"" + x + ", " + y + " " + terrainLabels[terrain]}
+      onClick={() => onSelect && onSelect(x, y)}
+    >
+      <span className="hex-texture" />
+      {asset && <img className={"tile-asset " + (terrain === "town" ? "town-asset" : "") + (compact ? " compact-asset" : "")} src={asset} alt="" draggable="false" />}
+      {terrain === "path" && <span className="path-stone" />}
+      {isTownAnchor && <span className="town-pin">{town.name}</span>}
+      {isPlayer && <span className="player-marker"><LocateFixed size={compact ? 12 : 19} strokeWidth={2.5} /></span>}
+    </button>
+  );
+}
+
+function HexMap({ position, world, onSelect }: { position: Position; world?: boolean; onSelect?: (x: number, y: number) => void }) {
+  const tiles = useMemo(() => {
+    if (world) {
+      return Array.from({ length: WORLD_HEIGHT }, (_, y) => ({ y, xs: Array.from({ length: WORLD_WIDTH }, (_, x) => x) }));
     }
-    const recovered = Math.min(REST_RECOVERY, MAX_STAMINA - state.stamina);
-    const message = 'Rested in the field. +' + recovered + ' stamina.';
-    return { ...state, stamina: state.stamina + recovered, message, messages: [message, ...state.messages].slice(0, 5) };
-  }
-
-  const dx = action.target.x - state.position.x;
-  const dy = action.target.y - state.position.y;
-  if (Math.abs(dx) + Math.abs(dy) !== 1) {
-    const message = 'Choose one neighboring tile before travelling.';
-    return { ...state, message, messages: [message, ...state.messages].slice(0, 5) };
-  }
-
-  const nextPosition = {
-    x: Math.max(0, Math.min(WORLD_SIZE - 1, action.target.x)),
-    y: Math.max(0, Math.min(WORLD_SIZE - 1, action.target.y)),
-  };
-  const direction: Direction = dx > 0 ? 'east' : dx < 0 ? 'west' : dy > 0 ? 'south' : 'north';
-  const destination = terrainAt(nextPosition.x, nextPosition.y);
-  const nearbyTown = townAt(nextPosition.x, nextPosition.y);
-  const staminaCost = movementStaminaCost(nextPosition);
-  if (state.stamina < staminaCost) {
-    const message = 'Too tired to travel there. Need ' + staminaCost + ' stamina; rest before continuing.';
-    return { ...state, direction, message, messages: [message, ...state.messages].slice(0, 5) };
-  }
-
-  const message = nearbyTown
-    ? 'Entered ' + nearbyTown.name + '. -' + staminaCost + ' stamina.'
-    : 'Travelled ' + direction + ' into ' + terrainLabel(destination) + '. -' + staminaCost + ' stamina. ' + positionLabel(nextPosition) + '.';
-  return {
-    ...state,
-    position: nextPosition,
-    direction,
-    steps: state.steps + 1,
-    stamina: state.stamina - staminaCost,
-    message,
-    messages: [message, ...state.messages].slice(0, 5),
-    moveTick: state.moveTick + 1,
-  };
+    const startX = position.x - Math.floor(LOCAL_WIDTH / 2);
+    const startY = position.y - Math.floor(LOCAL_HEIGHT / 2);
+    return Array.from({ length: LOCAL_HEIGHT }, (_, row) => ({ y: startY + row, xs: Array.from({ length: LOCAL_WIDTH }, (_, column) => startX + column) }));
+  }, [position, world]);
+  return (
+    <div className={world ? "hex-map world-hex-map" : "hex-map local-hex-map"}>
+      {tiles.map((row) => (
+        <div className={"hex-row " + (row.y % 2 !== 0 ? "offset-row" : "")} key={row.y}>
+          {row.xs.map((x) => <Tile key={x + ":" + row.y} x={x} y={row.y} compact={world} position={position} onSelect={onSelect} />)}
+        </div>
+      ))}
+    </div>
+  );
 }
 
-function Home() {
-  const [state, dispatch] = useReducer(gameReducer, initialState);
-  const [showInfo, setShowInfo] = useState(false);
-  const [zoomId, setZoomId] = useState<ZoomId>('close');
-  const [mapCenter, setMapCenter] = useState<Position>(initialState.position);
-  const [followPlayer, setFollowPlayer] = useState(true);
-  const [selectedTile, setSelectedTile] = useState<Position>(initialState.position);
-  const [gameMode, setGameMode] = useState<GameMode>('overworld');
-  const [activeTile, setActiveTile] = useState<Position | null>(null);
-  const [localPosition, setLocalPosition] = useState<Position>({ x: LOCAL_GRID_CENTER, y: LOCAL_GRID_CENTER });
-  const [localSteps, setLocalSteps] = useState(0);
-  const zoom = ZOOM_OPTIONS.find((option) => option.id === zoomId) ?? ZOOM_OPTIONS[0];
-  const selectDirection = useCallback((vector: MoveVector) => {
-    const next = {
-      x: Math.max(0, Math.min(WORLD_SIZE - 1, state.position.x + vector.dx)),
-      y: Math.max(0, Math.min(WORLD_SIZE - 1, state.position.y + vector.dy)),
-    };
-    setSelectedTile(next);
-    setFollowPlayer(false);
-  }, [state.position]);
-  const selectTile = useCallback((position: Position) => {
-    setSelectedTile(position);
-    setShowInfo(true);
-    setFollowPlayer(false);
-  }, []);
-  const rest = useCallback(() => dispatch({ type: 'rest' }), []);
-  const travel = useCallback(() => {
-    const target = selectedTile;
-    if (Math.abs(target.x - state.position.x) + Math.abs(target.y - state.position.y) !== 1) return;
-    dispatch({ type: 'travel', target });
-    setActiveTile(target);
-    setLocalPosition({ x: LOCAL_GRID_CENTER, y: LOCAL_GRID_CENTER });
-    setLocalSteps(0);
-    setGameMode('tile');
-    setFollowPlayer(true);
-  }, [selectedTile, state.position]);
-  const exitTile = useCallback(() => {
-    setGameMode('overworld');
-    setSelectedTile(state.position);
-    setMapCenter(state.position);
-    setFollowPlayer(true);
-    setShowInfo(true);
-  }, [state.position]);
-  const moveLocal = useCallback((vector: MoveVector) => {
-    setLocalPosition((position) => {
-      const next = {
-        x: Math.max(0, Math.min(LOCAL_GRID_SIZE - 1, position.x + vector.dx)),
-        y: Math.max(0, Math.min(LOCAL_GRID_SIZE - 1, position.y + vector.dy)),
-      };
-      if (next.x !== position.x || next.y !== position.y) setLocalSteps((steps) => steps + 1);
+export default function App() {
+  const [position, setPosition] = useState<Position>(START);
+  const [direction, setDirection] = useState<Direction>("south");
+  const [steps, setSteps] = useState(0);
+  const [stamina, setStamina] = useState(100);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [message, setMessage] = useState("The trail begins where the wildlands meet.");
+  const [selectedTile, setSelectedTile] = useState<Position | null>(null);
+
+  const move = useCallback((key: string) => {
+    const vector = directionKeys[key];
+    if (!vector) return;
+    setDirection(vector.direction);
+    setPosition((current) => {
+      const next = { x: current.x + vector.dx, y: current.y + vector.dy };
+      if (next.x < 0 || next.y < 0 || next.x >= WORLD_WIDTH || next.y >= WORLD_HEIGHT) {
+        setMessage("The frontier ends here. Turn back and find another trail.");
+        return current;
+      }
+      const terrain = terrainAt(next.x, next.y);
+      const cost = movementCost(terrain);
+      if (stamina < cost) {
+        setMessage("Your pack is heavy. Rest at a town before crossing more ground.");
+        return current;
+      }
+      const town = townForTile(next.x, next.y);
+      setStamina((value) => Math.max(0, value - cost));
+      setSteps((value) => value + 1);
+      setSelectedTile(null);
+      if (town && !townForTile(current.x, current.y)) setMessage("You arrive at " + town.name + ", a " + town.kind + ".");
+      else if (terrain === "rock") setMessage("The path climbs into the Crownspine. Snow catches the last light.");
+      else if (terrain === "woodland" || terrain === "autumn") setMessage("The forest closes around the trail; birds move in the canopy above.");
+      else setMessage("You travel " + directionLabels[vector.direction].toLowerCase() + " through " + terrainLabels[terrain] + ".");
       return next;
     });
-  }, []);
-  const resetPosition = useCallback(() => {
-    dispatch({ type: 'reset' });
-    setMapCenter(initialState.position);
-    setSelectedTile(initialState.position);
-    setGameMode('overworld');
-    setActiveTile(null);
-    setLocalPosition({ x: LOCAL_GRID_CENTER, y: LOCAL_GRID_CENTER });
-    setLocalSteps(0);
-    setFollowPlayer(true);
-  }, []);
+  }, [stamina]);
 
   useEffect(() => {
-    if (followPlayer) setMapCenter(state.position);
-  }, [followPlayer, state.position]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.repeat) return;
-      const target = event.target;
-      if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
-      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-      const vector = directionKeys[event.code] ?? directionKeys[key];
-      if (gameMode === 'tile') {
-        if (!vector) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code === "Escape") setMapOpen(false);
+      if (directionKeys[event.code]) {
         event.preventDefault();
-        moveLocal(vector);
-        return;
+        move(event.code);
       }
-      if (event.code === 'KeyR') {
-        event.preventDefault();
-        rest();
-        return;
-      }
-      if (!vector) return;
-      event.preventDefault();
-      selectDirection(vector);
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [gameMode, moveLocal, rest, selectDirection]);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [move]);
 
-  const mapView = useMemo(() => {
-    const cameraX = Math.max(0, Math.min(WORLD_SIZE - zoom.width, mapCenter.x - Math.floor(zoom.width / 2)));
-    const cameraY = Math.max(0, Math.min(WORLD_SIZE - zoom.height, mapCenter.y - Math.floor(zoom.height / 2)));
-    const cells = Array.from({ length: zoom.width * zoom.height }, (_, index) => {
-      const x = cameraX + (index % zoom.width);
-      const y = cameraY + Math.floor(index / zoom.width);
-      return { x, y, terrain: terrainAt(x, y) };
-    });
-    return { cameraX, cameraY, cells };
-  }, [mapCenter.x, mapCenter.y, zoom.height, zoom.width]);
-
-  const cameraOrigin = { x: mapView.cameraX, y: mapView.cameraY };
-  const nearestTown = towns
-    .map((town) => ({ ...town, distance: Math.abs(town.x - state.position.x) + Math.abs(town.y - state.position.y) }))
-    .sort((a, b) => a.distance - b.distance)[0];
-  const staminaPercent = (state.stamina / MAX_STAMINA) * 100;
-
-  if (gameMode === 'tile' && activeTile) {
-    return <TileGameplay worldTile={activeTile} terrain={terrainAt(activeTile.x, activeTile.y)} town={townAt(activeTile.x, activeTile.y)} localPosition={localPosition} localSteps={localSteps} onMove={moveLocal} onExit={exitTile} />;
-  }
+  const currentTerrain = terrainAt(position.x, position.y);
+  const currentTown = townForTile(position.x, position.y);
+  const selectedTown = selectedTile ? townForTile(selectedTile.x, selectedTile.y) : null;
+  const discovered = Math.min(100, Math.round((steps + 12) / 2.4));
 
   return (
-    <main className="game-shell min-h-[100dvh] bg-background text-foreground">
-      <div className="atlas-frame mx-auto flex min-h-[100dvh] w-full max-w-[1360px] flex-col px-3 py-3 sm:px-6 sm:py-5 lg:px-10">
-        <header className="topbar console-enter flex shrink-0 items-end justify-between gap-4 pb-3 sm:pb-5" aria-label="Playtest header">
-          <div className="brand-lockup flex items-center gap-3 sm:gap-4">
-            <span className="brand-mark" aria-hidden="true"><span /></span>
-            <div>
-              <p className="eyebrow">FIELD NOTES / 04</p>
-              <h1 className="brand-title">The Far Meadow</h1>
-              <p className="brand-subtitle">a hand-drawn continent playtest</p>
-            </div>
-          </div>
-          <div className="header-controls">
-            <div className="stamina-panel" aria-label={'Stamina ' + state.stamina + ' of ' + MAX_STAMINA}>
-              <div className="stamina-heading"><span className="meta-label">STAMINA</span><strong>{state.stamina}/{MAX_STAMINA}</strong></div>
-              <div className="stamina-track" role="progressbar" aria-valuemin={0} aria-valuemax={MAX_STAMINA} aria-valuenow={state.stamina}><span style={{ width: Math.max(0, Math.min(100, staminaPercent)) + '%' }} /></div>
-              <span className="stamina-hint">Travel selected tile · R rests +{REST_RECOVERY}</span>
-            </div>
-            <div className="header-meta hidden items-center gap-5 sm:flex">
-              <div><span className="meta-label">WORLD</span><strong>100 × 100</strong></div>
-              <div><span className="meta-label">VIEW</span><strong>{zoom.width} × {zoom.height}</strong></div>
-              <div className="compass-badge" aria-label="Compass marker"><Compass size={18} /><span>N</span></div>
-            </div>
-          </div>
-        </header>
-
-        <div className="game-layout grid min-h-0 flex-1 gap-3 py-3 sm:gap-5 sm:py-5 lg:gap-7">
-          <section className="map-column console-enter order-1 flex min-h-0 min-w-0 flex-col" aria-label="Active overworld map">
-            <div className="map-heading flex shrink-0 items-end justify-between gap-3 pb-2 sm:pb-3">
-              <div>
-                <p className="eyebrow text-teal">THE CONTINENT, UNFOLDED</p>
-                <p className="map-caption">{zoom.label} view · W A S D selects a neighboring tile · Travel enters it</p>
-              </div>
-              <div className="map-tools">
-                <label className="zoom-control"><span>ZOOM</span><select value={zoomId} onChange={(event) => { setZoomId(event.currentTarget.value as ZoomId); setFollowPlayer(true); }} aria-label="Map zoom level" data-testid="select-map-zoom">{ZOOM_OPTIONS.map((option) => <option value={option.id} key={option.id}>{option.label} · {option.width}×{option.height}</option>)}</select></label>
-                <button className="reset-button flex min-h-9 shrink-0 items-center gap-1.5 border px-2.5 py-1.5 font-mono text-[8px] font-bold uppercase tracking-[0.1em] sm:text-[9px]" onClick={resetPosition} type="button" data-testid="button-reset-position">
-                  <RotateCcw size={12} strokeWidth={2} aria-hidden="true" /><span>Reset trail</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="map-console" data-testid="map-console">
-              <div className="map-coordinate-bar">
-                <span>W {String(cameraOrigin.x).padStart(2, '0')}</span>
-                <span className="coordinate-rule" />
-                <span>E {String(Math.min(WORLD_SIZE - 1, cameraOrigin.x + zoom.width - 1)).padStart(2, '0')}</span>
-              </div>
-              <div className="map-navigation-frame">
-                <div className="map-pan-top"><MapPanButton label="Pan map north" icon={ChevronUp} onPress={() => { setFollowPlayer(false); setMapCenter((center) => ({ ...center, y: Math.max(0, center.y - zoom.panStep) })); }} disabled={cameraOrigin.y === 0} testId="button-pan-map-north" /></div>
-                <div className="map-pan-row">
-                  <MapPanButton label="Pan map west" icon={ChevronLeft} onPress={() => { setFollowPlayer(false); setMapCenter((center) => ({ ...center, x: Math.max(0, center.x - zoom.panStep) })); }} disabled={cameraOrigin.x === 0} testId="button-pan-map-west" />
-                  <div className="map-window-shell">
-                    <div className={'map-surface zoom-' + zoom.id} aria-label={zoom.label + ' view of the 100 by 100 overworld'} data-testid="board-ground-map" role="grid" style={{ gridTemplateColumns: 'repeat(' + zoom.width + ', minmax(0, 1fr))', gridTemplateRows: 'repeat(' + zoom.height + ', minmax(0, 1fr))', aspectRatio: zoom.width + ' / ' + zoom.height }}>
-                      {mapView.cells.map((cell) => {
-                        const isPlayer = cell.x === state.position.x && cell.y === state.position.y;
-                        const isSelected = selectedTile.x === cell.x && selectedTile.y === cell.y;
-                        const town = townAt(cell.x, cell.y);
-                        const label = isPlayer ? 'Player at ' + positionLabel(cell) : town ? town.name + ', ' + town.kind + ', at ' + positionLabel(cell) : cell.terrain + ' at ' + positionLabel(cell);
-                        return (
-                          <div className={'map-cell terrain-' + cell.terrain + (isPlayer ? ' is-player move-' + (state.moveTick % 3) + ' face-' + state.direction : '') + (isSelected ? ' is-selected' : '')} key={cell.x + '-' + cell.y} aria-label={label + '. Select for tile information.'} data-testid={'tile-' + cell.x + '-' + cell.y} role="gridcell" tabIndex={0} onClick={() => selectTile({ x: cell.x, y: cell.y })} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectTile({ x: cell.x, y: cell.y }); } }}>
-                            {zoom.showMarks && <span className="terrain-mark" aria-hidden="true">{terrainMark(cell.terrain)}</span>}
-                            {town && <img className={'village-sprite town-' + town.color} src="/village-sprite.svg" alt="" aria-hidden="true" />}
-                            {isPlayer && <img className="player-sprite" src="/player-sprite.svg" alt="" aria-hidden="true" />}
-                            {town && <span className="town-name" aria-hidden="true">{town.name}</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <MapPanButton label="Pan map east" icon={ChevronRight} onPress={() => { setFollowPlayer(false); setMapCenter((center) => ({ ...center, x: Math.min(WORLD_SIZE - 1, center.x + zoom.panStep) })); }} disabled={cameraOrigin.x + zoom.width >= WORLD_SIZE} testId="button-pan-map-east" />
-                </div>
-                <div className="map-pan-bottom"><MapPanButton label="Pan map south" icon={ChevronDown} onPress={() => { setFollowPlayer(false); setMapCenter((center) => ({ ...center, y: Math.min(WORLD_SIZE - 1, center.y + zoom.panStep) })); }} disabled={cameraOrigin.y + zoom.height >= WORLD_SIZE} testId="button-pan-map-south" /></div>
-              </div>
-              <div className="map-coordinate-bar bottom">
-                <span>N {String(cameraOrigin.y).padStart(2, '0')}</span>
-                <span className="coordinate-rule" />
-                <span>S {String(Math.min(WORLD_SIZE - 1, cameraOrigin.y + zoom.height - 1)).padStart(2, '0')}</span>
-              </div>
-            </div>
-            <div className="map-footnote mt-2 flex shrink-0 items-center justify-between gap-3 pt-2 font-mono text-[8px] sm:mt-3 sm:pt-3 sm:text-[10px]">
-              <span><i className="legend-dot player-dot" /> YOU ARE HERE <strong>@</strong></span>
-              <span className="hidden sm:inline">HIGHLIGHT → TILE INTEL → TRAVEL</span>
-              <span><i className="legend-dot town-dot" /> {towns.length} TOWNS MAPPED</span>
-            </div>
-          </section>
-
-          <aside className="play-rail console-enter console-delay-1 order-2 grid min-h-0 gap-3" aria-label="Playtest controls and status">
-            <div id="mobile-info-panels" className={'info-panels grid min-h-0 grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-1 ' + (showInfo ? 'is-open' : '')}>
-              <StatusPanel state={state} nearestTown={nearestTown} />
-              <TileInfoPanel selectedTile={selectedTile} playerPosition={state.position} onTravel={travel} />
-              <MessagePanel state={state} />
-            </div>
-            <ControlPanel onSelectDirection={selectDirection} onRest={rest} showInfo={showInfo} onToggleInfo={() => setShowInfo((visible) => !visible)} />
-          </aside>
+    <main className="game-shell">
+      <header className="topbar">
+        <div className="brand-lockup">
+          <div className="brand-mark"><Compass size={25} /></div>
+          <div><p className="eyebrow">FIELD JOURNAL · 01</p><h1>Wildlands</h1></div>
         </div>
+        <div className="topbar-actions">
+          <div className="coordinate-readout"><span>POSITION</span><strong>{positionLabel(position)}</strong></div>
+          <button type="button" className="map-button" onClick={() => setMapOpen((open) => !open)}><Map size={17} />{mapOpen ? "Close map" : "World map"}</button>
+        </div>
+      </header>
 
-        <footer className="footer console-enter console-delay-2 flex shrink-0 items-center justify-between gap-3 pt-2 font-mono text-[8px] sm:pt-3 sm:text-[10px]">
-          <span className="flex items-center gap-1.5"><Keyboard size={11} aria-hidden="true" /> WASD SELECTS</span>
-          <span className="hidden sm:inline">TWO WORLDS / ONE CONTINENT</span>
-          <span>TRAVEL ENTERS TILE</span>
-        </footer>
-      </div>
+      <section className="game-grid">
+        <aside className="journal-panel">
+          <div className="panel-kicker"><span className="live-dot" /> LIVE EXPEDITION</div>
+          <h2>Beyond the last road.</h2>
+          <p className="journal-copy">A hand-drawn continent of forests, high passes, quiet rivers, and places that have not made it onto any chart.</p>
+          <div className="status-card"><span className="status-label">CURRENT REGION</span><strong>{regionAt(position)}</strong><span className="status-detail">{currentTown ? currentTown.name : terrainLabels[currentTerrain]}</span></div>
+          <div className="control-block"><div className="status-label">TRAVEL WITH</div><div className="wasd-grid" aria-label="WASD movement controls"><span /><kbd>W</kbd><span /><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div><p>Use W A S D to walk. The map stays open only when you ask for it.</p></div>
+          <div className="journal-note"><span className="note-rule" /><span>{message}</span></div>
+        </aside>
+
+        <section className="play-panel">
+          <div className="play-header"><div><span className="status-label">THE UNMAPPED CONTINENT</span><h2>{currentTown ? currentTown.name : terrainLabels[currentTerrain]}</h2></div><div className="compass-badge"><span>N</span><Compass size={25} /><span>S</span></div></div>
+          <div className="map-frame">
+            <div className="map-frame-label"><span>LOCAL SURVEY</span><span>{directionLabels[direction]} · {steps} STEPS</span></div>
+            <HexMap position={position} onSelect={(x, y) => setSelectedTile({ x, y })} />
+            <div className="map-scale"><span>0</span><i /><span>1 km</span></div>
+            {mapOpen && <div className="world-map-overlay"><div className="overlay-head"><div><span className="status-label">CARTOGRAPHER'S VIEW</span><h2>World map</h2></div><button type="button" className="icon-button" onClick={() => setMapOpen(false)} aria-label="Close world map"><X size={19} /></button></div><div className="world-map-wrap"><HexMap position={position} world onSelect={(x, y) => setSelectedTile({ x, y })} /></div><div className="overlay-foot"><span><span className="legend-dot player-dot" /> YOU ARE HERE</span><span><span className="legend-dot town-dot" /> SETTLEMENTS</span><span><span className="legend-dot mountain-dot" /> HIGH COUNTRY</span></div></div>}
+          </div>
+          <div className="play-footer"><div className="movement-message"><Maximize2 size={15} /><span>{message}</span></div><div className="map-hint">PRESS <strong>M</strong> OR USE WORLD MAP</div></div>
+        </section>
+
+        <aside className="intel-panel">
+          <div className="intel-header"><span className="status-label">EXPEDITION LOG</span><Trees size={18} /></div>
+          <div className="progress-stat"><div><span className="status-label">LAND SURVEYED</span><strong>{discovered}%</strong></div><div className="progress-track"><i style={{ width: discovered + "%" }} /></div></div>
+          <dl className="intel-list"><div><dt>BIOME</dt><dd>{terrainLabels[currentTerrain]}</dd></div><div><dt>HEADING</dt><dd>{directionLabels[direction]}</dd></div><div><dt>GROUND</dt><dd>{currentTerrain === "rock" ? "elevated" : currentTerrain === "water" ? "impassable" : "stable"}</dd></div><div><dt>SETTLEMENTS</dt><dd>{towns.length} known</dd></div></dl>
+          <div className="stamina-card"><div><span className="status-label">TRAVEL RESOLVE</span><strong>{stamina}<small>/100</small></strong></div><div className="stamina-track"><i style={{ width: stamina + "%" }} /></div><p>Rest is found in the towns marked across your map.</p></div>
+          {(selectedTown || currentTown) && <div className="town-card"><span className="status-label">SETTLEMENT DISCOVERED</span><h3>{(selectedTown || currentTown)?.name}</h3><p>{(selectedTown || currentTown)?.kind}</p><span className="town-card-note">Four hexes make a town. Walk across its square to explore it.</span></div>}
+        </aside>
+      </section>
+      <footer className="bottom-bar"><span>WILDLANDS CARTOGRAPHY SOCIETY</span><span>WORLD {WORLD_WIDTH} × {WORLD_HEIGHT} HEXES · FRONTIER ACCESS</span><span>V. 0.4.0</span></footer>
     </main>
   );
 }
-
-function TileGameplay({ worldTile, terrain, town, localPosition, localSteps, onMove, onExit }: { worldTile: Position; terrain: Terrain; town?: Town; localPosition: Position; localSteps: number; onMove: (vector: MoveVector) => void; onExit: () => void }) {
-  const localCells = Array.from({ length: LOCAL_GRID_SIZE * LOCAL_GRID_SIZE }, (_, index) => {
-    const x = index % LOCAL_GRID_SIZE;
-    const y = Math.floor(index / LOCAL_GRID_SIZE);
-    return { x, y, terrain: localTerrainAt(x, y, terrain, worldTile) };
-  });
-  const localButton = (label: string, vector: MoveVector, Icon: typeof ChevronUp) => <button className="local-control-button" onClick={() => onMove(vector)} type="button" aria-label={label}><Icon size={17} strokeWidth={2.2} aria-hidden="true" /></button>;
-  return (
-    <main className="tile-game-shell game-shell min-h-[100dvh] bg-background text-foreground">
-      <div className="atlas-frame mx-auto flex min-h-[100dvh] w-full max-w-[1160px] flex-col px-3 py-3 sm:px-6 sm:py-5 lg:px-10">
-        <header className="topbar console-enter flex shrink-0 items-end justify-between gap-4 pb-3 sm:pb-5" aria-label="Tile gameplay header">
-          <div className="brand-lockup flex items-center gap-3 sm:gap-4"><span className="brand-mark" aria-hidden="true"><span /></span><div><p className="eyebrow">TILE GAMEPLAY / INNER WORLD</p><h1 className="brand-title">{town ? town.name : terrainLabel(terrain) + ' Reach'}</h1><p className="brand-subtitle">A smaller world inside tile {positionLabel(worldTile)}</p></div></div>
-          <button className="return-button" onClick={onExit} type="button" data-testid="button-return-overworld"><span>← OVERWORLD</span><small>return to continent</small></button>
-        </header>
-        <div className="tile-game-layout grid min-h-0 flex-1 gap-4 py-4 lg:grid-cols-[minmax(0,1fr)_250px] lg:gap-7">
-          <section className="tile-map-column console-enter" aria-label="Inner tile gameplay map">
-            <div className="map-heading pb-3"><p className="eyebrow text-teal">INNER TILE / {terrainLabel(terrain).toUpperCase()}</p><p className="map-caption">This local grid is the gameplay world inside one overworld tile.</p></div>
-            <div className="local-map-console"><div className="local-map-grid" role="grid" aria-label="Eleven by eleven inner tile gameplay map">{localCells.map((cell) => { const isPlayer = cell.x === localPosition.x && cell.y === localPosition.y; return <div className={'local-cell inner-' + cell.terrain + (isPlayer ? ' local-player' : '')} key={cell.x + '-' + cell.y} role="gridcell" aria-label={isPlayer ? 'You are here' : terrainLabel(cell.terrain)}><span aria-hidden="true">{isPlayer ? '◆' : localTerrainMark(cell.terrain)}</span></div>; })}</div></div>
-            <div className="local-map-caption"><span>LOCAL STEPS <strong>{String(localSteps).padStart(3, '0')}</strong></span><span>WASD / ARROWS MOVE INSIDE TILE</span></div>
-          </section>
-          <aside className="tile-game-side console-enter console-delay-1" aria-label="Inner tile controls and information">
-            <section className="console-panel tile-session-panel border p-3 sm:p-4"><div className="panel-heading flex items-center justify-between pb-2"><p className="eyebrow">SESSION</p><span className="panel-index">INNER</span></div><dl className="tile-session-list font-mono text-[9px]"><div><dt>OVERWORLD TILE</dt><dd>{positionLabel(worldTile)}</dd></div><div><dt>BIOME</dt><dd>{terrainLabel(terrain)}</dd></div><div><dt>LOCAL GRID</dt><dd>{LOCAL_GRID_SIZE} × {LOCAL_GRID_SIZE}</dd></div><div><dt>LANDMARK</dt><dd>{town ? town.name : 'UNSET'}</dd></div></dl><div className="inner-controls"><p className="meta-label">INNER MOVEMENT</p><div className="local-dpad"><span /><span />{localButton('Move north inside tile', { dx: 0, dy: -1, direction: 'north' }, ChevronUp)}<span /><span />{localButton('Move west inside tile', { dx: -1, dy: 0, direction: 'west' }, ChevronLeft)}{localButton('Move south inside tile', { dx: 0, dy: 1, direction: 'south' }, ChevronDown)}{localButton('Move east inside tile', { dx: 1, dy: 0, direction: 'east' }, ChevronRight)}</div></div><button className="return-button full" onClick={onExit} type="button">RETURN TO OVERWORLD</button></section>
-          </aside>
-        </div>
-        <footer className="footer console-enter console-delay-2 flex shrink-0 items-center justify-between gap-3 pt-2 font-mono text-[8px] sm:pt-3 sm:text-[10px]"><span>INNER WORLD ACTIVE</span><span className="hidden sm:inline">OUTER TILE {positionLabel(worldTile)}</span><span>ONE TILE / ONE LOCAL MAP</span></footer>
-      </div>
-    </main>
-  );
-}
-
-function StatusPanel({ state, nearestTown }: { state: GameState; nearestTown: Town & { distance: number } }) {
-  return (
-    <section className="console-panel status-panel min-h-0 border p-3 sm:p-4" aria-label="Player status">
-      <div className="panel-heading flex items-center justify-between pb-2 sm:pb-3">
-        <p className="eyebrow">TRAVEL LOG</p><span className="panel-index">01</span>
-      </div>
-      <dl className="status-list mt-2 grid grid-cols-3 gap-2 font-mono text-[8px] sm:mt-4 sm:block sm:space-y-4 sm:text-[10px]">
-        <div><dt>COORDINATES</dt><dd className="coordinate-value" data-testid="text-current-coordinates">{positionLabel(state.position)}</dd></div>
-        <div className="data-rule"><dt>STEPS TAKEN</dt><dd className="accent-value" data-testid="text-step-count">{state.steps.toString().padStart(3, '0')}</dd></div>
-        <div><dt>FACING</dt><dd data-testid="text-facing">{directionLabel[state.direction]}</dd></div>
-      </dl>
-      <div className="nearest-town mt-3 border-t pt-3 sm:mt-5">
-        <span className="meta-label">NEXT LANDMARK</span>
-        <strong data-testid="text-nearest-town">{nearestTown.name}</strong>
-        <span>{nearestTown.distance} tiles away</span>
-      </div>
-    </section>
-  );
-}
-
-function TileInfoPanel({ selectedTile, playerPosition, onTravel }: { selectedTile: Position; playerPosition: Position; onTravel: () => void }) {
-  const terrain = terrainAt(selectedTile.x, selectedTile.y);
-  const town = townAt(selectedTile.x, selectedTile.y);
-  const distanceFromPlayer = Math.abs(selectedTile.x - playerPosition.x) + Math.abs(selectedTile.y - playerPosition.y);
-  const nearest = towns.map((candidate) => ({ ...candidate, distance: Math.abs(candidate.x - selectedTile.x) + Math.abs(candidate.y - selectedTile.y) })).sort((a, b) => a.distance - b.distance)[0];
-  const cost = movementStaminaCost(selectedTile);
-  const canTravel = distanceFromPlayer === 1;
-  return (
-    <section className="console-panel tile-info-panel min-h-0 border p-3 sm:p-4" aria-label="Selected tile information" data-testid="panel-tile-info">
-      <div className="panel-heading flex items-center justify-between pb-2 sm:pb-3"><p className="eyebrow">TILE INTEL</p><span className="panel-index">02</span></div>
-      <div className="tile-details">
-        <div className="tile-detail-heading"><strong>{positionLabel(selectedTile)}</strong><span>{terrainLabel(terrain)}</span></div>
-        <dl className="tile-detail-list font-mono text-[9px] sm:text-[10px]">
-          <div><dt>TRAVEL COST</dt><dd className="accent-value">{cost} STAMINA</dd></div>
-          <div><dt>FROM PLAYER</dt><dd>{distanceFromPlayer === 0 ? 'CURRENT TILE' : distanceFromPlayer + ' TILES'}</dd></div>
-          <div><dt>NEAREST TOWN</dt><dd>{nearest.name} · {nearest.distance} TILES</dd></div>
-        </dl>
-        {town && <div className="town-intel"><span className="meta-label">LANDMARK</span><strong>{town.name}</strong><span>{town.kind}</span><small>HORSE CART / FAST TRAVEL: TOWN SYSTEM COMING LATER</small></div>}
-        <button className="travel-button" onClick={onTravel} type="button" disabled={!canTravel} data-testid="button-travel-tile"><span>{canTravel ? 'TRAVEL INTO TILE' : 'SELECT A NEIGHBOR'}</span><small>{canTravel ? '-' + cost + ' STAMINA' : 'W A S D / ARROWS'}</small></button>
-      </div>
-    </section>
-  );
-}
-
-function MessagePanel({ state }: { state: GameState }) {
-  return (
-    <section className="console-panel message-panel min-h-0 border p-3 sm:p-4" aria-label="Game messages">
-      <div className="panel-heading flex items-center justify-between pb-2 sm:pb-3"><p className="eyebrow">FIELD NOTES</p><span className="status-pip" aria-hidden="true" /></div>
-      <p className="message-line mt-2 min-h-0 font-mono text-[9px] leading-relaxed sm:mt-4 sm:min-h-[55px] sm:text-[11px]" aria-live="polite" data-testid="text-game-message">{state.message}</p>
-      <div className="recent-list mt-2 hidden border-t pt-3 sm:block"><p className="meta-label mb-2">RECENT STEPS</p><ol className="space-y-2 font-mono text-[9px]">{state.messages.slice(0, 3).map((message, index) => <li className="flex gap-2" key={`${message}-${index}`}><span className="accent-value">[{String(index).padStart(2, '0')}]</span><span>{message}</span></li>)}</ol></div>
-    </section>
-  );
-}
-
-function ControlPanel({ onSelectDirection, onRest, showInfo, onToggleInfo }: { onSelectDirection: (vector: MoveVector) => void; onRest: () => void; showInfo: boolean; onToggleInfo: () => void }) {
-  const press = (vector: MoveVector) => () => onSelectDirection(vector);
-  const buttons = [
-    { label: 'Select north', vector: { dx: 0, dy: -1, direction: 'north' } as MoveVector, icon: ChevronUp, key: 'W' },
-    { label: 'Select west', vector: { dx: -1, dy: 0, direction: 'west' } as MoveVector, icon: ChevronLeft, key: 'A' },
-    { label: 'Select south', vector: { dx: 0, dy: 1, direction: 'south' } as MoveVector, icon: ChevronDown, key: 'S' },
-    { label: 'Select east', vector: { dx: 1, dy: 0, direction: 'east' } as MoveVector, icon: ChevronRight, key: 'D' },
-  ];
-  return (
-    <section className="control-rail relative flex min-h-0 items-center justify-between gap-3 border p-2.5 sm:p-3 lg:block" aria-label="Overworld tile selection controls">
-      <div><p className="eyebrow text-sand">CHOOSE ROUTE</p><p className="control-copy">Highlight a neighbor, then travel.</p></div>
-      <button className="rest-button" onClick={onRest} type="button" aria-label={'Rest and recover ' + REST_RECOVERY + ' stamina'} data-testid="button-rest"><span>REST</span><small>+{REST_RECOVERY}</small></button>
-      <button className="info-toggle sm:hidden" onClick={onToggleInfo} type="button" aria-expanded={showInfo} aria-controls="mobile-info-panels" data-testid="button-toggle-info"><span>{showInfo ? 'Hide notes' : 'Show notes'}</span><span aria-hidden="true">{showInfo ? '−' : '+'}</span></button>
-      <div className="dpad-shell grid shrink-0 grid-cols-3 grid-rows-2 gap-1.5 p-1.5 sm:gap-2 sm:p-2 lg:mx-auto lg:mt-4 lg:w-fit" aria-label="Tile selection controls">
-        <span aria-hidden="true" /><TouchButton button={buttons[0]} onPress={press(buttons[0].vector)} testId="button-select-north" /><span aria-hidden="true" />
-        <TouchButton button={buttons[1]} onPress={press(buttons[1].vector)} testId="button-select-west" /><TouchButton button={buttons[2]} onPress={press(buttons[2].vector)} testId="button-select-south" /><TouchButton button={buttons[3]} onPress={press(buttons[3].vector)} testId="button-select-east" />
-      </div>
-      <div className="hidden shrink-0 text-right font-mono text-[9px] leading-relaxed text-sand/75 sm:block"><p>WASD / arrows select</p><p>travel enters tile</p></div>
-    </section>
-  );
-}
-
-function MapPanButton({ label, icon: Icon, onPress, disabled, testId }: { label: string; icon: typeof ChevronUp; onPress: () => void; disabled: boolean; testId: string }) {
-  return <button className="map-pan-button" onClick={onPress} type="button" aria-label={label} disabled={disabled} data-testid={testId}><Icon size={16} strokeWidth={2.4} aria-hidden="true" /></button>;
-}
-
-function TouchButton({ button, onPress, testId }: { button: { label: string; icon: typeof ChevronUp; key: string }; onPress: () => void; testId: string }) {
-  const Icon = button.icon;
-  return <button className="touch-button flex h-[3.5rem] w-[3.5rem] flex-col items-center justify-center gap-0.5 border sm:h-[3.75rem] sm:w-[3.75rem]" onClick={onPress} type="button" aria-label={`${button.label} (${button.key})`} data-testid={testId}><span className="font-mono text-[10px] font-bold leading-none">{button.key}</span><Icon size={19} strokeWidth={2.2} aria-hidden="true" /><span className="font-mono text-[8px] font-bold uppercase leading-none tracking-[0.08em]">{button.label.replace('Move ', '').replace('Select ', '')}</span></button>;
-}
-
-function App() {
-  return <Home />;
-}
-
-export default App;
