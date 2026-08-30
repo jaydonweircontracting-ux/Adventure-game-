@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Keyboard, RotateCcw } from 'lucide-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type ReactNode, useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -26,6 +26,7 @@ type GameState = {
   steps: number;
   message: string;
   messages: string[];
+  moveTick: number;
 };
 
 const initialState: GameState = {
@@ -34,6 +35,7 @@ const initialState: GameState = {
   steps: 0,
   message: 'Awaiting input. The ground is quiet.',
   messages: ['Awaiting input. The ground is quiet.'],
+  moveTick: 0,
 };
 
 const directionKeys: Record<string, MoveVector> = {
@@ -80,6 +82,7 @@ function gameReducer(state: GameState, action: { type: 'move'; vector: MoveVecto
     steps: state.steps + (changed ? 1 : 0),
     message,
     messages: [message, ...state.messages].slice(0, 5),
+    moveTick: state.moveTick + (changed ? 1 : 0),
   };
 }
 
@@ -101,6 +104,11 @@ function Home() {
       const vector = directionKeys[key];
 
       if (!vector) {
+        return;
+      }
+
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) {
         return;
       }
 
@@ -126,7 +134,7 @@ function Home() {
       <div className="mx-auto flex min-h-[100dvh] w-full max-w-[1540px] flex-col px-3 py-3 sm:px-6 sm:py-5 lg:px-9">
         <div className="game-layout grid min-h-0 flex-1 gap-3 py-3 sm:gap-5 sm:py-5 lg:gap-7 lg:py-6">
           <section className="console-enter order-1 flex min-h-0 min-w-0 flex-col lg:order-1">
-            <div className="mx-auto flex min-h-0 w-full max-w-[800px] flex-1 flex-col justify-center">
+            <div className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col justify-center">
               <div className="mb-2 flex shrink-0 items-end justify-between gap-3 sm:mb-3">
                 <div>
                   <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground sm:text-[10px]">
@@ -153,7 +161,7 @@ function Home() {
               <div className="border border-primary bg-primary p-1.5 shadow-md sm:p-3">
                 <div className="border border-accent/30 bg-[#284b37] p-1.5 sm:p-3">
                   <div className="mb-1.5 grid grid-cols-[14px_1fr_14px] items-center gap-1.5 font-mono text-[8px] text-accent/75 sm:mb-3 sm:grid-cols-[18px_1fr_18px] sm:gap-2 sm:text-[9px]">
-                    <span>Y</span>
+                    <span>X</span>
                     <div className="grid grid-cols-11 text-center">
                       {Array.from({ length: MAP_WIDTH }, (_, index) => <span key={index}>{index}</span>)}
                     </div>
@@ -174,8 +182,8 @@ function Home() {
                           : `Grass at ${positionLabel(cell)}`;
                       return (
                         <div
-                          className={`map-cell ${isPlayer ? 'is-player' : ''} ${isVillage ? 'is-village' : ''}`}
-                          key={`${cell.x}-${cell.y}`}
+                          className={`map-cell ${isPlayer ? `is-player move-${state.moveTick % 3}` : ''} ${isVillage ? 'is-village' : ''}`}
+                          key={`${cell.x}-${cell.y}-${isPlayer ? state.moveTick : 'static'}`}
                           aria-label={cellLabel}
                           data-testid={`tile-${cell.x}-${cell.y}`}
                         >
@@ -191,7 +199,7 @@ function Home() {
                     })}
                   </div>
                   <div className="mt-1.5 grid grid-cols-[14px_1fr_14px] items-center gap-1.5 font-mono text-[8px] text-accent/75 sm:mt-3 sm:grid-cols-[18px_1fr_18px] sm:gap-2 sm:text-[9px]">
-                    <span>Y</span>
+                    <span>X</span>
                     <div className="flex justify-between px-1">
                       <span>00</span>
                       <span>10</span>
@@ -212,7 +220,7 @@ function Home() {
           </section>
 
           <aside className="play-rail console-enter console-delay-1 order-2 grid min-h-0 gap-3 lg:order-2">
-            <div id="mobile-info-panels" className={`info-panels grid min-h-0 grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-1 ${showInfo ? 'is-open' : ''}`}>
+            <div id="mobile-info-panels" className={`info-panels grid min-h-0 grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-1 ${showInfo ? 'is-open' : ''}`}>
               <StatusPanel state={state} />
               <MessagePanel state={state} />
             </div>
@@ -295,8 +303,7 @@ function ControlPanel({
   showInfo: boolean;
   onToggleInfo: () => void;
 }) {
-  const press = (vector: MoveVector) => (event: PointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
+  const press = (vector: MoveVector) => () => {
     onMove(vector);
   };
 
@@ -340,23 +347,15 @@ function TouchButton({
   testId,
 }: {
   button: { label: string; icon: typeof ChevronUp; key: string };
-  onPress: (event: PointerEvent<HTMLButtonElement>) => void;
+  onPress: () => void;
   testId: string;
 }) {
   const Icon = button.icon;
 
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      onPress(event as unknown as PointerEvent<HTMLButtonElement>);
-    }
-  };
-
   return (
       <button
-      className="touch-button flex h-[3.75rem] w-[3.75rem] flex-col items-center justify-center gap-0.5 border border-border bg-card text-primary sm:h-[4.25rem] sm:w-[4.25rem]"
-      onKeyDown={handleKeyDown}
-      onPointerDown={onPress}
+      className="touch-button flex h-[3.5rem] w-[3.5rem] flex-col items-center justify-center gap-0.5 border border-border bg-card text-primary sm:h-[3.75rem] sm:w-[3.75rem]"
+      onClick={onPress}
       type="button"
       aria-label={`${button.label} (${button.key})`}
       data-testid={testId}
