@@ -1,13 +1,6 @@
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Keyboard, RotateCcw } from 'lucide-react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { type ReactNode, useCallback, useEffect, useMemo, useReducer, useState } from 'react';
-import { ErrorBoundary } from '@/components/error-boundary';
-import { Toaster } from '@/components/ui/toaster';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import NotFound from '@/pages/not-found';
-import { Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 
-const queryClient = new QueryClient();
 const MAP_WIDTH = 11;
 const MAP_HEIGHT = 9;
 const villageCells = new Set(['2-2', '8-2', '2-7', '8-7']);
@@ -40,12 +33,16 @@ const initialState: GameState = {
 
 const directionKeys: Record<string, MoveVector> = {
   ArrowUp: { dx: 0, dy: -1, direction: 'north' },
+  KeyW: { dx: 0, dy: -1, direction: 'north' },
   w: { dx: 0, dy: -1, direction: 'north' },
   ArrowDown: { dx: 0, dy: 1, direction: 'south' },
+  KeyS: { dx: 0, dy: 1, direction: 'south' },
   s: { dx: 0, dy: 1, direction: 'south' },
   ArrowLeft: { dx: -1, dy: 0, direction: 'west' },
+  KeyA: { dx: -1, dy: 0, direction: 'west' },
   a: { dx: -1, dy: 0, direction: 'west' },
   ArrowRight: { dx: 1, dy: 0, direction: 'east' },
+  KeyD: { dx: 1, dy: 0, direction: 'east' },
   d: { dx: 1, dy: 0, direction: 'east' },
 };
 
@@ -101,7 +98,7 @@ function Home() {
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-      const vector = directionKeys[key];
+      const vector = directionKeys[event.code] ?? directionKeys[key];
 
       if (!vector) {
         return;
@@ -131,7 +128,7 @@ function Home() {
 
   return (
     <main className="game-shell min-h-[100dvh] bg-background text-foreground">
-      <div className="mx-auto flex min-h-[100dvh] w-full max-w-[1540px] flex-col px-3 py-3 sm:px-6 sm:py-5 lg:px-9">
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-[1200px] flex-col px-3 py-3 sm:px-6 sm:py-5 lg:px-8">
         <header className="console-enter flex shrink-0 items-center justify-between border-b border-border pb-3 sm:pb-4" aria-label="Playtest header">
           <div className="flex items-center gap-3">
             <span className="h-3 w-3 bg-primary sm:h-4 sm:w-4" aria-hidden="true" />
@@ -145,14 +142,11 @@ function Home() {
           </div>
         </header>
 
-        <div className="game-layout grid min-h-0 flex-1 gap-3 py-3 sm:gap-5 sm:py-5 lg:gap-7 lg:py-6">
+        <div className="game-layout grid min-h-0 flex-1 gap-2 py-3 sm:gap-4 sm:py-5 lg:gap-5 lg:py-5">
           <section className="console-enter order-1 flex min-h-0 min-w-0 flex-col lg:order-1" aria-label="Active map">
-            <div className="mx-auto flex min-h-0 w-full max-w-[760px] flex-1 flex-col justify-center">
+            <div className="mx-auto flex min-h-0 w-full max-w-[680px] flex-1 flex-col justify-center">
               <div className="mb-2 flex shrink-0 items-end justify-between gap-3 sm:mb-3">
-                <div>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.17em] text-muted-foreground sm:text-[10px]">ACTIVE MAP</p>
-                  <p className="mt-1 font-mono text-[10px] text-primary sm:text-xs">{MAP_WIDTH.toString().padStart(2, '0')} × {MAP_HEIGHT.toString().padStart(2, '0')}</p>
-                </div>
+                <p className="font-mono text-[10px] text-primary sm:text-xs">{MAP_WIDTH.toString().padStart(2, '0')} × {MAP_HEIGHT.toString().padStart(2, '0')}</p>
                 <button
                   className="reset-button flex min-h-9 items-center gap-1.5 border border-border bg-card px-2.5 py-1.5 font-mono text-[8px] font-bold uppercase tracking-[0.1em] text-primary shadow-xs sm:text-[9px]"
                   onClick={resetPosition}
@@ -322,7 +316,7 @@ function ControlPanel({
   ];
 
   return (
-    <section className="control-rail relative flex min-h-0 items-center justify-between gap-4 border border-primary p-3 shadow-md sm:p-4 lg:block" aria-label="Movement controls">
+    <section className="control-rail relative flex min-h-0 items-center justify-between gap-3 border border-primary p-2.5 shadow-md sm:p-3 lg:block" aria-label="Movement controls">
       <div className="min-w-0 self-stretch lg:flex lg:items-center lg:justify-between">
         <div>
           <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-accent sm:text-[10px]">MOVE</p>
@@ -374,33 +368,8 @@ function TouchButton({
   );
 }
 
-function Router() {
-  return (
-    <RoutedErrorBoundary>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route component={NotFound} />
-      </Switch>
-    </RoutedErrorBoundary>
-  );
-}
-
-function RoutedErrorBoundary({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
-  return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
-}
-
 function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
-  );
+  return <Home />;
 }
 
 export default App;
