@@ -325,6 +325,10 @@
   .play-rail {
     overflow: hidden;
   }
+
+  .control-rail {
+    order: -1;
+  }
 }
 
 @media (min-width: 768px) {
