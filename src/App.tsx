@@ -177,6 +177,7 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code === "Escape") setMapOpen(false);
+      if (event.code === "KeyM") setMapOpen((open) => !open);
       if (directionKeys[event.code]) {
         event.preventDefault();
         move(event.code);
