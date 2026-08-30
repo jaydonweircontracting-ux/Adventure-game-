@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Keyboard, RotateCcw, Terminal } from 'lucide-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type ReactNode, useCallback, useEffect, useMemo, useReducer } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type ReactNode, useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -84,6 +84,7 @@ function gameReducer(state: GameState, action: { type: 'move'; vector: MoveVecto
 
 function Home() {
   const [state, dispatch] = useReducer(gameReducer, initialState);
+  const [showInfo, setShowInfo] = useState(false);
 
   const move = useCallback((vector: MoveVector) => {
     dispatch({ type: 'move', vector });
@@ -218,11 +219,15 @@ function Home() {
           </section>
 
           <aside className="play-rail console-enter console-delay-1 order-2 grid min-h-0 gap-3 lg:order-2">
-            <div className="grid min-h-0 grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-1">
+            <div id="mobile-info-panels" className={`info-panels grid min-h-0 grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-1 ${showInfo ? 'is-open' : ''}`}>
               <StatusPanel state={state} />
               <MessagePanel state={state} />
             </div>
-            <ControlPanel onMove={move} />
+            <ControlPanel
+              onMove={move}
+              showInfo={showInfo}
+              onToggleInfo={() => setShowInfo((visible) => !visible)}
+            />
           </aside>
         </div>
 
@@ -288,7 +293,15 @@ function MessagePanel({ state }: { state: GameState }) {
   );
 }
 
-function ControlPanel({ onMove }: { onMove: (vector: MoveVector) => void }) {
+function ControlPanel({
+  onMove,
+  showInfo,
+  onToggleInfo,
+}: {
+  onMove: (vector: MoveVector) => void;
+  showInfo: boolean;
+  onToggleInfo: () => void;
+}) {
   const press = (vector: MoveVector) => (event: PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
     onMove(vector);
@@ -312,6 +325,10 @@ function ControlPanel({ onMove }: { onMove: (vector: MoveVector) => void }) {
           <span>W A S D</span><span className="text-accent">/</span><span>ARROWS</span>
         </div>
       </div>
+      <button className="info-toggle sm:hidden" onClick={onToggleInfo} type="button" aria-expanded={showInfo} aria-controls="mobile-info-panels">
+        <span>{showInfo ? 'Hide info' : 'Show info'}</span>
+        <span aria-hidden="true">{showInfo ? '−' : '+'}</span>
+      </button>
       <div className="dpad-shell grid shrink-0 grid-cols-3 grid-rows-2 gap-1.5 p-1.5 sm:gap-2 sm:p-2 lg:mx-auto lg:mt-3 lg:w-fit" aria-label="Touch movement controls">
         <span />
         <TouchButton button={buttons[0]} onPress={press(buttons[0].vector)} testId="button-move-north" />
