@@ -111,7 +111,7 @@ function Tile({ x, y, compact, position, onSelect }: { x: number; y: number; com
       <span className="hex-texture" />
       {asset && <img className={"tile-asset " + (terrain === "town" ? "town-asset" : "") + (compact ? " compact-asset" : "")} src={asset} alt="" draggable="false" />}
       {terrain === "path" && <span className="path-stone" />}
-      {isTownAnchor && <span className="town-pin">{town.name}</span>}
+      {isTownAnchor && <span className="town-pin">{town?.name}</span>}
       {isPlayer && <span className="player-marker"><LocateFixed size={compact ? 12 : 19} strokeWidth={2.5} /></span>}
     </button>
   );
