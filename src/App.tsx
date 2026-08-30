@@ -10,6 +10,7 @@ import { Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 const queryClient = new QueryClient();
 const MAP_WIDTH = 11;
 const MAP_HEIGHT = 9;
+const villageCells = new Set(['2-2', '8-2', '2-7', '8-7']);
 
 type Position = {
   x: number;
@@ -165,15 +166,23 @@ function Home() {
                   >
                     {cells.map((cell) => {
                       const isPlayer = cell.x === state.position.x && cell.y === state.position.y;
+                      const isVillage = villageCells.has(`${cell.x}-${cell.y}`);
+                      const cellLabel = isPlayer
+                        ? `Player at ${positionLabel(cell)}`
+                        : isVillage
+                          ? `Village at ${positionLabel(cell)}`
+                          : `Grass at ${positionLabel(cell)}`;
                       return (
                         <div
-                          className={`map-cell ${isPlayer ? 'is-player' : ''}`}
+                          className={`map-cell ${isPlayer ? 'is-player' : ''} ${isVillage ? 'is-village' : ''}`}
                           key={`${cell.x}-${cell.y}`}
-                          aria-label={isPlayer ? `Player at ${positionLabel(cell)}` : `Open ground at ${positionLabel(cell)}`}
+                          aria-label={cellLabel}
                           data-testid={`tile-${cell.x}-${cell.y}`}
                         >
                           {isPlayer ? (
                             <img className="player-sprite" src="/player-sprite.svg" alt="" aria-hidden="true" />
+                          ) : isVillage ? (
+                            <img className="village-sprite" src="/village-sprite.svg" alt="" aria-hidden="true" />
                           ) : (
                             <span aria-hidden="true">.</span>
                           )}
