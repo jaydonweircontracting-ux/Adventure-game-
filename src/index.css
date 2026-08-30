@@ -251,3 +251,43 @@
   .map-pan-button { width: 1.7rem; height: 1.55rem; }
   .map-surface.zoom-world { width: min(100%, 68dvh); }
 }
+
+
+.header-controls { display: flex; align-items: flex-end; justify-content: flex-end; flex-wrap: wrap; gap: 1rem; }
+.stamina-panel { display: grid; min-width: 11rem; gap: .35rem; padding: .45rem .55rem; border: 1px solid rgba(18, 63, 67, .38); background: rgba(246, 231, 184, .6); }
+.stamina-heading { display: flex; align-items: center; justify-content: space-between; gap: .8rem; }
+.stamina-heading strong { color: var(--deep-teal); font-family: var(--app-font-mono); font-size: .7rem; font-weight: 500; }
+.stamina-track { height: .62rem; overflow: hidden; border: 1px solid rgba(18, 63, 67, .55); background: rgba(18, 63, 67, .15); }
+.stamina-track span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--sand)); box-shadow: inset 0 1px 0 rgba(255, 246, 164, .6); transition: width 180ms ease, background-color 180ms ease; }
+.stamina-hint { color: var(--muted-foreground); font-family: var(--app-font-mono); font-size: .5rem; letter-spacing: .08em; text-transform: uppercase; }
+.rest-button { display: flex; min-width: 3.8rem; min-height: 2.55rem; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; border: 1px solid rgba(242, 201, 109, .62); background: rgba(242, 201, 109, .2); color: var(--sand); font-family: var(--app-font-mono); font-size: .62rem; font-weight: 500; letter-spacing: .1em; line-height: 1.05; box-shadow: 0 2px 0 rgba(7, 29, 34, .3); touch-action: manipulation; transition: transform 120ms ease, background-color 120ms ease, color 120ms ease; }
+.rest-button small { margin-top: .18rem; color: rgba(242, 201, 109, .7); font-size: .48rem; letter-spacing: .04em; }
+.rest-button:hover, .rest-button:focus-visible { background: var(--sand); color: var(--deep-teal); outline: 0; }
+.rest-button:hover small, .rest-button:focus-visible small { color: var(--deep-teal); }
+.rest-button:active { transform: translateY(2px); box-shadow: none; }
+.map-cell { cursor: pointer; }
+.map-cell:focus-visible { z-index: 12; outline: 2px solid var(--sand); outline-offset: -2px; }
+.map-cell.is-selected { z-index: 10; box-shadow: inset 0 0 0 2px var(--sand), inset 0 0 0 4px rgba(18, 63, 67, .48); }
+.map-cell.is-selected::after { position: absolute; z-index: 11; inset: 12%; content: ''; border: 1px dashed rgba(255, 246, 164, .9); pointer-events: none; }
+.info-panels { overflow: auto; }
+.tile-info-panel { background: rgba(246, 231, 184, .88); }
+.tile-empty { margin-top: .8rem; color: var(--muted-foreground); }
+.tile-details { margin-top: .8rem; }
+.tile-detail-heading { display: flex; align-items: baseline; justify-content: space-between; gap: .7rem; }
+.tile-detail-heading strong { color: var(--deep-teal); font-family: var(--app-font-sans); font-size: 1.08rem; font-weight: 600; }
+.tile-detail-heading span { color: var(--teal); font-family: var(--app-font-mono); font-size: .58rem; letter-spacing: .08em; text-transform: uppercase; }
+.tile-detail-list { display: grid; gap: .55rem; margin-top: .75rem; padding-top: .65rem; border-top: 1px dashed rgba(18, 63, 67, .28); }
+.tile-detail-list div { display: flex; justify-content: space-between; gap: .6rem; }
+.tile-detail-list dt { color: var(--muted-foreground); font-size: .52rem; letter-spacing: .07em; }
+.tile-detail-list dd { margin: 0; color: var(--deep-teal); text-align: right; }
+.town-intel { display: grid; gap: .2rem; margin-top: .8rem; padding-top: .65rem; border-top: 1px solid rgba(18, 63, 67, .24); }
+.town-intel strong { color: var(--deep-teal); font-family: var(--app-font-sans); font-size: .95rem; font-weight: 600; }
+.town-intel span:not(.meta-label) { color: var(--muted-foreground); font-family: var(--app-font-mono); font-size: .56rem; }
+.town-intel small { margin-top: .3rem; color: var(--accent); font-family: var(--app-font-mono); font-size: .48rem; line-height: 1.35; }
+.tile-note { margin-top: .8rem; color: var(--muted-foreground); font-family: var(--app-font-mono); font-size: .56rem; line-height: 1.45; }
+@media (max-width: 767px) {
+  .header-controls { width: 100%; align-items: stretch; justify-content: space-between; gap: .6rem; }
+  .stamina-panel { flex: 1 1 11rem; min-width: 0; }
+  .rest-button { flex: 0 0 3.8rem; }
+  .tile-detail-heading { display: grid; gap: .15rem; }
+}
