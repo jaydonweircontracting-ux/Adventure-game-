@@ -47,35 +47,35 @@
 }
 
 :root {
-  --background: 84 27% 84%;
-  --foreground: 144 25% 15%;
-  --border: 82 15% 65%;
-  --card: 78 29% 91%;
-  --card-foreground: 144 25% 15%;
-  --card-border: 82 15% 65%;
-  --popover: 78 29% 91%;
-  --popover-foreground: 144 25% 15%;
-  --popover-border: 82 15% 65%;
-  --primary: 144 25% 15%;
-  --primary-foreground: 78 29% 91%;
-  --secondary: 82 17% 75%;
-  --secondary-foreground: 144 25% 15%;
-  --muted: 81 19% 78%;
-  --muted-foreground: 145 12% 36%;
-  --accent: 76 54% 58%;
-  --accent-foreground: 144 25% 15%;
-  --destructive: 4 47% 42%;
-  --destructive-foreground: 78 29% 91%;
-  --input: 82 15% 65%;
-  --ring: 76 54% 46%;
-  --sidebar: 144 25% 15%;
-  --sidebar-foreground: 82 27% 84%;
-  --sidebar-border: 145 16% 28%;
-  --sidebar-primary: 76 54% 58%;
-  --sidebar-primary-foreground: 144 25% 15%;
-  --sidebar-accent: 145 16% 23%;
-  --sidebar-accent-foreground: 82 27% 84%;
-  --sidebar-ring: 76 54% 58%;
+  --background: 55 31% 87%;
+  --foreground: 151 34% 13%;
+  --border: 147 17% 49%;
+  --card: 55 28% 93%;
+  --card-foreground: 151 34% 13%;
+  --card-border: 147 17% 49%;
+  --popover: 55 28% 93%;
+  --popover-foreground: 151 34% 13%;
+  --popover-border: 147 17% 49%;
+  --primary: 151 34% 13%;
+  --primary-foreground: 55 31% 87%;
+  --secondary: 148 19% 72%;
+  --secondary-foreground: 151 34% 13%;
+  --muted: 56 22% 80%;
+  --muted-foreground: 151 16% 35%;
+  --accent: 67 65% 55%;
+  --accent-foreground: 151 34% 13%;
+  --destructive: 8 55% 41%;
+  --destructive-foreground: 55 31% 87%;
+  --input: 147 17% 49%;
+  --ring: 67 65% 42%;
+  --sidebar: 151 34% 13%;
+  --sidebar-foreground: 55 31% 87%;
+  --sidebar-border: 149 23% 27%;
+  --sidebar-primary: 67 65% 55%;
+  --sidebar-primary-foreground: 151 34% 13%;
+  --sidebar-accent: 149 23% 22%;
+  --sidebar-accent-foreground: 55 31% 87%;
+  --sidebar-ring: 67 65% 55%;
   --primary-border: hsl(var(--primary));
   --secondary-border: hsl(var(--secondary));
   --muted-border: hsl(var(--muted));
@@ -84,41 +84,41 @@
   --app-font-sans: 'IBM Plex Mono', monospace;
   --app-font-mono: 'Space Mono', monospace;
   --radius: 0.35rem;
-  --shadow-2xs: 0 1px 0 rgba(26, 42, 32, .14);
-  --shadow-xs: 0 2px 0 rgba(26, 42, 32, .14);
-  --shadow-sm: 0 4px 0 rgba(26, 42, 32, .13);
-  --shadow: 0 8px 0 rgba(26, 42, 32, .13);
-  --shadow-md: 0 12px 0 rgba(26, 42, 32, .13);
+  --shadow-2xs: 0 1px 0 rgba(20, 38, 28, .14);
+  --shadow-xs: 0 2px 0 rgba(20, 38, 28, .14);
+  --shadow-sm: 0 5px 0 rgba(20, 38, 28, .13);
+  --shadow: 0 9px 0 rgba(20, 38, 28, .13);
+  --shadow-md: 0 13px 0 rgba(20, 38, 28, .13);
 }
 
 .dark {
-  --background: 144 25% 15%;
-  --foreground: 82 27% 84%;
-  --border: 145 16% 28%;
-  --card: 145 16% 22%;
-  --card-foreground: 82 27% 84%;
-  --card-border: 145 16% 28%;
-  --popover: 145 16% 22%;
-  --popover-foreground: 82 27% 84%;
-  --popover-border: 145 16% 28%;
-  --primary: 82 27% 84%;
-  --primary-foreground: 144 25% 15%;
-  --secondary: 145 16% 23%;
-  --secondary-foreground: 82 27% 84%;
-  --muted: 145 16% 23%;
-  --muted-foreground: 82 15% 61%;
-  --accent: 76 54% 58%;
-  --accent-foreground: 144 25% 15%;
-  --input: 145 16% 28%;
-  --ring: 76 54% 58%;
-  --sidebar: 144 30% 10%;
-  --sidebar-foreground: 82 27% 84%;
-  --sidebar-border: 145 16% 22%;
-  --sidebar-primary: 76 54% 58%;
-  --sidebar-primary-foreground: 144 25% 15%;
-  --sidebar-accent: 145 16% 18%;
-  --sidebar-accent-foreground: 82 27% 84%;
-  --sidebar-ring: 76 54% 58%;
+  --background: 151 34% 13%;
+  --foreground: 55 31% 87%;
+  --border: 149 23% 27%;
+  --card: 149 23% 19%;
+  --card-foreground: 55 31% 87%;
+  --card-border: 149 23% 27%;
+  --popover: 149 23% 19%;
+  --popover-foreground: 55 31% 87%;
+  --popover-border: 149 23% 27%;
+  --primary: 55 31% 87%;
+  --primary-foreground: 151 34% 13%;
+  --secondary: 149 23% 22%;
+  --secondary-foreground: 55 31% 87%;
+  --muted: 149 23% 22%;
+  --muted-foreground: 55 15% 61%;
+  --accent: 67 65% 55%;
+  --accent-foreground: 151 34% 13%;
+  --input: 149 23% 27%;
+  --ring: 67 65% 55%;
+  --sidebar: 151 38% 9%;
+  --sidebar-foreground: 55 31% 87%;
+  --sidebar-border: 149 23% 22%;
+  --sidebar-primary: 67 65% 55%;
+  --sidebar-primary-foreground: 151 34% 13%;
+  --sidebar-accent: 149 23% 17%;
+  --sidebar-accent-foreground: 55 31% 87%;
+  --sidebar-ring: 67 65% 55%;
 }
 
 @layer base {
@@ -133,8 +133,37 @@
   body {
     @apply bg-background text-foreground antialiased;
     min-width: 320px;
+    overflow: hidden;
     font-family: var(--app-font-sans);
   }
+}
+
+.game-shell {
+  position: relative;
+  isolation: isolate;
+  background-image:
+    radial-gradient(circle at 86% 8%, rgba(190, 218, 113, .18), transparent 24rem),
+    linear-gradient(135deg, rgba(24, 62, 39, .035), transparent 42%);
+}
+
+.game-shell::before {
+  content: '';
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  opacity: .18;
+  background-image: radial-gradient(rgba(22, 54, 34, .28) .55px, transparent .7px);
+  background-size: 5px 5px;
+}
+
+.game-layout {
+  overflow: hidden;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.play-rail {
+  grid-template-rows: auto auto;
 }
 
 @keyframes console-in {
@@ -161,13 +190,14 @@
 .console-delay-3 { animation-delay: 210ms; }
 
 .map-surface {
-  background-color: #3e6549;
+  background-color: #315c42;
   background-image:
     linear-gradient(rgba(185, 207, 116, .09) 1px, transparent 1px),
     linear-gradient(90deg, rgba(185, 207, 116, .09) 1px, transparent 1px),
     radial-gradient(circle at 19% 24%, rgba(185, 207, 116, .11) 0 1px, transparent 1.5px),
     radial-gradient(circle at 74% 68%, rgba(18, 35, 26, .2) 0 1px, transparent 1.5px);
   background-size: 10% 10%, 10% 10%, 23px 23px, 31px 31px;
+  box-shadow: inset 0 0 0 1px rgba(217, 235, 145, .16), inset 0 0 32px rgba(12, 30, 20, .22);
 }
 
 .map-surface::after {
@@ -190,11 +220,11 @@
   font-family: var(--app-font-mono);
   font-size: clamp(.65rem, 2vw, 1.05rem);
   line-height: 1;
-  transition: background-color 150ms ease, color 150ms ease;
+  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
 }
 
 .map-cell.is-player {
-  background: rgba(185, 207, 116, .13);
+  background: rgba(211, 235, 119, .18);
   color: #d9eb91;
 }
 
@@ -214,7 +244,7 @@
 }
 
 .console-panel {
-  background: rgba(239, 244, 221, .64);
+  background: rgba(244, 242, 213, .68);
   box-shadow: var(--shadow-sm);
 }
 
@@ -228,6 +258,38 @@
 .touch-button {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  box-shadow: 0 3px 0 rgba(20, 38, 28, .22);
+  transition: transform 120ms ease, background-color 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.touch-button:hover {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+  border-color: hsl(var(--accent));
+}
+
+.touch-button:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 rgba(20, 38, 28, .22);
+}
+
+.control-rail {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.dpad-shell {
+  background: rgba(196, 222, 111, .1);
+  border: 1px solid rgba(217, 235, 145, .24);
+}
+
+.status-pip {
+  animation: cursor-pulse 2.4s ease-in-out infinite;
+}
+
+.message-line {
+  animation: console-in 240ms ease-out both;
 }
 
 .touch-button:focus-visible,
@@ -241,5 +303,37 @@
     animation-duration: .001ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 767px) {
+  body {
+    overflow: hidden;
+  }
+
+  .game-layout {
+    min-height: 0;
+  }
+
+  .play-rail {
+    overflow: hidden;
+  }
+}
+
+@media (min-width: 768px) {
+  .game-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(255px, 340px);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .play-rail {
+    max-height: min(680px, 100%);
+  }
+}
+
+@media (max-width: 767px) {
+  body {
+    overflow: hidden;
   }
 }
