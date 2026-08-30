@@ -244,6 +244,12 @@
   filter: drop-shadow(0 0 4px rgba(238, 219, 139, .42));
 }
 
+.map-cell.is-player.move-1 .player-sprite,
+.map-cell.is-player.move-2 .player-sprite,
+.map-cell.is-player.move-0 .player-sprite {
+  animation: player-step 180ms cubic-bezier(.2, .8, .2, 1), player-breathe 1.8s ease-in-out 180ms infinite;
+}
+
 .map-cell.is-player::before {
   content: '';
   position: absolute;
@@ -275,6 +281,12 @@
   50% { transform: translateY(-2px); }
 }
 
+@keyframes player-step {
+  0% { transform: translateY(2px) scale(.88); }
+  65% { transform: translateY(-2px) scale(1.04); }
+  100% { transform: translateY(0) scale(1); }
+}
+
 .console-panel {
   background: rgba(244, 242, 213, .68);
   box-shadow: var(--shadow-sm);
@@ -288,6 +300,7 @@
 }
 
 .touch-button {
+  cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
@@ -430,7 +443,7 @@
 
 @media (min-width: 768px) {
   .game-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(255px, 340px);
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
     grid-template-rows: minmax(0, 1fr);
     align-items: center;
   }
@@ -442,8 +455,8 @@
 
 @media (min-width: 640px) {
   .touch-button {
-    min-width: 4.25rem;
-    min-height: 4.25rem;
+    min-width: 3.75rem;
+    min-height: 3.75rem;
   }
 }
 
