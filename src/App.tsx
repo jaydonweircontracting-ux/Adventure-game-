@@ -1,6 +1,6 @@
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, RotateCcw, Terminal } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Keyboard, RotateCcw, Terminal } from 'lucide-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { type PointerEvent, type ReactNode, useCallback, useEffect, useMemo, useReducer } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type ReactNode, useCallback, useEffect, useMemo, useReducer } from 'react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -94,7 +94,7 @@ function Home() {
   }, []);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
       const vector = directionKeys[key];
 
@@ -120,68 +120,57 @@ function Home() {
   );
 
   return (
-    <main className="min-h-[100dvh] bg-background text-foreground">
-      <div className="mx-auto flex min-h-[100dvh] w-full max-w-[1440px] flex-col px-4 py-4 sm:px-7 sm:py-7 lg:px-10">
-        <header className="console-enter flex flex-col gap-5 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex items-start gap-4">
-            <div className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center border border-primary bg-primary text-accent sm:h-11 sm:w-11">
-              <Terminal size={19} strokeWidth={1.8} aria-hidden="true" />
+    <main className="game-shell min-h-[100dvh] bg-background text-foreground">
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-[1540px] flex-col px-3 py-3 sm:px-6 sm:py-5 lg:px-9">
+        <header className="console-enter flex shrink-0 items-center justify-between gap-4 border-b border-border pb-3 sm:pb-4">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-accent bg-primary text-accent shadow-xs sm:h-11 sm:w-11">
+              <Terminal size={18} strokeWidth={1.8} aria-hidden="true" />
             </div>
-            <div>
-              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
+            <div className="min-w-0">
+              <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground sm:text-[10px]">
                 FIELD CONSOLE / BUILD 01
               </p>
-              <h1 className="mt-1 font-mono text-2xl font-bold tracking-[-0.07em] text-primary sm:text-3xl">
+              <h1 className="truncate font-mono text-lg font-bold tracking-[-0.08em] text-primary sm:text-2xl">
                 GREEN // FIELD
               </h1>
             </div>
           </div>
-          <div className="flex items-center justify-between gap-4 sm:justify-end">
-            <span className="flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
-              <span className="h-2 w-2 bg-accent" aria-hidden="true" />
+          <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+            <span className="hidden items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground sm:flex">
+              <span className="status-pip h-2 w-2 bg-accent" aria-hidden="true" />
               RUNNING
             </span>
             <button
-              className="reset-button flex items-center gap-2 border border-border bg-card px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.13em] text-primary shadow-xs transition-transform hover:-translate-y-0.5"
+              className="reset-button flex min-h-9 items-center gap-2 border border-border bg-card px-2.5 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.13em] text-primary shadow-xs transition-transform hover:-translate-y-0.5 sm:px-3 sm:text-[10px]"
               onClick={resetPosition}
               type="button"
               data-testid="button-reset-position"
             >
               <RotateCcw size={13} strokeWidth={2} aria-hidden="true" />
-              Reset
+              <span>Reset</span>
             </button>
           </div>
         </header>
 
-        <div className="grid flex-1 gap-5 py-6 sm:py-8 lg:grid-cols-[190px_minmax(0,1fr)_230px] lg:items-center lg:gap-7 lg:py-10">
-          <aside className="console-enter console-delay-1 order-2 flex flex-col gap-4 lg:order-1">
-            <StatusPanel state={state} />
-            <div className="hidden border border-border bg-secondary/70 p-4 lg:block">
-              <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-muted-foreground">LEGEND</p>
-              <div className="mt-4 space-y-3 font-mono text-[10px] text-muted-foreground">
-                <p className="flex items-center gap-3"><span className="text-lg leading-none text-accent">@</span> player</p>
-                <p className="flex items-center gap-3"><span className="text-lg leading-none text-primary">.</span> open ground</p>
-              </div>
-            </div>
-          </aside>
-
-          <section className="console-enter order-1 min-w-0 lg:order-2">
-            <div className="mx-auto w-full max-w-[720px]">
-              <div className="mb-3 flex items-end justify-between gap-4">
+        <div className="game-layout grid min-h-0 flex-1 gap-3 py-3 sm:gap-5 sm:py-5 lg:gap-7 lg:py-6">
+          <section className="console-enter order-1 flex min-h-0 min-w-0 flex-col lg:order-1">
+            <div className="mx-auto flex min-h-0 w-full max-w-[800px] flex-1 flex-col justify-center">
+              <div className="mb-2 flex shrink-0 items-end justify-between gap-3 sm:mb-3">
                 <div>
-                  <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
+                  <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground sm:text-[10px]">
                     ACTIVE MAP
                   </p>
-                  <p className="mt-1 font-mono text-xs text-primary">open ground / no features loaded</p>
+                  <p className="mt-0.5 font-mono text-[10px] text-primary sm:text-xs">open ground / no features loaded</p>
                 </div>
-                <p className="font-mono text-[10px] tracking-[0.12em] text-muted-foreground">
+                <p className="font-mono text-[9px] tracking-[0.12em] text-muted-foreground sm:text-[10px]">
                   {MAP_WIDTH.toString().padStart(2, '0')} × {MAP_HEIGHT.toString().padStart(2, '0')}
                 </p>
               </div>
 
-              <div className="border border-primary bg-primary p-2 shadow-md sm:p-3">
-                <div className="border border-accent/30 bg-[#2a4936] p-2 sm:p-3">
-                  <div className="mb-2 grid grid-cols-[18px_1fr_18px] items-center gap-2 font-mono text-[9px] text-accent/75 sm:mb-3">
+              <div className="border border-primary bg-primary p-1.5 shadow-md sm:p-3">
+                <div className="border border-accent/30 bg-[#284b37] p-1.5 sm:p-3">
+                  <div className="mb-1.5 grid grid-cols-[14px_1fr_14px] items-center gap-1.5 font-mono text-[8px] text-accent/75 sm:mb-3 sm:grid-cols-[18px_1fr_18px] sm:gap-2 sm:text-[9px]">
                     <span>Y</span>
                     <div className="grid grid-cols-11 text-center">
                       {Array.from({ length: MAP_WIDTH }, (_, index) => <span key={index}>{index}</span>)}
@@ -207,7 +196,7 @@ function Home() {
                       );
                     })}
                   </div>
-                  <div className="mt-2 grid grid-cols-[18px_1fr_18px] items-center gap-2 font-mono text-[9px] text-accent/75 sm:mt-3">
+                  <div className="mt-1.5 grid grid-cols-[14px_1fr_14px] items-center gap-1.5 font-mono text-[8px] text-accent/75 sm:mt-3 sm:grid-cols-[18px_1fr_18px] sm:gap-2 sm:text-[9px]">
                     <span>Y</span>
                     <div className="flex justify-between px-1">
                       <span>00</span>
@@ -218,25 +207,28 @@ function Home() {
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3 font-mono text-[10px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+              <div className="mt-2 flex shrink-0 items-center justify-between gap-3 border-t border-border pt-2 font-mono text-[8px] text-muted-foreground sm:mt-3 sm:pt-3 sm:text-[10px]">
                 <span className="flex items-center gap-2">
                   <span className="h-2 w-2 bg-accent" aria-hidden="true" />
                   <span>YOU ARE HERE / <strong className="text-primary">@</strong></span>
                 </span>
-                <span data-testid="text-map-bounds">movement clamped to map bounds</span>
+                <span className="hidden sm:inline" data-testid="text-map-bounds">movement clamped to map bounds</span>
               </div>
             </div>
           </section>
 
-          <aside className="console-enter console-delay-2 order-3 flex flex-col gap-4 lg:order-3">
-            <MessagePanel state={state} />
+          <aside className="play-rail console-enter console-delay-1 order-2 grid min-h-0 gap-3 lg:order-2">
+            <div className="grid min-h-0 grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-1">
+              <StatusPanel state={state} />
+              <MessagePanel state={state} />
+            </div>
             <ControlPanel onMove={move} />
           </aside>
         </div>
 
-        <footer className="console-enter console-delay-3 flex flex-col gap-3 border-t border-border pt-4 font-mono text-[10px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <span>INPUT: ARROW KEYS / W A S D</span>
-          <span>WORLD STATE: EMPTY GROUND</span>
+        <footer className="console-enter console-delay-2 flex shrink-0 items-center justify-between gap-3 border-t border-border pt-2 font-mono text-[8px] text-muted-foreground sm:pt-3 sm:text-[10px]">
+          <span className="flex items-center gap-1.5"><Keyboard size={11} aria-hidden="true" /> WASD / ARROWS</span>
+          <span className="hidden sm:inline">WORLD STATE: EMPTY GROUND</span>
           <span>NO BACKEND REQUIRED</span>
         </footer>
       </div>
@@ -246,19 +238,19 @@ function Home() {
 
 function StatusPanel({ state }: { state: GameState }) {
   return (
-    <section className="console-panel border border-border p-4" aria-label="Player status">
-      <div className="flex items-center justify-between border-b border-border pb-3">
-        <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-primary">STATUS</p>
-        <span className="font-mono text-[9px] text-muted-foreground">01</span>
+    <section className="console-panel min-h-0 border border-border p-3 sm:p-4" aria-label="Player status">
+      <div className="flex items-center justify-between border-b border-border pb-2 sm:pb-3">
+        <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-primary sm:text-[10px]">STATUS</p>
+        <span className="font-mono text-[8px] text-muted-foreground sm:text-[9px]">01</span>
       </div>
-      <dl className="mt-4 space-y-4 font-mono text-[10px]">
+      <dl className="mt-2 grid grid-cols-3 gap-2 font-mono text-[8px] sm:mt-4 sm:block sm:space-y-4 sm:text-[10px]">
         <div>
           <dt className="text-muted-foreground">COORDINATES</dt>
-          <dd className="mt-1 text-lg font-bold tracking-[-0.05em] text-primary" data-testid="text-current-coordinates">
+          <dd className="mt-1 text-sm font-bold tracking-[-0.06em] text-primary sm:text-lg" data-testid="text-current-coordinates">
             {positionLabel(state.position)}
           </dd>
         </div>
-        <div className="data-rule pb-3">
+        <div className="data-rule pb-1 sm:pb-3">
           <dt className="text-muted-foreground">STEPS</dt>
           <dd className="mt-1 text-accent" data-testid="text-step-count">{state.steps.toString().padStart(3, '0')}</dd>
         </div>
@@ -273,15 +265,15 @@ function StatusPanel({ state }: { state: GameState }) {
 
 function MessagePanel({ state }: { state: GameState }) {
   return (
-    <section className="console-panel border border-border p-4" aria-label="Game messages">
-      <div className="flex items-center justify-between border-b border-border pb-3">
-        <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-primary">MESSAGE BUFFER</p>
-        <span className="h-2 w-2 bg-accent" aria-hidden="true" />
+    <section className="console-panel min-h-0 border border-border p-3 sm:p-4" aria-label="Game messages">
+      <div className="flex items-center justify-between border-b border-border pb-2 sm:pb-3">
+        <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-primary sm:text-[10px]">MESSAGE BUFFER</p>
+        <span className="status-pip h-2 w-2 bg-accent" aria-hidden="true" />
       </div>
-      <p className="mt-4 min-h-[55px] font-mono text-[11px] leading-relaxed text-primary" data-testid="text-game-message">
+      <p className="message-line mt-2 min-h-0 font-mono text-[9px] leading-relaxed text-primary sm:mt-4 sm:min-h-[55px] sm:text-[11px]" aria-live="polite" data-testid="text-game-message">
         {state.message}
       </p>
-      <div className="mt-4 border-t border-border pt-3">
+      <div className="mt-2 hidden border-t border-border pt-3 sm:block">
         <p className="mb-2 font-mono text-[9px] uppercase tracking-[0.16em] text-muted-foreground">RECENT</p>
         <ol className="space-y-2 font-mono text-[9px] text-muted-foreground">
           {state.messages.slice(0, 3).map((message, index) => (
@@ -303,33 +295,35 @@ function ControlPanel({ onMove }: { onMove: (vector: MoveVector) => void }) {
   };
 
   const buttons = [
-    { label: 'Move north', vector: { dx: 0, dy: -1, direction: 'north' } as MoveVector, icon: ChevronUp },
-    { label: 'Move west', vector: { dx: -1, dy: 0, direction: 'west' } as MoveVector, icon: ChevronLeft },
-    { label: 'Move south', vector: { dx: 0, dy: 1, direction: 'south' } as MoveVector, icon: ChevronDown },
-    { label: 'Move east', vector: { dx: 1, dy: 0, direction: 'east' } as MoveVector, icon: ChevronRight },
+    { label: 'Move north', vector: { dx: 0, dy: -1, direction: 'north' } as MoveVector, icon: ChevronUp, key: 'W' },
+    { label: 'Move west', vector: { dx: -1, dy: 0, direction: 'west' } as MoveVector, icon: ChevronLeft, key: 'A' },
+    { label: 'Move south', vector: { dx: 0, dy: 1, direction: 'south' } as MoveVector, icon: ChevronDown, key: 'S' },
+    { label: 'Move east', vector: { dx: 1, dy: 0, direction: 'east' } as MoveVector, icon: ChevronRight, key: 'D' },
   ];
 
   return (
-    <section className="border border-border bg-secondary/70 p-4" aria-label="Movement controls">
-      <div className="flex items-center justify-between border-b border-border pb-3">
-        <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-primary">INPUT</p>
-        <p className="font-mono text-[9px] text-muted-foreground">MOVE</p>
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-4">
-        <div className="grid grid-cols-3 grid-rows-2 gap-1.5" aria-label="Touch movement controls">
-          <span />
-          <TouchButton button={buttons[0]} onPress={press(buttons[0].vector)} testId="button-move-north" />
-          <span />
-          <TouchButton button={buttons[1]} onPress={press(buttons[1].vector)} testId="button-move-west" />
-          <TouchButton button={buttons[2]} onPress={press(buttons[2].vector)} testId="button-move-south" />
-          <TouchButton button={buttons[3]} onPress={press(buttons[3].vector)} testId="button-move-east" />
+    <section className="control-rail flex min-h-0 items-center justify-between gap-4 border border-primary p-3 shadow-md sm:p-4 lg:block" aria-label="Movement controls">
+      <div className="min-w-0 self-stretch lg:flex lg:items-center lg:justify-between">
+        <div>
+          <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-accent sm:text-[10px]">MOVE</p>
+          <p className="mt-1 hidden font-mono text-[9px] text-primary-foreground/65 lg:block">Touch or keyboard input</p>
         </div>
-        <div className="hidden space-y-2 text-right font-mono text-[9px] leading-relaxed text-muted-foreground sm:block">
-          <p>W A S D</p>
-          <p>or arrow keys</p>
+        <div className="mt-2 hidden items-center gap-1 font-mono text-[9px] text-primary-foreground/70 lg:flex">
+          <span>W A S D</span><span className="text-accent">/</span><span>ARROWS</span>
         </div>
       </div>
-      <p className="mt-4 font-mono text-[9px] leading-relaxed text-muted-foreground sm:hidden">Touch controls active on this viewport.</p>
+      <div className="dpad-shell grid shrink-0 grid-cols-3 grid-rows-2 gap-1.5 p-1.5 sm:gap-2 sm:p-2 lg:mx-auto lg:mt-3 lg:w-fit" aria-label="Touch movement controls">
+        <span />
+        <TouchButton button={buttons[0]} onPress={press(buttons[0].vector)} testId="button-move-north" />
+        <span />
+        <TouchButton button={buttons[1]} onPress={press(buttons[1].vector)} testId="button-move-west" />
+        <TouchButton button={buttons[2]} onPress={press(buttons[2].vector)} testId="button-move-south" />
+        <TouchButton button={buttons[3]} onPress={press(buttons[3].vector)} testId="button-move-east" />
+      </div>
+      <div className="hidden shrink-0 text-right font-mono text-[9px] leading-relaxed text-primary-foreground/65 lg:block">
+        <p>Each press moves</p>
+        <p>one square.</p>
+      </div>
     </section>
   );
 }
@@ -339,20 +333,29 @@ function TouchButton({
   onPress,
   testId,
 }: {
-  button: { label: string; icon: typeof ChevronUp };
+  button: { label: string; icon: typeof ChevronUp; key: string };
   onPress: (event: PointerEvent<HTMLButtonElement>) => void;
   testId: string;
 }) {
   const Icon = button.icon;
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onPress(event as unknown as PointerEvent<HTMLButtonElement>);
+    }
+  };
+
   return (
     <button
-      className="touch-button flex h-9 w-9 items-center justify-center border border-border bg-card text-primary shadow-xs transition-transform hover:-translate-y-0.5 hover:border-accent hover:text-accent active:translate-y-0 active:shadow-none sm:h-10 sm:w-10"
+      className="touch-button flex h-10 w-10 items-center justify-center border border-border bg-card text-primary sm:h-12 sm:w-12"
+      onKeyDown={handleKeyDown}
       onPointerDown={onPress}
       type="button"
-      aria-label={button.label}
+      aria-label={`${button.label} (${button.key})`}
       data-testid={testId}
     >
-      <Icon size={16} strokeWidth={2} aria-hidden="true" />
+      <Icon size={19} strokeWidth={2.2} aria-hidden="true" />
     </button>
   );
 }
