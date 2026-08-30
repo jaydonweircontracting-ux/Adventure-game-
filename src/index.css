@@ -259,6 +259,8 @@
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  min-width: 3.75rem;
+  min-height: 3.75rem;
   box-shadow: 0 3px 0 rgba(20, 38, 28, .22);
   transition: transform 120ms ease, background-color 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 }
@@ -298,6 +300,11 @@
   outline-offset: 3px;
 }
 
+.touch-button:focus-visible {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .001ms !important;
@@ -329,6 +336,13 @@
 
   .play-rail {
     max-height: min(680px, 100%);
+  }
+}
+
+@media (min-width: 640px) {
+  .touch-button {
+    min-width: 4.25rem;
+    min-height: 4.25rem;
   }
 }
 
