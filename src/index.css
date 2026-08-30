@@ -243,6 +243,22 @@
   text-shadow: 0 0 12px rgba(210, 235, 132, .35);
 }
 
+.player-sprite {
+  position: relative;
+  z-index: 1;
+  width: 70%;
+  height: 70%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 5px rgba(216, 242, 125, .65));
+  animation: player-breathe 1.8s ease-in-out infinite;
+}
+
+@keyframes player-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
 .console-panel {
   background: rgba(244, 242, 213, .68);
   box-shadow: var(--shadow-sm);
