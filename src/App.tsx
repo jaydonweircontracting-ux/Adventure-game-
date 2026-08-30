@@ -172,7 +172,11 @@ function Home() {
                           aria-label={isPlayer ? `Player at ${positionLabel(cell)}` : `Open ground at ${positionLabel(cell)}`}
                           data-testid={`tile-${cell.x}-${cell.y}`}
                         >
-                          <span className={isPlayer ? 'player-glyph font-bold' : ''}>{isPlayer ? '@' : '.'}</span>
+                          {isPlayer ? (
+                            <img className="player-sprite" src="/player-sprite.svg" alt="" aria-hidden="true" />
+                          ) : (
+                            <span aria-hidden="true">.</span>
+                          )}
                         </div>
                       );
                     })}
