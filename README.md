@@ -1,6 +1,6 @@
 # Adventure Tile Game
 
-A first-pass, DCSS-inspired browser roguelike shell. The world is intentionally empty for now: you get an open green ground field, one player marker, movement, and a compact game console around it.
+A first-pass, DCSS-inspired browser roguelike shell. The world is intentionally empty for now: an open green ground field, one player marker, movement, and a compact game console.
 
 ## Current scope
 
