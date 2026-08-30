@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Keyboard, RotateCcw, Terminal } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Keyboard, RotateCcw } from 'lucide-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type ReactNode, useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -123,37 +123,6 @@ function Home() {
   return (
     <main className="game-shell min-h-[100dvh] bg-background text-foreground">
       <div className="mx-auto flex min-h-[100dvh] w-full max-w-[1540px] flex-col px-3 py-3 sm:px-6 sm:py-5 lg:px-9">
-        <header className="console-enter flex shrink-0 items-center justify-between gap-4 border-b border-border pb-3 sm:pb-4">
-          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-accent bg-primary text-accent shadow-xs sm:h-11 sm:w-11">
-              <Terminal size={18} strokeWidth={1.8} aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground sm:text-[10px]">
-                FIELD CONSOLE / BUILD 01
-              </p>
-              <h1 className="truncate font-mono text-lg font-bold tracking-[-0.08em] text-primary sm:text-2xl">
-                GREEN // FIELD
-              </h1>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2 sm:gap-4">
-            <span className="hidden items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground sm:flex">
-              <span className="status-pip h-2 w-2 bg-accent" aria-hidden="true" />
-              RUNNING
-            </span>
-            <button
-              className="reset-button flex min-h-9 items-center gap-2 border border-border bg-card px-2.5 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.13em] text-primary shadow-xs transition-transform hover:-translate-y-0.5 sm:px-3 sm:text-[10px]"
-              onClick={resetPosition}
-              type="button"
-              data-testid="button-reset-position"
-            >
-              <RotateCcw size={13} strokeWidth={2} aria-hidden="true" />
-              <span>Reset</span>
-            </button>
-          </div>
-        </header>
-
         <div className="game-layout grid min-h-0 flex-1 gap-3 py-3 sm:gap-5 sm:py-5 lg:gap-7 lg:py-6">
           <section className="console-enter order-1 flex min-h-0 min-w-0 flex-col lg:order-1">
             <div className="mx-auto flex min-h-0 w-full max-w-[800px] flex-1 flex-col justify-center">
@@ -164,9 +133,20 @@ function Home() {
                   </p>
                   <p className="mt-0.5 font-mono text-[10px] text-primary sm:text-xs">open ground / no features loaded</p>
                 </div>
-                <p className="font-mono text-[9px] tracking-[0.12em] text-muted-foreground sm:text-[10px]">
-                  {MAP_WIDTH.toString().padStart(2, '0')} × {MAP_HEIGHT.toString().padStart(2, '0')}
-                </p>
+                <div className="flex shrink-0 items-center gap-2">
+                  <p className="font-mono text-[9px] tracking-[0.12em] text-muted-foreground sm:text-[10px]">
+                    {MAP_WIDTH.toString().padStart(2, '0')} × {MAP_HEIGHT.toString().padStart(2, '0')}
+                  </p>
+                  <button
+                    className="reset-button flex min-h-8 items-center gap-1.5 border border-border bg-card px-2 py-1.5 font-mono text-[8px] font-bold uppercase tracking-[0.1em] text-primary shadow-xs transition-transform hover:-translate-y-0.5 sm:px-2.5 sm:text-[9px]"
+                    onClick={resetPosition}
+                    type="button"
+                    data-testid="button-reset-position"
+                  >
+                    <RotateCcw size={12} strokeWidth={2} aria-hidden="true" />
+                    <span>Reset</span>
+                  </button>
+                </div>
               </div>
 
               <div className="border border-primary bg-primary p-1.5 shadow-md sm:p-3">
