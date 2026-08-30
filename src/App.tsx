@@ -306,9 +306,9 @@ function ControlPanel({ onMove }: { onMove: (vector: MoveVector) => void }) {
       <div className="min-w-0 self-stretch lg:flex lg:items-center lg:justify-between">
         <div>
           <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-accent sm:text-[10px]">MOVE</p>
-          <p className="mt-1 hidden font-mono text-[9px] text-primary-foreground/65 lg:block">Touch or keyboard input</p>
+          <p className="mt-1 font-mono text-[9px] text-primary-foreground/65">Tap a direction</p>
         </div>
-        <div className="mt-2 hidden items-center gap-1 font-mono text-[9px] text-primary-foreground/70 lg:flex">
+        <div className="mt-2 flex items-center gap-1 font-mono text-[9px] text-primary-foreground/70 lg:mt-0">
           <span>W A S D</span><span className="text-accent">/</span><span>ARROWS</span>
         </div>
       </div>
@@ -320,9 +320,9 @@ function ControlPanel({ onMove }: { onMove: (vector: MoveVector) => void }) {
         <TouchButton button={buttons[2]} onPress={press(buttons[2].vector)} testId="button-move-south" />
         <TouchButton button={buttons[3]} onPress={press(buttons[3].vector)} testId="button-move-east" />
       </div>
-      <div className="hidden shrink-0 text-right font-mono text-[9px] leading-relaxed text-primary-foreground/65 lg:block">
-        <p>Each press moves</p>
-        <p>one square.</p>
+      <div className="hidden shrink-0 text-right font-mono text-[9px] leading-relaxed text-primary-foreground/65 sm:block lg:block">
+        <p>1 press</p>
+        <p>= 1 square</p>
       </div>
     </section>
   );
@@ -347,15 +347,17 @@ function TouchButton({
   };
 
   return (
-    <button
-      className="touch-button flex h-10 w-10 items-center justify-center border border-border bg-card text-primary sm:h-12 sm:w-12"
+      <button
+      className="touch-button flex h-[3.75rem] w-[3.75rem] flex-col items-center justify-center gap-0.5 border border-border bg-card text-primary sm:h-[4.25rem] sm:w-[4.25rem]"
       onKeyDown={handleKeyDown}
       onPointerDown={onPress}
       type="button"
       aria-label={`${button.label} (${button.key})`}
       data-testid={testId}
     >
+      <span className="font-mono text-[10px] font-bold leading-none">{button.key}</span>
       <Icon size={19} strokeWidth={2.2} aria-hidden="true" />
+      <span className="font-mono text-[8px] font-bold uppercase leading-none tracking-[0.08em]">{button.label.replace('Move ', '')}</span>
     </button>
   );
 }
