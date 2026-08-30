@@ -132,45 +132,52 @@ function Home() {
   return (
     <main className="game-shell min-h-[100dvh] bg-background text-foreground">
       <div className="mx-auto flex min-h-[100dvh] w-full max-w-[1540px] flex-col px-3 py-3 sm:px-6 sm:py-5 lg:px-9">
+        <header className="console-enter flex shrink-0 items-center justify-between border-b border-border pb-3 sm:pb-4" aria-label="Playtest header">
+          <div className="flex items-center gap-3">
+            <span className="h-3 w-3 bg-primary sm:h-4 sm:w-4" aria-hidden="true" />
+            <div>
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-primary sm:text-xs">ACTIVE MAP</p>
+              <p className="mt-1 font-mono text-[9px] text-muted-foreground sm:text-[10px]">open ground / no features loaded</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.13em] text-muted-foreground sm:gap-4 sm:text-[10px]">
+            <span>WORLD STATE: EMPTY GROUND</span>
+          </div>
+        </header>
+
         <div className="game-layout grid min-h-0 flex-1 gap-3 py-3 sm:gap-5 sm:py-5 lg:gap-7 lg:py-6">
-          <section className="console-enter order-1 flex min-h-0 min-w-0 flex-col lg:order-1">
-            <div className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col justify-center">
+          <section className="console-enter order-1 flex min-h-0 min-w-0 flex-col lg:order-1" aria-label="Active map">
+            <div className="mx-auto flex min-h-0 w-full max-w-[760px] flex-1 flex-col justify-center">
               <div className="mb-2 flex shrink-0 items-end justify-between gap-3 sm:mb-3">
                 <div>
-                  <p className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground sm:text-[10px]">
-                    ACTIVE MAP
-                  </p>
-                  <p className="mt-0.5 font-mono text-[10px] text-primary sm:text-xs">open ground / no features loaded</p>
+                  <p className="font-mono text-[9px] uppercase tracking-[0.17em] text-muted-foreground sm:text-[10px]">ACTIVE MAP</p>
+                  <p className="mt-1 font-mono text-[10px] text-primary sm:text-xs">{MAP_WIDTH.toString().padStart(2, '0')} × {MAP_HEIGHT.toString().padStart(2, '0')}</p>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <p className="font-mono text-[9px] tracking-[0.12em] text-muted-foreground sm:text-[10px]">
-                    {MAP_WIDTH.toString().padStart(2, '0')} × {MAP_HEIGHT.toString().padStart(2, '0')}
-                  </p>
-                  <button
-                    className="reset-button flex min-h-8 items-center gap-1.5 border border-border bg-card px-2 py-1.5 font-mono text-[8px] font-bold uppercase tracking-[0.1em] text-primary shadow-xs transition-transform hover:-translate-y-0.5 sm:px-2.5 sm:text-[9px]"
-                    onClick={resetPosition}
-                    type="button"
-                    data-testid="button-reset-position"
-                  >
-                    <RotateCcw size={12} strokeWidth={2} aria-hidden="true" />
-                    <span>Reset</span>
-                  </button>
-                </div>
+                <button
+                  className="reset-button flex min-h-9 items-center gap-1.5 border border-border bg-card px-2.5 py-1.5 font-mono text-[8px] font-bold uppercase tracking-[0.1em] text-primary shadow-xs sm:text-[9px]"
+                  onClick={resetPosition}
+                  type="button"
+                  data-testid="button-reset-position"
+                >
+                  <RotateCcw size={12} strokeWidth={2} aria-hidden="true" />
+                  <span>Reset</span>
+                </button>
               </div>
 
-              <div className="border border-primary bg-primary p-1.5 shadow-md sm:p-3">
+              <div className="border border-primary bg-primary p-1.5 shadow-md sm:p-3" data-testid="map-console">
                 <div className="border border-accent/30 bg-[#284b37] p-1.5 sm:p-3">
                   <div className="mb-1.5 grid grid-cols-[14px_1fr_14px] items-center gap-1.5 font-mono text-[8px] text-accent/75 sm:mb-3 sm:grid-cols-[18px_1fr_18px] sm:gap-2 sm:text-[9px]">
-                    <span>X</span>
-                    <div className="grid grid-cols-11 text-center">
+                    <span aria-hidden="true">X</span>
+                    <div className="grid grid-cols-11 text-center" aria-hidden="true">
                       {Array.from({ length: MAP_WIDTH }, (_, index) => <span key={index}>{index}</span>)}
                     </div>
-                    <span>Y</span>
+                    <span aria-hidden="true">Y</span>
                   </div>
                   <div
                     className="map-surface relative grid aspect-[11/9] grid-cols-11 overflow-hidden border border-accent/25"
                     aria-label="Eleven by nine open ground map"
                     data-testid="board-ground-map"
+                    role="img"
                   >
                     {cells.map((cell) => {
                       const isPlayer = cell.x === state.position.x && cell.y === state.position.y;
@@ -199,12 +206,12 @@ function Home() {
                     })}
                   </div>
                   <div className="mt-1.5 grid grid-cols-[14px_1fr_14px] items-center gap-1.5 font-mono text-[8px] text-accent/75 sm:mt-3 sm:grid-cols-[18px_1fr_18px] sm:gap-2 sm:text-[9px]">
-                    <span>X</span>
-                    <div className="flex justify-between px-1">
+                    <span aria-hidden="true">X</span>
+                    <div className="flex justify-between px-1" aria-hidden="true">
                       <span>00</span>
                       <span>10</span>
                     </div>
-                    <span>Y</span>
+                    <span aria-hidden="true">Y</span>
                   </div>
                 </div>
               </div>
@@ -219,7 +226,7 @@ function Home() {
             </div>
           </section>
 
-          <aside className="play-rail console-enter console-delay-1 order-2 grid min-h-0 gap-3 lg:order-2">
+          <aside className="play-rail console-enter console-delay-1 order-2 grid min-h-0 gap-3 lg:order-2" aria-label="Playtest controls and status">
             <div id="mobile-info-panels" className={`info-panels grid min-h-0 grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-1 ${showInfo ? 'is-open' : ''}`}>
               <StatusPanel state={state} />
               <MessagePanel state={state} />
@@ -315,20 +322,20 @@ function ControlPanel({
   ];
 
   return (
-    <section className="control-rail flex min-h-0 items-center justify-between gap-4 border border-primary p-3 shadow-md sm:p-4 lg:block" aria-label="Movement controls">
+    <section className="control-rail relative flex min-h-0 items-center justify-between gap-4 border border-primary p-3 shadow-md sm:p-4 lg:block" aria-label="Movement controls">
       <div className="min-w-0 self-stretch lg:flex lg:items-center lg:justify-between">
         <div>
           <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-accent sm:text-[10px]">MOVE</p>
         </div>
       </div>
-      <button className="info-toggle sm:hidden" onClick={onToggleInfo} type="button" aria-expanded={showInfo} aria-controls="mobile-info-panels">
+      <button className="info-toggle sm:hidden" onClick={onToggleInfo} type="button" aria-expanded={showInfo} aria-controls="mobile-info-panels" data-testid="button-toggle-info">
         <span>{showInfo ? 'Hide info' : 'Show info'}</span>
         <span aria-hidden="true">{showInfo ? '−' : '+'}</span>
       </button>
       <div className="dpad-shell grid shrink-0 grid-cols-3 grid-rows-2 gap-1.5 p-1.5 sm:gap-2 sm:p-2 lg:mx-auto lg:mt-3 lg:w-fit" aria-label="Touch movement controls">
-        <span />
+        <span aria-hidden="true" />
         <TouchButton button={buttons[0]} onPress={press(buttons[0].vector)} testId="button-move-north" />
-        <span />
+        <span aria-hidden="true" />
         <TouchButton button={buttons[1]} onPress={press(buttons[1].vector)} testId="button-move-west" />
         <TouchButton button={buttons[2]} onPress={press(buttons[2].vector)} testId="button-move-south" />
         <TouchButton button={buttons[3]} onPress={press(buttons[3].vector)} testId="button-move-east" />
@@ -353,8 +360,8 @@ function TouchButton({
   const Icon = button.icon;
 
   return (
-      <button
-      className="touch-button flex h-[3.5rem] w-[3.5rem] flex-col items-center justify-center gap-0.5 border border-border bg-card text-primary sm:h-[3.75rem] sm:w-[3.75rem]"
+    <button
+      className="touch-button flex h-[3.5rem] w-[3.5rem] flex-col items-center justify-center gap-0.5 border bg-card text-primary sm:h-[3.75rem] sm:w-[3.75rem]"
       onClick={onPress}
       type="button"
       aria-label={`${button.label} (${button.key})`}
