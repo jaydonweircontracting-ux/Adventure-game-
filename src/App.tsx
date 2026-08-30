@@ -99,11 +99,11 @@ function Tile({ x, y, compact, position, onSelect }: { x: number; y: number; com
   const town = townForTile(x, y);
   const isPlayer = x === position.x && y === position.y;
   const isTownAnchor = town && x === town.x && y === town.y;
-  const asset = terrain === "woodland" || terrain === "autumn" ? "/assets/tree.svg" : terrain === "rock" ? "/assets/mountain.svg" : terrain === "town" ? "/assets/town.svg" : "";
+  const asset = terrain === "woodland" || terrain === "autumn" ? "/assets/tree.svg" : terrain === "rock" ? "/assets/mountain.svg" : terrain === "town" && isTownAnchor ? "/assets/town.svg" : "";
   return (
     <button
       type="button"
-      className={"hex hex-" + terrain + (isPlayer ? " is-player" : "") + (town ? " is-town" : "")}
+      className={"hex hex-" + terrain + (isPlayer ? " is-player" : "") + (town ? " is-town" : "") + (isTownAnchor ? " is-town-anchor" : "")}
       title={town ? town.name + " · " + terrainLabels[terrain] : terrainLabels[terrain]}
       aria-label={"" + x + ", " + y + " " + terrainLabels[terrain]}
       onClick={() => onSelect && onSelect(x, y)}
