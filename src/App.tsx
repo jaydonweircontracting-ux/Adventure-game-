@@ -319,10 +319,6 @@ function ControlPanel({
       <div className="min-w-0 self-stretch lg:flex lg:items-center lg:justify-between">
         <div>
           <p className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-accent sm:text-[10px]">MOVE</p>
-          <p className="mt-1 font-mono text-[9px] text-primary-foreground/65">Tap a direction</p>
-        </div>
-        <div className="mt-2 flex items-center gap-1 font-mono text-[9px] text-primary-foreground/70 lg:mt-0">
-          <span>W A S D</span><span className="text-accent">/</span><span>ARROWS</span>
         </div>
       </div>
       <button className="info-toggle sm:hidden" onClick={onToggleInfo} type="button" aria-expanded={showInfo} aria-controls="mobile-info-panels">
