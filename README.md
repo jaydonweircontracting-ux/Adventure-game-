@@ -6,6 +6,8 @@ A first-pass, DCSS-inspired browser roguelike shell set on **The Far Meadow**, a
 
 - Move with Arrow keys or WASD
 - Touch-friendly player direction controls on narrow screens
+- Test horse parked near spawn with proximity-based Mount horse / Dismount controls
+- Mounted movement runs substantially faster than walking, and the horse persists at its last dismount location
 - Four map zoom levels: Close, Region, Survey, and World
 - Full 100 × 100 world overview
 - Outside map arrows for independent map panning
