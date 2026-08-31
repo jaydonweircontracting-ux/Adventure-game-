@@ -372,8 +372,8 @@
   image-rendering: pixelated;
 }
 .player[data-facing='up'] .player-sprite { --sprite-row: 2; }
-.player[data-facing='left'] .player-sprite { --sprite-row: 1; }
-.player[data-facing='right'] .player-sprite { --sprite-row: 1; transform: scaleX(-1); }
+.player[data-facing='left'] .player-sprite { --sprite-row: 1; transform: scaleX(-1); }
+.player[data-facing='right'] .player-sprite { --sprite-row: 1; }
 .player.is-moving .player-sprite {
   animation: player-run .48s steps(6, end) infinite;
 }
@@ -393,25 +393,25 @@
 .rider-head {
   position: absolute;
   z-index: 0;
-  left: 9px;
-  top: -2px;
-  width: 24px;
-  height: 14px;
+  left: 12px;
+  top: -3px;
+  width: 18px;
+  height: 11px;
   background-image: var(--player-sprite-url);
   background-position: 0 0;
-  background-size: 144px 240px;
+  background-size: 108px 180px;
   background-repeat: no-repeat;
   image-rendering: pixelated;
   clip-path: inset(0 0 1px 0);
   pointer-events: none;
 }
-.horse[data-facing='up'] .rider-head { background-position-y: -48px; }
-.horse[data-facing='left'] .rider-head { background-position-y: -24px; }
-.horse[data-facing='right'] .rider-head { background-position-y: -24px; transform: scaleX(-1); }
+.horse[data-facing='up'] .rider-head { background-position-y: -36px; }
+.horse[data-facing='left'] .rider-head { background-position-y: -18px; transform: scaleX(-1); }
+.horse[data-facing='right'] .rider-head { background-position-y: -18px; }
 .horse.is-mounted .rider-head { animation: rider-run .48s steps(6, end) infinite; }
 @keyframes rider-run {
   from { background-position-x: 0; }
-  to { background-position-x: -144px; }
+  to { background-position-x: -108px; }
 }
 .horse-sprite {
   position: absolute;
