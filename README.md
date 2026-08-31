@@ -57,6 +57,8 @@ This project is deployed from the GitHub `main` branch through Netlify.
 
 - Build command: `npm run build`
 - Publish directory: `dist/public`
-- Node version: 20 (configured in `netlify.toml`)
+- Node version: 20.x (declared in `package.json` and configured in `netlify.toml`)
 - SPA routes fall back to `/index.html`
 - Keep browser/runtime imports declared in `dependencies` in `package.json`
+- Netlify builds and serves the Vite browser client only; it does not run `server.js` or the optional WebSocket world server
+- Keep server-side persistence and WebSocket changes out of the static deployment path unless a separate compatible host is introduced
