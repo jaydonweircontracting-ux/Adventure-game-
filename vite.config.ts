@@ -6,7 +6,8 @@ import { defineConfig } from "vite";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 5173);
-const basePath = process.env.BASE_PATH || '/';
+const repositoryName = process.env.GITHUB_REPOSITORY?.split('/').pop();
+const basePath = process.env.BASE_PATH || (process.env.GITHUB_ACTIONS && repositoryName ? `/${repositoryName}/` : '/');
 
 export default defineConfig({
   base: basePath,
