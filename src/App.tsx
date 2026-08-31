@@ -26,7 +26,7 @@ const directionKeys: Record<string, Direction> = {
 const delta: Record<Direction, Point> = {
   up: { x: 0, y: -2.4 }, down: { x: 0, y: 2.4 }, left: { x: -2.4, y: 0 }, right: { x: 2.4, y: 0 },
 };
-const terrainTypes = ['meadow', 'woodland', 'rock', 'shore', 'autumn'] as const;
+const terrainTypes = ['meadow', 'woodland', 'rock', 'shore', 'autumn', 'ocean'] as const;
 type Terrain = (typeof terrainTypes)[number];
 const fieldPalettes: Record<Terrain, { field: string; path: string; glow: string }> = {
   meadow: { field: '#77a45b', path: '#d9b979', glow: 'rgba(255, 227, 157, .22)' },
@@ -34,7 +34,27 @@ const fieldPalettes: Record<Terrain, { field: string; path: string; glow: string
   rock: { field: '#87927a', path: '#c9b27d', glow: 'rgba(238, 228, 186, .2)' },
   shore: { field: '#6f9b88', path: '#dfc58d', glow: 'rgba(218, 239, 194, .2)' },
   autumn: { field: '#9b785d', path: '#d6ae70', glow: 'rgba(255, 198, 123, .2)' },
+  ocean: { field: '#2a6f8d', path: '#8ab8bd', glow: 'rgba(140, 213, 219, .2)' },
 };
+
+type RegionStyle = 'greenvale' | 'brackenfen' | 'ironwood' | 'northwatch' | 'sunwash' | 'ocean';
+const regionPalettes: Record<Exclude<RegionStyle, 'ocean'>, { field: string; path: string; glow: string }> = {
+  greenvale: { field: '#77a45b', path: '#d9b979', glow: 'rgba(255, 227, 157, .22)' },
+  brackenfen: { field: '#617d51', path: '#bca979', glow: 'rgba(186, 207, 135, .2)' },
+  ironwood: { field: '#587b58', path: '#c4a26c', glow: 'rgba(188, 219, 157, .18)' },
+  northwatch: { field: '#858a78', path: '#d0bd8b', glow: 'rgba(238, 228, 186, .2)' },
+  sunwash: { field: '#9a7658', path: '#d7ac6b', glow: 'rgba(255, 198, 123, .2)' },
+};
+
+function regionStyleFor(point: Point): RegionStyle {
+  const distanceFromGreenvale = Math.max(Math.abs(point.x - 4), Math.abs(point.y - 7));
+  if (distanceFromGreenvale >= 7) return 'ocean';
+  if (point.y <= 5) return 'northwatch';
+  if (point.x <= 3) return 'brackenfen';
+  if (point.x >= 6) return 'ironwood';
+  if (point.y >= 9) return 'sunwash';
+  return 'greenvale';
+}
 
 function chunkTerrain(chunk: Point): Terrain {
   const seed = Math.abs((chunk.x * 73856093) ^ (chunk.y * 19349663));
@@ -46,8 +66,10 @@ type MapTile = {
   x: number;
   y: number;
   terrain: Terrain;
+  regionStyle: RegionStyle;
   waterFeature: 'river' | 'lake' | 'sea' | null;
   road: 'horizontal' | 'vertical' | 'cross' | 'none';
+  bridge: boolean;
   landmark: { name: string; kind: SettlementKind } | null;
 };
 
@@ -59,38 +81,41 @@ const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
 };
 
 function mapTileFor(point: Point): MapTile {
-  // Broad bands and shared curves keep neighboring chunks part of one landscape.
+  // Wide regional bands keep the world readable while the outer rim is reserved for ocean.
+  const regionStyle = regionStyleFor(point);
   const riverX = Math.round(2.8 + Math.sin((point.y - 7) * 0.68) * 1.45);
   const mainRiver = point.x === riverX;
   const branchRiverY = Math.round(8 + Math.sin(point.x * 0.55) * 0.8);
   const branchRiver = point.y === branchRiverY && point.x >= 2 && point.x <= 7;
   const lake = (point.x === 6 && point.y === 5) || (point.x === 7 && point.y === 5);
-  const coastalSea = Math.abs(point.x - 4) >= 4 || Math.abs(point.y - 7) >= 4;
-  const waterFeature = coastalSea ? 'sea' : lake ? 'lake' : mainRiver || branchRiver ? 'river' : null;
-  const isWater = waterFeature !== null;
+  const waterFeature = regionStyle === 'ocean' ? 'sea' : lake ? 'lake' : mainRiver || branchRiver ? 'river' : null;
+  const isOcean = waterFeature === 'sea';
 
   const ridgeBoundary = 4 + Math.sin(point.x * 0.5) * 1.1;
   const isRidge = point.y <= ridgeBoundary || point.x <= 0;
   const isWoodland = !isRidge && ((point.x <= 3 && point.y >= 6) || (point.x >= 6 && point.y >= 7) || (point.x === 5 && point.y === 5));
   const isAutumn = !isRidge && !isWoodland && point.y >= 9 && point.x <= 3;
-  const terrain = isWater ? 'shore' : isRidge ? 'rock' : isWoodland ? 'woodland' : isAutumn ? 'autumn' : 'meadow';
+  const terrain = isOcean ? 'ocean' : isRidge ? 'rock' : isWoodland ? 'woodland' : isAutumn ? 'autumn' : 'meadow';
 
   const horizontalRoadY = Math.round(7 + Math.sin((point.x - 2) * 0.65) * 0.55);
   const verticalRoadX = Math.round(4 + Math.sin((point.y - 7) * 0.45) * 0.4);
-  const horizontalRoad = !isWater && point.y === horizontalRoadY;
-  const verticalRoad = !isWater && point.x === verticalRoadX;
+  const horizontalRoad = !isOcean && point.y === horizontalRoadY;
+  const verticalRoad = !isOcean && point.x === verticalRoadX;
   const road = horizontalRoad && verticalRoad ? 'cross' : horizontalRoad ? 'horizontal' : verticalRoad ? 'vertical' : 'none';
+  const bridge = waterFeature !== null && !isOcean && road !== 'none';
 
   return {
     ...point,
     terrain,
+    regionStyle,
     waterFeature,
     road,
+    bridge,
     landmark: mapLandmarks[point.x + ',' + point.y] || null,
   };
 }
 
-type FieldTree = { id: number; x: number; y: number; scale: number; variant: number };
+type FieldTree = { id: number; x: number; y: number; scale: number; variant: number; style: RegionStyle };
 type FieldRect = { left: number; top: number; right: number; bottom: number };
 
 function fieldHouseRects(kind: SettlementKind): FieldRect[] {
@@ -132,6 +157,7 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
   };
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   const houseRects = landmark ? fieldHouseRects(landmark.kind) : [];
+  const treeStyle = regionStyleFor(chunk);
   const trees: FieldTree[] = [];
   const targetCount = 8 + Math.floor(random() * 5);
   let attempts = 0;
@@ -146,14 +172,15 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
     const tooCloseToBuilding = houseRects.some((rect) => pointInRect(center, rect, 5));
     const tooCloseToTree = trees.some((tree) => Math.hypot(center.x - (tree.x + 3.2 * tree.scale), center.y - (tree.y + 2.5 * tree.scale)) < 9);
     if (tooCloseToStart || tooCloseToBuilding || tooCloseToTree) continue;
-    trees.push({ id: trees.length, x, y, scale, variant: Math.floor(random() * 3) });
+    trees.push({ id: trees.length, x, y, scale, variant: Math.floor(random() * 3), style: treeStyle });
   }
 
   return trees;
 }
 
 function isFieldPositionBlocked(position: Point, chunk: Point) {
-  if (mapTileFor(chunk).waterFeature === 'sea') return false;
+  const tile = mapTileFor(chunk);
+  if (tile.waterFeature === 'sea' || (tile.waterFeature !== null && !tile.bridge)) return true;
 
   const treeBlocked = fieldTreesFor(chunk).some((tree) => {
     const center = { x: tree.x + 3.2 * tree.scale, y: tree.y + 2.5 * tree.scale };
@@ -169,8 +196,10 @@ function mapTileClass(tile: MapTile & { current: boolean }) {
   return [
     'map-tile',
     'map-terrain-' + tile.terrain,
+    'map-region-' + tile.regionStyle,
     tile.waterFeature ? 'is-' + tile.waterFeature : '',
     tile.road !== 'none' ? 'has-road road-' + tile.road : '',
+    tile.bridge ? 'has-bridge' : '',
     tile.current ? 'is-current' : '',
   ].filter(Boolean).join(' ');
 }
@@ -494,29 +523,30 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
 
   const currentWorldTile = mapTileFor(chunk);
   const fieldTrees = fieldTreesFor(chunk);
+  const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
 
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field">
-        <div className={'pixel-field world-field map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '')} data-terrain={currentWorldTile.terrain} style={{
-          '--field-color': fieldPalettes[currentWorldTile.terrain].field,
-          '--path-color': fieldPalettes[currentWorldTile.terrain].path,
-          '--field-glow': fieldPalettes[currentWorldTile.terrain].glow,
+        <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
+          '--field-color': fieldPalette.field,
+          '--path-color': fieldPalette.path,
+          '--field-glow': fieldPalette.glow,
         } as CSSProperties}>
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature} aria-hidden="true" />}
-          {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road} aria-hidden="true" />}
+          {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road + (currentWorldTile.bridge ? ' field-bridge' : '')} aria-hidden="true" />}
           <div className="field-trees" aria-hidden="true">
             {fieldTrees.map((tree) => (
               <span
-                className={'field-tree variant-' + tree.variant}
+                className={'field-tree tree-' + tree.style + ' variant-' + tree.variant}
                 key={tree.id}
                 style={{ left: tree.x + '%', top: tree.y + '%', transform: 'scale(' + tree.scale + ')' }}
               />
             ))}
           </div>
           {currentWorldTile.landmark && (
-            <div className={'field-village ' + currentWorldTile.landmark.kind} aria-label={currentWorldTile.landmark.name}>
+            <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle} aria-label={currentWorldTile.landmark.name}>
               <span className="field-village-square" />
               <span className="field-house house-1" /><span className="field-house house-2" /><span className="field-house house-3" />
               <span className="field-house house-4" /><span className="field-house house-5" /><span className="field-house house-6" />
