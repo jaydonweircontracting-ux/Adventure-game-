@@ -830,3 +830,85 @@
   .area-flash { top: 72px; min-width: 112px; padding: 6px 11px 7px; }
   .area-flash strong { font-size: 12px; }
 }
+
+
+/* Connected overworld features: rivers, roads, and settlements share the same map geometry. */
+.map-tile.is-river {
+  background: #3f9dcc;
+}
+.map-tile.is-river::before {
+  z-index: 0;
+  opacity: .92;
+  background: repeating-linear-gradient(160deg, transparent 0 8px, rgba(191, 235, 224, .55) 9px 11px, transparent 12px 18px);
+}
+.map-tile.is-lake {
+  background: #3188be;
+}
+.map-tile.is-lake::before {
+  z-index: 0;
+  opacity: .9;
+  background: radial-gradient(ellipse at 48% 48%, rgba(163, 224, 223, .4) 0 28%, transparent 30%), repeating-linear-gradient(165deg, transparent 0 10px, rgba(180, 230, 220, .4) 11px 13px, transparent 14px 22px);
+}
+.map-tile.has-road::before {
+  z-index: 2;
+  inset: 0;
+  opacity: 1;
+  background-repeat: no-repeat;
+}
+.map-tile.road-horizontal::before {
+  background: linear-gradient(to bottom, transparent 35%, rgba(223, 190, 112, .98) 36% 64%, transparent 65%);
+}
+.map-tile.road-vertical::before {
+  background: linear-gradient(to right, transparent 35%, rgba(223, 190, 112, .98) 36% 64%, transparent 65%);
+}
+.map-tile.road-cross::before {
+  background: linear-gradient(to bottom, transparent 35%, rgba(223, 190, 112, .98) 36% 64%, transparent 65%), linear-gradient(to right, transparent 35%, rgba(223, 190, 112, .98) 36% 64%, transparent 65%);
+}
+.map-settlement {
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 9px;
+  transform: translate(-50%, -50%);
+  border: 1px solid #603c31;
+  background: #c76a45;
+  box-shadow: 2px 2px 0 rgba(53, 59, 39, .45);
+}
+.map-settlement::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 1px;
+  width: 8px;
+  height: 6px;
+  border: 1px solid #603c31;
+  background: #e19a46;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.map-settlement.town {
+  width: 15px;
+  height: 11px;
+  border-color: #4f3930;
+  background: #b9513f;
+}
+.map-settlement.town::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 5px;
+  width: 3px;
+  height: 7px;
+  background: #5a4a38;
+}
+.map-tile-player { z-index: 6; }
+.map-tile-label { z-index: 7; }
+.legend-line {
+  display: inline-block;
+  width: 17px;
+  height: 3px;
+  vertical-align: middle;
+  background: #3f9dcc;
+}
+.legend-line.road { background: #dfbe70; }
