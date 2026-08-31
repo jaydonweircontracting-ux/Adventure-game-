@@ -421,6 +421,7 @@
   image-rendering: pixelated;
   pointer-events: none;
 }
+.horse.is-mounted[data-facing='down']::before { animation: horse-walk .32s steps(4, end) infinite; }
 .horse.is-mounted .rider-head { animation: player-run .48s steps(6, end) infinite; }
 .horse[data-facing='up'] .rider-head { background-position-y: -32px; }
 .horse[data-facing='left'] .rider-head { background-position-y: -64px; }

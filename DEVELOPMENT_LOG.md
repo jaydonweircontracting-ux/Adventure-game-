@@ -129,3 +129,13 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Correction: remove `.github/workflows/publish-pages.yml` instead of changing `index.html` or package scripts.
 - Verification: 39 successful runs are GitHub's `pages build and deployment` workflow; no successful custom Vite Pages run was found.
 - Runtime/build verification: not run by design.
+
+
+## Checkpoint 008 — mounted horse frame synchronization
+
+- Date: 2026-08-31 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- Horse fix: synchronized the down-facing horse head overlay with the existing horse-walk animation so its head frame no longer freezes while the body animates.
+- Layering preserved: the rider head remains between the horse body and the down-facing horse head overlay.
+- Verification: static GitHub source readback only; no local build, typecheck, runtime, or gameplay execution.

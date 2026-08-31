@@ -19,3 +19,8 @@
 - Keep the browser build free of Replit-only plugins or required local-only environment variables.
 
 The successful deployment required declaring @tanstack/react-query and wouter as runtime dependencies.
+
+
+## Mounted horse rendering guardrail
+
+- The down-facing horse head overlay in `src/index.css` must use the same `horse-walk` animation as the horse body while mounted so both sprite layers stay synchronized.
