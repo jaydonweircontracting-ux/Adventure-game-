@@ -50,9 +50,9 @@ const initialLogs = [
 
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
-  const radius = zoom + 0;
+  const radius = 5 - zoom;
   const gridSize = radius * 2 + 1;
-  const mapScale = [1.12, 1, 0.86, 0.72][zoom - 1];
+  const mapScale = [0.72, 0.86, 1, 1.12][zoom - 1];
   const tiles = Array.from({ length: gridSize * gridSize }, (_, index) => {
     const row = Math.floor(index / gridSize);
     const column = index % gridSize;
