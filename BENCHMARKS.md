@@ -56,3 +56,22 @@ The fixed-step client loop was removed; the remaining interval is the in-game cl
 ## Interpretation
 
 The deployment contract is now declared both in package.json and netlify.toml, and the README explicitly keeps the optional Node/WebSocket server outside the static Netlify path. Static inspection does not prove a successful build; local validation remains required before claiming runtime success.
+
+
+## Post-horse static measurement — Checkpoint 005
+
+| Metric | Result | Status |
+|---|---:|---|
+| src/App.tsx | 26,902 bytes | recorded |
+| src/index.css | 36,469 bytes | recorded |
+| Walk speed | 32 | recorded |
+| Mounted speed | 118 (~3.7× walking) | recorded |
+| Mount proximity threshold | 11 percentage points | recorded |
+| Horse persistence state | chunk + local position | recorded |
+| New package dependencies | 0 | recorded |
+| npm install / build / typecheck | not run | pending local test |
+| Browser gameplay / horse runtime | not run | pending local test |
+
+## Interpretation
+
+The horse slice is browser-only and preserves the static Netlify deployment contract. Static source checks confirm the horse remains rendered after dismount and is not tied to the optional Node/WebSocket server; runtime feel and build success still require local validation.
