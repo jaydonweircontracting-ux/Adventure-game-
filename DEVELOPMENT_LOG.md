@@ -71,3 +71,11 @@
 ## Next bounded slice
 
 Run the client locally and report four checks: keyboard movement, diagonal movement, touch hold/release, and crossing a chunk boundary. Then choose whether to wire the client to the optional server or continue the browser-only world generator integration.
+
+
+## Checkpoint 003 — final handoff
+
+- Final documentation polish commit: 6550726 — docs: format world server commands.
+- Final verification confirmed the target file set, package JSON, frame-based movement markers, deterministic world module exports, persistence boundary, and server contract markers through GitHub reads.
+- Direct Node syntax execution was attempted but is unavailable in this session because the environment has no node binary. No install, mount, browser launch, or server launch was performed.
+- Local next step remains unchanged: run npm install, npm run typecheck, npm run build, then test keyboard, diagonal, touch hold/release, chunk crossing, and optional world-server behavior on the user's machine.
