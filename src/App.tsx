@@ -10,6 +10,7 @@ import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 
 const queryClient = new QueryClient();
+const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 type HorseState = { chunk: Point; position: Point };
@@ -332,7 +333,10 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const areaFlashIdRef = useRef(0);
 
   useEffect(() => {
-    ['/assets/gameplay/shining-fields/characters/player/idle.png', '/assets/gameplay/shining-fields/characters/player/run.png'].forEach((src) => {
+    [
+      assetUrl('assets/gameplay/shining-fields/characters/player/idle.png'),
+      assetUrl('assets/gameplay/shining-fields/characters/player/run.png'),
+    ].forEach((src) => {
       const image = new Image();
       image.src = src;
     });
@@ -640,7 +644,13 @@ function Home() {
   }, []);
 
   return (
-    <main className="game-app">
+    <main
+      className="game-app"
+      style={{
+        '--player-sprite-url': `url("${assetUrl('assets/gameplay/shining-fields/characters/player/run.png')}")`,
+        '--horse-sprite-url': `url("${assetUrl('assets/farm-male-cow-brown.png')}")`,
+      } as CSSProperties}
+    >
       <div className="game-layout">
         <GameField onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} />
       </div>
