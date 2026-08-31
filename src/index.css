@@ -1067,6 +1067,16 @@
   border-left: 1px solid #4d392c;
   border-right: 1px solid #4d392c;
 }
+.field-tree.variant-1 {
+  background: #4a804e;
+  border-radius: 44% 56% 52% 48%;
+  box-shadow: inset 5px 3px 0 rgba(155, 184, 75, .46), 3px 4px 0 rgba(37, 73, 45, .2);
+}
+.field-tree.variant-2 {
+  background: #2f6847;
+  border-radius: 58% 42% 46% 54%;
+  box-shadow: inset 7px 4px 0 rgba(91, 143, 62, .42), 3px 4px 0 rgba(37, 73, 45, .2);
+}
 .field-tree.tree-1 { left: 8%; top: 16%; }
 .field-tree.tree-2 { left: 19%; top: 9%; transform: scale(.8); }
 .field-tree.tree-3 { right: 10%; top: 15%; transform: scale(1.1); }
