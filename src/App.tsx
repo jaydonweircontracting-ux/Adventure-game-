@@ -193,7 +193,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
       if (active) {
         const direction = input.x > 0 ? 'right' : input.x < 0 ? 'left' : input.y < 0 ? 'up' : 'down';
         setFacing(direction);
-        const speed = 20;
+        const speed = 32;
         const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
         const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
         const movement = {
