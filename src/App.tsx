@@ -15,7 +15,7 @@ type Point = { x: number; y: number };
 type HorseState = { chunk: Point; position: Point };
 
 const WALK_SPEED = 32;
-const HORSE_SPEED = 118;
+const HORSE_SPEED = 180;
 const HORSE_MOUNT_DISTANCE = 11;
 const initialHorseState: HorseState = { chunk: { x: 4, y: 7 }, position: { x: 58, y: 52 } };
 
@@ -377,6 +377,10 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature} aria-hidden="true" />}
           {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road} aria-hidden="true" />}
+          <div className="farm-world-assets" aria-hidden="true">
+            <span className="farm-maple-tree tree-asset-1" /><span className="farm-maple-tree tree-asset-2" />
+            <span className="farm-crops crop-asset-1" /><span className="farm-crops crop-asset-2" />
+          </div>
           <div className="field-trees" aria-hidden="true">
             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((tree) => <span className={'field-tree tree-' + tree} key={tree} />)}
           </div>
@@ -394,10 +398,10 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
           )}
           {showHorse && (
             <>
-              <div className={'horse ' + (mounted ? 'is-mounted' : '')} style={{ left: horseDisplayPosition.x + '%', top: horseDisplayPosition.y + '%' }} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">
-                <span className="horse-tail" /><span className="horse-body" /><span className="horse-neck" /><span className="horse-head" /><span className="horse-ear" /><span className="horse-leg front" /><span className="horse-leg back" /><span className="horse-rein" />
+              <div className={'horse ' + (mounted ? 'is-mounted' : '')} style={{ left: horseDisplayPosition.x + '%', top: horseDisplayPosition.y + '%' }} data-facing={facing} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">
+                <span className="horse-sprite" />
               </div>
-              <button className={'horse-mount-button ' + (mounted ? 'mounted' : '')} style={{ left: horseDisplayPosition.x + '%', top: Math.min(88, Math.max(12, horseDisplayPosition.y + 10)) + '%' }} onClick={toggleMount} disabled={!mounted && !canMount} aria-pressed={mounted} aria-label={mounted ? 'Dismount horse' : 'Mount horse'} data-testid="button-toggle-mount">{mounted ? 'Dismount' : 'Mount'}</button>
+              {canMount && <button className="horse-mount-button" style={{ left: horseDisplayPosition.x + '%', top: Math.min(88, Math.max(12, horseDisplayPosition.y + 10)) + '%' }} onClick={toggleMount} aria-label="Mount horse" data-testid="button-toggle-mount">Mount</button>}
             </>
           )}
           <div className={'player ' + (moving ? 'is-moving ' : '') + (mounted ? 'is-mounted' : '')} style={{ left: position.x + '%', top: position.y + '%' }} data-facing={facing} data-testid="player-character">
@@ -415,6 +419,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
             <div className="hud-label"><span>Adventurer</span><span>08</span></div>
             <div className="hud-name">Rowan of the Vale</div>
             <div className="bar" aria-label="Health 84 percent"><div className="bar-fill health" style={{ width: '84%' }} /></div>
+            {mounted && <button className="horse-dismount-button" onClick={toggleMount} aria-label="Dismount horse" data-testid="button-dismount-horse">Dismount</button>}
           </div>
           <button className="hud-card right hud-button" onClick={onOpenInventory} aria-label="Open inventory" data-testid="button-open-inventory">
             <div className="hud-label"><span>Satchel</span><Coins size={12} /></div>
