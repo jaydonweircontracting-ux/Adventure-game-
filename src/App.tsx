@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Map, Navigation, Settings, Shield, Sword, Volume2, VolumeX, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Map, Settings, Shield, Sword, Volume2, VolumeX, X } from 'lucide-react';
 import { type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -21,8 +21,8 @@ const delta: Record<Direction, Point> = {
 
 const initialLogs = [
   { text: 'You arrive at the Mosslight Crossing.', color: '' },
-  { text: 'Mira the Wayfarer marked a route east.', color: 'blue' },
-  { text: 'A wild thistlebeak rustles nearby.', color: 'red' },
+  { text: 'The east path is clear.', color: 'blue' },
+  { text: 'Your field position was saved locally.', color: '' },
 ];
 
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
@@ -62,6 +62,12 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
   const chunkRef = useRef(chunk);
   const lastTravelRef = useRef('');
 
+  useEffect(() => {
+    ['/assets/gameplay/shining-fields/characters/player/idle.png', '/assets/gameplay/shining-fields/characters/player/run.png'].forEach((src) => {
+      const image = new Image();
+      image.src = src;
+    });
+  }, []);
   useEffect(() => { positionRef.current = position; }, [position]);
   useEffect(() => { chunkRef.current = chunk; }, [chunk]);
 
@@ -169,23 +175,10 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
       <div className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field">
         <div className="pixel-field">
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
-          <img className="world-object tree object-a" src="/assets/tree.svg" alt="" draggable="false" />
-          <img className="world-object tree object-b" src="/assets/tree.svg" alt="" draggable="false" />
-          <img className="world-object tree object-c" src="/assets/tree.svg" alt="" draggable="false" />
-          <img className="world-object tree object-d" src="/assets/tree.svg" alt="" draggable="false" />
-          <img className="world-object rock object-e" src="/assets/mountain.svg" alt="" draggable="false" />
-          <img className="world-object rock object-f" src="/assets/mountain.svg" alt="" draggable="false" />
-          <img className="world-object flower object-g" src="/assets/gameplay/shining-fields/tileset/grass-decor.png" alt="" draggable="false" />
-          <img className="world-object field-chest" src="/assets/gameplay/shining-fields/objects/chest-01.png" alt="" draggable="false" />
-          <img className="world-object field-dust" src="/assets/gameplay/shining-fields/particles/dust-01.png" alt="" draggable="false" />
-          <span className="world-object field-wasp" aria-label="A wasp circles the field" />
-          <div className="npc merchant"><span className="npc-name">Mira</span><span className="npc-body" /></div>
-          <div className="npc guard"><span className="npc-name">Orren</span><span className="npc-body" /></div>
-          <div className="npc wanderer"><span className="npc-name">Sable</span><span className="npc-body" /></div>
-          <span className="field-marker marker-one">Mosslight</span>
-          <span className="field-marker marker-two">East road</span>
+           <div className="field-path path-main" aria-hidden="true" />
+           <div className="field-path path-crossing" aria-hidden="true" />
           <div className={`player ${moving ? 'is-moving' : ''}`} style={{ left: `${position.x}%`, top: `${position.y}%` }} data-facing={facing} data-testid="player-character">
-            <span className="player-tag">Rowan · Lv 08</span><span className="player-sprite" /><span className="player-shadow" />
+            <span className="player-sprite" />
           </div>
         </div>
         <div className="world-hud">
@@ -202,17 +195,17 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
           </div>
         </div>
         <div className="touch-controls" aria-label="Touch movement controls">
-          <button className="touch-control up" aria-label="Move north" data-testid="button-move-up" onPointerDown={() => pressDirection('up')} onPointerUp={() => releaseDirection('up')} onPointerLeave={() => releaseDirection('up')}><ChevronUp size={18} /></button>
-          <button className="touch-control left" aria-label="Move west" data-testid="button-move-left" onPointerDown={() => pressDirection('left')} onPointerUp={() => releaseDirection('left')} onPointerLeave={() => releaseDirection('left')}><ChevronLeft size={18} /></button>
-          <button className="touch-control down" aria-label="Move south" data-testid="button-move-down" onPointerDown={() => pressDirection('down')} onPointerUp={() => releaseDirection('down')} onPointerLeave={() => releaseDirection('down')}><ChevronDown size={18} /></button>
-          <button className="touch-control right" aria-label="Move east" data-testid="button-move-right" onPointerDown={() => pressDirection('right')} onPointerUp={() => releaseDirection('right')} onPointerLeave={() => releaseDirection('right')}><ChevronRight size={18} /></button>
+           <button className="touch-control up" aria-label="Move north" data-testid="button-move-up" onPointerDown={() => pressDirection('up')} onPointerUp={() => releaseDirection('up')} onPointerCancel={() => releaseDirection('up')} onPointerLeave={() => releaseDirection('up')}><ChevronUp size={18} /></button>
+           <button className="touch-control left" aria-label="Move west" data-testid="button-move-left" onPointerDown={() => pressDirection('left')} onPointerUp={() => releaseDirection('left')} onPointerCancel={() => releaseDirection('left')} onPointerLeave={() => releaseDirection('left')}><ChevronLeft size={18} /></button>
+           <button className="touch-control down" aria-label="Move south" data-testid="button-move-down" onPointerDown={() => pressDirection('down')} onPointerUp={() => releaseDirection('down')} onPointerCancel={() => releaseDirection('down')} onPointerLeave={() => releaseDirection('down')}><ChevronDown size={18} /></button>
+           <button className="touch-control right" aria-label="Move east" data-testid="button-move-right" onPointerDown={() => pressDirection('right')} onPointerUp={() => releaseDirection('right')} onPointerCancel={() => releaseDirection('right')} onPointerLeave={() => releaseDirection('right')}><ChevronRight size={18} /></button>
         </div>
         <button className="map-button" onClick={onOpenMap} data-testid="button-open-map"><Map size={14} /> Field atlas</button>
       </div>
       <div className="game-footer">
         <div className="control-hint"><span className="key">W</span><span className="key">A</span><span className="key">S</span><span className="key">D</span><span>or arrow keys to move</span></div>
         <div className="autosave">Progress saved locally</div>
-        <button className="icon-button" onClick={onToggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'} data-testid="button-toggle-sound">{muted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
+         <button className="icon-button" onClick={onToggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'} aria-pressed={muted} data-testid="button-toggle-sound">{muted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
       </div>
       <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? 'Moving through Mosslight Crossing' : 'Standing still'}</div>
       <div className="sr-only" aria-live="polite" data-testid="status-field-log">{logs[0].text}</div>
@@ -221,21 +214,8 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
 }
 
 function SidePanel({ onOpenMap }: { onOpenMap: () => void }) {
-  const [tracked, setTracked] = useState(false);
   return (
     <aside className="side-panel" aria-label="Adventure notebook">
-      <section className="notebook-panel" data-testid="panel-active-quest">
-        <div className="panel-heading"><h2>Active quest</h2><span>01 / 03</span></div>
-        <div className="quest">
-          <div className="quest-status">Main route</div>
-          <h3 className="quest-title">A light beyond the fen</h3>
-          <p className="quest-copy">Follow the old stone markers east and find out why the watchfires went dark.</p>
-          <div className="quest-progress"><div className="bar"><div className="bar-fill" style={{ width: '34%' }} /></div><span>1 / 3</span></div>
-          <button className="map-button" style={{ position: 'static', marginTop: 14, color: 'var(--ink)', background: tracked ? '#f4c95d' : '#f8f0dd', borderColor: '#c6b594' }} onClick={() => setTracked((value) => !value)} data-testid="button-track-quest">
-            <Navigation size={13} /> {tracked ? 'Route tracked' : 'Track route'}
-          </button>
-        </div>
-      </section>
       <section className="notebook-panel" data-testid="panel-field-log">
         <div className="panel-heading"><h2>Field log</h2><span>just now</span></div>
         <div className="log-list">
@@ -272,6 +252,18 @@ function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
+
+  useEffect(() => {
+    const closeSheets = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMapOpen(false);
+        setSettingsOpen(false);
+      }
+    };
+    window.addEventListener('keydown', closeSheets);
+    return () => window.removeEventListener('keydown', closeSheets);
+  }, []);
+
   return (
     <main className="game-app">
       <header className="topbar">
