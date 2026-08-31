@@ -24,3 +24,9 @@ The successful deployment required declaring @tanstack/react-query and wouter as
 ## Mounted horse rendering guardrail
 
 - The down-facing horse head overlay in `src/index.css` must use the same `horse-walk` animation as the horse body while mounted so both sprite layers stay synchronized.
+
+
+## Published Pages sync guardrail
+
+- Source changes do not affect the live GitHub Pages site until the bundle referenced by `docs/index.html` is synchronized.
+- Before diagnosing a live visual bug, read `docs/index.html` and inspect the referenced `docs/assets` JS/CSS files; do not assume `src/` is what Pages is serving.
