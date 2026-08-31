@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Map, Settings, Shield, Sword, Volume2, VolumeX, X } from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Map, Settings, Shield, Sword, Volume2, VolumeX, X } from 'lucide-react';
 import { type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -55,6 +55,7 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
   const [stamina, setStamina] = useState(78);
   const [moving, setMoving] = useState(false);
   const [facing, setFacing] = useState<Direction>('down');
+  const [logOpen, setLogOpen] = useState(false);
   const [logs, setLogs] = useState(initialLogs);
   const [time, setTime] = useState('08:43');
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
@@ -200,7 +201,21 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
            <button className="touch-control down" aria-label="Move south" data-testid="button-move-down" onPointerDown={() => pressDirection('down')} onPointerUp={() => releaseDirection('down')} onPointerCancel={() => releaseDirection('down')} onPointerLeave={() => releaseDirection('down')}><ChevronDown size={18} /></button>
            <button className="touch-control right" aria-label="Move east" data-testid="button-move-right" onPointerDown={() => pressDirection('right')} onPointerUp={() => releaseDirection('right')} onPointerCancel={() => releaseDirection('right')} onPointerLeave={() => releaseDirection('right')}><ChevronRight size={18} /></button>
         </div>
-        <button className="map-button" onClick={onOpenMap} data-testid="button-open-map"><Map size={14} /> Field atlas</button>
+         {logOpen && (
+           <section id="field-log-drawer" className="field-log-drawer" aria-label="Field log" data-testid="panel-field-log">
+             <div className="field-log-heading">
+               <h2>Field log</h2>
+               <button className="field-log-close" onClick={() => setLogOpen(false)} aria-label="Close field log" data-testid="button-close-field-log"><X size={16} /></button>
+             </div>
+             <div className="log-list">
+               {logs.map((log, index) => <div className="log-row" key={`${log.text}-${index}`} data-testid={`log-entry-${index}`}><span className={`log-dot ${log.color}`} /><span>{log.text}</span></div>)}
+             </div>
+           </section>
+         )}
+         <div className="field-actions">
+           <button className="field-log-toggle" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" data-testid="button-toggle-field-log"><BookOpen size={14} /> {logOpen ? 'Hide log' : 'Field log'}</button>
+           <button className="map-button" onClick={onOpenMap} data-testid="button-open-map"><Map size={14} /> Field atlas</button>
+         </div>
       </div>
       <div className="game-footer">
         <div className="control-hint"><span className="key">W</span><span className="key">A</span><span className="key">S</span><span className="key">D</span><span>or arrow keys to move</span></div>
@@ -210,24 +225,6 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
       <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? 'Moving through Mosslight Crossing' : 'Standing still'}</div>
       <div className="sr-only" aria-live="polite" data-testid="status-field-log">{logs[0].text}</div>
     </div>
-  );
-}
-
-function SidePanel({ onOpenMap }: { onOpenMap: () => void }) {
-  return (
-    <aside className="side-panel" aria-label="Adventure notebook">
-      <section className="notebook-panel" data-testid="panel-field-log">
-        <div className="panel-heading"><h2>Field log</h2><span>just now</span></div>
-        <div className="log-list">
-          {initialLogs.map((log, index) => <div className="log-row" key={log.text} data-testid={`log-entry-${index}`}><span className={`log-dot ${log.color}`} /><span>{log.text}</span></div>)}
-        </div>
-      </section>
-      <section className="notebook-panel mini-only" data-testid="panel-nearby-map">
-        <div className="panel-heading"><h2>Nearby</h2><span>3 routes</span></div>
-        <div className="mini-map"><span className="map-coord">MOSS / 04:07</span></div>
-        <button className="sr-only" onClick={onOpenMap} data-testid="button-open-map-secondary">Open nearby map</button>
-      </section>
-    </aside>
   );
 }
 
@@ -279,7 +276,6 @@ function Home() {
       </header>
       <div className="game-layout">
         <GameField onOpenMap={() => setMapOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} />
-        <SidePanel onOpenMap={() => setMapOpen(true)} />
       </div>
       {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
       {settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} />}
