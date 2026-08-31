@@ -75,3 +75,20 @@ The deployment contract is now declared both in package.json and netlify.toml, a
 ## Interpretation
 
 The horse slice is browser-only and preserves the static Netlify deployment contract. Static source checks confirm the horse remains rendered after dismount and is not tied to the optional Node/WebSocket server; runtime feel and build success still require local validation.
+
+
+## Post-layout follow-up — Checkpoint 006
+
+| Metric | Result | Status |
+|---|---:|---|
+| Contextual mount control | positioned from horse coordinates | recorded |
+| Old bottom-bar mount control | removed | recorded |
+| Horse CSS scale | 0.68 | recorded |
+| Horse persistence logic | unchanged | preserved |
+| Netlify configuration | unchanged | preserved |
+| npm install / build / typecheck | not run | pending local test |
+| Browser layout / horse runtime | not run | pending local test |
+
+## Interpretation
+
+The follow-up keeps the control visually associated with the horse and reduces the horse footprint without changing the browser-only gameplay contract or Netlify deployment path.
