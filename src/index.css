@@ -442,6 +442,14 @@
 }
 .field-log-toggle { color: #fff3d4; background: rgba(29, 67, 49, .93); border-color: rgba(232, 211, 161, .68); }
 .field-log-toggle[aria-expanded='true'] { color: var(--ink); background: var(--sun); }
+.field-sound-button {
+  width: 37px;
+  height: 37px;
+  color: #fff3d4;
+  background: rgba(29, 67, 49, .93);
+  border-color: rgba(232, 211, 161, .68);
+}
+.field-sound-button:hover { transform: translateY(-2px); background: rgba(65, 110, 75, .98); }
 .field-log-drawer {
   position: absolute;
   z-index: 14;
