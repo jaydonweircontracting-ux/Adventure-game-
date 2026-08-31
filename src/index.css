@@ -394,7 +394,7 @@
   position: absolute;
   z-index: 2;
   left: 9px;
-  top: 1px;
+  top: 3px;
   width: 24px;
   height: 14px;
   background-image: var(--player-sprite-url);
@@ -425,10 +425,14 @@
 .horse[data-facing='left']::before { background-position-y: 0; }
 .horse[data-facing='right']::before { background-position-y: 0; transform: scaleX(-1); }
 .horse.is-mounted::before { animation: horse-walk .32s steps(4, end) infinite; }
-.horse.is-mounted .rider-head { animation: player-run .48s steps(6, end) infinite; }
-.horse[data-facing='up'] .rider-head { background-position-y: -32px; }
-.horse[data-facing='left'] .rider-head { background-position-y: -64px; }
-.horse[data-facing='right'] .rider-head { background-position-y: -96px; transform: scaleX(-1); }
+.horse.is-mounted .rider-head { animation: rider-run .48s steps(6, end) infinite; }
+.horse[data-facing='up'] .rider-head { background-position-y: -24px; }
+.horse[data-facing='left'] .rider-head { background-position-y: -48px; }
+.horse[data-facing='right'] .rider-head { background-position-y: -72px; transform: scaleX(-1); }
+@keyframes rider-run {
+  from { background-position-x: 0; }
+  to { background-position-x: -144px; }
+}
 .horse-sprite {
   position: absolute;
   z-index: 1;
