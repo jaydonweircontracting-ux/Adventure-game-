@@ -90,6 +90,81 @@ function mapTileFor(point: Point): MapTile {
   };
 }
 
+type FieldTree = { id: number; x: number; y: number; scale: number; variant: number };
+type FieldRect = { left: number; top: number; right: number; bottom: number };
+
+function fieldHouseRects(kind: SettlementKind): FieldRect[] {
+  const parent = kind === 'town'
+    ? { left: 19, top: 21, width: 62, height: 58 }
+    : { left: 23, top: 24, width: 54, height: 52 };
+  const specs = [
+    { left: 8, top: 11, width: 19, height: 13, scale: 1 },
+    { left: 73, top: 12, width: 19, height: 13, scale: 1 },
+    { left: 8, top: 75, width: 19, height: 13, scale: 1 },
+    { left: 73, top: 75, width: 19, height: 13, scale: 1 },
+    { left: 39, top: 7, width: 19, height: 13, scale: 0.8 },
+    { left: 39, top: 80, width: 19, height: 13, scale: 0.8 },
+  ];
+
+  return specs.map((spec) => {
+    const width = spec.width * spec.scale;
+    const height = spec.height * spec.scale;
+    const left = spec.left + (spec.width - width) / 2;
+    const top = spec.top + (spec.height - height) / 2;
+    return {
+      left: parent.left + (left / 100) * parent.width,
+      top: parent.top + (top / 100) * parent.height,
+      right: parent.left + ((left + width) / 100) * parent.width,
+      bottom: parent.top + ((top + height) / 100) * parent.height,
+    };
+  });
+}
+
+function pointInRect(point: Point, rect: FieldRect, padding = 0) {
+  return point.x >= rect.left - padding && point.x <= rect.right + padding && point.y >= rect.top - padding && point.y <= rect.bottom + padding;
+}
+
+function fieldTreesFor(chunk: Point): FieldTree[] {
+  let seed = Math.abs((chunk.x * 92837111) + (chunk.y * 689287499)) + 1;
+  const random = () => {
+    const value = Math.sin(seed++) * 10000;
+    return value - Math.floor(value);
+  };
+  const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
+  const houseRects = landmark ? fieldHouseRects(landmark.kind) : [];
+  const trees: FieldTree[] = [];
+  const targetCount = 8 + Math.floor(random() * 5);
+  let attempts = 0;
+
+  while (trees.length < targetCount && attempts < targetCount * 24) {
+    attempts += 1;
+    const x = 14 + random() * 72;
+    const y = 13 + random() * 74;
+    const scale = 0.72 + random() * 0.48;
+    const center = { x: x + 3.2 * scale, y: y + 2.5 * scale };
+    const tooCloseToStart = Math.hypot(center.x - 50, center.y - 52) < 12;
+    const tooCloseToBuilding = houseRects.some((rect) => pointInRect(center, rect, 5));
+    const tooCloseToTree = trees.some((tree) => Math.hypot(center.x - (tree.x + 3.2 * tree.scale), center.y - (tree.y + 2.5 * tree.scale)) < 9);
+    if (tooCloseToStart || tooCloseToBuilding || tooCloseToTree) continue;
+    trees.push({ id: trees.length, x, y, scale, variant: Math.floor(random() * 3) });
+  }
+
+  return trees;
+}
+
+function isFieldPositionBlocked(position: Point, chunk: Point) {
+  if (mapTileFor(chunk).waterFeature === 'sea') return false;
+
+  const treeBlocked = fieldTreesFor(chunk).some((tree) => {
+    const center = { x: tree.x + 3.2 * tree.scale, y: tree.y + 2.5 * tree.scale };
+    return Math.hypot(position.x - center.x, position.y - center.y) < 5.2 * tree.scale;
+  });
+  if (treeBlocked) return true;
+
+  const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
+  return landmark ? fieldHouseRects(landmark.kind).some((rect) => pointInRect(position, rect, 2.5)) : false;
+}
+
 function mapTileClass(tile: MapTile & { current: boolean }) {
   return [
     'map-tile',
@@ -335,16 +410,18 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
         if (next.x > 90) { next.x = 12; nextChunk.x += 1; travelLabels.push('east'); }
         if (next.y < 12) { next.y = 86; nextChunk.y -= 1; travelLabels.push('north'); }
         if (next.y > 88) { next.y = 14; nextChunk.y += 1; travelLabels.push('south'); }
-        positionRef.current = next;
-        setPosition(next);
-        if (travelLabels.length > 0) {
-          chunkRef.current = nextChunk;
-          setChunk(nextChunk);
-          onChunkChange(nextChunk);
-          setLogs((currentLogs) => [{
-            text: `You travel ${travelLabels.join(' and ')} into ${chunkRegion(nextChunk)} · chunk ${nextChunk.x}, ${nextChunk.y}.`,
-            color: 'blue',
-          }, ...currentLogs].slice(0, 3));
+        if (!isFieldPositionBlocked(next, nextChunk)) {
+          positionRef.current = next;
+          setPosition(next);
+          if (travelLabels.length > 0) {
+            chunkRef.current = nextChunk;
+            setChunk(nextChunk);
+            onChunkChange(nextChunk);
+            setLogs((currentLogs) => [{
+              text: `You travel ${travelLabels.join(' and ')} into ${chunkRegion(nextChunk)} · chunk ${nextChunk.x}, ${nextChunk.y}.`,
+              color: 'blue',
+            }, ...currentLogs].slice(0, 3));
+          }
         }
       }
       animationFrame = window.requestAnimationFrame(animate);
@@ -416,6 +493,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   };
 
   const currentWorldTile = mapTileFor(chunk);
+  const fieldTrees = fieldTreesFor(chunk);
 
   return (
     <div className="field-column">
@@ -428,12 +506,14 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature} aria-hidden="true" />}
           {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road} aria-hidden="true" />}
-          <div className="farm-world-assets" aria-hidden="true">
-            <span className="farm-maple-tree tree-asset-1" /><span className="farm-maple-tree tree-asset-2" />
-            <span className="farm-crops crop-asset-1" />
-          </div>
           <div className="field-trees" aria-hidden="true">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((tree) => <span className={'field-tree tree-' + tree} key={tree} />)}
+            {fieldTrees.map((tree) => (
+              <span
+                className={'field-tree variant-' + tree.variant}
+                key={tree.id}
+                style={{ left: tree.x + '%', top: tree.y + '%', transform: 'scale(' + tree.scale + ')' }}
+              />
+            ))}
           </div>
           {currentWorldTile.landmark && (
             <div className={'field-village ' + currentWorldTile.landmark.kind} aria-label={currentWorldTile.landmark.name}>
