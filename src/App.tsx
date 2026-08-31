@@ -76,6 +76,33 @@ function terrainAt(x: number, y: number): Terrain {
   return "grass";
 }
 
+
+function worldTerrainAt(x: number, y: number): Terrain {
+  if (x < 0 || y < 0 || x >= WORLD_WIDTH || y >= WORLD_HEIGHT) return "water";
+  const island =
+    (((x - 24) / 18) ** 2 + ((y - 16) / 13) ** 2 < 1) ||
+    (((x - 8) / 7) ** 2 + ((y - 25) / 5) ** 2 < 1) ||
+    (((x - 41) / 5) ** 2 + ((y - 7) / 5) ** 2 < 1) ||
+    (((x - 38) / 4) ** 2 + ((y - 27) / 4) ** 2 < 1);
+  if (!island) return "water";
+  if (townForTile(x, y)) return "town";
+
+  const northRiver = Math.abs(y - (7 + x * 0.22 + Math.sin(x / 3.2) * 1.2));
+  const southRiver = Math.abs(y - (25 - Math.sin(x / 3.8) * 2.3));
+  if ((northRiver < 0.55 || southRiver < 0.5) && x > 5 && x < 43) return "water";
+  if ((northRiver < 1.25 || southRiver < 1.1) && x > 5 && x < 43) return "shore";
+
+  const ridgeLine = 8 + Math.sin(x / 3.4) * 2 + x * 0.14;
+  const ridge = Math.abs(y - ridgeLine) < 2.2 && x > 14 && x < 39;
+  const forestNoise = hash(Math.floor(x / 2), Math.floor(y / 2));
+  const warmSouth = y > 21 && x > 24;
+  if (ridge || (x > 33 && y < 11 && forestNoise > 0.44)) return "rock";
+  if (forestNoise < 0.25) return warmSouth ? "autumn" : "woodland";
+  if (forestNoise > 0.86) return "path";
+  if (forestNoise > 0.62) return "meadow";
+  return "grass";
+}
+
 function regionAt(position: Position) {
   if (position.x > 28 && position.y < 15) return "The Crownspine";
   if (position.x < 17 && position.y > 21) return "Mosswood";
@@ -150,8 +177,8 @@ function GameplayChunk({ position, localPosition, terrain, direction }: { positi
   );
 }
 
-function Tile({ x, y, compact, position, onSelect }: { x: number; y: number; compact?: boolean; position: Position; onSelect?: (x: number, y: number) => void }) {
-  const terrain = terrainAt(x, y);
+function Tile({ x, y, compact, world, position, onSelect }: { x: number; y: number; compact?: boolean; world?: boolean; position: Position; onSelect?: (x: number, y: number) => void }) {
+  const terrain = world ? worldTerrainAt(x, y) : terrainAt(x, y);
   const town = townForTile(x, y);
   const isPlayer = x === position.x && y === position.y;
   const isTownAnchor = town && x === town.x && y === town.y;
@@ -186,7 +213,7 @@ function HexMap({ position, world, onSelect }: { position: Position; world?: boo
     <div className={world ? "hex-map world-hex-map" : "hex-map local-hex-map"}>
       {tiles.map((row) => (
         <div className={"hex-row " + (row.y % 2 !== 0 ? "offset-row" : "")} key={row.y}>
-          {row.xs.map((x) => <Tile key={x + ":" + row.y} x={x} y={row.y} compact={world} position={position} onSelect={onSelect} />)}
+          {row.xs.map((x) => <Tile key={x + ":" + row.y} x={x} y={row.y} compact={world} world={world} position={position} onSelect={onSelect} />)}
         </div>
       ))}
     </div>
