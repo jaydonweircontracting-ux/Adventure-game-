@@ -34,6 +34,64 @@ function chunkTerrain(chunk: Point): Terrain {
   return terrainTypes[seed % terrainTypes.length];
 }
 
+type SettlementKind = 'village' | 'town';
+type MapTile = {
+  x: number;
+  y: number;
+  terrain: Terrain;
+  waterFeature: 'river' | 'lake' | null;
+  road: 'horizontal' | 'vertical' | 'cross' | 'none';
+  landmark: { name: string; kind: SettlementKind } | null;
+};
+
+const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
+  '4,7': { name: 'Mosslight Crossing', kind: 'town' },
+  '2,6': { name: 'Amberfen Village', kind: 'village' },
+  '6,8': { name: 'Stonewake', kind: 'town' },
+  '5,4': { name: 'Highmere Watch', kind: 'village' },
+};
+
+function mapTileFor(point: Point): MapTile {
+  // Broad bands and shared curves keep neighboring chunks part of one landscape.
+  const riverX = Math.round(2.8 + Math.sin((point.y - 7) * 0.68) * 1.45);
+  const mainRiver = point.x === riverX;
+  const branchRiverY = Math.round(8 + Math.sin(point.x * 0.55) * 0.8);
+  const branchRiver = point.y === branchRiverY && point.x >= 2 && point.x <= 7;
+  const lake = (point.x === 6 && point.y === 5) || (point.x === 7 && point.y === 5);
+  const waterFeature = lake ? 'lake' : mainRiver || branchRiver ? 'river' : null;
+  const isWater = waterFeature !== null;
+
+  const ridgeBoundary = 4 + Math.sin(point.x * 0.5) * 1.1;
+  const isRidge = point.y <= ridgeBoundary || point.x <= 0;
+  const isWoodland = !isRidge && ((point.x <= 3 && point.y >= 6) || (point.x >= 6 && point.y >= 7) || (point.x === 5 && point.y === 5));
+  const isAutumn = !isRidge && !isWoodland && point.y >= 9 && point.x <= 3;
+  const terrain = isWater ? 'shore' : isRidge ? 'rock' : isWoodland ? 'woodland' : isAutumn ? 'autumn' : 'meadow';
+
+  const horizontalRoadY = Math.round(7 + Math.sin((point.x - 2) * 0.65) * 0.55);
+  const verticalRoadX = Math.round(4 + Math.sin((point.y - 7) * 0.45) * 0.4);
+  const horizontalRoad = !isWater && point.y === horizontalRoadY;
+  const verticalRoad = !isWater && point.x === verticalRoadX;
+  const road = horizontalRoad && verticalRoad ? 'cross' : horizontalRoad ? 'horizontal' : verticalRoad ? 'vertical' : 'none';
+
+  return {
+    ...point,
+    terrain,
+    waterFeature,
+    road,
+    landmark: mapLandmarks[point.x + ',' + point.y] || null,
+  };
+}
+
+function mapTileClass(tile: MapTile & { current: boolean }) {
+  return [
+    'map-tile',
+    'map-terrain-' + tile.terrain,
+    tile.waterFeature ? 'is-' + tile.waterFeature : '',
+    tile.road !== 'none' ? 'has-road road-' + tile.road : '',
+    tile.current ? 'is-current' : '',
+  ].filter(Boolean).join(' ');
+}
+
 function chunkRegion(chunk: Point) {
   if (chunk.x >= 3 && chunk.x <= 5 && chunk.y >= 6 && chunk.y <= 8) return 'Mosslight';
   if (chunk.x < 3) return 'Amberfen';
@@ -50,17 +108,17 @@ const initialLogs = [
 
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
-  const radius = 5 - zoom;
+  const radius = 6 - zoom;
   const gridSize = radius * 2 + 1;
   const mapScale = [0.72, 0.86, 1, 1.12][zoom - 1];
   const tiles = Array.from({ length: gridSize * gridSize }, (_, index) => {
     const row = Math.floor(index / gridSize);
     const column = index % gridSize;
-    const tile = {
+    const point = {
       x: chunk.x + column - radius,
       y: chunk.y + row - radius,
     };
-    return { ...tile, terrain: chunkTerrain(tile), current: tile.x === chunk.x && tile.y === chunk.y };
+    return { ...mapTileFor(point), current: point.x === chunk.x && point.y === chunk.y };
   });
 
   return (
@@ -81,7 +139,8 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
         <div className="big-map" data-testid="map-world-preview">
           <div className="map-grid" style={{ gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`, transform: `scale(${mapScale})` }}>
             {tiles.map((tile) => (
-              <div className={`map-tile map-terrain-${tile.terrain} ${tile.current ? 'is-current' : ''}`} key={`${tile.x}-${tile.y}`} title={`Chunk ${tile.x}, ${tile.y} · ${chunkRegion(tile)}`}>
+              <div className={mapTileClass(tile)} key={tile.x + '-' + tile.y} title={'Chunk ' + tile.x + ', ' + tile.y + ' · ' + (tile.landmark?.name || chunkRegion(tile))}>
+                {tile.landmark && <span className={`map-settlement ${tile.landmark.kind}`} aria-label={tile.landmark.name} />}
                 {tile.current && <span className="map-tile-player" aria-label="Your current position" />}
                 {tile.current && <span className="map-tile-label">{tile.x}, {tile.y}</span>}
               </div>
@@ -91,6 +150,8 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
         <div className="map-legend">
           <span className="legend-item"><span className="legend-dot" /> You are here</span>
           <span className="legend-item"><span className="legend-dot gold" /> Waypoint</span>
+          <span className="legend-item"><span className="legend-line river" /> River</span>
+          <span className="legend-item"><span className="legend-line road" /> Road</span>
           <span className="legend-item">Chunk {chunk.x}, {chunk.y} · {chunkRegion(chunk)}</span>
         </div>
       </div>
