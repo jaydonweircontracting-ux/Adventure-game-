@@ -12,6 +12,13 @@ import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 const queryClient = new QueryClient();
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
+type HorseState = { chunk: Point; position: Point };
+
+const WALK_SPEED = 32;
+const HORSE_SPEED = 118;
+const HORSE_MOUNT_DISTANCE = 11;
+const initialHorseState: HorseState = { chunk: { x: 4, y: 7 }, position: { x: 58, y: 52 } };
+
 const directionKeys: Record<string, Direction> = {
   ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
@@ -116,6 +123,7 @@ function chunkRegion(chunk: Point) {
 
 const initialLogs = [
   { text: 'You arrive at the Mosslight Crossing.', color: '' },
+  { text: 'A test horse waits just east of the square.', color: 'blue' },
   { text: 'The east path is clear.', color: 'blue' },
   { text: 'Your field position was saved locally.', color: '' },
 ];
@@ -200,12 +208,15 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
   const [moving, setMoving] = useState(false);
   const [facing, setFacing] = useState<Direction>('down');
+  const [mounted, setMounted] = useState(false);
+  const [horse, setHorse] = useState<HorseState>(initialHorseState);
   const [logOpen, setLogOpen] = useState(false);
   const [logs, setLogs] = useState(initialLogs);
   const [time, setTime] = useState('08:43');
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
   const chunkRef = useRef(chunk);
+  const mountedRef = useRef(mounted);
   const gameFrameRef = useRef<HTMLDivElement>(null);
   const areaFlashIdRef = useRef(0);
 
@@ -217,6 +228,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   }, []);
   useEffect(() => { positionRef.current = position; }, [position]);
   useEffect(() => { chunkRef.current = chunk; }, [chunk]);
+  useEffect(() => { mountedRef.current = mounted; }, [mounted]);
 
   useEffect(() => {
     areaFlashIdRef.current += 1;
@@ -268,7 +280,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
       if (active) {
         const direction = input.x > 0 ? 'right' : input.x < 0 ? 'left' : input.y < 0 ? 'up' : 'down';
         setFacing(direction);
-        const speed = 32;
+        const speed = mountedRef.current ? HORSE_SPEED : WALK_SPEED;
         const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
         const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
         const movement = {
@@ -324,6 +336,34 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
     setMoving(Object.values(keysRef.current).some(Boolean));
   };
 
+  const horseHere = horse.chunk.x === chunk.x && horse.chunk.y === chunk.y;
+  const horseDistance = Math.hypot(position.x - horse.position.x, position.y - horse.position.y);
+  const canMount = !mounted && horseHere && horseDistance <= HORSE_MOUNT_DISTANCE;
+  const showHorse = mounted || horseHere;
+  const horseDisplayPosition = mounted ? position : horse.position;
+
+  const toggleMount = () => {
+    if (mounted) {
+      const currentPosition = positionRef.current;
+      const currentChunk = chunkRef.current;
+      setHorse({ chunk: currentChunk, position: currentPosition });
+      setMounted(false);
+      setLogs((currentLogs) => [{ text: 'You dismount and leave the horse here.', color: '' }, ...currentLogs].slice(0, 3));
+      return;
+    }
+
+    if (!canMount) {
+      setLogs((currentLogs) => [{ text: horseHere ? 'The horse is too far away to mount.' : 'Your horse is in another field.', color: 'blue' }, ...currentLogs].slice(0, 3));
+      return;
+    }
+
+    const currentPosition = positionRef.current;
+    const currentChunk = chunkRef.current;
+    setHorse({ chunk: currentChunk, position: currentPosition });
+    setMounted(true);
+    setLogs((currentLogs) => [{ text: 'You mount the horse. The road opens ahead.', color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
+
   const currentWorldTile = mapTileFor(chunk);
 
   return (
@@ -352,7 +392,12 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
               )}
             </div>
           )}
-          <div className={'player ' + (moving ? 'is-moving' : '')} style={{ left: position.x + '%', top: position.y + '%' }} data-facing={facing} data-testid="player-character">
+          {showHorse && (
+            <div className={'horse ' + (mounted ? 'is-mounted' : '')} style={{ left: horseDisplayPosition.x + '%', top: horseDisplayPosition.y + '%' }} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">
+              <span className="horse-tail" /><span className="horse-body" /><span className="horse-neck" /><span className="horse-head" /><span className="horse-ear" /><span className="horse-leg front" /><span className="horse-leg back" /><span className="horse-rein" />
+            </div>
+          )}
+          <div className={'player ' + (moving ? 'is-moving ' : '') + (mounted ? 'is-mounted' : '')} style={{ left: position.x + '%', top: position.y + '%' }} data-facing={facing} data-testid="player-character">
             <span className="player-sprite" />
           </div>
         </div>
@@ -393,11 +438,13 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
          )}
          <div className="field-actions">
            <button className="field-log-toggle" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" data-testid="button-toggle-field-log"><BookOpen size={14} /> {logOpen ? 'Hide log' : 'Field log'}</button>
+           <button className={'horse-button ' + (mounted ? 'mounted' : '')} onClick={toggleMount} disabled={!mounted && !canMount} aria-pressed={mounted} aria-label={mounted ? 'Dismount horse' : 'Mount horse'} data-testid="button-toggle-mount">{mounted ? 'Dismount' : 'Mount horse'}</button>
            <button className="map-button" onClick={onOpenMap} data-testid="button-open-map"><Map size={14} /> Field atlas</button>
             <button className="icon-button field-sound-button" onClick={onToggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'} aria-pressed={muted} data-testid="button-toggle-sound">{muted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
          </div>
       </div>
-      <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? 'Moving through Mosslight Crossing' : 'Standing still'}</div>
+      <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? (mounted ? 'Riding through Mosslight Crossing' : 'Moving through Mosslight Crossing') : (mounted ? 'Mounted and ready' : 'Standing still')}</div>
+      <div className="sr-only" aria-live="polite" data-testid="status-mount">{mounted ? 'Mounted on the horse' : canMount ? 'Horse nearby and ready to mount' : horseHere ? 'Horse is parked in this field' : 'Horse is in another field'}</div>
       <div className="sr-only" aria-live="polite" data-testid="status-field-log">{logs[0].text}</div>
     </div>
   );
