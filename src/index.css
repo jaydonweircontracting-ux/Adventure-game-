@@ -343,6 +343,15 @@
   background-color: rgba(231, 201, 141, .78);
   mix-blend-mode: multiply;
 }
+.farm-world-assets { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
+.farm-world-assets > * { position: absolute; display: block; image-rendering: pixelated; }
+.farm-maple-tree { width: 32px; height: 48px; background-image: url('/assets/farm-maple-tree.png'); background-size: 160px 48px; background-position: -64px 0; background-repeat: no-repeat; transform: scale(1.45); transform-origin: bottom center; }
+.farm-maple-tree.tree-asset-1 { left: 16%; top: 39%; }
+.farm-maple-tree.tree-asset-2 { right: 15%; top: 62%; transform: scale(1.2); }
+.farm-crops { width: 32px; height: 32px; background-image: url('/assets/farm-spring-crops.png'); background-size: 224px 128px; background-repeat: no-repeat; transform: scale(1.15); }
+.farm-crops.crop-asset-1 { left: 28%; top: 70%; background-position: -32px -32px; }
+.farm-crops.crop-asset-2 { right: 27%; top: 68%; background-position: -96px -32px; }
+.world-field.world-is-sea .farm-world-assets { display: none; }
 .field-edge { position: absolute; z-index: 3; background: rgba(44, 91, 62, .58); }
 .field-edge.top, .field-edge.bottom { left: 0; right: 0; height: 15px; }
 .field-edge.top { top: 0; } .field-edge.bottom { bottom: 0; }
@@ -382,24 +391,34 @@
 .horse {
   position: absolute;
   z-index: 5;
-  width: 70px;
-  height: 50px;
-  transform: translate(-50%, -50%) scale(.68);
+  width: 42px;
+  height: 42px;
+  transform: translate(-50%, -50%) scale(1.35);
   transform-origin: center;
   pointer-events: none;
   will-change: left, top;
   filter: drop-shadow(3px 4px 0 rgba(39, 47, 35, .2));
 }
-.horse span { position: absolute; display: block; image-rendering: pixelated; }
-.horse-body { left: 14px; top: 20px; width: 38px; height: 17px; border: 2px solid #3f2d29; border-radius: 48% 52% 38% 34%; background: #875437; box-shadow: inset 0 -4px 0 rgba(58, 37, 29, .22); }
-.horse-neck { left: 40px; top: 9px; width: 15px; height: 27px; border: 2px solid #3f2d29; border-radius: 55% 45% 25% 30%; background: #9c6542; transform: rotate(18deg); }
-.horse-head { left: 51px; top: 5px; width: 17px; height: 15px; border: 2px solid #3f2d29; border-radius: 55% 45% 40% 48%; background: #a56b45; }
-.horse-ear { left: 58px; top: 0; width: 6px; height: 9px; border: 2px solid #3f2d29; background: #b17a51; transform: rotate(17deg); }
-.horse-tail { left: 5px; top: 17px; width: 15px; height: 17px; border-left: 5px solid #4a3129; border-bottom: 3px solid #4a3129; border-radius: 0 0 0 80%; transform: rotate(22deg); }
-.horse-leg { top: 34px; width: 7px; height: 14px; border: 2px solid #3f2d29; border-top: 0; background: #74452f; }
-.horse-leg.front { left: 39px; }
-.horse-leg.back { left: 20px; }
-.horse-rein { left: 49px; top: 17px; width: 19px; height: 8px; border-bottom: 2px solid #d6b86e; border-radius: 50%; transform: rotate(-15deg); }
+.horse-sprite {
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  width: 32px;
+  height: 32px;
+  background-image: url('/assets/farm-male-cow-brown.png');
+  background-position: 0 -32px;
+  background-size: 128px 96px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+.horse[data-facing='up'] .horse-sprite { background-position-y: -64px; }
+.horse[data-facing='left'] .horse-sprite { background-position-y: 0; }
+.horse[data-facing='right'] .horse-sprite { background-position-y: 0; transform: scaleX(-1); }
+.horse.is-mounted .horse-sprite { animation: horse-walk .32s steps(4, end) infinite; }
+@keyframes horse-walk {
+  from { background-position-x: 0; }
+  to { background-position-x: -128px; }
+}
 .horse.is-mounted { filter: drop-shadow(3px 4px 0 rgba(39, 47, 35, .28)); }
 @keyframes player-run {
   from { background-position-x: 0; }
@@ -485,9 +504,23 @@
   transform: translate(-50%, -50%);
   transition: transform .16s ease, background-color .16s ease;
 }
-.horse-mount-button.mounted { color: var(--ink); background: var(--sun); }
-.horse-mount-button:disabled { opacity: .48; cursor: not-allowed; }
-.map-button:hover, .field-log-toggle:hover, .horse-mount-button:hover:not(:disabled) { transform: translateY(-2px); background: rgba(65, 110, 75, .98); }
+.horse-mount-button:hover { transform: translate(-50%, -50%) scale(1.03); background: rgba(65, 110, 75, .98); }
+.horse-dismount-button {
+  display: block;
+  width: 100%;
+  height: 27px;
+  margin-top: 8px;
+  border: 1px solid rgba(232, 211, 161, .76);
+  color: #fff3d4;
+  background: rgba(29, 67, 49, .93);
+  font-family: var(--app-font-mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  transition: transform .16s ease, background-color .16s ease;
+}
+.horse-dismount-button:hover { transform: translateY(-2px); background: rgba(65, 110, 75, .98); }
+.map-button:hover, .field-log-toggle:hover { transform: translateY(-2px); background: rgba(65, 110, 75, .98); }
 .field-sound-button {
   width: 37px;
   height: 37px;
