@@ -53,25 +53,17 @@ npm start
 
 The current browser UI does not open this socket yet. That is intentional: run and test the client locally first, then wire synchronization as a separate bounded slice.
 
-## Netlify deployment
+## GitHub Pages deployment
 
-This project is deployed from the GitHub `main` branch through Netlify.
+This project is deployed automatically from the GitHub `main` branch by `.github/workflows/deploy-pages.yml`.
 
 - Build command: `npm run build`
 - Publish directory: `dist/public`
-- Node version: 20.x (declared in `package.json` and configured in `netlify.toml`)
-- SPA routes fall back to `/index.html`
-- Keep browser/runtime imports declared in `dependencies` in `package.json`
-- Netlify builds and serves the Vite browser client only; it does not run `server.js` or the optional WebSocket world server
-- Keep server-side persistence and WebSocket changes out of the static deployment path unless a separate compatible host is introduced
+- Node version: 20.x (declared in `package.json` and `.nvmrc`)
+- The workflow builds with the repository base path: `/Adventure-game-/`
+- GitHub Pages publishes the Vite browser client only; it does not run `server.js` or the optional WebSocket world server
+- Pages **Source** must be set to **GitHub Actions** under **Settings → Pages**
 
-## GitHub Pages deployment
-
-GitHub Pages is deployed automatically by `.github/workflows/deploy-pages.yml` whenever
-changes reach `main`. The workflow builds the Vite client with the repository path as
-its base URL, then publishes `dist/public` as a Pages artifact.
-
-For the first deployment, set the repository's Pages **Source** to **GitHub Actions**
-under **Settings → Pages**. The published site will be available at:
+The published site is available at:
 
 `https://jaydonweircontracting-ux.github.io/Adventure-game-/`
