@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node server.js",
     "world-server": "node server.js",
-    "prebuild": "npm run typecheck"
+    "prebuild": "node scripts/prepare-build-entry.mjs && npm run typecheck"
   },
   "dependencies": {
     "@radix-ui/react-toast": "^1.2.7",
