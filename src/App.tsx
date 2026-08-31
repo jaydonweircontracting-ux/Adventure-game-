@@ -68,6 +68,7 @@ type MapTile = {
   terrain: Terrain;
   regionStyle: RegionStyle;
   waterFeature: 'river' | 'lake' | 'sea' | null;
+  waterEdge: 'north' | 'south' | 'east' | 'west' | null;
   road: 'horizontal' | 'vertical' | 'cross' | 'none';
   bridge: boolean;
   landmark: { name: string; kind: SettlementKind } | null;
@@ -90,6 +91,7 @@ function mapTileFor(point: Point): MapTile {
   const lake = (point.x === 6 && point.y === 5) || (point.x === 7 && point.y === 5);
   const waterFeature = regionStyle === 'ocean' ? 'sea' : lake ? 'lake' : mainRiver || branchRiver ? 'river' : null;
   const isOcean = waterFeature === 'sea';
+  const waterEdge = isOcean ? null : lake ? 'south' : mainRiver ? (Math.sin((point.y - 7) * 0.68) >= 0 ? 'east' : 'west') : branchRiver ? (Math.sin(point.x * 0.55) >= 0 ? 'south' : 'north') : null;
 
   const ridgeBoundary = 4 + Math.sin(point.x * 0.5) * 1.1;
   const isRidge = point.y <= ridgeBoundary || point.x <= 0;
@@ -109,6 +111,7 @@ function mapTileFor(point: Point): MapTile {
     terrain,
     regionStyle,
     waterFeature,
+    waterEdge,
     road,
     bridge,
     landmark: mapLandmarks[point.x + ',' + point.y] || null,
@@ -198,6 +201,7 @@ function mapTileClass(tile: MapTile & { current: boolean }) {
     'map-terrain-' + tile.terrain,
     'map-region-' + tile.regionStyle,
     tile.waterFeature ? 'is-' + tile.waterFeature : '',
+    tile.waterEdge ? 'water-edge-' + tile.waterEdge : '',
     tile.road !== 'none' ? 'has-road road-' + tile.road : '',
     tile.bridge ? 'has-bridge' : '',
     tile.current ? 'is-current' : '',
@@ -534,7 +538,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
           '--field-glow': fieldPalette.glow,
         } as CSSProperties}>
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
-          {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature} aria-hidden="true" />}
+          {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
           {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road + (currentWorldTile.bridge ? ' field-bridge' : '')} aria-hidden="true" />}
           <div className="field-trees" aria-hidden="true">
             {fieldTrees.map((tree) => (
