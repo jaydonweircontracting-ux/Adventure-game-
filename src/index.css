@@ -912,3 +912,159 @@
   background: #3f9dcc;
 }
 .legend-line.road { background: #dfbe70; }
+
+
+/* Shared overworld pass: the playable field mirrors the atlas geography. */
+.world-field {
+  background-color: var(--field-color, #83a948);
+  background-image: radial-gradient(circle at 18% 18%, rgba(232, 238, 164, .28) 0 2px, transparent 3px), radial-gradient(circle at 74% 74%, rgba(45, 95, 54, .18) 0 3px, transparent 4px), linear-gradient(135deg, rgba(255, 235, 167, .12), transparent 45%);
+}
+.world-field::before {
+  z-index: 0;
+  inset: 0;
+  opacity: .48;
+  background: repeating-linear-gradient(25deg, transparent 0 12px, rgba(33, 91, 53, .12) 13px 15px, transparent 16px 25px);
+}
+.world-field::after { z-index: 1; }
+.world-field.world-is-sea {
+  background: #2e8fc2;
+}
+.world-field.world-is-sea::before {
+  opacity: .74;
+  background: repeating-linear-gradient(165deg, transparent 0 14px, rgba(180, 234, 223, .4) 15px 18px, transparent 19px 29px);
+}
+.field-path { display: none; }
+.field-water {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background: repeating-linear-gradient(165deg, transparent 0 15px, rgba(184, 232, 223, .4) 16px 19px, transparent 20px 31px);
+  pointer-events: none;
+}
+.field-road {
+  position: absolute;
+  z-index: 2;
+  background: #d9b66e;
+  border: 1px solid rgba(112, 76, 45, .42);
+  box-shadow: inset 0 3px 0 rgba(255, 229, 156, .3), inset 0 -3px 0 rgba(117, 78, 42, .13);
+  pointer-events: none;
+}
+.field-road-horizontal { left: -5%; right: -5%; top: 47%; height: 9%; }
+.field-road-vertical { top: -5%; bottom: -5%; left: 47%; width: 9%; }
+.field-road-cross { left: -5%; right: -5%; top: 47%; height: 9%; }
+.field-road-cross::after {
+  content: '';
+  position: absolute;
+  top: -510%;
+  bottom: -510%;
+  left: 47%;
+  width: 9%;
+  background: #d9b66e;
+  border-left: 1px solid rgba(112, 76, 45, .42);
+  border-right: 1px solid rgba(112, 76, 45, .42);
+  box-shadow: inset 3px 0 0 rgba(255, 229, 156, .3), inset -3px 0 0 rgba(117, 78, 42, .13);
+}
+.field-trees { position: absolute; z-index: 3; inset: 0; pointer-events: none; }
+.field-tree {
+  position: absolute;
+  width: 31px;
+  height: 25px;
+  border: 2px solid #28583c;
+  border-radius: 52% 48% 48% 52%;
+  background: #39734a;
+  box-shadow: inset 6px 4px 0 rgba(126, 161, 60, .5), 3px 4px 0 rgba(37, 73, 45, .2);
+}
+.field-tree::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  bottom: -9px;
+  width: 6px;
+  height: 11px;
+  background: #765338;
+  border-left: 1px solid #4d392c;
+  border-right: 1px solid #4d392c;
+}
+.field-tree.tree-1 { left: 8%; top: 16%; }
+.field-tree.tree-2 { left: 19%; top: 9%; transform: scale(.8); }
+.field-tree.tree-3 { right: 10%; top: 15%; transform: scale(1.1); }
+.field-tree.tree-4 { right: 20%; top: 8%; transform: scale(.72); }
+.field-tree.tree-5 { left: 7%; bottom: 18%; transform: scale(1.12); }
+.field-tree.tree-6 { left: 18%; bottom: 9%; transform: scale(.78); }
+.field-tree.tree-7 { right: 8%; bottom: 18%; }
+.field-tree.tree-8 { right: 19%; bottom: 9%; transform: scale(.82); }
+.field-tree.tree-9 { left: 34%; top: 13%; transform: scale(.58); }
+.field-tree.tree-10 { right: 34%; top: 12%; transform: scale(.62); }
+.field-tree.tree-11 { left: 31%; bottom: 13%; transform: scale(.64); }
+.field-tree.tree-12 { right: 31%; bottom: 12%; transform: scale(.58); }
+.world-field.world-is-sea .field-trees,
+.world-field.world-is-sea .field-road,
+.world-field.world-is-sea .field-village { display: none; }
+.field-village {
+  position: absolute;
+  z-index: 4;
+  left: 23%;
+  top: 24%;
+  width: 54%;
+  height: 52%;
+  border: 2px solid rgba(99, 75, 45, .45);
+  background: rgba(196, 178, 117, .24);
+  box-shadow: 0 0 0 5px rgba(76, 91, 49, .12), inset 0 0 0 2px rgba(255, 229, 160, .18);
+}
+.field-village.town { left: 19%; top: 21%; width: 62%; height: 58%; }
+.field-village-square {
+  position: absolute;
+  left: 31%;
+  top: 29%;
+  width: 38%;
+  height: 39%;
+  border: 2px solid rgba(115, 86, 48, .35);
+  background: #b7a063;
+  box-shadow: inset 0 0 0 3px rgba(237, 210, 139, .28);
+}
+.field-village-well {
+  position: absolute;
+  z-index: 2;
+  left: 46%;
+  top: 45%;
+  width: 8px;
+  height: 8px;
+  border: 2px solid #4e6270;
+  border-radius: 50%;
+  background: #66a7b0;
+}
+.field-house {
+  position: absolute;
+  z-index: 3;
+  width: 19%;
+  height: 13%;
+  border: 1px solid #613d31;
+  background: #c76c45;
+  box-shadow: 2px 3px 0 rgba(64, 59, 39, .3);
+}
+.field-house::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: -7px;
+  width: calc(100% + 6px);
+  height: 10px;
+  background: #944839;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.field-house::after {
+  content: '';
+  position: absolute;
+  left: 43%;
+  bottom: 0;
+  width: 16%;
+  height: 44%;
+  background: #604331;
+}
+.field-house.house-1 { left: 8%; top: 11%; }
+.field-house.house-2 { right: 8%; top: 12%; }
+.field-house.house-3 { left: 8%; bottom: 12%; }
+.field-house.house-4 { right: 8%; bottom: 12%; }
+.field-house.house-5 { left: 39%; top: 7%; transform: scale(.8); }
+.field-house.house-6 { left: 39%; bottom: 7%; transform: scale(.8); }
+.world-field.world-is-sea .field-edge { background: rgba(20, 80, 101, .42); }
