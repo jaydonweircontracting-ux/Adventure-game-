@@ -79,3 +79,15 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Final verification confirmed the target file set, package JSON, frame-based movement markers, deterministic world module exports, persistence boundary, and server contract markers through GitHub reads.
 - Direct Node syntax execution was attempted but is unavailable in this session because the environment has no node binary. No install, mount, browser launch, or server launch was performed.
 - Local next step remains unchanged: run npm install, npm run typecheck, npm run build, then test keyboard, diagonal, touch hold/release, chunk crossing, and optional world-server behavior on the user's machine.
+
+
+## Checkpoint 004 — Netlify deployment hardening
+
+- Date: 2026-08-30 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- Changes: declared Node 20.x in package.json and clarified the static-client boundary in README.md.
+- Netlify contract preserved: npm run build, dist/public, Node 20, and SPA fallback in netlify.toml.
+- Optional server.js, persistence.js, and world_generator.js remain outside the Netlify browser build path.
+- Verification: GitHub tree, package manifest, Netlify config, README, and source imports inspected statically; npm install, npm run build, typecheck, and gameplay runtime were not run.
+- Commits: c7013d6 (manifest correction with Node engine declaration), e1c25c8 (deployment-boundary documentation).
