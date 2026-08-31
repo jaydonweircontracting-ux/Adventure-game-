@@ -34,11 +34,13 @@ npm run build
 The browser client remains standalone. The server layer is available when you want a persistent, network-ready world boundary:
 
 
+```bash
 npm install
 npm run world-server
 
 # or
 npm start
+```
 
 ### Server contract
 
