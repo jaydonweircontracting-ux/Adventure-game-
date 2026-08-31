@@ -18,3 +18,25 @@ Measured from the target repository on 2026-08-30 before implementation changes.
 ## Next measurement
 
 After the movement patch, compare source metrics and record the new commit SHA. The user should run the browser locally and report whether keyboard, diagonal input, touch hold/release, chunk transitions, and stamina behavior feel correct. No runtime success is claimed by this file until that happens.
+
+
+## Post-patch static measurement — Checkpoint 002
+
+| Metric | Result | Status |
+|---|---:|---|
+| Target commit at measurement | b33ffb63ab9364a6cdd2ea1cd9316ce38c664f74 | recorded |
+| src/App.tsx | 312 lines / 18,150 bytes | recorded |
+| Browser movement loop | requestAnimationFrame + elapsed delta | recorded |
+| Diagonal normalization | Math.hypot vector normalization | recorded |
+| Input release safety | window blur + document visibility cleanup | recorded |
+| world_generator.js | 70 lines / 2,223 bytes | recorded |
+| persistence.js | 48 lines / 1,607 bytes | recorded |
+| server.js | 141 lines / 4,577 bytes | recorded |
+| WebSocket checkpoint cadence | 10,000 ms | recorded |
+| Runtime package | ws ^8.18.0 | recorded |
+| npm install / build / typecheck | not run | pending local test |
+| Browser gameplay / WebSocket runtime | not run | pending local test |
+
+## Interpretation
+
+The fixed-step client loop was removed; the remaining interval is the in-game clock. Static checks confirm the new modules and package manifest are present. These are source measurements, not performance claims: FPS, input feel, chunk crossing, persistence, and server behavior still require the user's local run.
