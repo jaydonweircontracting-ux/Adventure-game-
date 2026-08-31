@@ -1,0 +1,6 @@
+node_modules/
+dist/
+world_state.json
+.env
+.env.*
+!.env.example
