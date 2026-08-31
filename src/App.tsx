@@ -224,12 +224,8 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
          <div className="field-actions">
            <button className="field-log-toggle" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" data-testid="button-toggle-field-log"><BookOpen size={14} /> {logOpen ? 'Hide log' : 'Field log'}</button>
            <button className="map-button" onClick={onOpenMap} data-testid="button-open-map"><Map size={14} /> Field atlas</button>
+            <button className="icon-button field-sound-button" onClick={onToggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'} aria-pressed={muted} data-testid="button-toggle-sound">{muted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
          </div>
-      </div>
-      <div className="game-footer">
-        <div className="control-hint"><span className="key">W</span><span className="key">A</span><span className="key">S</span><span className="key">D</span><span>or arrow keys to move</span></div>
-        <div className="autosave">Progress saved locally</div>
-         <button className="icon-button" onClick={onToggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'} aria-pressed={muted} data-testid="button-toggle-sound">{muted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
       </div>
       <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? 'Moving through Mosslight Crossing' : 'Standing still'}</div>
       <div className="sr-only" aria-live="polite" data-testid="status-field-log">{logs[0].text}</div>
