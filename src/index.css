@@ -411,6 +411,7 @@
   to { background-position-x: -128px; }
 }
 .horse.is-mounted { filter: drop-shadow(3px 4px 0 rgba(39, 47, 35, .28)); }
+.horse.is-mounted[data-facing='down'] { z-index: 8; }
 @keyframes player-run {
   from { background-position-x: 0; }
   to { background-position-x: -192px; }
