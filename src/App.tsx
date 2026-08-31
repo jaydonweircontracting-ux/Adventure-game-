@@ -16,7 +16,7 @@ type HorseState = { chunk: Point; position: Point };
 
 const WALK_SPEED = 32;
 const HORSE_SPEED = 180;
-const HORSE_MOUNT_DISTANCE = 11;
+const HORSE_MOUNT_DISTANCE = 4.5;
 const initialHorseState: HorseState = { chunk: { x: 4, y: 7 }, position: { x: 58, y: 52 } };
 
 const directionKeys: Record<string, Direction> = {
@@ -346,7 +346,14 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
     if (mounted) {
       const currentPosition = positionRef.current;
       const currentChunk = chunkRef.current;
+      const preferredOffset = facing === 'right' ? -6 : facing === 'left' ? 6 : currentPosition.x < 50 ? 6 : -6;
+      const dismountPosition = {
+        x: Math.min(88, Math.max(12, currentPosition.x + preferredOffset)),
+        y: Math.min(88, Math.max(12, currentPosition.y)),
+      };
       setHorse({ chunk: currentChunk, position: currentPosition });
+      positionRef.current = dismountPosition;
+      setPosition(dismountPosition);
       setMounted(false);
       setLogs((currentLogs) => [{ text: 'You dismount and leave the horse here.', color: '' }, ...currentLogs].slice(0, 3));
       return;
@@ -357,9 +364,11 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
       return;
     }
 
-    const currentPosition = positionRef.current;
     const currentChunk = chunkRef.current;
-    setHorse({ chunk: currentChunk, position: currentPosition });
+    const mountPosition = { ...horse.position };
+    positionRef.current = mountPosition;
+    setPosition(mountPosition);
+    setHorse({ chunk: currentChunk, position: mountPosition });
     setMounted(true);
     setLogs((currentLogs) => [{ text: 'You mount the horse. The road opens ahead.', color: 'blue' }, ...currentLogs].slice(0, 3));
   };
