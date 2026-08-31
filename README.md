@@ -64,3 +64,14 @@ This project is deployed from the GitHub `main` branch through Netlify.
 - Keep browser/runtime imports declared in `dependencies` in `package.json`
 - Netlify builds and serves the Vite browser client only; it does not run `server.js` or the optional WebSocket world server
 - Keep server-side persistence and WebSocket changes out of the static deployment path unless a separate compatible host is introduced
+
+## GitHub Pages deployment
+
+GitHub Pages is deployed automatically by `.github/workflows/deploy-pages.yml` whenever
+changes reach `main`. The workflow builds the Vite client with the repository path as
+its base URL, then publishes `dist/public` as a Pages artifact.
+
+For the first deployment, set the repository's Pages **Source** to **GitHub Actions**
+under **Settings → Pages**. The published site will be available at:
+
+`https://jaydonweircontracting-ux.github.io/Adventure-game-/`
