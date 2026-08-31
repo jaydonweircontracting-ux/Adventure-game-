@@ -430,7 +430,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
           {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road} aria-hidden="true" />}
           <div className="farm-world-assets" aria-hidden="true">
             <span className="farm-maple-tree tree-asset-1" /><span className="farm-maple-tree tree-asset-2" />
-            <span className="farm-crops crop-asset-1" /><span className="farm-crops crop-asset-2" />
+            <span className="farm-crops crop-asset-1" />
           </div>
           <div className="field-trees" aria-hidden="true">
             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((tree) => <span className={'field-tree tree-' + tree} key={tree} />)}
