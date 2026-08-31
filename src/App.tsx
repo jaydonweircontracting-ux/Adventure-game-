@@ -131,7 +131,6 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
   const chunkRef = useRef(chunk);
-  const announcedRegionRef = useRef<string | null>(null);
   const areaFlashIdRef = useRef(0);
 
   useEffect(() => {
@@ -144,12 +143,8 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   useEffect(() => { chunkRef.current = chunk; }, [chunk]);
 
   useEffect(() => {
-    const region = chunkRegion(chunk);
-    if (announcedRegionRef.current === region) return;
-
-    announcedRegionRef.current = region;
     areaFlashIdRef.current += 1;
-    setAreaFlash({ id: String(areaFlashIdRef.current), label: region });
+    setAreaFlash({ id: String(areaFlashIdRef.current), label: chunkRegion(chunk) });
   }, [chunk]);
 
   useEffect(() => {
