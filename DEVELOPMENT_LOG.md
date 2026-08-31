@@ -91,3 +91,16 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Optional server.js, persistence.js, and world_generator.js remain outside the Netlify browser build path.
 - Verification: GitHub tree, package manifest, Netlify config, README, and source imports inspected statically; npm install, npm run build, typecheck, and gameplay runtime were not run.
 - Commits: c7013d6 (manifest correction with Node engine declaration), e1c25c8 (deployment-boundary documentation).
+
+
+## Checkpoint 005 — persistent test horse
+
+- Date: 2026-08-30 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- Client change: added a horse near the spawn point with proximity-based Mount horse / Dismount controls.
+- Movement change: mounted speed is 118 versus walking speed 32; diagonal normalization and frame-time movement remain intact.
+- Persistence behavior: the horse is stored with its chunk and position and is left at the exact dismount location, remaining available when the player returns.
+- Netlify boundary: changes are limited to browser source and CSS; no server.js, WebSocket, persistence, or new package dependency was added.
+- Static verification: GitHub readback confirmed horse state, mount distance, speed constants, persistence handler, test IDs, horse CSS, and Node 20 declaration. npm install, npm run build, typecheck, and gameplay runtime were not run.
+- Commits: 1c84d21 (horse behavior), 29aa7a1 (horse styling), 32e798a (README controls).
