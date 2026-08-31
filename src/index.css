@@ -393,16 +393,16 @@
 .rider-head {
   position: absolute;
   z-index: 2;
-  left: 5px;
-  top: -7px;
-  width: 32px;
-  height: 18px;
+  left: 9px;
+  top: 1px;
+  width: 24px;
+  height: 14px;
   background-image: var(--player-sprite-url);
   background-position: 0 0;
-  background-size: 192px 128px;
+  background-size: 144px 96px;
   background-repeat: no-repeat;
   image-rendering: pixelated;
-  clip-path: inset(0 0 2px 0);
+  clip-path: inset(0 0 1px 0);
   pointer-events: none;
 }
 .horse[data-facing='down'] .rider-head { z-index: 2; }
