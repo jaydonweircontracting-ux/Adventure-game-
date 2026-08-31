@@ -392,7 +392,7 @@
 }
 .rider-head {
   position: absolute;
-  z-index: 0;
+  z-index: 2;
   left: 5px;
   top: -7px;
   width: 32px;
@@ -406,7 +406,7 @@
   pointer-events: none;
 }
 .horse[data-facing='down'] .rider-head { z-index: 2; }
-.horse[data-facing='down']::before {
+.horse::before {
   content: '';
   position: absolute;
   z-index: 3;
@@ -421,7 +421,10 @@
   image-rendering: pixelated;
   pointer-events: none;
 }
-.horse.is-mounted[data-facing='down']::before { animation: horse-walk .32s steps(4, end) infinite; }
+.horse[data-facing='up']::before { background-position-y: -64px; }
+.horse[data-facing='left']::before { background-position-y: 0; }
+.horse[data-facing='right']::before { background-position-y: 0; transform: scaleX(-1); }
+.horse.is-mounted::before { animation: horse-walk .32s steps(4, end) infinite; }
 .horse.is-mounted .rider-head { animation: player-run .48s steps(6, end) infinite; }
 .horse[data-facing='up'] .rider-head { background-position-y: -32px; }
 .horse[data-facing='left'] .rider-head { background-position-y: -64px; }

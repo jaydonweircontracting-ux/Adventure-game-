@@ -149,3 +149,13 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Diagnosis: GitHub Pages was serving `docs/index.html` with the older `index-CByqhflD.js` and `index-DrkzlicZ.css` bundles, so the current source rider-layering fix was not live.
 - Fix: synchronized the active published JavaScript and CSS bundles with the mounted rider markup, horse-head layering, and matching walk animations.
 - Verification: static GitHub readback confirmed the active bundle contains `rider-head` and the down-facing horse overlay rule. No local build, typecheck, runtime, or gameplay execution.
+
+
+## Checkpoint 010 — explicit rider and cow head stacking
+
+- Date: 2026-08-31 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- Horse fix: set the mounted stack explicitly to cow body at z-index 1, player head at z-index 2, and cow head overlay at z-index 3 for every facing direction.
+- Published output: synchronized the active Pages stylesheet so the live `docs/` bundle receives the same layering, not only `src/`.
+- Verification: static GitHub readback only; no local build, typecheck, runtime, or gameplay execution.
