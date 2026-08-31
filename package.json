@@ -12,7 +12,8 @@
     "world-server": "node server.js"
   },
   "dependencies": {
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "@tanstack/react-query": "^5.66.8"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
