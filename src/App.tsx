@@ -94,11 +94,11 @@ function mapTileClass(tile: MapTile & { current: boolean }) {
 }
 
 function chunkRegion(chunk: Point) {
-  if (chunk.x >= 3 && chunk.x <= 5 && chunk.y >= 6 && chunk.y <= 8) return 'Mosslight';
-  if (chunk.x < 3) return 'Amberfen';
-  if (chunk.x > 5) return 'Stonewake';
-  if (chunk.y < 6) return 'Highmere';
-  return 'Redwater';
+  if (chunk.x >= 3 && chunk.x <= 5 && chunk.y >= 6 && chunk.y <= 8) return 'Greenvale';
+  if (chunk.x < 3) return 'Brackenfen';
+  if (chunk.x > 5) return 'Ironwood March';
+  if (chunk.y < 6) return 'Northwatch Heights';
+  return 'Sunwash Coast';
 }
 
 const initialLogs = [
