@@ -278,3 +278,11 @@ kbd { display: grid; place-items: center; width: 31px; height: 28px; border: 1px
   .scene-avatar-chip { min-width: 0; }.scene-avatar-chip small, .scene-gold { display: none; }.scene-bars { max-width: none; }
   .scene-bottom-frame { min-height: 35px; }.scene-slot { width: 20px; height: 20px; }.scene-chat { font-size: 7px; }.scene-npc { transform: translate(-50%, -72%) scale(.82); }
 }
+
+/* Use the repository's shipped gameplay sprites and particle sheets in the live field. */
+.scene-asset { position: absolute; z-index: 5; display: block; pointer-events: none; image-rendering: pixelated; transform: translate(-50%, -72%); filter: drop-shadow(2px 3px 0 rgba(20,35,24,.42)); }
+.scene-asset-chest { width: 38px; height: 38px; object-fit: contain; }
+.scene-asset-dust { width: 29px; height: 29px; object-fit: contain; opacity: .78; mix-blend-mode: screen; }
+.scene-asset-wasp { width: 34px; height: 34px; background: url('/assets/gameplay/shining-fields/characters/wasp/wasp-sheet.png') 0 0 / 400% 400% no-repeat; animation: wasp-hover 1.1s steps(2, end) infinite; }
+@keyframes wasp-hover { 50% { margin-top: -5px; } }
+@media (max-width: 760px) { .scene-asset-chest { width: 31px; height: 31px; }.scene-asset-dust { width: 23px; height: 23px; }.scene-asset-wasp { width: 28px; height: 28px; } }
