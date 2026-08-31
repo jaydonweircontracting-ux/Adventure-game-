@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Map, Settings, Shield, Sword, Volume2, VolumeX, X } from 'lucide-react';
+import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Map, Volume2, VolumeX, X } from 'lucide-react';
 import { type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -49,10 +49,30 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   );
 }
 
-function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMap: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void }) {
+function InventorySheet({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="inventory-title" data-testid="overlay-inventory">
+      <div className="map-sheet inventory-sheet">
+        <div className="map-sheet-heading">
+          <h2 id="inventory-title">Inventory</h2>
+          <button className="map-close" onClick={onClose} aria-label="Close inventory" data-testid="button-close-inventory"><X size={19} /></button>
+        </div>
+        <div className="inventory-body">
+          <div className="inventory-count">0 items carried</div>
+          <div className="inventory-empty">
+            <Backpack size={30} strokeWidth={1.5} />
+            <strong>Your pack is empty</strong>
+            <span>Items you discover on the road will appear here.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute }: { onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void }) {
   const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
   const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
-  const [stamina, setStamina] = useState(78);
   const [moving, setMoving] = useState(false);
   const [facing, setFacing] = useState<Direction>('down');
   const [logOpen, setLogOpen] = useState(false);
@@ -123,7 +143,6 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
         if (next.y > 88) { next.y = 14; nextChunk.y += 1; travelLabel = 'south'; }
         positionRef.current = next;
         setPosition(next);
-        setStamina((value) => Math.max(12, value - 5 * elapsed));
         const chunkKey = nextChunk.x + ',' + nextChunk.y;
         if (travelLabel && lastTravelRef.current !== chunkKey) {
           lastTravelRef.current = chunkKey;
@@ -132,8 +151,6 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
           onChunkChange(nextChunk);
           setLogs((currentLogs) => [{ text: 'You travel ' + travelLabel + ' into a new field chunk.', color: 'blue' }, ...currentLogs].slice(0, 3));
         }
-      } else {
-        setStamina((value) => Math.min(100, value + 8.5 * elapsed));
       }
       animationFrame = window.requestAnimationFrame(animate);
     };
@@ -166,13 +183,6 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
 
   return (
     <div className="field-column">
-      <div className="field-header">
-        <div>
-          <div className="field-kicker">Live field / chapter one</div>
-          <h1 className="field-title" data-testid="text-location-name">Mosslight Crossing</h1>
-        </div>
-        <div className="field-coordinates" data-testid="text-chunk-coordinates">CHUNK {chunk.x} : {chunk.y}</div>
-      </div>
       <div className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field">
         <div className="pixel-field">
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
@@ -187,13 +197,12 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
             <div className="hud-label"><span>Adventurer</span><span>08</span></div>
             <div className="hud-name">Rowan of the Vale</div>
             <div className="bar" aria-label="Health 84 percent"><div className="bar-fill health" style={{ width: '84%' }} /></div>
-            <div className="bar" aria-label={`Stamina ${Math.round(stamina)} percent`}><div className="bar-fill stamina" style={{ width: `${stamina}%` }} /></div>
           </div>
-          <div className="hud-card right">
+          <button className="hud-card right hud-button" onClick={onOpenInventory} aria-label="Open inventory" data-testid="button-open-inventory">
             <div className="hud-label"><span>Satchel</span><Coins size={12} /></div>
             <div className="hud-coins" data-testid="text-coin-count">1,284 c</div>
             <div className="hud-time" data-testid="text-game-time">{time} / clear</div>
-          </div>
+          </button>
         </div>
         <div className="touch-controls" aria-label="Touch movement controls">
            <button className="touch-control up" aria-label="Move north" data-testid="button-move-up" onPointerDown={() => pressDirection('up')} onPointerUp={() => releaseDirection('up')} onPointerCancel={() => releaseDirection('up')} onPointerLeave={() => releaseDirection('up')}><ChevronUp size={18} /></button>
@@ -228,25 +237,9 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
   );
 }
 
-function SettingsSheet({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title" data-testid="overlay-settings">
-      <div className="map-sheet" style={{ maxWidth: 430 }}>
-        <div className="map-sheet-heading"><h2 id="settings-title">Field settings</h2><button className="map-close" onClick={onClose} aria-label="Close settings" data-testid="button-close-settings"><X size={19} /></button></div>
-        <div className="quest">
-          <div className="quest-status">Local play</div>
-          <h3 className="quest-title">Tune your expedition</h3>
-          <p className="quest-copy">Movement, progress, and your field position are kept on this device for the next time you return.</p>
-          <div className="map-legend" style={{ padding: '18px 0 0' }}><span className="legend-item"><Shield size={13} /> Safe local session</span><span className="legend-item"><Sword size={13} /> Combat ready</span></div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function Home() {
   const [mapOpen, setMapOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
 
@@ -254,7 +247,7 @@ function Home() {
     const closeSheets = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setMapOpen(false);
-        setSettingsOpen(false);
+        setInventoryOpen(false);
       }
     };
     window.addEventListener('keydown', closeSheets);
@@ -263,22 +256,11 @@ function Home() {
 
   return (
     <main className="game-app">
-      <header className="topbar">
-        <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true" />
-          <div className="brand-copy"><strong>Adventure Game</strong><span>Field journal · online</span></div>
-        </div>
-        <div className="topbar-actions">
-          <div className="status-pill"><span className="online-dot" /> 12,408 adventurers online</div>
-          <button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label="Open settings" data-testid="button-open-settings"><Settings size={16} /></button>
-          <button className="icon-button" onClick={() => setMuted((value) => !value)} aria-label={muted ? 'Turn sound on' : 'Turn sound off'} data-testid="button-header-sound">{muted ? <VolumeX size={16} /> : <Volume2 size={16} />}</button>
-        </div>
-      </header>
       <div className="game-layout">
-        <GameField onOpenMap={() => setMapOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} />
+        <GameField onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} />
       </div>
       {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
-      {settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} />}
+      {inventoryOpen && <InventorySheet onClose={() => setInventoryOpen(false)} />}
     </main>
   );
 }
