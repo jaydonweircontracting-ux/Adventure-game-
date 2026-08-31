@@ -343,15 +343,6 @@
   background-color: rgba(231, 201, 141, .78);
   mix-blend-mode: multiply;
 }
-.farm-world-assets { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
-.farm-world-assets > * { position: absolute; display: block; image-rendering: pixelated; }
-.farm-maple-tree { width: 32px; height: 48px; background-image: url('/assets/farm-maple-tree.png'); background-size: 160px 48px; background-position: -64px 0; background-repeat: no-repeat; transform: scale(1.45); transform-origin: bottom center; }
-.farm-maple-tree.tree-asset-1 { left: 16%; top: 39%; }
-.farm-maple-tree.tree-asset-2 { right: 15%; top: 62%; transform: scale(1.2); }
-.farm-crops { width: 32px; height: 32px; background-image: url('/assets/farm-spring-crops.png'); background-size: 224px 128px; background-repeat: no-repeat; transform: scale(1.15); }
-.farm-crops.crop-asset-1 { left: 28%; top: 70%; background-position: -32px -32px; }
-.farm-crops.crop-asset-2 { right: 27%; top: 68%; background-position: -96px -32px; }
-.world-field.world-is-sea .farm-world-assets { display: none; }
 .field-edge { position: absolute; z-index: 3; background: rgba(44, 91, 62, .58); }
 .field-edge.top, .field-edge.bottom { left: 0; right: 0; height: 15px; }
 .field-edge.top { top: 0; } .field-edge.bottom { bottom: 0; }
@@ -1425,3 +1416,127 @@ body {
     bottom: max(12px, env(safe-area-inset-bottom));
   }
 }
+
+
+/* Regional world pass: land stays land, ocean stays at the outer rim, and crossings read as bridges. */
+.map-region-northwatch.map-terrain-rock {
+  background: linear-gradient(145deg, rgba(219, 213, 177, .2), transparent 48%), #858a78;
+}
+.map-region-northwatch.map-terrain-meadow {
+  background: linear-gradient(145deg, rgba(219, 213, 177, .16), transparent 48%), #7f9461;
+}
+.map-region-brackenfen.map-terrain-meadow,
+.map-region-brackenfen.map-terrain-woodland {
+  background: radial-gradient(circle at 22% 30%, rgba(164, 190, 103, .28) 0 12%, transparent 13%), #5c7b50;
+}
+.map-region-ironwood.map-terrain-meadow,
+.map-region-ironwood.map-terrain-woodland {
+  background: radial-gradient(circle at 72% 28%, rgba(182, 208, 123, .3) 0 11%, transparent 12%), #527a57;
+}
+.map-region-sunwash.map-terrain-meadow,
+.map-region-sunwash.map-terrain-autumn {
+  background: linear-gradient(145deg, rgba(235, 179, 99, .24), transparent 50%), #a27755;
+}
+.map-tile.map-terrain-ocean,
+.map-tile.is-sea {
+  background: linear-gradient(145deg, rgba(133, 211, 211, .16), transparent 44%), #286b89;
+}
+.map-tile.map-terrain-ocean::before,
+.map-tile.is-sea::before {
+  background: repeating-linear-gradient(165deg, transparent 0 9px, rgba(160, 221, 218, .42) 10px 12px, transparent 13px 21px);
+}
+.map-tile.has-bridge::before {
+  z-index: 3;
+  inset: 0;
+  opacity: 1;
+  background-color: #8b603d;
+  background-image: repeating-linear-gradient(90deg, rgba(239, 194, 122, .52) 0 2px, transparent 2px 6px), linear-gradient(180deg, #a87649, #70482f);
+  box-shadow: inset 0 2px 0 rgba(255, 224, 158, .34), inset 0 -2px 0 rgba(66, 43, 30, .3);
+}
+.map-tile.has-bridge.road-vertical::before {
+  background-image: repeating-linear-gradient(0deg, rgba(239, 194, 122, .52) 0 2px, transparent 2px 6px), linear-gradient(90deg, #a87649, #70482f);
+}
+.field-road.field-bridge {
+  background: #8b603d;
+  border-color: rgba(78, 48, 31, .65);
+  box-shadow: inset 0 3px 0 rgba(255, 224, 158, .32), inset 0 -3px 0 rgba(66, 43, 30, .3);
+}
+.field-road-horizontal.field-bridge::after,
+.field-road-vertical.field-bridge::after,
+.field-road-cross.field-bridge::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, rgba(240, 197, 126, .55) 0 3px, transparent 3px 11px);
+  opacity: .9;
+}
+.field-road-vertical.field-bridge::after {
+  background: repeating-linear-gradient(0deg, rgba(240, 197, 126, .55) 0 3px, transparent 3px 11px);
+}
+.field-road-cross.field-bridge::after {
+  top: -510%;
+  bottom: -510%;
+  left: 47%;
+  right: auto;
+  width: 9%;
+  background: repeating-linear-gradient(0deg, rgba(240, 197, 126, .55) 0 3px, transparent 3px 11px);
+}
+.world-field.world-region-northwatch .field-road { background: #c1b083; }
+.world-field.world-region-brackenfen .field-road { background: #aa9162; }
+.world-field.world-region-ironwood .field-road { background: #b9915e; }
+.world-field.world-region-sunwash .field-road { background: #c69255; }
+.field-tree.tree-northwatch {
+  width: 25px;
+  height: 34px;
+  border-radius: 48% 48% 25% 25%;
+  background: #486646;
+  border-color: #294a37;
+  box-shadow: inset 5px 3px 0 rgba(161, 177, 97, .34), 3px 4px 0 rgba(37, 73, 45, .2);
+}
+.field-tree.tree-brackenfen {
+  width: 35px;
+  height: 27px;
+  border-radius: 58% 42% 46% 54%;
+  background: #3f7049;
+  border-color: #27553b;
+  box-shadow: inset 7px 4px 0 rgba(115, 157, 66, .42), 3px 4px 0 rgba(37, 73, 45, .2);
+}
+.field-tree.tree-ironwood {
+  width: 38px;
+  height: 31px;
+  border-radius: 48% 52% 55% 45%;
+  background: #356844;
+  border-color: #234e37;
+  box-shadow: inset 7px 4px 0 rgba(116, 157, 65, .4), 3px 4px 0 rgba(37, 73, 45, .2);
+}
+.field-tree.tree-sunwash {
+  width: 31px;
+  height: 28px;
+  border-radius: 42% 58% 48% 52%;
+  background: #8e7043;
+  border-color: #634b35;
+  box-shadow: inset 6px 4px 0 rgba(209, 151, 66, .48), 3px 4px 0 rgba(78, 56, 35, .2);
+}
+.field-tree.tree-greenvale {
+  background: #39734a;
+}
+.world-field.world-region-northwatch .field-village {
+  background: rgba(192, 185, 151, .3);
+  border-color: rgba(76, 76, 59, .55);
+}
+.world-field.world-region-northwatch .field-house { background: #9d765c; }
+.world-field.world-region-brackenfen .field-village {
+  background: rgba(128, 151, 91, .28);
+  border-color: rgba(64, 86, 56, .54);
+}
+.world-field.world-region-brackenfen .field-house { background: #a9684e; }
+.world-field.world-region-ironwood .field-village {
+  background: rgba(105, 139, 94, .25);
+  border-color: rgba(54, 78, 56, .58);
+}
+.world-field.world-region-ironwood .field-house { background: #9b6244; }
+.world-field.world-region-sunwash .field-village {
+  background: rgba(207, 160, 92, .26);
+  border-color: rgba(102, 69, 43, .54);
+}
+.world-field.world-region-sunwash .field-house { background: #c46d43; }
