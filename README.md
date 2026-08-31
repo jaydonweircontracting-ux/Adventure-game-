@@ -28,3 +28,24 @@ npm run dev
 # production build
 npm run build
 ```
+
+## Optional infinite world server
+
+The browser client remains standalone. The server layer is available when you want a persistent, network-ready world boundary:
+
+
+npm install
+npm run world-server
+
+# or
+npm start
+
+### Server contract
+
+- `GET /health` returns a JSON readiness response.
+- Send `{ family: 'AUTH', action: 'JOIN', data: { username } }` over WebSocket to receive the player’s generated chunk.
+- Send `{ family: 'MOVE', action: 'UPDATE', data: { newGlobalX, newGlobalY } }`" to update a bounded global position and receive a refreshed chunk view.
+- Chunks are deterministic 16 × 16 grids generated on demand from their integer coordinates.
+- `world_state.json` is local runtime state and is ignored by Git; active socket objects are never persisted.
+
+The current browser UI does not open this socket yet. That is intentional: run and test the client locally first, then wire synchronization as a separate bounded slice.
