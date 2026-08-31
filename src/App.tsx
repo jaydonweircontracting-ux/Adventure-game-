@@ -131,6 +131,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
   const chunkRef = useRef(chunk);
+  const gameFrameRef = useRef<HTMLDivElement>(null);
   const areaFlashIdRef = useRef(0);
 
   useEffect(() => {
@@ -193,7 +194,12 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
         const direction = input.x > 0 ? 'right' : input.x < 0 ? 'left' : input.y < 0 ? 'up' : 'down';
         setFacing(direction);
         const speed = 20;
-        const movement = { x: (input.x / length) * speed * elapsed, y: (input.y / length) * speed * elapsed };
+        const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
+        const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
+        const movement = {
+          x: (input.x / length) * speed * elapsed * 100 / frameWidth,
+          y: (input.y / length) * speed * elapsed * 100 / frameHeight,
+        };
         const current = positionRef.current;
         const next = { x: current.x + movement.x, y: current.y + movement.y };
         const nextChunk = { ...chunkRef.current };
@@ -245,7 +251,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
 
   return (
     <div className="field-column">
-      <div className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field">
+      <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field">
         <div className="pixel-field" data-terrain={chunkTerrain(chunk)} style={{
           '--field-color': fieldPalettes[chunkTerrain(chunk)].field,
           '--path-color': fieldPalettes[chunkTerrain(chunk)].path,
