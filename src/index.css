@@ -718,3 +718,115 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Illustrated overworld pass: readable terrain blocks with a hand-drawn map feel. */
+.big-map {
+  background: #2d79ad;
+  box-shadow: inset 0 0 0 4px rgba(18, 58, 78, .28), inset 0 0 34px rgba(16, 48, 65, .3);
+}
+.map-grid {
+  inset: 4px;
+  gap: 1px;
+}
+.map-tile {
+  border: 0;
+  isolation: isolate;
+}
+.map-tile::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  opacity: .92;
+  pointer-events: none;
+  background-repeat: no-repeat;
+}
+.map-tile::after {
+  z-index: 1;
+  opacity: .22;
+}
+.map-terrain-meadow {
+  background:
+    radial-gradient(circle at 22% 27%, rgba(223, 232, 137, .5) 0 2px, transparent 3px),
+    radial-gradient(circle at 76% 68%, rgba(52, 111, 57, .34) 0 3px, transparent 4px),
+    linear-gradient(145deg, rgba(188, 209, 93, .2), transparent 43%),
+    #83a948;
+}
+.map-terrain-woodland {
+  background: #47783b;
+}
+.map-terrain-woodland::before {
+  background:
+    radial-gradient(circle at 17% 22%, #76952f 0 10%, #285c3b 11% 16%, transparent 17%),
+    radial-gradient(circle at 53% 47%, #6f8d2d 0 12%, #285c3b 13% 18%, transparent 19%),
+    radial-gradient(circle at 84% 76%, #7d9b31 0 11%, #285c3b 12% 17%, transparent 18%);
+}
+.map-terrain-rock {
+  background:
+    linear-gradient(132deg, transparent 0 30%, rgba(91, 91, 79, .74) 31% 39%, transparent 40% 100%),
+    linear-gradient(48deg, transparent 0 49%, rgba(217, 199, 157, .48) 50% 57%, transparent 58% 100%),
+    #8b8f78;
+}
+.map-terrain-shore {
+  background:
+    repeating-linear-gradient(165deg, transparent 0 13px, rgba(159, 219, 224, .35) 14px 16px, transparent 17px 28px),
+    #3288c0;
+}
+.map-terrain-autumn {
+  background: #b87843;
+}
+.map-terrain-autumn::before {
+  background:
+    radial-gradient(circle at 18% 25%, #e2a33c 0 11%, #844334 12% 16%, transparent 17%),
+    radial-gradient(circle at 58% 64%, #d7662e 0 12%, #844334 13% 17%, transparent 18%),
+    radial-gradient(circle at 86% 20%, #f0b742 0 10%, #844334 11% 15%, transparent 16%);
+}
+.map-tile.is-current {
+  border: 2px solid var(--sun);
+  box-shadow: 0 0 0 2px var(--ink), 0 0 0 5px rgba(231, 185, 66, .28), inset 0 0 0 2px rgba(255, 247, 195, .55);
+}
+
+.area-flash {
+  position: absolute;
+  z-index: 9;
+  top: 78px;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 132px;
+  padding: 7px 14px 8px;
+  color: #fff3cf;
+  border: 1px solid rgba(232, 211, 161, .58);
+  background: rgba(23, 52, 36, .84);
+  box-shadow: 3px 3px 0 rgba(25, 56, 47, .24);
+  pointer-events: none;
+  text-align: center;
+  transform: translateX(-50%);
+  animation: area-name-fade 1.7s ease both;
+}
+.area-flash-kicker {
+  color: #d9eb91;
+  font-family: var(--app-font-mono);
+  font-size: 7px;
+  letter-spacing: .18em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.area-flash strong {
+  font-family: var(--app-font-display);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  line-height: 1.1;
+}
+@keyframes area-name-fade {
+  0% { opacity: 0; transform: translate(-50%, -6px); }
+  16%, 76% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -3px); }
+}
+@media (max-width: 700px) {
+  .area-flash { top: 72px; min-width: 112px; padding: 6px 11px 7px; }
+  .area-flash strong { font-size: 12px; }
+}
