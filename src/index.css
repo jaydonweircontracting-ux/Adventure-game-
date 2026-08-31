@@ -411,7 +411,7 @@
   to { background-position-x: -128px; }
 }
 .horse.is-mounted { filter: drop-shadow(3px 4px 0 rgba(39, 47, 35, .28)); }
-.player.is-mounted[data-facing='down']::after { content: ''; position: absolute; left: 50%; top: 50%; width: 32px; height: 32px; transform: translate(-50%, -50%) scale(1.35); background-image: var(--horse-sprite-url); background-position: 0 -32px; background-size: 128px 96px; background-repeat: no-repeat; image-rendering: pixelated; clip-path: inset(0 0 45% 0); animation: horse-walk .32s steps(4, end) infinite; pointer-events: none; }
+.player.is-mounted[data-facing='down'] .player-sprite { clip-path: inset(15px 0 0 0); }
 @keyframes player-run {
   from { background-position-x: 0; }
   to { background-position-x: -192px; }
