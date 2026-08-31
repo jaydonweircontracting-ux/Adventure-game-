@@ -94,10 +94,11 @@ function mapTileClass(tile: MapTile & { current: boolean }) {
 }
 
 function chunkRegion(chunk: Point) {
-  if (chunk.x >= 3 && chunk.x <= 5 && chunk.y >= 6 && chunk.y <= 8) return 'Greenvale';
-  if (chunk.x < 3) return 'Brackenfen';
-  if (chunk.x > 5) return 'Ironwood March';
-  if (chunk.y < 6) return 'Northwatch Heights';
+  // Greenvale is the village itself; every neighboring chunk belongs to a distinct region.
+  if (chunk.x === 4 && chunk.y === 7) return 'Greenvale';
+  if (chunk.x <= 3) return 'Brackenfen';
+  if (chunk.x >= 5) return 'Ironwood March';
+  if (chunk.y <= 6) return 'Northwatch Heights';
   return 'Sunwash Coast';
 }
 
