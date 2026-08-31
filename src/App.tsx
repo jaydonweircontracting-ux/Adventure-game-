@@ -54,6 +54,7 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
   const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
   const [stamina, setStamina] = useState(78);
   const [moving, setMoving] = useState(false);
+  const [facing, setFacing] = useState<Direction>('down');
   const [logs, setLogs] = useState(initialLogs);
   const [time, setTime] = useState('08:43');
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
@@ -65,61 +66,87 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
   useEffect(() => { chunkRef.current = chunk; }, [chunk]);
 
   useEffect(() => {
+    const clearInput = () => {
+      keysRef.current = {};
+      setMoving(false);
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       const direction = directionKeys[event.code];
       if (!direction) return;
       event.preventDefault();
       keysRef.current[direction] = true;
-      setMoving(true);
     };
     const onKeyUp = (event: KeyboardEvent) => {
       const direction = directionKeys[event.code];
       if (!direction) return;
+      event.preventDefault();
       keysRef.current[direction] = false;
-      setMoving(Object.values(keysRef.current).some(Boolean));
     };
+    const onVisibilityChange = () => { if (document.hidden) clearInput(); };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
-    const gameLoop = window.setInterval(() => {
-      const active = (Object.keys(keysRef.current) as Direction[]).find((key) => keysRef.current[key]);
-      if (!active) {
-        setStamina((value) => Math.min(100, value + 1.1));
-        return;
+    window.addEventListener('blur', clearInput);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    let animationFrame = 0;
+    let lastFrame = performance.now();
+    const animate = (now: number) => {
+      const elapsed = Math.min(50, now - lastFrame) / 1000;
+      lastFrame = now;
+      const input = {
+        x: (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
+        y: (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
+      };
+      const length = Math.hypot(input.x, input.y);
+      const active = length > 0;
+      setMoving(active);
+
+      if (active) {
+        const direction = input.x > 0 ? 'right' : input.x < 0 ? 'left' : input.y < 0 ? 'up' : 'down';
+        setFacing(direction);
+        const speed = 20;
+        const movement = { x: (input.x / length) * speed * elapsed, y: (input.y / length) * speed * elapsed };
+        const current = positionRef.current;
+        const next = { x: current.x + movement.x, y: current.y + movement.y };
+        const nextChunk = { ...chunkRef.current };
+        let travelLabel = '';
+        if (next.x < 10) { next.x = 88; nextChunk.x -= 1; travelLabel = 'west'; }
+        if (next.x > 90) { next.x = 12; nextChunk.x += 1; travelLabel = 'east'; }
+        if (next.y < 12) { next.y = 86; nextChunk.y -= 1; travelLabel = 'north'; }
+        if (next.y > 88) { next.y = 14; nextChunk.y += 1; travelLabel = 'south'; }
+        positionRef.current = next;
+        setPosition(next);
+        setStamina((value) => Math.max(12, value - 5 * elapsed));
+        const chunkKey = nextChunk.x + ',' + nextChunk.y;
+        if (travelLabel && lastTravelRef.current !== chunkKey) {
+          lastTravelRef.current = chunkKey;
+          chunkRef.current = nextChunk;
+          setChunk(nextChunk);
+          onChunkChange(nextChunk);
+          setLogs((currentLogs) => [{ text: 'You travel ' + travelLabel + ' into a new field chunk.', color: 'blue' }, ...currentLogs].slice(0, 3));
+        }
+      } else {
+        setStamina((value) => Math.min(100, value + 8.5 * elapsed));
       }
-      setStamina((value) => Math.max(12, value - .65));
-      const movement = delta[active];
-      const current = positionRef.current;
-      let next = { x: current.x + movement.x, y: current.y + movement.y };
-      const nextChunk = { ...chunkRef.current };
-      let travelLabel = '';
-      if (next.x < 10) { next.x = 88; nextChunk.x -= 1; travelLabel = 'west'; }
-      if (next.x > 90) { next.x = 12; nextChunk.x += 1; travelLabel = 'east'; }
-      if (next.y < 12) { next.y = 86; nextChunk.y -= 1; travelLabel = 'north'; }
-      if (next.y > 88) { next.y = 14; nextChunk.y += 1; travelLabel = 'south'; }
-      positionRef.current = next;
-      setPosition(next);
-      if (travelLabel && lastTravelRef.current !== `${nextChunk.x},${nextChunk.y}`) {
-        lastTravelRef.current = `${nextChunk.x},${nextChunk.y}`;
-        chunkRef.current = nextChunk;
-        setChunk(nextChunk);
-        onChunkChange(nextChunk);
-        setLogs((currentLogs) => [{ text: `You travel ${travelLabel} into a new field chunk.`, color: 'blue' }, ...currentLogs].slice(0, 3));
-      }
-    }, 130);
+      animationFrame = window.requestAnimationFrame(animate);
+    };
+    animationFrame = window.requestAnimationFrame(animate);
     const clock = window.setInterval(() => {
       setTime((current) => {
         const [hours, minutes] = current.split(':').map(Number);
         const nextMinutes = minutes + 1;
-        return `${String((hours + Math.floor(nextMinutes / 60)) % 24).padStart(2, '0')}:${String(nextMinutes % 60).padStart(2, '0')}`;
+        return String((hours + Math.floor(nextMinutes / 60)) % 24).padStart(2, '0') + ':' + String(nextMinutes % 60).padStart(2, '0');
       });
     }, 3000);
     return () => {
-      window.clearInterval(gameLoop);
+      window.cancelAnimationFrame(animationFrame);
       window.clearInterval(clock);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', clearInput);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, []);
+  }, [onChunkChange]);
 
   const pressDirection = (direction: Direction) => {
     keysRef.current[direction] = true;
@@ -157,7 +184,7 @@ function GameField({ onOpenMap, onChunkChange, muted, onToggleMute }: { onOpenMa
           <div className="npc wanderer"><span className="npc-name">Sable</span><span className="npc-body" /></div>
           <span className="field-marker marker-one">Mosslight</span>
           <span className="field-marker marker-two">East road</span>
-          <div className={`player ${moving ? 'is-moving' : ''}`} style={{ left: `${position.x}%`, top: `${position.y}%` }} data-testid="player-character">
+          <div className={`player ${moving ? 'is-moving' : ''}`} style={{ left: `${position.x}%`, top: `${position.y}%` }} data-facing={facing} data-testid="player-character">
             <span className="player-tag">Rowan · Lv 08</span><span className="player-sprite" /><span className="player-shadow" />
           </div>
         </div>
