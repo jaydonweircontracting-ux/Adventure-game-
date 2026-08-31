@@ -393,9 +393,12 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
             </div>
           )}
           {showHorse && (
-            <div className={'horse ' + (mounted ? 'is-mounted' : '')} style={{ left: horseDisplayPosition.x + '%', top: horseDisplayPosition.y + '%' }} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">
-              <span className="horse-tail" /><span className="horse-body" /><span className="horse-neck" /><span className="horse-head" /><span className="horse-ear" /><span className="horse-leg front" /><span className="horse-leg back" /><span className="horse-rein" />
-            </div>
+            <>
+              <div className={'horse ' + (mounted ? 'is-mounted' : '')} style={{ left: horseDisplayPosition.x + '%', top: horseDisplayPosition.y + '%' }} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">
+                <span className="horse-tail" /><span className="horse-body" /><span className="horse-neck" /><span className="horse-head" /><span className="horse-ear" /><span className="horse-leg front" /><span className="horse-leg back" /><span className="horse-rein" />
+              </div>
+              <button className={'horse-mount-button ' + (mounted ? 'mounted' : '')} style={{ left: horseDisplayPosition.x + '%', top: Math.min(88, Math.max(12, horseDisplayPosition.y + 10)) + '%' }} onClick={toggleMount} disabled={!mounted && !canMount} aria-pressed={mounted} aria-label={mounted ? 'Dismount horse' : 'Mount horse'} data-testid="button-toggle-mount">{mounted ? 'Dismount' : 'Mount'}</button>
+            </>
           )}
           <div className={'player ' + (moving ? 'is-moving ' : '') + (mounted ? 'is-mounted' : '')} style={{ left: position.x + '%', top: position.y + '%' }} data-facing={facing} data-testid="player-character">
             <span className="player-sprite" />
@@ -438,7 +441,6 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
          )}
          <div className="field-actions">
            <button className="field-log-toggle" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" data-testid="button-toggle-field-log"><BookOpen size={14} /> {logOpen ? 'Hide log' : 'Field log'}</button>
-           <button className={'horse-button ' + (mounted ? 'mounted' : '')} onClick={toggleMount} disabled={!mounted && !canMount} aria-pressed={mounted} aria-label={mounted ? 'Dismount horse' : 'Mount horse'} data-testid="button-toggle-mount">{mounted ? 'Dismount' : 'Mount horse'}</button>
            <button className="map-button" onClick={onOpenMap} data-testid="button-open-map"><Map size={14} /> Field atlas</button>
             <button className="icon-button field-sound-button" onClick={onToggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'} aria-pressed={muted} data-testid="button-toggle-sound">{muted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
          </div>
