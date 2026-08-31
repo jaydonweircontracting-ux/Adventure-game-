@@ -1068,3 +1068,13 @@
 .field-house.house-5 { left: 39%; top: 7%; transform: scale(.8); }
 .field-house.house-6 { left: 39%; bottom: 7%; transform: scale(.8); }
 .world-field.world-is-sea .field-edge { background: rgba(20, 80, 101, .42); }
+
+
+.map-tile.is-sea {
+  background: #246f9c;
+}
+.map-tile.is-sea::before {
+  z-index: 0;
+  opacity: .88;
+  background: repeating-linear-gradient(165deg, transparent 0 9px, rgba(160, 221, 218, .42) 10px 12px, transparent 13px 21px);
+}
