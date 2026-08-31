@@ -103,6 +103,11 @@ function worldTerrainAt(x: number, y: number): Terrain {
   return "grass";
 }
 
+
+function sceneNpcCount(terrain: Terrain) {
+  return terrain === "town" ? 7 : terrain === "woodland" || terrain === "autumn" ? 4 : 3;
+}
+
 function regionAt(position: Position) {
   if (position.x > 28 && position.y < 15) return "The Crownspine";
   if (position.x < 17 && position.y > 21) return "Mosswood";
@@ -146,13 +151,27 @@ function GameplayChunk({ position, localPosition, terrain, direction }: { positi
     x: index % CHUNK_SIZE,
     y: Math.floor(index / CHUNK_SIZE),
   })), []);
+  const npcs = useMemo(() => Array.from({ length: sceneNpcCount(terrain) }, (_, index) => ({
+    left: 10 + hash(position.x * 11 + index, position.y * 7 + index) * 80,
+    top: 18 + hash(position.x * 5 + index + 3, position.y * 13 + index + 1) * 62,
+    variant: index % 4,
+  })), [position.x, position.y, terrain]);
   const playerStyle = {
     backgroundImage: 'url("/assets/gameplay/shining-fields/characters/player/idle.png")',
   };
   return (
     <div className={"zelda-scene zelda-" + terrain}>
       <div className="scene-skywash" />
+      <div className="scene-online-hud" aria-hidden="true">
+        <div className="scene-top-frame">
+          <div className="scene-avatar-chip"><span className="scene-avatar">W</span><span><strong>TRAVELER</strong><small>LEVEL 01 · {regionAt(position)}</small></span></div>
+          <div className="scene-bars"><span className="scene-bar hp"><i style={{ width: "82%" }} /></span><span className="scene-bar mp"><i style={{ width: Math.max(18, stamina) + "%" }} /></span></div>
+          <span className="scene-gold">✦ {steps * 2}</span>
+        </div>
+        <div className="scene-bottom-frame"><div className="scene-action-slots"><span className="scene-slot active">W</span><span className="scene-slot">✦</span><span className="scene-slot">◇</span><span className="scene-slot">✚</span><span className="scene-slot">?</span></div><span className="scene-chat">{message}</span><span className="scene-compass">N</span></div>
+      </div>
       <div className="scene-signpost"><span>CHUNK {positionLabel(position)}</span><strong>10 × 10 PLAY TILES</strong></div>
+      {npcs.map((npc, index) => <div className={"scene-npc npc-" + npc.variant} style={{ left: npc.left + "%", top: npc.top + "%" }} key={index}><span className="npc-shadow" /><span className="npc-head" /><span className="npc-body" /></div>)}
       <div className="gameplay-grid">
         {cells.map((cell) => {
           const microTerrain = localTileAt(position, cell, terrain);
