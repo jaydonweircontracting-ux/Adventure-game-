@@ -1,5 +1,5 @@
-import { Compass, LocateFixed, Map, Maximize2, Mountain, Trees, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Compass, Info, LocateFixed, Map, Maximize2, Trees, X } from "lucide-react";
+import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Position = { x: number; y: number };
 type LocalPosition = { x: number; y: number };
@@ -200,8 +200,10 @@ export default function App() {
   const [steps, setSteps] = useState(0);
   const [stamina, setStamina] = useState(100);
   const [mapOpen, setMapOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [message, setMessage] = useState("The trail begins where the wildlands meet.");
   const [selectedTile, setSelectedTile] = useState<Position | null>(null);
+  const gameFrameRef = useRef<HTMLDivElement>(null);
 
   const move = useCallback((key: string) => {
     const vector = directionKeys[key];
@@ -252,14 +254,21 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code === "Escape") setMapOpen(false);
       if (event.code === "KeyM") setMapOpen((open) => !open);
-      if (directionKeys[event.code]) {
-        event.preventDefault();
-        move(event.code);
-      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [move]);
+  }, []);
+
+  useEffect(() => {
+    gameFrameRef.current?.focus();
+  }, []);
+
+  const handleGameKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!directionKeys[event.code]) return;
+    event.preventDefault();
+    event.stopPropagation();
+    move(event.code);
+  };
 
   const currentTerrain = terrainAt(position.x, position.y);
   const currentTown = townForTile(position.x, position.y);
@@ -271,43 +280,35 @@ export default function App() {
       <header className="topbar">
         <div className="brand-lockup">
           <div className="brand-mark"><Compass size={25} /></div>
-          <div><p className="eyebrow">FIELD JOURNAL · 01</p><h1>Wildlands</h1></div>
+          <div><p className="eyebrow">FRONTIER ONLINE · CHUNK 01</p><h1>Wildlands</h1></div>
         </div>
         <div className="topbar-actions">
           <div className="coordinate-readout"><span>POSITION</span><strong>{positionLabel(position)}</strong></div>
+          <button type="button" className="utility-button" onClick={() => setInfoOpen((open) => !open)}><Info size={16} />{infoOpen ? "Close info" : "Info"}</button>
           <button type="button" className="map-button" onClick={() => setMapOpen((open) => !open)}><Map size={17} />{mapOpen ? "Close map" : "World map"}</button>
         </div>
       </header>
 
       <section className="game-grid">
-        <aside className="journal-panel">
-          <div className="panel-kicker"><span className="live-dot" /> LIVE EXPEDITION</div>
-          <h2>Beyond the last road.</h2>
-          <p className="journal-copy">A hand-drawn continent of forests, high passes, quiet rivers, and places that have not made it onto any chart.</p>
-          <div className="status-card"><span className="status-label">CURRENT REGION</span><strong>{regionAt(position)}</strong><span className="status-detail">{currentTown ? currentTown.name : terrainLabels[currentTerrain]}</span></div>
-          <div className="control-block"><div className="status-label">TRAVEL WITH</div><div className="wasd-grid" aria-label="WASD movement controls"><span /><kbd>W</kbd><span /><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div><p>Use W A S D to walk. The map stays open only when you ask for it.</p></div>
-          <div className="journal-note"><span className="note-rule" /><span>{message}</span></div>
-        </aside>
-
         <section className="play-panel">
-          <div className="play-header"><div><span className="status-label">THE UNMAPPED CONTINENT</span><h2>{currentTown ? currentTown.name : terrainLabels[currentTerrain]}</h2></div><div className="compass-badge"><span>N</span><Compass size={25} /><span>S</span></div></div>
-           <div className="map-frame">
-             <div className="map-frame-label"><span>PLAYABLE CHUNK · 10 × 10 TILES</span><span>{directionLabels[direction]} · {steps} STEPS</span></div>
-             <GameplayChunk position={position} localPosition={localPosition} terrain={currentTerrain} direction={direction} />
-             {mapOpen && <div className="world-map-overlay"><div className="overlay-head"><div><span className="status-label">CARTOGRAPHER'S VIEW</span><h2>World map</h2><p>Each hex is one 10 × 10 playable chunk.</p></div><button type="button" className="icon-button" onClick={() => setMapOpen(false)} aria-label="Close world map"><X size={19} /></button></div><div className="world-map-wrap"><HexMap position={position} world onSelect={(x, y) => setSelectedTile({ x, y })} /></div><div className="overlay-foot"><span><span className="legend-dot player-dot" /> YOU ARE HERE · CHUNK {positionLabel(position)}</span><span><span className="legend-dot town-dot" /> SETTLEMENTS</span><span><span className="legend-dot mountain-dot" /> HIGH COUNTRY</span></div></div>}
+          <div className="play-header"><div><span className="status-label">ACTIVE PLAY SPACE</span><h2>{currentTown ? currentTown.name : terrainLabels[currentTerrain]}</h2></div><div className="play-header-actions"><button type="button" className="header-icon-button" onClick={() => setInfoOpen(true)} aria-label="Open game info"><Info size={16} /></button><div className="compass-badge"><span>N</span><Compass size={25} /><span>S</span></div></div></div>
+          <div
+            className="map-frame game-frame"
+            ref={gameFrameRef}
+            tabIndex={0}
+            onKeyDown={handleGameKeyDown}
+            onClick={() => gameFrameRef.current?.focus()}
+            aria-label="2D gameplay area. Use W A S D to move."
+          >
+            <div className="map-frame-label"><span>PLAYABLE CHUNK · 10 × 10 TILES</span><span>{directionLabels[direction]} · {steps} STEPS</span></div>
+            <GameplayChunk position={position} localPosition={localPosition} terrain={currentTerrain} direction={direction} />
+            {mapOpen && <div className="world-map-overlay"><div className="overlay-head"><div><span className="status-label">CARTOGRAPHER'S VIEW</span><h2>World map</h2><p>Each hex is one 10 × 10 playable chunk.</p></div><button type="button" className="icon-button" onClick={() => setMapOpen(false)} aria-label="Close world map"><X size={19} /></button></div><div className="world-map-wrap"><HexMap position={position} world onSelect={(x, y) => setSelectedTile({ x, y })} /></div><div className="overlay-foot"><span><span className="legend-dot player-dot" /> YOU ARE HERE · CHUNK {positionLabel(position)}</span><span><span className="legend-dot town-dot" /> SETTLEMENTS</span><span><span className="legend-dot mountain-dot" /> HIGH COUNTRY</span></div></div>}
           </div>
-          <div className="play-footer"><div className="movement-message"><Maximize2 size={15} /><span>{message}</span></div><div className="map-hint">PRESS <strong>M</strong> OR USE WORLD MAP</div></div>
+          <div className="play-footer"><div className="movement-message"><Maximize2 size={15} /><span>{message}</span></div><div className="touch-controls" aria-label="Movement controls"><button type="button" onClick={() => move("KeyW")} aria-label="Move north">W</button><button type="button" onClick={() => move("KeyA")} aria-label="Move west">A</button><button type="button" onClick={() => move("KeyS")} aria-label="Move south">S</button><button type="button" onClick={() => move("KeyD")} aria-label="Move east">D</button></div><div className="map-hint">CLICK GAME · WASD TO MOVE · <strong>M</strong> MAP</div></div>
         </section>
-
-        <aside className="intel-panel">
-          <div className="intel-header"><span className="status-label">EXPEDITION LOG</span><Trees size={18} /></div>
-          <div className="progress-stat"><div><span className="status-label">LAND SURVEYED</span><strong>{discovered}%</strong></div><div className="progress-track"><i style={{ width: discovered + "%" }} /></div></div>
-          <dl className="intel-list"><div><dt>BIOME</dt><dd>{terrainLabels[currentTerrain]}</dd></div><div><dt>HEADING</dt><dd>{directionLabels[direction]}</dd></div><div><dt>GROUND</dt><dd>{currentTerrain === "rock" ? "elevated" : currentTerrain === "water" ? "impassable" : "stable"}</dd></div><div><dt>SETTLEMENTS</dt><dd>{towns.length} known</dd></div></dl>
-          <div className="stamina-card"><div><span className="status-label">TRAVEL RESOLVE</span><strong>{stamina}<small>/100</small></strong></div><div className="stamina-track"><i style={{ width: stamina + "%" }} /></div><p>Rest is found in the towns marked across your map.</p></div>
-          {(selectedTown || currentTown) && <div className="town-card"><span className="status-label">SETTLEMENT DISCOVERED</span><h3>{(selectedTown || currentTown)?.name}</h3><p>{(selectedTown || currentTown)?.kind}</p><span className="town-card-note">Four hexes make a town. Walk across its square to explore it.</span></div>}
-        </aside>
       </section>
-       <footer className="bottom-bar"><span>WILDLANDS CARTOGRAPHY SOCIETY</span><span>WORLD {WORLD_WIDTH} × {WORLD_HEIGHT} CHUNKS · 10 × 10 TILES EACH</span><span>V. 0.5.0</span></footer>
+      {infoOpen && <div className="drawer-backdrop" onClick={() => setInfoOpen(false)}><aside className="info-drawer" onClick={(event) => event.stopPropagation()}><div className="drawer-header"><div><span className="status-label">GAME INFO</span><h2>Field guide</h2></div><button type="button" className="icon-button" onClick={() => setInfoOpen(false)} aria-label="Close game info"><X size={19} /></button></div><div className="drawer-scroll"><section className="drawer-section"><span className="status-label">CURRENT CHUNK</span><strong>{positionLabel(position)}</strong><p>{regionAt(position)} · {terrainLabels[currentTerrain]}</p></section><section className="drawer-section"><div className="drawer-section-heading"><span className="status-label">TRAVEL</span><Trees size={17} /></div><p>Move one tile at a time with W A S D. A 10 × 10 chunk connects directly to the next chunk when you reach its edge.</p><div className="drawer-wasd"><button type="button" onClick={() => move("KeyW")}>W</button><button type="button" onClick={() => move("KeyA")}>A</button><button type="button" onClick={() => move("KeyS")}>S</button><button type="button" onClick={() => move("KeyD")}>D</button></div></section><section className="drawer-section"><span className="status-label">TRAVEL RESOLVE</span><div className="drawer-stat"><strong>{stamina}<small>/100</small></strong><span>{steps} steps</span></div><div className="stamina-track"><i style={{ width: stamina + "%" }} /></div></section><section className="drawer-section"><span className="status-label">WORLD</span><p>{WORLD_WIDTH} × {WORLD_HEIGHT} world chunks · {towns.length} settlements known</p><button type="button" className="drawer-map-link" onClick={() => { setInfoOpen(false); setMapOpen(true); }}>Open world map <Map size={15} /></button></section>{(selectedTown || currentTown) && <section className="drawer-section town-drawer-section"><span className="status-label">SETTLEMENT</span><h3>{(selectedTown || currentTown)?.name}</h3><p>{(selectedTown || currentTown)?.kind}</p><span className="town-card-note">Four world-map hexes form this settlement.</span></section>}<section className="drawer-section drawer-message"><span className="status-label">LATEST MESSAGE</span><p>{message}</p></section></div></aside></div>}
+      <footer className="bottom-bar"><span>WILDLANDS</span><span>WORLD {WORLD_WIDTH} × {WORLD_HEIGHT} CHUNKS · 10 × 10 TILES EACH</span><span>V. 0.6.0</span></footer>
     </main>
   );
 }
