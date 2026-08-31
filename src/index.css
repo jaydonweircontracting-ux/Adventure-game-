@@ -906,22 +906,6 @@
 
 
 /* Connected overworld features: rivers, roads, and settlements share the same map geometry. */
-.map-tile.is-river {
-  background: #3f9dcc;
-}
-.map-tile.is-river::before {
-  z-index: 0;
-  opacity: .92;
-  background: repeating-linear-gradient(160deg, transparent 0 8px, rgba(191, 235, 224, .55) 9px 11px, transparent 12px 18px);
-}
-.map-tile.is-lake {
-  background: #3188be;
-}
-.map-tile.is-lake::before {
-  z-index: 0;
-  opacity: .9;
-  background: radial-gradient(ellipse at 48% 48%, rgba(163, 224, 223, .4) 0 28%, transparent 30%), repeating-linear-gradient(165deg, transparent 0 10px, rgba(180, 230, 220, .4) 11px 13px, transparent 14px 22px);
-}
 .map-tile.has-road::before {
   z-index: 2;
   inset: 0;
@@ -1540,3 +1524,85 @@ body {
   border-color: rgba(102, 69, 43, .54);
 }
 .world-field.world-region-sunwash .field-house { background: #c46d43; }
+
+
+/* Edge-water pass: rivers and lakes sit on the edge of land chunks; only ocean fills a tile. */
+.map-tile.is-river,
+.map-tile.is-lake {
+  background-color: #729652;
+  background-image: linear-gradient(145deg, rgba(209, 220, 133, .18), transparent 46%);
+}
+.map-tile.is-river.map-region-northwatch,
+.map-tile.is-lake.map-region-northwatch { background-color: #858a78; }
+.map-tile.is-river.map-region-brackenfen,
+.map-tile.is-lake.map-region-brackenfen { background-color: #5c7b50; }
+.map-tile.is-river.map-region-ironwood,
+.map-tile.is-lake.map-region-ironwood { background-color: #527a57; }
+.map-tile.is-river.map-region-sunwash,
+.map-tile.is-lake.map-region-sunwash { background-color: #a27755; }
+.map-tile.is-river::before,
+.map-tile.is-lake::before {
+  content: '';
+  z-index: 3;
+  position: absolute;
+  opacity: 1;
+  pointer-events: none;
+  background: repeating-linear-gradient(165deg, transparent 0 8px, rgba(184, 232, 223, .5) 9px 11px, transparent 12px 18px), linear-gradient(180deg, #4c98a8, #347b96);
+  box-shadow: inset 0 0 0 2px rgba(189, 233, 223, .2);
+}
+.map-tile.is-river.water-edge-east::before,
+.map-tile.is-lake.water-edge-east::before {
+  inset: 0 0 0 auto;
+  width: 31%;
+}
+.map-tile.is-river.water-edge-west::before,
+.map-tile.is-lake.water-edge-west::before {
+  inset: 0 auto 0 0;
+  width: 31%;
+}
+.map-tile.is-river.water-edge-north::before,
+.map-tile.is-lake.water-edge-north::before {
+  inset: 0 0 auto;
+  height: 31%;
+}
+.map-tile.is-river.water-edge-south::before,
+.map-tile.is-lake.water-edge-south::before {
+  inset: auto 0 0;
+  height: 31%;
+}
+.map-tile.is-river.water-edge-north::before,
+.map-tile.is-lake.water-edge-north::before,
+.map-tile.is-river.water-edge-south::before,
+.map-tile.is-lake.water-edge-south::before {
+  background: repeating-linear-gradient(90deg, transparent 0 8px, rgba(184, 232, 223, .5) 9px 11px, transparent 12px 18px), linear-gradient(180deg, #4c98a8, #347b96);
+}
+.map-tile.is-river.has-bridge::before,
+.map-tile.is-lake.has-bridge::before {
+  z-index: 4;
+}
+.field-water {
+  inset: auto;
+  z-index: 1;
+  background: repeating-linear-gradient(165deg, transparent 0 12px, rgba(184, 232, 223, .46) 13px 16px, transparent 17px 27px), linear-gradient(180deg, rgba(76, 152, 168, .96), rgba(52, 123, 150, .96));
+  box-shadow: inset 0 0 0 2px rgba(189, 233, 223, .2);
+}
+.field-water.water-edge-east,
+.field-water.water-edge-west {
+  top: 0;
+  bottom: 0;
+  width: 25%;
+}
+.field-water.water-edge-east { right: 0; left: auto; }
+.field-water.water-edge-west { left: 0; right: auto; }
+.field-water.water-edge-north,
+.field-water.water-edge-south {
+  left: 0;
+  right: 0;
+  height: 25%;
+}
+.field-water.water-edge-north { top: 0; bottom: auto; }
+.field-water.water-edge-south { top: auto; bottom: 0; }
+.world-water-sea {
+  inset: 0;
+  background: repeating-linear-gradient(165deg, transparent 0 15px, rgba(184, 232, 223, .4) 16px 19px, transparent 20px 31px), linear-gradient(180deg, #2c789a, #1f5e80);
+}
