@@ -122,6 +122,7 @@ function InventorySheet({ onClose }: { onClose: () => void }) {
 function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute }: { onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void }) {
   const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
   const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
+  const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
   const [moving, setMoving] = useState(false);
   const [facing, setFacing] = useState<Direction>('down');
   const [logOpen, setLogOpen] = useState(false);
@@ -139,6 +140,12 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   }, []);
   useEffect(() => { positionRef.current = position; }, [position]);
   useEffect(() => { chunkRef.current = chunk; }, [chunk]);
+
+  useEffect(() => {
+    if (!areaFlash) return;
+    const timer = window.setTimeout(() => setAreaFlash(null), 1700);
+    return () => window.clearTimeout(timer);
+  }, [areaFlash]);
 
   useEffect(() => {
     const clearInput = () => {
@@ -192,9 +199,14 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
         positionRef.current = next;
         setPosition(next);
         if (travelLabels.length > 0) {
+          const previousRegion = chunkRegion(chunkRef.current);
+          const nextRegion = chunkRegion(nextChunk);
           chunkRef.current = nextChunk;
           setChunk(nextChunk);
           onChunkChange(nextChunk);
+          if (nextRegion !== previousRegion) {
+            setAreaFlash({ id: String(nextChunk.x) + ':' + String(nextChunk.y), label: nextRegion });
+          }
           setLogs((currentLogs) => [{
             text: `You travel ${travelLabels.join(' and ')} into ${chunkRegion(nextChunk)} · chunk ${nextChunk.x}, ${nextChunk.y}.`,
             color: 'blue',
@@ -245,6 +257,12 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
             <span className="player-sprite" />
           </div>
         </div>
+        {areaFlash && (
+          <div className="area-flash" key={areaFlash.id} aria-live="polite" data-testid="area-entry-flash">
+            <span className="area-flash-kicker">Entering</span>
+            <strong>{areaFlash.label}</strong>
+          </div>
+        )}
         <div className="world-hud">
           <div className="hud-card" data-testid="hud-player">
             <div className="hud-label"><span>Adventurer</span><span>08</span></div>
