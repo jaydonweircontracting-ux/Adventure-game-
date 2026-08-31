@@ -15,7 +15,7 @@ type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 type HorseState = { chunk: Point; position: Point };
 
-const WALK_SPEED = 256; // 8x the original walking speed
+const WALK_SPEED = 384; // 12x the original walking speed
 const HORSE_SPEED = 180;
 const HORSE_MOUNT_DISTANCE = 4.5;
 const initialHorseState: HorseState = { chunk: { x: 4, y: 7 }, position: { x: 58, y: 52 } };
