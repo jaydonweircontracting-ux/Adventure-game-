@@ -345,7 +345,11 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
               <span className="field-village-square" />
               <span className="field-house house-1" /><span className="field-house house-2" /><span className="field-house house-3" />
               <span className="field-house house-4" /><span className="field-house house-5" /><span className="field-house house-6" />
-              <span className="field-village-well" />
+              {currentWorldTile.landmark?.name === 'Mosslight Crossing' ? (
+                <span className="field-village-fountain" aria-label="Greenvale fountain"><span className="fountain-spray" /></span>
+              ) : (
+                <span className="field-village-well" />
+              )}
             </div>
           )}
           <div className={'player ' + (moving ? 'is-moving' : '')} style={{ left: position.x + '%', top: position.y + '%' }} data-facing={facing} data-testid="player-character">
