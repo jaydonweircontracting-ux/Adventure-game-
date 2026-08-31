@@ -104,3 +104,16 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Netlify boundary: changes are limited to browser source and CSS; no server.js, WebSocket, persistence, or new package dependency was added.
 - Static verification: GitHub readback confirmed horse state, mount distance, speed constants, persistence handler, test IDs, horse CSS, and Node 20 declaration. npm install, npm run build, typecheck, and gameplay runtime were not run.
 - Commits: 1c84d21 (horse behavior), 29aa7a1 (horse styling), 32e798a (README controls).
+
+
+## Checkpoint 006 — contextual horse control and scale
+
+- Date: 2026-08-30 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- UI change: moved the Mount / Dismount control from the bottom action bar to a contextual button positioned beside the rendered horse.
+- Visual change: scaled the CSS horse to 0.68 so its visible footprint is closer to the player sprite.
+- Behavior preserved: proximity gating, mounted speed, chunk-aware horse persistence, and exact dismount placement.
+- Netlify boundary: only src/App.tsx and src/index.css changed; no package, server, persistence, or deployment configuration changes.
+- Static verification: confirmed contextual button placement, removed old horse-button selector, horse scale, persistence markers, and Node 20 declaration through GitHub readback. Build, typecheck, and runtime testing were not run.
+- Commits: 0b85551 (contextual control), 1d57236 (horse scale).
