@@ -40,3 +40,19 @@ After the movement patch, compare source metrics and record the new commit SHA. 
 ## Interpretation
 
 The fixed-step client loop was removed; the remaining interval is the in-game clock. Static checks confirm the new modules and package manifest are present. These are source measurements, not performance claims: FPS, input feel, chunk crossing, persistence, and server behavior still require the user's local run.
+
+
+## Post-hardening static measurement — Checkpoint 004
+
+| Metric | Result | Status |
+|---|---:|---|
+| package.json Node engine | 20.x | recorded |
+| Netlify build command | npm run build | preserved |
+| Netlify publish directory | dist/public | preserved |
+| Netlify SPA fallback | /* → /index.html | preserved |
+| Static third-party import audit | no undeclared imports | recorded |
+| npm install / build / typecheck | not run | pending local test |
+
+## Interpretation
+
+The deployment contract is now declared both in package.json and netlify.toml, and the README explicitly keeps the optional Node/WebSocket server outside the static Netlify path. Static inspection does not prove a successful build; local validation remains required before claiming runtime success.
