@@ -535,7 +535,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
               {canMount && <button className="horse-mount-button" style={{ left: horseDisplayPosition.x + '%', top: Math.min(88, Math.max(12, horseDisplayPosition.y + 10)) + '%' }} onClick={toggleMount} aria-label="Mount horse" data-testid="button-toggle-mount">Mount</button>}
             </>
           )}
-          <div className={'player ' + (moving ? 'is-moving ' : '') + (mounted ? 'is-mounted' : '')} style={{ left: position.x + '%', top: position.y + '%' }} data-facing={facing} data-testid="player-character">
+          <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (mounted ? 'is-mounted' : '')} style={{ left: position.x + '%', top: position.y + '%' }} data-facing={facing} data-testid="player-character">
             <span className="player-sprite" />
           </div>
         </div>
