@@ -387,7 +387,7 @@
   animation: player-run .48s steps(6, end) infinite;
 }
 .player.is-mounted { z-index: 7; }
-.player.is-mounted .player-sprite { top: 8px; }
+.player.is-mounted .player-sprite { top: 16px; }
 .horse {
   position: absolute;
   z-index: 5;
