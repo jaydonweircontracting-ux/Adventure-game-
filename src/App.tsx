@@ -46,9 +46,9 @@ type MapTile = {
 
 const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
   '4,7': { name: 'Mosslight Crossing', kind: 'town' },
-  '2,6': { name: 'Amberfen Village', kind: 'village' },
-  '6,8': { name: 'Stonewake', kind: 'town' },
-  '5,4': { name: 'Highmere Watch', kind: 'village' },
+  '2,6': { name: 'Fenmere Hamlet', kind: 'village' },
+  '6,8': { name: 'Ironwood Southhold', kind: 'town' },
+  '5,4': { name: 'Northwatch Beacon', kind: 'village' },
 };
 
 function mapTileFor(point: Point): MapTile {
@@ -94,12 +94,24 @@ function mapTileClass(tile: MapTile & { current: boolean }) {
 }
 
 function chunkRegion(chunk: Point) {
-  // Greenvale is the village itself; every neighboring chunk belongs to a distinct region.
+  // Every land chunk gets a named reach; Greenvale is reserved for the village itself.
   if (chunk.x === 4 && chunk.y === 7) return 'Greenvale';
-  if (chunk.x <= 3) return 'Brackenfen';
-  if (chunk.x >= 5) return 'Ironwood March';
-  if (chunk.y <= 6) return 'Northwatch Heights';
-  return 'Sunwash Coast';
+
+  const latitudeNames = ['Far North', 'North', 'Upper', 'Northgate', 'Central', 'Southgate', 'Lower', 'South', 'Far South'];
+  const latitude = latitudeNames[Math.max(0, Math.min(latitudeNames.length - 1, chunk.y - 3))];
+  const coastalSea = Math.abs(chunk.x - 4) >= 4 || Math.abs(chunk.y - 7) >= 4;
+  if (coastalSea) return latitude + (chunk.x < 4 ? ' Western Sea' : chunk.x > 4 ? ' Eastern Sea' : ' Open Sea');
+
+  if (chunk.x <= 3) {
+    const reach = chunk.x <= 1 ? 'Deep Brackenfen' : chunk.x === 2 ? 'Outer Brackenfen' : 'Brackenfen Gate';
+    return latitude === 'Central' ? reach : latitude + ' ' + reach;
+  }
+  if (chunk.x >= 5) {
+    const reach = chunk.x >= 7 ? 'Deep Ironwood March' : chunk.x === 6 ? 'Outer Ironwood March' : 'Ironwood Gate';
+    return latitude === 'Central' ? reach : latitude + ' ' + reach;
+  }
+  if (chunk.y <= 6) return chunk.y <= 4 ? 'High Northwatch Heights' : chunk.y === 5 ? 'Outer Northwatch Heights' : 'Northwatch Foothills';
+  return chunk.y >= 10 ? 'Far Sunwash Coast' : chunk.y === 9 ? 'Outer Sunwash Coast' : 'Sunwash Foothills';
 }
 
 const initialLogs = [
