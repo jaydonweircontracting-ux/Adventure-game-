@@ -210,6 +210,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const [facing, setFacing] = useState<Direction>('down');
   const [mounted, setMounted] = useState(false);
   const [horse, setHorse] = useState<HorseState>(initialHorseState);
+  const [horseFacing, setHorseFacing] = useState<Direction>('down');
   const [logOpen, setLogOpen] = useState(false);
   const [logs, setLogs] = useState(initialLogs);
   const [time, setTime] = useState('08:43');
@@ -217,6 +218,8 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const positionRef = useRef(position);
   const chunkRef = useRef(chunk);
   const mountedRef = useRef(mounted);
+  const horseRef = useRef(horse);
+  const horseIdleAnchorRef = useRef(initialHorseState.position);
   const gameFrameRef = useRef<HTMLDivElement>(null);
   const areaFlashIdRef = useRef(0);
 
@@ -229,6 +232,43 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   useEffect(() => { positionRef.current = position; }, [position]);
   useEffect(() => { chunkRef.current = chunk; }, [chunk]);
   useEffect(() => { mountedRef.current = mounted; }, [mounted]);
+  useEffect(() => { horseRef.current = horse; }, [horse]);
+
+  useEffect(() => {
+    if (mounted) return;
+
+    const idleDirections: Direction[] = ['up', 'down', 'left', 'right'];
+    let idleTimer = 0;
+    const scheduleIdleAction = () => {
+      idleTimer = window.setTimeout(() => {
+        if (mountedRef.current) return;
+
+        const direction = idleDirections[Math.floor(Math.random() * idleDirections.length)];
+        setHorseFacing(direction);
+
+        if (Math.random() < 0.38) {
+          const currentHorse = horseRef.current;
+          const idleStep = 3;
+          const nextPosition = {
+            x: currentHorse.position.x + (direction === 'left' ? -idleStep : direction === 'right' ? idleStep : 0),
+            y: currentHorse.position.y + (direction === 'up' ? -idleStep : direction === 'down' ? idleStep : 0),
+          };
+          const anchor = horseIdleAnchorRef.current;
+          const withinIdleArea = Math.hypot(nextPosition.x - anchor.x, nextPosition.y - anchor.y) <= 9;
+          const withinField = nextPosition.x >= 12 && nextPosition.x <= 88 && nextPosition.y >= 12 && nextPosition.y <= 88;
+
+          if (withinIdleArea && withinField) {
+            setHorse((current) => ({ ...current, position: nextPosition }));
+          }
+        }
+
+        if (!mountedRef.current) scheduleIdleAction();
+      }, 2200 + Math.random() * 2800);
+    };
+
+    scheduleIdleAction();
+    return () => window.clearTimeout(idleTimer);
+  }, [mounted]);
 
   useEffect(() => {
     areaFlashIdRef.current += 1;
@@ -351,6 +391,8 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
         x: Math.min(88, Math.max(12, currentPosition.x + preferredOffset)),
         y: Math.min(88, Math.max(12, currentPosition.y)),
       };
+      horseIdleAnchorRef.current = dismountPosition;
+
       setHorse({ chunk: currentChunk, position: currentPosition });
       positionRef.current = dismountPosition;
       setPosition(dismountPosition);
@@ -407,7 +449,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
           )}
           {showHorse && (
             <>
-              <div className={'horse ' + (mounted ? 'is-mounted' : '')} style={{ left: horseDisplayPosition.x + '%', top: horseDisplayPosition.y + '%' }} data-facing={mounted ? facing : 'down'} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">
+              <div className={'horse ' + (mounted ? 'is-mounted' : '')} style={{ left: horseDisplayPosition.x + '%', top: horseDisplayPosition.y + '%' }} data-facing={mounted ? facing : horseFacing} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">
                 <span className="horse-sprite" />
               </div>
               {canMount && <button className="horse-mount-button" style={{ left: horseDisplayPosition.x + '%', top: Math.min(88, Math.max(12, horseDisplayPosition.y + 10)) + '%' }} onClick={toggleMount} aria-label="Mount horse" data-testid="button-toggle-mount">Mount</button>}
