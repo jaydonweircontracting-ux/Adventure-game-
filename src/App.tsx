@@ -39,7 +39,7 @@ type MapTile = {
   x: number;
   y: number;
   terrain: Terrain;
-  waterFeature: 'river' | 'lake' | null;
+  waterFeature: 'river' | 'lake' | 'sea' | null;
   road: 'horizontal' | 'vertical' | 'cross' | 'none';
   landmark: { name: string; kind: SettlementKind } | null;
 };
@@ -58,7 +58,8 @@ function mapTileFor(point: Point): MapTile {
   const branchRiverY = Math.round(8 + Math.sin(point.x * 0.55) * 0.8);
   const branchRiver = point.y === branchRiverY && point.x >= 2 && point.x <= 7;
   const lake = (point.x === 6 && point.y === 5) || (point.x === 7 && point.y === 5);
-  const waterFeature = lake ? 'lake' : mainRiver || branchRiver ? 'river' : null;
+  const coastalSea = Math.abs(point.x - 4) >= 4 || Math.abs(point.y - 7) >= 4;
+  const waterFeature = coastalSea ? 'sea' : lake ? 'lake' : mainRiver || branchRiver ? 'river' : null;
   const isWater = waterFeature !== null;
 
   const ridgeBoundary = 4 + Math.sin(point.x * 0.5) * 1.1;
@@ -310,18 +311,31 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
     setMoving(Object.values(keysRef.current).some(Boolean));
   };
 
+  const currentWorldTile = mapTileFor(chunk);
+
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field">
-        <div className="pixel-field" data-terrain={chunkTerrain(chunk)} style={{
-          '--field-color': fieldPalettes[chunkTerrain(chunk)].field,
-          '--path-color': fieldPalettes[chunkTerrain(chunk)].path,
-          '--field-glow': fieldPalettes[chunkTerrain(chunk)].glow,
+        <div className={'pixel-field world-field map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '')} data-terrain={currentWorldTile.terrain} style={{
+          '--field-color': fieldPalettes[currentWorldTile.terrain].field,
+          '--path-color': fieldPalettes[currentWorldTile.terrain].path,
+          '--field-glow': fieldPalettes[currentWorldTile.terrain].glow,
         } as CSSProperties}>
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
-           <div className="field-path path-main" aria-hidden="true" />
-           <div className="field-path path-crossing" aria-hidden="true" />
-          <div className={`player ${moving ? 'is-moving' : ''}`} style={{ left: `${position.x}%`, top: `${position.y}%` }} data-facing={facing} data-testid="player-character">
+          {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature} aria-hidden="true" />}
+          {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road} aria-hidden="true" />}
+          <div className="field-trees" aria-hidden="true">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((tree) => <span className={'field-tree tree-' + tree} key={tree} />)}
+          </div>
+          {currentWorldTile.landmark && (
+            <div className={'field-village ' + currentWorldTile.landmark.kind} aria-label={currentWorldTile.landmark.name}>
+              <span className="field-village-square" />
+              <span className="field-house house-1" /><span className="field-house house-2" /><span className="field-house house-3" />
+              <span className="field-house house-4" /><span className="field-house house-5" /><span className="field-house house-6" />
+              <span className="field-village-well" />
+            </div>
+          )}
+          <div className={'player ' + (moving ? 'is-moving' : '')} style={{ left: position.x + '%', top: position.y + '%' }} data-facing={facing} data-testid="player-character">
             <span className="player-sprite" />
           </div>
         </div>
