@@ -117,3 +117,15 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Netlify boundary: only src/App.tsx and src/index.css changed; no package, server, persistence, or deployment configuration changes.
 - Static verification: confirmed contextual button placement, removed old horse-button selector, horse scale, persistence markers, and Node 20 declaration through GitHub readback. Build, typecheck, and runtime testing were not run.
 - Commits: 0b85551 (contextual control), 1d57236 (horse scale).
+
+
+## Checkpoint 007 — GitHub Pages deployment correction
+
+- Date: 2026-08-31 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- Deployment target: GitHub Pages publishes the committed `docs/` directory; Netlify is not the active deployment target.
+- Diagnosis: the green `pages build and deployment` check is GitHub's Jekyll publish of `docs/`; it is not a Vite source build. The duplicate custom Pages workflow failed at `Build the app` on every recorded attempt.
+- Correction: remove `.github/workflows/publish-pages.yml` instead of changing `index.html` or package scripts.
+- Verification: 39 successful runs are GitHub's `pages build and deployment` workflow; no successful custom Vite Pages run was found.
+- Runtime/build verification: not run by design.
