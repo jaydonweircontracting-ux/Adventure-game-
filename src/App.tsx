@@ -146,7 +146,7 @@ function localTileAt(position: Position, local: LocalPosition, terrain: Terrain)
   return terrain;
 }
 
-function GameplayChunk({ position, localPosition, terrain, direction }: { position: Position; localPosition: LocalPosition; terrain: Terrain; direction: Direction }) {
+function GameplayChunk({ position, localPosition, terrain, direction, stamina, steps, message }: { position: Position; localPosition: LocalPosition; terrain: Terrain; direction: Direction; stamina: number; steps: number; message: string }) {
   const cells = useMemo(() => Array.from({ length: CHUNK_SIZE * CHUNK_SIZE }, (_, index) => ({
     x: index % CHUNK_SIZE,
     y: Math.floor(index / CHUNK_SIZE),
@@ -156,9 +156,20 @@ function GameplayChunk({ position, localPosition, terrain, direction }: { positi
     top: 18 + hash(position.x * 5 + index + 3, position.y * 13 + index + 1) * 62,
     variant: index % 4,
   })), [position.x, position.y, terrain]);
-  const playerStyle = {
-    backgroundImage: 'url("/assets/gameplay/shining-fields/characters/player/idle.png")',
-  };
+  const assetObjects = useMemo(() => {
+    const objects: Array<{ asset: "chest" | "dust" | "wasp"; left: number; top: number }> = [];
+    const place = (asset: "chest" | "dust" | "wasp", index: number) => objects.push({
+      asset,
+      left: 14 + hash(position.x * 17 + index, position.y * 19 + index) * 72,
+      top: 22 + hash(position.x * 23 + index + 5, position.y * 29 + index + 2) * 55,
+    });
+    if (terrain === "town" || terrain === "meadow" || terrain === "path") place("chest", 1);
+    if (terrain === "path" || terrain === "town") place("dust", 2);
+    if (terrain === "meadow" || terrain === "woodland" || terrain === "autumn") place("wasp", 3);
+    return objects;
+  }, [position.x, position.y, terrain]);
+  const playerSprite = steps > 0 && steps % 3 !== 0 ? "/assets/gameplay/shining-fields/characters/player/run.png" : "/assets/gameplay/shining-fields/characters/player/idle.png";
+  const playerStyle = { backgroundImage: `url("${playerSprite}")` };
   return (
     <div className={"zelda-scene zelda-" + terrain}>
       <div className="scene-skywash" />
@@ -172,6 +183,7 @@ function GameplayChunk({ position, localPosition, terrain, direction }: { positi
       </div>
       <div className="scene-signpost"><span>CHUNK {positionLabel(position)}</span><strong>10 × 10 PLAY TILES</strong></div>
       {npcs.map((npc, index) => <div className={"scene-npc npc-" + npc.variant} style={{ left: npc.left + "%", top: npc.top + "%" }} key={index}><span className="npc-shadow" /><span className="npc-head" /><span className="npc-body" /></div>)}
+      {assetObjects.map((asset, index) => asset.asset === "wasp" ? <span className="scene-asset scene-asset-wasp" style={{ left: asset.left + "%", top: asset.top + "%" }} key={asset.asset + index} /> : <img className={"scene-asset scene-asset-" + asset.asset} src={asset.asset === "chest" ? "/assets/gameplay/shining-fields/objects/chest-01.png" : "/assets/gameplay/shining-fields/particles/dust-01.png"} style={{ left: asset.left + "%", top: asset.top + "%" }} alt="" draggable="false" key={asset.asset + index} />)}
       <div className="gameplay-grid">
         {cells.map((cell) => {
           const microTerrain = localTileAt(position, cell, terrain);
@@ -347,7 +359,7 @@ export default function App() {
             aria-label="2D gameplay area. Use W A S D to move."
           >
             <div className="map-frame-label"><span>PLAYABLE CHUNK · 10 × 10 TILES</span><span>{directionLabels[direction]} · {steps} STEPS</span></div>
-            <GameplayChunk position={position} localPosition={localPosition} terrain={currentTerrain} direction={direction} />
+            <GameplayChunk position={position} localPosition={localPosition} terrain={currentTerrain} direction={direction} stamina={stamina} steps={steps} message={message} />
             {mapOpen && <div className="world-map-overlay"><div className="overlay-head"><div><span className="status-label">CARTOGRAPHER'S VIEW</span><h2>World map</h2><p>Each hex is one 10 × 10 playable chunk.</p></div><button type="button" className="icon-button" onClick={() => setMapOpen(false)} aria-label="Close world map"><X size={19} /></button></div><div className="world-map-wrap"><HexMap position={position} world onSelect={(x, y) => setSelectedTile({ x, y })} /></div><div className="overlay-foot"><span><span className="legend-dot player-dot" /> YOU ARE HERE · CHUNK {positionLabel(position)}</span><span><span className="legend-dot town-dot" /> SETTLEMENTS</span><span><span className="legend-dot mountain-dot" /> HIGH COUNTRY</span></div></div>}
           </div>
           <div className="play-footer"><div className="movement-message"><Maximize2 size={15} /><span>{message}</span></div><div className="touch-controls" aria-label="Movement controls"><button type="button" onClick={() => move("KeyW")} aria-label="Move north">W</button><button type="button" onClick={() => move("KeyA")} aria-label="Move west">A</button><button type="button" onClick={() => move("KeyS")} aria-label="Move south">S</button><button type="button" onClick={() => move("KeyD")} aria-label="Move east">D</button></div><div className="map-hint">CLICK GAME · WASD TO MOVE · <strong>M</strong> MAP</div></div>
