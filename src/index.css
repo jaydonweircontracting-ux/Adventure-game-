@@ -230,3 +230,51 @@ kbd { display: grid; place-items: center; width: 31px; height: 28px; border: 1px
 .world-hex-map .town-asset { width: 180%; height: 180%; left: -40%; bottom: -58%; opacity: .9; }
 .world-hex-map .town-pin { top: -2px; padding: 2px 4px; color: #fff7d3; background: rgba(34,57,47,.9); font-size: 6px; box-shadow: 1px 1px 0 rgba(255,243,183,.35); }
 .world-hex-map .player-marker { width: 12px; height: 12px; border-width: 1px; box-shadow: 0 0 0 3px rgba(240,111,61,.48), 1px 1px 0 rgba(39,47,51,.5); }
+
+/* Primary gameplay presentation: a framed, lively online-RPG field rather than a world-map screen. */
+.game-frame { min-height: 650px; border: 7px solid #6b4328; border-radius: 18px; background: #2d5f35; box-shadow: inset 0 0 0 2px #c08b4b, inset 0 0 0 5px #35231d, 0 18px 34px rgba(47,31,24,.22); }
+.game-frame::after { content: ''; position: absolute; z-index: 1; inset: 0; pointer-events: none; border: 2px solid rgba(246,194,103,.36); border-radius: 11px; box-shadow: inset 0 0 30px rgba(20,20,16,.24); }
+.zelda-scene { background-color: #2e7f38; background-image: radial-gradient(circle at 15% 20%, rgba(115,183,67,.28) 0 10%, transparent 11%), repeating-linear-gradient(0deg, rgba(15,69,35,.12) 0 2px, transparent 2px 7px), repeating-linear-gradient(90deg, rgba(207,223,91,.09) 0 1px, transparent 1px 9px); }
+.scene-skywash { opacity: .7; background: radial-gradient(circle at 18% 24%, rgba(198,226,100,.32), transparent 25%), radial-gradient(circle at 82% 75%, rgba(8,53,35,.4), transparent 35%); }
+.gameplay-grid { inset: 52px 24px 62px; gap: 0; transform: perspective(1100px) rotateX(2deg) rotateZ(-.6deg) scale(1.035); transform-origin: center; border: 2px solid rgba(35,71,38,.6); box-shadow: 0 7px 0 rgba(25,50,29,.22); }
+.micro-tile { border: 1px solid rgba(31,76,37,.28); border-radius: 0; background-size: 22px 22px; }
+.micro-grain { opacity: .34; background-size: 12px 12px, 16px 16px; }
+.micro-water { background-color: #4b7090; background-image: linear-gradient(135deg, transparent 42%, rgba(201,235,220,.42) 43% 46%, transparent 47%), linear-gradient(45deg, transparent 46%, rgba(26,68,100,.42) 47% 50%, transparent 51%), repeating-linear-gradient(0deg, rgba(225,241,213,.08) 0 2px, transparent 2px 7px); background-size: 27px 21px, 31px 24px, auto; }
+.micro-shore { background-color: #c5ad65; background-image: url('/assets/gameplay/shining-fields/tileset/soil.png'); background-size: 18px 18px; }
+.micro-meadow { background-color: #65a83d; background-image: url('/assets/gameplay/shining-fields/tileset/grass.png'); background-size: 22px 22px; }
+.micro-town-ground, .micro-garden { background-color: #4f943d; background-image: radial-gradient(circle at 25% 30%, #a6c54b 0 1px, transparent 1.5px), radial-gradient(circle at 74% 68%, #2c713a 0 1px, transparent 1.5px); background-size: 13px 13px; }
+.micro-building { background-color: #a7774e; background-image: url('/assets/gameplay/shining-fields/tileset/wooden-floor-01.png'); background-size: 32px 32px; }
+.gameplay-tree { left: -36%; bottom: -26%; width: 172%; height: 172%; filter: drop-shadow(3px 4px 0 rgba(21,42,27,.42)); }
+.gameplay-rock { filter: drop-shadow(2px 3px 0 rgba(21,42,27,.32)); }
+.gameplay-building { left: -46%; bottom: -36%; width: 192%; height: 192%; filter: drop-shadow(3px 4px 0 rgba(57,31,25,.35)); }
+.zelda-player { filter: drop-shadow(3px 4px 0 rgba(24,25,22,.52)); }
+.scene-online-hud { position: absolute; z-index: 8; inset: 0; pointer-events: none; }
+.scene-top-frame, .scene-bottom-frame { position: absolute; left: 13px; right: 13px; display: flex; align-items: center; gap: 12px; border: 2px solid #3c261d; color: #f5dda5; background: linear-gradient(#714b2c, #39251e 54%, #291d1b); box-shadow: 0 2px 0 rgba(246,194,103,.35), inset 0 0 0 1px rgba(224,165,84,.48); font-family: 'DM Mono', monospace; }
+.scene-top-frame { top: 10px; min-height: 42px; padding: 5px 9px; }
+.scene-bottom-frame { bottom: 10px; min-height: 39px; padding: 4px 7px; }
+.scene-avatar-chip { display: flex; align-items: center; gap: 7px; min-width: 154px; }
+.scene-avatar { display: grid; place-items: center; width: 27px; height: 27px; border: 2px solid #d9a75b; color: #ffe4a4; background: #6e3d45; font-family: 'Playfair Display', serif; font-size: 16px; }
+.scene-avatar-chip strong { display: block; color: #f7dda4; font-size: 9px; letter-spacing: .08em; }
+.scene-avatar-chip small { display: block; margin-top: 2px; color: #c59d6c; font-size: 7px; white-space: nowrap; }
+.scene-bars { display: grid; gap: 4px; flex: 1; max-width: 270px; }
+.scene-bar { display: block; height: 7px; overflow: hidden; border: 1px solid #c89a58; background: #211719; box-shadow: inset 0 1px rgba(0,0,0,.5); }
+.scene-bar i { display: block; height: 100%; background: #b94335; box-shadow: inset 0 1px rgba(255,225,145,.35); }
+.scene-bar.mp i { background: #4a8fc1; }
+.scene-gold { margin-left: auto; color: #f4c95f; font-size: 10px; white-space: nowrap; }
+.scene-action-slots { display: flex; gap: 4px; }
+.scene-slot { display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid #c29052; color: #d5b375; background: #2a1e1d; font-size: 10px; }
+.scene-slot.active { color: #fff0b5; background: #79502e; box-shadow: inset 0 0 0 1px #f0c260; }
+.scene-chat { overflow: hidden; flex: 1; color: #c7a775; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.scene-compass { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid #c29052; color: #f0c260; font-size: 9px; }
+.scene-npc { position: absolute; z-index: 4; width: 30px; height: 48px; transform: translate(-50%, -72%); image-rendering: pixelated; filter: drop-shadow(2px 4px 0 rgba(23,37,23,.4)); }
+.npc-shadow { position: absolute; left: 3px; bottom: 0; width: 24px; height: 7px; border-radius: 50%; background: rgba(24,45,26,.42); }
+.npc-head { position: absolute; z-index: 2; top: 4px; left: 10px; width: 11px; height: 12px; border: 2px solid #32231f; background: #d18a60; }
+.npc-body { position: absolute; z-index: 1; top: 17px; left: 6px; width: 19px; height: 24px; border: 2px solid #32231f; background: #5d527b; clip-path: polygon(22% 0, 78% 0, 100% 100%, 0 100%); }
+.npc-1 .npc-head { background: #9b654d; }.npc-1 .npc-body { background: #bd6d3e; }.npc-2 .npc-head { background: #e1ae76; }.npc-2 .npc-body { background: #397b73; }.npc-3 .npc-head { background: #bd695f; }.npc-3 .npc-body { background: #9a9a49; }
+@media (max-width: 760px) {
+  .game-frame { min-height: 570px; border-width: 5px; border-radius: 13px; }
+  .gameplay-grid { inset: 54px 12px 60px; transform: perspective(900px) rotateX(1.5deg) rotateZ(-.4deg) scale(1.015); }
+  .scene-top-frame, .scene-bottom-frame { left: 7px; right: 7px; gap: 6px; }
+  .scene-avatar-chip { min-width: 0; }.scene-avatar-chip small, .scene-gold { display: none; }.scene-bars { max-width: none; }
+  .scene-bottom-frame { min-height: 35px; }.scene-slot { width: 20px; height: 20px; }.scene-chat { font-size: 7px; }.scene-npc { transform: translate(-50%, -72%) scale(.82); }
+}
