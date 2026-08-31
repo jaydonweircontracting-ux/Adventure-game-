@@ -129,7 +129,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
-          <span className="map-area-label">{chunkRegion(chunk)} region · {chunkTerrain(chunk)}</span>
+          <span className="map-area-label">{chunkRegion(chunk)} region · {mapTileFor(chunk).terrain}</span>
           <div className="map-zoom-controls" aria-label="Map zoom controls">
             <button className="map-zoom-button" onClick={() => setZoom((value) => Math.max(1, value - 1))} disabled={zoom === 1} aria-label="Zoom out" data-testid="button-map-zoom-out"><Minus size={15} /></button>
             <span className="map-zoom-level">×{zoom}</span>
