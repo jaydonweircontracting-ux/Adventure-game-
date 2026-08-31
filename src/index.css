@@ -411,7 +411,7 @@
   to { background-position-x: -128px; }
 }
 .horse.is-mounted { filter: drop-shadow(3px 4px 0 rgba(39, 47, 35, .28)); }
-.player.is-mounted[data-facing='down'] .player-sprite { clip-path: inset(15px 0 0 0); }
+.player.is-mounted[data-facing='down'] .player-sprite { clip-path: inset(20px 0 0 0); }
 @keyframes player-run {
   from { background-position-x: 0; }
   to { background-position-x: -192px; }
