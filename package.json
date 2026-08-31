@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "ws": "^8.18.0",
-    "@tanstack/react-query": "^5.66.8"
+    "@tanstack/react-query": "^5.66.8",
+    "wouter": "^3.7.1"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
