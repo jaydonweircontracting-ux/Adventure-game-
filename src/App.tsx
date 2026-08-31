@@ -131,6 +131,8 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
   const chunkRef = useRef(chunk);
+  const announcedRegionRef = useRef<string | null>(null);
+  const areaFlashIdRef = useRef(0);
 
   useEffect(() => {
     ['/assets/gameplay/shining-fields/characters/player/idle.png', '/assets/gameplay/shining-fields/characters/player/run.png'].forEach((src) => {
@@ -140,6 +142,15 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   }, []);
   useEffect(() => { positionRef.current = position; }, [position]);
   useEffect(() => { chunkRef.current = chunk; }, [chunk]);
+
+  useEffect(() => {
+    const region = chunkRegion(chunk);
+    if (announcedRegionRef.current === region) return;
+
+    announcedRegionRef.current = region;
+    areaFlashIdRef.current += 1;
+    setAreaFlash({ id: String(areaFlashIdRef.current), label: region });
+  }, [chunk]);
 
   useEffect(() => {
     if (!areaFlash) return;
@@ -199,14 +210,9 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
         positionRef.current = next;
         setPosition(next);
         if (travelLabels.length > 0) {
-          const previousRegion = chunkRegion(chunkRef.current);
-          const nextRegion = chunkRegion(nextChunk);
           chunkRef.current = nextChunk;
           setChunk(nextChunk);
           onChunkChange(nextChunk);
-          if (nextRegion !== previousRegion) {
-            setAreaFlash({ id: String(nextChunk.x) + ':' + String(nextChunk.y), label: nextRegion });
-          }
           setLogs((currentLogs) => [{
             text: `You travel ${travelLabels.join(' and ')} into ${chunkRegion(nextChunk)} · chunk ${nextChunk.x}, ${nextChunk.y}.`,
             color: 'blue',
