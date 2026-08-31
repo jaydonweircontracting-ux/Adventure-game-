@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Map, Volume2, VolumeX, X } from 'lucide-react';
+import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Map, Minus, Plus, Volume2, VolumeX, X } from 'lucide-react';
+import { type CSSProperties } from 'react';
 import { type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -18,6 +19,28 @@ const directionKeys: Record<string, Direction> = {
 const delta: Record<Direction, Point> = {
   up: { x: 0, y: -2.4 }, down: { x: 0, y: 2.4 }, left: { x: -2.4, y: 0 }, right: { x: 2.4, y: 0 },
 };
+const terrainTypes = ['meadow', 'woodland', 'rock', 'shore', 'autumn'] as const;
+type Terrain = (typeof terrainTypes)[number];
+const fieldPalettes: Record<Terrain, { field: string; path: string; glow: string }> = {
+  meadow: { field: '#77a45b', path: '#d9b979', glow: 'rgba(255, 227, 157, .22)' },
+  woodland: { field: '#658e58', path: '#c7a66b', glow: 'rgba(180, 214, 141, .18)' },
+  rock: { field: '#87927a', path: '#c9b27d', glow: 'rgba(238, 228, 186, .2)' },
+  shore: { field: '#6f9b88', path: '#dfc58d', glow: 'rgba(218, 239, 194, .2)' },
+  autumn: { field: '#9b785d', path: '#d6ae70', glow: 'rgba(255, 198, 123, .2)' },
+};
+
+function chunkTerrain(chunk: Point): Terrain {
+  const seed = Math.abs((chunk.x * 73856093) ^ (chunk.y * 19349663));
+  return terrainTypes[seed % terrainTypes.length];
+}
+
+function chunkRegion(chunk: Point) {
+  if (chunk.x >= 3 && chunk.x <= 5 && chunk.y >= 6 && chunk.y <= 8) return 'Mosslight';
+  if (chunk.x < 3) return 'Amberfen';
+  if (chunk.x > 5) return 'Stonewake';
+  if (chunk.y < 6) return 'Highmere';
+  return 'Redwater';
+}
 
 const initialLogs = [
   { text: 'You arrive at the Mosslight Crossing.', color: '' },
@@ -26,6 +49,20 @@ const initialLogs = [
 ];
 
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
+  const [zoom, setZoom] = useState(2);
+  const radius = zoom + 0;
+  const gridSize = radius * 2 + 1;
+  const mapScale = [1.12, 1, 0.86, 0.72][zoom - 1];
+  const tiles = Array.from({ length: gridSize * gridSize }, (_, index) => {
+    const row = Math.floor(index / gridSize);
+    const column = index % gridSize;
+    const tile = {
+      x: chunk.x + column - radius,
+      y: chunk.y + row - radius,
+    };
+    return { ...tile, terrain: chunkTerrain(tile), current: tile.x === chunk.x && tile.y === chunk.y };
+  });
+
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
@@ -33,16 +70,28 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
           <h2 id="map-title">Field atlas</h2>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
+        <div className="map-toolbar">
+          <span className="map-area-label">{chunkRegion(chunk)} region · {chunkTerrain(chunk)}</span>
+          <div className="map-zoom-controls" aria-label="Map zoom controls">
+            <button className="map-zoom-button" onClick={() => setZoom((value) => Math.max(1, value - 1))} disabled={zoom === 1} aria-label="Zoom out" data-testid="button-map-zoom-out"><Minus size={15} /></button>
+            <span className="map-zoom-level">×{zoom}</span>
+            <button className="map-zoom-button" onClick={() => setZoom((value) => Math.min(4, value + 1))} disabled={zoom === 4} aria-label="Zoom in" data-testid="button-map-zoom-in"><Plus size={15} /></button>
+          </div>
+        </div>
         <div className="big-map" data-testid="map-world-preview">
-          <span className="map-region region-one">Amberfen</span>
-          <span className="map-region region-two">Stonewake</span>
-          <span className="map-region region-three">Mosslight</span>
-          <span className="map-player" title="Your position" />
+          <div className="map-grid" style={{ gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`, transform: `scale(${mapScale})` }}>
+            {tiles.map((tile) => (
+              <div className={`map-tile map-terrain-${tile.terrain} ${tile.current ? 'is-current' : ''}`} key={`${tile.x}-${tile.y}`} title={`Chunk ${tile.x}, ${tile.y} · ${chunkRegion(tile)}`}>
+                {tile.current && <span className="map-tile-player" aria-label="Your current position" />}
+                {tile.current && <span className="map-tile-label">{tile.x}, {tile.y}</span>}
+              </div>
+            ))}
+          </div>
         </div>
         <div className="map-legend">
           <span className="legend-item"><span className="legend-dot" /> You are here</span>
           <span className="legend-item"><span className="legend-dot gold" /> Waypoint</span>
-          <span className="legend-item">Chunk {chunk.x}, {chunk.y}</span>
+          <span className="legend-item">Chunk {chunk.x}, {chunk.y} · {chunkRegion(chunk)}</span>
         </div>
       </div>
     </div>
@@ -81,7 +130,6 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
   const chunkRef = useRef(chunk);
-  const lastTravelRef = useRef('');
 
   useEffect(() => {
     ['/assets/gameplay/shining-fields/characters/player/idle.png', '/assets/gameplay/shining-fields/characters/player/run.png'].forEach((src) => {
@@ -136,20 +184,21 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
         const current = positionRef.current;
         const next = { x: current.x + movement.x, y: current.y + movement.y };
         const nextChunk = { ...chunkRef.current };
-        let travelLabel = '';
-        if (next.x < 10) { next.x = 88; nextChunk.x -= 1; travelLabel = 'west'; }
-        if (next.x > 90) { next.x = 12; nextChunk.x += 1; travelLabel = 'east'; }
-        if (next.y < 12) { next.y = 86; nextChunk.y -= 1; travelLabel = 'north'; }
-        if (next.y > 88) { next.y = 14; nextChunk.y += 1; travelLabel = 'south'; }
+        const travelLabels: string[] = [];
+        if (next.x < 10) { next.x = 88; nextChunk.x -= 1; travelLabels.push('west'); }
+        if (next.x > 90) { next.x = 12; nextChunk.x += 1; travelLabels.push('east'); }
+        if (next.y < 12) { next.y = 86; nextChunk.y -= 1; travelLabels.push('north'); }
+        if (next.y > 88) { next.y = 14; nextChunk.y += 1; travelLabels.push('south'); }
         positionRef.current = next;
         setPosition(next);
-        const chunkKey = nextChunk.x + ',' + nextChunk.y;
-        if (travelLabel && lastTravelRef.current !== chunkKey) {
-          lastTravelRef.current = chunkKey;
+        if (travelLabels.length > 0) {
           chunkRef.current = nextChunk;
           setChunk(nextChunk);
           onChunkChange(nextChunk);
-          setLogs((currentLogs) => [{ text: 'You travel ' + travelLabel + ' into a new field chunk.', color: 'blue' }, ...currentLogs].slice(0, 3));
+          setLogs((currentLogs) => [{
+            text: `You travel ${travelLabels.join(' and ')} into ${chunkRegion(nextChunk)} · chunk ${nextChunk.x}, ${nextChunk.y}.`,
+            color: 'blue',
+          }, ...currentLogs].slice(0, 3));
         }
       }
       animationFrame = window.requestAnimationFrame(animate);
@@ -184,7 +233,11 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   return (
     <div className="field-column">
       <div className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field">
-        <div className="pixel-field">
+        <div className="pixel-field" data-terrain={chunkTerrain(chunk)} style={{
+          '--field-color': fieldPalettes[chunkTerrain(chunk)].field,
+          '--path-color': fieldPalettes[chunkTerrain(chunk)].path,
+          '--field-glow': fieldPalettes[chunkTerrain(chunk)].glow,
+        } as CSSProperties}>
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
            <div className="field-path path-main" aria-hidden="true" />
            <div className="field-path path-crossing" aria-hidden="true" />
