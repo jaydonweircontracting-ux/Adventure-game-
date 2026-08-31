@@ -244,11 +244,11 @@
 
 .game-layout {
   width: 100%;
-  min-height: calc(100dvh - 72px);
+  min-height: 100dvh;
   margin: 0 auto;
-  padding: clamp(14px, 2.2vw, 28px) clamp(14px, 3.6vw, 56px) 24px;
+  padding: 0;
 }
-.field-column { min-width: 0; min-height: calc(100dvh - 72px - 52px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.field-column { min-width: 0; min-height: 100dvh; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
 .field-header {
   display: flex;
   align-items: end;
@@ -394,18 +394,24 @@
   min-width: 185px;
   padding: 11px 13px;
   color: #f8efd8;
+  font: inherit;
   border: 1px solid rgba(232, 211, 161, .65);
   background: rgba(29, 67, 49, .91);
   box-shadow: 3px 3px 0 rgba(28, 55, 42, .26);
 }
 .hud-card.right { min-width: 136px; text-align: right; }
+.hud-button {
+  pointer-events: auto;
+  cursor: pointer;
+  appearance: none;
+  transition: transform .16s ease, background-color .16s ease;
+}
+.hud-button:hover { transform: translateY(-2px); background: rgba(65, 110, 75, .98); }
 .hud-label { display: flex; justify-content: space-between; color: #cbd8bb; font-family: var(--app-font-mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
 .hud-name { margin: 4px 0 9px; color: #fff5dd; font-size: 14px; font-weight: 600; }
 .bar { height: 7px; overflow: hidden; border: 1px solid rgba(251, 240, 205, .36); background: rgba(19, 43, 34, .82); }
-.bar + .bar { margin-top: 6px; }
 .bar-fill { height: 100%; transition: width .2s ease; }
 .bar-fill.health { background: #db785e; }
-.bar-fill.stamina { background: var(--sun); }
 .hud-coins { color: var(--sun); font-family: var(--app-font-mono); font-size: 12px; }
 .hud-time { margin-top: 6px; color: #cbd8bb; font-family: var(--app-font-mono); font-size: 9px; }
 
@@ -563,6 +569,29 @@
 .map-sheet-heading h2 { margin: 0; font-size: 16px; letter-spacing: .04em; }
 .map-close { display: grid; place-items: center; width: 30px; height: 30px; color: var(--ink); background: transparent; border: 1px solid transparent; }
 .map-close:hover { border-color: var(--line); background: rgba(255, 249, 235, .7); }
+.inventory-body { padding: 17px; }
+.inventory-count {
+  color: var(--ink-soft);
+  font-family: var(--app-font-mono);
+  font-size: 9px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.inventory-empty {
+  display: grid;
+  place-items: center;
+  gap: 9px;
+  min-height: 210px;
+  margin-top: 14px;
+  padding: 28px;
+  color: var(--ink-soft);
+  border: 1px dashed var(--line);
+  background: rgba(251, 246, 233, .58);
+  text-align: center;
+}
+.inventory-empty svg { color: var(--clay); }
+.inventory-empty strong { color: var(--ink); font-size: 14px; }
+.inventory-empty span { max-width: 260px; font-size: 11px; line-height: 1.5; }
 .big-map { position: relative; height: 300px; margin: 17px; overflow: hidden; border: 1px solid #355d46; background: #73a25c; }
 .big-map::before { content: ''; position: absolute; inset: -8%; background: linear-gradient(150deg, transparent 0 32%, #e1c183 32.3% 37%, transparent 37.3% 59%, #e1c183 59.3% 64%, transparent 64.3%); }
 .map-region { position: absolute; color: rgba(31, 77, 51, .7); font-family: var(--app-font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
@@ -574,12 +603,8 @@
 .legend-dot.gold { background: var(--sun); }
 
 @media (max-width: 700px) {
-  .topbar { min-height: 61px; padding: 10px 15px; }
-  .status-pill { display: none; }
-  .game-layout { min-height: calc(100dvh - 61px); padding: 10px 10px 14px; }
-  .field-column { min-height: calc(100dvh - 61px - 36px); }
-  .field-header { align-items: flex-start; }
-  .field-coordinates { margin-top: 4px; }
+  .game-layout { min-height: 100dvh; padding: 0; }
+  .field-column { min-height: 100dvh; }
   .game-frame { min-height: 0; }
   .world-hud { inset: 15px 16px auto; }
   .hud-card { min-width: 145px; padding: 8px 9px; }
