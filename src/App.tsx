@@ -301,7 +301,7 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
         position,
         area: {
           ...namedDoorway.area,
-          exteriorPosition: { x: position.x, y: Math.min(94, position.y + 10) },
+          exteriorPosition: { x: position.x, y: Math.min(94, position.y + 4) },
         },
       };
     }
@@ -313,7 +313,7 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
         name: landmark.name + ' House ' + (index + 1),
         description: 'A simple brown room waiting to be furnished.',
         roomType: 'building' as const,
-        exteriorPosition: { x: position.x, y: Math.min(94, position.y + 10) },
+        exteriorPosition: { x: position.x, y: Math.min(94, position.y + 4) },
       },
     };
   });
@@ -704,7 +704,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
            doorwayExitCooldownRef.current = interiorDoorwayIdRef.current;
            interiorDoorwayIdRef.current = null;
            interiorRef.current = null; setInterior(null);
-           interiorPositionRef.current = { x: 50, y: 84 }; setInteriorPosition({ x: 50, y: 84 });
+           interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
            positionRef.current = exitPosition; setPosition(exitPosition);
            setLogs((currentLogs) => [{ text: 'You step back outside into Mosslight Crossing.', color: 'blue' }, ...currentLogs].slice(0, 3));
          } else { interiorPositionRef.current = next; setInteriorPosition(next); }
@@ -733,7 +733,7 @@ if (active) {
         if (nearbyDoor && nearbyDoor.id !== doorwayExitCooldownRef.current && canEnterDoorway(current, attempted, nearbyDoor, direction)) {
           interiorDoorwayIdRef.current = nearbyDoor.id;
           interiorRef.current = nearbyDoor.area; setInterior(nearbyDoor.area);
-          interiorPositionRef.current = { x: 50, y: 84 }; setInteriorPosition({ x: 50, y: 84 });
+          interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
           setMoving(false);
           setLogs((currentLogs) => [{ text: 'You enter the ' + nearbyDoor.area.name + '.', color: 'blue' }, ...currentLogs].slice(0, 3));
           animationFrame = window.requestAnimationFrame(animate); return;
