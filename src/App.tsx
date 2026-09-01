@@ -257,6 +257,30 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
   return landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk)).some((rect) => pointInRect(position, rect, 2.5)) : false;
 }
 
+function wrapFieldPosition(position: Point, chunk: Point) {
+  const nextPosition = { ...position };
+  const nextChunk = { ...chunk };
+  const travelLabels: string[] = [];
+  if (nextPosition.x < 4) { nextPosition.x = 94; nextChunk.x -= 1; travelLabels.push('west'); }
+  if (nextPosition.x > 96) { nextPosition.x = 6; nextChunk.x += 1; travelLabels.push('east'); }
+  if (nextPosition.y < 4) { nextPosition.y = 94; nextChunk.y -= 1; travelLabels.push('north'); }
+  if (nextPosition.y > 96) { nextPosition.y = 6; nextChunk.y += 1; travelLabels.push('south'); }
+  return { position: nextPosition, chunk: nextChunk, travelLabels };
+}
+
+function resolveFieldMovement(current: Point, movement: Point, chunk: Point) {
+  const candidates = [
+    { x: current.x + movement.x, y: current.y + movement.y },
+    { x: current.x + movement.x, y: current.y },
+    { x: current.x, y: current.y + movement.y },
+  ];
+  for (const candidate of candidates) {
+    const wrapped = wrapFieldPosition(candidate, chunk);
+    if (!isFieldPositionBlocked(wrapped.position, wrapped.chunk)) return wrapped;
+  }
+  return null;
+}
+
 type InteriorArea = { id: string; name: string; description: string; roomType: 'guild' | 'inn' | 'chapel' | 'building'; exteriorPosition: Point };
 type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number };
 const startingDoorways: Doorway[] = [
@@ -290,6 +314,13 @@ function doorwayNear(position: Point, chunk: Point) {
   return buildingDoorwaysFor(chunk).find((doorway) => Math.hypot(position.x - doorway.position.x, position.y - doorway.position.y) <= 4.2) || null;
 }
 
+function canEnterDoorway(currentPosition: Point, nextPosition: Point, doorway: Doorway, direction: Direction) {
+  return direction === 'up'
+    && currentPosition.y > doorway.position.y
+    && nextPosition.y <= doorway.position.y + 4.2
+    && Math.abs(nextPosition.x - doorway.position.x) <= 4.2;
+}
+
 type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
 type GoatState = { id: number; position: Point; facing: Direction; hp: number; maxHp: number; disposition: GoatDisposition; attackCooldown: number };
 const GOAT_STEP = 2.4;
@@ -303,7 +334,8 @@ const startingGoatPositions: Point[] = [
 function goatsForChunk(chunk: Point): GoatState[] {
   if (mapTileFor(chunk).terrain === 'ocean') return [];
   const positions = isStartingArea(chunk) ? startingGoatPositions : Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 16 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % 68), y: 17 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % 66) }));
-  return positions.map((position, index) => ({ id: index, position, facing: index % 2 ? 'left' : 'right', hp: 18, maxHp: 18, disposition: 'calm', attackCooldown: 0 }));
+  const safePositions = positions.filter((position) => !isFieldPositionBlocked(position, chunk));
+  return safePositions.map((position, index) => ({ id: index, position, facing: index % 2 ? 'left' : 'right', hp: 18, maxHp: 18, disposition: 'calm', attackCooldown: 0 }));
 }
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
 function moveGoatIndependently(goat: GoatState, index: number, worldStep: number, playerPosition: Point, chunk: Point, goats: GoatState[]) {
@@ -367,6 +399,12 @@ const startingTownNpcs: TownNpc[] = [
 ];
 
 const atlasBounds = { minX: -3, maxX: 11, minY: 1, maxY: 13 };
+const CAMERA_DEAD_ZONE = 10;
+function cameraShiftAxis(coordinate: number) {
+  const offset = 50 - coordinate;
+  if (Math.abs(offset) <= CAMERA_DEAD_ZONE) return 0;
+  return Math.max(-4, Math.min(4, (offset - Math.sign(offset) * CAMERA_DEAD_ZONE) * 0.4));
+}
 
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
@@ -666,38 +704,34 @@ if (active) {
           y: (input.y / length) * speed * elapsed * 100 / frameHeight,
         };
         const current = positionRef.current;
-        const next = { x: current.x + movement.x, y: current.y + movement.y };
-        const nextChunk = { ...chunkRef.current };
-         const cooldownDoor = doorwayExitCooldownRef.current
-           ? buildingDoorwaysFor(nextChunk).find((doorway) => doorway.id === doorwayExitCooldownRef.current)
-           : null;
-         if (!cooldownDoor || Math.hypot(next.x - cooldownDoor.position.x, next.y - cooldownDoor.position.y) > 10) {
-           doorwayExitCooldownRef.current = null;
-         }
-         const nearbyDoor = doorwayNear(next, nextChunk);
-         if (nearbyDoor && nearbyDoor.id !== doorwayExitCooldownRef.current) {
-           interiorDoorwayIdRef.current = nearbyDoor.id;
-           interiorRef.current = nearbyDoor.area; setInterior(nearbyDoor.area);
-           interiorPositionRef.current = { x: 50, y: 84 }; setInteriorPosition({ x: 50, y: 84 });
-           setMoving(false);
-           setLogs((currentLogs) => [{ text: 'You enter the ' + nearbyDoor.area.name + '.', color: 'blue' }, ...currentLogs].slice(0, 3));
-           animationFrame = window.requestAnimationFrame(animate); return;
-         }
-        const travelLabels: string[] = [];
-        if (next.x < 4) { next.x = 94; nextChunk.x -= 1; travelLabels.push('west'); }
-        if (next.x > 96) { next.x = 6; nextChunk.x += 1; travelLabels.push('east'); }
-        if (next.y < 4) { next.y = 94; nextChunk.y -= 1; travelLabels.push('north'); }
-        if (next.y > 96) { next.y = 6; nextChunk.y += 1; travelLabels.push('south'); }
-        if (!isFieldPositionBlocked(next, nextChunk)) {
-          positionRef.current = next;
-          setPosition(next);
-          if (travelLabels.length > 0) {
-              brainRef.current?.visitChunk(nextChunk, chunkRegion(nextChunk), travelLabels.join(' and '));
-            chunkRef.current = nextChunk;
-            setChunk(nextChunk);
-            onChunkChange(nextChunk);
+        const currentChunk = chunkRef.current;
+        const attempted = { x: current.x + movement.x, y: current.y + movement.y };
+        const cooldownDoor = doorwayExitCooldownRef.current
+          ? buildingDoorwaysFor(currentChunk).find((doorway) => doorway.id === doorwayExitCooldownRef.current)
+          : null;
+        if (!cooldownDoor || Math.hypot(attempted.x - cooldownDoor.position.x, attempted.y - cooldownDoor.position.y) > 10) {
+          doorwayExitCooldownRef.current = null;
+        }
+        const nearbyDoor = doorwayNear(attempted, currentChunk);
+        if (nearbyDoor && nearbyDoor.id !== doorwayExitCooldownRef.current && canEnterDoorway(current, attempted, nearbyDoor, direction)) {
+          interiorDoorwayIdRef.current = nearbyDoor.id;
+          interiorRef.current = nearbyDoor.area; setInterior(nearbyDoor.area);
+          interiorPositionRef.current = { x: 50, y: 84 }; setInteriorPosition({ x: 50, y: 84 });
+          setMoving(false);
+          setLogs((currentLogs) => [{ text: 'You enter the ' + nearbyDoor.area.name + '.', color: 'blue' }, ...currentLogs].slice(0, 3));
+          animationFrame = window.requestAnimationFrame(animate); return;
+        }
+        const resolved = resolveFieldMovement(current, movement, currentChunk);
+        if (resolved) {
+          positionRef.current = resolved.position;
+          setPosition(resolved.position);
+          if (resolved.travelLabels.length > 0) {
+            brainRef.current?.visitChunk(resolved.chunk, chunkRegion(resolved.chunk), resolved.travelLabels.join(' and '));
+            chunkRef.current = resolved.chunk;
+            setChunk(resolved.chunk);
+            onChunkChange(resolved.chunk);
             setLogs((currentLogs) => [{
-              text: `You travel ${travelLabels.join(' and ')} into ${chunkRegion(nextChunk)} · chunk ${nextChunk.x}, ${nextChunk.y}.`,
+              text: `You travel ${resolved.travelLabels.join(' and ')} into ${chunkRegion(resolved.chunk)} · chunk ${resolved.chunk.x}, ${resolved.chunk.y}.`,
               color: 'blue',
             }, ...currentLogs].slice(0, 3));
           }
@@ -804,8 +838,8 @@ if (active) {
   const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
   const startingArea = isStartingArea(chunk);
   const cameraShift = {
-    x: Math.max(-5, Math.min(5, (50 - position.x) * 0.16)),
-    y: Math.max(-5, Math.min(5, (50 - position.y) * 0.16)),
+    x: cameraShiftAxis(position.x),
+    y: cameraShiftAxis(position.y),
   };
 
   return (
