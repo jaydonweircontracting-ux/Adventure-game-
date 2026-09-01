@@ -486,6 +486,8 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const playerHpRef = useRef(playerHp);
   const interiorRef = useRef(interior);
   const interiorPositionRef = useRef(interiorPosition);
+  const interiorDoorwayIdRef = useRef<string | null>(null);
+  const doorwayExitCooldownRef = useRef<string | null>(null);
   const goatWorldStepRef = useRef(0);
   const brainRef = useRef<RPGBrain | null>(null);
   if (brainRef.current === null) {
@@ -644,6 +646,8 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
          const next = { x: Math.min(90, Math.max(10, current.x + movement.x)), y: current.y + movement.y };
          if (next.y > 91) {
            const exitPosition = currentInterior.exteriorPosition;
+           doorwayExitCooldownRef.current = interiorDoorwayIdRef.current;
+           interiorDoorwayIdRef.current = null;
            interiorRef.current = null; setInterior(null);
            interiorPositionRef.current = { x: 50, y: 84 }; setInteriorPosition({ x: 50, y: 84 });
            positionRef.current = exitPosition; setPosition(exitPosition);
@@ -664,8 +668,15 @@ if (active) {
         const current = positionRef.current;
         const next = { x: current.x + movement.x, y: current.y + movement.y };
         const nextChunk = { ...chunkRef.current };
+         const cooldownDoor = doorwayExitCooldownRef.current
+           ? buildingDoorwaysFor(nextChunk).find((doorway) => doorway.id === doorwayExitCooldownRef.current)
+           : null;
+         if (!cooldownDoor || Math.hypot(next.x - cooldownDoor.position.x, next.y - cooldownDoor.position.y) > 10) {
+           doorwayExitCooldownRef.current = null;
+         }
          const nearbyDoor = doorwayNear(next, nextChunk);
-         if (nearbyDoor) {
+         if (nearbyDoor && nearbyDoor.id !== doorwayExitCooldownRef.current) {
+           interiorDoorwayIdRef.current = nearbyDoor.id;
            interiorRef.current = nearbyDoor.area; setInterior(nearbyDoor.area);
            interiorPositionRef.current = { x: 50, y: 84 }; setInteriorPosition({ x: 50, y: 84 });
            setMoving(false);
