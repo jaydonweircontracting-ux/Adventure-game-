@@ -598,10 +598,9 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
           ))}
           {showHorse && (
             <>
-              <div className={'horse ' + (mounted ? 'is-mounted' : '')} style={{ left: horseDisplayPosition.x + '%', top: horseDisplayPosition.y + '%' }} data-facing={mounted ? facing : horseFacing} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">
+              <div className={'horse ' + (mounted ? 'is-mounted ' : '') + (mounted && moving ? 'is-moving' : '')} style={{ left: horseDisplayPosition.x + '%', top: horseDisplayPosition.y + '%' }} data-facing={mounted ? facing : horseFacing} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">
                 {mounted && <>
                   <span className="rider-sprite" aria-hidden="true" />
-                  <span className="rider-head" aria-hidden="true" />
                 </>}
                 <span className="horse-sprite" />
               </div>
