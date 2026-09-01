@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Map, Minus, Plus, Volume2, VolumeX, X } from 'lucide-react';
+import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Map, Minus, Plus, Sword, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
 import { type PointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -236,6 +236,8 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
   const tile = mapTileFor(chunk);
   if (tile.waterFeature === 'sea' || (tile.waterFeature !== null && !tile.bridge)) return true;
 
+  if (doorwayNear(position, chunk)) return false;
+
   const treeBlocked = fieldTreesFor(chunk).some((tree) => {
     const center = { x: tree.x + 3.2 * tree.scale, y: tree.y + 2.5 * tree.scale };
     return Math.hypot(position.x - center.x, position.y - center.y) < 5.2 * tree.scale;
@@ -245,6 +247,49 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   return landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk)).some((rect) => pointInRect(position, rect, 2.5)) : false;
 }
+
+type InteriorArea = { id: string; name: string; description: string; roomType: 'guild' | 'inn' | 'chapel'; exteriorPosition: Point };
+type Doorway = { id: string; position: Point; area: InteriorArea };
+const startingDoorways: Doorway[] = [
+  { id: 'guild-door', position: { x: 30, y: 36 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'Maps, contracts, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 30, y: 40 } } },
+  { id: 'inn-door', position: { x: 70, y: 36 }, area: { id: 'moonwell-inn', name: 'Moonwell Inn', description: 'A warm common room where travelers trade rumors over stew.', roomType: 'inn', exteriorPosition: { x: 70, y: 40 } } },
+  { id: 'chapel-door', position: { x: 30, y: 72 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 30, y: 68 } } },
+];
+function doorwayNear(position: Point, chunk: Point) {
+  if (!isStartingArea(chunk)) return null;
+  return startingDoorways.find((doorway) => Math.hypot(position.x - doorway.position.x, position.y - doorway.position.y) <= 5.5) || null;
+}
+
+type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
+type GoatState = { id: number; position: Point; facing: Direction; hp: number; maxHp: number; disposition: GoatDisposition; attackCooldown: number };
+const GOAT_STEP = 4.8;
+const GOAT_ATTACK_RANGE = 9;
+const GOAT_ATTACK_DAMAGE = 3;
+const startingGoatPositions: Point[] = [
+  { x: 13, y: 18 }, { x: 29, y: 14 }, { x: 72, y: 14 }, { x: 87, y: 19 },
+  { x: 12, y: 43 }, { x: 88, y: 44 }, { x: 14, y: 82 }, { x: 31, y: 87 },
+  { x: 70, y: 86 }, { x: 87, y: 80 },
+];
+function goatsForChunk(chunk: Point): GoatState[] {
+  if (mapTileFor(chunk).terrain === 'ocean') return [];
+  const positions = isStartingArea(chunk) ? startingGoatPositions : Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 16 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % 68), y: 17 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % 66) }));
+  return positions.map((position, index) => ({ id: index, position, facing: index % 2 ? 'left' : 'right', hp: 18, maxHp: 18, disposition: 'calm', attackCooldown: 0 }));
+}
+function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
+function moveGoatIndependently(goat: GoatState, index: number, worldStep: number, playerPosition: Point, chunk: Point, goats: GoatState[]) {
+  if (goat.disposition === 'defeated') return goat;
+  const distance = goatDistance(goat, playerPosition);
+  let direction: Direction;
+  if (goat.disposition === 'aggressive' && distance > GOAT_ATTACK_RANGE) {
+    const horizontal = playerPosition.x - goat.position.x;
+    const vertical = playerPosition.y - goat.position.y;
+    direction = Math.abs(horizontal) >= Math.abs(vertical) ? (horizontal >= 0 ? 'right' : 'left') : (vertical >= 0 ? 'down' : 'up');
+  } else { direction = (['up', 'right', 'down', 'left'] as Direction[])[Math.abs((worldStep + index * 7) % 4)]; }
+  const nextPosition = { x: Math.min(88, Math.max(12, goat.position.x + (direction === 'right' ? GOAT_STEP : direction === 'left' ? -GOAT_STEP : 0))), y: Math.min(88, Math.max(12, goat.position.y + (direction === 'down' ? GOAT_STEP : direction === 'up' ? -GOAT_STEP : 0))) };
+  const occupied = goats.some((other) => other.id !== goat.id && other.disposition !== 'defeated' && Math.hypot(other.position.x - nextPosition.x, other.position.y - nextPosition.y) < 5);
+  return occupied || isFieldPositionBlocked(nextPosition, chunk) ? { ...goat, facing: direction } : { ...goat, position: nextPosition, facing: direction };
+}
+
 
 function mapTileClass(tile: MapTile & { current: boolean }) {
   return [
@@ -370,6 +415,18 @@ function InventorySheet({ onClose }: { onClose: () => void }) {
   );
 }
 
+function InteriorRoom({ area, position }: { area: InteriorArea; position: Point }) {
+  return (
+    <div className={'interior-scene interior-' + area.roomType} aria-label={area.name + ' interior'} data-testid={'interior-' + area.id}>
+      <div className="interior-header"><span className="interior-kicker">Mosslight Crossing</span><strong>{area.name}</strong><span>{area.description}</span></div>
+      <div className="interior-room" aria-hidden="true"><span className="interior-rug" /><span className="interior-table" /><span className="interior-counter" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></div>
+      <div className="interior-doorway" aria-label="Exit to Mosslight Crossing"><span>EXIT</span></div>
+      <div className="interior-player" style={{ left: position.x + '%', top: position.y + '%' }}><span className="player-sprite" /></div>
+      <div className="interior-exit-hint">Walk to the door to leave</div>
+    </div>
+  );
+}
+
 function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute }: { onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void }) {
   const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
   const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
@@ -382,6 +439,11 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const [logOpen, setLogOpen] = useState(false);
   const [logs, setLogs] = useState(initialLogs);
   const [time, setTime] = useState('08:43');
+  const [playerHp, setPlayerHp] = useState(84);
+  const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }));
+  const [attackFlash, setAttackFlash] = useState<string | null>(null);
+  const [interior, setInterior] = useState<InteriorArea | null>(null);
+  const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 84 });
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
   const chunkRef = useRef(chunk);
@@ -390,6 +452,11 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const horseIdleAnchorRef = useRef(initialHorseState.position);
   const gameFrameRef = useRef<HTMLDivElement>(null);
   const areaFlashIdRef = useRef(0);
+  const goatsRef = useRef(goats);
+  const playerHpRef = useRef(playerHp);
+  const interiorRef = useRef(interior);
+  const interiorPositionRef = useRef(interiorPosition);
+  const goatWorldStepRef = useRef(0);
   const brainRef = useRef<RPGBrain | null>(null);
   if (brainRef.current === null) {
     const brain = createAdventureBrain();
@@ -410,6 +477,41 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   useEffect(() => { chunkRef.current = chunk; }, [chunk]);
   useEffect(() => { mountedRef.current = mounted; }, [mounted]);
   useEffect(() => { horseRef.current = horse; }, [horse]);
+  useEffect(() => { goatsRef.current = goats; }, [goats]);
+  useEffect(() => { playerHpRef.current = playerHp; }, [playerHp]);
+  useEffect(() => { interiorRef.current = interior; }, [interior]);
+  useEffect(() => { interiorPositionRef.current = interiorPosition; }, [interiorPosition]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const currentGoats = goatsRef.current;
+      if (currentGoats.length === 0 || interiorRef.current) return;
+      goatWorldStepRef.current += 1;
+      const currentPlayer = positionRef.current;
+      const currentChunk = chunkRef.current;
+      let damageTaken = 0;
+      const nextGoats = currentGoats.map((goat, index) => {
+        if (goat.disposition !== 'aggressive' || goat.attackCooldown > 0) {
+          const moved = moveGoatIndependently(goat, index, goatWorldStepRef.current, currentPlayer, currentChunk, currentGoats);
+          return { ...moved, attackCooldown: Math.max(0, moved.attackCooldown - 1) };
+        }
+        if (goatDistance(goat, currentPlayer) <= GOAT_ATTACK_RANGE) {
+          damageTaken += GOAT_ATTACK_DAMAGE;
+          return { ...goat, attackCooldown: 2 };
+        }
+        return moveGoatIndependently(goat, index, goatWorldStepRef.current, currentPlayer, currentChunk, currentGoats);
+      });
+      goatsRef.current = nextGoats;
+      setGoats(nextGoats);
+      if (damageTaken > 0) {
+        const nextHp = Math.max(0, playerHpRef.current - damageTaken);
+        playerHpRef.current = nextHp;
+        setPlayerHp(nextHp);
+        setLogs((currentLogs) => [{ text: 'A hostile goat rams you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
+      }
+    }, 900);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (mounted) return;
@@ -453,6 +555,13 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   }, [chunk]);
 
   useEffect(() => {
+    const nextGoats = goatsForChunk(chunk);
+    goatsRef.current = nextGoats;
+    setGoats(nextGoats);
+    goatWorldStepRef.current = 0;
+  }, [chunk]);
+
+  useEffect(() => {
     if (!areaFlash) return;
     const timer = window.setTimeout(() => setAreaFlash(null), 1700);
     return () => window.clearTimeout(timer);
@@ -464,6 +573,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
       setMoving(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code === 'Space' || event.code === 'KeyF') { event.preventDefault(); attackGoat(); return; }
       const direction = directionKeys[event.code];
       if (!direction) return;
       event.preventDefault();
@@ -494,7 +604,24 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
       const active = length > 0;
       setMoving(active);
 
-      if (active) {
+      
+       const currentInterior = interiorRef.current;
+       if (active && currentInterior) {
+         const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
+         const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
+         const movement = { x: (input.x / length) * 150 * elapsed * 100 / frameWidth, y: (input.y / length) * 150 * elapsed * 100 / frameHeight };
+         const current = interiorPositionRef.current;
+         const next = { x: Math.min(90, Math.max(10, current.x + movement.x)), y: current.y + movement.y };
+         if (next.y > 91) {
+           const exitPosition = currentInterior.exteriorPosition;
+           interiorRef.current = null; setInterior(null);
+           interiorPositionRef.current = { x: 50, y: 84 }; setInteriorPosition({ x: 50, y: 84 });
+           positionRef.current = exitPosition; setPosition(exitPosition);
+           setLogs((currentLogs) => [{ text: 'You step back outside into Mosslight Crossing.', color: 'blue' }, ...currentLogs].slice(0, 3));
+         } else { interiorPositionRef.current = next; setInteriorPosition(next); }
+         animationFrame = window.requestAnimationFrame(animate); return;
+       }
+if (active) {
         const direction = input.x > 0 ? 'right' : input.x < 0 ? 'left' : input.y < 0 ? 'up' : 'down';
         setFacing(direction);
         const speed = mountedRef.current ? HORSE_SPEED : WALK_SPEED;
@@ -507,6 +634,14 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
         const current = positionRef.current;
         const next = { x: current.x + movement.x, y: current.y + movement.y };
         const nextChunk = { ...chunkRef.current };
+         const nearbyDoor = doorwayNear(next, nextChunk);
+         if (nearbyDoor) {
+           interiorRef.current = nearbyDoor.area; setInterior(nearbyDoor.area);
+           interiorPositionRef.current = { x: 50, y: 84 }; setInteriorPosition({ x: 50, y: 84 });
+           setMoving(false);
+           setLogs((currentLogs) => [{ text: 'You enter the ' + nearbyDoor.area.name + '.', color: 'blue' }, ...currentLogs].slice(0, 3));
+           animationFrame = window.requestAnimationFrame(animate); return;
+         }
         const travelLabels: string[] = [];
         if (next.x < 10) { next.x = 88; nextChunk.x -= 1; travelLabels.push('west'); }
         if (next.x > 90) { next.x = 12; nextChunk.x += 1; travelLabels.push('east'); }
@@ -545,7 +680,25 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
       window.removeEventListener('blur', clearInput);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [onChunkChange]);
+  }, [onChunkChange, interior]);
+
+
+
+  const attackGoat = () => {
+    if (interiorRef.current) return;
+    const currentPlayer = positionRef.current;
+    const target = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goatDistance(goat, currentPlayer) <= 14).sort((a, b) => (a.disposition === 'aggressive' ? 0 : 1) - (b.disposition === 'aggressive' ? 0 : 1) || goatDistance(a, currentPlayer) - goatDistance(b, currentPlayer))[0];
+    if (!target) { setAttackFlash('No goat is close enough to strike.'); window.setTimeout(() => setAttackFlash(null), 900); return; }
+    const nextHp = target.hp - 9;
+    const defeated = nextHp <= 0;
+    const nextGoats = goatsRef.current.map((goat) => goat.id === target.id ? { ...goat, hp: Math.max(0, nextHp), disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, attackCooldown: 0 } : goat);
+    goatsRef.current = nextGoats;
+    setGoats(nextGoats);
+    const message = defeated ? 'You defeat the goat.' : 'You strike a goat. It bleats angrily and charges!';
+    setAttackFlash(message);
+    setLogs((currentLogs) => [{ text: message, color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
+    window.setTimeout(() => setAttackFlash(null), 1100);
+  };
 
   const pressDirection = (direction: Direction) => {
     keysRef.current[direction] = true;
@@ -613,6 +766,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -629,6 +783,15 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
               <span className="starting-flower flower-southeast" />
             </div>
           )}
+          <div className="field-goats" aria-label="Goats in the field">
+            {goats.filter((goat) => goat.disposition !== 'defeated').map((goat) => (
+              <div className={'goat goat-' + goat.disposition} style={{ left: goat.position.x + '%', top: goat.position.y + '%' }} data-facing={goat.facing} data-disposition={goat.disposition} aria-label={goat.disposition === 'aggressive' ? 'Hostile goat' : 'Peaceful goat'} key={goat.id}>
+                <span className="goat-hp" style={{ width: (goat.hp / goat.maxHp) * 100 + '%' }} />
+                {goat.disposition === 'aggressive' && <span className="goat-aggro">!</span>}
+                <span className="goat-sprite" />
+              </div>
+            ))}
+          </div>
           <div className="field-trees" aria-hidden="true">
             {fieldTrees.map((tree) => (
               <span
@@ -686,6 +849,9 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
             <span className="player-sprite" />
           </div>}
         </div>
+        )}
+        {attackFlash && <div className="combat-flash" aria-live="polite">{attackFlash}</div>}
+        {!interior && doorwayNear(position, chunk) && <div className="door-prompt" aria-live="polite">Enter {doorwayNear(position, chunk)?.area.name}</div>}
         {areaFlash && (
           <div className="area-flash" key={areaFlash.id} aria-live="polite" data-testid="area-entry-flash">
             <span className="area-flash-kicker">Entering</span>
@@ -696,7 +862,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
           <div className="hud-card" data-testid="hud-player">
             <div className="hud-label"><span>Adventurer</span><span>08</span></div>
             <div className="hud-name">Rowan of the Vale</div>
-            <div className="bar" aria-label="Health 84 percent"><div className="bar-fill health" style={{ width: '84%' }} /></div>
+            <div className="bar" aria-label={'Health ' + playerHp + ' percent'}><div className="bar-fill health" style={{ width: playerHp + '%' }} /></div><span className="hud-health-value">{playerHp} HP</span>
             {mounted && <button className="horse-dismount-button" onClick={toggleMount} aria-label="Dismount horse" data-testid="button-dismount-horse">Dismount</button>}
           </div>
           <button className="hud-card right hud-button" onClick={onOpenInventory} aria-label="Open inventory" data-testid="button-open-inventory">
@@ -723,7 +889,8 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
            </section>
          )}
          <div className="field-actions">
-           <button className="icon-button field-log-toggle" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={16} /></button>
+           <button className="icon-button field-attack-button" onClick={attackGoat} aria-label="Strike nearest goat" title="Strike (Space)" data-testid="button-attack"><Sword size={16} /></button>
+            <button className="icon-button field-log-toggle" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={16} /></button>
            <button className="icon-button map-button" onClick={onOpenMap} aria-label="Open field atlas" title="Open field atlas" data-testid="button-open-map"><Map size={16} /></button>
             <button className="icon-button field-sound-button" onClick={onToggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'} aria-pressed={muted} data-testid="button-toggle-sound">{muted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
          </div>
