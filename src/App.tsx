@@ -345,6 +345,22 @@ function canEnterDoorway(currentPosition: Point, nextPosition: Point, doorway: D
     && Math.abs(nextPosition.x - doorway.position.x) <= 4.2;
 }
 
+type InteriorCollisionRect = FieldRect;
+
+// These rectangles are in the interior scene's 0-100 coordinate space. They include
+// a little visual padding so the player cannot overlap the furniture sprites.
+const interiorFurnitureCollision: InteriorCollisionRect[] = [
+  { left: 20, top: 29, right: 80, bottom: 40 }, // counter
+  { left: 17, top: 43, right: 32, bottom: 67 }, // left shelf
+  { left: 68, top: 43, right: 83, bottom: 67 }, // right shelf
+  { left: 38, top: 55, right: 63, bottom: 72 }, // table and legs
+];
+
+function isInteriorPositionBlocked(position: Point, area: InteriorArea) {
+  if (area.roomType === 'building') return false;
+  return interiorFurnitureCollision.some((rect) => pointInRect(position, rect));
+}
+
 type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
 type PlayerClass = 'Beginner' | 'Warrior' | 'Mage' | 'Rogue';
 type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number };
@@ -867,6 +883,15 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
          const movement = { x: (input.x / length) * 150 * elapsed * 100 / frameWidth, y: (input.y / length) * 150 * elapsed * 100 / frameHeight };
          const current = interiorPositionRef.current;
          const next = { x: Math.min(90, Math.max(10, current.x + movement.x)), y: current.y + movement.y };
+         const horizontalStep = { x: next.x, y: current.y };
+         const verticalStep = { x: current.x, y: next.y };
+         const resolvedInteriorPosition = isInteriorPositionBlocked(next, currentInterior)
+           ? !isInteriorPositionBlocked(horizontalStep, currentInterior)
+             ? horizontalStep
+             : !isInteriorPositionBlocked(verticalStep, currentInterior)
+               ? verticalStep
+               : current
+           : next;
          if (next.y > 91) {
            const exitPosition = currentInterior.exteriorPosition;
            interiorDoorwayIdRef.current = null;
@@ -874,7 +899,10 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
            interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
            positionRef.current = exitPosition; setPosition(exitPosition);
            setLogs((currentLogs) => [{ text: 'You step back outside into Mosslight Crossing.', color: 'blue' }, ...currentLogs].slice(0, 3));
-         } else { interiorPositionRef.current = next; setInteriorPosition(next); }
+         } else {
+           interiorPositionRef.current = resolvedInteriorPosition;
+           setInteriorPosition(resolvedInteriorPosition);
+         }
          animationFrame = window.requestAnimationFrame(animate); return;
        }
 if (active) {
