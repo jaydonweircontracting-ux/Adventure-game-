@@ -253,20 +253,7 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
   if (treeBlocked) return true;
 
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
-  if (!landmark) return false;
-
-  const houseRects = fieldHouseRects(landmark.kind, isStartingArea(chunk));
-  const doorways = buildingDoorwaysFor(chunk);
-  return houseRects.some((rect, index) => {
-    if (!pointInRect(position, rect, 2.5)) return false;
-
-    const doorway = doorways[index];
-    const inDoorwayOpening = doorway
-      && Math.abs(position.x - doorway.position.x) <= 4.2
-      && position.y >= doorway.position.y - 4.2
-      && position.y <= rect.bottom + 4.2;
-    return !inDoorwayOpening;
-  });
+  return landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk)).some((rect) => pointInRect(position, rect, 2.5)) : false;
 }
 
 function wrapFieldPosition(position: Point, chunk: Point) {
@@ -301,9 +288,6 @@ const startingDoorways: Doorway[] = [
   { id: 'chapel-door', buildingIndex: 2, position: { x: 30, y: 72 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 30, y: 60 } } },
 ];
 
-const STARTING_DOORWAY_ID = 'tutorial-house-door';
-const startingHouse = startingDoorways.find((doorway) => doorway.id === STARTING_DOORWAY_ID)?.area || startingDoorways[0].area;
-
 function buildingDoorwaysFor(chunk: Point): Doorway[] {
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   if (!landmark) return [];
@@ -316,7 +300,7 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
         position,
         area: {
           ...namedDoorway.area,
-          exteriorPosition: { x: position.x, y: Math.min(94, position.y + 4) },
+          exteriorPosition: doorwayExteriorPosition(rect, position),
         },
       };
     }
@@ -333,6 +317,14 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
     };
   });
 }
+
+function doorwayExteriorPosition(rect: FieldRect, doorway: Point): Point {
+  // Spawn beyond the house's collision padding so the first frame outside is safe.
+  return { x: doorway.x, y: Math.min(94, Math.max(doorway.y + 4, rect.bottom + 4.5)) };
+}
+
+const STARTING_DOORWAY_ID = 'tutorial-house-door';
+const startingHouse = buildingDoorwaysFor({ x: 4, y: 7 }).find((doorway) => doorway.id === STARTING_DOORWAY_ID)?.area || startingDoorways[0].area;
 
 function fieldDoorPosition(rect: FieldRect): Point {
   // Match .field-house::after: left 43%, width 16%, bottom 0, height 44%.
