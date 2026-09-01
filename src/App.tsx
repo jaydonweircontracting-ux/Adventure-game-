@@ -285,8 +285,8 @@ function resolveFieldMovement(current: Point, movement: Point, chunk: Point) {
 type InteriorArea = { id: string; name: string; description: string; roomType: 'guild' | 'inn' | 'chapel' | 'building'; exteriorPosition: Point };
 type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number };
 const startingDoorways: Doorway[] = [
-  { id: 'guild-door', buildingIndex: 0, position: { x: 30, y: 36 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'Maps, contracts, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 30, y: 48 } } },
-  { id: 'inn-door', buildingIndex: 1, position: { x: 70, y: 36 }, area: { id: 'moonwell-inn', name: 'Moonwell Inn', description: 'A warm common room where travelers trade rumors over stew.', roomType: 'inn', exteriorPosition: { x: 70, y: 48 } } },
+  { id: 'tutorial-house-door', buildingIndex: 0, position: { x: 30, y: 36 }, area: { id: 'tutorial-house', name: 'Tutorial House', description: 'A small safe house on the tutorial island. The morning light reaches your bed.', roomType: 'inn', exteriorPosition: { x: 30, y: 48 } } },
+  { id: 'crafting-guild-door', buildingIndex: 1, position: { x: 70, y: 36 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'A workbench, maps, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 70, y: 48 } } },
   { id: 'chapel-door', buildingIndex: 2, position: { x: 30, y: 72 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 30, y: 60 } } },
 ];
 
@@ -340,7 +340,8 @@ function canEnterDoorway(currentPosition: Point, nextPosition: Point, doorway: D
 }
 
 type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
-type GameInventory = { coins: number; goatHorns: number; fabric: number };
+type PlayerClass = 'Beginner' | 'Warrior' | 'Mage' | 'Rogue';
+type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number };
 type GoatLoot = Partial<GameInventory>;
 type GoatState = {
   id: number;
@@ -351,18 +352,28 @@ type GoatState = {
   maxHp: number;
   disposition: GoatDisposition;
   attackCooldown: number;
-  defeatedAt: number | null;
+  respawnTicks: number;
   wanderSeed: number;
-  wanderPeriod: number;
   moving: boolean;
 };
-const GOAT_STEP = 1.35;
+const GOAT_STEP = 0.72;
+const GOAT_TICK_MS = 350;
+const GOAT_RESPAWN_TICKS = Math.ceil(12000 / GOAT_TICK_MS);
 const GOAT_ATTACK_RANGE = 9;
 const GOAT_ATTACK_DAMAGE = 3;
-const GOAT_RESPAWN_MS = 12000;
 const GOAT_XP_REWARD = 25;
 const PLAYER_MAX_HP = 100;
-const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0 };
+const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0 };
+const classDescriptions: Record<Exclude<PlayerClass, 'Beginner'>, string> = {
+  Warrior: 'More health and a heavy starting style.',
+  Mage: 'A spell-focused path for curious explorers.',
+  Rogue: 'A fast, precise path for clever adventurers.',
+};
+type CraftItem = 'dagger' | 'cloths';
+const craftRecipes: Record<CraftItem, { name: string; description: string; cost: GoatLoot; reward: GoatLoot }> = {
+  dagger: { name: 'Goat-horn dagger', description: 'A sharp beginner weapon.', cost: { goatHorns: 2 }, reward: { daggers: 1 } },
+  cloths: { name: 'Field cloths', description: 'Simple protective travel clothes.', cost: { fabric: 2 }, reward: { cloths: 1 } },
+};
 const startingGoatPositions: Point[] = [
   { x: 13, y: 18 }, { x: 29, y: 14 }, { x: 72, y: 14 }, { x: 87, y: 19 },
   { x: 12, y: 43 }, { x: 88, y: 44 }, { x: 14, y: 82 }, { x: 31, y: 87 },
@@ -383,9 +394,8 @@ function goatsForChunk(chunk: Point): GoatState[] {
       maxHp: 18,
       disposition: 'calm',
       attackCooldown: 0,
-      defeatedAt: null,
+      respawnTicks: 0,
       wanderSeed,
-      wanderPeriod: 2 + (wanderSeed % 3),
       moving: false,
     };
   });
@@ -393,7 +403,6 @@ function goatsForChunk(chunk: Point): GoatState[] {
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
 function moveGoatIndependently(goat: GoatState, worldStep: number, playerPosition: Point, chunk: Point, goats: GoatState[]) {
   if (goat.disposition === 'defeated') return { ...goat, moving: false };
-  if ((worldStep + goat.wanderSeed) % goat.wanderPeriod !== 0) return { ...goat, moving: false };
   const distance = goatDistance(goat, playerPosition);
   let direction: Direction;
   if (goat.disposition === 'aggressive' && distance > GOAT_ATTACK_RANGE) {
@@ -402,14 +411,21 @@ function moveGoatIndependently(goat: GoatState, worldStep: number, playerPositio
     direction = Math.abs(horizontal) >= Math.abs(vertical) ? (horizontal >= 0 ? 'right' : 'left') : (vertical >= 0 ? 'down' : 'up');
   } else {
     const directions: Direction[] = ['up', 'right', 'down', 'left'];
-    const directionIndex = Math.abs((worldStep * 13 + goat.wanderSeed * 7 + goat.id * 3) % directions.length);
+    const directionIndex = Math.abs((Math.floor(worldStep / 4) * 13 + goat.wanderSeed * 7 + goat.id * 3) % directions.length);
     direction = directions[directionIndex];
   }
-  const nextPosition = { x: Math.min(88, Math.max(12, goat.position.x + (direction === 'right' ? GOAT_STEP : direction === 'left' ? -GOAT_STEP : 0))), y: Math.min(88, Math.max(12, goat.position.y + (direction === 'down' ? GOAT_STEP : direction === 'up' ? -GOAT_STEP : 0))) };
-  const occupied = goats.some((other) => other.id !== goat.id && other.disposition !== 'defeated' && Math.hypot(other.position.x - nextPosition.x, other.position.y - nextPosition.y) < 5);
-  return occupied || isFieldPositionBlocked(nextPosition, chunk)
-    ? { ...goat, facing: direction, moving: false }
-    : { ...goat, position: nextPosition, facing: direction, moving: true };
+  const directions: Direction[] = ([direction, 'up', 'right', 'down', 'left'] as Direction[]).filter((candidate, index, all) => all.indexOf(candidate) === index);
+  for (const candidateDirection of directions) {
+    const nextPosition = {
+      x: Math.min(90, Math.max(10, goat.position.x + (candidateDirection === 'right' ? GOAT_STEP : candidateDirection === 'left' ? -GOAT_STEP : 0))),
+      y: Math.min(90, Math.max(10, goat.position.y + (candidateDirection === 'down' ? GOAT_STEP : candidateDirection === 'up' ? -GOAT_STEP : 0))),
+    };
+    const occupied = goats.some((other) => other.id !== goat.id && other.disposition !== 'defeated' && Math.hypot(other.position.x - nextPosition.x, other.position.y - nextPosition.y) < 4.2);
+    if (!occupied && !isFieldPositionBlocked(nextPosition, chunk)) {
+      return { ...goat, position: nextPosition, facing: candidateDirection, moving: true };
+    }
+  }
+  return { ...goat, facing: direction, moving: false };
 }
 
 
@@ -438,10 +454,9 @@ function chunkRegion(chunk: Point) {
 }
 
 const initialLogs = [
-  { text: 'You arrive at the Mosslight Crossing.', color: '' },
+  { text: 'You wake inside the Tutorial House on the island.', color: 'blue' },
+  { text: 'Leave the house to meet goats and the town guides.', color: '' },
   { text: 'A test horse waits just east of the square.', color: 'blue' },
-  { text: 'The east path is clear.', color: 'blue' },
-  { text: 'Your field position was saved locally.', color: '' },
 ];
 
 type TownNpc = {
@@ -516,6 +531,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
 }
 
 function InventorySheet({ inventory, onClose }: { inventory: GameInventory; onClose: () => void }) {
+  const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths;
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="inventory-title" data-testid="overlay-inventory">
       <div className="map-sheet inventory-sheet">
@@ -524,7 +540,7 @@ function InventorySheet({ inventory, onClose }: { inventory: GameInventory; onCl
           <button className="map-close" onClick={onClose} aria-label="Close inventory" data-testid="button-close-inventory"><X size={19} /></button>
         </div>
         <div className="inventory-body">
-          <div className="inventory-count">{inventory.goatHorns + inventory.fabric} items carried · {inventory.coins} gold</div>
+          <div className="inventory-count">{itemCount} items carried · {inventory.coins} gold</div>
           <div className="inventory-grid">
             <div className="inventory-item" data-testid="inventory-goat-horns">
               <span className="inventory-item-mark horn-mark">✦</span>
@@ -541,8 +557,18 @@ function InventorySheet({ inventory, onClose }: { inventory: GameInventory; onCl
               <span><strong>Coins</strong><small>Spendable gold</small></span>
               <b>{inventory.coins}</b>
             </div>
+            <div className="inventory-item" data-testid="inventory-daggers">
+              <span className="inventory-item-mark dagger-mark">†</span>
+              <span><strong>Daggers</strong><small>Crafted weapons</small></span>
+              <b>{inventory.daggers}</b>
+            </div>
+            <div className="inventory-item" data-testid="inventory-cloths">
+              <span className="inventory-item-mark cloths-mark">✚</span>
+              <span><strong>Field cloths</strong><small>Crafted gear</small></span>
+              <b>{inventory.cloths}</b>
+            </div>
           </div>
-          {inventory.goatHorns + inventory.fabric === 0 && inventory.coins === 0 && (
+          {itemCount === 0 && inventory.coins === 0 && (
             <div className="inventory-empty">
               <Backpack size={30} strokeWidth={1.5} />
               <strong>Your pack is empty</strong>
@@ -556,11 +582,33 @@ function InventorySheet({ inventory, onClose }: { inventory: GameInventory; onCl
   );
 }
 
-function InteriorRoom({ area, position }: { area: InteriorArea; position: Point }) {
+function InteriorRoom({ area, position, inventory, onCraft }: { area: InteriorArea; position: Point; inventory: GameInventory; onCraft: (item: CraftItem) => void }) {
+  const canCraft = (item: CraftItem) => {
+    const recipe = craftRecipes[item];
+    return Object.entries(recipe.cost).every(([key, value]) => (inventory[key as keyof GameInventory] || 0) >= (value || 0));
+  };
   return (
     <div className={'interior-scene interior-' + area.roomType} aria-label={area.name + ' interior'} data-testid={'interior-' + area.id}>
       <div className="interior-header"><span className="interior-kicker">Mosslight Crossing</span><strong>{area.name}</strong><span>{area.description}</span></div>
       <div className="interior-room" aria-hidden="true"><span className="interior-rug" /><span className="interior-table" /><span className="interior-counter" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></div>
+      {area.roomType === 'guild' && (
+        <section className="crafting-panel" aria-label="Crafting bench" data-testid="crafting-panel">
+          <span className="crafting-kicker">Guild workbench</span>
+          <strong>Turn goat drops into gear</strong>
+          <div className="crafting-options">
+            {(Object.keys(craftRecipes) as CraftItem[]).map((item) => {
+              const recipe = craftRecipes[item];
+              const costLabel = item === 'dagger' ? `${inventory.goatHorns}/2 horns` : `${inventory.fabric}/2 fabric`;
+              return (
+                <button className="craft-button" key={item} onClick={() => onCraft(item)} disabled={!canCraft(item)} data-testid={'button-craft-' + item}>
+                  <span><b>{recipe.name}</b><small>{recipe.description}</small></span>
+                  <em>{costLabel}</em>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
       <div className="interior-doorway" aria-label="Exit to Mosslight Crossing"><span>EXIT</span></div>
       <div className="interior-player" style={{ left: position.x + '%', top: position.y + '%' }}><span className="player-sprite" /></div>
       <div className="interior-exit-hint">Walk to the door to leave</div>
@@ -583,10 +631,13 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
   const [playerHp, setPlayerHp] = useState(PLAYER_MAX_HP);
   const [playerXp, setPlayerXp] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
+  const [playerClass, setPlayerClass] = useState<PlayerClass>('Beginner');
+  const [npcDialogue, setNpcDialogue] = useState<TownNpc | null>(null);
+  const [npcStates, setNpcStates] = useState(startingTownNpcs);
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }));
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
-  const [interior, setInterior] = useState<InteriorArea | null>(null);
-  const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 89 });
+  const [interior, setInterior] = useState<InteriorArea | null>(() => startingDoorways[0].area);
+  const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 52 });
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
   const chunkRef = useRef(chunk);
@@ -597,9 +648,12 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
   const areaFlashIdRef = useRef(0);
   const goatsRef = useRef(goats);
   const playerHpRef = useRef(playerHp);
+  const playerXpRef = useRef(playerXp);
+  const playerLevelRef = useRef(playerLevel);
+  const playerClassRef = useRef<PlayerClass>(playerClass);
   const interiorRef = useRef(interior);
   const interiorPositionRef = useRef(interiorPosition);
-  const interiorDoorwayIdRef = useRef<string | null>(null);
+  const interiorDoorwayIdRef = useRef<string | null>('tutorial-house-door');
   const doorwayExitCooldownRef = useRef<string | null>(null);
   const goatWorldStepRef = useRef(0);
   const brainRef = useRef<RPGBrain | null>(null);
@@ -624,6 +678,9 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
   useEffect(() => { horseRef.current = horse; }, [horse]);
   useEffect(() => { goatsRef.current = goats; }, [goats]);
   useEffect(() => { playerHpRef.current = playerHp; }, [playerHp]);
+  useEffect(() => { playerXpRef.current = playerXp; }, [playerXp]);
+  useEffect(() => { playerLevelRef.current = playerLevel; }, [playerLevel]);
+  useEffect(() => { playerClassRef.current = playerClass; }, [playerClass]);
   useEffect(() => { interiorRef.current = interior; }, [interior]);
   useEffect(() => { interiorPositionRef.current = interiorPosition; }, [interiorPosition]);
   useEffect(() => {
@@ -636,25 +693,25 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
   useEffect(() => {
     const timer = window.setInterval(() => {
       const currentGoats = goatsRef.current;
-      if (currentGoats.length === 0 || interiorRef.current) return;
+       if (currentGoats.length === 0) return;
       goatWorldStepRef.current += 1;
       const currentPlayer = positionRef.current;
       const currentChunk = chunkRef.current;
       let damageTaken = 0;
       const nextGoats = currentGoats.map((goat) => {
         if (goat.disposition === 'defeated') {
-          if (goat.defeatedAt !== null && Date.now() - goat.defeatedAt >= GOAT_RESPAWN_MS) {
+          if (goat.respawnTicks >= GOAT_RESPAWN_TICKS) {
             return {
               ...goat,
               position: { ...goat.spawnPosition },
               hp: goat.maxHp,
               disposition: 'calm' as GoatDisposition,
               attackCooldown: 0,
-              defeatedAt: null,
+              respawnTicks: 0,
               moving: false,
             };
           }
-          return { ...goat, moving: false };
+          return { ...goat, moving: false, respawnTicks: goat.respawnTicks + 1 };
         }
         if (goat.disposition !== 'aggressive' || goat.attackCooldown > 0) {
           const moved = moveGoatIndependently(goat, goatWorldStepRef.current, currentPlayer, currentChunk, currentGoats);
@@ -674,7 +731,22 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
         setPlayerHp(nextHp);
         setLogs((currentLogs) => [{ text: 'A hostile goat rams you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
       }
-    }, 900);
+    }, GOAT_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNpcStates((current) => current.map((npc, index) => {
+        const direction: Direction = (['up', 'right', 'down', 'left'] as Direction[])[(Math.floor(Date.now() / 2600) + index) % 4];
+        const step = index % 2 === 0 ? 1.2 : 0;
+        const nextPosition = {
+          x: Math.min(86, Math.max(14, npc.position.x + (direction === 'right' ? step : direction === 'left' ? -step : 0))),
+          y: Math.min(76, Math.max(32, npc.position.y + (direction === 'down' ? step : direction === 'up' ? -step : 0))),
+        };
+        return { ...npc, position: nextPosition, facing: direction };
+      }));
+    }, 2600);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -819,6 +891,14 @@ if (active) {
         }
         const resolved = resolveFieldMovement(current, movement, currentChunk);
         if (resolved) {
+          if (resolved.travelLabels.length > 0 && playerClassRef.current === 'Beginner' && isStartingArea(currentChunk)) {
+            positionRef.current = current;
+            setPosition(current);
+            setAttackFlash('Choose a class with Noah, Damon, or Shawn at level 10 before leaving the tutorial island.');
+            setLogs((currentLogs) => [{ text: 'The island gate is sealed. Reach level 10 and choose a class first.', color: 'red' }, ...currentLogs].slice(0, 3));
+            window.setTimeout(() => setAttackFlash(null), 1400);
+            animationFrame = window.requestAnimationFrame(animate); return;
+          }
           positionRef.current = resolved.position;
           setPosition(resolved.position);
           if (resolved.travelLabels.length > 0) {
@@ -867,7 +947,7 @@ if (active) {
       hp: Math.max(0, nextHp),
       disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition,
       attackCooldown: 0,
-      defeatedAt: defeated ? Date.now() : null,
+      respawnTicks: defeated ? 0 : goat.respawnTicks,
     } : goat);
     goatsRef.current = nextGoats;
     setGoats(nextGoats);
@@ -878,16 +958,19 @@ if (active) {
       const loot: GoatLoot = { goatHorns: 1, coins: coinCount, fabric: fabricCount };
       onLoot(loot);
       const bonusDrop = dropsCoins ? `${coinCount} coins` : '1 fabric';
-      const nextXp = playerXp + GOAT_XP_REWARD;
+      const nextXp = playerXpRef.current + GOAT_XP_REWARD;
       const nextLevel = Math.floor(nextXp / 100) + 1;
+      const previousLevel = playerLevelRef.current;
       setPlayerXp(nextXp);
-      if (nextLevel > playerLevel) {
+      playerXpRef.current = nextXp;
+      if (nextLevel > previousLevel) {
         setPlayerLevel(nextLevel);
+        playerLevelRef.current = nextLevel;
         setAttackFlash(`Level up! Adventure is now level ${nextLevel}.`);
       }
       const message = `Goat defeated: +${GOAT_XP_REWARD} XP · +1 horn · +${bonusDrop}. Respawns in 12s.`;
       setLogs((currentLogs) => [{ text: message, color: 'blue' }, ...currentLogs].slice(0, 3));
-      if (nextLevel <= playerLevel) {
+      if (nextLevel <= previousLevel) {
         setAttackFlash(message);
       }
       window.setTimeout(() => setAttackFlash(null), 1400);
@@ -970,11 +1053,41 @@ if (active) {
   const startingArea = isStartingArea(chunk);
   const xpIntoLevel = playerXp - (playerLevel - 1) * 100;
   const levelProgress = Math.min(100, Math.max(0, (xpIntoLevel / 100) * 100));
+  const talkToNpc = (npc: TownNpc) => {
+    setNpcDialogue(npc);
+    setLogs((currentLogs) => [{ text: `${npc.name} turns to you: ${npc.title}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
+  const chooseClass = (nextClass: Exclude<PlayerClass, 'Beginner'>) => {
+    if (playerLevelRef.current < 10) return;
+    playerClassRef.current = nextClass;
+    setPlayerClass(nextClass);
+    setNpcDialogue(null);
+    setAttackFlash(`Class chosen: ${nextClass}. The roads beyond the island are open.`);
+    setLogs((currentLogs) => [{ text: `You become a ${nextClass}. The tutorial island gate is open.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+    window.setTimeout(() => setAttackFlash(null), 1500);
+  };
+  const craftItem = (item: CraftItem) => {
+    const recipe = craftRecipes[item];
+    if (!Object.entries(recipe.cost).every(([key, value]) => (inventory[key as keyof GameInventory] || 0) >= (value || 0))) {
+      setAttackFlash(`You need more materials to make ${recipe.name}.`);
+      window.setTimeout(() => setAttackFlash(null), 1100);
+      return;
+    }
+    onLoot({
+      goatHorns: -(recipe.cost.goatHorns || 0),
+      fabric: -(recipe.cost.fabric || 0),
+      daggers: recipe.reward.daggers || 0,
+      cloths: recipe.reward.cloths || 0,
+    });
+    setAttackFlash(`${recipe.name} crafted.`);
+    setLogs((currentLogs) => [{ text: `${recipe.name} added to your satchel.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+    window.setTimeout(() => setAttackFlash(null), 1100);
+  };
 
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} inventory={inventory} onCraft={craftItem} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -1025,9 +1138,10 @@ if (active) {
               )}
             </div>
           )}
-          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && startingTownNpcs.map((npc) => (
-            <div
+          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && npcStates.map((npc) => (
+            <button
               className={'town-npc npc-' + npc.role}
+              onClick={() => talkToNpc(npc)}
               style={{ left: npc.position.x + '%', top: npc.position.y + '%' }}
               data-role={npc.role}
               data-facing={npc.facing}
@@ -1040,7 +1154,7 @@ if (active) {
                 <small>{npc.title}</small>
               </span>
               <span className="npc-sprite" aria-hidden="true" />
-            </div>
+            </button>
           ))}
           {showHorse && (
             <>
@@ -1060,6 +1174,37 @@ if (active) {
           </div>}
         </div>
         )}
+        {npcDialogue && (
+          <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="npc-dialogue-title">
+            <div className="npc-dialogue-card">
+              <div className={'dialogue-portrait npc-' + npcDialogue.role} data-facing={npcDialogue.facing}><span className="npc-sprite" /></div>
+              <div className="npc-dialogue-copy">
+                <span className="dialogue-kicker">{npcDialogue.title}</span>
+                <h2 id="npc-dialogue-title">{npcDialogue.name}</h2>
+                <p>
+                  {playerLevel < 10
+                    ? `Welcome, Beginner. Earn ${10 - playerLevel} more levels by exploring and defeating goats, then return here for your class choice.`
+                    : playerClass === 'Beginner'
+                      ? `You have reached level 10. Choose the path that feels right: ${classDescriptions[npcDialogue.role === 'guide' ? 'Warrior' : npcDialogue.role === 'warrior' ? 'Warrior' : npcDialogue.role === 'mage' ? 'Mage' : 'Rogue']}`
+                      : `You are already a ${playerClass}. Keep exploring the world and put your new strengths to work.`
+                  }
+                </p>
+                {playerLevel >= 10 && playerClass === 'Beginner' && (
+                  <div className="class-choice-grid" aria-label="Choose your class">
+                    {(Object.keys(classDescriptions) as Exclude<PlayerClass, 'Beginner'>[]).map((nextClass) => (
+                      <button key={nextClass} className="class-choice" onClick={() => chooseClass(nextClass)} data-testid={'button-choose-' + nextClass.toLowerCase()}>
+                        <strong>{nextClass}</strong><small>{classDescriptions[nextClass]}</small>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button className="dialogue-close" onClick={() => setNpcDialogue(null)} data-testid="button-close-dialogue">
+                  {playerLevel >= 10 && playerClass === 'Beginner' ? 'Not yet' : 'Continue'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {attackFlash && <div className="combat-flash" aria-live="polite">{attackFlash}</div>}
         {!interior && doorwayNear(position, chunk) && <div className="door-prompt" aria-live="polite">Enter {doorwayNear(position, chunk)?.area.name}</div>}
         {areaFlash && (
@@ -1071,7 +1216,7 @@ if (active) {
         <div className="world-hud">
           <div className="hud-card" data-testid="hud-player">
             <div className="hud-label"><span>Character</span><span>Lv {playerLevel}</span></div>
-            <div className="hud-name">Adventure</div>
+            <div className="hud-name">Adventure <span className="hud-class">{playerClass}</span></div>
             <div className="bar" aria-label={'Health ' + playerHp + ' percent'}><div className="bar-fill health" style={{ width: (playerHp / PLAYER_MAX_HP) * 100 + '%' }} /></div><span className="hud-health-value">{playerHp} / {PLAYER_MAX_HP} HP</span>
             <div className="level-bar-label"><span>Experience</span><span>{xpIntoLevel} / 100 XP</span></div>
             <div className="bar level-bar" aria-label={'Level ' + playerLevel + ', ' + playerXp + ' experience points'}><div className="bar-fill experience" style={{ width: levelProgress + '%' }} /></div>
@@ -1147,6 +1292,8 @@ function Home() {
          coins: current.coins + (loot.coins || 0),
          goatHorns: current.goatHorns + (loot.goatHorns || 0),
          fabric: current.fabric + (loot.fabric || 0),
+          daggers: current.daggers + (loot.daggers || 0),
+          cloths: current.cloths + (loot.cloths || 0),
        }))} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen} />
       </div>
       {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
