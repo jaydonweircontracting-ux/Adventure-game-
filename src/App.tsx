@@ -48,13 +48,24 @@ const regionPalettes: Record<Exclude<RegionStyle, 'ocean'>, { field: string; pat
   sunwash: { field: '#9a7658', path: '#d7ac6b', glow: 'rgba(255, 198, 123, .2)' },
 };
 
+const coastlineWater = new Set([
+  '-3,1', '-2,1', '-1,1', '0,1', '1,1', '2,1', '9,1', '10,1', '11,1',
+  '-3,2', '-2,2', '10,2', '11,2', '-3,3', '11,3', '-3,4', '11,4',
+  '-3,5', '11,5', '-3,6', '11,6', '-3,7', '11,7', '-3,8', '11,8',
+  '-3,9', '11,9', '-3,10', '10,10', '11,10', '-3,11', '9,11', '10,11', '11,11',
+  '-3,12', '-2,12', '8,12', '9,12', '10,12', '11,12', '-3,13', '-2,13', '-1,13', '0,13', '1,13', '7,13', '8,13', '9,13', '10,13', '11,13',
+]);
+
+function isContinentChunk(point: Point) {
+  return point.x >= -3 && point.x <= 11 && point.y >= 1 && point.y <= 13 && !coastlineWater.has(point.x + ',' + point.y);
+}
+
 function regionStyleFor(point: Point): RegionStyle {
-  const distanceFromGreenvale = Math.max(Math.abs(point.x - 4), Math.abs(point.y - 7));
-  if (distanceFromGreenvale >= 7) return 'ocean';
-  if (point.y <= 5) return 'northwatch';
-  if (point.x <= 3) return 'brackenfen';
-  if (point.x >= 6) return 'ironwood';
-  if (point.y >= 9) return 'sunwash';
+  if (!isContinentChunk(point)) return 'ocean';
+  if (point.y <= 4 || (point.y === 5 && point.x >= 5)) return 'northwatch';
+  if (point.x <= 1) return 'brackenfen';
+  if (point.x >= 7) return 'ironwood';
+  if (point.y >= 10) return 'sunwash';
   return 'greenvale';
 }
 
@@ -78,9 +89,15 @@ type MapTile = {
 
 const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
   '4,7': { name: 'Mosslight Crossing', kind: 'town' },
-  '2,6': { name: 'Fenmere Hamlet', kind: 'village' },
-  '6,8': { name: 'Ironwood Southhold', kind: 'town' },
-  '5,4': { name: 'Northwatch Beacon', kind: 'village' },
+  '0,7': { name: 'Fenmere Hamlet', kind: 'village' },
+  '8,7': { name: 'Ironwood Southhold', kind: 'town' },
+  '5,2': { name: 'Northwatch Beacon', kind: 'village' },
+  '2,4': { name: 'Old Mill', kind: 'village' },
+  '9,3': { name: 'Emberpeak Shrine', kind: 'village' },
+  '3,12': { name: 'Sunwash Port', kind: 'town' },
+  '6,10': { name: 'Bellwater', kind: 'village' },
+  '10,10': { name: 'Seabreak', kind: 'town' },
+  '1,3': { name: 'Blackroot Camp', kind: 'village' },
 };
 
 function isStartingArea(point: Point) {
@@ -88,28 +105,38 @@ function isStartingArea(point: Point) {
 }
 
 function mapTileFor(point: Point): MapTile {
-  // Wide regional bands keep the world readable while the outer rim is reserved for ocean.
   const regionStyle = regionStyleFor(point);
-  const riverX = Math.round(2.8 + Math.sin((point.y - 7) * 0.68) * 1.45);
-  const mainRiver = point.x === riverX;
-  const branchRiverY = Math.round(8 + Math.sin(point.x * 0.55) * 0.8);
-  const branchRiver = point.y === branchRiverY && point.x >= 2 && point.x <= 7;
-  const lake = (point.x === 6 && point.y === 5) || (point.x === 7 && point.y === 5);
-  const waterFeature = regionStyle === 'ocean' ? 'sea' : lake ? 'lake' : mainRiver || branchRiver ? 'river' : null;
-  const isOcean = waterFeature === 'sea';
-  const waterEdge = isOcean ? null : lake ? 'south' : mainRiver ? (Math.sin((point.y - 7) * 0.68) >= 0 ? 'east' : 'west') : branchRiver ? (Math.sin(point.x * 0.55) >= 0 ? 'south' : 'north') : null;
+  const isOcean = regionStyle === 'ocean';
+  const mainRiverX = Math.round(4.5 + Math.sin((point.y - 2) * 0.48) * 1.35);
+  const mainRiver = !isOcean && point.y >= 2 && point.y <= 12 && point.x === mainRiverX;
+  const westBranchY = Math.round(7 + Math.sin((point.x + 1) * 0.72) * 0.85);
+  const westBranch = !isOcean && point.x >= -1 && point.x <= 4 && point.y === westBranchY;
+  const southBranchY = Math.round(10 + Math.sin(point.x * 0.65) * 0.45);
+  const southBranch = !isOcean && point.x >= 4 && point.x <= 9 && point.y === southBranchY;
+  const lake = !isOcean && ((point.x === 6 && point.y === 5) || (point.x === 7 && point.y === 5) || (point.x === 7 && point.y === 6));
+  const waterFeature = isOcean ? 'sea' : lake ? 'lake' : mainRiver || westBranch || southBranch ? 'river' : null;
+  const waterEdge = isOcean ? null : lake ? 'south' : mainRiver ? (Math.sin((point.y - 2) * 0.48) >= 0 ? 'east' : 'west') : westBranch || southBranch ? 'south' : null;
 
-  const ridgeBoundary = 4 + Math.sin(point.x * 0.5) * 1.1;
-  const isRidge = point.y <= ridgeBoundary || point.x <= 0;
-  const isWoodland = !isRidge && ((point.x <= 3 && point.y >= 6) || (point.x >= 6 && point.y >= 7) || (point.x === 5 && point.y === 5));
-  const isAutumn = !isRidge && !isWoodland && point.y >= 9 && point.x <= 3;
+  const ridgeLine = 3.2 + Math.sin(point.x * 0.55) * 0.7;
+  const isRidge = !isOcean && (point.y <= ridgeLine || (point.x >= 8 && point.y <= 4));
+  const isWoodland = !isOcean && !isRidge && ((point.x <= 2 && point.y >= 5) || (point.x >= 6 && point.y >= 7) || (point.x === 4 && point.y === 5));
+  const isAutumn = !isOcean && !isRidge && !isWoodland && point.y >= 10 && point.x <= 3;
   const terrain = isOcean ? 'ocean' : isRidge ? 'rock' : isWoodland ? 'woodland' : isAutumn ? 'autumn' : 'meadow';
 
-  const horizontalRoadY = Math.round(7 + Math.sin((point.x - 2) * 0.65) * 0.55);
-  const verticalRoadX = Math.round(4 + Math.sin((point.y - 7) * 0.45) * 0.4);
-  const startingArea = isStartingArea(point);
-  const horizontalRoad = startingArea || (!isOcean && point.y === horizontalRoadY);
-  const verticalRoad = startingArea || (!isOcean && point.x === verticalRoadX);
+  const horizontalRoad = !isOcean && (
+    (point.y === 7 && point.x >= -1 && point.x <= 8) ||
+    (point.y === 4 && point.x >= 2 && point.x <= 5) ||
+    (point.y === 3 && point.x >= 5 && point.x <= 9) ||
+    (point.y === 10 && point.x >= 3 && point.x <= 10) ||
+    (point.y === 12 && point.x >= 1 && point.x <= 3)
+  );
+  const verticalRoad = !isOcean && (
+    (point.x === 4 && point.y >= 4 && point.y <= 8) ||
+    (point.x === 5 && point.y >= 2 && point.y <= 4) ||
+    (point.x === 9 && point.y >= 3 && point.y <= 7) ||
+    (point.x === 3 && point.y >= 7 && point.y <= 12) ||
+    (point.x === 6 && point.y >= 7 && point.y <= 10)
+  );
   const road = horizontalRoad && verticalRoad ? 'cross' : horizontalRoad ? 'horizontal' : verticalRoad ? 'vertical' : 'none';
   const bridge = waterFeature !== null && !isOcean && road !== 'none';
 
@@ -233,24 +260,14 @@ function mapTileClass(tile: MapTile & { current: boolean }) {
 }
 
 function chunkRegion(chunk: Point) {
-  // Every land chunk gets a named reach; Greenvale is reserved for the village itself.
-  if (chunk.x === 4 && chunk.y === 7) return 'Greenvale';
-
-  const latitudeNames = ['Far North', 'North', 'Upper', 'Northgate', 'Central', 'Southgate', 'Lower', 'South', 'Far South'];
-  const latitude = latitudeNames[Math.max(0, Math.min(latitudeNames.length - 1, chunk.y - 3))];
-  const coastalSea = Math.abs(chunk.x - 4) >= 4 || Math.abs(chunk.y - 7) >= 4;
-  if (coastalSea) return latitude + (chunk.x < 4 ? ' Western Sea' : chunk.x > 4 ? ' Eastern Sea' : ' Open Sea');
-
-  if (chunk.x <= 3) {
-    const reach = chunk.x <= 1 ? 'Deep Brackenfen' : chunk.x === 2 ? 'Outer Brackenfen' : 'Brackenfen Gate';
-    return latitude === 'Central' ? reach : latitude + ' ' + reach;
-  }
-  if (chunk.x >= 5) {
-    const reach = chunk.x >= 7 ? 'Deep Ironwood March' : chunk.x === 6 ? 'Outer Ironwood March' : 'Ironwood Gate';
-    return latitude === 'Central' ? reach : latitude + ' ' + reach;
-  }
-  if (chunk.y <= 6) return chunk.y <= 4 ? 'High Northwatch Heights' : chunk.y === 5 ? 'Outer Northwatch Heights' : 'Northwatch Foothills';
-  return chunk.y >= 10 ? 'Far Sunwash Coast' : chunk.y === 9 ? 'Outer Sunwash Coast' : 'Sunwash Foothills';
+  const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
+  if (landmark) return landmark.name;
+  if (!isContinentChunk(chunk)) return 'Open Water';
+  if (chunk.y <= 4) return 'Northwatch Heights';
+  if (chunk.x <= 1) return 'Brackenfen Wilds';
+  if (chunk.x >= 7) return 'Ironwood March';
+  if (chunk.y >= 10) return 'Sunwash Coast';
+  return 'Greenvale';
 }
 
 const initialLogs = [
@@ -274,30 +291,30 @@ const startingTownNpcs: TownNpc[] = [
   { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up' },
 ];
 
+const atlasBounds = { minX: -3, maxX: 11, minY: 1, maxY: 13 };
+
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
-  const radius = 6 - zoom;
-  const gridSize = radius * 2 + 1;
-  const mapScale = [0.72, 0.86, 1, 1.12][zoom - 1];
-  const tiles = Array.from({ length: gridSize * gridSize }, (_, index) => {
-    const row = Math.floor(index / gridSize);
-    const column = index % gridSize;
-    const point = {
-      x: chunk.x + column - radius,
-      y: chunk.y + row - radius,
-    };
+  const atlasWidth = atlasBounds.maxX - atlasBounds.minX + 1;
+  const atlasHeight = atlasBounds.maxY - atlasBounds.minY + 1;
+  const mapScale = [0.84, 0.96, 1.08, 1.22][zoom - 1];
+  const tiles = Array.from({ length: atlasWidth * atlasHeight }, (_, index) => {
+    const row = Math.floor(index / atlasWidth);
+    const column = index % atlasWidth;
+    const point = { x: atlasBounds.minX + column, y: atlasBounds.minY + row };
     return { ...mapTileFor(point), current: point.x === chunk.x && point.y === chunk.y };
   });
+  const currentTile = mapTileFor(chunk);
 
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <h2 id="map-title">Field atlas</h2>
+          <div><span className="atlas-eyebrow">Chart of the known coast</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
-          <span className="map-area-label">{chunkRegion(chunk)} region · {mapTileFor(chunk).terrain}</span>
+          <span className="map-area-label">{currentTile.landmark?.name || chunkRegion(chunk)} · {currentTile.terrain}</span>
           <div className="map-zoom-controls" aria-label="Map zoom controls">
             <button className="map-zoom-button" onClick={() => setZoom((value) => Math.max(1, value - 1))} disabled={zoom === 1} aria-label="Zoom out" data-testid="button-map-zoom-out"><Minus size={15} /></button>
             <span className="map-zoom-level">×{zoom}</span>
@@ -305,10 +322,15 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
           </div>
         </div>
         <div className="big-map" data-testid="map-world-preview">
-          <div className="map-grid" style={{ gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`, transform: `scale(${mapScale})` }}>
+          <span className="atlas-compass" aria-hidden="true"><strong>N</strong><span>↑</span></span>
+          <span className="atlas-region-label atlas-region-north">NORTHWATCH HEIGHTS</span>
+          <span className="atlas-region-label atlas-region-west">BRACKENFEN WILDS</span>
+          <span className="atlas-region-label atlas-region-east">IRONWOOD MARCH</span>
+          <span className="atlas-region-label atlas-region-south">SUNWASH COAST</span>
+          <div className="map-grid" style={{ gridTemplateColumns: 'repeat(' + atlasWidth + ', minmax(0, 1fr))', gridTemplateRows: 'repeat(' + atlasHeight + ', minmax(0, 1fr))', transform: 'scale(' + mapScale + ')' }}>
             {tiles.map((tile) => (
               <div className={mapTileClass(tile)} key={tile.x + '-' + tile.y} title={'Chunk ' + tile.x + ', ' + tile.y + ' · ' + (tile.landmark?.name || chunkRegion(tile))}>
-                {tile.landmark && <span className={`map-settlement ${tile.landmark.kind}`} aria-label={tile.landmark.name} />}
+                {tile.landmark && <><span className={'map-settlement ' + tile.landmark.kind} aria-label={tile.landmark.name} /><span className="map-settlement-name">{tile.landmark.name}</span></>}
                 {tile.current && <span className="map-tile-player" aria-label="Your current position" />}
                 {tile.current && <span className="map-tile-label">{tile.x}, {tile.y}</span>}
               </div>
@@ -317,9 +339,9 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
         </div>
         <div className="map-legend">
           <span className="legend-item"><span className="legend-dot" /> You are here</span>
-          <span className="legend-item"><span className="legend-dot gold" /> Waypoint</span>
+          <span className="legend-item"><span className="legend-town" /> Town</span>
           <span className="legend-item"><span className="legend-line river" /> River</span>
-          <span className="legend-item"><span className="legend-line road" /> Road</span>
+          <span className="legend-item"><span className="legend-line road" /> King’s road</span>
           <span className="legend-item">Chunk {chunk.x}, {chunk.y} · {chunkRegion(chunk)}</span>
         </div>
       </div>
