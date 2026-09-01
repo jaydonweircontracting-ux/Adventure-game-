@@ -1811,14 +1811,14 @@ body {
   right: -7%;
   top: 45%;
   height: 11%;
-  border-radius: 999px;
+  border-radius: 0;
 }
 .starting-area .field-road-cross::after {
   top: -420%;
   bottom: -420%;
   left: 45%;
   width: 11%;
-  border-radius: 999px;
+  border-radius: 0;
 }
 .starting-area .field-trees {
   z-index: 5;
@@ -1883,19 +1883,22 @@ body {
 
 /* Independent goat wildlife and light combat. */
 .field-goats { position: absolute; z-index: 5; inset: 0; pointer-events: none; }
-.goat { position: absolute; width: 34px; height: 30px; transform: translate(-50%, -50%); transition: left .6s ease, top .6s ease; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .2)); }
+.goat { position: absolute; width: 44px; height: 38px; transform: translate(-50%, -50%); transition: left .85s ease, top .85s ease; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .2)); }
 .goat-sprite {
   position: absolute;
   left: 0;
-  top: -3px;
-  width: 34px;
-  height: 34px;
+  top: -4px;
+  width: 44px;
+  height: 44px;
   background-image: var(--goat-sprite-url);
   background-repeat: no-repeat;
   background-size: 400% 800%;
   background-position: 0 0;
   image-rendering: pixelated;
-  animation: goat-walk .6s steps(4) infinite;
+  animation: none;
+}
+.goat.is-moving .goat-sprite {
+  animation: goat-walk .9s steps(4, end) infinite;
 }
 .goat[data-facing='right'] .goat-sprite { background-position-y: 14.2857%; }
 .goat[data-facing='up'] .goat-sprite { background-position-y: 28.5714%; }
@@ -1911,7 +1914,7 @@ body {
 .field-attack-button:hover, .field-attack-button:focus-visible { background: rgba(172, 78, 60, .98); }
 .combat-flash { position: absolute; z-index: 14; top: max(72px, calc(env(safe-area-inset-top) + 56px)); left: 50%; width: max-content; max-width: calc(100% - 32px); padding: 7px 11px; color: #fff4d5; border: 1px solid rgba(255, 221, 150, .74); background: rgba(101, 52, 42, .9); box-shadow: 3px 3px 0 rgba(48, 42, 32, .25); font-family: var(--app-font-mono); font-size: 9px; transform: translateX(-50%); animation: combat-pop .2s ease both; pointer-events: none; }
 @keyframes combat-pop { from { opacity: 0; transform: translate(-50%, -5px); } to { opacity: 1; transform: translate(-50%, 0); } }
-@media (prefers-reduced-motion: reduce) { .goat { transition: none; } .goat-aggro .goat-sprite { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .goat { transition: none; } .goat.is-moving .goat-sprite { animation: none; } }
 
 
 /* Enterable town interiors. */
