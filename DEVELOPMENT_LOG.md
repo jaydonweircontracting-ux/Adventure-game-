@@ -159,3 +159,13 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Horse fix: set the mounted stack explicitly to cow body at z-index 1, player head at z-index 2, and cow head overlay at z-index 3 for every facing direction.
 - Published output: synchronized the active Pages stylesheet so the live `docs/` bundle receives the same layering, not only `src/`.
 - Verification: static GitHub readback only; no local build, typecheck, runtime, or gameplay execution.
+
+## Checkpoint 011 — iOS directional control capture
+
+- Date: 2026-09-01 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- Diagnosis: touch controls released movement on `pointerleave`, which can fire while a finger shifts on iOS; this made all four directions stop or behave inconsistently.
+- Fix: added pointer capture on directional press, explicit pointer-up/cancel release, and lost-capture cleanup for up, down, left, and right.
+- Published output: synchronized the active `docs/assets/index-BAH2JQQu.js` bundle referenced by `docs/index.html`.
+- Verification: GitHub readback confirmed the source has no directional `pointerleave` handlers and the active bundle has pointer capture. No local build, typecheck, runtime, or gameplay execution.
