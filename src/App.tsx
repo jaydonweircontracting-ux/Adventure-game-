@@ -340,10 +340,29 @@ function canEnterDoorway(currentPosition: Point, nextPosition: Point, doorway: D
 }
 
 type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
-type GoatState = { id: number; position: Point; facing: Direction; hp: number; maxHp: number; disposition: GoatDisposition; attackCooldown: number; wanderSeed: number; wanderPeriod: number; moving: boolean };
+type GameInventory = { coins: number; goatHorns: number; fabric: number };
+type GoatLoot = Partial<GameInventory>;
+type GoatState = {
+  id: number;
+  position: Point;
+  spawnPosition: Point;
+  facing: Direction;
+  hp: number;
+  maxHp: number;
+  disposition: GoatDisposition;
+  attackCooldown: number;
+  defeatedAt: number | null;
+  wanderSeed: number;
+  wanderPeriod: number;
+  moving: boolean;
+};
 const GOAT_STEP = 1.35;
 const GOAT_ATTACK_RANGE = 9;
 const GOAT_ATTACK_DAMAGE = 3;
+const GOAT_RESPAWN_MS = 12000;
+const GOAT_XP_REWARD = 25;
+const PLAYER_MAX_HP = 100;
+const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0 };
 const startingGoatPositions: Point[] = [
   { x: 13, y: 18 }, { x: 29, y: 14 }, { x: 72, y: 14 }, { x: 87, y: 19 },
   { x: 12, y: 43 }, { x: 88, y: 44 }, { x: 14, y: 82 }, { x: 31, y: 87 },
@@ -358,11 +377,13 @@ function goatsForChunk(chunk: Point): GoatState[] {
     return {
       id: index,
       position,
+      spawnPosition: { ...position },
       facing: (['up', 'right', 'down', 'left'] as Direction[])[wanderSeed % 4],
       hp: 18,
       maxHp: 18,
       disposition: 'calm',
       attackCooldown: 0,
+      defeatedAt: null,
       wanderSeed,
       wanderPeriod: 2 + (wanderSeed % 3),
       moving: false,
@@ -494,7 +515,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   );
 }
 
-function InventorySheet({ onClose }: { onClose: () => void }) {
+function InventorySheet({ inventory, onClose }: { inventory: GameInventory; onClose: () => void }) {
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="inventory-title" data-testid="overlay-inventory">
       <div className="map-sheet inventory-sheet">
@@ -503,12 +524,32 @@ function InventorySheet({ onClose }: { onClose: () => void }) {
           <button className="map-close" onClick={onClose} aria-label="Close inventory" data-testid="button-close-inventory"><X size={19} /></button>
         </div>
         <div className="inventory-body">
-          <div className="inventory-count">0 items carried</div>
-          <div className="inventory-empty">
-            <Backpack size={30} strokeWidth={1.5} />
-            <strong>Your pack is empty</strong>
-            <span>Items you discover on the road will appear here.</span>
+          <div className="inventory-count">{inventory.goatHorns + inventory.fabric} items carried · {inventory.coins} gold</div>
+          <div className="inventory-grid">
+            <div className="inventory-item" data-testid="inventory-goat-horns">
+              <span className="inventory-item-mark horn-mark">✦</span>
+              <span><strong>Goat horns</strong><small>Crafting material</small></span>
+              <b>{inventory.goatHorns}</b>
+            </div>
+            <div className="inventory-item" data-testid="inventory-fabric">
+              <span className="inventory-item-mark fabric-mark">▤</span>
+              <span><strong>Fabric</strong><small>Useful cloth</small></span>
+              <b>{inventory.fabric}</b>
+            </div>
+            <div className="inventory-item" data-testid="inventory-coins">
+              <span className="inventory-item-mark coin-mark"><Coins size={16} /></span>
+              <span><strong>Coins</strong><small>Spendable gold</small></span>
+              <b>{inventory.coins}</b>
+            </div>
           </div>
+          {inventory.goatHorns + inventory.fabric === 0 && inventory.coins === 0 && (
+            <div className="inventory-empty">
+              <Backpack size={30} strokeWidth={1.5} />
+              <strong>Your pack is empty</strong>
+              <span>Defeat goats to find horns and useful supplies.</span>
+            </div>
+          )}
+          <div className="inventory-note">Goat horns are guaranteed. Each goat also drops either coins or fabric.</div>
         </div>
       </div>
     </div>
@@ -527,7 +568,7 @@ function InteriorRoom({ area, position }: { area: InteriorArea; position: Point 
   );
 }
 
-function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked }: { onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean }) {
+function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked }: { inventory: GameInventory; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean }) {
   const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
   const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -539,7 +580,9 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const [logOpen, setLogOpen] = useState(false);
   const [logs, setLogs] = useState(initialLogs);
   const [time, setTime] = useState('08:43');
-  const [playerHp, setPlayerHp] = useState(84);
+  const [playerHp, setPlayerHp] = useState(PLAYER_MAX_HP);
+  const [playerXp, setPlayerXp] = useState(0);
+  const [playerLevel, setPlayerLevel] = useState(1);
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }));
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
   const [interior, setInterior] = useState<InteriorArea | null>(null);
@@ -598,7 +641,21 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
       const currentPlayer = positionRef.current;
       const currentChunk = chunkRef.current;
       let damageTaken = 0;
-      const nextGoats = currentGoats.map((goat, index) => {
+      const nextGoats = currentGoats.map((goat) => {
+        if (goat.disposition === 'defeated') {
+          if (goat.defeatedAt !== null && Date.now() - goat.defeatedAt >= GOAT_RESPAWN_MS) {
+            return {
+              ...goat,
+              position: { ...goat.spawnPosition },
+              hp: goat.maxHp,
+              disposition: 'calm' as GoatDisposition,
+              attackCooldown: 0,
+              defeatedAt: null,
+              moving: false,
+            };
+          }
+          return { ...goat, moving: false };
+        }
         if (goat.disposition !== 'aggressive' || goat.attackCooldown > 0) {
           const moved = moveGoatIndependently(goat, goatWorldStepRef.current, currentPlayer, currentChunk, currentGoats);
           return { ...moved, attackCooldown: Math.max(0, moved.attackCooldown - 1) };
@@ -805,10 +862,38 @@ if (active) {
     if (!target) { setAttackFlash('No goat is close enough to strike.'); window.setTimeout(() => setAttackFlash(null), 900); return; }
     const nextHp = target.hp - 9;
     const defeated = nextHp <= 0;
-    const nextGoats = goatsRef.current.map((goat) => goat.id === target.id ? { ...goat, hp: Math.max(0, nextHp), disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, attackCooldown: 0 } : goat);
+    const nextGoats = goatsRef.current.map((goat) => goat.id === target.id ? {
+      ...goat,
+      hp: Math.max(0, nextHp),
+      disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition,
+      attackCooldown: 0,
+      defeatedAt: defeated ? Date.now() : null,
+    } : goat);
     goatsRef.current = nextGoats;
     setGoats(nextGoats);
-    const message = defeated ? 'You defeat the goat.' : 'You strike a goat. It bleats angrily and charges!';
+    if (defeated) {
+      const dropsCoins = Math.random() < 0.65;
+      const coinCount = dropsCoins ? 4 + Math.floor(Math.random() * 9) : 0;
+      const fabricCount = dropsCoins ? 0 : 1;
+      const loot: GoatLoot = { goatHorns: 1, coins: coinCount, fabric: fabricCount };
+      onLoot(loot);
+      const bonusDrop = dropsCoins ? `${coinCount} coins` : '1 fabric';
+      const nextXp = playerXp + GOAT_XP_REWARD;
+      const nextLevel = Math.floor(nextXp / 100) + 1;
+      setPlayerXp(nextXp);
+      if (nextLevel > playerLevel) {
+        setPlayerLevel(nextLevel);
+        setAttackFlash(`Level up! Adventure is now level ${nextLevel}.`);
+      }
+      const message = `Goat defeated: +${GOAT_XP_REWARD} XP · +1 horn · +${bonusDrop}. Respawns in 12s.`;
+      setLogs((currentLogs) => [{ text: message, color: 'blue' }, ...currentLogs].slice(0, 3));
+      if (nextLevel <= playerLevel) {
+        setAttackFlash(message);
+      }
+      window.setTimeout(() => setAttackFlash(null), 1400);
+      return;
+    }
+    const message = 'You strike a goat. It bleats angrily and charges!';
     setAttackFlash(message);
     setLogs((currentLogs) => [{ text: message, color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
     window.setTimeout(() => setAttackFlash(null), 1100);
@@ -883,6 +968,8 @@ if (active) {
   const fieldTrees = fieldTreesFor(chunk);
   const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
   const startingArea = isStartingArea(chunk);
+  const xpIntoLevel = playerXp - (playerLevel - 1) * 100;
+  const levelProgress = Math.min(100, Math.max(0, (xpIntoLevel / 100) * 100));
 
   return (
     <div className="field-column">
@@ -983,14 +1070,17 @@ if (active) {
         )}
         <div className="world-hud">
           <div className="hud-card" data-testid="hud-player">
-            <div className="hud-label"><span>Adventurer</span><span>08</span></div>
-            <div className="hud-name">Rowan of the Vale</div>
-            <div className="bar" aria-label={'Health ' + playerHp + ' percent'}><div className="bar-fill health" style={{ width: playerHp + '%' }} /></div><span className="hud-health-value">{playerHp} HP</span><span className="hud-build" data-testid="text-build-number">BUILD {BUILD_NUMBER}</span>
+            <div className="hud-label"><span>Character</span><span>Lv {playerLevel}</span></div>
+            <div className="hud-name">Adventure</div>
+            <div className="bar" aria-label={'Health ' + playerHp + ' percent'}><div className="bar-fill health" style={{ width: (playerHp / PLAYER_MAX_HP) * 100 + '%' }} /></div><span className="hud-health-value">{playerHp} / {PLAYER_MAX_HP} HP</span>
+            <div className="level-bar-label"><span>Experience</span><span>{xpIntoLevel} / 100 XP</span></div>
+            <div className="bar level-bar" aria-label={'Level ' + playerLevel + ', ' + playerXp + ' experience points'}><div className="bar-fill experience" style={{ width: levelProgress + '%' }} /></div>
+            <span className="hud-build" data-testid="text-build-number">BUILD {BUILD_NUMBER}</span>
             {mounted && <button className="horse-dismount-button" onClick={toggleMount} aria-label="Dismount horse" data-testid="button-dismount-horse">Dismount</button>}
           </div>
           <button className="hud-card right hud-button" onClick={onOpenInventory} aria-label="Open inventory" data-testid="button-open-inventory">
             <div className="hud-label"><span>Satchel</span><Coins size={12} /></div>
-            <div className="hud-coins" data-testid="text-coin-count">1,284 c</div>
+             <div className="hud-coins" data-testid="text-coin-count">{inventory.coins.toLocaleString()} g</div>
             <div className="hud-time" data-testid="text-game-time">{time} / clear</div>
           </button>
         </div>
@@ -1030,6 +1120,7 @@ function Home() {
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
+  const [inventory, setInventory] = useState<GameInventory>(initialInventory);
 
   useEffect(() => {
     const closeSheets = (event: KeyboardEvent) => {
@@ -1052,10 +1143,14 @@ function Home() {
       } as CSSProperties}
     >
       <div className="game-layout">
-      <GameField onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen} />
+       <GameField inventory={inventory} onLoot={(loot) => setInventory((current) => ({
+         coins: current.coins + (loot.coins || 0),
+         goatHorns: current.goatHorns + (loot.goatHorns || 0),
+         fabric: current.fabric + (loot.fabric || 0),
+       }))} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen} />
       </div>
       {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
-      {inventoryOpen && <InventorySheet onClose={() => setInventoryOpen(false)} />}
+       {inventoryOpen && <InventorySheet inventory={inventory} onClose={() => setInventoryOpen(false)} />}
     </main>
   );
 }
