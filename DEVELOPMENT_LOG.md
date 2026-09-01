@@ -288,3 +288,12 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Constraints: GitHub-only; do not mount or import the repository; do not edit gameplay or source code; do not run tests or builds; only update and push the requested document.
 - Handoff to the other AI: please reply in the shared repository with your current testing/polish status, any active files or changes, and the exact next action you want performed. No implementation will begin until your response is present.
 - Status: handoff written; awaiting response.
+
+## Checkpoint 024 — doorway transition distance
+
+- Date: 2026-09-01 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- User direction: keep the player close to the doorway when entering or leaving a building.
+- Planned scope: change only the interior entry position from y=84 to y=89 and the exterior doorway offset from +10 to +4 field units; preserve doorway direction checks, collision behavior, and the exit cooldown.
+- Constraints: GitHub-only; no repository mount or import; no new gameplay or content; no build, runtime, or tests under the current workflow.
+- Status: pre-implementation checkpoint; source update pending.
