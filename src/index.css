@@ -1380,6 +1380,16 @@ body {
   box-shadow: 0 0 0 1px rgba(25, 56, 47, .28), 4px 5px 0 rgba(25, 56, 47, .24);
   backdrop-filter: blur(8px);
 }
+.hud-card[data-testid="hud-player"] {
+  min-width: 148px;
+  width: min(100%, 168px);
+  justify-self: start;
+  padding: 8px 10px 9px;
+  border-color: rgba(238, 222, 174, .48);
+  background: linear-gradient(180deg, rgba(38, 81, 59, .68), rgba(24, 57, 44, .54));
+  box-shadow: 0 1px 0 rgba(25, 56, 47, .18);
+  backdrop-filter: blur(3px) saturate(.9);
+}
 .hud-card.right {
   min-width: 126px;
 }
