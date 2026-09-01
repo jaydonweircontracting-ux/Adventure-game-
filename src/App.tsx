@@ -191,10 +191,18 @@ function pointInRect(point: Point, rect: FieldRect, padding = 0) {
   return point.x >= rect.left - padding && point.x <= rect.right + padding && point.y >= rect.top - padding && point.y <= rect.bottom + padding;
 }
 
+function pointOnFieldRoad(point: Point, road: MapTile['road']) {
+  // Keep tree canopies and trunks off the full road corridor, not just its center line.
+  const onHorizontalRoad = point.y >= 44 && point.y <= 59;
+  const onVerticalRoad = point.x >= 44 && point.x <= 59;
+  return road === 'horizontal' ? onHorizontalRoad : road === 'vertical' ? onVerticalRoad : road === 'cross' ? onHorizontalRoad || onVerticalRoad : false;
+}
+
 function fieldTreesFor(chunk: Point): FieldTree[] {
   const startingArea = isStartingArea(chunk);
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   const treeStyle = regionStyleFor(chunk);
+  const road = mapTileFor(chunk).road;
 
   if (startingArea) {
     const perimeterTrees = [
@@ -225,7 +233,8 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
     const tooCloseToStart = Math.hypot(center.x - 50, center.y - 52) < 12;
     const tooCloseToBuilding = houseRects.some((rect) => pointInRect(center, rect, 5));
     const tooCloseToTree = trees.some((tree) => Math.hypot(center.x - (tree.x + 3.2 * tree.scale), center.y - (tree.y + 2.5 * tree.scale)) < 9);
-    if (tooCloseToStart || tooCloseToBuilding || tooCloseToTree) continue;
+    const tooCloseToRoad = pointOnFieldRoad(center, road);
+    if (tooCloseToStart || tooCloseToBuilding || tooCloseToTree || tooCloseToRoad) continue;
     trees.push({ id: trees.length, x, y, scale, variant: Math.floor(random() * 3), style: treeStyle });
   }
 
