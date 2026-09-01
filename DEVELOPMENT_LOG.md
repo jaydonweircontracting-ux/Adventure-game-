@@ -257,3 +257,14 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Fixes: doorway entry now requires approaching from the exterior side; the chapel returns to its outside doorway position; blocked field movement resolves each axis independently for wall-sliding; generated goats avoid blocked map geometry; the camera holds a compact center dead-zone; goat frames render pixelated for a sharper sprite.
 - Published output: synchronized the active Pages JavaScript and stylesheet and cache-busted docs/index.html.
 - Scope: polish and collision corrections only; no new game content or systems.
+
+
+## Checkpoint 021 — collaboration-first workflow directive
+
+- Date: 2026-09-01 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Direction recorded before new implementation: every user request and planned scope must be written to the shared source of truth before substantive work begins, then pushed to GitHub so progress survives credit limits or interrupted sessions.
+- Collaboration: another AI is currently testing and polishing the game; future work must reread the latest main state, keep handoffs and updates current, and avoid overwriting concurrent changes.
+- Planned scope: clean up and optimize the current code only, preserve gameplay and existing content, and do not introduce new gameplay systems during polish.
+- Workflow: GitHub-only; no repository mount or routine game execution unless the user explicitly changes that instruction.
+- Status: checkpoint recorded; no new implementation started in this work slice.
