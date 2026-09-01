@@ -170,14 +170,10 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
 
   if (startingArea) {
     const perimeterTrees = [
-      { x: 10, y: 11, scale: 0.72, variant: 1 },
-      { x: 22, y: 13, scale: 0.56, variant: 0 },
-      { x: 69, y: 13, scale: 0.58, variant: 2 },
-      { x: 81, y: 11, scale: 0.72, variant: 1 },
-      { x: 10, y: 78, scale: 0.72, variant: 2 },
-      { x: 22, y: 83, scale: 0.56, variant: 0 },
-      { x: 69, y: 83, scale: 0.58, variant: 1 },
-      { x: 81, y: 78, scale: 0.72, variant: 2 },
+      { x: 12, y: 13, scale: 0.56, variant: 1 },
+      { x: 77, y: 13, scale: 0.56, variant: 2 },
+      { x: 12, y: 78, scale: 0.56, variant: 2 },
+      { x: 77, y: 78, scale: 0.56, variant: 1 },
     ];
     return perimeterTrees.map((tree, id) => ({ ...tree, id, style: treeStyle }));
   }
@@ -597,7 +593,6 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
           {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road + (currentWorldTile.bridge ? ' field-bridge' : '')} aria-hidden="true" />}
           {startingArea && (
             <div className="starting-area-decor" aria-hidden="true">
-              <span className="starting-plaza-ring" />
               <span className="starting-flower flower-northwest" />
               <span className="starting-flower flower-northeast" />
               <span className="starting-flower flower-southwest" />
