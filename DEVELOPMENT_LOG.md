@@ -215,3 +215,14 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Fix: forced the mounted rider animation off with `!important`, locked its horizontal sprite frame to zero, and preserved the animal-only walk animation.
 - Published output: added docs/assets/index-mounted-seated.css and updated docs/index.html to load it.
 - Verification: source, new published stylesheet, and HTML stylesheet reference contain the explicit frame lock; no local build, typecheck, runtime, or gameplay execution.
+
+
+## Checkpoint 017 — mounted animal head composition
+
+- Date: 2026-08-31 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- Diagnosis: the rider was layered over the animal body, but the published mounted markup had no separate animal-front layer even though the stylesheet reserved the stacking seam.
+- Fix: added a mounted-only animal-head overlay above the seated rider and synchronized its directional rows, horizontal flip, and walk animation with the animal sprite.
+- Published output: updated the active Pages bundle and cache-busted docs/index.html.
+- Verification: static content and marker checks only; no local build, typecheck, runtime, or gameplay execution.
