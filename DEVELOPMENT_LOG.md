@@ -206,3 +206,12 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Fix: mounted rider now holds its direction-specific idle pose while the animal retains its own walk animation; mounted movement speed and facing behavior are unchanged.
 - Published output: synchronized the active docs/assets/index-BF9_2MBc.css stylesheet referenced by docs/index.html.
 - Verification: source and active Pages stylesheet contain matching seated-rider rules; no local build, typecheck, runtime, or gameplay execution.
+## Checkpoint 016 — force seated mounted rider frame
+
+- Date: 2026-08-31 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- Diagnosis: the first seated-rider override did not visibly change the published game, so the mounted rider animation needed an explicit frame lock and a cache-busted Pages stylesheet path.
+- Fix: forced the mounted rider animation off with `!important`, locked its horizontal sprite frame to zero, and preserved the animal-only walk animation.
+- Published output: added docs/assets/index-mounted-seated.css and updated docs/index.html to load it.
+- Verification: source, new published stylesheet, and HTML stylesheet reference contain the explicit frame lock; no local build, typecheck, runtime, or gameplay execution.
