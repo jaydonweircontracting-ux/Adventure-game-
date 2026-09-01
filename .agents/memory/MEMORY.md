@@ -35,3 +35,12 @@ The successful deployment required declaring @tanstack/react-query and wouter as
 ## Mounted rider/cow layer guardrail
 
 - Keep the mounted visual stack explicit: cow body below the player head, cow head overlay above the player head. Apply it for every facing direction and synchronize the active bundle referenced by `docs/index.html`.
+
+
+## Collaboration and checkpoint workflow
+
+- Before substantive implementation, record the user's direction, planned scope, constraints, and pending work in the shared repository.
+- Push that checkpoint to GitHub main before editing code so progress survives interrupted sessions, credit limits, or a handoff.
+- Keep DEVELOPMENT_LOG.md and this memory file current with decisions, completed work, verification limits, and next steps.
+- Another AI may be testing or polishing concurrently: reread the latest main state before each work slice, keep edits narrow, and avoid overwriting unrelated changes.
+- Cleanup and optimization are allowed only when they preserve current gameplay, content, and player-facing behavior; do not add gameplay or content during polish passes.
