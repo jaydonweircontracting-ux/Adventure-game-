@@ -673,10 +673,10 @@ if (active) {
            animationFrame = window.requestAnimationFrame(animate); return;
          }
         const travelLabels: string[] = [];
-        if (next.x < 10) { next.x = 88; nextChunk.x -= 1; travelLabels.push('west'); }
-        if (next.x > 90) { next.x = 12; nextChunk.x += 1; travelLabels.push('east'); }
-        if (next.y < 12) { next.y = 86; nextChunk.y -= 1; travelLabels.push('north'); }
-        if (next.y > 88) { next.y = 14; nextChunk.y += 1; travelLabels.push('south'); }
+        if (next.x < 4) { next.x = 94; nextChunk.x -= 1; travelLabels.push('west'); }
+        if (next.x > 96) { next.x = 6; nextChunk.x += 1; travelLabels.push('east'); }
+        if (next.y < 4) { next.y = 94; nextChunk.y -= 1; travelLabels.push('north'); }
+        if (next.y > 96) { next.y = 6; nextChunk.y += 1; travelLabels.push('south'); }
         if (!isFieldPositionBlocked(next, nextChunk)) {
           positionRef.current = next;
           setPosition(next);
@@ -792,6 +792,10 @@ if (active) {
   const fieldTrees = fieldTreesFor(chunk);
   const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
   const startingArea = isStartingArea(chunk);
+  const cameraShift = {
+    x: Math.max(-5, Math.min(5, (50 - position.x) * 0.16)),
+    y: Math.max(-5, Math.min(5, (50 - position.y) * 0.16)),
+  };
 
   return (
     <div className="field-column">
@@ -803,6 +807,7 @@ if (active) {
           '--field-glow': fieldPalette.glow,
         } as CSSProperties}>
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
+          <div className="field-world-layer" style={{ transform: 'translate(' + cameraShift.x + '%, ' + cameraShift.y + '%)' }}>
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
           {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road + (currentWorldTile.bridge ? ' field-bridge' : '')} aria-hidden="true" />}
           {startingArea && (
@@ -875,6 +880,7 @@ if (active) {
               {canMount && <button className="horse-mount-button" style={{ left: horseDisplayPosition.x + '%', top: Math.min(88, Math.max(12, horseDisplayPosition.y + 10)) + '%' }} onClick={toggleMount} aria-label="Mount horse" data-testid="button-toggle-mount">Mount</button>}
             </>
           )}
+          </div>
           {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving' : '')} style={{ left: position.x + '%', top: position.y + '%' }} data-facing={facing} data-testid="player-character">
             <span className="player-sprite" />
           </div>}
