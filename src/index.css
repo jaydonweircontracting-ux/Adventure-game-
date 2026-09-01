@@ -1914,6 +1914,17 @@ body {
 .interior-guild { background: #66734d; } .interior-guild::after { background: linear-gradient(135deg, rgba(216, 226, 157, .14), transparent 45%), #927258; }
 .interior-inn { background: #694a42; } .interior-inn::after { background: linear-gradient(135deg, rgba(250, 199, 107, .18), transparent 45%), #a46c4c; }
 .interior-chapel { background: #4b6257; } .interior-chapel::after { background: linear-gradient(135deg, rgba(177, 226, 186, .15), transparent 45%), #70856b; }
+.interior-building { background: #2f231d; }
+.interior-building::after { background: linear-gradient(135deg, rgba(224, 179, 119, .12), transparent 48%), #5a3929; }
+.interior-building .interior-room {
+  inset: 19% 10% 10%;
+  border: 6px solid #3f2a20;
+  background-color: #80553c;
+  background-image: linear-gradient(90deg, rgba(52, 33, 24, .42) 1px, transparent 1px), linear-gradient(0deg, rgba(52, 33, 24, .42) 1px, transparent 1px);
+  background-size: 12.5% 12.5%;
+  box-shadow: inset 0 0 0 2px rgba(207, 147, 95, .34), 0 5px 0 rgba(28, 20, 17, .3);
+}
+.interior-building .interior-room > span { display: none; }
 .interior-doorway { position: absolute; z-index: 7; left: 50%; bottom: 4%; width: 58px; height: 34px; border: 3px solid #4a332e; background: #302b31; transform: translateX(-50%); box-shadow: 0 0 0 3px rgba(244, 201, 93, .28); }
 .interior-doorway span { position: absolute; top: 9px; left: 50%; color: #f2c96f; font-family: var(--app-font-mono); font-size: 7px; transform: translateX(-50%); }
 .interior-player { position: absolute; z-index: 9; width: 46px; height: 48px; transform: translate(-50%, -50%); }
