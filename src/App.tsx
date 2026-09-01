@@ -294,8 +294,17 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
   if (!landmark) return [];
   return fieldHouseRects(landmark.kind, isStartingArea(chunk)).map((rect, index) => {
     const namedDoorway = isStartingArea(chunk) ? startingDoorways.find((doorway) => doorway.buildingIndex === index) : null;
-    if (namedDoorway) return namedDoorway;
-    const position = { x: (rect.left + rect.right) / 2, y: Math.min(88, rect.bottom + 4) };
+    const position = fieldDoorPosition(rect);
+    if (namedDoorway) {
+      return {
+        ...namedDoorway,
+        position,
+        area: {
+          ...namedDoorway.area,
+          exteriorPosition: { x: position.x, y: Math.min(94, position.y + 10) },
+        },
+      };
+    }
     return {
       id: chunk.x + ',' + chunk.y + '-building-' + index,
       position,
@@ -304,10 +313,18 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
         name: landmark.name + ' House ' + (index + 1),
         description: 'A simple brown room waiting to be furnished.',
         roomType: 'building' as const,
-        exteriorPosition: { x: position.x, y: Math.min(94, position.y + 8) },
+        exteriorPosition: { x: position.x, y: Math.min(94, position.y + 10) },
       },
     };
   });
+}
+
+function fieldDoorPosition(rect: FieldRect): Point {
+  // Match .field-house::after: left 43%, width 16%, bottom 0, height 44%.
+  return {
+    x: rect.left + (rect.right - rect.left) * 0.51,
+    y: rect.top + (rect.bottom - rect.top) * 0.78,
+  };
 }
 
 function doorwayNear(position: Point, chunk: Point) {
@@ -399,13 +416,6 @@ const startingTownNpcs: TownNpc[] = [
 ];
 
 const atlasBounds = { minX: -3, maxX: 11, minY: 1, maxY: 13 };
-const CAMERA_DEAD_ZONE = 10;
-function cameraShiftAxis(coordinate: number) {
-  const offset = 50 - coordinate;
-  if (Math.abs(offset) <= CAMERA_DEAD_ZONE) return 0;
-  return Math.max(-4, Math.min(4, (offset - Math.sign(offset) * CAMERA_DEAD_ZONE) * 0.4));
-}
-
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
   const atlasWidth = atlasBounds.maxX - atlasBounds.minX + 1;
@@ -851,10 +861,6 @@ if (active) {
   const fieldTrees = fieldTreesFor(chunk);
   const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
   const startingArea = isStartingArea(chunk);
-  const cameraShift = {
-    x: cameraShiftAxis(position.x),
-    y: cameraShiftAxis(position.y),
-  };
 
   return (
     <div className="field-column">
@@ -866,7 +872,7 @@ if (active) {
           '--field-glow': fieldPalette.glow,
         } as CSSProperties}>
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
-          <div className="field-world-layer" style={{ transform: 'translate(' + cameraShift.x + '%, ' + cameraShift.y + '%)' }}>
+          <div className="field-world-layer">
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
           {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road + (currentWorldTile.bridge ? ' field-bridge' : '')} aria-hidden="true" />}
           {startingArea && (
