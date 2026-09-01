@@ -299,3 +299,12 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Published output: synchronized `docs/assets/index-C03jPy2H.js` and cache-busted its reference in `docs/index.html`.
 - Verification: static source and published-bundle marker checks only; no mount, build, runtime, or tests.
 - Status: implemented and pushed.
+
+## Checkpoint 025 — goat movement and path-end polish
+
+- Date: 2026-09-01 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- User direction: slow the goats down, give each goat distinct random-looking movement, fix the flashing sprite, make goats slightly bigger, and remove rounded ends from pathways in main areas.
+- Planned scope: add deterministic per-goat movement cadence and wander seed, reduce step distance, animate the goat sprite only while it is moving, enlarge the goat render, and square the starting-area road cross. Preserve combat, collision, spawn positions, and existing gameplay content.
+- Constraints: GitHub-only; no repository mount or import; no build, runtime, or tests under the current workflow.
+- Status: pre-implementation checkpoint; source and published bundle update pending.
