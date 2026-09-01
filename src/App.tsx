@@ -12,7 +12,7 @@ import { createAdventureBrain, type RPGBrain } from '@/game/rpgBrain';
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '026';
+const BUILD_NUMBER = '027';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 type HorseState = { chunk: Point; position: Point };
@@ -290,6 +290,9 @@ const startingDoorways: Doorway[] = [
   { id: 'chapel-door', buildingIndex: 2, position: { x: 30, y: 72 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 30, y: 60 } } },
 ];
 
+const STARTING_DOORWAY_ID = 'tutorial-house-door';
+const startingHouse = startingDoorways.find((doorway) => doorway.id === STARTING_DOORWAY_ID)?.area || startingDoorways[0].area;
+
 function buildingDoorwaysFor(chunk: Point): Doorway[] {
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   if (!landmark) return [];
@@ -363,6 +366,9 @@ const GOAT_ATTACK_RANGE = 9;
 const GOAT_ATTACK_DAMAGE = 3;
 const GOAT_XP_REWARD = 25;
 const PLAYER_MAX_HP = 100;
+const GOAT_GOLD_DROP = 5;
+const GOAT_FABRIC_DROP = 1;
+const GOAT_HORN_DROP = 1;
 const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0 };
 const classDescriptions: Record<Exclude<PlayerClass, 'Beginner'>, string> = {
   Warrior: 'More health and a heavy starting style.',
@@ -454,7 +460,7 @@ function chunkRegion(chunk: Point) {
 }
 
 const initialLogs = [
-  { text: 'You wake inside the Tutorial House on the island.', color: 'blue' },
+  { text: 'You wake inside the left Tutorial House on the island.', color: 'blue' },
   { text: 'Leave the house to meet goats and the town guides.', color: '' },
   { text: 'A test horse waits just east of the square.', color: 'blue' },
 ];
@@ -575,7 +581,7 @@ function InventorySheet({ inventory, onClose }: { inventory: GameInventory; onCl
               <span>Defeat goats to find horns and useful supplies.</span>
             </div>
           )}
-          <div className="inventory-note">Goat horns are guaranteed. Each goat also drops either coins or fabric.</div>
+  <div className="inventory-note">Every goat drops 1 horn, 1 fabric, and 5 gold.</div>
         </div>
       </div>
     </div>
@@ -636,7 +642,7 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
   const [npcStates, setNpcStates] = useState(startingTownNpcs);
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }));
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
-  const [interior, setInterior] = useState<InteriorArea | null>(() => startingDoorways[0].area);
+  const [interior, setInterior] = useState<InteriorArea | null>(startingHouse);
   const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 52 });
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
@@ -653,7 +659,7 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
   const playerClassRef = useRef<PlayerClass>(playerClass);
   const interiorRef = useRef(interior);
   const interiorPositionRef = useRef(interiorPosition);
-  const interiorDoorwayIdRef = useRef<string | null>('tutorial-house-door');
+  const interiorDoorwayIdRef = useRef<string | null>(STARTING_DOORWAY_ID);
   const doorwayExitCooldownRef = useRef<string | null>(null);
   const goatWorldStepRef = useRef(0);
   const brainRef = useRef<RPGBrain | null>(null);
@@ -959,12 +965,9 @@ if (active) {
     goatsRef.current = nextGoats;
     setGoats(nextGoats);
     if (defeated) {
-      const dropsCoins = Math.random() < 0.65;
-      const coinCount = dropsCoins ? 4 + Math.floor(Math.random() * 9) : 0;
-      const fabricCount = dropsCoins ? 0 : 1;
-      const loot: GoatLoot = { goatHorns: 1, coins: coinCount, fabric: fabricCount };
+      const loot: GoatLoot = { goatHorns: GOAT_HORN_DROP, coins: GOAT_GOLD_DROP, fabric: GOAT_FABRIC_DROP };
       onLoot(loot);
-      const bonusDrop = dropsCoins ? `${coinCount} coins` : '1 fabric';
+      const bonusDrop = `${GOAT_GOLD_DROP} gold + ${GOAT_FABRIC_DROP} fabric`;
       const nextXp = playerXpRef.current + GOAT_XP_REWARD;
       const nextLevel = Math.floor(nextXp / 100) + 1;
       const previousLevel = playerLevelRef.current;
@@ -1060,6 +1063,7 @@ if (active) {
   const startingArea = isStartingArea(chunk);
   const xpIntoLevel = playerXp - (playerLevel - 1) * 100;
   const levelProgress = Math.min(100, Math.max(0, (xpIntoLevel / 100) * 100));
+  const inventoryItemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths;
   const talkToNpc = (npc: TownNpc) => {
     setNpcDialogue(npc);
     setLogs((currentLogs) => [{ text: `${npc.name} turns to you: ${npc.title}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
@@ -1222,8 +1226,8 @@ if (active) {
         )}
         <div className="world-hud">
           <div className="hud-card" data-testid="hud-player">
-            <div className="hud-label"><span>Character</span><span>Lv {playerLevel}</span></div>
-            <div className="hud-name">Adventure <span className="hud-class">{playerClass}</span></div>
+            <div className="hud-label"><span>Player</span><span data-testid="text-level">LV {playerLevel}</span></div>
+            <div className="hud-name"><span className="hud-class">{playerClass}</span></div>
             <div className="bar" aria-label={'Health ' + playerHp + ' percent'}><div className="bar-fill health" style={{ width: (playerHp / PLAYER_MAX_HP) * 100 + '%' }} /></div><span className="hud-health-value">{playerHp} / {PLAYER_MAX_HP} HP</span>
             <div className="level-bar-label"><span>Experience</span><span>{xpIntoLevel} / 100 XP</span></div>
             <div className="bar level-bar" aria-label={'Level ' + playerLevel + ', ' + playerXp + ' experience points'}><div className="bar-fill experience" style={{ width: levelProgress + '%' }} /></div>
@@ -1232,7 +1236,8 @@ if (active) {
           </div>
           <button className="hud-card right hud-button" onClick={onOpenInventory} aria-label="Open inventory" data-testid="button-open-inventory">
             <div className="hud-label"><span>Satchel</span><Coins size={12} /></div>
-             <div className="hud-coins" data-testid="text-coin-count">{inventory.coins.toLocaleString()} g</div>
+             <div className="hud-coins" data-testid="text-coin-count">{inventory.coins.toLocaleString()} gold</div>
+             <div className="hud-items" data-testid="text-item-count">{inventoryItemCount} items</div>
             <div className="hud-time" data-testid="text-game-time">{time} / clear</div>
           </button>
         </div>
@@ -1273,6 +1278,13 @@ function Home() {
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
   const [inventory, setInventory] = useState<GameInventory>(initialInventory);
+  const applyLoot = (loot: GoatLoot) => setInventory((current) => ({
+    coins: Math.max(0, current.coins + (loot.coins || 0)),
+    goatHorns: Math.max(0, current.goatHorns + (loot.goatHorns || 0)),
+    fabric: Math.max(0, current.fabric + (loot.fabric || 0)),
+    daggers: Math.max(0, current.daggers + (loot.daggers || 0)),
+    cloths: Math.max(0, current.cloths + (loot.cloths || 0)),
+  }));
 
   useEffect(() => {
     const closeSheets = (event: KeyboardEvent) => {
@@ -1295,13 +1307,7 @@ function Home() {
       } as CSSProperties}
     >
       <div className="game-layout">
-       <GameField inventory={inventory} onLoot={(loot) => setInventory((current) => ({
-         coins: current.coins + (loot.coins || 0),
-         goatHorns: current.goatHorns + (loot.goatHorns || 0),
-         fabric: current.fabric + (loot.fabric || 0),
-          daggers: current.daggers + (loot.daggers || 0),
-          cloths: current.cloths + (loot.cloths || 0),
-       }))} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen} />
+       <GameField inventory={inventory} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen} />
       </div>
       {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
        {inventoryOpen && <InventorySheet inventory={inventory} onClose={() => setInventoryOpen(false)} />}
