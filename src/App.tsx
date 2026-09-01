@@ -246,8 +246,6 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
   const tile = mapTileFor(chunk);
   if (tile.waterFeature === 'sea' || (tile.waterFeature !== null && !tile.bridge)) return true;
 
-  if (doorwayNear(position, chunk)) return false;
-
   const treeBlocked = fieldTreesFor(chunk).some((tree) => {
     const center = { x: tree.x + 3.2 * tree.scale, y: tree.y + 2.5 * tree.scale };
     return Math.hypot(position.x - center.x, position.y - center.y) < 5.2 * tree.scale;
@@ -255,7 +253,20 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
   if (treeBlocked) return true;
 
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
-  return landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk)).some((rect) => pointInRect(position, rect, 2.5)) : false;
+  if (!landmark) return false;
+
+  const houseRects = fieldHouseRects(landmark.kind, isStartingArea(chunk));
+  const doorways = buildingDoorwaysFor(chunk);
+  return houseRects.some((rect, index) => {
+    if (!pointInRect(position, rect, 2.5)) return false;
+
+    const doorway = doorways[index];
+    const inDoorwayOpening = doorway
+      && Math.abs(position.x - doorway.position.x) <= 4.2
+      && position.y >= doorway.position.y - 4.2
+      && position.y <= rect.bottom + 4.2;
+    return !inDoorwayOpening;
+  });
 }
 
 function wrapFieldPosition(position: Point, chunk: Point) {
@@ -660,7 +671,6 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
   const interiorRef = useRef(interior);
   const interiorPositionRef = useRef(interiorPosition);
   const interiorDoorwayIdRef = useRef<string | null>(STARTING_DOORWAY_ID);
-  const doorwayExitCooldownRef = useRef<string | null>(null);
   const goatWorldStepRef = useRef(0);
   const brainRef = useRef<RPGBrain | null>(null);
   if (brainRef.current === null) {
@@ -867,7 +877,6 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
          const next = { x: Math.min(90, Math.max(10, current.x + movement.x)), y: current.y + movement.y };
          if (next.y > 91) {
            const exitPosition = currentInterior.exteriorPosition;
-           doorwayExitCooldownRef.current = interiorDoorwayIdRef.current;
            interiorDoorwayIdRef.current = null;
            interiorRef.current = null; setInterior(null);
            interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
@@ -889,14 +898,8 @@ if (active) {
         const current = positionRef.current;
         const currentChunk = chunkRef.current;
         const attempted = { x: current.x + movement.x, y: current.y + movement.y };
-        const cooldownDoor = doorwayExitCooldownRef.current
-          ? buildingDoorwaysFor(currentChunk).find((doorway) => doorway.id === doorwayExitCooldownRef.current)
-          : null;
-        if (!cooldownDoor || Math.hypot(attempted.x - cooldownDoor.position.x, attempted.y - cooldownDoor.position.y) > 10) {
-          doorwayExitCooldownRef.current = null;
-        }
         const nearbyDoor = doorwayNear(attempted, currentChunk);
-        if (nearbyDoor && nearbyDoor.id !== doorwayExitCooldownRef.current && canEnterDoorway(current, attempted, nearbyDoor, direction)) {
+        if (nearbyDoor && canEnterDoorway(current, attempted, nearbyDoor, direction)) {
           interiorDoorwayIdRef.current = nearbyDoor.id;
           interiorRef.current = nearbyDoor.area; setInterior(nearbyDoor.area);
           interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
