@@ -1910,6 +1910,7 @@ body {
 .goat-aggro .goat-aggro { position: absolute; z-index: 4; right: -1px; top: -13px; display: grid; place-items: center; width: 13px; height: 13px; color: #fff4cf; border: 1px solid #67372f; border-radius: 50%; background: #b94d42; font: 10px/1 var(--app-font-mono); }
 @keyframes goat-angry { from { transform: translateX(-1px); } to { transform: translateX(1px); } }
 .hud-health-value { display: block; margin-top: 3px; color: rgba(255, 244, 211, .78); font-family: var(--app-font-mono); font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
+.hud-build { display: block; margin-top: 4px; color: rgba(203, 216, 187, .72); font-family: var(--app-font-mono); font-size: 7px; letter-spacing: .12em; text-transform: uppercase; }
 .field-attack-button { color: #fff0cf; background: rgba(131, 67, 55, .9); border-color: rgba(238, 185, 133, .72); }
 .field-attack-button:hover, .field-attack-button:focus-visible { background: rgba(172, 78, 60, .98); }
 .combat-flash { position: absolute; z-index: 14; top: max(72px, calc(env(safe-area-inset-top) + 56px)); left: 50%; width: max-content; max-width: calc(100% - 32px); padding: 7px 11px; color: #fff4d5; border: 1px solid rgba(255, 221, 150, .74); background: rgba(101, 52, 42, .9); box-shadow: 3px 3px 0 rgba(48, 42, 32, .25); font-family: var(--app-font-mono); font-size: 9px; transform: translateX(-50%); animation: combat-pop .2s ease both; pointer-events: none; }
