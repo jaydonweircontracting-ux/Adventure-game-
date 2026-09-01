@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Map, Minus, Plus, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
-import { type ReactNode } from 'react';
+import { type PointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -503,6 +503,16 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
     keysRef.current[direction] = false;
     setMoving(Object.values(keysRef.current).some(Boolean));
   };
+  const beginDirection = (direction: Direction, event: PointerEvent<HTMLButtonElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pressDirection(direction);
+  };
+  const endDirection = (direction: Direction, event: PointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    releaseDirection(direction);
+  };
 
   const horseHere = horse.chunk.x === chunk.x && horse.chunk.y === chunk.y;
   const horseDistance = Math.hypot(position.x - horse.position.x, position.y - horse.position.y);
@@ -631,10 +641,10 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
           </button>
         </div>
         <div className="touch-controls" aria-label="Touch movement controls">
-           <button className="touch-control up" aria-label="Move north" data-testid="button-move-up" onPointerDown={() => pressDirection('up')} onPointerUp={() => releaseDirection('up')} onPointerCancel={() => releaseDirection('up')} onPointerLeave={() => releaseDirection('up')}><ChevronUp size={18} /></button>
-           <button className="touch-control left" aria-label="Move west" data-testid="button-move-left" onPointerDown={() => pressDirection('left')} onPointerUp={() => releaseDirection('left')} onPointerCancel={() => releaseDirection('left')} onPointerLeave={() => releaseDirection('left')}><ChevronLeft size={18} /></button>
-           <button className="touch-control down" aria-label="Move south" data-testid="button-move-down" onPointerDown={() => pressDirection('down')} onPointerUp={() => releaseDirection('down')} onPointerCancel={() => releaseDirection('down')} onPointerLeave={() => releaseDirection('down')}><ChevronDown size={18} /></button>
-           <button className="touch-control right" aria-label="Move east" data-testid="button-move-right" onPointerDown={() => pressDirection('right')} onPointerUp={() => releaseDirection('right')} onPointerCancel={() => releaseDirection('right')} onPointerLeave={() => releaseDirection('right')}><ChevronRight size={18} /></button>
+           <button className="touch-control up" aria-label="Move north" data-testid="button-move-up" onPointerDown={(event) => beginDirection('up', event)} onPointerUp={(event) => endDirection('up', event)} onPointerCancel={(event) => endDirection('up', event)} onLostPointerCapture={() => releaseDirection('up')}><ChevronUp size={18} /></button>
+           <button className="touch-control left" aria-label="Move west" data-testid="button-move-left" onPointerDown={(event) => beginDirection('left', event)} onPointerUp={(event) => endDirection('left', event)} onPointerCancel={(event) => endDirection('left', event)} onLostPointerCapture={() => releaseDirection('left')}><ChevronLeft size={18} /></button>
+           <button className="touch-control down" aria-label="Move south" data-testid="button-move-down" onPointerDown={(event) => beginDirection('down', event)} onPointerUp={(event) => endDirection('down', event)} onPointerCancel={(event) => endDirection('down', event)} onLostPointerCapture={() => releaseDirection('down')}><ChevronDown size={18} /></button>
+           <button className="touch-control right" aria-label="Move east" data-testid="button-move-right" onPointerDown={(event) => beginDirection('right', event)} onPointerUp={(event) => endDirection('right', event)} onPointerCancel={(event) => endDirection('right', event)} onLostPointerCapture={() => releaseDirection('right')}><ChevronRight size={18} /></button>
         </div>
          {logOpen && (
            <section id="field-log-drawer" className="field-log-drawer" aria-label="Field log" data-testid="panel-field-log">
