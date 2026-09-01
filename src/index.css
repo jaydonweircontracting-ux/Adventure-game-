@@ -1786,3 +1786,53 @@ body {
   padding: 0;
   gap: 0;
 }
+
+/* Starting-area redesign: a clean, decorated four-way clearing with safe tree bounds. */
+.starting-area .field-road-cross {
+  left: -7%;
+  right: -7%;
+  top: 45%;
+  height: 11%;
+  border-radius: 999px;
+}
+.starting-area .field-road-cross::after {
+  top: -420%;
+  bottom: -420%;
+  left: 45%;
+  width: 11%;
+  border-radius: 999px;
+}
+.starting-area .field-trees { z-index: 5; }
+.starting-area-decor {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  pointer-events: none;
+}
+.starting-plaza-ring {
+  position: absolute;
+  left: 39%;
+  top: 36%;
+  width: 22%;
+  height: 28%;
+  border: 2px dashed rgba(255, 232, 157, .7);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(91, 116, 60, .12), inset 0 0 0 2px rgba(103, 76, 38, .16);
+}
+.starting-flower {
+  position: absolute;
+  width: 22px;
+  height: 12px;
+  border: 1px solid rgba(86, 73, 39, .42);
+  border-radius: 55% 45% 48% 52%;
+  background: radial-gradient(circle at 22% 40%, #f2d36d 0 2px, transparent 3px), radial-gradient(circle at 52% 64%, #d87565 0 2px, transparent 3px), radial-gradient(circle at 78% 34%, #efe6a4 0 2px, transparent 3px), #6d9b53;
+  box-shadow: 2px 2px 0 rgba(55, 73, 42, .18);
+}
+.flower-northwest { left: 29%; top: 34%; }
+.flower-northeast { right: 29%; top: 34%; }
+.flower-southwest { left: 29%; bottom: 34%; }
+.flower-southeast { right: 29%; bottom: 34%; }
+.world-field.starting-area .field-village {
+  background: rgba(196, 178, 117, .14);
+  border-color: rgba(99, 75, 45, .38);
+}
