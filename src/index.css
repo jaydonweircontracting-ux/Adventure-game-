@@ -629,9 +629,14 @@
   align-items: center;
   justify-content: center;
   height: 28px;
+  min-height: 44px;
+  min-width: 72px;
   padding: 0 9px;
   border: 1px solid rgba(232, 211, 161, .88);
   color: #fff3d4;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
   background: rgba(29, 67, 49, .96);
   box-shadow: 3px 3px 0 rgba(25, 56, 47, .2);
   font-family: var(--app-font-mono);
@@ -648,9 +653,12 @@
   display: block;
   width: 100%;
   height: 27px;
+  min-height: 44px;
   margin-top: 8px;
   border: 1px solid rgba(232, 211, 161, .76);
   color: #fff3d4;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   background: rgba(29, 67, 49, .93);
   font-family: var(--app-font-mono);
   font-size: 9px;
