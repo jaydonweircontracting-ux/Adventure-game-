@@ -1871,3 +1871,23 @@ body {
 .world-field.map-terrain-woodland { background-image: radial-gradient(circle at 17% 23%, rgba(38, 103, 64, .42) 0 5%, transparent 6%), radial-gradient(circle at 68% 70%, rgba(38, 103, 64, .32) 0 7%, transparent 8%), repeating-linear-gradient(25deg, transparent 0 12px, rgba(33, 91, 53, .15) 13px 15px, transparent 16px 25px); }
 .world-field.map-terrain-autumn { background-image: radial-gradient(circle at 18% 26%, rgba(226, 159, 71, .24) 0 5%, transparent 6%), radial-gradient(circle at 74% 62%, rgba(106, 69, 46, .2) 0 7%, transparent 8%), linear-gradient(135deg, rgba(255, 214, 127, .14), transparent 48%); }
 @media (max-width: 700px) { .map-grid { inset: 9px; border-width: 3px; } .atlas-region-label { font-size: 6px; } .map-settlement-name { font-size: 6px; max-width: 62px; } .atlas-compass { top: 13px; right: 15px; } }
+
+
+/* Independent goat wildlife and light combat. */
+.field-goats { position: absolute; z-index: 5; inset: 0; pointer-events: none; }
+.goat { position: absolute; width: 34px; height: 30px; transform: translate(-50%, -50%); transition: left .42s ease, top .42s ease; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .2)); }
+.goat-sprite { position: absolute; left: 3px; top: 7px; width: 25px; height: 17px; border: 2px solid #75664e; border-radius: 54% 42% 46% 50%; background: #efe4c7; box-shadow: inset 6px 2px 0 rgba(255, 251, 228, .7), inset -4px -2px 0 rgba(174, 154, 117, .35); }
+.goat-sprite::before { content: ''; position: absolute; right: -7px; top: -5px; width: 12px; height: 14px; border: 2px solid #75664e; border-radius: 48% 54% 50% 42%; background: #f2e8cf; box-shadow: 4px 2px 0 -2px #75664e; }
+.goat-sprite::after { content: ''; position: absolute; left: 4px; bottom: -8px; width: 4px; height: 9px; background: #75664e; box-shadow: 13px 0 0 #75664e; }
+.goat[data-facing='left'] .goat-sprite { transform: scaleX(-1); }
+.goat-aggro .goat-sprite { border-color: #8e4539; background: #ead8b8; box-shadow: inset 6px 2px 0 rgba(255, 245, 207, .65), inset -4px -2px 0 rgba(173, 109, 83, .35); animation: goat-angry .42s ease-in-out infinite alternate; }
+.goat-hp { position: absolute; z-index: 2; left: 5px; top: 2px; height: 3px; border: 1px solid rgba(50, 53, 37, .7); background: #80a457; }
+.goat-aggro .goat-hp { background: #b94d42; }
+.goat-aggro .goat-aggro { position: absolute; z-index: 4; right: -1px; top: -13px; display: grid; place-items: center; width: 13px; height: 13px; color: #fff4cf; border: 1px solid #67372f; border-radius: 50%; background: #b94d42; font: 10px/1 var(--app-font-mono); }
+@keyframes goat-angry { from { transform: translateX(-1px); } to { transform: translateX(1px); } }
+.hud-health-value { display: block; margin-top: 3px; color: rgba(255, 244, 211, .78); font-family: var(--app-font-mono); font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
+.field-attack-button { color: #fff0cf; background: rgba(131, 67, 55, .9); border-color: rgba(238, 185, 133, .72); }
+.field-attack-button:hover, .field-attack-button:focus-visible { background: rgba(172, 78, 60, .98); }
+.combat-flash { position: absolute; z-index: 14; top: max(72px, calc(env(safe-area-inset-top) + 56px)); left: 50%; width: max-content; max-width: calc(100% - 32px); padding: 7px 11px; color: #fff4d5; border: 1px solid rgba(255, 221, 150, .74); background: rgba(101, 52, 42, .9); box-shadow: 3px 3px 0 rgba(48, 42, 32, .25); font-family: var(--app-font-mono); font-size: 9px; transform: translateX(-50%); animation: combat-pop .2s ease both; pointer-events: none; }
+@keyframes combat-pop { from { opacity: 0; transform: translate(-50%, -5px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) { .goat { transition: none; } .goat-aggro .goat-sprite { animation: none; } }
