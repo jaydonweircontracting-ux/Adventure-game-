@@ -8,7 +8,6 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
-import { createAdventureBrain, type RPGBrain } from '@/game/rpgBrain';
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
@@ -368,12 +367,6 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const horseIdleAnchorRef = useRef(initialHorseState.position);
   const gameFrameRef = useRef<HTMLDivElement>(null);
   const areaFlashIdRef = useRef(0);
-  const brainRef = useRef<RPGBrain | null>(null);
-  if (brainRef.current === null) {
-    const brain = createAdventureBrain();
-    brain.movePlayer('mosslight-crossing');
-    brainRef.current = brain;
-  }
 
   useEffect(() => {
     [
@@ -494,7 +487,6 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
           positionRef.current = next;
           setPosition(next);
           if (travelLabels.length > 0) {
-              brainRef.current?.visitChunk(nextChunk, chunkRegion(nextChunk), travelLabels.join(' and '));
             chunkRef.current = nextChunk;
             setChunk(nextChunk);
             onChunkChange(nextChunk);
@@ -590,7 +582,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
 
   return (
     <div className="field-column">
-      <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
+      <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field">
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,

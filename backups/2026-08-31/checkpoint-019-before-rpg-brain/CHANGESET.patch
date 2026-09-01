@@ -1,0 +1,1513 @@
+diff --git a/src/App.tsx b/src/App.tsx
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -8,581 +8,589 @@
+ import { TooltipProvider } from '@/components/ui/tooltip';
+ import NotFound from '@/pages/not-found';
+ import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
+-
+-const queryClient = new QueryClient();
+-const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
+-type Direction = 'up' | 'down' | 'left' | 'right';
+-type Point = { x: number; y: number };
+-type HorseState = { chunk: Point; position: Point };
+-
+-const WALK_SPEED = 96; // 3x the original walking speed
+-const HORSE_SPEED = 180;
+-const HORSE_MOUNT_DISTANCE = 4.5;
+-const initialHorseState: HorseState = { chunk: { x: 4, y: 7 }, position: { x: 58, y: 52 } };
+-
+-const directionKeys: Record<string, Direction> = {
+-  ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
+-  ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
+-};
+-const delta: Record<Direction, Point> = {
+-  up: { x: 0, y: -2.4 }, down: { x: 0, y: 2.4 }, left: { x: -2.4, y: 0 }, right: { x: 2.4, y: 0 },
+-};
+-const terrainTypes = ['meadow', 'woodland', 'rock', 'shore', 'autumn', 'ocean'] as const;
+-type Terrain = (typeof terrainTypes)[number];
+-const fieldPalettes: Record<Terrain, { field: string; path: string; glow: string }> = {
+-  meadow: { field: '#77a45b', path: '#d9b979', glow: 'rgba(255, 227, 157, .22)' },
+-  woodland: { field: '#658e58', path: '#c7a66b', glow: 'rgba(180, 214, 141, .18)' },
+-  rock: { field: '#87927a', path: '#c9b27d', glow: 'rgba(238, 228, 186, .2)' },
+-  shore: { field: '#6f9b88', path: '#dfc58d', glow: 'rgba(218, 239, 194, .2)' },
+-  autumn: { field: '#9b785d', path: '#d6ae70', glow: 'rgba(255, 198, 123, .2)' },
+-  ocean: { field: '#2a6f8d', path: '#8ab8bd', glow: 'rgba(140, 213, 219, .2)' },
+-};
+-
+-type RegionStyle = 'greenvale' | 'brackenfen' | 'ironwood' | 'northwatch' | 'sunwash' | 'ocean';
+-const regionPalettes: Record<Exclude<RegionStyle, 'ocean'>, { field: string; path: string; glow: string }> = {
+-  greenvale: { field: '#77a45b', path: '#d9b979', glow: 'rgba(255, 227, 157, .22)' },
+-  brackenfen: { field: '#617d51', path: '#bca979', glow: 'rgba(186, 207, 135, .2)' },
+-  ironwood: { field: '#587b58', path: '#c4a26c', glow: 'rgba(188, 219, 157, .18)' },
+-  northwatch: { field: '#858a78', path: '#d0bd8b', glow: 'rgba(238, 228, 186, .2)' },
+-  sunwash: { field: '#9a7658', path: '#d7ac6b', glow: 'rgba(255, 198, 123, .2)' },
+-};
+-
+-function regionStyleFor(point: Point): RegionStyle {
+-  const distanceFromGreenvale = Math.max(Math.abs(point.x - 4), Math.abs(point.y - 7));
+-  if (distanceFromGreenvale >= 7) return 'ocean';
+-  if (point.y <= 5) return 'northwatch';
+-  if (point.x <= 3) return 'brackenfen';
+-  if (point.x >= 6) return 'ironwood';
+-  if (point.y >= 9) return 'sunwash';
+-  return 'greenvale';
+-}
+-
+-function chunkTerrain(chunk: Point): Terrain {
+-  const seed = Math.abs((chunk.x * 73856093) ^ (chunk.y * 19349663));
+-  return terrainTypes[seed % terrainTypes.length];
+-}
+-
+-type SettlementKind = 'village' | 'town';
+-type MapTile = {
+-  x: number;
+-  y: number;
+-  terrain: Terrain;
+-  regionStyle: RegionStyle;
+-  waterFeature: 'river' | 'lake' | 'sea' | null;
+-  waterEdge: 'north' | 'south' | 'east' | 'west' | null;
+-  road: 'horizontal' | 'vertical' | 'cross' | 'none';
+-  bridge: boolean;
+-  landmark: { name: string; kind: SettlementKind } | null;
+-};
+-
+-const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
+-  '4,7': { name: 'Mosslight Crossing', kind: 'town' },
+-  '2,6': { name: 'Fenmere Hamlet', kind: 'village' },
+-  '6,8': { name: 'Ironwood Southhold', kind: 'town' },
+-  '5,4': { name: 'Northwatch Beacon', kind: 'village' },
+-};
+-
+-function isStartingArea(point: Point) {
+-  return point.x === 4 && point.y === 7;
+-}
+-
+-function mapTileFor(point: Point): MapTile {
+-  // Wide regional bands keep the world readable while the outer rim is reserved for ocean.
+-  const regionStyle = regionStyleFor(point);
+-  const riverX = Math.round(2.8 + Math.sin((point.y - 7) * 0.68) * 1.45);
+-  const mainRiver = point.x === riverX;
+-  const branchRiverY = Math.round(8 + Math.sin(point.x * 0.55) * 0.8);
+-  const branchRiver = point.y === branchRiverY && point.x >= 2 && point.x <= 7;
+-  const lake = (point.x === 6 && point.y === 5) || (point.x === 7 && point.y === 5);
+-  const waterFeature = regionStyle === 'ocean' ? 'sea' : lake ? 'lake' : mainRiver || branchRiver ? 'river' : null;
+-  const isOcean = waterFeature === 'sea';
+-  const waterEdge = isOcean ? null : lake ? 'south' : mainRiver ? (Math.sin((point.y - 7) * 0.68) >= 0 ? 'east' : 'west') : branchRiver ? (Math.sin(point.x * 0.55) >= 0 ? 'south' : 'north') : null;
+-
+-  const ridgeBoundary = 4 + Math.sin(point.x * 0.5) * 1.1;
+-  const isRidge = point.y <= ridgeBoundary || point.x <= 0;
+-  const isWoodland = !isRidge && ((point.x <= 3 && point.y >= 6) || (point.x >= 6 && point.y >= 7) || (point.x === 5 && point.y === 5));
+-  const isAutumn = !isRidge && !isWoodland && point.y >= 9 && point.x <= 3;
+-  const terrain = isOcean ? 'ocean' : isRidge ? 'rock' : isWoodland ? 'woodland' : isAutumn ? 'autumn' : 'meadow';
+-
+-  const horizontalRoadY = Math.round(7 + Math.sin((point.x - 2) * 0.65) * 0.55);
+-  const verticalRoadX = Math.round(4 + Math.sin((point.y - 7) * 0.45) * 0.4);
+-  const startingArea = isStartingArea(point);
+-  const horizontalRoad = startingArea || (!isOcean && point.y === horizontalRoadY);
+-  const verticalRoad = startingArea || (!isOcean && point.x === verticalRoadX);
+-  const road = horizontalRoad && verticalRoad ? 'cross' : horizontalRoad ? 'horizontal' : verticalRoad ? 'vertical' : 'none';
+-  const bridge = waterFeature !== null && !isOcean && road !== 'none';
+-
+-  return {
+-    ...point,
+-    terrain,
+-    regionStyle,
+-    waterFeature,
+-    waterEdge,
+-    road,
+-    bridge,
+-    landmark: mapLandmarks[point.x + ',' + point.y] || null,
+-  };
+-}
+-
+-type FieldTree = { id: number; x: number; y: number; scale: number; variant: number; style: RegionStyle };
+-type FieldRect = { left: number; top: number; right: number; bottom: number };
+-
+-function fieldHouseRects(kind: SettlementKind, startingArea = false): FieldRect[] {
+-  const parent = kind === 'town'
+-    ? { left: 19, top: 21, width: 62, height: 58 }
+-    : { left: 23, top: 24, width: 54, height: 52 };
+-  const specs = [
+-    { left: 8, top: 11, width: 19, height: 13, scale: 1 },
+-    { left: 73, top: 12, width: 19, height: 13, scale: 1 },
+-    { left: 8, top: 75, width: 19, height: 13, scale: 1 },
+-    { left: 73, top: 75, width: 19, height: 13, scale: 1 },
+-  ];
+-
+-  if (!startingArea) {
+-    specs.push(
+-      { left: 39, top: 7, width: 19, height: 13, scale: 0.8 },
+-      { left: 39, top: 80, width: 19, height: 13, scale: 0.8 },
+-    );
+-  }
+-
+-  return specs.map((spec) => {
+-    const width = spec.width * spec.scale;
+-    const height = spec.height * spec.scale;
+-    const left = spec.left + (spec.width - width) / 2;
+-    const top = spec.top + (spec.height - height) / 2;
+-    return {
+-      left: parent.left + (left / 100) * parent.width,
+-      top: parent.top + (top / 100) * parent.height,
+-      right: parent.left + ((left + width) / 100) * parent.width,
+-      bottom: parent.top + ((top + height) / 100) * parent.height,
+-    };
+-  });
+-}
+-
+-function pointInRect(point: Point, rect: FieldRect, padding = 0) {
+-  return point.x >= rect.left - padding && point.x <= rect.right + padding && point.y >= rect.top - padding && point.y <= rect.bottom + padding;
+-}
+-
+-function fieldTreesFor(chunk: Point): FieldTree[] {
+-  const startingArea = isStartingArea(chunk);
+-  const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
+-  const treeStyle = regionStyleFor(chunk);
+-
+-  if (startingArea) {
+-    const perimeterTrees = [
+-      { x: 12, y: 13, scale: 0.56, variant: 1 },
+-      { x: 77, y: 13, scale: 0.56, variant: 2 },
+-      { x: 12, y: 78, scale: 0.56, variant: 2 },
+-      { x: 77, y: 78, scale: 0.56, variant: 1 },
+-    ];
+-    return perimeterTrees.map((tree, id) => ({ ...tree, id, style: treeStyle }));
+-  }
+-
+-  let seed = Math.abs((chunk.x * 92837111) + (chunk.y * 689287499)) + 1;
+-  const random = () => {
+-    const value = Math.sin(seed++) * 10000;
+-    return value - Math.floor(value);
+-  };
+-  const houseRects = landmark ? fieldHouseRects(landmark.kind) : [];
+-  const trees: FieldTree[] = [];
+-  const targetCount = 8 + Math.floor(random() * 5);
+-  let attempts = 0;
+-
+-  while (trees.length < targetCount && attempts < targetCount * 24) {
+-    attempts += 1;
+-    const x = 14 + random() * 72;
+-    const y = 13 + random() * 74;
+-    const scale = 0.72 + random() * 0.48;
+-    const center = { x: x + 3.2 * scale, y: y + 2.5 * scale };
+-    const tooCloseToStart = Math.hypot(center.x - 50, center.y - 52) < 12;
+-    const tooCloseToBuilding = houseRects.some((rect) => pointInRect(center, rect, 5));
+-    const tooCloseToTree = trees.some((tree) => Math.hypot(center.x - (tree.x + 3.2 * tree.scale), center.y - (tree.y + 2.5 * tree.scale)) < 9);
+-    if (tooCloseToStart || tooCloseToBuilding || tooCloseToTree) continue;
+-    trees.push({ id: trees.length, x, y, scale, variant: Math.floor(random() * 3), style: treeStyle });
+-  }
+-
+-  return trees;
+-}
+-
+-function isFieldPositionBlocked(position: Point, chunk: Point) {
+-  const tile = mapTileFor(chunk);
+-  if (tile.waterFeature === 'sea' || (tile.waterFeature !== null && !tile.bridge)) return true;
+-
+-  const treeBlocked = fieldTreesFor(chunk).some((tree) => {
+-    const center = { x: tree.x + 3.2 * tree.scale, y: tree.y + 2.5 * tree.scale };
+-    return Math.hypot(position.x - center.x, position.y - center.y) < 5.2 * tree.scale;
+-  });
+-  if (treeBlocked) return true;
+-
+-  const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
+-  return landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk)).some((rect) => pointInRect(position, rect, 2.5)) : false;
+-}
+-
+-function mapTileClass(tile: MapTile & { current: boolean }) {
+-  return [
+-    'map-tile',
+-    'map-terrain-' + tile.terrain,
+-    'map-region-' + tile.regionStyle,
+-    tile.waterFeature ? 'is-' + tile.waterFeature : '',
+-    tile.waterEdge ? 'water-edge-' + tile.waterEdge : '',
+-    tile.road !== 'none' ? 'has-road road-' + tile.road : '',
+-    tile.bridge ? 'has-bridge' : '',
+-    tile.current ? 'is-current' : '',
+-  ].filter(Boolean).join(' ');
+-}
+-
+-function chunkRegion(chunk: Point) {
+-  // Every land chunk gets a named reach; Greenvale is reserved for the village itself.
+-  if (chunk.x === 4 && chunk.y === 7) return 'Greenvale';
+-
+-  const latitudeNames = ['Far North', 'North', 'Upper', 'Northgate', 'Central', 'Southgate', 'Lower', 'South', 'Far South'];
+-  const latitude = latitudeNames[Math.max(0, Math.min(latitudeNames.length - 1, chunk.y - 3))];
+-  const coastalSea = Math.abs(chunk.x - 4) >= 4 || Math.abs(chunk.y - 7) >= 4;
+-  if (coastalSea) return latitude + (chunk.x < 4 ? ' Western Sea' : chunk.x > 4 ? ' Eastern Sea' : ' Open Sea');
+-
+-  if (chunk.x <= 3) {
+-    const reach = chunk.x <= 1 ? 'Deep Brackenfen' : chunk.x === 2 ? 'Outer Brackenfen' : 'Brackenfen Gate';
+-    return latitude === 'Central' ? reach : latitude + ' ' + reach;
+-  }
+-  if (chunk.x >= 5) {
+-    const reach = chunk.x >= 7 ? 'Deep Ironwood March' : chunk.x === 6 ? 'Outer Ironwood March' : 'Ironwood Gate';
+-    return latitude === 'Central' ? reach : latitude + ' ' + reach;
+-  }
+-  if (chunk.y <= 6) return chunk.y <= 4 ? 'High Northwatch Heights' : chunk.y === 5 ? 'Outer Northwatch Heights' : 'Northwatch Foothills';
+-  return chunk.y >= 10 ? 'Far Sunwash Coast' : chunk.y === 9 ? 'Outer Sunwash Coast' : 'Sunwash Foothills';
+-}
+-
+-const initialLogs = [
+-  { text: 'You arrive at the Mosslight Crossing.', color: '' },
+-  { text: 'A test horse waits just east of the square.', color: 'blue' },
+-  { text: 'The east path is clear.', color: 'blue' },
+-  { text: 'Your field position was saved locally.', color: '' },
+-];
+-
+-type TownNpc = {
+-  name: string;
+-  title: string;
+-  role: 'mage' | 'warrior' | 'guide' | 'rogue';
+-  position: Point;
+-  facing: Direction;
+-};
+-
+-const startingTownNpcs: TownNpc[] = [
+-  { name: 'Noah', title: 'Mage teacher', role: 'mage', position: { x: 40, y: 47 }, facing: 'right' },
+-  { name: 'Damon', title: 'Warrior teacher', role: 'warrior', position: { x: 60, y: 47 }, facing: 'left' },
+-  { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up' },
+-];
+-
+-function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
+-  const [zoom, setZoom] = useState(2);
+-  const radius = 6 - zoom;
+-  const gridSize = radius * 2 + 1;
+-  const mapScale = [0.72, 0.86, 1, 1.12][zoom - 1];
+-  const tiles = Array.from({ length: gridSize * gridSize }, (_, index) => {
+-    const row = Math.floor(index / gridSize);
+-    const column = index % gridSize;
+-    const point = {
+-      x: chunk.x + column - radius,
+-      y: chunk.y + row - radius,
+-    };
+-    return { ...mapTileFor(point), current: point.x === chunk.x && point.y === chunk.y };
+-  });
+-
+-  return (
+-    <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
+-      <div className="map-sheet">
+-        <div className="map-sheet-heading">
+-          <h2 id="map-title">Field atlas</h2>
+-          <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
+-        </div>
+-        <div className="map-toolbar">
+-          <span className="map-area-label">{chunkRegion(chunk)} region · {mapTileFor(chunk).terrain}</span>
+-          <div className="map-zoom-controls" aria-label="Map zoom controls">
+-            <button className="map-zoom-button" onClick={() => setZoom((value) => Math.max(1, value - 1))} disabled={zoom === 1} aria-label="Zoom out" data-testid="button-map-zoom-out"><Minus size={15} /></button>
+-            <span className="map-zoom-level">×{zoom}</span>
+-            <button className="map-zoom-button" onClick={() => setZoom((value) => Math.min(4, value + 1))} disabled={zoom === 4} aria-label="Zoom in" data-testid="button-map-zoom-in"><Plus size={15} /></button>
+-          </div>
+-        </div>
+-        <div className="big-map" data-testid="map-world-preview">
+-          <div className="map-grid" style={{ gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`, transform: `scale(${mapScale})` }}>
+-            {tiles.map((tile) => (
+-              <div className={mapTileClass(tile)} key={tile.x + '-' + tile.y} title={'Chunk ' + tile.x + ', ' + tile.y + ' · ' + (tile.landmark?.name || chunkRegion(tile))}>
+-                {tile.landmark && <span className={`map-settlement ${tile.landmark.kind}`} aria-label={tile.landmark.name} />}
+-                {tile.current && <span className="map-tile-player" aria-label="Your current position" />}
+-                {tile.current && <span className="map-tile-label">{tile.x}, {tile.y}</span>}
+-              </div>
+-            ))}
+-          </div>
+-        </div>
+-        <div className="map-legend">
+-          <span className="legend-item"><span className="legend-dot" /> You are here</span>
+-          <span className="legend-item"><span className="legend-dot gold" /> Waypoint</span>
+-          <span className="legend-item"><span className="legend-line river" /> River</span>
+-          <span className="legend-item"><span className="legend-line road" /> Road</span>
+-          <span className="legend-item">Chunk {chunk.x}, {chunk.y} · {chunkRegion(chunk)}</span>
+-        </div>
+-      </div>
+-    </div>
+-  );
+-}
+-
+-function InventorySheet({ onClose }: { onClose: () => void }) {
+-  return (
+-    <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="inventory-title" data-testid="overlay-inventory">
+-      <div className="map-sheet inventory-sheet">
+-        <div className="map-sheet-heading">
+-          <h2 id="inventory-title">Inventory</h2>
+-          <button className="map-close" onClick={onClose} aria-label="Close inventory" data-testid="button-close-inventory"><X size={19} /></button>
+-        </div>
+-        <div className="inventory-body">
+-          <div className="inventory-count">0 items carried</div>
+-          <div className="inventory-empty">
+-            <Backpack size={30} strokeWidth={1.5} />
+-            <strong>Your pack is empty</strong>
+-            <span>Items you discover on the road will appear here.</span>
+-          </div>
+-        </div>
+-      </div>
+-    </div>
+-  );
+-}
+-
+-function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute }: { onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void }) {
+-  const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
+-  const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
+-  const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
+-  const [moving, setMoving] = useState(false);
+-  const [facing, setFacing] = useState<Direction>('down');
+-  const [mounted, setMounted] = useState(false);
+-  const [horse, setHorse] = useState<HorseState>(initialHorseState);
+-  const [horseFacing, setHorseFacing] = useState<Direction>('down');
+-  const [logOpen, setLogOpen] = useState(false);
+-  const [logs, setLogs] = useState(initialLogs);
+-  const [time, setTime] = useState('08:43');
+-  const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
+-  const positionRef = useRef(position);
+-  const chunkRef = useRef(chunk);
+-  const mountedRef = useRef(mounted);
+-  const horseRef = useRef(horse);
+-  const horseIdleAnchorRef = useRef(initialHorseState.position);
+-  const gameFrameRef = useRef<HTMLDivElement>(null);
+-  const areaFlashIdRef = useRef(0);
+-
+-  useEffect(() => {
+-    [
+-      assetUrl('assets/gameplay/shining-fields/characters/player/idle.png'),
+-      assetUrl('assets/gameplay/shining-fields/characters/player/run.png'),
+-    ].forEach((src) => {
+-      const image = new Image();
+-      image.src = src;
+-    });
+-  }, []);
+-  useEffect(() => { positionRef.current = position; }, [position]);
+-  useEffect(() => { chunkRef.current = chunk; }, [chunk]);
+-  useEffect(() => { mountedRef.current = mounted; }, [mounted]);
+-  useEffect(() => { horseRef.current = horse; }, [horse]);
+-
+-  useEffect(() => {
+-    if (mounted) return;
+-
+-    const idleDirections: Direction[] = ['up', 'down', 'left', 'right'];
+-    let idleTimer = 0;
+-    const scheduleIdleAction = () => {
+-      idleTimer = window.setTimeout(() => {
+-        if (mountedRef.current) return;
+-
+-        const direction = idleDirections[Math.floor(Math.random() * idleDirections.length)];
+-        setHorseFacing(direction);
+-
+-        if (Math.random() < 0.38) {
+-          const currentHorse = horseRef.current;
+-          const idleStep = 3;
+-          const nextPosition = {
+-            x: currentHorse.position.x + (direction === 'left' ? -idleStep : direction === 'right' ? idleStep : 0),
+-            y: currentHorse.position.y + (direction === 'up' ? -idleStep : direction === 'down' ? idleStep : 0),
+-          };
+-          const anchor = horseIdleAnchorRef.current;
+-          const withinIdleArea = Math.hypot(nextPosition.x - anchor.x, nextPosition.y - anchor.y) <= 9;
+-          const withinField = nextPosition.x >= 12 && nextPosition.x <= 88 && nextPosition.y >= 12 && nextPosition.y <= 88;
+-
+-          if (withinIdleArea && withinField) {
+-            setHorse((current) => ({ ...current, position: nextPosition }));
+-          }
+-        }
+-
+-        if (!mountedRef.current) scheduleIdleAction();
+-      }, 2200 + Math.random() * 2800);
+-    };
+-
+-    scheduleIdleAction();
+-    return () => window.clearTimeout(idleTimer);
+-  }, [mounted]);
+-
+-  useEffect(() => {
+-    areaFlashIdRef.current += 1;
+-    setAreaFlash({ id: String(areaFlashIdRef.current), label: chunkRegion(chunk) });
+-  }, [chunk]);
+-
+-  useEffect(() => {
+-    if (!areaFlash) return;
+-    const timer = window.setTimeout(() => setAreaFlash(null), 1700);
+-    return () => window.clearTimeout(timer);
+-  }, [areaFlash]);
+-
+-  useEffect(() => {
+-    const clearInput = () => {
+-      keysRef.current = {};
+-      setMoving(false);
+-    };
+-    const onKeyDown = (event: KeyboardEvent) => {
+-      const direction = directionKeys[event.code];
+-      if (!direction) return;
+-      event.preventDefault();
+-      keysRef.current[direction] = true;
+-    };
+-    const onKeyUp = (event: KeyboardEvent) => {
+-      const direction = directionKeys[event.code];
+-      if (!direction) return;
+-      event.preventDefault();
+-      keysRef.current[direction] = false;
+-    };
+-    const onVisibilityChange = () => { if (document.hidden) clearInput(); };
+-    window.addEventListener('keydown', onKeyDown);
+-    window.addEventListener('keyup', onKeyUp);
+-    window.addEventListener('blur', clearInput);
+-    document.addEventListener('visibilitychange', onVisibilityChange);
+-
+-    let animationFrame = 0;
+-    let lastFrame = performance.now();
+-    const animate = (now: number) => {
+-      const elapsed = Math.min(50, now - lastFrame) / 1000;
+-      lastFrame = now;
+-      const input = {
+-        x: (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
+-        y: (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
+-      };
+-      const length = Math.hypot(input.x, input.y);
+-      const active = length > 0;
+-      setMoving(active);
+-
+-      if (active) {
+-        const direction = input.x > 0 ? 'right' : input.x < 0 ? 'left' : input.y < 0 ? 'up' : 'down';
+-        setFacing(direction);
+-        const speed = mountedRef.current ? HORSE_SPEED : WALK_SPEED;
+-        const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
+-        const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
+-        const movement = {
+-          x: (input.x / length) * speed * elapsed * 100 / frameWidth,
+-          y: (input.y / length) * speed * elapsed * 100 / frameHeight,
+-        };
+-        const current = positionRef.current;
+-        const next = { x: current.x + movement.x, y: current.y + movement.y };
+-        const nextChunk = { ...chunkRef.current };
+-        const travelLabels: string[] = [];
+-        if (next.x < 10) { next.x = 88; nextChunk.x -= 1; travelLabels.push('west'); }
+-        if (next.x > 90) { next.x = 12; nextChunk.x += 1; travelLabels.push('east'); }
+-        if (next.y < 12) { next.y = 86; nextChunk.y -= 1; travelLabels.push('north'); }
+-        if (next.y > 88) { next.y = 14; nextChunk.y += 1; travelLabels.push('south'); }
+-        if (!isFieldPositionBlocked(next, nextChunk)) {
+-          positionRef.current = next;
+-          setPosition(next);
+-          if (travelLabels.length > 0) {
+-            chunkRef.current = nextChunk;
+-            setChunk(nextChunk);
+-            onChunkChange(nextChunk);
+-            setLogs((currentLogs) => [{
+-              text: `You travel ${travelLabels.join(' and ')} into ${chunkRegion(nextChunk)} · chunk ${nextChunk.x}, ${nextChunk.y}.`,
+-              color: 'blue',
+-            }, ...currentLogs].slice(0, 3));
+-          }
+-        }
+-      }
+-      animationFrame = window.requestAnimationFrame(animate);
+-    };
+-    animationFrame = window.requestAnimationFrame(animate);
+-    const clock = window.setInterval(() => {
+-      setTime((current) => {
+-        const [hours, minutes] = current.split(':').map(Number);
+-        const nextMinutes = minutes + 1;
+-        return String((hours + Math.floor(nextMinutes / 60)) % 24).padStart(2, '0') + ':' + String(nextMinutes % 60).padStart(2, '0');
+-      });
+-    }, 3000);
+-    return () => {
+-      window.cancelAnimationFrame(animationFrame);
+-      window.clearInterval(clock);
+-      window.removeEventListener('keydown', onKeyDown);
+-      window.removeEventListener('keyup', onKeyUp);
+-      window.removeEventListener('blur', clearInput);
+-      document.removeEventListener('visibilitychange', onVisibilityChange);
+-    };
+-  }, [onChunkChange]);
+-
+-  const pressDirection = (direction: Direction) => {
+-    keysRef.current[direction] = true;
+-    setMoving(true);
+-  };
+-  const releaseDirection = (direction: Direction) => {
+-    keysRef.current[direction] = false;
+-    setMoving(Object.values(keysRef.current).some(Boolean));
+-  };
+-  const beginDirection = (direction: Direction, event: PointerEvent<HTMLButtonElement>) => {
+-    event.currentTarget.setPointerCapture(event.pointerId);
+-    pressDirection(direction);
+-  };
+-  const endDirection = (direction: Direction, event: PointerEvent<HTMLButtonElement>) => {
+-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+-      event.currentTarget.releasePointerCapture(event.pointerId);
+-    }
+-    releaseDirection(direction);
+-  };
+-
+-  const horseHere = horse.chunk.x === chunk.x && horse.chunk.y === chunk.y;
+-  const horseDistance = Math.hypot(position.x - horse.position.x, position.y - horse.position.y);
+-  const canMount = !mounted && horseHere && horseDistance <= HORSE_MOUNT_DISTANCE;
+-  const showHorse = mounted || horseHere;
+-  const horseDisplayPosition = mounted ? position : horse.position;
+-
+-  const toggleMount = () => {
+-    if (mounted) {
+-      const currentPosition = positionRef.current;
+-      const currentChunk = chunkRef.current;
+-      const preferredOffset = facing === 'right' ? -6 : facing === 'left' ? 6 : currentPosition.x < 50 ? 6 : -6;
+-      const dismountPosition = {
+-        x: Math.min(88, Math.max(12, currentPosition.x + preferredOffset)),
+-        y: Math.min(88, Math.max(12, currentPosition.y)),
+-      };
+-      horseIdleAnchorRef.current = dismountPosition;
+-
+-      setHorse({ chunk: currentChunk, position: currentPosition });
+-      positionRef.current = dismountPosition;
+-      setPosition(dismountPosition);
+-      setMounted(false);
+-      setLogs((currentLogs) => [{ text: 'You dismount and leave the horse here.', color: '' }, ...currentLogs].slice(0, 3));
+-      return;
+-    }
+-
+-    if (!canMount) {
+-      setLogs((currentLogs) => [{ text: horseHere ? 'The horse is too far away to mount.' : 'Your horse is in another field.', color: 'blue' }, ...currentLogs].slice(0, 3));
+-      return;
+-    }
+-
+-    const currentChunk = chunkRef.current;
+-    const mountPosition = { ...horse.position };
+-    positionRef.current = mountPosition;
+-    setPosition(mountPosition);
+-    setHorse({ chunk: currentChunk, position: mountPosition });
+-    setMounted(true);
+-    setLogs((currentLogs) => [{ text: 'You mount the horse. The road opens ahead.', color: 'blue' }, ...currentLogs].slice(0, 3));
+-  };
+-
+-  const currentWorldTile = mapTileFor(chunk);
+-  const fieldTrees = fieldTreesFor(chunk);
+-  const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
+-  const startingArea = isStartingArea(chunk);
+-
+-  return (
+-    <div className="field-column">
+-      <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field">
++import { createAdventureBrain, type RPGBrain } from '@/game/rpgBrain';
++
++const queryClient = new QueryClient();
++const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
++type Direction = 'up' | 'down' | 'left' | 'right';
++type Point = { x: number; y: number };
++type HorseState = { chunk: Point; position: Point };
++
++const WALK_SPEED = 96; // 3x the original walking speed
++const HORSE_SPEED = 180;
++const HORSE_MOUNT_DISTANCE = 4.5;
++const initialHorseState: HorseState = { chunk: { x: 4, y: 7 }, position: { x: 58, y: 52 } };
++
++const directionKeys: Record<string, Direction> = {
++  ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
++  ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
++};
++const delta: Record<Direction, Point> = {
++  up: { x: 0, y: -2.4 }, down: { x: 0, y: 2.4 }, left: { x: -2.4, y: 0 }, right: { x: 2.4, y: 0 },
++};
++const terrainTypes = ['meadow', 'woodland', 'rock', 'shore', 'autumn', 'ocean'] as const;
++type Terrain = (typeof terrainTypes)[number];
++const fieldPalettes: Record<Terrain, { field: string; path: string; glow: string }> = {
++  meadow: { field: '#77a45b', path: '#d9b979', glow: 'rgba(255, 227, 157, .22)' },
++  woodland: { field: '#658e58', path: '#c7a66b', glow: 'rgba(180, 214, 141, .18)' },
++  rock: { field: '#87927a', path: '#c9b27d', glow: 'rgba(238, 228, 186, .2)' },
++  shore: { field: '#6f9b88', path: '#dfc58d', glow: 'rgba(218, 239, 194, .2)' },
++  autumn: { field: '#9b785d', path: '#d6ae70', glow: 'rgba(255, 198, 123, .2)' },
++  ocean: { field: '#2a6f8d', path: '#8ab8bd', glow: 'rgba(140, 213, 219, .2)' },
++};
++
++type RegionStyle = 'greenvale' | 'brackenfen' | 'ironwood' | 'northwatch' | 'sunwash' | 'ocean';
++const regionPalettes: Record<Exclude<RegionStyle, 'ocean'>, { field: string; path: string; glow: string }> = {
++  greenvale: { field: '#77a45b', path: '#d9b979', glow: 'rgba(255, 227, 157, .22)' },
++  brackenfen: { field: '#617d51', path: '#bca979', glow: 'rgba(186, 207, 135, .2)' },
++  ironwood: { field: '#587b58', path: '#c4a26c', glow: 'rgba(188, 219, 157, .18)' },
++  northwatch: { field: '#858a78', path: '#d0bd8b', glow: 'rgba(238, 228, 186, .2)' },
++  sunwash: { field: '#9a7658', path: '#d7ac6b', glow: 'rgba(255, 198, 123, .2)' },
++};
++
++function regionStyleFor(point: Point): RegionStyle {
++  const distanceFromGreenvale = Math.max(Math.abs(point.x - 4), Math.abs(point.y - 7));
++  if (distanceFromGreenvale >= 7) return 'ocean';
++  if (point.y <= 5) return 'northwatch';
++  if (point.x <= 3) return 'brackenfen';
++  if (point.x >= 6) return 'ironwood';
++  if (point.y >= 9) return 'sunwash';
++  return 'greenvale';
++}
++
++function chunkTerrain(chunk: Point): Terrain {
++  const seed = Math.abs((chunk.x * 73856093) ^ (chunk.y * 19349663));
++  return terrainTypes[seed % terrainTypes.length];
++}
++
++type SettlementKind = 'village' | 'town';
++type MapTile = {
++  x: number;
++  y: number;
++  terrain: Terrain;
++  regionStyle: RegionStyle;
++  waterFeature: 'river' | 'lake' | 'sea' | null;
++  waterEdge: 'north' | 'south' | 'east' | 'west' | null;
++  road: 'horizontal' | 'vertical' | 'cross' | 'none';
++  bridge: boolean;
++  landmark: { name: string; kind: SettlementKind } | null;
++};
++
++const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
++  '4,7': { name: 'Mosslight Crossing', kind: 'town' },
++  '2,6': { name: 'Fenmere Hamlet', kind: 'village' },
++  '6,8': { name: 'Ironwood Southhold', kind: 'town' },
++  '5,4': { name: 'Northwatch Beacon', kind: 'village' },
++};
++
++function isStartingArea(point: Point) {
++  return point.x === 4 && point.y === 7;
++}
++
++function mapTileFor(point: Point): MapTile {
++  // Wide regional bands keep the world readable while the outer rim is reserved for ocean.
++  const regionStyle = regionStyleFor(point);
++  const riverX = Math.round(2.8 + Math.sin((point.y - 7) * 0.68) * 1.45);
++  const mainRiver = point.x === riverX;
++  const branchRiverY = Math.round(8 + Math.sin(point.x * 0.55) * 0.8);
++  const branchRiver = point.y === branchRiverY && point.x >= 2 && point.x <= 7;
++  const lake = (point.x === 6 && point.y === 5) || (point.x === 7 && point.y === 5);
++  const waterFeature = regionStyle === 'ocean' ? 'sea' : lake ? 'lake' : mainRiver || branchRiver ? 'river' : null;
++  const isOcean = waterFeature === 'sea';
++  const waterEdge = isOcean ? null : lake ? 'south' : mainRiver ? (Math.sin((point.y - 7) * 0.68) >= 0 ? 'east' : 'west') : branchRiver ? (Math.sin(point.x * 0.55) >= 0 ? 'south' : 'north') : null;
++
++  const ridgeBoundary = 4 + Math.sin(point.x * 0.5) * 1.1;
++  const isRidge = point.y <= ridgeBoundary || point.x <= 0;
++  const isWoodland = !isRidge && ((point.x <= 3 && point.y >= 6) || (point.x >= 6 && point.y >= 7) || (point.x === 5 && point.y === 5));
++  const isAutumn = !isRidge && !isWoodland && point.y >= 9 && point.x <= 3;
++  const terrain = isOcean ? 'ocean' : isRidge ? 'rock' : isWoodland ? 'woodland' : isAutumn ? 'autumn' : 'meadow';
++
++  const horizontalRoadY = Math.round(7 + Math.sin((point.x - 2) * 0.65) * 0.55);
++  const verticalRoadX = Math.round(4 + Math.sin((point.y - 7) * 0.45) * 0.4);
++  const startingArea = isStartingArea(point);
++  const horizontalRoad = startingArea || (!isOcean && point.y === horizontalRoadY);
++  const verticalRoad = startingArea || (!isOcean && point.x === verticalRoadX);
++  const road = horizontalRoad && verticalRoad ? 'cross' : horizontalRoad ? 'horizontal' : verticalRoad ? 'vertical' : 'none';
++  const bridge = waterFeature !== null && !isOcean && road !== 'none';
++
++  return {
++    ...point,
++    terrain,
++    regionStyle,
++    waterFeature,
++    waterEdge,
++    road,
++    bridge,
++    landmark: mapLandmarks[point.x + ',' + point.y] || null,
++  };
++}
++
++type FieldTree = { id: number; x: number; y: number; scale: number; variant: number; style: RegionStyle };
++type FieldRect = { left: number; top: number; right: number; bottom: number };
++
++function fieldHouseRects(kind: SettlementKind, startingArea = false): FieldRect[] {
++  const parent = kind === 'town'
++    ? { left: 19, top: 21, width: 62, height: 58 }
++    : { left: 23, top: 24, width: 54, height: 52 };
++  const specs = [
++    { left: 8, top: 11, width: 19, height: 13, scale: 1 },
++    { left: 73, top: 12, width: 19, height: 13, scale: 1 },
++    { left: 8, top: 75, width: 19, height: 13, scale: 1 },
++    { left: 73, top: 75, width: 19, height: 13, scale: 1 },
++  ];
++
++  if (!startingArea) {
++    specs.push(
++      { left: 39, top: 7, width: 19, height: 13, scale: 0.8 },
++      { left: 39, top: 80, width: 19, height: 13, scale: 0.8 },
++    );
++  }
++
++  return specs.map((spec) => {
++    const width = spec.width * spec.scale;
++    const height = spec.height * spec.scale;
++    const left = spec.left + (spec.width - width) / 2;
++    const top = spec.top + (spec.height - height) / 2;
++    return {
++      left: parent.left + (left / 100) * parent.width,
++      top: parent.top + (top / 100) * parent.height,
++      right: parent.left + ((left + width) / 100) * parent.width,
++      bottom: parent.top + ((top + height) / 100) * parent.height,
++    };
++  });
++}
++
++function pointInRect(point: Point, rect: FieldRect, padding = 0) {
++  return point.x >= rect.left - padding && point.x <= rect.right + padding && point.y >= rect.top - padding && point.y <= rect.bottom + padding;
++}
++
++function fieldTreesFor(chunk: Point): FieldTree[] {
++  const startingArea = isStartingArea(chunk);
++  const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
++  const treeStyle = regionStyleFor(chunk);
++
++  if (startingArea) {
++    const perimeterTrees = [
++      { x: 12, y: 13, scale: 0.56, variant: 1 },
++      { x: 77, y: 13, scale: 0.56, variant: 2 },
++      { x: 12, y: 78, scale: 0.56, variant: 2 },
++      { x: 77, y: 78, scale: 0.56, variant: 1 },
++    ];
++    return perimeterTrees.map((tree, id) => ({ ...tree, id, style: treeStyle }));
++  }
++
++  let seed = Math.abs((chunk.x * 92837111) + (chunk.y * 689287499)) + 1;
++  const random = () => {
++    const value = Math.sin(seed++) * 10000;
++    return value - Math.floor(value);
++  };
++  const houseRects = landmark ? fieldHouseRects(landmark.kind) : [];
++  const trees: FieldTree[] = [];
++  const targetCount = 8 + Math.floor(random() * 5);
++  let attempts = 0;
++
++  while (trees.length < targetCount && attempts < targetCount * 24) {
++    attempts += 1;
++    const x = 14 + random() * 72;
++    const y = 13 + random() * 74;
++    const scale = 0.72 + random() * 0.48;
++    const center = { x: x + 3.2 * scale, y: y + 2.5 * scale };
++    const tooCloseToStart = Math.hypot(center.x - 50, center.y - 52) < 12;
++    const tooCloseToBuilding = houseRects.some((rect) => pointInRect(center, rect, 5));
++    const tooCloseToTree = trees.some((tree) => Math.hypot(center.x - (tree.x + 3.2 * tree.scale), center.y - (tree.y + 2.5 * tree.scale)) < 9);
++    if (tooCloseToStart || tooCloseToBuilding || tooCloseToTree) continue;
++    trees.push({ id: trees.length, x, y, scale, variant: Math.floor(random() * 3), style: treeStyle });
++  }
++
++  return trees;
++}
++
++function isFieldPositionBlocked(position: Point, chunk: Point) {
++  const tile = mapTileFor(chunk);
++  if (tile.waterFeature === 'sea' || (tile.waterFeature !== null && !tile.bridge)) return true;
++
++  const treeBlocked = fieldTreesFor(chunk).some((tree) => {
++    const center = { x: tree.x + 3.2 * tree.scale, y: tree.y + 2.5 * tree.scale };
++    return Math.hypot(position.x - center.x, position.y - center.y) < 5.2 * tree.scale;
++  });
++  if (treeBlocked) return true;
++
++  const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
++  return landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk)).some((rect) => pointInRect(position, rect, 2.5)) : false;
++}
++
++function mapTileClass(tile: MapTile & { current: boolean }) {
++  return [
++    'map-tile',
++    'map-terrain-' + tile.terrain,
++    'map-region-' + tile.regionStyle,
++    tile.waterFeature ? 'is-' + tile.waterFeature : '',
++    tile.waterEdge ? 'water-edge-' + tile.waterEdge : '',
++    tile.road !== 'none' ? 'has-road road-' + tile.road : '',
++    tile.bridge ? 'has-bridge' : '',
++    tile.current ? 'is-current' : '',
++  ].filter(Boolean).join(' ');
++}
++
++function chunkRegion(chunk: Point) {
++  // Every land chunk gets a named reach; Greenvale is reserved for the village itself.
++  if (chunk.x === 4 && chunk.y === 7) return 'Greenvale';
++
++  const latitudeNames = ['Far North', 'North', 'Upper', 'Northgate', 'Central', 'Southgate', 'Lower', 'South', 'Far South'];
++  const latitude = latitudeNames[Math.max(0, Math.min(latitudeNames.length - 1, chunk.y - 3))];
++  const coastalSea = Math.abs(chunk.x - 4) >= 4 || Math.abs(chunk.y - 7) >= 4;
++  if (coastalSea) return latitude + (chunk.x < 4 ? ' Western Sea' : chunk.x > 4 ? ' Eastern Sea' : ' Open Sea');
++
++  if (chunk.x <= 3) {
++    const reach = chunk.x <= 1 ? 'Deep Brackenfen' : chunk.x === 2 ? 'Outer Brackenfen' : 'Brackenfen Gate';
++    return latitude === 'Central' ? reach : latitude + ' ' + reach;
++  }
++  if (chunk.x >= 5) {
++    const reach = chunk.x >= 7 ? 'Deep Ironwood March' : chunk.x === 6 ? 'Outer Ironwood March' : 'Ironwood Gate';
++    return latitude === 'Central' ? reach : latitude + ' ' + reach;
++  }
++  if (chunk.y <= 6) return chunk.y <= 4 ? 'High Northwatch Heights' : chunk.y === 5 ? 'Outer Northwatch Heights' : 'Northwatch Foothills';
++  return chunk.y >= 10 ? 'Far Sunwash Coast' : chunk.y === 9 ? 'Outer Sunwash Coast' : 'Sunwash Foothills';
++}
++
++const initialLogs = [
++  { text: 'You arrive at the Mosslight Crossing.', color: '' },
++  { text: 'A test horse waits just east of the square.', color: 'blue' },
++  { text: 'The east path is clear.', color: 'blue' },
++  { text: 'Your field position was saved locally.', color: '' },
++];
++
++type TownNpc = {
++  name: string;
++  title: string;
++  role: 'mage' | 'warrior' | 'guide' | 'rogue';
++  position: Point;
++  facing: Direction;
++};
++
++const startingTownNpcs: TownNpc[] = [
++  { name: 'Noah', title: 'Mage teacher', role: 'mage', position: { x: 40, y: 47 }, facing: 'right' },
++  { name: 'Damon', title: 'Warrior teacher', role: 'warrior', position: { x: 60, y: 47 }, facing: 'left' },
++  { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up' },
++];
++
++function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
++  const [zoom, setZoom] = useState(2);
++  const radius = 6 - zoom;
++  const gridSize = radius * 2 + 1;
++  const mapScale = [0.72, 0.86, 1, 1.12][zoom - 1];
++  const tiles = Array.from({ length: gridSize * gridSize }, (_, index) => {
++    const row = Math.floor(index / gridSize);
++    const column = index % gridSize;
++    const point = {
++      x: chunk.x + column - radius,
++      y: chunk.y + row - radius,
++    };
++    return { ...mapTileFor(point), current: point.x === chunk.x && point.y === chunk.y };
++  });
++
++  return (
++    <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
++      <div className="map-sheet">
++        <div className="map-sheet-heading">
++          <h2 id="map-title">Field atlas</h2>
++          <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
++        </div>
++        <div className="map-toolbar">
++          <span className="map-area-label">{chunkRegion(chunk)} region · {mapTileFor(chunk).terrain}</span>
++          <div className="map-zoom-controls" aria-label="Map zoom controls">
++            <button className="map-zoom-button" onClick={() => setZoom((value) => Math.max(1, value - 1))} disabled={zoom === 1} aria-label="Zoom out" data-testid="button-map-zoom-out"><Minus size={15} /></button>
++            <span className="map-zoom-level">×{zoom}</span>
++            <button className="map-zoom-button" onClick={() => setZoom((value) => Math.min(4, value + 1))} disabled={zoom === 4} aria-label="Zoom in" data-testid="button-map-zoom-in"><Plus size={15} /></button>
++          </div>
++        </div>
++        <div className="big-map" data-testid="map-world-preview">
++          <div className="map-grid" style={{ gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`, transform: `scale(${mapScale})` }}>
++            {tiles.map((tile) => (
++              <div className={mapTileClass(tile)} key={tile.x + '-' + tile.y} title={'Chunk ' + tile.x + ', ' + tile.y + ' · ' + (tile.landmark?.name || chunkRegion(tile))}>
++                {tile.landmark && <span className={`map-settlement ${tile.landmark.kind}`} aria-label={tile.landmark.name} />}
++                {tile.current && <span className="map-tile-player" aria-label="Your current position" />}
++                {tile.current && <span className="map-tile-label">{tile.x}, {tile.y}</span>}
++              </div>
++            ))}
++          </div>
++        </div>
++        <div className="map-legend">
++          <span className="legend-item"><span className="legend-dot" /> You are here</span>
++          <span className="legend-item"><span className="legend-dot gold" /> Waypoint</span>
++          <span className="legend-item"><span className="legend-line river" /> River</span>
++          <span className="legend-item"><span className="legend-line road" /> Road</span>
++          <span className="legend-item">Chunk {chunk.x}, {chunk.y} · {chunkRegion(chunk)}</span>
++        </div>
++      </div>
++    </div>
++  );
++}
++
++function InventorySheet({ onClose }: { onClose: () => void }) {
++  return (
++    <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="inventory-title" data-testid="overlay-inventory">
++      <div className="map-sheet inventory-sheet">
++        <div className="map-sheet-heading">
++          <h2 id="inventory-title">Inventory</h2>
++          <button className="map-close" onClick={onClose} aria-label="Close inventory" data-testid="button-close-inventory"><X size={19} /></button>
++        </div>
++        <div className="inventory-body">
++          <div className="inventory-count">0 items carried</div>
++          <div className="inventory-empty">
++            <Backpack size={30} strokeWidth={1.5} />
++            <strong>Your pack is empty</strong>
++            <span>Items you discover on the road will appear here.</span>
++          </div>
++        </div>
++      </div>
++    </div>
++  );
++}
++
++function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute }: { onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void }) {
++  const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
++  const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
++  const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
++  const [moving, setMoving] = useState(false);
++  const [facing, setFacing] = useState<Direction>('down');
++  const [mounted, setMounted] = useState(false);
++  const [horse, setHorse] = useState<HorseState>(initialHorseState);
++  const [horseFacing, setHorseFacing] = useState<Direction>('down');
++  const [logOpen, setLogOpen] = useState(false);
++  const [logs, setLogs] = useState(initialLogs);
++  const [time, setTime] = useState('08:43');
++  const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
++  const positionRef = useRef(position);
++  const chunkRef = useRef(chunk);
++  const mountedRef = useRef(mounted);
++  const horseRef = useRef(horse);
++  const horseIdleAnchorRef = useRef(initialHorseState.position);
++  const gameFrameRef = useRef<HTMLDivElement>(null);
++  const areaFlashIdRef = useRef(0);
++  const brainRef = useRef<RPGBrain | null>(null);
++  if (brainRef.current === null) {
++    const brain = createAdventureBrain();
++    brain.movePlayer('mosslight-crossing');
++    brainRef.current = brain;
++  }
++
++  useEffect(() => {
++    [
++      assetUrl('assets/gameplay/shining-fields/characters/player/idle.png'),
++      assetUrl('assets/gameplay/shining-fields/characters/player/run.png'),
++    ].forEach((src) => {
++      const image = new Image();
++      image.src = src;
++    });
++  }, []);
++  useEffect(() => { positionRef.current = position; }, [position]);
++  useEffect(() => { chunkRef.current = chunk; }, [chunk]);
++  useEffect(() => { mountedRef.current = mounted; }, [mounted]);
++  useEffect(() => { horseRef.current = horse; }, [horse]);
++
++  useEffect(() => {
++    if (mounted) return;
++
++    const idleDirections: Direction[] = ['up', 'down', 'left', 'right'];
++    let idleTimer = 0;
++    const scheduleIdleAction = () => {
++      idleTimer = window.setTimeout(() => {
++        if (mountedRef.current) return;
++
++        const direction = idleDirections[Math.floor(Math.random() * idleDirections.length)];
++        setHorseFacing(direction);
++
++        if (Math.random() < 0.38) {
++          const currentHorse = horseRef.current;
++          const idleStep = 3;
++          const nextPosition = {
++            x: currentHorse.position.x + (direction === 'left' ? -idleStep : direction === 'right' ? idleStep : 0),
++            y: currentHorse.position.y + (direction === 'up' ? -idleStep : direction === 'down' ? idleStep : 0),
++          };
++          const anchor = horseIdleAnchorRef.current;
++          const withinIdleArea = Math.hypot(nextPosition.x - anchor.x, nextPosition.y - anchor.y) <= 9;
++          const withinField = nextPosition.x >= 12 && nextPosition.x <= 88 && nextPosition.y >= 12 && nextPosition.y <= 88;
++
++          if (withinIdleArea && withinField) {
++            setHorse((current) => ({ ...current, position: nextPosition }));
++          }
++        }
++
++        if (!mountedRef.current) scheduleIdleAction();
++      }, 2200 + Math.random() * 2800);
++    };
++
++    scheduleIdleAction();
++    return () => window.clearTimeout(idleTimer);
++  }, [mounted]);
++
++  useEffect(() => {
++    areaFlashIdRef.current += 1;
++    setAreaFlash({ id: String(areaFlashIdRef.current), label: chunkRegion(chunk) });
++  }, [chunk]);
++
++  useEffect(() => {
++    if (!areaFlash) return;
++    const timer = window.setTimeout(() => setAreaFlash(null), 1700);
++    return () => window.clearTimeout(timer);
++  }, [areaFlash]);
++
++  useEffect(() => {
++    const clearInput = () => {
++      keysRef.current = {};
++      setMoving(false);
++    };
++    const onKeyDown = (event: KeyboardEvent) => {
++      const direction = directionKeys[event.code];
++      if (!direction) return;
++      event.preventDefault();
++      keysRef.current[direction] = true;
++    };
++    const onKeyUp = (event: KeyboardEvent) => {
++      const direction = directionKeys[event.code];
++      if (!direction) return;
++      event.preventDefault();
++      keysRef.current[direction] = false;
++    };
++    const onVisibilityChange = () => { if (document.hidden) clearInput(); };
++    window.addEventListener('keydown', onKeyDown);
++    window.addEventListener('keyup', onKeyUp);
++    window.addEventListener('blur', clearInput);
++    document.addEventListener('visibilitychange', onVisibilityChange);
++
++    let animationFrame = 0;
++    let lastFrame = performance.now();
++    const animate = (now: number) => {
++      const elapsed = Math.min(50, now - lastFrame) / 1000;
++      lastFrame = now;
++      const input = {
++        x: (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
++        y: (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
++      };
++      const length = Math.hypot(input.x, input.y);
++      const active = length > 0;
++      setMoving(active);
++
++      if (active) {
++        const direction = input.x > 0 ? 'right' : input.x < 0 ? 'left' : input.y < 0 ? 'up' : 'down';
++        setFacing(direction);
++        const speed = mountedRef.current ? HORSE_SPEED : WALK_SPEED;
++        const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
++        const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
++        const movement = {
++          x: (input.x / length) * speed * elapsed * 100 / frameWidth,
++          y: (input.y / length) * speed * elapsed * 100 / frameHeight,
++        };
++        const current = positionRef.current;
++        const next = { x: current.x + movement.x, y: current.y + movement.y };
++        const nextChunk = { ...chunkRef.current };
++        const travelLabels: string[] = [];
++        if (next.x < 10) { next.x = 88; nextChunk.x -= 1; travelLabels.push('west'); }
++        if (next.x > 90) { next.x = 12; nextChunk.x += 1; travelLabels.push('east'); }
++        if (next.y < 12) { next.y = 86; nextChunk.y -= 1; travelLabels.push('north'); }
++        if (next.y > 88) { next.y = 14; nextChunk.y += 1; travelLabels.push('south'); }
++        if (!isFieldPositionBlocked(next, nextChunk)) {
++          positionRef.current = next;
++          setPosition(next);
++          if (travelLabels.length > 0) {
++              brainRef.current?.visitChunk(nextChunk, chunkRegion(nextChunk), travelLabels.join(' and '));
++            chunkRef.current = nextChunk;
++            setChunk(nextChunk);
++            onChunkChange(nextChunk);
++            setLogs((currentLogs) => [{
++              text: `You travel ${travelLabels.join(' and ')} into ${chunkRegion(nextChunk)} · chunk ${nextChunk.x}, ${nextChunk.y}.`,
++              color: 'blue',
++            }, ...currentLogs].slice(0, 3));
++          }
++        }
++      }
++      animationFrame = window.requestAnimationFrame(animate);
++    };
++    animationFrame = window.requestAnimationFrame(animate);
++    const clock = window.setInterval(() => {
++      setTime((current) => {
++        const [hours, minutes] = current.split(':').map(Number);
++        const nextMinutes = minutes + 1;
++        return String((hours + Math.floor(nextMinutes / 60)) % 24).padStart(2, '0') + ':' + String(nextMinutes % 60).padStart(2, '0');
++      });
++    }, 3000);
++    return () => {
++      window.cancelAnimationFrame(animationFrame);
++      window.clearInterval(clock);
++      window.removeEventListener('keydown', onKeyDown);
++      window.removeEventListener('keyup', onKeyUp);
++      window.removeEventListener('blur', clearInput);
++      document.removeEventListener('visibilitychange', onVisibilityChange);
++    };
++  }, [onChunkChange]);
++
++  const pressDirection = (direction: Direction) => {
++    keysRef.current[direction] = true;
++    setMoving(true);
++  };
++  const releaseDirection = (direction: Direction) => {
++    keysRef.current[direction] = false;
++    setMoving(Object.values(keysRef.current).some(Boolean));
++  };
++  const beginDirection = (direction: Direction, event: PointerEvent<HTMLButtonElement>) => {
++    event.currentTarget.setPointerCapture(event.pointerId);
++    pressDirection(direction);
++  };
++  const endDirection = (direction: Direction, event: PointerEvent<HTMLButtonElement>) => {
++    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
++      event.currentTarget.releasePointerCapture(event.pointerId);
++    }
++    releaseDirection(direction);
++  };
++
++  const horseHere = horse.chunk.x === chunk.x && horse.chunk.y === chunk.y;
++  const horseDistance = Math.hypot(position.x - horse.position.x, position.y - horse.position.y);
++  const canMount = !mounted && horseHere && horseDistance <= HORSE_MOUNT_DISTANCE;
++  const showHorse = mounted || horseHere;
++  const horseDisplayPosition = mounted ? position : horse.position;
++
++  const toggleMount = () => {
++    if (mounted) {
++      const currentPosition = positionRef.current;
++      const currentChunk = chunkRef.current;
++      const preferredOffset = facing === 'right' ? -6 : facing === 'left' ? 6 : currentPosition.x < 50 ? 6 : -6;
++      const dismountPosition = {
++        x: Math.min(88, Math.max(12, currentPosition.x + preferredOffset)),
++        y: Math.min(88, Math.max(12, currentPosition.y)),
++      };
++      horseIdleAnchorRef.current = dismountPosition;
++
++      setHorse({ chunk: currentChunk, position: currentPosition });
++      positionRef.current = dismountPosition;
++      setPosition(dismountPosition);
++      setMounted(false);
++      setLogs((currentLogs) => [{ text: 'You dismount and leave the horse here.', color: '' }, ...currentLogs].slice(0, 3));
++      return;
++    }
++
++    if (!canMount) {
++      setLogs((currentLogs) => [{ text: horseHere ? 'The horse is too far away to mount.' : 'Your horse is in another field.', color: 'blue' }, ...currentLogs].slice(0, 3));
++      return;
++    }
++
++    const currentChunk = chunkRef.current;
++    const mountPosition = { ...horse.position };
++    positionRef.current = mountPosition;
++    setPosition(mountPosition);
++    setHorse({ chunk: currentChunk, position: mountPosition });
++    setMounted(true);
++    setLogs((currentLogs) => [{ text: 'You mount the horse. The road opens ahead.', color: 'blue' }, ...currentLogs].slice(0, 3));
++  };
++
++  const currentWorldTile = mapTileFor(chunk);
++  const fieldTrees = fieldTreesFor(chunk);
++  const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
++  const startingArea = isStartingArea(chunk);
++
++  return (
++    <div className="field-column">
++      <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
+         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
+           '--field-color': fieldPalette.field,
+           '--path-color': fieldPalette.path,
+diff --git a/src/game/rpgBrain.ts b/src/game/rpgBrain.ts
+new file mode 100644
+--- /dev/null
++++ b/src/game/rpgBrain.ts
+@@ -0,0 +340 @@
++// RPG brain: typed content registry and state layer for the Adventure Game.
++// Content is data; the UI can grow without rewriting the core relationships.
++
++export type ChunkCoordinates = { x: number; y: number };
++export type RpgLocationType = 'wilderness' | 'village' | 'town' | 'dungeon' | 'landmark';
++export type BuildingType = 'home' | 'shop' | 'inn' | 'temple' | 'guild' | 'important';
++export type NpcRole = 'civilian' | 'merchant' | 'mage' | 'warrior' | 'guide' | 'rogue';
++export type EnemyType = 'beast' | 'humanoid' | 'undead' | 'elemental' | 'boss';
++export type ItemType = 'quest' | 'equipment' | 'consumable' | 'key' | 'lore';
++export type HistoryType = 'travel' | 'enter_building' | 'dungeon_completed' | 'lore_discovered';
++
++export type BrainHistoryEntry = {
++  type: HistoryType;
++  id: string;
++  label: string;
++  at: string;
++  metadata?: Record<string, string | number>;
++};
++
++export type WorldDefinition = { id: string; name: string; description: string; chunks: string[]; cities: string[]; locations: string[] };
++export type ChunkDefinition = { id: string; worldId: string; name: string; coordinates: ChunkCoordinates; data: Record<string, unknown>; locations: string[]; connections: string[] };
++export type LocationDefinition = { id: string; chunkId: string; name: string; type: RpgLocationType; description: string; buildings: string[]; npcs: string[]; enemies: string[]; items: string[] };
++export type CityDefinition = { id: string; locationId: string; name: string; description: string; buildings: string[]; npcs: string[]; shops: string[]; districts: Array<{ id: string; name: string }> };
++export type BuildingDefinition = { id: string; locationId: string; name: string; type: BuildingType; interior: Record<string, unknown>; enterable: boolean; npcs: string[]; items: string[] };
++export type DungeonDefinition = { id: string; locationId: string; name: string; description: string; floors: number; rooms: Array<{ id: string; name: string; type: string }>; enemies: string[]; items: string[]; boss: string | null; completed: boolean };
++export type NpcDefinition = { id: string; name: string; locationId: string; role: NpcRole; personality: string[]; dialogue: string[]; relationships: Record<string, string>; knowledge: string[]; alive: boolean };
++export type EnemyDefinition = { id: string; name: string; type: EnemyType; level: number; stats: Record<string, number>; loot: string[]; locations: string[] };
++export type ItemDefinition = { id: string; name: string; type: ItemType; description: string; stats: Record<string, number | string> };
++export type LoreDefinition = { id: string; title: string; text: string; category: string };
++export type PlayerDefinition = { id: string; name: string; inventory: string[] };
++export type RpgGameState = { currentLocationId: string | null; currentChunkId: string | null; discoveredChunks: string[]; discoveredLocations: string[]; discoveredLore: string[]; enteredBuildings: string[]; completedDungeons: string[]; history: BrainHistoryEntry[] };
++
++export class RPGBrain {
++  readonly world: Record<string, WorldDefinition> = {};
++  readonly chunks: Record<string, ChunkDefinition> = {};
++  readonly locations: Record<string, LocationDefinition> = {};
++  readonly cities: Record<string, CityDefinition> = {};
++  readonly buildings: Record<string, BuildingDefinition> = {};
++  readonly dungeons: Record<string, DungeonDefinition> = {};
++  readonly npcs: Record<string, NpcDefinition> = {};
++  readonly enemies: Record<string, EnemyDefinition> = {};
++  readonly items: Record<string, ItemDefinition> = {};
++  readonly lore: Record<string, LoreDefinition> = {};
++  player: PlayerDefinition | null = null;
++  currentLocationId: string | null = null;
++  currentChunkId: string | null = null;
++  readonly discoveredChunks = new Set<string>();
++  readonly discoveredLocations = new Set<string>();
++  readonly discoveredLore = new Set<string>();
++  readonly enteredBuildings = new Set<string>();
++  readonly completedDungeons = new Set<string>();
++  readonly history: BrainHistoryEntry[] = [];
++
++  private requireEntry<T>(collection: Record<string, T>, id: string, kind: string): T {
++    const entry = collection[id];
++    if (!entry) throw new Error('RPG brain: unknown ' + kind + ' "' + id + '"');
++    return entry;
++  }
++
++  private record(type: HistoryType, id: string, label: string, metadata?: Record<string, string | number>) {
++    this.history.unshift({ type, id, label, at: new Date().toISOString(), metadata });
++    if (this.history.length > 100) this.history.length = 100;
++  }
++
++  createWorld(id: string, name: string, description: string) {
++    const world = { id, name, description, chunks: [], cities: [], locations: [] };
++    this.world[id] = world;
++    return world;
++  }
++
++  addChunk(id: string, worldId: string, name: string, coordinates: ChunkCoordinates, data: Record<string, unknown> = {}) {
++    const world = this.requireEntry(this.world, worldId, 'world');
++    const chunk = { id, worldId, name, coordinates, data, locations: [], connections: [] };
++    this.chunks[id] = chunk;
++    if (!world.chunks.includes(id)) world.chunks.push(id);
++    return chunk;
++  }
++
++  connectChunks(chunkA: string, chunkB: string) {
++    const first = this.requireEntry(this.chunks, chunkA, 'chunk');
++    const second = this.requireEntry(this.chunks, chunkB, 'chunk');
++    if (!first.connections.includes(chunkB)) first.connections.push(chunkB);
++    if (!second.connections.includes(chunkA)) second.connections.push(chunkA);
++  }
++
++  addLocation(id: string, chunkId: string, name: string, type: RpgLocationType, description = '') {
++    const chunk = this.requireEntry(this.chunks, chunkId, 'chunk');
++    const location = { id, chunkId, name, type, description, buildings: [], npcs: [], enemies: [], items: [] };
++    this.locations[id] = location;
++    if (!chunk.locations.includes(id)) chunk.locations.push(id);
++    const world = this.requireEntry(this.world, chunk.worldId, 'world');
++    if (!world.locations.includes(id)) world.locations.push(id);
++    return location;
++  }
++
++  createCity(id: string, locationId: string, name: string, description = '') {
++    const location = this.requireEntry(this.locations, locationId, 'location');
++    const chunk = this.requireEntry(this.chunks, location.chunkId, 'chunk');
++    const world = this.requireEntry(this.world, chunk.worldId, 'world');
++    const city = { id, locationId, name, description, buildings: [], npcs: [], shops: [], districts: [] };
++    this.cities[id] = city;
++    location.type = 'town';
++    if (!world.cities.includes(id)) world.cities.push(id);
++    return city;
++  }
++
++  addCityDistrict(cityId: string, districtId: string, name: string) {
++    const city = this.requireEntry(this.cities, cityId, 'city');
++    if (!city.districts.some((district) => district.id === districtId)) city.districts.push({ id: districtId, name });
++  }
++
++  addBuilding(id: string, locationId: string, name: string, type: BuildingType, interior: Record<string, unknown> = {}, enterable = true) {
++    const location = this.requireEntry(this.locations, locationId, 'location');
++    const building = { id, locationId, name, type, interior, enterable, npcs: [], items: [] };
++    this.buildings[id] = building;
++    if (!location.buildings.includes(id)) location.buildings.push(id);
++    const city = Object.values(this.cities).find((candidate) => candidate.locationId === locationId);
++    if (city && !city.buildings.includes(id)) city.buildings.push(id);
++    if (city && type === 'shop' && !city.shops.includes(id)) city.shops.push(id);
++    return building;
++  }
++
++  enterBuilding(id: string) {
++    const building = this.requireEntry(this.buildings, id, 'building');
++    if (!building.enterable) return null;
++    this.enteredBuildings.add(id);
++    this.record('enter_building', id, building.name);
++    return building.interior;
++  }
++
++  createDungeon(id: string, locationId: string, name: string, description = '', floors = 1) {
++    this.requireEntry(this.locations, locationId, 'location');
++    const dungeon = { id, locationId, name, description, floors, rooms: [], enemies: [], items: [], boss: null, completed: false };
++    this.dungeons[id] = dungeon;
++    return dungeon;
++  }
++
++  addDungeonRoom(dungeonId: string, roomId: string, name: string, type = 'normal') {
++    const dungeon = this.requireEntry(this.dungeons, dungeonId, 'dungeon');
++    dungeon.rooms.push({ id: roomId, name, type });
++  }
++
++  setDungeonBoss(dungeonId: string, enemyId: string) {
++    const dungeon = this.requireEntry(this.dungeons, dungeonId, 'dungeon');
++    this.requireEntry(this.enemies, enemyId, 'enemy');
++    dungeon.boss = enemyId;
++  }
++
++  completeDungeon(id: string) {
++    const dungeon = this.requireEntry(this.dungeons, id, 'dungeon');
++    dungeon.completed = true;
++    this.completedDungeons.add(id);
++    this.record('dungeon_completed', id, dungeon.name);
++  }
++
++  addNpc(id: string, name: string, locationId: string, role: NpcRole = 'civilian', personality: string[] = [], dialogue: string[] = []) {
++    const location = this.requireEntry(this.locations, locationId, 'location');
++    const npc = { id, name, locationId, role, personality, dialogue, relationships: {}, knowledge: [], alive: true };
++    this.npcs[id] = npc;
++    if (!location.npcs.includes(id)) location.npcs.push(id);
++    const city = Object.values(this.cities).find((candidate) => candidate.locationId === locationId);
++    if (city && !city.npcs.includes(id)) city.npcs.push(id);
++    return npc;
++  }
++
++  addEnemy(id: string, name: string, type: EnemyType, level: number, stats: Record<string, number> = {}) {
++    const enemy = { id, name, type, level, stats, loot: [], locations: [] };
++    this.enemies[id] = enemy;
++    return enemy;
++  }
++
++  placeEnemy(enemyId: string, locationId: string) {
++    const enemy = this.requireEntry(this.enemies, enemyId, 'enemy');
++    const location = this.requireEntry(this.locations, locationId, 'location');
++    if (!enemy.locations.includes(locationId)) enemy.locations.push(locationId);
++    if (!location.enemies.includes(enemyId)) location.enemies.push(enemyId);
++  }
++
++  addItem(id: string, name: string, type: ItemType, description = '', stats: Record<string, number | string> = {}) {
++    const item = { id, name, type, description, stats };
++    this.items[id] = item;
++    return item;
++  }
++
++  addLore(id: string, title: string, text: string, category = 'world') {
++    const entry = { id, title, text, category };
++    this.lore[id] = entry;
++    return entry;
++  }
++
++  discoverLore(id: string) {
++    const entry = this.requireEntry(this.lore, id, 'lore entry');
++    this.discoveredLore.add(id);
++    this.record('lore_discovered', id, entry.title);
++  }
++
++  connectNpcToBuilding(npcId: string, buildingId: string) {
++    const building = this.requireEntry(this.buildings, buildingId, 'building');
++    this.requireEntry(this.npcs, npcId, 'NPC');
++    if (!building.npcs.includes(npcId)) building.npcs.push(npcId);
++  }
++
++  connectItemToBuilding(itemId: string, buildingId: string) {
++    const building = this.requireEntry(this.buildings, buildingId, 'building');
++    this.requireEntry(this.items, itemId, 'item');
++    if (!building.items.includes(itemId)) building.items.push(itemId);
++  }
++
++  connectItemToEnemy(itemId: string, enemyId: string) {
++    const enemy = this.requireEntry(this.enemies, enemyId, 'enemy');
++    this.requireEntry(this.items, itemId, 'item');
++    if (!enemy.loot.includes(itemId)) enemy.loot.push(itemId);
++  }
++
++  connectEnemyToDungeon(enemyId: string, dungeonId: string) {
++    const dungeon = this.requireEntry(this.dungeons, dungeonId, 'dungeon');
++    this.requireEntry(this.enemies, enemyId, 'enemy');
++    if (!dungeon.enemies.includes(enemyId)) dungeon.enemies.push(enemyId);
++  }
++
++  movePlayer(locationId: string) {
++    const location = this.locations[locationId];
++    if (!location) return false;
++    this.currentLocationId = locationId;
++    this.currentChunkId = location.chunkId;
++    this.discoveredLocations.add(locationId);
++    this.discoveredChunks.add(location.chunkId);
++    this.record('travel', locationId, location.name);
++    return true;
++  }
++
++  visitChunk(coordinates: ChunkCoordinates, name: string, direction = 'travel') {
++    const existing = Object.values(this.chunks).find((chunk) => chunk.coordinates.x === coordinates.x && chunk.coordinates.y === coordinates.y);
++    const chunk = existing || this.addChunk('chunk-' + coordinates.x + '-' + coordinates.y, 'eldoria', name, coordinates);
++    this.currentChunkId = chunk.id;
++    this.discoveredChunks.add(chunk.id);
++    this.record('travel', chunk.id, name, { x: coordinates.x, y: coordinates.y, direction });
++  }
++
++  inspectCurrentLocation() {
++    return this.currentLocationId ? this.locations[this.currentLocationId] || null : null;
++  }
++
++  getBuildingsHere() { return this.inspectCurrentLocation()?.buildings.map((id) => this.buildings[id]).filter(Boolean) || []; }
++  getNpcsHere() { return this.inspectCurrentLocation()?.npcs.map((id) => this.npcs[id]).filter((npc) => npc && npc.alive) || []; }
++  getEnemiesHere() { return this.inspectCurrentLocation()?.enemies.map((id) => this.enemies[id]).filter(Boolean) || []; }
++
++  getGameState(): RpgGameState {
++    return {
++      currentLocationId: this.currentLocationId,
++      currentChunkId: this.currentChunkId,
++      discoveredChunks: [...this.discoveredChunks].sort(),
++      discoveredLocations: [...this.discoveredLocations].sort(),
++      discoveredLore: [...this.discoveredLore].sort(),
++      enteredBuildings: [...this.enteredBuildings].sort(),
++      completedDungeons: [...this.completedDungeons].sort(),
++      history: this.history.map((entry) => ({ ...entry, metadata: entry.metadata ? { ...entry.metadata } : undefined })),
++    };
++  }
++
++  loadGameState(state: RpgGameState) {
++    this.currentLocationId = state.currentLocationId && this.locations[state.currentLocationId] ? state.currentLocationId : null;
++    this.currentChunkId = state.currentChunkId && this.chunks[state.currentChunkId] ? state.currentChunkId : null;
++    this.replaceSet(this.discoveredChunks, state.discoveredChunks, this.chunks);
++    this.replaceSet(this.discoveredLocations, state.discoveredLocations, this.locations);
++    this.replaceSet(this.discoveredLore, state.discoveredLore, this.lore);
++    this.replaceSet(this.enteredBuildings, state.enteredBuildings, this.buildings);
++    this.replaceSet(this.completedDungeons, state.completedDungeons, this.dungeons);
++    this.history.splice(0, this.history.length, ...state.history.slice(0, 100));
++  }
++
++  private replaceSet<T>(target: Set<string>, values: string[], known: Record<string, T>) {
++    target.clear();
++    values.filter((id) => Boolean(known[id])).forEach((id) => target.add(id));
++  }
++
++  validateContent() {
++    const issues: string[] = [];
++    Object.values(this.chunks).forEach((chunk) => {
++      if (!this.world[chunk.worldId]) issues.push('Chunk ' + chunk.id + ' references missing world ' + chunk.worldId);
++      chunk.connections.forEach((id) => { if (!this.chunks[id]) issues.push('Chunk ' + chunk.id + ' references missing connection ' + id); });
++    });
++    Object.values(this.locations).forEach((location) => {
++      if (!this.chunks[location.chunkId]) issues.push('Location ' + location.id + ' references missing chunk ' + location.chunkId);
++      location.buildings.forEach((id) => { if (!this.buildings[id]) issues.push('Location ' + location.id + ' references missing building ' + id); });
++      location.npcs.forEach((id) => { if (!this.npcs[id]) issues.push('Location ' + location.id + ' references missing NPC ' + id); });
++      location.enemies.forEach((id) => { if (!this.enemies[id]) issues.push('Location ' + location.id + ' references missing enemy ' + id); });
++    });
++    Object.values(this.dungeons).forEach((dungeon) => {
++      if (!this.locations[dungeon.locationId]) issues.push('Dungeon ' + dungeon.id + ' references missing location ' + dungeon.locationId);
++      dungeon.enemies.forEach((id) => { if (!this.enemies[id]) issues.push('Dungeon ' + dungeon.id + ' references missing enemy ' + id); });
++      if (dungeon.boss && !this.enemies[dungeon.boss]) issues.push('Dungeon ' + dungeon.id + ' references missing boss ' + dungeon.boss);
++    });
++    return issues;
++  }
++}
++
++export function createAdventureBrain(): RPGBrain {
++  const brain = new RPGBrain();
++  brain.player = { id: 'player', name: 'Wanderer', inventory: [] };
++  brain.createWorld('eldoria', 'Eldoria', 'A living realm of crossings, wild reaches, old ruins, and stories still waiting to connect.');
++  brain.addChunk('greenvale-4-7', 'eldoria', 'Greenvale', { x: 4, y: 7 }, { region: 'greenvale', terrain: 'meadow' });
++  brain.addChunk('brackenfen-gate-3-7', 'eldoria', 'Brackenfen Gate', { x: 3, y: 7 }, { region: 'brackenfen', terrain: 'woodland' });
++  brain.addChunk('ironwood-gate-5-7', 'eldoria', 'Ironwood Gate', { x: 5, y: 7 }, { region: 'ironwood', terrain: 'woodland' });
++  brain.addChunk('northwatch-foothills-4-6', 'eldoria', 'Northwatch Foothills', { x: 4, y: 6 }, { region: 'northwatch', terrain: 'rock' });
++  brain.addChunk('sunwash-foothills-4-8', 'eldoria', 'Sunwash Foothills', { x: 4, y: 8 }, { region: 'sunwash', terrain: 'meadow' });
++  brain.connectChunks('greenvale-4-7', 'brackenfen-gate-3-7');
++  brain.connectChunks('greenvale-4-7', 'ironwood-gate-5-7');
++  brain.connectChunks('greenvale-4-7', 'northwatch-foothills-4-6');
++  brain.connectChunks('greenvale-4-7', 'sunwash-foothills-4-8');
++  brain.addLocation('mosslight-crossing', 'greenvale-4-7', 'Mosslight Crossing', 'town', 'A four-way town at the heart of Greenvale, where every road points toward another story.');
++  brain.createCity('mosslight-crossing-city', 'mosslight-crossing', 'Mosslight Crossing', 'A welcoming crossroads with quiet corners, teaching halls, and an old fountain.');
++  brain.addCityDistrict('mosslight-crossing-city', 'crossroads-square', 'Crossroads Square');
++  brain.addCityDistrict('mosslight-crossing-city', 'lantern-row', 'Lantern Row');
++  brain.addBuilding('mosslight-inn', 'mosslight-crossing', 'The Mosslight Inn', 'inn', { floors: 2, keeper: 'mira' });
++  brain.addBuilding('wayfarer-guild', 'mosslight-crossing', 'Wayfarer Guild', 'guild', { noticeboard: true });
++  brain.addNpc('mira', 'Mira', 'mosslight-crossing', 'merchant', ['observant', 'warm'], ['The roads remember who travels them.']);
++  brain.addNpc('noah', 'Noah', 'mosslight-crossing', 'mage', ['patient', 'curious'], ['Magic is easier to learn when you know what you are protecting.']);
++  brain.addNpc('damon', 'Damon', 'mosslight-crossing', 'warrior', ['direct', 'steadfast'], ['A clear road is useful. A prepared traveler is better.']);
++  brain.addNpc('shawn', 'Shawn', 'mosslight-crossing', 'rogue', ['quiet', 'clever'], ['The interesting paths are rarely the loudest ones.']);
++  brain.connectNpcToBuilding('mira', 'mosslight-inn');
++  brain.addItem('mosslight-lantern', 'Mosslight Lantern', 'quest', 'A lantern whose glow strengthens near old Greenvale markers.');
++  brain.addItem('wayfarer-token', 'Wayfarer Token', 'key', 'A simple brass token accepted by the guild at the crossroads.');
++  brain.connectItemToBuilding('wayfarer-token', 'wayfarer-guild');
++  brain.addLore('greenvale-crossroads', 'The Four Roads', 'Mosslight Crossing was built where four old routes meet, long before the present borders were drawn.', 'history');
++  brain.addLocation('rootbound-cellar', 'greenvale-4-7', 'Rootbound Cellar', 'dungeon', 'A sealed cellar beneath the town, where roots have broken through stone and something still stirs below.');
++  brain.createDungeon('rootbound-cellar-dungeon', 'rootbound-cellar', 'Rootbound Cellar', 'A small first dungeon beneath Mosslight Crossing.', 1);
++  brain.addDungeonRoom('rootbound-cellar-dungeon', 'cellar-entry', 'Collapsed Entry', 'entrance');
++  brain.addDungeonRoom('rootbound-cellar-dungeon', 'root-chamber', 'Root Chamber', 'boss');
++  brain.addEnemy('mire-wisp', 'Mire Wisp', 'elemental', 1, { health: 18, power: 4 });
++  brain.addEnemy('rootbound-warden', 'Rootbound Warden', 'boss', 3, { health: 72, power: 10 });
++  brain.placeEnemy('mire-wisp', 'rootbound-cellar');
++  brain.placeEnemy('rootbound-warden', 'rootbound-cellar');
++  brain.connectEnemyToDungeon('mire-wisp', 'rootbound-cellar-dungeon');
++  brain.connectEnemyToDungeon('rootbound-warden', 'rootbound-cellar-dungeon');
++  brain.setDungeonBoss('rootbound-cellar-dungeon', 'rootbound-warden');
++  brain.connectItemToEnemy('mosslight-lantern', 'rootbound-warden');
++  brain.movePlayer('mosslight-crossing');
++  return brain;
++}
