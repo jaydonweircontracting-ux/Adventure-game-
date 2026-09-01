@@ -308,3 +308,13 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Planned scope: add deterministic per-goat movement cadence and wander seed, reduce step distance, animate the goat sprite only while it is moving, enlarge the goat render, and square the starting-area road cross. Preserve combat, collision, spawn positions, and existing gameplay content.
 - Constraints: GitHub-only; no repository mount or import; no build, runtime, or tests under the current workflow.
 - Status: pre-implementation checkpoint; source and published bundle update pending.
+
+## Build 026 — goat polish and in-game patch marker
+
+- Date: 2026-09-01 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- User direction: finish the goat movement/sprite/pathway polish and show the submitted build number in the game under the player HP UI.
+- Planned scope: preserve the already-pushed goat movement cadence, sprite animation guard, larger goat styling, and square main-area path ends; add a visible BUILD 026 marker under the HP value; synchronize the published Pages bundle and cache-bust its script.
+- Tracking rule: this is the numbered patch record for this submission; future submitted updates receive the next build number and a matching log entry.
+- Constraints: GitHub-only; no repository mount or import; no build, runtime, or tests under the current workflow.
+- Status: pre-implementation checkpoint; build marker and published bundle update pending.
