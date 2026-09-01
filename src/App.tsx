@@ -588,7 +588,7 @@ function InventorySheet({ inventory, onClose }: { inventory: GameInventory; onCl
   );
 }
 
-function InteriorRoom({ area, position, inventory, onCraft }: { area: InteriorArea; position: Point; inventory: GameInventory; onCraft: (item: CraftItem) => void }) {
+function InteriorRoom({ area, position, facing, inventory, onCraft }: { area: InteriorArea; position: Point; facing: Direction; inventory: GameInventory; onCraft: (item: CraftItem) => void }) {
   const canCraft = (item: CraftItem) => {
     const recipe = craftRecipes[item];
     return Object.entries(recipe.cost).every(([key, value]) => (inventory[key as keyof GameInventory] || 0) >= (value || 0));
@@ -616,7 +616,7 @@ function InteriorRoom({ area, position, inventory, onCraft }: { area: InteriorAr
         </section>
       )}
       <div className="interior-doorway" aria-label="Exit to Mosslight Crossing"><span>EXIT</span></div>
-      <div className="interior-player" style={{ left: position.x + '%', top: position.y + '%' }}><span className="player-sprite" /></div>
+      <div className="interior-player" data-facing={facing} style={{ left: position.x + '%', top: position.y + '%' }}><span className="player-sprite" /></div>
       <div className="interior-exit-hint">Walk to the door to leave</div>
     </div>
   );
@@ -858,6 +858,8 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
       
        const currentInterior = interiorRef.current;
        if (active && currentInterior) {
+          const direction = input.x > 0 ? 'right' : input.x < 0 ? 'left' : input.y < 0 ? 'up' : 'down';
+          setFacing(direction);
          const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
          const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
          const movement = { x: (input.x / length) * 150 * elapsed * 100 / frameWidth, y: (input.y / length) * 150 * elapsed * 100 / frameHeight };
@@ -1098,7 +1100,7 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} inventory={inventory} onCraft={craftItem} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={facing} inventory={inventory} onCraft={craftItem} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
