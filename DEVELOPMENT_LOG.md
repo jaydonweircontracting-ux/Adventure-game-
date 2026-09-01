@@ -188,3 +188,12 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Fix: raised both horse action controls to a 44px minimum target and added tap-safe interaction styling without changing horse state, movement, mount distance, or dismount placement.
 - Published output: synchronized the active docs/assets/index-BF9_2MBc.css stylesheet referenced by docs/index.html.
 - Verification: source and active Pages stylesheet contain matching minimum target and tap-safety rules; no local build, typecheck, runtime, or gameplay execution.
+## Checkpoint 014 — mounted rider walk rows
+
+- Date: 2026-08-31 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- Diagnosis: mounted rider CSS still used the pre-correction sprite rows, so up/down movement selected the wrong animation rows and did not visually walk with the horse.
+- Fix: aligned mounted rider idle and walk rows with the verified standalone player sheet: down walk row 3, up walk row 5, and side walk row 4; the existing mounted walk animation remains enabled.
+- Published output: synchronized the active docs/assets/index-BF9_2MBc.css stylesheet referenced by docs/index.html.
+- Verification: source and active Pages stylesheet contain matching mounted row mappings; no local build, typecheck, runtime, or gameplay execution.
