@@ -12,7 +12,7 @@ import { createAdventureBrain, type RPGBrain } from '@/game/rpgBrain';
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '029';
+const BUILD_NUMBER = '030';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 type HorseState = { chunk: Point; position: Point };
