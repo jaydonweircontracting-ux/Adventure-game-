@@ -226,3 +226,13 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Fix: added a mounted-only animal-head overlay above the seated rider and synchronized its directional rows, horizontal flip, and walk animation with the animal sprite.
 - Published output: updated the active Pages bundle and cache-busted docs/index.html.
 - Verification: static content and marker checks only; no local build, typecheck, runtime, or gameplay execution.
+
+
+## Checkpoint 018 — Shawn becomes rogue instructor
+
+- Date: 2026-08-31 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- Correction: Shawn is now the Rogue instructor rather than a generic town resident/guide.
+- Presentation: added a dedicated rogue role marker and sprite tint, and synchronized the published Pages bundle and stylesheet.
+- Verification: static content and marker checks only; no local build, typecheck, runtime, or gameplay execution.
