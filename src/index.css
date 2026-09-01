@@ -420,7 +420,7 @@
 .horse.is-mounted.is-moving .rider-sprite { animation: rider-run .48s steps(6, end) infinite; }
 @keyframes rider-run {
   from { background-position-x: 0; }
-  to { background-position-x: -192px; }
+  to { background-position-x: -160px; }
 }
 .rider-head {
   display: none;
@@ -460,7 +460,7 @@
 .horse[data-facing='right'] .horse-sprite { transform: scaleX(-1); }
 .horse.is-mounted.is-moving .horse-sprite {
   background-position-y: -32px;
-  animation: horse-walk .32s steps(2, end) infinite;
+  animation: horse-walk .32s steps(2, start) infinite;
 }
 @keyframes horse-walk {
   from { background-position-x: 0; }
@@ -469,7 +469,7 @@
 .horse.is-mounted { filter: drop-shadow(3px 4px 0 rgba(39, 47, 35, .28)); }
 @keyframes player-run {
   from { background-position-x: 0; }
-  to { background-position-x: -192px; }
+  to { background-position-x: -160px; }
 }
 
 /* Starting-town teachers and guide use the player sheet at the same pixel size. */
