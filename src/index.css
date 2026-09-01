@@ -372,11 +372,15 @@
   image-rendering: pixelated;
 }
 .player[data-facing='up'] .player-sprite { --sprite-row: 2; }
-.player[data-facing='left'] .player-sprite { --sprite-row: 1; transform: scaleX(-1); }
-.player[data-facing='right'] .player-sprite { --sprite-row: 1; }
+.player[data-facing='left'] .player-sprite { --sprite-row: 4; transform: scaleX(-1); }
+.player[data-facing='right'] .player-sprite { --sprite-row: 4; }
 .player.is-moving .player-sprite {
+  --sprite-row: 1;
   animation: player-run .48s steps(6, end) infinite;
 }
+.player.is-moving[data-facing='up'] .player-sprite { --sprite-row: 3; }
+.player.is-moving[data-facing='left'] .player-sprite { --sprite-row: 5; }
+.player.is-moving[data-facing='right'] .player-sprite { --sprite-row: 5; }
 .player.is-mounted { z-index: 4; }
 .player.is-mounted .player-sprite { display: none; }
 .horse {
@@ -394,21 +398,26 @@
   position: absolute;
   z-index: 0;
   left: 5px;
-  top: -7px;
+  top: -4px;
   width: 32px;
   height: 32px;
   background-image: var(--player-sprite-url);
   background-position: 0 0;
+  background-position-y: 0;
   background-size: 192px 320px;
   background-repeat: no-repeat;
   image-rendering: pixelated;
   pointer-events: none;
 }
 .horse[data-facing='up'] .rider-sprite { background-position-y: -64px; }
-.horse[data-facing='left'] .rider-sprite { background-position-y: -32px; transform: scaleX(-1); }
-.horse[data-facing='right'] .rider-sprite { background-position-y: -32px; }
-.horse[data-facing='down'] .rider-sprite { display: none; }
-.horse.is-mounted .rider-sprite { animation: rider-run .48s steps(6, end) infinite; }
+.horse[data-facing='left'] .rider-sprite { background-position-y: -128px; transform: scaleX(-1); }
+.horse[data-facing='right'] .rider-sprite { background-position-y: -128px; }
+.horse[data-facing='down'] .rider-sprite { background-position-y: 0; }
+.horse.is-mounted.is-moving[data-facing='up'] .rider-sprite { background-position-y: -96px; }
+.horse.is-mounted.is-moving[data-facing='left'] .rider-sprite { background-position-y: -160px; }
+.horse.is-mounted.is-moving[data-facing='right'] .rider-sprite { background-position-y: -160px; }
+.horse.is-mounted.is-moving[data-facing='down'] .rider-sprite { background-position-y: -32px; }
+.horse.is-mounted.is-moving .rider-sprite { animation: rider-run .48s steps(6, end) infinite; }
 @keyframes rider-run {
   from { background-position-x: 0; }
   to { background-position-x: -192px; }
@@ -449,7 +458,10 @@
   image-rendering: pixelated;
 }
 .horse[data-facing='right'] .horse-sprite { transform: scaleX(-1); }
-.horse.is-mounted .horse-sprite { animation: horse-walk .32s steps(2, end) infinite; }
+.horse.is-mounted.is-moving .horse-sprite {
+  background-position-y: -32px;
+  animation: horse-walk .32s steps(2, end) infinite;
+}
 @keyframes horse-walk {
   from { background-position-x: 0; }
   to { background-position-x: -32px; }
@@ -484,8 +496,8 @@
   image-rendering: pixelated;
 }
 .town-npc[data-facing='up'] .npc-sprite { background-position-y: -64px; }
-.town-npc[data-facing='left'] .npc-sprite { background-position-y: -32px; transform: scaleX(-1); }
-.town-npc[data-facing='right'] .npc-sprite { background-position-y: -32px; }
+.town-npc[data-facing='left'] .npc-sprite { background-position-y: -128px; transform: scaleX(-1); }
+.town-npc[data-facing='right'] .npc-sprite { background-position-y: -128px; }
 .town-npc.npc-mage .npc-sprite {
   filter: hue-rotate(178deg) saturate(1.55) brightness(.92);
 }
