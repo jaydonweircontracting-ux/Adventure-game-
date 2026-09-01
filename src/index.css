@@ -1802,22 +1802,18 @@ body {
   width: 11%;
   border-radius: 999px;
 }
-.starting-area .field-trees { z-index: 5; }
+.starting-area .field-trees {
+  z-index: 5;
+  overflow: visible;
+}
+.starting-area .field-tree {
+  clip-path: none;
+}
 .starting-area-decor {
   position: absolute;
   z-index: 3;
   inset: 0;
   pointer-events: none;
-}
-.starting-plaza-ring {
-  position: absolute;
-  left: 39%;
-  top: 36%;
-  width: 22%;
-  height: 28%;
-  border: 2px dashed rgba(255, 232, 157, .7);
-  border-radius: 50%;
-  box-shadow: 0 0 0 4px rgba(91, 116, 60, .12), inset 0 0 0 2px rgba(103, 76, 38, .16);
 }
 .starting-flower {
   position: absolute;
