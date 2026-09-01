@@ -576,7 +576,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
           )}
           {!mounted && <div className={'player ' + (moving ? 'is-moving' : '')} style={{ left: position.x + '%', top: position.y + '%' }} data-facing={facing} data-testid="player-character">
             <span className="player-sprite" />
-          </div>
+          </div>}
         </div>
         {areaFlash && (
           <div className="area-flash" key={areaFlash.id} aria-live="polite" data-testid="area-entry-flash">
