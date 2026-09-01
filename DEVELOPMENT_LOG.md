@@ -169,3 +169,13 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Fix: added pointer capture on directional press, explicit pointer-up/cancel release, and lost-capture cleanup for up, down, left, and right.
 - Published output: synchronized the active `docs/assets/index-BAH2JQQu.js` bundle referenced by `docs/index.html`.
 - Verification: GitHub readback confirmed the source has no directional `pointerleave` handlers and the active bundle has pointer capture. No local build, typecheck, runtime, or gameplay execution.
+
+## Checkpoint 012 — correct standalone player direction rows
+
+- Date: 2026-09-01 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- Diagnosis: the Cute Fantasy player sheet uses row 3 for down-facing walk, row 5 for up-facing walk, row 4 for side-facing walk, and row 1 for side-facing idle; the CSS had those rows crossed.
+- Fix: corrected only the standalone player direction selectors in `src/index.css`; mount behavior was not changed.
+- Published output: synchronized `docs/assets/index-BF9_2MBc.css`, the stylesheet referenced by `docs/index.html`.
+- Verification: GitHub readback confirmed the corrected source and published row mappings. No local build, typecheck, runtime, or gameplay execution.
