@@ -398,7 +398,7 @@
   position: absolute;
   z-index: 0;
   left: 5px;
-  top: -4px;
+  top: 0px;
   width: 32px;
   height: 32px;
   background-image: var(--player-sprite-url);
