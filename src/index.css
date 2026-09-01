@@ -417,7 +417,7 @@
 .horse.is-mounted.is-moving[data-facing='left'] .rider-sprite { background-position-y: -32px; }
 .horse.is-mounted.is-moving[data-facing='right'] .rider-sprite { background-position-y: -32px; }
 .horse.is-mounted.is-moving[data-facing='down'] .rider-sprite { background-position-y: 0; }
-.horse.is-mounted.is-moving .rider-sprite { animation: none; }
+.horse.is-mounted.is-moving .rider-sprite { animation: none !important; background-position-x: 0 !important; }
 @keyframes rider-run {
   from { background-position-x: 0; }
   to { background-position-x: -160px; }
