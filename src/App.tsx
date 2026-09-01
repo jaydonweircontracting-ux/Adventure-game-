@@ -339,8 +339,8 @@ function canEnterDoorway(currentPosition: Point, nextPosition: Point, doorway: D
 }
 
 type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
-type GoatState = { id: number; position: Point; facing: Direction; hp: number; maxHp: number; disposition: GoatDisposition; attackCooldown: number };
-const GOAT_STEP = 2.4;
+type GoatState = { id: number; position: Point; facing: Direction; hp: number; maxHp: number; disposition: GoatDisposition; attackCooldown: number; wanderSeed: number; wanderPeriod: number; moving: boolean };
+const GOAT_STEP = 1.35;
 const GOAT_ATTACK_RANGE = 9;
 const GOAT_ATTACK_DAMAGE = 3;
 const startingGoatPositions: Point[] = [
@@ -352,21 +352,42 @@ function goatsForChunk(chunk: Point): GoatState[] {
   if (mapTileFor(chunk).terrain === 'ocean') return [];
   const positions = isStartingArea(chunk) ? startingGoatPositions : Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 16 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % 68), y: 17 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % 66) }));
   const safePositions = positions.filter((position) => !isFieldPositionBlocked(position, chunk));
-  return safePositions.map((position, index) => ({ id: index, position, facing: index % 2 ? 'left' : 'right', hp: 18, maxHp: 18, disposition: 'calm', attackCooldown: 0 }));
+  return safePositions.map((position, index) => {
+    const wanderSeed = Math.abs(chunk.x * 97 + chunk.y * 193 + index * 53 + 17);
+    return {
+      id: index,
+      position,
+      facing: (['up', 'right', 'down', 'left'] as Direction[])[wanderSeed % 4],
+      hp: 18,
+      maxHp: 18,
+      disposition: 'calm',
+      attackCooldown: 0,
+      wanderSeed,
+      wanderPeriod: 2 + (wanderSeed % 3),
+      moving: false,
+    };
+  });
 }
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
-function moveGoatIndependently(goat: GoatState, index: number, worldStep: number, playerPosition: Point, chunk: Point, goats: GoatState[]) {
-  if (goat.disposition === 'defeated') return goat;
+function moveGoatIndependently(goat: GoatState, worldStep: number, playerPosition: Point, chunk: Point, goats: GoatState[]) {
+  if (goat.disposition === 'defeated') return { ...goat, moving: false };
+  if ((worldStep + goat.wanderSeed) % goat.wanderPeriod !== 0) return { ...goat, moving: false };
   const distance = goatDistance(goat, playerPosition);
   let direction: Direction;
   if (goat.disposition === 'aggressive' && distance > GOAT_ATTACK_RANGE) {
     const horizontal = playerPosition.x - goat.position.x;
     const vertical = playerPosition.y - goat.position.y;
     direction = Math.abs(horizontal) >= Math.abs(vertical) ? (horizontal >= 0 ? 'right' : 'left') : (vertical >= 0 ? 'down' : 'up');
-  } else { direction = (['up', 'right', 'down', 'left'] as Direction[])[Math.abs((worldStep + index * 7) % 4)]; }
+  } else {
+    const directions: Direction[] = ['up', 'right', 'down', 'left'];
+    const directionIndex = Math.abs((worldStep * 13 + goat.wanderSeed * 7 + goat.id * 3) % directions.length);
+    direction = directions[directionIndex];
+  }
   const nextPosition = { x: Math.min(88, Math.max(12, goat.position.x + (direction === 'right' ? GOAT_STEP : direction === 'left' ? -GOAT_STEP : 0))), y: Math.min(88, Math.max(12, goat.position.y + (direction === 'down' ? GOAT_STEP : direction === 'up' ? -GOAT_STEP : 0))) };
   const occupied = goats.some((other) => other.id !== goat.id && other.disposition !== 'defeated' && Math.hypot(other.position.x - nextPosition.x, other.position.y - nextPosition.y) < 5);
-  return occupied || isFieldPositionBlocked(nextPosition, chunk) ? { ...goat, facing: direction } : { ...goat, position: nextPosition, facing: direction };
+  return occupied || isFieldPositionBlocked(nextPosition, chunk)
+    ? { ...goat, facing: direction, moving: false }
+    : { ...goat, position: nextPosition, facing: direction, moving: true };
 }
 
 
@@ -578,14 +599,14 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
       let damageTaken = 0;
       const nextGoats = currentGoats.map((goat, index) => {
         if (goat.disposition !== 'aggressive' || goat.attackCooldown > 0) {
-          const moved = moveGoatIndependently(goat, index, goatWorldStepRef.current, currentPlayer, currentChunk, currentGoats);
+          const moved = moveGoatIndependently(goat, goatWorldStepRef.current, currentPlayer, currentChunk, currentGoats);
           return { ...moved, attackCooldown: Math.max(0, moved.attackCooldown - 1) };
         }
         if (goatDistance(goat, currentPlayer) <= GOAT_ATTACK_RANGE) {
           damageTaken += GOAT_ATTACK_DAMAGE;
           return { ...goat, attackCooldown: 2 };
         }
-        return moveGoatIndependently(goat, index, goatWorldStepRef.current, currentPlayer, currentChunk, currentGoats);
+        return moveGoatIndependently(goat, goatWorldStepRef.current, currentPlayer, currentChunk, currentGoats);
       });
       goatsRef.current = nextGoats;
       setGoats(nextGoats);
@@ -885,7 +906,7 @@ if (active) {
           )}
           <div className="field-goats" aria-label="Goats in the field">
             {goats.filter((goat) => goat.disposition !== 'defeated').map((goat) => (
-              <div className={'goat goat-' + goat.disposition} style={{ left: goat.position.x + '%', top: goat.position.y + '%' }} data-facing={goat.facing} data-disposition={goat.disposition} aria-label={goat.disposition === 'aggressive' ? 'Hostile goat' : 'Peaceful goat'} key={goat.id}>
+              <div className={'goat goat-' + goat.disposition + (goat.moving ? ' is-moving' : '')} style={{ left: goat.position.x + '%', top: goat.position.y + '%' }} data-facing={goat.facing} data-disposition={goat.disposition} aria-label={goat.disposition === 'aggressive' ? 'Hostile goat' : 'Peaceful goat'} key={goat.id}>
                 <span className="goat-hp" style={{ width: (goat.hp / goat.maxHp) * 100 + '%' }} />
                 {goat.disposition === 'aggressive' && <span className="goat-aggro">!</span>}
                 <span className="goat-sprite" />
