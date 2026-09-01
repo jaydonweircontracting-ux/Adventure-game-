@@ -738,8 +738,15 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
   useEffect(() => {
     const timer = window.setInterval(() => {
       setNpcStates((current) => current.map((npc, index) => {
-        const direction: Direction = (['up', 'right', 'down', 'left'] as Direction[])[(Math.floor(Date.now() / 2600) + index) % 4];
-        const step = index % 2 === 0 ? 1.2 : 0;
+        const player = positionRef.current;
+        const nearby = Math.hypot(player.x - npc.position.x, player.y - npc.position.y) < 18;
+        const idleDirection: Direction = (['up', 'right', 'down', 'left'] as Direction[])[(Math.floor(Date.now() / 2600) + index) % 4];
+        const direction: Direction = nearby
+          ? Math.abs(player.x - npc.position.x) >= Math.abs(player.y - npc.position.y)
+            ? (player.x >= npc.position.x ? 'right' : 'left')
+            : (player.y >= npc.position.y ? 'down' : 'up')
+          : idleDirection;
+        const step = nearby ? 0 : index % 2 === 0 ? 1.2 : 0;
         const nextPosition = {
           x: Math.min(86, Math.max(14, npc.position.x + (direction === 'right' ? step : direction === 'left' ? -step : 0))),
           y: Math.min(76, Math.max(32, npc.position.y + (direction === 'down' ? step : direction === 'up' ? -step : 0))),
