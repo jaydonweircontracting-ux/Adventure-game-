@@ -197,3 +197,12 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Fix: aligned mounted rider idle and walk rows with the verified standalone player sheet: down walk row 3, up walk row 5, and side walk row 4; the existing mounted walk animation remains enabled.
 - Published output: synchronized the active docs/assets/index-BF9_2MBc.css stylesheet referenced by docs/index.html.
 - Verification: source and active Pages stylesheet contain matching mounted row mappings; no local build, typecheck, runtime, or gameplay execution.
+## Checkpoint 015 — keep rider seated while mounted
+
+- Date: 2026-08-31 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- Diagnosis: the mounted rider reused the standalone player walk animation while the animal was moving, making the player appear to walk instead of ride.
+- Fix: mounted rider now holds its direction-specific idle pose while the animal retains its own walk animation; mounted movement speed and facing behavior are unchanged.
+- Published output: synchronized the active docs/assets/index-BF9_2MBc.css stylesheet referenced by docs/index.html.
+- Verification: source and active Pages stylesheet contain matching seated-rider rules; no local build, typecheck, runtime, or gameplay execution.
