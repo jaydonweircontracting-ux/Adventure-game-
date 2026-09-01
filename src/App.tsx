@@ -972,6 +972,7 @@ function Home() {
       style={{
         '--player-sprite-url': `url("${assetUrl('assets/cute-fantasy/player.png')}")`,
         '--horse-sprite-url': `url("${assetUrl('assets/farm-male-cow-brown.png')}")`,
+         '--goat-sprite-url': `url("${assetUrl('assets/gameplay/characters/goat/goat.png')}")`,
       } as CSSProperties}
     >
       <div className="game-layout">

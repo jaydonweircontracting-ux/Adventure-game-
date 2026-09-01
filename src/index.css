@@ -303,7 +303,8 @@
   position: absolute;
   inset: 0;
   z-index: 2;
-  transition: transform .16s ease-out;
+  transition: none;
+  will-change: transform;
 }
 .pixel-field::before {
   content: '';
@@ -1883,11 +1884,24 @@ body {
 /* Independent goat wildlife and light combat. */
 .field-goats { position: absolute; z-index: 5; inset: 0; pointer-events: none; }
 .goat { position: absolute; width: 34px; height: 30px; transform: translate(-50%, -50%); transition: left .6s ease, top .6s ease; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .2)); }
-.goat-sprite { position: absolute; left: 3px; top: 7px; width: 25px; height: 17px; border: 2px solid #75664e; border-radius: 54% 42% 46% 50%; background: #efe4c7; box-shadow: inset 6px 2px 0 rgba(255, 251, 228, .7), inset -4px -2px 0 rgba(174, 154, 117, .35); }
-.goat-sprite::before { content: ''; position: absolute; right: -7px; top: -5px; width: 12px; height: 14px; border: 2px solid #75664e; border-radius: 48% 54% 50% 42%; background: #f2e8cf; box-shadow: 4px 2px 0 -2px #75664e; }
-.goat-sprite::after { content: ''; position: absolute; left: 4px; bottom: -8px; width: 4px; height: 9px; background: #75664e; box-shadow: 13px 0 0 #75664e; }
-.goat[data-facing='left'] .goat-sprite { transform: scaleX(-1); }
-.goat-aggro .goat-sprite { border-color: #8e4539; background: #ead8b8; box-shadow: inset 6px 2px 0 rgba(255, 245, 207, .65), inset -4px -2px 0 rgba(173, 109, 83, .35); animation: goat-angry .42s ease-in-out infinite alternate; }
+.goat-sprite {
+  position: absolute;
+  left: 0;
+  top: -3px;
+  width: 34px;
+  height: 34px;
+  background-image: var(--goat-sprite-url);
+  background-repeat: no-repeat;
+  background-size: 400% 800%;
+  background-position: 0 0;
+  image-rendering: auto;
+  animation: goat-walk .6s steps(4) infinite;
+}
+.goat[data-facing='right'] .goat-sprite { background-position-y: 14.2857%; }
+.goat[data-facing='up'] .goat-sprite { background-position-y: 28.5714%; }
+.goat[data-facing='left'] .goat-sprite { background-position-y: 42.8571%; }
+.goat-aggro .goat-sprite { filter: sepia(.35) saturate(1.4) drop-shadow(0 0 2px rgba(185, 77, 66, .55)); }
+@keyframes goat-walk { from { background-position-x: 0%; } to { background-position-x: 100%; } }
 .goat-hp { position: absolute; z-index: 2; left: 5px; top: 2px; height: 3px; border: 1px solid rgba(50, 53, 37, .7); background: #80a457; }
 .goat-aggro .goat-hp { background: #b94d42; }
 .goat-aggro .goat-aggro { position: absolute; z-index: 4; right: -1px; top: -13px; display: grid; place-items: center; width: 13px; height: 13px; color: #fff4cf; border: 1px solid #67372f; border-radius: 50%; background: #b94d42; font: 10px/1 var(--app-font-mono); }
