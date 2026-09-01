@@ -257,16 +257,37 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
   return landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk)).some((rect) => pointInRect(position, rect, 2.5)) : false;
 }
 
-type InteriorArea = { id: string; name: string; description: string; roomType: 'guild' | 'inn' | 'chapel'; exteriorPosition: Point };
-type Doorway = { id: string; position: Point; area: InteriorArea };
+type InteriorArea = { id: string; name: string; description: string; roomType: 'guild' | 'inn' | 'chapel' | 'building'; exteriorPosition: Point };
+type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number };
 const startingDoorways: Doorway[] = [
-  { id: 'guild-door', position: { x: 30, y: 36 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'Maps, contracts, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 30, y: 40 } } },
-  { id: 'inn-door', position: { x: 70, y: 36 }, area: { id: 'moonwell-inn', name: 'Moonwell Inn', description: 'A warm common room where travelers trade rumors over stew.', roomType: 'inn', exteriorPosition: { x: 70, y: 40 } } },
-  { id: 'chapel-door', position: { x: 30, y: 72 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 30, y: 68 } } },
+  { id: 'guild-door', buildingIndex: 0, position: { x: 30, y: 36 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'Maps, contracts, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 30, y: 40 } } },
+  { id: 'inn-door', buildingIndex: 1, position: { x: 70, y: 36 }, area: { id: 'moonwell-inn', name: 'Moonwell Inn', description: 'A warm common room where travelers trade rumors over stew.', roomType: 'inn', exteriorPosition: { x: 70, y: 40 } } },
+  { id: 'chapel-door', buildingIndex: 2, position: { x: 30, y: 72 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 30, y: 68 } } },
 ];
+
+function buildingDoorwaysFor(chunk: Point): Doorway[] {
+  const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
+  if (!landmark) return [];
+  return fieldHouseRects(landmark.kind, isStartingArea(chunk)).map((rect, index) => {
+    const namedDoorway = isStartingArea(chunk) ? startingDoorways.find((doorway) => doorway.buildingIndex === index) : null;
+    if (namedDoorway) return namedDoorway;
+    const position = { x: (rect.left + rect.right) / 2, y: Math.min(88, rect.bottom + 4) };
+    return {
+      id: chunk.x + ',' + chunk.y + '-building-' + index,
+      position,
+      area: {
+        id: chunk.x + '-' + chunk.y + '-building-' + index,
+        name: landmark.name + ' House ' + (index + 1),
+        description: 'A simple brown room waiting to be furnished.',
+        roomType: 'building' as const,
+        exteriorPosition: { x: position.x, y: Math.min(90, position.y + 3) },
+      },
+    };
+  });
+}
+
 function doorwayNear(position: Point, chunk: Point) {
-  if (!isStartingArea(chunk)) return null;
-  return startingDoorways.find((doorway) => Math.hypot(position.x - doorway.position.x, position.y - doorway.position.y) <= 5.5) || null;
+  return buildingDoorwaysFor(chunk).find((doorway) => Math.hypot(position.x - doorway.position.x, position.y - doorway.position.y) <= 5.5) || null;
 }
 
 type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
