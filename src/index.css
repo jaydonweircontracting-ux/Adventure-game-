@@ -1772,3 +1772,8 @@ body {
 .horse[data-facing='up'] .animal-head { background-position-y: -64px; }
 .horse[data-facing='right'] .animal-head { transform: scaleX(-1); }
 .horse.is-mounted.is-moving .animal-head { animation: horse-walk .48s steps(4, end) infinite; }
+
+
+/* Shawn teaches roguecraft: a distinct stealth-school marker and tint. */
+.town-npc.npc-rogue .npc-sprite { filter: hue-rotate(268deg) saturate(1.42) brightness(.9); }
+.npc-rogue .npc-role-mark { background: #8b67b0; transform: rotate(45deg) scale(.78); }
