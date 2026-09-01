@@ -179,3 +179,12 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Fix: corrected only the standalone player direction selectors in `src/index.css`; mount behavior was not changed.
 - Published output: synchronized `docs/assets/index-BF9_2MBc.css`, the stylesheet referenced by `docs/index.html`.
 - Verification: GitHub readback confirmed the corrected source and published row mappings. No local build, typecheck, runtime, or gameplay execution.
+## Checkpoint 013 — mobile horse action targets
+
+- Date: 2026-08-31 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount or game execution.
+- Diagnosis: the contextual Mount button and HUD Dismount button were visually styled below a comfortable touch target on narrow screens.
+- Fix: raised both horse action controls to a 44px minimum target and added tap-safe interaction styling without changing horse state, movement, mount distance, or dismount placement.
+- Published output: synchronized the active docs/assets/index-BF9_2MBc.css stylesheet referenced by docs/index.html.
+- Verification: source and active Pages stylesheet contain matching minimum target and tap-safety rules; no local build, typecheck, runtime, or gameplay execution.
