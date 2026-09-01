@@ -92,3 +92,16 @@ The horse slice is browser-only and preserves the static Netlify deployment cont
 ## Interpretation
 
 The follow-up keeps the control visually associated with the horse and reduces the horse footprint without changing the browser-only gameplay contract or Netlify deployment path.
+
+
+## Post-riding composition measurement — Checkpoint 017
+
+| Metric | Result | Status |
+|---|---:|---|
+| Mounted markup animal-head overlay | present in source and active Pages bundle | recorded |
+| Animal overlay stacking | z-index 3 above rider z-index 2 and body z-index 1 | recorded |
+| Directional overlay rows | down -32px; up -64px; side row 0 with right flip | recorded |
+| Mounted overlay animation | horse-walk, 4 frames, 0.48s steps | recorded |
+| Published cache key | rider-animal-head-1 | recorded |
+| npm install / build / typecheck | not run | pending local test |
+| Browser gameplay / riding feel | not run | pending local test |
