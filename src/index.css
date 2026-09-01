@@ -1891,3 +1891,32 @@ body {
 .combat-flash { position: absolute; z-index: 14; top: max(72px, calc(env(safe-area-inset-top) + 56px)); left: 50%; width: max-content; max-width: calc(100% - 32px); padding: 7px 11px; color: #fff4d5; border: 1px solid rgba(255, 221, 150, .74); background: rgba(101, 52, 42, .9); box-shadow: 3px 3px 0 rgba(48, 42, 32, .25); font-family: var(--app-font-mono); font-size: 9px; transform: translateX(-50%); animation: combat-pop .2s ease both; pointer-events: none; }
 @keyframes combat-pop { from { opacity: 0; transform: translate(-50%, -5px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @media (prefers-reduced-motion: reduce) { .goat { transition: none; } .goat-aggro .goat-sprite { animation: none; } }
+
+
+/* Enterable town interiors. */
+.interior-scene { position: absolute; inset: 0; overflow: hidden; background: #7d5b46; isolation: isolate; }
+.interior-scene::before { content: ''; position: absolute; inset: 0; z-index: 0; background: linear-gradient(90deg, rgba(52, 39, 37, .24) 0 4%, transparent 4% 96%, rgba(52, 39, 37, .24) 96%), repeating-linear-gradient(0deg, rgba(52, 39, 37, .12) 0 2px, transparent 2px 11px), linear-gradient(135deg, rgba(255, 227, 157, .13), transparent 48%); }
+.interior-scene::after { content: ''; position: absolute; z-index: 1; left: 8%; right: 8%; top: 24%; bottom: 7%; border: 2px solid rgba(45, 36, 34, .48); background: linear-gradient(135deg, rgba(255, 231, 167, .12), transparent 42%), #a47758; box-shadow: inset 0 0 0 7px rgba(65, 45, 38, .22), inset 0 0 28px rgba(54, 40, 33, .25); }
+.interior-header { position: absolute; z-index: 8; top: 20px; left: 22px; display: grid; gap: 3px; max-width: min(340px, calc(100% - 44px)); color: #fff0cc; text-shadow: 1px 1px 0 rgba(45, 36, 34, .55); }
+.interior-header strong { font-size: 20px; letter-spacing: .02em; }
+.interior-header span:last-child { color: rgba(255, 239, 204, .76); font-size: 10px; line-height: 1.4; }
+.interior-kicker { color: #f2c96f; font-family: var(--app-font-mono); font-size: 8px; letter-spacing: .14em; text-transform: uppercase; }
+.interior-room { position: absolute; z-index: 3; inset: 24% 8% 7%; pointer-events: none; }
+.interior-rug { position: absolute; left: 27%; top: 27%; width: 46%; height: 42%; border: 2px solid rgba(101, 57, 47, .54); background: repeating-linear-gradient(90deg, rgba(227, 165, 87, .26) 0 9px, rgba(151, 85, 61, .2) 9px 18px), #b86e54; box-shadow: 0 4px 0 rgba(65, 45, 38, .22); }
+.interior-table { position: absolute; left: 39%; top: 48%; width: 23%; height: 14%; border: 2px solid #5c3d32; border-radius: 3px; background: #895737; box-shadow: inset 0 4px 0 rgba(223, 157, 79, .34), 3px 4px 0 rgba(65, 45, 38, .22); }
+.interior-table::after { content: ''; position: absolute; left: 13%; right: 13%; bottom: -13px; height: 12px; border-left: 3px solid #5c3d32; border-right: 3px solid #5c3d32; }
+.interior-counter { position: absolute; left: 17%; top: 10%; width: 66%; height: 10%; border: 2px solid #5c3d32; background: #94613c; box-shadow: inset 0 4px 0 rgba(232, 176, 93, .3); }
+.interior-shelf { position: absolute; top: 30%; width: 12%; height: 29%; border: 2px solid #654132; background: repeating-linear-gradient(0deg, #a96d43 0 10px, #6f4836 10px 13px); box-shadow: 2px 3px 0 rgba(65, 45, 38, .2); }
+.shelf-left { left: 14%; } .shelf-right { right: 14%; }
+.interior-lantern { position: absolute; z-index: 5; top: 13%; width: 11px; height: 15px; border: 2px solid #6a4935; border-radius: 50% 50% 35% 35%; background: #f2c85d; box-shadow: 0 0 15px rgba(242, 200, 93, .65); }
+.lantern-left { left: 28%; } .lantern-right { right: 28%; }
+.interior-guild { background: #66734d; } .interior-guild::after { background: linear-gradient(135deg, rgba(216, 226, 157, .14), transparent 45%), #927258; }
+.interior-inn { background: #694a42; } .interior-inn::after { background: linear-gradient(135deg, rgba(250, 199, 107, .18), transparent 45%), #a46c4c; }
+.interior-chapel { background: #4b6257; } .interior-chapel::after { background: linear-gradient(135deg, rgba(177, 226, 186, .15), transparent 45%), #70856b; }
+.interior-doorway { position: absolute; z-index: 7; left: 50%; bottom: 4%; width: 58px; height: 34px; border: 3px solid #4a332e; background: #302b31; transform: translateX(-50%); box-shadow: 0 0 0 3px rgba(244, 201, 93, .28); }
+.interior-doorway span { position: absolute; top: 9px; left: 50%; color: #f2c96f; font-family: var(--app-font-mono); font-size: 7px; transform: translateX(-50%); }
+.interior-player { position: absolute; z-index: 9; width: 46px; height: 48px; transform: translate(-50%, -50%); }
+.interior-player .player-sprite { left: 7px; top: 4px; }
+.interior-exit-hint { position: absolute; z-index: 8; left: 50%; bottom: 1%; color: rgba(255, 240, 204, .74); font-family: var(--app-font-mono); font-size: 8px; letter-spacing: .08em; transform: translateX(-50%); text-transform: uppercase; }
+.door-prompt { position: absolute; z-index: 14; top: max(72px, calc(env(safe-area-inset-top) + 56px)); left: 50%; padding: 7px 11px; color: #fff4d5; border: 1px solid rgba(255, 221, 150, .74); background: rgba(48, 74, 52, .9); box-shadow: 3px 3px 0 rgba(48, 42, 32, .25); font-family: var(--app-font-mono); font-size: 9px; transform: translateX(-50%); pointer-events: none; }
+@media (max-width: 700px) { .interior-header { top: 15px; left: 16px; } .interior-header strong { font-size: 16px; } .interior-header span:last-child { font-size: 9px; } .interior-scene::after { left: 5%; right: 5%; } }
