@@ -692,7 +692,7 @@ function Home() {
       className="game-app"
       style={{
         '--player-sprite-url': `url("${assetUrl('assets/cute-fantasy/player.png')}")`,
-        '--horse-sprite-url': `url("${assetUrl('assets/cute-fantasy/cow.png')}")`,
+        '--horse-sprite-url': `url("${assetUrl('assets/farm-male-cow-brown.png')}")`,
       } as CSSProperties}
     >
       <div className="game-layout">
