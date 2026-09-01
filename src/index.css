@@ -378,9 +378,12 @@
   background-repeat: no-repeat;
   image-rendering: pixelated;
 }
-.player[data-facing='up'] .player-sprite { --sprite-row: 2; }
-.player[data-facing='left'] .player-sprite { --sprite-row: 1; transform: scaleX(-1); }
-.player[data-facing='right'] .player-sprite { --sprite-row: 1; }
+.player[data-facing='up'] .player-sprite,
+.interior-player[data-facing='up'] .player-sprite { --sprite-row: 2; }
+.player[data-facing='left'] .player-sprite,
+.interior-player[data-facing='left'] .player-sprite { --sprite-row: 1; transform: scaleX(-1); }
+.player[data-facing='right'] .player-sprite,
+.interior-player[data-facing='right'] .player-sprite { --sprite-row: 1; }
 .player.is-moving .player-sprite {
   --sprite-row: 3;
   animation: player-run .48s steps(5, end) infinite;
