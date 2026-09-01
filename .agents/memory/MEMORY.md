@@ -44,3 +44,12 @@ The successful deployment required declaring @tanstack/react-query and wouter as
 - Keep DEVELOPMENT_LOG.md and this memory file current with decisions, completed work, verification limits, and next steps.
 - Another AI may be testing or polishing concurrently: reread the latest main state before each work slice, keep edits narrow, and avoid overwriting unrelated changes.
 - Cleanup and optimization are allowed only when they preserve current gameplay, content, and player-facing behavior; do not add gameplay or content during polish passes.
+
+
+## Progression and release guardrail
+
+- Monster levels are internal gameplay state only: assign a hidden level to each monster, never render or announce that level to the player.
+- As the player levels up, living monsters should scale upward in health and attack pressure; defeated monsters should remain defeated until their normal respawn.
+- Monster XP should diminish with player progression and never fall below the configured minimum reward; show the actual awarded XP, not the hidden monster level.
+- For every published gameplay change, synchronize the active bundle referenced by docs/index.html and increment its cache-busting build key so the live Pages game cannot keep serving a stale artifact.
+- When the user returns with the Adventure-game GitHub link, inspect the latest main branch, src/App.tsx, DEVELOPMENT_LOG.md, .agents/memory/MEMORY.md, and the active docs bundle before making the next change.
