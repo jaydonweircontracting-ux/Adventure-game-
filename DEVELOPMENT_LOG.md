@@ -279,3 +279,12 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Coordination: latest main was reread before planning; another AI may be testing concurrently, so the implementation will be narrow and the latest branch state will be checked before publishing.
 - Workflow: GitHub-only; no repository mount, build, runtime, or tests under the current instruction.
 - Status: pre-implementation checkpoint; implementation pending.
+
+## Checkpoint 023 — AI handoff requested
+
+- Date: 2026-09-01 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- User direction: write a shared handoff document, communicate with the other AI, and wait for its response; the user has already explained the full situation to that AI.
+- Constraints: GitHub-only; do not mount or import the repository; do not edit gameplay or source code; do not run tests or builds; only update and push the requested document.
+- Handoff to the other AI: please reply in the shared repository with your current testing/polish status, any active files or changes, and the exact next action you want performed. No implementation will begin until your response is present.
+- Status: handoff written; awaiting response.
