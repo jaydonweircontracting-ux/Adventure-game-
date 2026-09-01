@@ -376,7 +376,7 @@
 .player[data-facing='right'] .player-sprite { --sprite-row: 4; }
 .player.is-moving .player-sprite {
   --sprite-row: 1;
-  animation: player-run .48s steps(6, end) infinite;
+  animation: player-run .48s steps(5, end) infinite;
 }
 .player.is-moving[data-facing='up'] .player-sprite { --sprite-row: 3; }
 .player.is-moving[data-facing='left'] .player-sprite { --sprite-row: 5; }
@@ -417,7 +417,7 @@
 .horse.is-mounted.is-moving[data-facing='left'] .rider-sprite { background-position-y: -160px; }
 .horse.is-mounted.is-moving[data-facing='right'] .rider-sprite { background-position-y: -160px; }
 .horse.is-mounted.is-moving[data-facing='down'] .rider-sprite { background-position-y: -32px; }
-.horse.is-mounted.is-moving .rider-sprite { animation: rider-run .48s steps(6, end) infinite; }
+.horse.is-mounted.is-moving .rider-sprite { animation: rider-run .48s steps(5, end) infinite; }
 @keyframes rider-run {
   from { background-position-x: 0; }
   to { background-position-x: -160px; }
@@ -460,7 +460,7 @@
 .horse[data-facing='right'] .horse-sprite { transform: scaleX(-1); }
 .horse.is-mounted.is-moving .horse-sprite {
   background-position-y: -32px;
-  animation: horse-walk .32s steps(2, start) infinite;
+  animation: horse-walk .32s steps(1, end) infinite;
 }
 @keyframes horse-walk {
   from { background-position-x: 0; }
