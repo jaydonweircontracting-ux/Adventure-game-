@@ -372,8 +372,8 @@
   image-rendering: pixelated;
 }
 .player[data-facing='up'] .player-sprite { --sprite-row: 2; }
-.player[data-facing='left'] .player-sprite { --sprite-row: 1; }
-.player[data-facing='right'] .player-sprite { --sprite-row: 1; transform: scaleX(-1); }
+.player[data-facing='left'] .player-sprite { --sprite-row: 1; transform: scaleX(-1); }
+.player[data-facing='right'] .player-sprite { --sprite-row: 1; }
 .player.is-moving .player-sprite {
   animation: player-run .48s steps(6, end) infinite;
 }
@@ -405,8 +405,8 @@
   pointer-events: none;
 }
 .horse[data-facing='up'] .rider-sprite { background-position-y: -64px; }
-.horse[data-facing='left'] .rider-sprite { background-position-y: -32px; }
-.horse[data-facing='right'] .rider-sprite { background-position-y: -32px; transform: scaleX(-1); }
+.horse[data-facing='left'] .rider-sprite { background-position-y: -32px; transform: scaleX(-1); }
+.horse[data-facing='right'] .rider-sprite { background-position-y: -32px; }
 .horse[data-facing='down'] .rider-sprite { display: none; }
 .horse.is-mounted .rider-sprite { animation: rider-run .48s steps(6, end) infinite; }
 @keyframes rider-run {
