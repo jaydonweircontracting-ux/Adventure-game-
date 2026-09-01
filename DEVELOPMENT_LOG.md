@@ -247,3 +247,13 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Integration: Connected field chunk travel to the brain while preserving the current visual field implementation.
 - Safety: Saved pre-change source backups and an exact patch under backups/2026-08-31/checkpoint-019-before-rpg-brain/.
 - Revert: Revert the single Checkpoint 019 commit, or apply the included patch in reverse.
+
+
+## Checkpoint 020 — goat, doorway, and field collision polish
+
+- Date: 2026-09-01 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Workflow: GitHub-only; no repository mount, game execution, or tests.
+- Fixes: doorway entry now requires approaching from the exterior side; the chapel returns to its outside doorway position; blocked field movement resolves each axis independently for wall-sliding; generated goats avoid blocked map geometry; the camera holds a compact center dead-zone; goat frames render pixelated for a sharper sprite.
+- Published output: synchronized the active Pages JavaScript and stylesheet and cache-busted docs/index.html.
+- Scope: polish and collision corrections only; no new game content or systems.
