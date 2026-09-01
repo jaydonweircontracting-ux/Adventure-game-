@@ -495,7 +495,7 @@ function InteriorRoom({ area, position }: { area: InteriorArea; position: Point 
   );
 }
 
-function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute }: { onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void }) {
+function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked }: { onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean }) {
   const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
   const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -551,6 +551,12 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   useEffect(() => { playerHpRef.current = playerHp; }, [playerHp]);
   useEffect(() => { interiorRef.current = interior; }, [interior]);
   useEffect(() => { interiorPositionRef.current = interiorPosition; }, [interiorPosition]);
+  useEffect(() => {
+    if (inputLocked) {
+      keysRef.current = {};
+      setMoving(false);
+    }
+  }, [inputLocked]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -643,6 +649,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
       setMoving(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
+      if (inputLocked) return;
       if (event.code === 'Space' || event.code === 'KeyF') { event.preventDefault(); attackGoat(); return; }
       const direction = directionKeys[event.code];
       if (!direction) return;
@@ -667,8 +674,8 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
       const elapsed = Math.min(50, now - lastFrame) / 1000;
       lastFrame = now;
       const input = {
-        x: (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
-        y: (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
+        x: inputLocked ? 0 : (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
+        y: inputLocked ? 0 : (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
       };
       const length = Math.hypot(input.x, input.y);
       const active = length > 0;
@@ -755,7 +762,7 @@ if (active) {
       window.removeEventListener('blur', clearInput);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [onChunkChange, interior]);
+  }, [onChunkChange, interior, inputLocked]);
 
 
 
@@ -805,10 +812,17 @@ if (active) {
       const currentPosition = positionRef.current;
       const currentChunk = chunkRef.current;
       const preferredOffset = facing === 'right' ? -6 : facing === 'left' ? 6 : currentPosition.x < 50 ? 6 : -6;
-      const dismountPosition = {
-        x: Math.min(88, Math.max(12, currentPosition.x + preferredOffset)),
-        y: Math.min(88, Math.max(12, currentPosition.y)),
-      };
+      const clampFieldPosition = (candidate: Point): Point => ({
+        x: Math.min(88, Math.max(12, candidate.x)),
+        y: Math.min(88, Math.max(12, candidate.y)),
+      });
+      const dismountCandidates = [
+        { x: currentPosition.x + preferredOffset, y: currentPosition.y },
+        { x: currentPosition.x - preferredOffset, y: currentPosition.y },
+        { x: currentPosition.x, y: currentPosition.y - 7 },
+        { x: currentPosition.x, y: currentPosition.y + 7 },
+      ].map(clampFieldPosition);
+      const dismountPosition = dismountCandidates.find((candidate) => !isFieldPositionBlocked(candidate, currentChunk)) || clampFieldPosition(currentPosition);
       horseIdleAnchorRef.current = dismountPosition;
 
       setHorse({ chunk: currentChunk, position: currentPosition });
@@ -1010,7 +1024,7 @@ function Home() {
       } as CSSProperties}
     >
       <div className="game-layout">
-        <GameField onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} />
+      <GameField onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen} />
       </div>
       {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
       {inventoryOpen && <InventorySheet onClose={() => setInventoryOpen(false)} />}
