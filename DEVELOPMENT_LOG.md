@@ -320,3 +320,15 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Published output: synchronized the active Pages JavaScript and CSS bundles and cache-busted docs/index.html to Build 026.
 - Verification: static source and published-bundle marker checks only; no mount, build, runtime, or tests.
 - Status: implemented and pushed.
+
+
+## Build 029 — hidden monster scaling and diminishing XP
+
+- Date: 2026-09-01 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- User direction: make progression harder after each level, assign monsters hidden levels, and reduce monster XP as the player advances.
+- Change: goats now receive an internal area/player-scaled level; living goats gain higher max HP and attack damage as the player levels, while defeated goats keep their defeat state until respawn.
+- Reward curve: goat XP decreases with player progression and monster level, with a minimum floor; the combat message shows only the awarded XP and never exposes monster level.
+- Published output: synchronized the active Pages JavaScript bundle and cache-busted docs/index.html to Build 029.
+- Memory: recorded the hidden-level, diminishing-XP, source/docs synchronization, cache-busting, and GitHub-link handoff rules in .agents/memory/MEMORY.md.
+- Verification: static source and published-bundle marker checks only; GitHub Actions Pages status will be checked after the final docs/index.html commit.
