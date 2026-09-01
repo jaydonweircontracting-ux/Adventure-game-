@@ -53,3 +53,10 @@ The successful deployment required declaring @tanstack/react-query and wouter as
 - Monster XP should diminish with player progression and never fall below the configured minimum reward; show the actual awarded XP, not the hidden monster level.
 - For every published gameplay change, synchronize the active bundle referenced by docs/index.html and increment its cache-busting build key so the live Pages game cannot keep serving a stale artifact.
 - When the user returns with the Adventure-game GitHub link, inspect the latest main branch, src/App.tsx, DEVELOPMENT_LOG.md, .agents/memory/MEMORY.md, and the active docs bundle before making the next change.
+
+
+## Published-bundle validation
+
+- A green GitHub Pages workflow only confirms that committed files were published; it does not parse or execute the browser JavaScript.
+- Before every manual docs-bundle update, run a browser-targeted JavaScript build/parser check and do not publish if it fails.
+- If the game goes blank after a release, inspect the active docs JavaScript syntax before changing gameplay code.
