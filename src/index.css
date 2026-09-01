@@ -299,6 +299,12 @@
   overflow: hidden;
   background-color: var(--field-color, var(--field));
 }
+.field-world-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  transition: transform .16s ease-out;
+}
 .pixel-field::before {
   content: '';
   position: absolute;
