@@ -1959,3 +1959,78 @@ body {
 
 /* Keep the starting clearing dry even when an adjacent river touches its tile. */
 .starting-area .field-water { display: none; }
+
+/* Progress and loot UI for the Adventure character. */
+.level-bar-label {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 7px;
+  color: rgba(255, 244, 211, .78);
+  font-family: var(--app-font-mono);
+  font-size: 8px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.level-bar {
+  margin-top: 3px;
+}
+.bar-fill.experience {
+  background: linear-gradient(90deg, #b7cf65, #e8c65e);
+}
+.inventory-grid {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.inventory-item {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 8px 10px;
+  border: 1px solid #d4c29f;
+  background: rgba(251, 246, 233, .66);
+}
+.inventory-item-mark {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  color: #fff2c9;
+  border: 1px solid rgba(25, 56, 47, .55);
+  background: var(--field-deep);
+  font-family: var(--app-font-mono);
+  font-size: 16px;
+}
+.fabric-mark { background: #7a668e; }
+.coin-mark { color: var(--sun); background: #705437; }
+.inventory-item > span:nth-child(2) {
+  display: grid;
+  gap: 3px;
+}
+.inventory-item strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+.inventory-item small {
+  color: var(--ink-soft);
+  font-family: var(--app-font-mono);
+  font-size: 8px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.inventory-item b {
+  color: var(--ink);
+  font-family: var(--app-font-mono);
+  font-size: 14px;
+}
+.inventory-note {
+  margin-top: 14px;
+  padding: 9px 10px;
+  color: var(--ink-soft);
+  border-left: 3px solid var(--sun);
+  background: rgba(231, 185, 66, .1);
+  font-size: 10px;
+  line-height: 1.45;
+}
