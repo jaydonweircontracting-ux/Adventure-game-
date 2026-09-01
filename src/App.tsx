@@ -114,8 +114,8 @@ function mapTileFor(point: Point): MapTile {
   const southBranchY = Math.round(10 + Math.sin(point.x * 0.65) * 0.45);
   const southBranch = !isOcean && point.x >= 4 && point.x <= 9 && point.y === southBranchY;
   const lake = !isOcean && ((point.x === 6 && point.y === 5) || (point.x === 7 && point.y === 5) || (point.x === 7 && point.y === 6));
-  const waterFeature = isOcean ? 'sea' : lake ? 'lake' : mainRiver || westBranch || southBranch ? 'river' : null;
-  const waterEdge = isOcean ? null : lake ? 'south' : mainRiver ? (Math.sin((point.y - 2) * 0.48) >= 0 ? 'east' : 'west') : westBranch || southBranch ? 'south' : null;
+  const waterFeature = isStartingArea(point) ? null : isOcean ? 'sea' : lake ? 'lake' : mainRiver || westBranch || southBranch ? 'river' : null;
+  const waterEdge = isStartingArea(point) ? null : isOcean ? null : lake ? 'south' : mainRiver ? (Math.sin((point.y - 2) * 0.48) >= 0 ? 'east' : 'west') : westBranch || southBranch ? 'south' : null;
 
   const ridgeLine = 3.2 + Math.sin(point.x * 0.55) * 0.7;
   const isRidge = !isOcean && (point.y <= ridgeLine || (point.x >= 8 && point.y <= 4));
@@ -260,9 +260,9 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
 type InteriorArea = { id: string; name: string; description: string; roomType: 'guild' | 'inn' | 'chapel' | 'building'; exteriorPosition: Point };
 type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number };
 const startingDoorways: Doorway[] = [
-  { id: 'guild-door', buildingIndex: 0, position: { x: 30, y: 36 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'Maps, contracts, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 30, y: 40 } } },
-  { id: 'inn-door', buildingIndex: 1, position: { x: 70, y: 36 }, area: { id: 'moonwell-inn', name: 'Moonwell Inn', description: 'A warm common room where travelers trade rumors over stew.', roomType: 'inn', exteriorPosition: { x: 70, y: 40 } } },
-  { id: 'chapel-door', buildingIndex: 2, position: { x: 30, y: 72 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 30, y: 68 } } },
+  { id: 'guild-door', buildingIndex: 0, position: { x: 30, y: 36 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'Maps, contracts, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 30, y: 48 } } },
+  { id: 'inn-door', buildingIndex: 1, position: { x: 70, y: 36 }, area: { id: 'moonwell-inn', name: 'Moonwell Inn', description: 'A warm common room where travelers trade rumors over stew.', roomType: 'inn', exteriorPosition: { x: 70, y: 48 } } },
+  { id: 'chapel-door', buildingIndex: 2, position: { x: 30, y: 72 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 30, y: 60 } } },
 ];
 
 function buildingDoorwaysFor(chunk: Point): Doorway[] {
@@ -280,19 +280,19 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
         name: landmark.name + ' House ' + (index + 1),
         description: 'A simple brown room waiting to be furnished.',
         roomType: 'building' as const,
-        exteriorPosition: { x: position.x, y: Math.min(90, position.y + 3) },
+        exteriorPosition: { x: position.x, y: Math.min(94, position.y + 8) },
       },
     };
   });
 }
 
 function doorwayNear(position: Point, chunk: Point) {
-  return buildingDoorwaysFor(chunk).find((doorway) => Math.hypot(position.x - doorway.position.x, position.y - doorway.position.y) <= 5.5) || null;
+  return buildingDoorwaysFor(chunk).find((doorway) => Math.hypot(position.x - doorway.position.x, position.y - doorway.position.y) <= 4.2) || null;
 }
 
 type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
 type GoatState = { id: number; position: Point; facing: Direction; hp: number; maxHp: number; disposition: GoatDisposition; attackCooldown: number };
-const GOAT_STEP = 4.8;
+const GOAT_STEP = 2.4;
 const GOAT_ATTACK_RANGE = 9;
 const GOAT_ATTACK_DAMAGE = 3;
 const startingGoatPositions: Point[] = [
