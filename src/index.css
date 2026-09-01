@@ -413,11 +413,11 @@
 .horse[data-facing='left'] .rider-sprite { background-position-y: -32px; transform: scaleX(-1); }
 .horse[data-facing='right'] .rider-sprite { background-position-y: -32px; }
 .horse[data-facing='down'] .rider-sprite { background-position-y: 0; }
-.horse.is-mounted.is-moving[data-facing='up'] .rider-sprite { background-position-y: -160px; }
-.horse.is-mounted.is-moving[data-facing='left'] .rider-sprite { background-position-y: -128px; }
-.horse.is-mounted.is-moving[data-facing='right'] .rider-sprite { background-position-y: -128px; }
-.horse.is-mounted.is-moving[data-facing='down'] .rider-sprite { background-position-y: -96px; }
-.horse.is-mounted.is-moving .rider-sprite { animation: rider-run .48s steps(5, end) infinite; }
+.horse.is-mounted.is-moving[data-facing='up'] .rider-sprite { background-position-y: -64px; }
+.horse.is-mounted.is-moving[data-facing='left'] .rider-sprite { background-position-y: -32px; }
+.horse.is-mounted.is-moving[data-facing='right'] .rider-sprite { background-position-y: -32px; }
+.horse.is-mounted.is-moving[data-facing='down'] .rider-sprite { background-position-y: 0; }
+.horse.is-mounted.is-moving .rider-sprite { animation: none; }
 @keyframes rider-run {
   from { background-position-x: 0; }
   to { background-position-x: -160px; }
