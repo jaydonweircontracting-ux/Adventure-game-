@@ -237,6 +237,20 @@ const initialLogs = [
   { text: 'Your field position was saved locally.', color: '' },
 ];
 
+type TownNpc = {
+  name: string;
+  title: string;
+  role: 'mage' | 'warrior' | 'guide';
+  position: Point;
+  facing: Direction;
+};
+
+const startingTownNpcs: TownNpc[] = [
+  { name: 'Noah', title: 'Mage teacher', role: 'mage', position: { x: 40, y: 47 }, facing: 'right' },
+  { name: 'Damon', title: 'Warrior teacher', role: 'warrior', position: { x: 60, y: 47 }, facing: 'left' },
+  { name: 'Shawn', title: 'Town resident', role: 'guide', position: { x: 50, y: 64 }, facing: 'up' },
+];
+
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
   const radius = 6 - zoom;
@@ -565,6 +579,23 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
               )}
             </div>
           )}
+          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && startingTownNpcs.map((npc) => (
+            <div
+              className={'town-npc npc-' + npc.role}
+              style={{ left: npc.position.x + '%', top: npc.position.y + '%' }}
+              data-role={npc.role}
+              data-facing={npc.facing}
+              aria-label={npc.name + ', ' + npc.title}
+              data-testid={'npc-' + npc.name.toLowerCase()}
+            >
+              <span className="npc-nameplate">
+                <span className="npc-role-mark" aria-hidden="true" />
+                <strong>{npc.name}</strong>
+                <small>{npc.title}</small>
+              </span>
+              <span className="npc-sprite" aria-hidden="true" />
+            </div>
+          ))}
           {showHorse && (
             <>
               <div className={'horse ' + (mounted ? 'is-mounted' : '')} style={{ left: horseDisplayPosition.x + '%', top: horseDisplayPosition.y + '%' }} data-facing={mounted ? facing : horseFacing} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">
