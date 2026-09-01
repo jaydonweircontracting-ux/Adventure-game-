@@ -372,15 +372,15 @@
   image-rendering: pixelated;
 }
 .player[data-facing='up'] .player-sprite { --sprite-row: 2; }
-.player[data-facing='left'] .player-sprite { --sprite-row: 4; transform: scaleX(-1); }
-.player[data-facing='right'] .player-sprite { --sprite-row: 4; }
+.player[data-facing='left'] .player-sprite { --sprite-row: 1; transform: scaleX(-1); }
+.player[data-facing='right'] .player-sprite { --sprite-row: 1; }
 .player.is-moving .player-sprite {
-  --sprite-row: 1;
+  --sprite-row: 3;
   animation: player-run .48s steps(5, end) infinite;
 }
-.player.is-moving[data-facing='up'] .player-sprite { --sprite-row: 3; }
-.player.is-moving[data-facing='left'] .player-sprite { --sprite-row: 5; }
-.player.is-moving[data-facing='right'] .player-sprite { --sprite-row: 5; }
+.player.is-moving[data-facing='up'] .player-sprite { --sprite-row: 5; }
+.player.is-moving[data-facing='left'] .player-sprite { --sprite-row: 4; }
+.player.is-moving[data-facing='right'] .player-sprite { --sprite-row: 4; }
 .player.is-mounted { z-index: 4; }
 .player.is-mounted .player-sprite { display: none; }
 .horse {
