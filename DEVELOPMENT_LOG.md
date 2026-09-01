@@ -332,3 +332,13 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Published output: synchronized the active Pages JavaScript bundle and cache-busted docs/index.html to Build 029.
 - Memory: recorded the hidden-level, diminishing-XP, source/docs synchronization, cache-busting, and GitHub-link handoff rules in .agents/memory/MEMORY.md.
 - Verification: static source and published-bundle marker checks only; GitHub Actions Pages status will be checked after the final docs/index.html commit.
+
+
+## Build 030 — blank-page bundle syntax hotfix
+
+- Date: 2026-09-01 (America/Vancouver)
+- Diagnosis: the active compiled doorway bundle contained an invalid `,const` sequence, so the browser could not parse the script and rendered a blank page. The Pages workflow was green because it publishes files without browser parsing.
+- Fix: changed the invalid separator to a statement separator, retained the Build 029 gameplay logic, and republished the active JavaScript bundle.
+- Cache: updated docs/index.html from build-029 to build-030.
+- Guardrail: added a browser-targeted Bun build check to project memory for every future manual bundle update.
+- Verification: Build 030 JavaScript passed the browser-targeted Bun build check; Pages deployment status is pending.
