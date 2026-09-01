@@ -459,6 +459,95 @@
   from { background-position-x: 0; }
   to { background-position-x: -192px; }
 }
+
+/* Starting-town teachers and guide use the player sheet at the same pixel size. */
+.town-npc {
+  position: absolute;
+  z-index: 6;
+  width: 46px;
+  height: 62px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  will-change: left, top;
+}
+.town-npc .npc-sprite {
+  position: absolute;
+  left: 7px;
+  top: 24px;
+  width: 32px;
+  height: 32px;
+  background-image: var(--player-sprite-url);
+  background-position: 0 0;
+  background-position-y: 0;
+  background-size: 192px 320px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+.town-npc[data-facing='up'] .npc-sprite { background-position-y: -64px; }
+.town-npc[data-facing='left'] .npc-sprite { background-position-y: -32px; transform: scaleX(-1); }
+.town-npc[data-facing='right'] .npc-sprite { background-position-y: -32px; }
+.town-npc.npc-mage .npc-sprite {
+  filter: hue-rotate(178deg) saturate(1.55) brightness(.92);
+}
+.town-npc.npc-warrior .npc-sprite {
+  filter: sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9);
+}
+.town-npc.npc-guide .npc-sprite {
+  filter: hue-rotate(32deg) saturate(1.25) brightness(1.05);
+}
+.npc-nameplate {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 0;
+  display: grid;
+  grid-template-columns: 9px auto;
+  column-gap: 4px;
+  align-items: center;
+  min-width: 78px;
+  padding: 4px 6px 4px 5px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(30, 52, 42, .48);
+  border-radius: 3px;
+  background: rgba(250, 245, 226, .94);
+  box-shadow: 2px 2px 0 rgba(30, 52, 42, .2);
+  color: #223a2d;
+  text-align: left;
+  white-space: nowrap;
+}
+.npc-nameplate strong {
+  font-family: var(--app-font-display);
+  font-size: 12px;
+  line-height: 1;
+}
+.npc-nameplate small {
+  grid-column: 2;
+  color: #6c7059;
+  font-family: var(--app-font-mono);
+  font-size: 7px;
+  letter-spacing: .04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+.npc-role-mark {
+  grid-row: span 2;
+  display: block;
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgba(34, 58, 45, .5);
+  border-radius: 50%;
+  background: #8b9b6d;
+}
+.npc-mage .npc-role-mark {
+  border-radius: 2px;
+  background: #7770b0;
+  transform: rotate(45deg) scale(.78);
+}
+.npc-warrior .npc-role-mark {
+  border-radius: 2px;
+  background: #b76d4e;
+}
+.npc-guide .npc-role-mark { background: #5b9a87; }
 .world-hud {
   position: absolute;
   z-index: 8;
