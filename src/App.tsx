@@ -12,6 +12,7 @@ import { createAdventureBrain, type RPGBrain } from '@/game/rpgBrain';
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
+const BUILD_NUMBER = '026';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 type HorseState = { chunk: Point; position: Point };
@@ -542,7 +543,7 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }));
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
   const [interior, setInterior] = useState<InteriorArea | null>(null);
-  const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 84 });
+  const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 89 });
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
   const chunkRef = useRef(chunk);
@@ -984,7 +985,7 @@ if (active) {
           <div className="hud-card" data-testid="hud-player">
             <div className="hud-label"><span>Adventurer</span><span>08</span></div>
             <div className="hud-name">Rowan of the Vale</div>
-            <div className="bar" aria-label={'Health ' + playerHp + ' percent'}><div className="bar-fill health" style={{ width: playerHp + '%' }} /></div><span className="hud-health-value">{playerHp} HP</span>
+            <div className="bar" aria-label={'Health ' + playerHp + ' percent'}><div className="bar-fill health" style={{ width: playerHp + '%' }} /></div><span className="hud-health-value">{playerHp} HP</span><span className="hud-build" data-testid="text-build-number">BUILD {BUILD_NUMBER}</span>
             {mounted && <button className="horse-dismount-button" onClick={toggleMount} aria-label="Dismount horse" data-testid="button-dismount-horse">Dismount</button>}
           </div>
           <button className="hud-card right hud-button" onClick={onOpenInventory} aria-label="Open inventory" data-testid="button-open-inventory">
