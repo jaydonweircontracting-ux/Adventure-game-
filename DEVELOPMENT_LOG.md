@@ -342,3 +342,12 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Cache: updated docs/index.html from build-029 to build-030.
 - Guardrail: added a browser-targeted Bun build check to project memory for every future manual bundle update.
 - Verification: Build 030 JavaScript passed the browser-targeted Bun build check; Pages deployment status is pending.
+
+
+## Build 031 — starting-house table collision refinement
+
+- Date: 2026-09-01 (America/Vancouver)
+- User direction: the starting-house table collision was too wide on the sides and extended too far below the table.
+- Fix: tightened only the table hitbox from left 38/top 55/right 63/bottom 72 to left 41/top 55/right 60/bottom 68; counter and shelf collision remain unchanged.
+- Published output: synchronized the active Pages JavaScript bundle and cache-busted docs/index.html to Build 031.
+- Verification: browser-targeted Bun build check passed before publication; Pages deployment status is pending.
