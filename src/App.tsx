@@ -12,7 +12,7 @@ import { createAdventureBrain, type RPGBrain } from '@/game/rpgBrain';
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '027';
+const BUILD_NUMBER = '029';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 type HorseState = { chunk: Point; position: Point };
@@ -370,6 +370,7 @@ type GoatState = {
   position: Point;
   spawnPosition: Point;
   facing: Direction;
+  level: number;
   hp: number;
   maxHp: number;
   disposition: GoatDisposition;
@@ -384,11 +385,42 @@ const GOAT_RESPAWN_TICKS = Math.ceil(12000 / GOAT_TICK_MS);
 const GOAT_ATTACK_RANGE = 9;
 const GOAT_ATTACK_DAMAGE = 3;
 const GOAT_XP_REWARD = 25;
+const GOAT_MIN_XP_REWARD = 5;
+const GOAT_HP_PER_LEVEL = 4;
+const GOAT_DAMAGE_PER_LEVEL = 1;
 const PLAYER_MAX_HP = 100;
 const GOAT_GOLD_DROP = 5;
 const GOAT_FABRIC_DROP = 1;
 const GOAT_HORN_DROP = 1;
 const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0 };
+
+function monsterLevelForChunk(chunk: Point, index: number, playerLevel = 1) {
+  const areaOffset = Math.abs(chunk.x * 17 + chunk.y * 31 + index * 7) % 3;
+  return Math.max(1, playerLevel + areaOffset);
+}
+
+function goatMaxHpForLevel(level: number) {
+  return 18 + Math.max(0, level - 1) * GOAT_HP_PER_LEVEL;
+}
+
+function goatAttackDamageForLevel(level: number) {
+  return GOAT_ATTACK_DAMAGE + Math.floor(Math.max(0, level - 1) / 2) * GOAT_DAMAGE_PER_LEVEL;
+}
+
+function goatExperienceReward(goat: GoatState, playerLevel: number) {
+  const progressionPenalty = Math.max(0, playerLevel - 1) * 2;
+  const monsterPenalty = Math.max(0, goat.level - playerLevel);
+  return Math.max(GOAT_MIN_XP_REWARD, GOAT_XP_REWARD - progressionPenalty - monsterPenalty);
+}
+
+function scaleGoatsToPlayerLevel(goats: GoatState[], playerLevel: number) {
+  return goats.map((goat) => {
+    if (goat.disposition === 'defeated') return goat;
+    const level = Math.max(goat.level, playerLevel);
+    const maxHp = goatMaxHpForLevel(level);
+    return { ...goat, level, maxHp, hp: maxHp };
+  });
+}
 const classDescriptions: Record<Exclude<PlayerClass, 'Beginner'>, string> = {
   Warrior: 'More health and a heavy starting style.',
   Mage: 'A spell-focused path for curious explorers.',
@@ -404,7 +436,7 @@ const startingGoatPositions: Point[] = [
   { x: 12, y: 43 }, { x: 88, y: 44 }, { x: 14, y: 82 }, { x: 31, y: 87 },
   { x: 70, y: 86 }, { x: 87, y: 80 },
 ];
-function goatsForChunk(chunk: Point): GoatState[] {
+function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
   if (mapTileFor(chunk).terrain === 'ocean') return [];
   const positions = isStartingArea(chunk) ? startingGoatPositions : Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 16 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % 68), y: 17 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % 66) }));
   const safePositions = positions.filter((position) => !isFieldPositionBlocked(position, chunk));
@@ -415,8 +447,9 @@ function goatsForChunk(chunk: Point): GoatState[] {
       position,
       spawnPosition: { ...position },
       facing: (['up', 'right', 'down', 'left'] as Direction[])[wanderSeed % 4],
-      hp: 18,
-      maxHp: 18,
+      level: monsterLevelForChunk(chunk, index, playerLevel),
+      hp: goatMaxHpForLevel(monsterLevelForChunk(chunk, index, playerLevel)),
+      maxHp: goatMaxHpForLevel(monsterLevelForChunk(chunk, index, playerLevel)),
       disposition: 'calm',
       attackCooldown: 0,
       respawnTicks: 0,
@@ -659,7 +692,7 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
   const [playerClass, setPlayerClass] = useState<PlayerClass>('Beginner');
   const [npcDialogue, setNpcDialogue] = useState<TownNpc | null>(null);
   const [npcStates, setNpcStates] = useState(startingTownNpcs);
-  const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }));
+  const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }, 1));
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
   const [interior, setInterior] = useState<InteriorArea | null>(startingHouse);
   const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 52 });
@@ -742,7 +775,7 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
           return { ...moved, attackCooldown: Math.max(0, moved.attackCooldown - 1) };
         }
         if (goatDistance(goat, currentPlayer) <= GOAT_ATTACK_RANGE) {
-          damageTaken += GOAT_ATTACK_DAMAGE;
+          damageTaken += goatAttackDamageForLevel(goat.level);
           return { ...goat, attackCooldown: 2 };
         }
         return moveGoatIndependently(goat, goatWorldStepRef.current, currentPlayer, currentChunk, currentGoats);
@@ -823,7 +856,7 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
   }, [chunk]);
 
   useEffect(() => {
-    const nextGoats = goatsForChunk(chunk);
+    const nextGoats = goatsForChunk(chunk, playerLevelRef.current);
     goatsRef.current = nextGoats;
     setGoats(nextGoats);
     goatWorldStepRef.current = 0;
@@ -980,7 +1013,7 @@ if (active) {
     if (!target) { setAttackFlash('No goat is close enough to strike.'); window.setTimeout(() => setAttackFlash(null), 900); return; }
     const nextHp = target.hp - 9;
     const defeated = nextHp <= 0;
-    const nextGoats = goatsRef.current.map((goat) => goat.id === target.id ? {
+    let nextGoats = goatsRef.current.map((goat) => goat.id === target.id ? {
       ...goat,
       hp: Math.max(0, nextHp),
       disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition,
@@ -993,7 +1026,8 @@ if (active) {
       const loot: GoatLoot = { goatHorns: GOAT_HORN_DROP, coins: GOAT_GOLD_DROP, fabric: GOAT_FABRIC_DROP };
       onLoot(loot);
       const bonusDrop = `${GOAT_GOLD_DROP} gold + ${GOAT_FABRIC_DROP} fabric`;
-      const nextXp = playerXpRef.current + GOAT_XP_REWARD;
+      const xpReward = goatExperienceReward(target, playerLevelRef.current);
+       const nextXp = playerXpRef.current + xpReward;
       const nextLevel = Math.floor(nextXp / 100) + 1;
       const previousLevel = playerLevelRef.current;
       setPlayerXp(nextXp);
@@ -1001,9 +1035,12 @@ if (active) {
       if (nextLevel > previousLevel) {
         setPlayerLevel(nextLevel);
         playerLevelRef.current = nextLevel;
+        nextGoats = scaleGoatsToPlayerLevel(nextGoats, nextLevel);
+        goatsRef.current = nextGoats;
+        setGoats(nextGoats);
         setAttackFlash(`Level up! Adventure is now level ${nextLevel}.`);
       }
-      const message = `Goat defeated: +${GOAT_XP_REWARD} XP · +1 horn · +${bonusDrop}. Respawns in 12s.`;
+      const message = `Goat defeated: +${xpReward} XP · +1 horn · +${bonusDrop}. Respawns in 12s.`;
       setLogs((currentLogs) => [{ text: message, color: 'blue' }, ...currentLogs].slice(0, 3));
       if (nextLevel <= previousLevel) {
         setAttackFlash(message);
