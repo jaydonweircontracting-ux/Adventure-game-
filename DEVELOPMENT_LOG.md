@@ -268,3 +268,14 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Planned scope: clean up and optimize the current code only, preserve gameplay and existing content, and do not introduce new gameplay systems during polish.
 - Workflow: GitHub-only; no repository mount or routine game execution unless the user explicitly changes that instruction.
 - Status: checkpoint recorded; no new implementation started in this work slice.
+
+
+## Checkpoint 022 — render cleanup and performance-safe polish
+
+- Date: 2026-09-01 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- Direction recorded before implementation: continue polishing the current game while preserving gameplay, content, and player-facing behavior.
+- Planned scope: memoize deterministic world tile/tree calculations during movement renders, reuse the existing doorway lookup in the field prompt, and add stable keys to the fixed town NPC list. These are render cleanup changes only; no new mechanics, content, or balance changes.
+- Coordination: latest main was reread before planning; another AI may be testing concurrently, so the implementation will be narrow and the latest branch state will be checked before publishing.
+- Workflow: GitHub-only; no repository mount, build, runtime, or tests under the current instruction.
+- Status: pre-implementation checkpoint; implementation pending.
