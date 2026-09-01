@@ -82,6 +82,10 @@ const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
   '5,4': { name: 'Northwatch Beacon', kind: 'village' },
 };
 
+function isStartingArea(point: Point) {
+  return point.x === 4 && point.y === 7;
+}
+
 function mapTileFor(point: Point): MapTile {
   // Wide regional bands keep the world readable while the outer rim is reserved for ocean.
   const regionStyle = regionStyleFor(point);
@@ -102,8 +106,9 @@ function mapTileFor(point: Point): MapTile {
 
   const horizontalRoadY = Math.round(7 + Math.sin((point.x - 2) * 0.65) * 0.55);
   const verticalRoadX = Math.round(4 + Math.sin((point.y - 7) * 0.45) * 0.4);
-  const horizontalRoad = !isOcean && point.y === horizontalRoadY;
-  const verticalRoad = !isOcean && point.x === verticalRoadX;
+  const startingArea = isStartingArea(point);
+  const horizontalRoad = startingArea || (!isOcean && point.y === horizontalRoadY);
+  const verticalRoad = startingArea || (!isOcean && point.x === verticalRoadX);
   const road = horizontalRoad && verticalRoad ? 'cross' : horizontalRoad ? 'horizontal' : verticalRoad ? 'vertical' : 'none';
   const bridge = waterFeature !== null && !isOcean && road !== 'none';
 
@@ -122,7 +127,7 @@ function mapTileFor(point: Point): MapTile {
 type FieldTree = { id: number; x: number; y: number; scale: number; variant: number; style: RegionStyle };
 type FieldRect = { left: number; top: number; right: number; bottom: number };
 
-function fieldHouseRects(kind: SettlementKind): FieldRect[] {
+function fieldHouseRects(kind: SettlementKind, startingArea = false): FieldRect[] {
   const parent = kind === 'town'
     ? { left: 19, top: 21, width: 62, height: 58 }
     : { left: 23, top: 24, width: 54, height: 52 };
@@ -131,9 +136,14 @@ function fieldHouseRects(kind: SettlementKind): FieldRect[] {
     { left: 73, top: 12, width: 19, height: 13, scale: 1 },
     { left: 8, top: 75, width: 19, height: 13, scale: 1 },
     { left: 73, top: 75, width: 19, height: 13, scale: 1 },
-    { left: 39, top: 7, width: 19, height: 13, scale: 0.8 },
-    { left: 39, top: 80, width: 19, height: 13, scale: 0.8 },
   ];
+
+  if (!startingArea) {
+    specs.push(
+      { left: 39, top: 7, width: 19, height: 13, scale: 0.8 },
+      { left: 39, top: 80, width: 19, height: 13, scale: 0.8 },
+    );
+  }
 
   return specs.map((spec) => {
     const width = spec.width * spec.scale;
@@ -154,14 +164,30 @@ function pointInRect(point: Point, rect: FieldRect, padding = 0) {
 }
 
 function fieldTreesFor(chunk: Point): FieldTree[] {
+  const startingArea = isStartingArea(chunk);
+  const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
+  const treeStyle = regionStyleFor(chunk);
+
+  if (startingArea) {
+    const perimeterTrees = [
+      { x: 10, y: 11, scale: 0.72, variant: 1 },
+      { x: 22, y: 13, scale: 0.56, variant: 0 },
+      { x: 69, y: 13, scale: 0.58, variant: 2 },
+      { x: 81, y: 11, scale: 0.72, variant: 1 },
+      { x: 10, y: 78, scale: 0.72, variant: 2 },
+      { x: 22, y: 83, scale: 0.56, variant: 0 },
+      { x: 69, y: 83, scale: 0.58, variant: 1 },
+      { x: 81, y: 78, scale: 0.72, variant: 2 },
+    ];
+    return perimeterTrees.map((tree, id) => ({ ...tree, id, style: treeStyle }));
+  }
+
   let seed = Math.abs((chunk.x * 92837111) + (chunk.y * 689287499)) + 1;
   const random = () => {
     const value = Math.sin(seed++) * 10000;
     return value - Math.floor(value);
   };
-  const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   const houseRects = landmark ? fieldHouseRects(landmark.kind) : [];
-  const treeStyle = regionStyleFor(chunk);
   const trees: FieldTree[] = [];
   const targetCount = 8 + Math.floor(random() * 5);
   let attempts = 0;
@@ -193,7 +219,7 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
   if (treeBlocked) return true;
 
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
-  return landmark ? fieldHouseRects(landmark.kind).some((rect) => pointInRect(position, rect, 2.5)) : false;
+  return landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk)).some((rect) => pointInRect(position, rect, 2.5)) : false;
 }
 
 function mapTileClass(tile: MapTile & { current: boolean }) {
@@ -556,11 +582,12 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
   const currentWorldTile = mapTileFor(chunk);
   const fieldTrees = fieldTreesFor(chunk);
   const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
+  const startingArea = isStartingArea(chunk);
 
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field">
-        <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
+        <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
           '--field-glow': fieldPalette.glow,
@@ -568,6 +595,15 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
           {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road + (currentWorldTile.bridge ? ' field-bridge' : '')} aria-hidden="true" />}
+          {startingArea && (
+            <div className="starting-area-decor" aria-hidden="true">
+              <span className="starting-plaza-ring" />
+              <span className="starting-flower flower-northwest" />
+              <span className="starting-flower flower-northeast" />
+              <span className="starting-flower flower-southwest" />
+              <span className="starting-flower flower-southeast" />
+            </div>
+          )}
           <div className="field-trees" aria-hidden="true">
             {fieldTrees.map((tree) => (
               <span
@@ -581,7 +617,10 @@ function GameField({ onOpenMap, onOpenInventory, onChunkChange, muted, onToggleM
             <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle} aria-label={currentWorldTile.landmark.name}>
               <span className="field-village-square" />
               <span className="field-house house-1" /><span className="field-house house-2" /><span className="field-house house-3" />
-              <span className="field-house house-4" /><span className="field-house house-5" /><span className="field-house house-6" />
+              <span className="field-house house-4" />
+              {!startingArea && <>
+                <span className="field-house house-5" /><span className="field-house house-6" />
+              </>}
               {currentWorldTile.landmark?.name === 'Mosslight Crossing' ? (
                 <span className="field-village-fountain" aria-label="Greenvale fountain"><span className="fountain-spray" /></span>
               ) : (
