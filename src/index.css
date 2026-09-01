@@ -1764,3 +1764,11 @@ body {
   inset: 0;
   background: repeating-linear-gradient(165deg, transparent 0 15px, rgba(184, 232, 223, .4) 16px 19px, transparent 20px 31px), linear-gradient(180deg, #2c789a, #1f5e80);
 }
+
+
+/* Mounted composition: keep the animal's front/head in front of the seated rider. */
+.horse .animal-head { position: absolute; z-index: 3; left: 5px; top: 5px; width: 32px; height: 15px; background-image: var(--horse-sprite-url); background-position: 0 0; background-size: 128px 96px; background-repeat: no-repeat; image-rendering: pixelated; pointer-events: none; }
+.horse[data-facing='down'] .animal-head { background-position-y: -32px; }
+.horse[data-facing='up'] .animal-head { background-position-y: -64px; }
+.horse[data-facing='right'] .animal-head { transform: scaleX(-1); }
+.horse.is-mounted.is-moving .animal-head { animation: horse-walk .48s steps(4, end) infinite; }
