@@ -1777,3 +1777,12 @@ body {
 /* Shawn teaches roguecraft: a distinct stealth-school marker and tint. */
 .town-npc.npc-rogue .npc-sprite { filter: hue-rotate(268deg) saturate(1.42) brightness(.9); }
 .npc-rogue .npc-role-mark { background: #8b67b0; transform: rotate(45deg) scale(.78); }
+
+/* Compact action icons: labels remain available through aria-label and title. */
+.map-button.icon-button,
+.field-log-toggle.icon-button {
+  width: 39px;
+  min-width: 39px;
+  padding: 0;
+  gap: 0;
+}
