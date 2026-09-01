@@ -307,7 +307,7 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - User direction: slow the goats down, give each goat distinct random-looking movement, fix the flashing sprite, make goats slightly bigger, and remove rounded ends from pathways in main areas.
 - Planned scope: add deterministic per-goat movement cadence and wander seed, reduce step distance, animate the goat sprite only while it is moving, enlarge the goat render, and square the starting-area road cross. Preserve combat, collision, spawn positions, and existing gameplay content.
 - Constraints: GitHub-only; no repository mount or import; no build, runtime, or tests under the current workflow.
-- Status: pre-implementation checkpoint; source and published bundle update pending.
+- Status: completed and released as Build 026.
 
 ## Build 026 — goat polish and in-game patch marker
 
@@ -317,4 +317,6 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Planned scope: preserve the already-pushed goat movement cadence, sprite animation guard, larger goat styling, and square main-area path ends; add a visible BUILD 026 marker under the HP value; synchronize the published Pages bundle and cache-bust its script.
 - Tracking rule: this is the numbered patch record for this submission; future submitted updates receive the next build number and a matching log entry.
 - Constraints: GitHub-only; no repository mount or import; no build, runtime, or tests under the current workflow.
-- Status: pre-implementation checkpoint; build marker and published bundle update pending.
+- Published output: synchronized the active Pages JavaScript and CSS bundles and cache-busted docs/index.html to Build 026.
+- Verification: static source and published-bundle marker checks only; no mount, build, runtime, or tests.
+- Status: implemented and pushed.
