@@ -1894,7 +1894,7 @@ body {
   background-repeat: no-repeat;
   background-size: 400% 800%;
   background-position: 0 0;
-  image-rendering: auto;
+  image-rendering: pixelated;
   animation: goat-walk .6s steps(4) infinite;
 }
 .goat[data-facing='right'] .goat-sprite { background-position-y: 14.2857%; }
