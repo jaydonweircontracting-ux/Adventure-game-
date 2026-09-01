@@ -240,7 +240,7 @@ const initialLogs = [
 type TownNpc = {
   name: string;
   title: string;
-  role: 'mage' | 'warrior' | 'guide';
+  role: 'mage' | 'warrior' | 'guide' | 'rogue';
   position: Point;
   facing: Direction;
 };
@@ -248,7 +248,7 @@ type TownNpc = {
 const startingTownNpcs: TownNpc[] = [
   { name: 'Noah', title: 'Mage teacher', role: 'mage', position: { x: 40, y: 47 }, facing: 'right' },
   { name: 'Damon', title: 'Warrior teacher', role: 'warrior', position: { x: 60, y: 47 }, facing: 'left' },
-  { name: 'Shawn', title: 'Town resident', role: 'guide', position: { x: 50, y: 64 }, facing: 'up' },
+  { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up' },
 ];
 
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
