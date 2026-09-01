@@ -296,4 +296,6 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - User direction: keep the player close to the doorway when entering or leaving a building.
 - Planned scope: change only the interior entry position from y=84 to y=89 and the exterior doorway offset from +10 to +4 field units; preserve doorway direction checks, collision behavior, and the exit cooldown.
 - Constraints: GitHub-only; no repository mount or import; no new gameplay or content; no build, runtime, or tests under the current workflow.
-- Status: pre-implementation checkpoint; source update pending.
+- Published output: synchronized `docs/assets/index-C03jPy2H.js` and cache-busted its reference in `docs/index.html`.
+- Verification: static source and published-bundle marker checks only; no mount, build, runtime, or tests.
+- Status: implemented and pushed.
