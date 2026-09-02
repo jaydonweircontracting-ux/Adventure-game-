@@ -935,6 +935,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }, 1));
   const [droppedLoot, setDroppedLoot] = useState<DroppedLoot[]>([]);
   const [attacking, setAttacking] = useState(false);
+  const [attackVariant, setAttackVariant] = useState(0);
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
   const [interior, setInterior] = useState<InteriorArea | null>(startingHouse);
   const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 47 });
@@ -1329,6 +1330,7 @@ if (active) {
     const target = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goatDistance(goat, currentPlayer) <= PLAYER_ATTACK_RANGE).sort((a, b) => (a.disposition === 'aggressive' ? 0 : 1) - (b.disposition === 'aggressive' ? 0 : 1) || goatDistance(a, currentPlayer) - goatDistance(b, currentPlayer))[0];
     if (!target) { setAttackFlash('No goat is close enough to strike.'); window.setTimeout(() => setAttackFlash(null), 900); return; }
     playerAttackCooldownRef.current = playerAttackCooldownForStats(playerStatsRef.current);
+    setAttackVariant((current) => (current + 1) % 3);
     setAttacking(true);
     window.setTimeout(() => setAttacking(false), PLAYER_ATTACK_ANIMATION_MS);
     const attackStats = playerStatsRef.current;
@@ -1597,7 +1599,7 @@ if (active) {
             </>
           )}
           </div>
-          {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} style={{ left: position.x + '%', top: position.y + '%' }} data-facing={facing} data-testid="player-character">
+          {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-(attackVariant * 4 + attackDirectionRow[facing]) * 48}px` } as CSSProperties} data-facing={facing} data-testid="player-character">
             <span className="player-sprite" />
             {equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}
           </div>}
