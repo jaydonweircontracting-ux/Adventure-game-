@@ -854,7 +854,7 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, onClose }: 
               <div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot">
                 <span className="equipment-slot-mark dagger-mark">†</span>
                 <span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>
-                {inventory.daggers > 0 && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}
+                {(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}
               </div>
               <p className="equipment-hint">{equippedDagger ? 'The dagger is visible in your hand.' : 'Craft a dagger, then equip it from this tab.'}</p>
             </div>
@@ -1779,8 +1779,14 @@ function Home() {
   }));
 
   const toggleDagger = () => {
+    if (equippedDagger) {
+      setEquippedDagger(false);
+      setInventory((current) => ({ ...current, daggers: current.daggers + 1 }));
+      return;
+    }
     if (inventory.daggers < 1) return;
-    setEquippedDagger((current) => !current);
+    setInventory((current) => ({ ...current, daggers: Math.max(0, current.daggers - 1) }));
+    setEquippedDagger(true);
   };
 
   const startNewGame = () => {
@@ -1801,10 +1807,11 @@ function Home() {
 
   const applyLoadedSave = (parsed: SaveGameData, notice: string) => {
     setLoadedSave(parsed);
-    setInventory(parsed.inventory);
+    const savedEquippedDagger = Boolean(parsed.equippedDagger);
+    setInventory({ ...parsed.inventory, daggers: Math.max(0, parsed.inventory.daggers - (savedEquippedDagger ? 1 : 0)) });
     setPlayerStats(parsed.playerStats || initialPlayerStats);
     setStatPoints(Math.max(0, Math.floor(parsed.statPoints || 0)));
-    setEquippedDagger(Boolean(parsed.equippedDagger) && parsed.inventory.daggers > 0);
+    setEquippedDagger(savedEquippedDagger);
     setChunk(parsed.chunk);
     setMapOpen(false); setInventoryOpen(false); setStatsOpen(false); setSaveNotice(notice); setMenuOpen(false);
   };
