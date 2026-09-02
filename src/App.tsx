@@ -890,7 +890,7 @@ function StatsSheet({ playerStats, statPoints, onAssign, onClose }: { playerStat
   );
 }
 
-function InteriorRoom({ area, position, facing, moving, inventory, equippedDagger, attacking, attackVariant, onCraft }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; inventory: GameInventory; equippedDagger: boolean; attacking: boolean; attackVariant: number; onCraft: (item: CraftItem) => void }) {
+function InteriorRoom({ area, position, facing, moving, inventory, equippedDagger, attacking, attackVariant, attackSequence, onCraft }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; inventory: GameInventory; equippedDagger: boolean; attacking: boolean; attackVariant: number; attackSequence: number; onCraft: (item: CraftItem) => void }) {
   const canCraft = (item: CraftItem) => {
     const recipe = craftRecipes[item];
     return Object.entries(recipe.cost).every(([key, value]) => (inventory[key as keyof GameInventory] || 0) >= (value || 0));
@@ -917,7 +917,7 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
         </section>
       )}
       <div className="interior-doorway" aria-label="Exit to Mosslight Crossing"><span>EXIT</span></div>
-      <div className={'interior-player ' + (moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} data-facing={facing} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-(attackVariant * 4 + attackDirectionRow[facing]) * 48}px` } as CSSProperties}><span className="player-sprite" />{attacking && <span className="player-attack-sprite" aria-hidden="true" />}{equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}</div>
+      <div className={'interior-player ' + (moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} data-facing={facing} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-(attackVariant * 4 + attackDirectionRow[facing]) * 48}px` } as CSSProperties}><span className="player-sprite" />{attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-(attackVariant * 4 + attackDirectionRow[facing]) * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}{equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}</div>
       <div className="interior-exit-hint">Walk to the door to leave</div>
     </div>
   );
@@ -946,6 +946,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [droppedLoot, setDroppedLoot] = useState<DroppedLoot[]>([]);
   const [attacking, setAttacking] = useState(false);
   const [attackVariant, setAttackVariant] = useState(0);
+  const [attackSequence, setAttackSequence] = useState(0);
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
   const [interior, setInterior] = useState<InteriorArea | null>(startingHouse);
   const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 47 });
@@ -1333,6 +1334,7 @@ if (active) {
 
   const playAttackAnimation = () => {
     setAttackVariant((current) => (current + 1) % 3);
+    setAttackSequence((current) => current + 1);
     setAttacking(true);
     window.setTimeout(() => setAttacking(false), PLAYER_ATTACK_ANIMATION_MS);
   };
@@ -1349,9 +1351,6 @@ if (active) {
     const target = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goatIsInAttackArc(goat, currentPlayer, facingRef.current)).sort((a, b) => (a.disposition === 'aggressive' ? 0 : 1) - (b.disposition === 'aggressive' ? 0 : 1) || goatDistance(a, currentPlayer) - goatDistance(b, currentPlayer))[0];
     if (!target) { setAttackFlash('No goat is close enough to strike.'); window.setTimeout(() => setAttackFlash(null), 900); return; }
     playerAttackCooldownRef.current = playerAttackCooldownForStats(playerStatsRef.current);
-    setAttackVariant((current) => (current + 1) % 3);
-    setAttacking(true);
-    window.setTimeout(() => setAttacking(false), PLAYER_ATTACK_ANIMATION_MS);
     const attackStats = playerStatsRef.current;
     const critical = Math.random() < playerCriticalChanceForStats(attackStats);
     const damage = playerDamageForStats(attackStats) * (critical ? 2 : 1);
@@ -1527,7 +1526,7 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={facing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} attacking={attacking} attackVariant={attackVariant} onCraft={craftItem} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={facing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} attacking={attacking} attackVariant={attackVariant} attackSequence={attackSequence} onCraft={craftItem} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -1620,7 +1619,7 @@ if (active) {
           </div>
           {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-(attackVariant * 4 + attackDirectionRow[facing]) * 48}px` } as CSSProperties} data-facing={facing} data-testid="player-character">
             <span className="player-sprite" />
-            {attacking && <span className="player-attack-sprite" aria-hidden="true" />}
+            {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-(attackVariant * 4 + attackDirectionRow[facing]) * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
             {equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}
           </div>}
         </div>
