@@ -383,10 +383,12 @@
 .player[data-facing='right'] .player-dagger { left: 28px; top: 19px; transform: rotate(34deg); }
 .interior-player[data-facing='up'] .player-dagger { left: 26px; top: 9px; }
 .interior-player[data-facing='left'] .player-dagger { left: 10px; top: 19px; transform: rotate(-34deg); }
-.player.is-attacking, .interior-player.is-attacking { animation: player-lunge .36s ease-out both; }
-.player.is-attacking .player-dagger, .interior-player.is-attacking .player-dagger { animation: dagger-swing .36s ease-out both; }
-@keyframes player-lunge { 0%, 100% { translate: 0 0; } 45% { translate: 4px -2px; } }
-@keyframes dagger-swing { 0% { rotate: 0deg; } 45% { rotate: -62deg; } 100% { rotate: 0deg; } }
+.player.is-attacking, .interior-player.is-attacking { animation: player-lunge .48s ease-out both; }
+.player.is-attacking .player-dagger, .interior-player.is-attacking .player-dagger { animation: dagger-swing .48s ease-out both; }
+.player.is-attacking::after { content: '✦'; position: absolute; z-index: 5; left: 27px; top: 4px; color: #fff0a8; font: 17px/1 var(--app-font-mono); text-shadow: 2px 2px 0 rgba(85, 50, 38, .45); animation: attack-spark .48s ease-out both; pointer-events: none; }
+@keyframes player-lunge { 0%, 100% { translate: 0 0; } 35% { translate: 5px -2px; } 58% { translate: -2px 1px; } }
+@keyframes dagger-swing { 0% { rotate: 0deg; } 35% { rotate: -78deg; } 65% { rotate: 20deg; } 100% { rotate: 0deg; } }
+@keyframes attack-spark { 0% { opacity: 0; scale: .45; rotate: -18deg; } 35% { opacity: 1; scale: 1.15; rotate: 12deg; } 100% { opacity: 0; scale: 1.4; rotate: 34deg; } }
 .player-sprite {
   position: absolute;
   left: 7px;
@@ -1951,8 +1953,10 @@ body {
 .goat.is-moving .goat-sprite {
   animation: goat-walk .48s steps(4, end) infinite;
 }
-.goat.is-attacking .goat-sprite { animation: goat-attack .34s ease-out both; }
-@keyframes goat-attack { 0%, 100% { transform: translateX(0); } 45% { transform: translateX(5px) scale(1.08, .94); } }
+.goat.is-attacking .goat-sprite { animation: goat-attack .48s ease-out both; }
+.goat.is-attacking::after { content: ''; position: absolute; z-index: 4; left: 19px; top: 8px; width: 13px; height: 7px; border-top: 2px solid #fff0a8; border-right: 2px solid #fff0a8; opacity: 0; animation: goat-attack-flash .48s ease-out both; pointer-events: none; }
+@keyframes goat-attack { 0%, 100% { transform: translateX(0) scale(1); } 32% { transform: translateX(3px) scale(1.04, .98); } 58% { transform: translateX(7px) scale(1.12, .9); } }
+@keyframes goat-attack-flash { 0%, 45% { opacity: 0; transform: translateX(-3px) rotate(-20deg); } 58% { opacity: 1; transform: translateX(3px) rotate(12deg); } 100% { opacity: 0; transform: translateX(9px) rotate(32deg); } }
 .goat.is-moving[data-facing='left'] .goat-sprite { background-position-y: -24px; }
 .goat.is-moving[data-facing='right'] .goat-sprite { background-position-y: -48px; }
 .goat.is-moving[data-facing='down'] .goat-sprite { background-position-y: 0; }
@@ -1969,7 +1973,7 @@ body {
 .field-attack-button:hover, .field-attack-button:focus-visible { background: rgba(172, 78, 60, .98); }
 .combat-flash { position: absolute; z-index: 14; top: max(72px, calc(env(safe-area-inset-top) + 56px)); left: 50%; width: max-content; max-width: calc(100% - 32px); padding: 7px 11px; color: #fff4d5; border: 1px solid rgba(255, 221, 150, .74); background: rgba(101, 52, 42, .9); box-shadow: 3px 3px 0 rgba(48, 42, 32, .25); font-family: var(--app-font-mono); font-size: 9px; transform: translateX(-50%); animation: combat-pop .2s ease both; pointer-events: none; }
 @keyframes combat-pop { from { opacity: 0; transform: translate(-50%, -5px); } to { opacity: 1; transform: translate(-50%, 0); } }
-@media (prefers-reduced-motion: reduce) { .goat { transition: none; } .goat.is-moving .goat-sprite, .goat.is-attacking .goat-sprite, .player.is-attacking, .player.is-attacking .player-dagger { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .goat { transition: none; } .goat.is-moving .goat-sprite, .goat.is-attacking .goat-sprite, .player.is-attacking, .player.is-attacking .player-dagger, .player.is-attacking::after, .goat.is-attacking::after { animation: none; } }
 
 
 /* Enterable town interiors. */
