@@ -7,7 +7,34 @@ export type BuildingType = 'home' | 'shop' | 'inn' | 'temple' | 'guild' | 'impor
 export type NpcRole = 'civilian' | 'merchant' | 'mage' | 'warrior' | 'guide' | 'rogue';
 export type EnemyType = 'beast' | 'humanoid' | 'undead' | 'elemental' | 'boss';
 export type ItemType = 'quest' | 'equipment' | 'consumable' | 'key' | 'lore';
-export type HistoryType = 'travel' | 'enter_building' | 'dungeon_completed' | 'lore_discovered';
+export type HistoryType = 'travel' | 'enter_building' | 'dungeon_completed' | 'lore_discovered' | 'class_chosen';
+export type PlayerClass = 'beginner' | 'mage' | 'warrior' | 'rogue';
+export type TutorialStage = 'wake_in_house' | 'meet_class_guides' | 'hunt_goats' | 'choose_class' | 'leave_tutorial_island';
+export type TravelDirection = 'north' | 'east' | 'south' | 'west';
+export type TravelGateRequirement = { minLevel?: number; requiresClass?: boolean };
+export type TravelGateDefinition = {
+  id: string;
+  fromChunkId: string;
+  toChunkId: string;
+  direction: TravelDirection;
+  label: string;
+  requirement?: TravelGateRequirement;
+};
+export type TutorialStepDefinition = {
+  stage: TutorialStage;
+  title: string;
+  objective: string;
+  completion: string;
+};
+
+export const ADVENTURE_STARTING_LOOP: readonly TutorialStepDefinition[] = [
+  { stage: 'wake_in_house', title: 'Wake in the Tutorial House', objective: 'Leave the house and reach Mosslight Crossing.', completion: 'The road outside is open.' },
+  { stage: 'meet_class_guides', title: 'Meet the Class Guides', objective: 'Speak with Noah, Damon, and Shawn in the town square.', completion: 'The guides explain the three paths forward.' },
+  { stage: 'hunt_goats', title: 'Learn the Hunt', objective: 'Defeat goats, survive their counterattacks, and collect useful materials.', completion: 'Your first supplies and experience are secured.' },
+  { stage: 'choose_class', title: 'Choose a Class', objective: 'Reach level 10, then choose Mage, Warrior, or Rogue.', completion: 'Your class opens the roads beyond the tutorial.' },
+  { stage: 'leave_tutorial_island', title: 'Leave the Tutorial Island', objective: 'Take a connected road into the wider world.', completion: 'The larger map and its settlements are now available.' },
+];
+
 
 export type BrainHistoryEntry = {
   type: HistoryType;
@@ -28,7 +55,7 @@ export type EnemyDefinition = { id: string; name: string; type: EnemyType; level
 export type ItemDefinition = { id: string; name: string; type: ItemType; description: string; stats: Record<string, number | string> };
 export type LoreDefinition = { id: string; title: string; text: string; category: string };
 export type PlayerDefinition = { id: string; name: string; inventory: string[] };
-export type RpgGameState = { currentLocationId: string | null; currentChunkId: string | null; discoveredChunks: string[]; discoveredLocations: string[]; discoveredLore: string[]; enteredBuildings: string[]; completedDungeons: string[]; history: BrainHistoryEntry[] };
+export type RpgGameState = { currentLocationId: string | null; currentChunkId: string | null; discoveredChunks: string[]; discoveredLocations: string[]; discoveredLore: string[]; enteredBuildings: string[]; completedDungeons: string[]; history: BrainHistoryEntry[]; tutorialStage?: TutorialStage; playerClass?: PlayerClass; playerLevel?: number };
 
 export class RPGBrain {
   readonly world: Record<string, WorldDefinition> = {};
@@ -41,7 +68,11 @@ export class RPGBrain {
   readonly enemies: Record<string, EnemyDefinition> = {};
   readonly items: Record<string, ItemDefinition> = {};
   readonly lore: Record<string, LoreDefinition> = {};
+  readonly travelGates: Record<string, TravelGateDefinition> = {};
   player: PlayerDefinition | null = null;
+  tutorialStage: TutorialStage = 'wake_in_house';
+  playerClass: PlayerClass = 'beginner';
+  playerLevel = 1;
   currentLocationId: string | null = null;
   currentChunkId: string | null = null;
   readonly discoveredChunks = new Set<string>();
@@ -218,6 +249,50 @@ export class RPGBrain {
     if (!dungeon.enemies.includes(enemyId)) dungeon.enemies.push(enemyId);
   }
 
+  addTravelGate(id: string, fromChunkId: string, toChunkId: string, direction: TravelDirection, label: string, requirement?: TravelGateRequirement) {
+    const from = this.requireEntry(this.chunks, fromChunkId, 'source chunk');
+    const to = this.requireEntry(this.chunks, toChunkId, 'destination chunk');
+    const gate = { id, fromChunkId: from.id, toChunkId: to.id, direction, label, requirement };
+    this.travelGates[id] = gate;
+    if (!from.connections.includes(to.id)) from.connections.push(to.id);
+    if (!to.connections.includes(from.id)) to.connections.push(from.id);
+    return gate;
+  }
+
+  getTravelGatesFrom(chunkId = this.currentChunkId) {
+    if (!chunkId) return [];
+    return Object.values(this.travelGates).filter((gate) => gate.fromChunkId === chunkId);
+  }
+
+  canUseTravelGate(id: string) {
+    const gate = this.requireEntry(this.travelGates, id, 'travel gate');
+    if (gate.fromChunkId !== this.currentChunkId) return false;
+    if (gate.requirement?.minLevel && this.playerLevel < gate.requirement.minLevel) return false;
+    if (gate.requirement?.requiresClass && this.playerClass === 'beginner') return false;
+    return true;
+  }
+
+  advanceTutorial(stage: TutorialStage) {
+    const currentIndex = ADVENTURE_STARTING_LOOP.findIndex((step) => step.stage === this.tutorialStage);
+    const nextIndex = ADVENTURE_STARTING_LOOP.findIndex((step) => step.stage === stage);
+    if (nextIndex < 0 || nextIndex < currentIndex) return false;
+    this.tutorialStage = stage;
+    return true;
+  }
+
+  setPlayerLevel(level: number) {
+    this.playerLevel = Math.max(1, Math.floor(level));
+    if (this.playerLevel >= 10 && this.tutorialStage === 'hunt_goats') this.advanceTutorial('choose_class');
+  }
+
+  chooseClass(playerClass: Exclude<PlayerClass, 'beginner'>) {
+    if (this.playerLevel < 10 || this.tutorialStage !== 'choose_class') return false;
+    this.playerClass = playerClass;
+    this.tutorialStage = 'leave_tutorial_island';
+    this.record('class_chosen', playerClass, playerClass + ' class chosen');
+    return true;
+  }
+
   movePlayer(locationId: string) {
     const location = this.locations[locationId];
     if (!location) return false;
@@ -254,6 +329,9 @@ export class RPGBrain {
       discoveredLore: [...this.discoveredLore].sort(),
       enteredBuildings: [...this.enteredBuildings].sort(),
       completedDungeons: [...this.completedDungeons].sort(),
+      tutorialStage: this.tutorialStage,
+      playerClass: this.playerClass,
+      playerLevel: this.playerLevel,
       history: this.history.map((entry) => ({ ...entry, metadata: entry.metadata ? { ...entry.metadata } : undefined })),
     };
   }
@@ -266,6 +344,9 @@ export class RPGBrain {
     this.replaceSet(this.discoveredLore, state.discoveredLore, this.lore);
     this.replaceSet(this.enteredBuildings, state.enteredBuildings, this.buildings);
     this.replaceSet(this.completedDungeons, state.completedDungeons, this.dungeons);
+    this.tutorialStage = state.tutorialStage || 'wake_in_house';
+    this.playerClass = state.playerClass || 'beginner';
+    this.playerLevel = Math.max(1, Math.floor(state.playerLevel || 1));
     this.history.splice(0, this.history.length, ...state.history.slice(0, 100));
   }
 
@@ -308,6 +389,11 @@ export function createAdventureBrain(): RPGBrain {
   brain.connectChunks('greenvale-4-7', 'ironwood-gate-5-7');
   brain.connectChunks('greenvale-4-7', 'northwatch-foothills-4-6');
   brain.connectChunks('greenvale-4-7', 'sunwash-foothills-4-8');
+  const tutorialExitRequirement = { minLevel: 10, requiresClass: true };
+  brain.addTravelGate('tutorial-road-west', 'greenvale-4-7', 'brackenfen-gate-3-7', 'west', 'Brackenfen Road', tutorialExitRequirement);
+  brain.addTravelGate('tutorial-road-east', 'greenvale-4-7', 'ironwood-gate-5-7', 'east', 'Ironwood Road', tutorialExitRequirement);
+  brain.addTravelGate('tutorial-road-north', 'greenvale-4-7', 'northwatch-foothills-4-6', 'north', 'Northwatch Road', tutorialExitRequirement);
+  brain.addTravelGate('tutorial-road-south', 'greenvale-4-7', 'sunwash-foothills-4-8', 'south', 'Sunwash Road', tutorialExitRequirement);
   brain.addLocation('mosslight-crossing', 'greenvale-4-7', 'Mosslight Crossing', 'town', 'A four-way town at the heart of Greenvale, where every road points toward another story.');
   brain.createCity('mosslight-crossing-city', 'mosslight-crossing', 'Mosslight Crossing', 'A welcoming crossroads with quiet corners, teaching halls, and an old fountain.');
   brain.addCityDistrict('mosslight-crossing-city', 'crossroads-square', 'Crossroads Square');
