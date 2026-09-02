@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Map, Minus, Plus, Sword, Volume2, VolumeX, X } from 'lucide-react';
+import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Download, Map, Menu, Minus, Plus, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
-import { type PointerEvent, type ReactNode } from 'react';
+import { type ChangeEvent, type PointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
-import { createAdventureBrain, type RPGBrain } from '@/game/rpgBrain';
+import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/rpgBrain';
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '031';
+const BUILD_NUMBER = '032';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 type HorseState = { chunk: Point; position: Point };
@@ -393,6 +393,126 @@ const GOAT_GOLD_DROP = 5;
 const GOAT_FABRIC_DROP = 1;
 const GOAT_HORN_DROP = 1;
 const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0 };
+type SaveGameData = {
+  format: 'adventure-game-save';
+  version: 1;
+  savedAt: string;
+  position: Point;
+  chunk: Point;
+  mounted: boolean;
+  horse: HorseState;
+  inventory: GameInventory;
+  playerHp: number;
+  playerXp: number;
+  playerLevel: number;
+  playerClass: PlayerClass;
+  npcStates: TownNpc[];
+  goats: GoatState[];
+  interiorId: string | null;
+  interiorPosition: Point;
+  logs: Array<{ text: string; color: string }>;
+  time: string;
+  brainState: RpgGameState | null;
+};
+
+const SAVE_FILE_FORMAT = 'adventure-game-save';
+const SAVE_FILE_VERSION = 1;
+const saveDirections = ['up', 'down', 'left', 'right'];
+const savePlayerClasses = ['Beginner', 'Warrior', 'Mage', 'Rogue'];
+const saveNpcRoles = ['mage', 'warrior', 'guide', 'rogue'];
+const saveGoatDispositions = ['calm', 'aggressive', 'defeated'];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isSavePoint(value: unknown): value is Point {
+  return isRecord(value) && isFiniteNumber(value.x) && isFiniteNumber(value.y);
+}
+
+function isGameInventory(value: unknown): value is GameInventory {
+  return isRecord(value)
+    && isFiniteNumber(value.coins)
+    && isFiniteNumber(value.goatHorns)
+    && isFiniteNumber(value.fabric)
+    && isFiniteNumber(value.daggers)
+    && isFiniteNumber(value.cloths);
+}
+
+function isTownNpcSave(value: unknown): value is TownNpc {
+  return isRecord(value)
+    && typeof value.name === 'string'
+    && typeof value.title === 'string'
+    && typeof value.role === 'string'
+    && saveNpcRoles.includes(value.role)
+    && isSavePoint(value.position)
+    && typeof value.facing === 'string'
+    && saveDirections.includes(value.facing);
+}
+
+function isGoatSave(value: unknown): value is GoatState {
+  return isRecord(value)
+    && isFiniteNumber(value.id)
+    && isSavePoint(value.position)
+    && isSavePoint(value.spawnPosition)
+    && typeof value.facing === 'string'
+    && saveDirections.includes(value.facing)
+    && isFiniteNumber(value.level)
+    && isFiniteNumber(value.hp)
+    && isFiniteNumber(value.maxHp)
+    && typeof value.disposition === 'string'
+    && saveGoatDispositions.includes(value.disposition)
+    && isFiniteNumber(value.attackCooldown)
+    && isFiniteNumber(value.respawnTicks)
+    && isFiniteNumber(value.wanderSeed)
+    && typeof value.moving === 'boolean';
+}
+
+function isBrainStateSave(value: unknown): value is RpgGameState {
+  return isRecord(value)
+    && (value.currentLocationId === null || typeof value.currentLocationId === 'string')
+    && (value.currentChunkId === null || typeof value.currentChunkId === 'string')
+    && Array.isArray(value.discoveredChunks)
+    && Array.isArray(value.discoveredLocations)
+    && Array.isArray(value.discoveredLore)
+    && Array.isArray(value.enteredBuildings)
+    && Array.isArray(value.completedDungeons)
+    && Array.isArray(value.history);
+}
+
+function isSaveGameData(value: unknown): value is SaveGameData {
+  return isRecord(value)
+    && value.format === SAVE_FILE_FORMAT
+    && value.version === SAVE_FILE_VERSION
+    && typeof value.savedAt === 'string'
+    && isSavePoint(value.position)
+    && isSavePoint(value.chunk)
+    && typeof value.mounted === 'boolean'
+    && isRecord(value.horse)
+    && isSavePoint(value.horse.chunk)
+    && isSavePoint(value.horse.position)
+    && isGameInventory(value.inventory)
+    && isFiniteNumber(value.playerHp)
+    && isFiniteNumber(value.playerXp)
+    && isFiniteNumber(value.playerLevel)
+    && typeof value.playerClass === 'string'
+    && savePlayerClasses.includes(value.playerClass)
+    && Array.isArray(value.npcStates)
+    && value.npcStates.every(isTownNpcSave)
+    && Array.isArray(value.goats)
+    && value.goats.every(isGoatSave)
+    && (value.interiorId === null || typeof value.interiorId === 'string')
+    && isSavePoint(value.interiorPosition)
+    && typeof value.time === 'string'
+    && Array.isArray(value.logs)
+    && value.logs.every((log) => isRecord(log) && typeof log.text === 'string' && typeof log.color === 'string')
+    && (value.brainState === null || isBrainStateSave(value.brainState));
+}
+
 
 function monsterLevelForChunk(chunk: Point, index: number, playerLevel = 1) {
   const areaOffset = Math.abs(chunk.x * 17 + chunk.y * 31 + index * 7) % 3;
@@ -674,7 +794,7 @@ function InteriorRoom({ area, position, facing, inventory, onCraft }: { area: In
   );
 }
 
-function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked }: { inventory: GameInventory; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean }) {
+function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onOpenLoad, onOpenMenu }: { inventory: GameInventory; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void }) {
   const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
   const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -719,6 +839,54 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
     brain.movePlayer('mosslight-crossing');
     brainRef.current = brain;
   }
+
+  const createSaveData = (): SaveGameData => ({
+    format: SAVE_FILE_FORMAT,
+    version: SAVE_FILE_VERSION,
+    savedAt: new Date().toISOString(),
+    position,
+    chunk,
+    mounted,
+    horse,
+    inventory,
+    playerHp,
+    playerXp,
+    playerLevel,
+    playerClass,
+    npcStates,
+    goats,
+    interiorId: interior?.id || null,
+    interiorPosition,
+    logs,
+    time,
+    brainState: brainRef.current?.getGameState() || null,
+  });
+  saveStateRef.current = createSaveData;
+
+  useEffect(() => {
+    if (!loadState) return;
+    const restoredDoorway = loadState.interiorId
+      ? buildingDoorwaysFor(loadState.chunk).find((doorway) => doorway.area.id === loadState.interiorId) || null
+      : null;
+    keysRef.current = {};
+    positionRef.current = loadState.position; setPosition(loadState.position);
+    chunkRef.current = loadState.chunk; setChunk(loadState.chunk); onChunkChange(loadState.chunk);
+    mountedRef.current = loadState.mounted; setMounted(loadState.mounted);
+    horseRef.current = loadState.horse; setHorse(loadState.horse);
+    horseIdleAnchorRef.current = loadState.horse.position;
+    goatsRef.current = loadState.goats; setGoats(loadState.goats);
+    playerHpRef.current = loadState.playerHp; setPlayerHp(loadState.playerHp);
+    playerXpRef.current = loadState.playerXp; setPlayerXp(loadState.playerXp);
+    playerLevelRef.current = loadState.playerLevel; setPlayerLevel(loadState.playerLevel);
+    playerClassRef.current = loadState.playerClass; setPlayerClass(loadState.playerClass);
+    setNpcStates(loadState.npcStates);
+    interiorDoorwayIdRef.current = restoredDoorway?.id || null;
+    interiorRef.current = restoredDoorway?.area || null; setInterior(restoredDoorway?.area || null);
+    interiorPositionRef.current = loadState.interiorPosition; setInteriorPosition(loadState.interiorPosition);
+    setLogs(loadState.logs); setTime(loadState.time);
+    setNpcDialogue(null); setAttackFlash(null); setLogOpen(false); setMoving(false);
+    if (loadState.brainState) brainRef.current?.loadGameState(loadState.brainState);
+  }, [loadState, onChunkChange]);
 
   useEffect(() => {
     [
@@ -1325,6 +1493,9 @@ if (active) {
             <button className="icon-button field-log-toggle" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={16} /></button>
            <button className="icon-button map-button" onClick={onOpenMap} aria-label="Open field atlas" title="Open field atlas" data-testid="button-open-map"><Map size={16} /></button>
             <button className="icon-button field-sound-button" onClick={onToggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'} aria-pressed={muted} data-testid="button-toggle-sound">{muted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
+           <button className="icon-button" onClick={onSave} aria-label="Download save file" title="Download save file" data-testid="button-save-game"><Download size={15} /></button>
+           <button className="icon-button" onClick={onOpenLoad} aria-label="Load save file" title="Load save file" data-testid="button-load-game"><Upload size={15} /></button>
+           <button className="icon-button" onClick={onOpenMenu} aria-label="Open main menu" title="Main menu" data-testid="button-main-menu"><Menu size={15} /></button>
          </div>
       </div>
       <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? (mounted ? 'Riding through Mosslight Crossing' : 'Moving through Mosslight Crossing') : (mounted ? 'Mounted and ready' : 'Standing still')}</div>
@@ -1340,6 +1511,11 @@ function Home() {
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
   const [inventory, setInventory] = useState<GameInventory>(initialInventory);
+  const [menuOpen, setMenuOpen] = useState(true);
+  const [loadedSave, setLoadedSave] = useState<SaveGameData | null>(null);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const saveStateRef = useRef<(() => SaveGameData) | null>(null);
+  const saveFileInputRef = useRef<HTMLInputElement>(null);
   const applyLoot = (loot: GoatLoot) => setInventory((current) => ({
     coins: Math.max(0, current.coins + (loot.coins || 0)),
     goatHorns: Math.max(0, current.goatHorns + (loot.goatHorns || 0)),
@@ -1347,6 +1523,50 @@ function Home() {
     daggers: Math.max(0, current.daggers + (loot.daggers || 0)),
     cloths: Math.max(0, current.cloths + (loot.cloths || 0)),
   }));
+
+  const startNewGame = () => {
+    setLoadedSave(null);
+    setInventory(initialInventory);
+    setChunk({ x: 4, y: 7 });
+    setMapOpen(false); setInventoryOpen(false); setSaveNotice(null); setMenuOpen(false);
+  };
+
+  const openLoadPicker = () => saveFileInputRef.current?.click();
+
+  const handleSaveFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed: unknown = JSON.parse(String(reader.result));
+        if (!isSaveGameData(parsed)) throw new Error('invalid save');
+        setLoadedSave(parsed);
+        setInventory(parsed.inventory);
+        setChunk(parsed.chunk);
+        setMapOpen(false); setInventoryOpen(false); setMenuOpen(false);
+        setSaveNotice('Save file loaded.');
+      } catch {
+        setSaveNotice('That file is not a valid Adventure Game save.');
+      }
+    };
+    reader.onerror = () => setSaveNotice('The save file could not be read.');
+    reader.readAsText(file);
+  };
+
+  const downloadSave = () => {
+    const save = saveStateRef.current?.();
+    if (!save) { setSaveNotice('Start a game before downloading a save.'); return; }
+    const blob = new Blob([JSON.stringify(save, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'adventure-game-save-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    setSaveNotice('Save file downloaded.');
+  };
 
   useEffect(() => {
     const closeSheets = (event: KeyboardEvent) => {
@@ -1361,18 +1581,38 @@ function Home() {
 
   return (
     <main
-      className="game-app"
+      className={menuOpen ? 'game-app menu-mode' : 'game-app'}
       style={{
         '--player-sprite-url': `url("${assetUrl('assets/cute-fantasy/player.png')}")`,
         '--horse-sprite-url': `url("${assetUrl('assets/farm-male-cow-brown.png')}")`,
          '--goat-sprite-url': `url("${assetUrl('assets/gameplay/characters/goat/goat.png')}")`,
       } as CSSProperties}
     >
-      <div className="game-layout">
-       <GameField inventory={inventory} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen} />
-      </div>
-      {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
-       {inventoryOpen && <InventorySheet inventory={inventory} onClose={() => setInventoryOpen(false)} />}
+      {menuOpen ? (
+        <section className="main-menu" aria-label="Main menu" data-testid="main-menu">
+          <div className="main-menu-card">
+            <span className="main-menu-kicker">THE FAR MEADOW · BUILD {BUILD_NUMBER}</span>
+            <h1>Adventure Game</h1>
+            <p>Follow the roads, learn the first hunt, and choose the path that carries you beyond Mosslight Crossing.</p>
+            <div className="main-menu-actions">
+              <button className="main-menu-button primary" onClick={startNewGame} data-testid="button-new-game">New Game</button>
+              <button className="main-menu-button" onClick={openLoadPicker} data-testid="button-load-save-menu">Load Save File</button>
+            </div>
+            <p className="main-menu-note">Save files are downloaded as JSON and can be loaded on another session.</p>
+            {saveNotice && <div className="save-notice" role="status">{saveNotice}</div>}
+          </div>
+        </section>
+      ) : (
+        <>
+          <div className="game-layout">
+            <GameField inventory={inventory} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} />
+          </div>
+          {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
+          {inventoryOpen && <InventorySheet inventory={inventory} onClose={() => setInventoryOpen(false)} />}
+          {saveNotice && <div className="save-notice save-notice-floating" role="status">{saveNotice}</div>}
+        </>
+      )}
+      <input ref={saveFileInputRef} className="save-file-input" type="file" accept="application/json,.json" onChange={handleSaveFile} aria-label="Load Adventure Game save file" />
     </main>
   );
 }
