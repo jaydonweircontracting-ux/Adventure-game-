@@ -890,7 +890,8 @@
   position: absolute;
   inset: 7px;
   display: grid;
-  gap: 3px;
+  /* Road segments are drawn inside each tile; a grid gap would cut them apart. */
+  gap: 0;
   transform-origin: center;
   transition: transform .2s ease;
 }
