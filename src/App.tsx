@@ -363,7 +363,7 @@ const interiorFurnitureCollision: InteriorCollisionRect[] = [
   { left: 20, top: 29, right: 80, bottom: 40 }, // counter
   { left: 17, top: 43, right: 32, bottom: 67 }, // left shelf
   { left: 68, top: 43, right: 83, bottom: 67 }, // right shelf
-  { left: 41, top: 58, right: 60, bottom: 68 }, // table and legs
+  { left: 41, top: 52, right: 60, bottom: 68 }, // table and legs
 ];
 
 function isInteriorPositionBlocked(position: Point, area: InteriorArea) {
@@ -937,7 +937,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [attacking, setAttacking] = useState(false);
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
   const [interior, setInterior] = useState<InteriorArea | null>(startingHouse);
-  const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 52 });
+  const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 47 });
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
   const chunkRef = useRef(chunk);
