@@ -388,6 +388,13 @@
   --sprite-row: 3;
   animation: player-run .48s steps(5, end) infinite;
 }
+.interior-player.is-moving .player-sprite {
+  --sprite-row: 3;
+  animation: player-run .48s steps(5, end) infinite;
+}
+.interior-player.is-moving[data-facing='up'] .player-sprite { --sprite-row: 5; }
+.interior-player.is-moving[data-facing='left'] .player-sprite { --sprite-row: 4; }
+.interior-player.is-moving[data-facing='right'] .player-sprite { --sprite-row: 4; }
 .player.is-moving[data-facing='up'] .player-sprite { --sprite-row: 5; }
 .player.is-moving[data-facing='left'] .player-sprite { --sprite-row: 4; }
 .player.is-moving[data-facing='right'] .player-sprite { --sprite-row: 4; }
