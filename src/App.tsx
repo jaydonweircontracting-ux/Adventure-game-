@@ -880,7 +880,7 @@ function StatsSheet({ playerStats, statPoints, onAssign, onClose }: { playerStat
   );
 }
 
-function InteriorRoom({ area, position, facing, moving, inventory, equippedDagger, onCraft }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; inventory: GameInventory; equippedDagger: boolean; onCraft: (item: CraftItem) => void }) {
+function InteriorRoom({ area, position, facing, moving, inventory, equippedDagger, attacking, attackVariant, onCraft }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; inventory: GameInventory; equippedDagger: boolean; attacking: boolean; attackVariant: number; onCraft: (item: CraftItem) => void }) {
   const canCraft = (item: CraftItem) => {
     const recipe = craftRecipes[item];
     return Object.entries(recipe.cost).every(([key, value]) => (inventory[key as keyof GameInventory] || 0) >= (value || 0));
@@ -907,7 +907,7 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
         </section>
       )}
       <div className="interior-doorway" aria-label="Exit to Mosslight Crossing"><span>EXIT</span></div>
-      <div className={'interior-player ' + (moving ? 'is-moving' : '')} data-facing={facing} style={{ left: position.x + '%', top: position.y + '%' }}><span className="player-sprite" />{equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}</div>
+      <div className={'interior-player ' + (moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} data-facing={facing} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-(attackVariant * 4 + attackDirectionRow[facing]) * 48}px` } as CSSProperties}><span className="player-sprite" />{attacking && <span className="player-attack-sprite" aria-hidden="true" />}{equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}</div>
       <div className="interior-exit-hint">Walk to the door to leave</div>
     </div>
   );
@@ -1320,7 +1320,12 @@ if (active) {
 
 
   const attackGoat = () => {
-    if (interiorRef.current) return;
+    if (interiorRef.current) {
+      setAttackVariant((current) => (current + 1) % 3);
+      setAttacking(true);
+      window.setTimeout(() => setAttacking(false), PLAYER_ATTACK_ANIMATION_MS);
+      return;
+    }
     if (playerAttackCooldownRef.current > 0) {
       setAttackFlash('Your attack is still on cooldown.');
       window.setTimeout(() => setAttackFlash(null), 700);
@@ -1508,7 +1513,7 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={facing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} onCraft={craftItem} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={facing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} attacking={attacking} attackVariant={attackVariant} onCraft={craftItem} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
