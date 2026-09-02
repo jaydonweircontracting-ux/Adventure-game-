@@ -2290,6 +2290,122 @@ body {
   color: var(--ink-soft);
   font: 9px/1.5 var(--app-font-mono);
 }
+/* In-game save options. */
+.options-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(9, 29, 26, .78);
+  backdrop-filter: blur(3px);
+}
+.options-card {
+  width: min(430px, 100%);
+  padding: clamp(20px, 5vw, 30px);
+  border: 1px solid rgba(235, 206, 139, .62);
+  background: #f3ebd5;
+  color: var(--ink);
+  box-shadow: 7px 7px 0 rgba(7, 22, 22, .34);
+}
+.options-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.options-heading h2 {
+  margin: 5px 0 0;
+  color: var(--field-deep);
+  font-family: var(--app-font-display);
+  font-size: 29px;
+  line-height: 1;
+}
+.options-kicker {
+  color: var(--clay);
+  font: 9px var(--app-font-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.options-copy {
+  margin: 16px 0 20px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.options-actions {
+  display: grid;
+  gap: 8px;
+}
+.options-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px solid rgba(37, 67, 57, .32);
+  background: #efe3c8;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.options-action:hover {
+  border-color: var(--sun);
+  background: #fff4c7;
+  transform: translateY(-1px);
+}
+.options-action.primary {
+  border-color: var(--field-deep);
+  background: var(--field-deep);
+  color: #fff0c9;
+}
+.options-action.primary:hover { background: #245848; }
+.options-action-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  color: var(--sun);
+  font-size: 20px;
+}
+.options-action span:last-child {
+  display: grid;
+  gap: 3px;
+}
+.options-action strong {
+  font: 10px var(--app-font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.options-action small {
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+.options-action.primary small { color: #cbd8bb; }
+.options-menu-button {
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font: 9px var(--app-font-mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.options-menu-button:hover { color: var(--field-deep); }
+.main-menu-button:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+}
+.main-menu-button:disabled:hover {
+  border-color: var(--ink);
+  background: #efe3c8;
+  transform: none;
+}
+
 .save-file-input {
   display: none;
 }
