@@ -382,7 +382,7 @@ type GoatState = {
   attacking: boolean;
   nextWanderTick?: number;
 };
-const GOAT_STEP = 0.72;
+const GOAT_STEP = 1.35;
 const GOAT_TICK_MS = 500;
 const GOAT_WANDER_MIN_TICKS = 10;
 const GOAT_WANDER_MAX_TICKS = 20;
@@ -395,9 +395,7 @@ const GOAT_MIN_XP_REWARD = 5;
 const GOAT_HP_PER_LEVEL = 4;
 const GOAT_DAMAGE_PER_LEVEL = 1;
 const PLAYER_MAX_HP = 100;
-const GOAT_GOLD_DROP = 5;
-const GOAT_FABRIC_DROP = 1;
-const GOAT_HORN_DROP = 1;
+const GOAT_LOOT_TYPES: Array<keyof GameInventory> = ['goatHorns', 'fabric', 'coins'];
 const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0 };
 type SaveGameData = {
   format: 'adventure-game-save';
@@ -1257,7 +1255,9 @@ if (active) {
     goatsRef.current = nextGoats;
     setGoats(nextGoats);
     if (defeated) {
-      const loot: GoatLoot = { goatHorns: GOAT_HORN_DROP, coins: GOAT_GOLD_DROP, fabric: GOAT_FABRIC_DROP };
+      const lootType = GOAT_LOOT_TYPES[Math.floor(Math.random() * GOAT_LOOT_TYPES.length)];
+      const lootAmount = Math.floor(Math.random() * 2) + 1;
+      const loot: GoatLoot = { [lootType]: lootAmount };
       const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: { ...target.position }, loot };
       droppedLootRef.current = [...droppedLootRef.current, drop];
       setDroppedLoot(droppedLootRef.current);
