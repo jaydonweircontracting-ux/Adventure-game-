@@ -1920,17 +1920,17 @@ body {
   image-rendering: pixelated;
   animation: none;
 }
-.goat[data-facing='up'] .goat-sprite { background-position-y: 0; }
+.goat[data-facing='up'] .goat-sprite { background-position-y: -72px; }
 .goat[data-facing='left'] .goat-sprite { background-position-y: -24px; }
 .goat[data-facing='right'] .goat-sprite { background-position-y: -48px; }
-.goat[data-facing='down'] .goat-sprite { background-position-y: -72px; }
+.goat[data-facing='down'] .goat-sprite { background-position-y: 0; }
 .goat.is-moving .goat-sprite {
   animation: goat-walk .48s steps(4, end) infinite;
 }
 .goat.is-moving[data-facing='left'] .goat-sprite { background-position-y: -24px; }
 .goat.is-moving[data-facing='right'] .goat-sprite { background-position-y: -48px; }
-.goat.is-moving[data-facing='down'] .goat-sprite { background-position-y: -72px; }
-.goat.is-moving[data-facing='up'] .goat-sprite { background-position-y: 0; }
+.goat.is-moving[data-facing='down'] .goat-sprite { background-position-y: 0; }
+.goat.is-moving[data-facing='up'] .goat-sprite { background-position-y: -72px; }
 .goat-aggro .goat-sprite { filter: sepia(.35) saturate(1.4) drop-shadow(0 0 2px rgba(185, 77, 66, .55)); }
 @keyframes goat-walk { from { background-position-x: 0; } to { background-position-x: -96px; } } } } }
 .goat-hp { position: absolute; z-index: 2; left: 5px; top: 2px; height: 3px; border: 1px solid rgba(50, 53, 37, .7); background: #80a457; }
