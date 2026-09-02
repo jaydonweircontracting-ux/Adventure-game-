@@ -887,7 +887,6 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
   };
   return (
     <div className={'interior-scene interior-' + area.roomType} aria-label={area.name + ' interior'} data-testid={'interior-' + area.id}>
-      <div className="interior-header"><span className="interior-kicker">Mosslight Crossing</span><strong>{area.name}</strong><span>{area.description}</span></div>
       <div className="interior-room" aria-hidden="true"><span className="interior-rug" /><span className="interior-table" /><span className="interior-counter" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></div>
       {area.roomType === 'guild' && (
         <section className="crafting-panel" aria-label="Crafting bench" data-testid="crafting-panel">
