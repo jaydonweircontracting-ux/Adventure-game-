@@ -1899,33 +1899,33 @@ body {
 
 /* Independent goat wildlife and light combat. */
 .field-goats { position: absolute; z-index: 5; inset: 0; pointer-events: none; }
-.goat { position: absolute; width: 32px; height: 32px; transform: translate(-50%, -50%); transition: none; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .2)); }
+.goat { position: absolute; width: 24px; height: 24px; transform: translate(-50%, -50%); transition: none; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .2)); }
 .goat-sprite {
   position: absolute;
   left: 0;
   top: 0;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   background-image: var(--goat-sprite-url);
   background-repeat: no-repeat;
-  background-size: 128px 128px;
+  background-size: 96px 96px;
   background-position: 0 0;
   image-rendering: pixelated;
   animation: none;
 }
 .goat[data-facing='up'] .goat-sprite { background-position-y: 0; }
-.goat[data-facing='left'] .goat-sprite { background-position-y: -32px; }
-.goat[data-facing='right'] .goat-sprite { background-position-y: -64px; }
-.goat[data-facing='down'] .goat-sprite { background-position-y: -96px; }
+.goat[data-facing='left'] .goat-sprite { background-position-y: -48px; }
+.goat[data-facing='right'] .goat-sprite { background-position-y: -24px; }
+.goat[data-facing='down'] .goat-sprite { background-position-y: -72px; }
 .goat.is-moving .goat-sprite {
   animation: goat-walk .48s steps(4, end) infinite;
 }
-.goat.is-moving[data-facing='left'] .goat-sprite { background-position-y: -32px; }
-.goat.is-moving[data-facing='right'] .goat-sprite { background-position-y: -64px; }
-.goat.is-moving[data-facing='down'] .goat-sprite { background-position-y: -96px; }
+.goat.is-moving[data-facing='left'] .goat-sprite { background-position-y: -48px; }
+.goat.is-moving[data-facing='right'] .goat-sprite { background-position-y: -24px; }
+.goat.is-moving[data-facing='down'] .goat-sprite { background-position-y: -72px; }
 .goat.is-moving[data-facing='up'] .goat-sprite { background-position-y: 0; }
 .goat-aggro .goat-sprite { filter: sepia(.35) saturate(1.4) drop-shadow(0 0 2px rgba(185, 77, 66, .55)); }
-@keyframes goat-walk { from { background-position-x: 0; } to { background-position-x: -128px; } } }
+@keyframes goat-walk { from { background-position-x: 0; } to { background-position-x: -96px; } } } }
 .goat-hp { position: absolute; z-index: 2; left: 5px; top: 2px; height: 3px; border: 1px solid rgba(50, 53, 37, .7); background: #80a457; }
 .goat-aggro .goat-hp { background: #b94d42; }
 .goat-aggro .goat-aggro { position: absolute; z-index: 4; right: -1px; top: -13px; display: grid; place-items: center; width: 13px; height: 13px; color: #fff4cf; border: 1px solid #67372f; border-radius: 50%; background: #b94d42; font: 10px/1 var(--app-font-mono); }
