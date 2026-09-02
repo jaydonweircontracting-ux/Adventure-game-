@@ -26,6 +26,7 @@ const directionKeys: Record<string, Direction> = {
   ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
 };
+const attackDirectionRow: Record<Direction, number> = { right: 0, down: 1, up: 2, left: 3 };
 const delta: Record<Direction, Point> = {
   up: { x: 0, y: -2.4 }, down: { x: 0, y: 2.4 }, left: { x: -2.4, y: 0 }, right: { x: 2.4, y: 0 },
 };
