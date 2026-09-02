@@ -424,7 +424,7 @@
 .player.is-moving[data-facing='left'] .player-sprite { --sprite-row: 4; }
 .player.is-moving[data-facing='right'] .player-sprite { --sprite-row: 4; }
 
-.player.is-attacking .player-sprite { opacity: 0; }
+.player.is-attacking .player-sprite, .interior-player.is-attacking .player-sprite { opacity: 0; }
 .player-attack-sprite {
   position: absolute;
   z-index: 4;
@@ -440,7 +440,7 @@
   animation: player-attack-sprite .48s steps(2, end) both;
   pointer-events: none;
 }
-.player.is-attacking .player-dagger { display: none; }
+.player.is-attacking .player-dagger, .interior-player.is-attacking .player-dagger { display: none; }
 @keyframes player-attack-sprite { 0%, 49% { background-position-x: 0; } 50%, 100% { background-position-x: -48px; } }
 
 .player.is-mounted { z-index: 4; }
