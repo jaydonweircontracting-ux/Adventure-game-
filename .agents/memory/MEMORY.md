@@ -28,9 +28,10 @@ The successful deployment required declaring @tanstack/react-query and wouter as
 
 ## Published Pages sync guardrail
 
-- Source changes do not affect the live GitHub Pages site until the bundle referenced by `docs/index.html` is synchronized.
-- Before diagnosing a live visual bug, read `docs/index.html` and inspect the referenced `docs/assets` JS/CSS files; do not assume `src/` is what Pages is serving.
-
+- When the user sends the repository link, inspect both the GitHub source and the actual deployed GitHub Pages artifact before making changes.
+- Trace docs/index.html to the exact JS/CSS bundle and cache/build key the live page serves; apply fixes to that version and verify the live result before saying the issue is fixed.
+- Source changes do not affect the live GitHub Pages site until the bundle referenced by docs/index.html is synchronized.
+- Before diagnosing a live visual bug, read docs/index.html and inspect the referenced docs/assets JS/CSS files; do not assume src/ is what Pages is serving.
 
 ## Mounted rider/cow layer guardrail
 
