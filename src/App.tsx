@@ -378,9 +378,12 @@ type GoatState = {
   respawnTicks: number;
   wanderSeed: number;
   moving: boolean;
+  nextWanderTick?: number;
 };
 const GOAT_STEP = 0.72;
 const GOAT_TICK_MS = 500;
+const GOAT_WANDER_MIN_TICKS = 10;
+const GOAT_WANDER_MAX_TICKS = 20;
 const COMBAT_ATTACK_COOLDOWN_TICKS = 3;
 const GOAT_RESPAWN_TICKS = Math.ceil(12000 / GOAT_TICK_MS);
 const GOAT_ATTACK_RANGE = 9;
@@ -470,7 +473,8 @@ function isGoatSave(value: unknown): value is GoatState {
     && isFiniteNumber(value.attackCooldown)
     && isFiniteNumber(value.respawnTicks)
     && isFiniteNumber(value.wanderSeed)
-    && typeof value.moving === 'boolean';
+    && typeof value.moving === 'boolean'
+    && (value.nextWanderTick === undefined || isFiniteNumber(value.nextWanderTick));
 }
 
 function isBrainStateSave(value: unknown): value is RpgGameState {
@@ -576,12 +580,24 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
       respawnTicks: 0,
       wanderSeed,
       moving: false,
+      nextWanderTick: GOAT_WANDER_MIN_TICKS + (wanderSeed % (GOAT_WANDER_MAX_TICKS - GOAT_WANDER_MIN_TICKS + 1)),
     };
   });
 }
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
+function goatWanderDelay(wanderSeed: number) {
+  const range = GOAT_WANDER_MAX_TICKS - GOAT_WANDER_MIN_TICKS + 1;
+  return GOAT_WANDER_MIN_TICKS + Math.abs(wanderSeed % range);
+}
+function nextGoatWanderSeed(goat: GoatState, worldStep: number) {
+  return Math.abs((goat.wanderSeed * 1664525 + worldStep * 101 + goat.id * 17) % 2147483647);
+}
 function moveGoatIndependently(goat: GoatState, worldStep: number, playerPosition: Point, chunk: Point, goats: GoatState[]) {
   if (goat.disposition === 'defeated') return { ...goat, moving: false };
+  const isWandering = goat.disposition === 'calm';
+  const scheduledTick = goat.nextWanderTick ?? goatWanderDelay(goat.wanderSeed);
+  if (isWandering && worldStep < scheduledTick) return { ...goat, moving: false, nextWanderTick: scheduledTick };
+  const wanderSeed = nextGoatWanderSeed(goat, worldStep);
   const distance = goatDistance(goat, playerPosition);
   let direction: Direction;
   if (goat.disposition === 'aggressive' && distance > GOAT_ATTACK_RANGE) {
@@ -589,9 +605,8 @@ function moveGoatIndependently(goat: GoatState, worldStep: number, playerPositio
     const vertical = playerPosition.y - goat.position.y;
     direction = Math.abs(horizontal) >= Math.abs(vertical) ? (horizontal >= 0 ? 'right' : 'left') : (vertical >= 0 ? 'down' : 'up');
   } else {
-    const directions: Direction[] = ['up', 'right', 'down', 'left'];
-    const directionIndex = Math.abs((Math.floor(worldStep / 4) * 13 + goat.wanderSeed * 7 + goat.id * 3) % directions.length);
-    direction = directions[directionIndex];
+    const wanderDirections: Direction[] = ['up', 'right', 'down', 'left'];
+    direction = wanderDirections[wanderSeed % wanderDirections.length];
   }
   const directions: Direction[] = ([direction, 'up', 'right', 'down', 'left'] as Direction[]).filter((candidate, index, all) => all.indexOf(candidate) === index);
   for (const candidateDirection of directions) {
@@ -601,10 +616,10 @@ function moveGoatIndependently(goat: GoatState, worldStep: number, playerPositio
     };
     const occupied = goats.some((other) => other.id !== goat.id && other.disposition !== 'defeated' && Math.hypot(other.position.x - nextPosition.x, other.position.y - nextPosition.y) < 4.2);
     if (!occupied && !isFieldPositionBlocked(nextPosition, chunk)) {
-      return { ...goat, position: nextPosition, facing: candidateDirection, moving: true };
+      return { ...goat, position: nextPosition, facing: candidateDirection, moving: true, wanderSeed, nextWanderTick: isWandering ? worldStep + goatWanderDelay(wanderSeed) : goat.nextWanderTick };
     }
   }
-  return { ...goat, facing: direction, moving: false };
+  return { ...goat, facing: direction, moving: false, wanderSeed, nextWanderTick: isWandering ? worldStep + goatWanderDelay(wanderSeed) : goat.nextWanderTick };
 }
 
 
@@ -937,6 +952,7 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
               attackCooldown: 0,
               respawnTicks: 0,
               moving: false,
+              nextWanderTick: goatWorldStepRef.current + goatWanderDelay(goat.wanderSeed),
             };
           }
           return { ...goat, moving: false, respawnTicks: goat.respawnTicks + 1 };
