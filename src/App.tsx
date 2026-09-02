@@ -12,7 +12,7 @@ import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/r
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '033';
+const BUILD_NUMBER = '034';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 type HorseState = { chunk: Point; position: Point };
@@ -363,7 +363,7 @@ const interiorFurnitureCollision: InteriorCollisionRect[] = [
   { left: 20, top: 29, right: 80, bottom: 40 }, // counter
   { left: 17, top: 43, right: 32, bottom: 67 }, // left shelf
   { left: 68, top: 43, right: 83, bottom: 67 }, // right shelf
-  { left: 41, top: 55, right: 60, bottom: 68 }, // table and legs
+  { left: 41, top: 57, right: 60, bottom: 68 }, // table and legs
 ];
 
 function isInteriorPositionBlocked(position: Point, area: InteriorArea) {
