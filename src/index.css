@@ -423,6 +423,20 @@
 .player.is-moving[data-facing='up'] .player-sprite { --sprite-row: 5; }
 .player.is-moving[data-facing='left'] .player-sprite { --sprite-row: 4; }
 .player.is-moving[data-facing='right'] .player-sprite { --sprite-row: 4; }
+
+.player.is-attacking .player-sprite {
+  left: -1px;
+  top: 0;
+  width: 48px;
+  height: 48px;
+  background-image: var(--player-attack-sprite-url);
+  background-position: 0 var(--attack-y);
+  background-size: 96px 576px;
+  animation: player-attack-sprite .48s steps(2, end) both;
+  transform: none;
+}
+.player.is-attacking .player-dagger { display: none; }
+@keyframes player-attack-sprite { from { background-position-x: 0; } to { background-position-x: -96px; } }
 .player.is-mounted { z-index: 4; }
 .player.is-mounted .player-sprite { display: none; }
 .horse {
@@ -1974,7 +1988,7 @@ body {
 .field-attack-button:hover, .field-attack-button:focus-visible { background: rgba(172, 78, 60, .98); }
 .combat-flash { position: absolute; z-index: 14; top: max(72px, calc(env(safe-area-inset-top) + 56px)); left: 50%; width: max-content; max-width: calc(100% - 32px); padding: 7px 11px; color: #fff4d5; border: 1px solid rgba(255, 221, 150, .74); background: rgba(101, 52, 42, .9); box-shadow: 3px 3px 0 rgba(48, 42, 32, .25); font-family: var(--app-font-mono); font-size: 9px; transform: translateX(-50%); animation: combat-pop .2s ease both; pointer-events: none; }
 @keyframes combat-pop { from { opacity: 0; transform: translate(-50%, -5px); } to { opacity: 1; transform: translate(-50%, 0); } }
-@media (prefers-reduced-motion: reduce) { .goat { transition: none; } .goat.is-moving .goat-sprite, .goat.is-attacking .goat-sprite, .player.is-attacking, .player.is-attacking .player-dagger, .player.is-attacking::after, .goat.is-attacking::after { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .goat { transition: none; } .goat.is-moving .goat-sprite, .goat.is-attacking .goat-sprite, .player.is-attacking, .player.is-attacking .player-sprite, .player.is-attacking .player-dagger, .player.is-attacking::after, .goat.is-attacking::after { animation: none; } }
 
 
 /* Enterable town interiors. */
