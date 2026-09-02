@@ -434,15 +434,15 @@
   height: 48px;
   background-image: var(--player-attack-sprite-url);
   background-position: 0 var(--attack-y);
-  background-size: 240px 192px;
+  background-size: 96px 576px;
   background-repeat: no-repeat;
   image-rendering: pixelated;
-  animation: player-attack-sprite .48s steps(5, end) both;
+  animation: player-attack-sprite .48s steps(2, end) both;
   will-change: background-position;
   pointer-events: none;
 }
 .player.is-attacking .player-dagger, .interior-player.is-attacking .player-dagger { display: none; }
-@keyframes player-attack-sprite { 0% { background-position: 0 var(--attack-y); } 100% { background-position: -192px var(--attack-y); } }
+@keyframes player-attack-sprite { 0%, 49% { background-position: 0 var(--attack-y); } 50%, 100% { background-position: -48px var(--attack-y); } }
 
 .player.is-mounted { z-index: 4; }
 .player.is-mounted .player-sprite { display: none; }
