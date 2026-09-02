@@ -834,7 +834,6 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, onClose }: 
                 <div className="inventory-empty">
                   <Backpack size={30} strokeWidth={1.5} />
                   <strong>Your satchel is empty</strong>
-                  <span>Pick up a dropped goat bag to collect supplies.</span>
                 </div>
               )}
             </>
