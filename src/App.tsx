@@ -57,6 +57,16 @@ const coastlineWater = new Set([
   '-3,12', '-2,12', '8,12', '9,12', '10,12', '11,12', '-3,13', '-2,13', '-1,13', '0,13', '1,13', '7,13', '8,13', '9,13', '10,13', '11,13',
 ]);
 
+// Give the tutorial island a clear water buffer without changing the starting field.
+for (let x = -1; x <= 11; x += 1) {
+  coastlineWater.add(x + ',1');
+  coastlineWater.add(x + ',13');
+}
+for (let y = 1; y <= 13; y += 1) {
+  coastlineWater.add('-1,' + y);
+  coastlineWater.add('11,' + y);
+}
+
 function isContinentChunk(point: Point) {
   return point.x >= -3 && point.x <= 11 && point.y >= 1 && point.y <= 13 && !coastlineWater.has(point.x + ',' + point.y);
 }
@@ -684,7 +694,8 @@ const startingTownNpcs: TownNpc[] = [
   { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up' },
 ];
 
-const atlasBounds = { minX: -3, maxX: 11, minY: 1, maxY: 13 };
+// Keep the atlas compact while the water buffer frames the tutorial island.
+const atlasBounds = { minX: -1, maxX: 11, minY: 1, maxY: 13 };
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
   const atlasWidth = atlasBounds.maxX - atlasBounds.minX + 1;
@@ -1031,17 +1042,17 @@ function GameField({ inventory, equippedDagger, onLoot, onOpenMap, onOpenInvento
           : (player.y >= npc.position.y ? 'down' : 'up');
         const direction = nearby
           ? facePlayer
-          : Math.random() < 0.34
+          : Math.random() < 0.08
             ? directions.filter((candidate) => candidate !== npc.facing)[Math.floor(Math.random() * 3)]
             : npc.facing;
-        const step = nearby ? 0 : Math.random() < 0.2 ? 1.2 : 0;
+        const step = nearby ? 0 : Math.random() < 0.08 ? 1.2 : 0;
         const nextPosition = {
           x: Math.min(86, Math.max(14, npc.position.x + (direction === 'right' ? step : direction === 'left' ? -step : 0))),
           y: Math.min(76, Math.max(32, npc.position.y + (direction === 'down' ? step : direction === 'up' ? -step : 0))),
         };
         return { ...npc, position: nextPosition, facing: direction };
       }));
-    }, 1100);
+    }, 2600);
     return () => window.clearInterval(timer);
   }, []);
 
