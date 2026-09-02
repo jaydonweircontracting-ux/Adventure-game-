@@ -61,3 +61,9 @@ The successful deployment required declaring @tanstack/react-query and wouter as
 - A green GitHub Pages workflow only confirms that committed files were published; it does not parse or execute the browser JavaScript.
 - Before every manual docs-bundle update, run a browser-targeted JavaScript build/parser check and do not publish if it fails.
 - If the game goes blank after a release, inspect the active docs JavaScript syntax before changing gameplay code.
+
+
+## Completion and verification
+
+- After every requested fix, confirm the change was committed to GitHub main, confirm the exact deployed artifact serves it, and report any deployment or cache delay.
+- Do not stop after an attempted patch or call the work complete until the user confirms satisfaction; if the problem remains, continue tracing, fixing, and rechecking it.
