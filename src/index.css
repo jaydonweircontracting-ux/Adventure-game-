@@ -2152,3 +2152,104 @@ body {
   font-size: 10px;
   line-height: 1.45;
 }
+
+
+/* Main menu and browser save-file controls. */
+.game-app.menu-mode {
+  min-height: 100svh;
+}
+.main-menu {
+  display: grid;
+  place-items: center;
+  min-height: 100svh;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(231, 185, 66, .13), transparent 34%),
+    linear-gradient(145deg, #173e35 0%, #102d29 54%, #0d2423 100%);
+}
+.main-menu-card {
+  width: min(500px, 100%);
+  padding: clamp(28px, 7vw, 54px);
+  border: 1px solid rgba(235, 206, 139, .48);
+  background: rgba(243, 235, 213, .97);
+  color: var(--ink);
+  box-shadow: 8px 8px 0 rgba(7, 22, 22, .34), 0 24px 70px rgba(5, 18, 18, .28);
+  text-align: center;
+}
+.main-menu-kicker {
+  color: var(--clay);
+  font: 9px var(--app-font-mono);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.main-menu-card h1 {
+  margin: 12px 0 10px;
+  color: var(--field-deep);
+  font-family: var(--app-font-display);
+  font-size: clamp(34px, 8vw, 52px);
+  line-height: .96;
+}
+.main-menu-card > p:not(.main-menu-note) {
+  max-width: 390px;
+  margin: 0 auto;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.main-menu-actions {
+  display: grid;
+  gap: 9px;
+  max-width: 280px;
+  margin: 26px auto 0;
+}
+.main-menu-button {
+  min-height: 44px;
+  padding: 11px 16px;
+  border: 1px solid var(--ink);
+  background: #efe3c8;
+  color: var(--ink);
+  font: 10px var(--app-font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.main-menu-button:hover {
+  border-color: var(--sun);
+  background: #fff4c7;
+  transform: translateY(-1px);
+}
+.main-menu-button.primary {
+  border-color: var(--field-deep);
+  background: var(--field-deep);
+  color: #fff0c9;
+}
+.main-menu-button.primary:hover {
+  background: #245848;
+}
+.main-menu-note {
+  margin: 22px 0 0;
+  color: var(--ink-soft);
+  font: 9px/1.5 var(--app-font-mono);
+}
+.save-file-input {
+  display: none;
+}
+.save-notice {
+  margin-top: 14px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--sun);
+  background: rgba(231, 185, 66, .15);
+  color: var(--ink-soft);
+  font: 9px/1.4 var(--app-font-mono);
+}
+.save-notice-floating {
+  position: fixed;
+  z-index: 50;
+  right: 18px;
+  bottom: 18px;
+  margin: 0;
+  border: 1px solid rgba(231, 185, 66, .7);
+  background: rgba(19, 50, 43, .94);
+  color: #fff0c9;
+  box-shadow: 3px 3px 0 rgba(20, 34, 29, .25);
+}
