@@ -362,8 +362,8 @@ type InteriorCollisionRect = FieldRect;
 // a little visual padding so the player cannot overlap the furniture sprites.
 const interiorFurnitureCollision: InteriorCollisionRect[] = [
   { left: 20, top: 29, right: 80, bottom: 40 }, // counter
-  { left: 17, top: 43, right: 32, bottom: 67 }, // left shelf
-  { left: 68, top: 43, right: 83, bottom: 67 }, // right shelf
+  { left: 17, top: 43, right: 30, bottom: 67 }, // left shelf — extra inner clearance
+  { left: 70, top: 43, right: 83, bottom: 67 }, // right shelf — extra inner clearance
   { left: 41, top: 57, right: 60, bottom: 68 }, // table and legs
 ];
 
