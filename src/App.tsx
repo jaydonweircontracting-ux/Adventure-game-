@@ -798,7 +798,7 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, onClose }: 
     { key: 'daggers', label: 'Goat-horn dagger', detail: 'Crafted weapon', mark: '†', className: 'dagger-mark' },
     { key: 'cloths', label: 'Field cloths', detail: 'Crafted gear', mark: '✚', className: 'cloths-mark' },
   ].filter((item) => inventory[item.key as keyof GameInventory] > 0);
-  const hasCoins = inventory.coins > 0;
+  const showGold = true;
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="inventory-title" data-testid="overlay-inventory">
       <div className="map-sheet inventory-sheet">
@@ -813,9 +813,9 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, onClose }: 
         <div className="inventory-body">
           {activeTab === 'inventory' ? (
             <>
-              <div className="inventory-count">{itemCount > 0 ? itemCount + ' items carried' : 'Satchel is empty'}{hasCoins ? ' · ' + inventory.coins + ' gold' : ''}</div>
+              <div className="inventory-count">{itemCount > 0 ? itemCount + ' items carried' : 'Satchel is empty'}{showGold ? ' · ' + inventory.coins + ' gold' : ''}</div>
               <div className="inventory-grid">
-                {hasCoins && <div className="inventory-item" data-testid="inventory-coins">
+                {showGold && <div className="inventory-item" data-testid="inventory-coins">
                   <span className="inventory-item-mark coin-mark"><Coins size={16} /></span>
                   <span><strong>Coins</strong><small>Spendable gold</small></span>
                   <b>{inventory.coins}</b>
@@ -830,7 +830,7 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, onClose }: 
                   </div>;
                 })}
               </div>
-              {itemCount === 0 && !hasCoins && (
+              {itemCount === 0 && (
                 <div className="inventory-empty">
                   <Backpack size={30} strokeWidth={1.5} />
                   <strong>Your satchel is empty</strong>
