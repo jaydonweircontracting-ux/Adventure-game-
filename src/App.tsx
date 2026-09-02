@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Download, Map, Menu, Minus, Plus, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
+import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Download, Map, Menu, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
 import { type ChangeEvent, type PointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -464,6 +464,7 @@ type SaveGameData = {
 
 const SAVE_FILE_FORMAT = 'adventure-game-save';
 const SAVE_FILE_VERSION = 1;
+const SAVE_STORAGE_KEY = 'adventure-game-save-v1';
 const saveDirections = ['up', 'down', 'left', 'right'];
 const savePlayerClasses = ['Beginner', 'Warrior', 'Mage', 'Rogue'];
 const saveNpcRoles = ['mage', 'warrior', 'guide', 'rogue'];
@@ -913,7 +914,7 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
   );
 }
 
-function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenStats, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onOpenLoad, onOpenMenu }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenStats: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void }) {
+function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenStats, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenStats: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void }) {
   const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
   const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -923,6 +924,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [horse, setHorse] = useState<HorseState>(initialHorseState);
   const [horseFacing, setHorseFacing] = useState<Direction>('down');
   const [logOpen, setLogOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [logs, setLogs] = useState(initialLogs);
   const [time, setTime] = useState('08:43');
   const [playerHp, setPlayerHp] = useState(PLAYER_MAX_HP);
@@ -1046,11 +1048,11 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   useEffect(() => { interiorRef.current = interior; }, [interior]);
   useEffect(() => { interiorPositionRef.current = interiorPosition; }, [interiorPosition]);
   useEffect(() => {
-    if (inputLocked) {
+    if (inputLocked || optionsOpen) {
       keysRef.current = {};
       setMoving(false);
     }
-  }, [inputLocked]);
+  }, [inputLocked, optionsOpen]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1185,7 +1187,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
       setMoving(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (inputLocked) return;
+      if (inputLocked || optionsOpen) return;
       if (event.code === 'Space' || event.code === 'KeyF') { event.preventDefault(); attackGoat(); return; }
       const direction = directionKeys[event.code];
       if (!direction) return;
@@ -1210,8 +1212,8 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
       const elapsed = Math.min(50, now - lastFrame) / 1000;
       lastFrame = now;
       const input = {
-        x: inputLocked ? 0 : (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
-        y: inputLocked ? 0 : (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
+        x: inputLocked || optionsOpen ? 0 : (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
+        y: inputLocked || optionsOpen ? 0 : (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
       };
       const length = Math.hypot(input.x, input.y);
       const active = length > 0;
@@ -1313,7 +1315,7 @@ if (active) {
       window.removeEventListener('blur', clearInput);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [onChunkChange, interior, inputLocked]);
+  }, [onChunkChange, interior, inputLocked, optionsOpen]);
 
 
 
@@ -1406,6 +1408,7 @@ if (active) {
     setMoving(Object.values(keysRef.current).some(Boolean));
   };
   const beginDirection = (direction: Direction, event: PointerEvent<HTMLButtonElement>) => {
+    if (inputLocked || optionsOpen) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     pressDirection(direction);
   };
@@ -1601,6 +1604,35 @@ if (active) {
           </div>}
         </div>
         )}
+        {optionsOpen && (
+          <div className="options-overlay" role="dialog" aria-modal="true" aria-labelledby="options-title" data-testid="overlay-options">
+            <div className="options-card">
+              <div className="options-heading">
+                <div>
+                  <span className="options-kicker">Adventure Game</span>
+                  <h2 id="options-title">Options</h2>
+                </div>
+                <button className="map-close" onClick={() => setOptionsOpen(false)} aria-label="Close options" data-testid="button-close-options"><X size={19} /></button>
+              </div>
+              <p className="options-copy">Save your progress in this browser for quick continuation, or download a file to keep a backup.</p>
+              <div className="options-actions">
+                <button className="options-action primary" onClick={() => { onSave(); setOptionsOpen(false); }} data-testid="button-save-browser">
+                  <span className="options-action-icon"><SaveIcon /></span>
+                  <span><strong>Save Game</strong><small>Keep progress in this browser</small></span>
+                </button>
+                <button className="options-action" onClick={() => { onDownloadSave(); setOptionsOpen(false); }} data-testid="button-download-save">
+                  <span className="options-action-icon"><Download size={17} /></span>
+                  <span><strong>Download Save File</strong><small>Export a portable JSON backup</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); onOpenLoad(); }} data-testid="button-import-save">
+                  <span className="options-action-icon"><Upload size={17} /></span>
+                  <span><strong>Load Save File</strong><small>Import a downloaded JSON save</small></span>
+                </button>
+              </div>
+              <button className="options-menu-button" onClick={() => { setOptionsOpen(false); onOpenMenu(); }} data-testid="button-options-main-menu">Main Menu</button>
+            </div>
+          </div>
+        )}
         {npcDialogue && (
           <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="npc-dialogue-title">
             <div className="npc-dialogue-card">
@@ -1680,9 +1712,7 @@ if (active) {
             <button className="icon-button field-log-toggle" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={16} /></button>
            <button className="icon-button map-button" onClick={onOpenMap} aria-label="Open field atlas" title="Open field atlas" data-testid="button-open-map"><Map size={16} /></button>
             <button className="icon-button field-sound-button" onClick={onToggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'} aria-pressed={muted} data-testid="button-toggle-sound">{muted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
-           <button className="icon-button" onClick={onSave} aria-label="Download save file" title="Download save file" data-testid="button-save-game"><Download size={15} /></button>
-           <button className="icon-button" onClick={onOpenLoad} aria-label="Load save file" title="Load save file" data-testid="button-load-game"><Upload size={15} /></button>
-           <button className="icon-button" onClick={onOpenMenu} aria-label="Open main menu" title="Main menu" data-testid="button-main-menu"><Menu size={15} /></button>
+           <button className="icon-button" onClick={() => setOptionsOpen(true)} aria-label="Open options" title="Options" data-testid="button-open-options"><Settings size={15} /></button>
          </div>
       </div>
       <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? (mounted ? 'Riding through Mosslight Crossing' : 'Moving through Mosslight Crossing') : (mounted ? 'Mounted and ready' : 'Standing still')}</div>
@@ -1690,6 +1720,10 @@ if (active) {
       <div className="sr-only" aria-live="polite" data-testid="status-field-log">{logs[0].text}</div>
     </div>
   );
+}
+
+function SaveIcon() {
+  return <span className="save-icon" aria-hidden="true">▣</span>;
 }
 
 function Home() {
@@ -1705,8 +1739,17 @@ function Home() {
   const [menuOpen, setMenuOpen] = useState(true);
   const [loadedSave, setLoadedSave] = useState<SaveGameData | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const [hasLocalSave, setHasLocalSave] = useState(false);
   const saveStateRef = useRef<(() => SaveGameData) | null>(null);
   const saveFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    try {
+      setHasLocalSave(Boolean(window.localStorage.getItem(SAVE_STORAGE_KEY)));
+    } catch {
+      setHasLocalSave(false);
+    }
+  }, []);
   const applyLoot = (loot: GoatLoot) => setInventory((current) => ({
     coins: Math.max(0, current.coins + (loot.coins || 0)),
     goatHorns: Math.max(0, current.goatHorns + (loot.goatHorns || 0)),
@@ -1736,6 +1779,44 @@ function Home() {
     setPlayerStats((current) => ({ ...current, [stat]: current[stat] + 1 }));
   };
 
+  const applyLoadedSave = (parsed: SaveGameData, notice: string) => {
+    setLoadedSave(parsed);
+    setInventory(parsed.inventory);
+    setPlayerStats(parsed.playerStats || initialPlayerStats);
+    setStatPoints(Math.max(0, Math.floor(parsed.statPoints || 0)));
+    setEquippedDagger(Boolean(parsed.equippedDagger) && parsed.inventory.daggers > 0);
+    setChunk(parsed.chunk);
+    setMapOpen(false); setInventoryOpen(false); setStatsOpen(false); setSaveNotice(notice); setMenuOpen(false);
+  };
+
+  const loadLocalSave = () => {
+    try {
+      const raw = window.localStorage.getItem(SAVE_STORAGE_KEY);
+      if (!raw) {
+        setSaveNotice('No browser save found yet. Start a game and save from Options.');
+        return;
+      }
+      const parsed: unknown = JSON.parse(raw);
+      if (!isSaveGameData(parsed)) throw new Error('invalid save');
+      applyLoadedSave(parsed, 'Browser save loaded.');
+    } catch {
+      setHasLocalSave(false);
+      setSaveNotice('The browser save could not be loaded.');
+    }
+  };
+
+  const saveGame = () => {
+    const save = saveStateRef.current?.();
+    if (!save) { setSaveNotice('Start a game before saving.'); return; }
+    try {
+      window.localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(save));
+      setHasLocalSave(true);
+      setSaveNotice('Game saved in this browser.');
+    } catch {
+      setSaveNotice('This browser could not store the save. Download a save file instead.');
+    }
+  };
+
   const openLoadPicker = () => saveFileInputRef.current?.click();
 
   const handleSaveFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -1748,14 +1829,7 @@ function Home() {
       try {
         const parsed: unknown = JSON.parse(String(reader.result));
         if (!isSaveGameData(parsed)) throw new Error('invalid save');
-        setLoadedSave(parsed);
-        setInventory(parsed.inventory);
-        setPlayerStats(parsed.playerStats || initialPlayerStats);
-        setStatPoints(Math.max(0, Math.floor(parsed.statPoints || 0)));
-        setEquippedDagger(Boolean(parsed.equippedDagger) && parsed.inventory.daggers > 0);
-        setChunk(parsed.chunk);
-        setMapOpen(false); setInventoryOpen(false); setMenuOpen(false);
-        setSaveNotice('Save file loaded.');
+        applyLoadedSave(parsed, 'Save file loaded.');
       } catch {
         setSaveNotice('That file is not a valid Adventure Game save.');
       }
@@ -1805,16 +1879,17 @@ function Home() {
             <p>Follow the roads, learn the first hunt, and choose the path that carries you beyond Mosslight Crossing.</p>
             <div className="main-menu-actions">
               <button className="main-menu-button primary" onClick={startNewGame} data-testid="button-new-game">New Game</button>
-              <button className="main-menu-button" onClick={openLoadPicker} data-testid="button-load-save-menu">Load Save File</button>
+              <button className="main-menu-button" onClick={loadLocalSave} disabled={!hasLocalSave} data-testid="button-load-game-menu">{hasLocalSave ? 'Load Game' : 'Load Game · No Save Yet'}</button>
+              <button className="main-menu-button" onClick={openLoadPicker} data-testid="button-load-save-menu">Import Save File</button>
             </div>
-            <p className="main-menu-note">Save files are downloaded as JSON and can be loaded on another session.</p>
+            <p className="main-menu-note">Use Load Game for this browser, or Import Save File for a downloaded backup.</p>
             {saveNotice && <div className="save-notice" role="status">{saveNotice}</div>}
           </div>
         </section>
       ) : (
         <>
           <div className="game-layout">
-            <GameField inventory={inventory} equippedDagger={equippedDagger} playerStats={playerStats} statPoints={statPoints} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenStats={() => setStatsOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || statsOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} />
+            <GameField inventory={inventory} equippedDagger={equippedDagger} playerStats={playerStats} statPoints={statPoints} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenStats={() => setStatsOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || statsOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} />
           </div>
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
           {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} onClose={() => setInventoryOpen(false)} />}
