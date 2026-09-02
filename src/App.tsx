@@ -1601,6 +1601,7 @@ if (active) {
           </div>
           {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-(attackVariant * 4 + attackDirectionRow[facing]) * 48}px` } as CSSProperties} data-facing={facing} data-testid="player-character">
             <span className="player-sprite" />
+            {attacking && <span className="player-attack-sprite" aria-hidden="true" />}
             {equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}
           </div>}
         </div>
