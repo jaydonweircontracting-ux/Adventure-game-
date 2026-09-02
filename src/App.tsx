@@ -409,7 +409,8 @@ const GOAT_WANDER_MIN_TICKS = 10;
 const GOAT_WANDER_MAX_TICKS = 20;
 const PLAYER_BASE_ATTACK_COOLDOWN_TICKS = 5;
 const GOAT_ATTACK_COOLDOWN_TICKS = 5;
-const PLAYER_ATTACK_RANGE = 8;
+const PLAYER_ATTACK_RANGE = 5;
+const PLAYER_ATTACK_LANE = 3;
 const PLAYER_ATTACK_ANIMATION_MS = 480;
 const GOAT_RESPAWN_TICKS = Math.ceil(12000 / GOAT_TICK_MS);
 const GOAT_ATTACK_RANGE = 9;
@@ -650,6 +651,15 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
   });
 }
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
+function goatIsInAttackArc(goat: GoatState, position: Point, facing: Direction) {
+  const dx = goat.position.x - position.x;
+  const dy = goat.position.y - position.y;
+  if (Math.hypot(dx, dy) > PLAYER_ATTACK_RANGE) return false;
+  if (facing === 'up') return dy < 0 && Math.abs(dx) <= PLAYER_ATTACK_LANE;
+  if (facing === 'down') return dy > 0 && Math.abs(dx) <= PLAYER_ATTACK_LANE;
+  if (facing === 'left') return dx < 0 && Math.abs(dy) <= PLAYER_ATTACK_LANE;
+  return dx > 0 && Math.abs(dy) <= PLAYER_ATTACK_LANE;
+}
 function goatWanderDelay(wanderSeed: number) {
   const range = GOAT_WANDER_MAX_TICKS - GOAT_WANDER_MIN_TICKS + 1;
   return GOAT_WANDER_MIN_TICKS + Math.abs(wanderSeed % range);
@@ -941,6 +951,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 47 });
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
+  const facingRef = useRef(facing);
   const chunkRef = useRef(chunk);
   const mountedRef = useRef(mounted);
   const horseRef = useRef(horse);
@@ -1045,6 +1056,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   useEffect(() => { playerLevelRef.current = playerLevel; }, [playerLevel]);
   useEffect(() => { playerStatsRef.current = playerStats; }, [playerStats]);
   useEffect(() => { playerClassRef.current = playerClass; }, [playerClass]);
+  useEffect(() => { facingRef.current = facing; }, [facing]);
   useEffect(() => { interiorRef.current = interior; }, [interior]);
   useEffect(() => { interiorPositionRef.current = interiorPosition; }, [interiorPosition]);
   useEffect(() => {
@@ -1319,20 +1331,22 @@ if (active) {
 
 
 
+  const playAttackAnimation = () => {
+    setAttackVariant((current) => (current + 1) % 3);
+    setAttacking(true);
+    window.setTimeout(() => setAttacking(false), PLAYER_ATTACK_ANIMATION_MS);
+  };
+
   const attackGoat = () => {
-    if (interiorRef.current) {
-      setAttackVariant((current) => (current + 1) % 3);
-      setAttacking(true);
-      window.setTimeout(() => setAttacking(false), PLAYER_ATTACK_ANIMATION_MS);
-      return;
-    }
+    playAttackAnimation();
+    if (interiorRef.current) return;
     if (playerAttackCooldownRef.current > 0) {
       setAttackFlash('Your attack is still on cooldown.');
       window.setTimeout(() => setAttackFlash(null), 700);
       return;
     }
     const currentPlayer = positionRef.current;
-    const target = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goatDistance(goat, currentPlayer) <= PLAYER_ATTACK_RANGE).sort((a, b) => (a.disposition === 'aggressive' ? 0 : 1) - (b.disposition === 'aggressive' ? 0 : 1) || goatDistance(a, currentPlayer) - goatDistance(b, currentPlayer))[0];
+    const target = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goatIsInAttackArc(goat, currentPlayer, facingRef.current)).sort((a, b) => (a.disposition === 'aggressive' ? 0 : 1) - (b.disposition === 'aggressive' ? 0 : 1) || goatDistance(a, currentPlayer) - goatDistance(b, currentPlayer))[0];
     if (!target) { setAttackFlash('No goat is close enough to strike.'); window.setTimeout(() => setAttackFlash(null), 900); return; }
     playerAttackCooldownRef.current = playerAttackCooldownForStats(playerStatsRef.current);
     setAttackVariant((current) => (current + 1) % 3);
