@@ -380,7 +380,8 @@ type GoatState = {
   moving: boolean;
 };
 const GOAT_STEP = 0.72;
-const GOAT_TICK_MS = 350;
+const GOAT_TICK_MS = 500;
+const COMBAT_ATTACK_COOLDOWN_TICKS = 3;
 const GOAT_RESPAWN_TICKS = Math.ceil(12000 / GOAT_TICK_MS);
 const GOAT_ATTACK_RANGE = 9;
 const GOAT_ATTACK_DAMAGE = 3;
@@ -833,6 +834,7 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
   const interiorPositionRef = useRef(interiorPosition);
   const interiorDoorwayIdRef = useRef<string | null>(STARTING_DOORWAY_ID);
   const goatWorldStepRef = useRef(0);
+  const playerAttackCooldownRef = useRef(0);
   const brainRef = useRef<RPGBrain | null>(null);
   if (brainRef.current === null) {
     const brain = createAdventureBrain();
@@ -917,6 +919,7 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
 
   useEffect(() => {
     const timer = window.setInterval(() => {
+      playerAttackCooldownRef.current = Math.max(0, playerAttackCooldownRef.current - 1);
       const currentGoats = goatsRef.current;
        if (currentGoats.length === 0) return;
       goatWorldStepRef.current += 1;
@@ -944,7 +947,7 @@ function GameField({ inventory, onLoot, onOpenMap, onOpenInventory, onChunkChang
         }
         if (goatDistance(goat, currentPlayer) <= GOAT_ATTACK_RANGE) {
           damageTaken += goatAttackDamageForLevel(goat.level);
-          return { ...goat, attackCooldown: 2 };
+          return { ...goat, attackCooldown: COMBAT_ATTACK_COOLDOWN_TICKS };
         }
         return moveGoatIndependently(goat, goatWorldStepRef.current, currentPlayer, currentChunk, currentGoats);
       });
@@ -1175,10 +1178,11 @@ if (active) {
 
 
   const attackGoat = () => {
-    if (interiorRef.current) return;
+    if (interiorRef.current || playerAttackCooldownRef.current > 0) return;
     const currentPlayer = positionRef.current;
     const target = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goatDistance(goat, currentPlayer) <= 14).sort((a, b) => (a.disposition === 'aggressive' ? 0 : 1) - (b.disposition === 'aggressive' ? 0 : 1) || goatDistance(a, currentPlayer) - goatDistance(b, currentPlayer))[0];
     if (!target) { setAttackFlash('No goat is close enough to strike.'); window.setTimeout(() => setAttackFlash(null), 900); return; }
+    playerAttackCooldownRef.current = COMBAT_ATTACK_COOLDOWN_TICKS;
     const nextHp = target.hp - 9;
     const defeated = nextHp <= 0;
     let nextGoats = goatsRef.current.map((goat) => goat.id === target.id ? {
