@@ -373,6 +373,16 @@ function isInteriorPositionBlocked(position: Point, area: InteriorArea) {
 
 type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
 type PlayerClass = 'Beginner' | 'Warrior' | 'Mage' | 'Rogue';
+type StatKey = 'str' | 'dex' | 'int' | 'luk';
+type PlayerStats = Record<StatKey, number>;
+const STAT_KEYS: StatKey[] = ['str', 'dex', 'int', 'luk'];
+const statDetails: Record<StatKey, { label: string; description: string }> = {
+  str: { label: 'Strength', description: 'Raises damage dealt per hit.' },
+  dex: { label: 'Dexterity', description: 'Shortens your attack cooldown.' },
+  int: { label: 'Intelligence', description: 'Raises max HP and bonus XP.' },
+  luk: { label: 'Luck', description: 'Improves critical hits and loot rolls.' },
+};
+const initialPlayerStats: PlayerStats = { str: 4, dex: 4, int: 4, luk: 4 };
 type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number };
 type GoatLoot = Partial<GameInventory>;
 type DroppedLoot = { id: number; chunk: Point; position: Point; loot: GoatLoot };
@@ -396,7 +406,8 @@ const GOAT_STEP = 1.35;
 const GOAT_TICK_MS = 500;
 const GOAT_WANDER_MIN_TICKS = 10;
 const GOAT_WANDER_MAX_TICKS = 20;
-const COMBAT_ATTACK_COOLDOWN_TICKS = 5;
+const PLAYER_BASE_ATTACK_COOLDOWN_TICKS = 5;
+const GOAT_ATTACK_COOLDOWN_TICKS = 5;
 const PLAYER_ATTACK_RANGE = 8;
 const PLAYER_ATTACK_ANIMATION_MS = 480;
 const GOAT_RESPAWN_TICKS = Math.ceil(12000 / GOAT_TICK_MS);
@@ -406,9 +417,25 @@ const GOAT_XP_REWARD = 25;
 const GOAT_MIN_XP_REWARD = 5;
 const GOAT_HP_PER_LEVEL = 4;
 const GOAT_DAMAGE_PER_LEVEL = 1;
-const PLAYER_MAX_HP = 100;
+const PLAYER_MAX_HP = 88;
+const PLAYER_BASE_ATTACK_DAMAGE = 5;
+const PLAYER_STAT_POINTS_PER_LEVEL = 5;
 const GOAT_LOOT_TYPES: Array<keyof GameInventory> = ['goatHorns', 'fabric', 'coins'];
 const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0 };
+
+function playerMaxHpForStats(stats: PlayerStats) {
+  return PLAYER_MAX_HP + stats.int * 3;
+}
+function playerDamageForStats(stats: PlayerStats) {
+  return PLAYER_BASE_ATTACK_DAMAGE + stats.str;
+}
+function playerAttackCooldownForStats(stats: PlayerStats) {
+  return Math.max(2, PLAYER_BASE_ATTACK_COOLDOWN_TICKS - Math.floor(Math.max(0, stats.dex - 4) / 3));
+}
+function playerCriticalChanceForStats(stats: PlayerStats) {
+  return Math.min(0.35, stats.luk * 0.01);
+}
+
 type SaveGameData = {
   format: 'adventure-game-save';
   version: 1;
@@ -424,6 +451,8 @@ type SaveGameData = {
   playerXp: number;
   playerLevel: number;
   playerClass: PlayerClass;
+  playerStats?: PlayerStats;
+  statPoints?: number;
   npcStates: TownNpc[];
   goats: GoatState[];
   interiorId: string | null;
@@ -459,6 +488,11 @@ function isGameInventory(value: unknown): value is GameInventory {
     && isFiniteNumber(value.fabric)
     && isFiniteNumber(value.daggers)
     && isFiniteNumber(value.cloths);
+}
+
+function isPlayerStats(value: unknown): value is PlayerStats {
+  return isRecord(value)
+    && STAT_KEYS.every((key) => isFiniteNumber(value[key]) && value[key] >= 0);
 }
 
 function isTownNpcSave(value: unknown): value is TownNpc {
@@ -532,6 +566,8 @@ function isSaveGameData(value: unknown): value is SaveGameData {
     && isFiniteNumber(value.playerLevel)
     && typeof value.playerClass === 'string'
     && savePlayerClasses.includes(value.playerClass)
+    && (value.playerStats === undefined || isPlayerStats(value.playerStats))
+    && (value.statPoints === undefined || (isFiniteNumber(value.statPoints) && value.statPoints >= 0))
     && Array.isArray(value.npcStates)
     && value.npcStates.every(isTownNpcSave)
     && Array.isArray(value.goats)
@@ -558,10 +594,10 @@ function goatAttackDamageForLevel(level: number) {
   return GOAT_ATTACK_DAMAGE + Math.floor(Math.max(0, level - 1) / 2) * GOAT_DAMAGE_PER_LEVEL;
 }
 
-function goatExperienceReward(goat: GoatState, playerLevel: number) {
+function goatExperienceReward(goat: GoatState, playerLevel: number, stats: PlayerStats = initialPlayerStats) {
   const progressionPenalty = Math.max(0, playerLevel - 1) * 2;
   const monsterPenalty = Math.max(0, goat.level - playerLevel);
-  return Math.max(GOAT_MIN_XP_REWARD, GOAT_XP_REWARD - progressionPenalty - monsterPenalty);
+  return Math.max(GOAT_MIN_XP_REWARD, GOAT_XP_REWARD - progressionPenalty - monsterPenalty) + Math.floor(stats.int / 5);
 }
 
 function scaleGoatsToPlayerLevel(goats: GoatState[], playerLevel: number) {
@@ -818,6 +854,31 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, onClose }: 
   );
 }
 
+function StatsSheet({ playerStats, statPoints, onAssign, onClose }: { playerStats: PlayerStats; statPoints: number; onAssign: (stat: StatKey) => void; onClose: () => void }) {
+  return (
+    <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="stats-title">
+      <div className="map-sheet stats-sheet">
+        <div className="map-sheet-heading">
+          <div><span className="atlas-eyebrow">Character growth</span><h2 id="stats-title">Adventurer Stats</h2></div>
+          <button className="map-close" onClick={onClose} aria-label="Close character stats" data-testid="button-close-stats"><X size={19} /></button>
+        </div>
+        <div className="stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div>
+        <div className="stats-list">
+          {STAT_KEYS.map((stat) => (
+            <div className="stat-row" key={stat} data-testid={'stat-row-' + stat}>
+              <span className="stat-key">{stat.toUpperCase()}</span>
+              <span className="stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span>
+              <b className="stat-value">{playerStats[stat]}</b>
+              <button className="stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button>
+            </div>
+          ))}
+        </div>
+        <div className="stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div>
+      </div>
+    </div>
+  );
+}
+
 function InteriorRoom({ area, position, facing, moving, inventory, equippedDagger, onCraft }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; inventory: GameInventory; equippedDagger: boolean; onCraft: (item: CraftItem) => void }) {
   const canCraft = (item: CraftItem) => {
     const recipe = craftRecipes[item];
@@ -852,7 +913,7 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
   );
 }
 
-function GameField({ inventory, equippedDagger, onLoot, onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onOpenLoad, onOpenMenu }: { inventory: GameInventory; equippedDagger: boolean; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void }) {
+function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenStats, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onOpenLoad, onOpenMenu }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenStats: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void }) {
   const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
   const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -890,6 +951,7 @@ function GameField({ inventory, equippedDagger, onLoot, onOpenMap, onOpenInvento
   const playerHpRef = useRef(playerHp);
   const playerXpRef = useRef(playerXp);
   const playerLevelRef = useRef(playerLevel);
+  const playerStatsRef = useRef(playerStats);
   const playerClassRef = useRef<PlayerClass>(playerClass);
   const interiorRef = useRef(interior);
   const interiorPositionRef = useRef(interiorPosition);
@@ -918,6 +980,8 @@ function GameField({ inventory, equippedDagger, onLoot, onOpenMap, onOpenInvento
     playerXp,
     playerLevel,
     playerClass,
+    playerStats,
+    statPoints,
     npcStates,
     goats,
     interiorId: interior?.id || null,
@@ -946,6 +1010,9 @@ function GameField({ inventory, equippedDagger, onLoot, onOpenMap, onOpenInvento
     playerXpRef.current = loadState.playerXp; setPlayerXp(loadState.playerXp);
     playerLevelRef.current = loadState.playerLevel; setPlayerLevel(loadState.playerLevel);
     playerClassRef.current = loadState.playerClass; setPlayerClass(loadState.playerClass);
+    const restoredStats = loadState.playerStats || initialPlayerStats;
+    playerStatsRef.current = restoredStats; onPlayerStatsChange(restoredStats);
+    onStatPointsChange(Math.max(0, Math.floor(loadState.statPoints || 0)));
     setNpcStates(loadState.npcStates);
     interiorDoorwayIdRef.current = restoredDoorway?.id || null;
     interiorRef.current = restoredDoorway?.area || null; setInterior(restoredDoorway?.area || null);
@@ -953,12 +1020,13 @@ function GameField({ inventory, equippedDagger, onLoot, onOpenMap, onOpenInvento
     setLogs(loadState.logs); setTime(loadState.time);
     setNpcDialogue(null); setAttackFlash(null); setLogOpen(false); setMoving(false);
     if (loadState.brainState) brainRef.current?.loadGameState(loadState.brainState);
-  }, [loadState, onChunkChange]);
+  }, [loadState, onChunkChange, onPlayerStatsChange, onStatPointsChange]);
 
   useEffect(() => {
     [
       assetUrl('assets/gameplay/shining-fields/characters/player/idle.png'),
       assetUrl('assets/gameplay/shining-fields/characters/player/run.png'),
+      assetUrl('assets/gameplay/shining-fields/characters/player/attack.png'),
     ].forEach((src) => {
       const image = new Image();
       image.src = src;
@@ -973,6 +1041,7 @@ function GameField({ inventory, equippedDagger, onLoot, onOpenMap, onOpenInvento
   useEffect(() => { playerHpRef.current = playerHp; }, [playerHp]);
   useEffect(() => { playerXpRef.current = playerXp; }, [playerXp]);
   useEffect(() => { playerLevelRef.current = playerLevel; }, [playerLevel]);
+  useEffect(() => { playerStatsRef.current = playerStats; }, [playerStats]);
   useEffect(() => { playerClassRef.current = playerClass; }, [playerClass]);
   useEffect(() => { interiorRef.current = interior; }, [interior]);
   useEffect(() => { interiorPositionRef.current = interiorPosition; }, [interiorPosition]);
@@ -1015,7 +1084,7 @@ function GameField({ inventory, equippedDagger, onLoot, onOpenMap, onOpenInvento
         }
         if (goatDistance(goat, currentPlayer) <= GOAT_ATTACK_RANGE) {
           damageTaken += goatAttackDamageForLevel(goat.level);
-          return { ...goat, attacking: true, attackCooldown: COMBAT_ATTACK_COOLDOWN_TICKS };
+          return { ...goat, attacking: true, attackCooldown: GOAT_ATTACK_COOLDOWN_TICKS };
         }
         return moveGoatIndependently(goat, goatWorldStepRef.current, currentPlayer, currentChunk, currentGoats);
       });
@@ -1258,10 +1327,13 @@ if (active) {
     const currentPlayer = positionRef.current;
     const target = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goatDistance(goat, currentPlayer) <= PLAYER_ATTACK_RANGE).sort((a, b) => (a.disposition === 'aggressive' ? 0 : 1) - (b.disposition === 'aggressive' ? 0 : 1) || goatDistance(a, currentPlayer) - goatDistance(b, currentPlayer))[0];
     if (!target) { setAttackFlash('No goat is close enough to strike.'); window.setTimeout(() => setAttackFlash(null), 900); return; }
-    playerAttackCooldownRef.current = COMBAT_ATTACK_COOLDOWN_TICKS;
+    playerAttackCooldownRef.current = playerAttackCooldownForStats(playerStatsRef.current);
     setAttacking(true);
     window.setTimeout(() => setAttacking(false), PLAYER_ATTACK_ANIMATION_MS);
-    const nextHp = target.hp - 9;
+    const attackStats = playerStatsRef.current;
+    const critical = Math.random() < playerCriticalChanceForStats(attackStats);
+    const damage = playerDamageForStats(attackStats) * (critical ? 2 : 1);
+    const nextHp = target.hp - damage;
     const defeated = nextHp <= 0;
     let nextGoats = goatsRef.current.map((goat) => goat.id === target.id ? {
       ...goat,
@@ -1274,24 +1346,27 @@ if (active) {
     setGoats(nextGoats);
     if (defeated) {
       const lootType = GOAT_LOOT_TYPES[Math.floor(Math.random() * GOAT_LOOT_TYPES.length)];
-      const lootAmount = Math.floor(Math.random() * 2) + 1;
+      const lootAmount = Math.floor(Math.random() * (2 + Math.floor(playerStatsRef.current.luk / 10))) + 1;
       const loot: GoatLoot = { [lootType]: lootAmount };
       const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: { ...target.position }, loot };
       droppedLootRef.current = [...droppedLootRef.current, drop];
       setDroppedLoot(droppedLootRef.current);
-      const xpReward = goatExperienceReward(target, playerLevelRef.current);
+      const xpReward = goatExperienceReward(target, playerLevelRef.current, playerStatsRef.current);
        const nextXp = playerXpRef.current + xpReward;
       const nextLevel = Math.floor(nextXp / 100) + 1;
       const previousLevel = playerLevelRef.current;
       setPlayerXp(nextXp);
       playerXpRef.current = nextXp;
       if (nextLevel > previousLevel) {
+        const levelsGained = nextLevel - previousLevel;
+        const awardedStatPoints = levelsGained * PLAYER_STAT_POINTS_PER_LEVEL;
         setPlayerLevel(nextLevel);
         playerLevelRef.current = nextLevel;
+        onStatPointsChange((current) => current + awardedStatPoints);
         nextGoats = scaleGoatsToPlayerLevel(nextGoats, nextLevel);
         goatsRef.current = nextGoats;
         setGoats(nextGoats);
-        setAttackFlash(`Level up! Adventure is now level ${nextLevel}.`);
+        setAttackFlash(`Level up! Level ${nextLevel} reached · +${awardedStatPoints} stat points.`);
       }
       const message = `Goat defeated: +${xpReward} XP. A loot bag is waiting nearby.`;
       setLogs((currentLogs) => [{ text: message, color: 'blue' }, ...currentLogs].slice(0, 3));
@@ -1388,6 +1463,7 @@ if (active) {
   };
 
   const currentWorldTile = mapTileFor(chunk);
+  const playerMaxHp = playerMaxHpForStats(playerStats);
   const fieldTrees = fieldTreesFor(chunk);
   const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
   const startingArea = isStartingArea(chunk);
@@ -1568,7 +1644,8 @@ if (active) {
           <div className="hud-card" data-testid="hud-player">
             <div className="hud-label"><span>Player</span><span data-testid="text-level">LV {playerLevel}</span></div>
             <div className="hud-name"><span className="hud-class">{playerClass}</span></div>
-            <div className="bar" aria-label={'Health ' + playerHp + ' percent'}><div className="bar-fill health" style={{ width: (playerHp / PLAYER_MAX_HP) * 100 + '%' }} /></div><span className="hud-health-value">{playerHp} / {PLAYER_MAX_HP} HP</span>
+            <div className="bar" aria-label={'Health ' + playerHp + ' percent'}><div className="bar-fill health" style={{ width: (playerHp / playerMaxHp) * 100 + '%' }} /></div><span className="hud-health-value">{playerHp} / {playerMaxHp} HP</span>
+            <button className="hud-stats-button" onClick={onOpenStats} aria-label="Open character stats" data-testid="button-open-stats"><span>Stats</span><strong>{statPoints} points</strong></button>
             <div className="level-bar-label"><span>Experience</span><span>{xpIntoLevel} / 100 XP</span></div>
             <div className="bar level-bar" aria-label={'Level ' + playerLevel + ', ' + playerXp + ' experience points'}><div className="bar-fill experience" style={{ width: levelProgress + '%' }} /></div>
             <span className="hud-build" data-testid="text-build-number">BUILD {BUILD_NUMBER}</span>
@@ -1618,9 +1695,12 @@ if (active) {
 function Home() {
   const [mapOpen, setMapOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
   const [inventory, setInventory] = useState<GameInventory>(initialInventory);
+  const [playerStats, setPlayerStats] = useState<PlayerStats>(initialPlayerStats);
+  const [statPoints, setStatPoints] = useState(0);
   const [equippedDagger, setEquippedDagger] = useState(false);
   const [menuOpen, setMenuOpen] = useState(true);
   const [loadedSave, setLoadedSave] = useState<SaveGameData | null>(null);
@@ -1643,9 +1723,17 @@ function Home() {
   const startNewGame = () => {
     setLoadedSave(null);
     setInventory(initialInventory);
+    setPlayerStats(initialPlayerStats);
+    setStatPoints(0);
     setEquippedDagger(false);
     setChunk({ x: 4, y: 7 });
     setMapOpen(false); setInventoryOpen(false); setSaveNotice(null); setMenuOpen(false);
+  };
+
+  const assignStatPoint = (stat: StatKey) => {
+    if (statPoints < 1) return;
+    setStatPoints((current) => current - 1);
+    setPlayerStats((current) => ({ ...current, [stat]: current[stat] + 1 }));
   };
 
   const openLoadPicker = () => saveFileInputRef.current?.click();
@@ -1662,6 +1750,8 @@ function Home() {
         if (!isSaveGameData(parsed)) throw new Error('invalid save');
         setLoadedSave(parsed);
         setInventory(parsed.inventory);
+        setPlayerStats(parsed.playerStats || initialPlayerStats);
+        setStatPoints(Math.max(0, Math.floor(parsed.statPoints || 0)));
         setEquippedDagger(Boolean(parsed.equippedDagger) && parsed.inventory.daggers > 0);
         setChunk(parsed.chunk);
         setMapOpen(false); setInventoryOpen(false); setMenuOpen(false);
@@ -1702,6 +1792,7 @@ function Home() {
       className={menuOpen ? 'game-app menu-mode' : 'game-app'}
       style={{
         '--player-sprite-url': `url("${assetUrl('assets/cute-fantasy/player.png')}")`,
+        '--player-attack-sprite-url': `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")`,
         '--horse-sprite-url': `url("${assetUrl('assets/farm-male-cow-brown.png')}")`,
          '--goat-sprite-url': `url("${assetUrl('assets/gameplay/characters/goat/goat.png')}")`,
       } as CSSProperties}
@@ -1723,10 +1814,11 @@ function Home() {
       ) : (
         <>
           <div className="game-layout">
-            <GameField inventory={inventory} equippedDagger={equippedDagger} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} />
+            <GameField inventory={inventory} equippedDagger={equippedDagger} playerStats={playerStats} statPoints={statPoints} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenStats={() => setStatsOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || statsOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} />
           </div>
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
           {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} onClose={() => setInventoryOpen(false)} />}
+          {statsOpen && <StatsSheet playerStats={playerStats} statPoints={statPoints} onAssign={assignStatPoint} onClose={() => setStatsOpen(false)} />}
           {saveNotice && <div className="save-notice save-notice-floating" role="status">{saveNotice}</div>}
         </>
       )}
