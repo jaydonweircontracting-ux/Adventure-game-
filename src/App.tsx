@@ -9,6 +9,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/rpgBrain';
+import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
@@ -923,7 +924,7 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
   );
 }
 
-function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenStats, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenStats: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void }) {
+function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenStats, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenStats: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void }) {
   const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
   const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -1544,6 +1545,12 @@ if (active) {
               <span className="starting-flower flower-southeast" />
             </div>
           )}
+                    {startingArea && (
+            <button className="dungeon-staircase" onClick={onEnterDungeon} aria-label="Enter the Ember Vault dungeon" data-testid="button-enter-dungeon">
+              <span className="dungeon-staircase-stone" aria-hidden="true">▾</span>
+              <span className="dungeon-staircase-label">Ember Vault<br /><small>descend</small></span>
+            </button>
+          )}
           <div className="field-goats" aria-label="Goats in the field">
             {goats.filter((goat) => goat.disposition !== 'defeated').map((goat) => (
               <div className={'goat goat-' + goat.disposition + (goat.moving ? ' is-moving' : '') + (goat.attacking ? ' is-attacking' : '')} style={{ left: goat.position.x + '%', top: goat.position.y + '%' }} data-facing={goat.facing} data-disposition={goat.disposition} aria-label={goat.disposition === 'aggressive' ? 'Hostile goat' : 'Peaceful goat'} key={goat.id}>
@@ -1757,6 +1764,7 @@ function Home() {
   const [statPoints, setStatPoints] = useState(0);
   const [equippedDagger, setEquippedDagger] = useState(false);
   const [menuOpen, setMenuOpen] = useState(true);
+  const [dungeonOpen, setDungeonOpen] = useState(false);
   const [loadedSave, setLoadedSave] = useState<SaveGameData | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [hasLocalSave, setHasLocalSave] = useState(false);
@@ -1916,8 +1924,9 @@ function Home() {
       ) : (
         <>
           <div className="game-layout">
-            <GameField inventory={inventory} equippedDagger={equippedDagger} playerStats={playerStats} statPoints={statPoints} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenStats={() => setStatsOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || statsOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} />
+            <GameField inventory={inventory} equippedDagger={equippedDagger} playerStats={playerStats} statPoints={statPoints} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenStats={() => setStatsOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || statsOpen || dungeonOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} />
           </div>
+          {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
           {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} onClose={() => setInventoryOpen(false)} />}
           {statsOpen && <StatsSheet playerStats={playerStats} statPoints={statPoints} onAssign={assignStatPoint} onClose={() => setStatsOpen(false)} />}
