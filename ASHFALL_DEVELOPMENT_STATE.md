@@ -1,0 +1,71 @@
+# ASHFALL Development State
+
+Last updated: 2026-09-04
+Current milestone: Living-world adventurer vertical slice
+
+## Current build state
+
+### Working
+
+- React/Vite browser client with GitHub Pages configuration.
+- Mosslight Crossing starting hub and deterministic overworld chunk/map presentation.
+- WASD/arrow/pointer movement, camera follow, map zoom/pan, terrain and landmark inspection.
+- Horse mount/dismount, stamina, goat encounters, combat feedback, loot drops, inventory, crafting, XP, leveling, and class selection.
+- Town NPCs, interiors, tutorial progression, browser save/load, downloadable save files, and RPG brain state.
+- Stone Soup: The Ember Vault overlay with seeded turn-based dungeon maps, fog of war, combat, spells, items, stairs, three depths, relic objective, victory, defeat, and permadeath.
+- First living-world slice: Kael Thorn, Sera Flint, and Orin Vale have identities, levels, goals, routes, movement, activities, and inspectable contextual details in Mosslight Crossing.
+
+### Partially working
+
+- Simulated adventurers currently run a lightweight local route loop in the Mosslight Crossing field. They are not yet persistent, goal-driven agents across regions, and their state is not included in save files.
+- The overworld has biomes, roads, rivers, lakes, settlements, trees, and landmarks, but the visual composition still needs a deliberate art-direction pass to feel handcrafted rather than procedurally assembled.
+- The Ember Vault is playable, but dungeon runs reset when its overlay closes and the integrated entry currently uses the default Mira/Ashen Human/Wayfarer build.
+
+### Missing
+
+- Persistent AI-adventurer lifecycle, simulation LOD, shared-world consequences, factions, economy, quest system, and world history.
+- A separated world/player/AI/dungeon/quest/inventory persistence model.
+- Automated coverage for deterministic generation, overworld combat, AI lifecycle, dungeon progression, and save/load.
+
+## Architecture
+
+- src/App.tsx: main overworld UI, movement, rendering, NPCs, combat, inventory, saves, and dungeon entry.
+- src/index.css: overworld visual system and interaction styling.
+- src/game/rpgBrain.ts: deterministic world/RPG content model and game-state brain.
+- src/game/simulatedAdventurers.ts: lightweight living-world adventurer identities and route simulation.
+- src/game/stoneSoupEngine.ts: dungeon rules, maps, monsters, items, spells, depth, victory, and defeat.
+- src/game/StoneSoupDungeon.tsx: dungeon overlay UI and turn controls.
+- src/game/stoneSoupDungeon.css: dungeon-specific visual system.
+- world_generator.js and server.js: optional deterministic chunk server boundary, not currently wired into the browser UI.
+
+## World generation
+
+- The browser overworld is deterministic around named chunks and landmarks, with regional palettes, terrain types, roads, rivers, lakes, forests, settlements, and starting-area composition.
+- The optional server generator produces deterministic 16 x 16 chunks from integer chunk coordinates.
+- The next generation pass should make geography, settlement placement, roads, resources, and danger levels influence one another instead of behaving as independent decorations.
+
+## RPG systems
+
+- Player movement, combat, goat enemies, loot, crafting, horse travel, XP, level progression, player stats, NPC dialogue, interiors, and class selection are present.
+- The browser save format stores overworld/player/NPC/goat/interior/RPG-brain state but does not yet store dungeon-run or simulated-adventurer state.
+
+## Dungeon
+
+- Ember Vault is a separate turn-based roguelike overlay inspired by traditional dungeon crawlers.
+- It keeps Mira of the Ember Road, Ashen Human, Wayfarer, Ember Bolt, three depths, Cave Stalkers, Bone Scribes, Ash Cultists, the First Flame shard, sealed altar, and permadeath.
+- The next dungeon milestone is persistence and additional visual/game-feel polish after overworld stabilization.
+
+## Known risks
+
+- The repository’s published Pages bundle and README can lag behind the current src implementation.
+- The Adventure-game integration has not been run or visually verified in this milestone; build/typecheck verification should be performed before treating the slice as release-ready.
+- The source currently concentrates many overworld systems in src/App.tsx; future polish should extract focused systems without disrupting working behavior.
+
+## Prioritized next milestones
+
+1. Stabilize and verify the current source build and important gameplay paths.
+2. Overhaul overworld terrain composition, transitions, landmarks, settlement layout, and environmental hierarchy.
+3. Make Mosslight Crossing a more believable hub with roads, activity, entrances, and contextual points of interest.
+4. Expand simulated adventurers into persistent goal-driven agents with near/region/far simulation levels.
+5. Separate and persist world, player, AI, dungeon, quest, and inventory state.
+6. Add automated tests for deterministic generation, combat, AI lifecycle, dungeon progression, and save/load.
