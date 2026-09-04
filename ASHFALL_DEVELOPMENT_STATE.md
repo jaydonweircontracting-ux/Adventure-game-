@@ -1,7 +1,7 @@
 # ASHFALL Development State
 
 Last updated: 2026-09-04
-Current milestone: Living-world adventurer vertical slice
+Current milestone: Handcrafted overworld composition pass
 
 ## Current build state
 
@@ -18,7 +18,7 @@ Current milestone: Living-world adventurer vertical slice
 ### Partially working
 
 - Simulated adventurers currently run a lightweight local route loop in the Mosslight Crossing field. They are not yet persistent, goal-driven agents across regions, and their state is not included in save files.
-- The overworld has biomes, roads, rivers, lakes, settlements, trees, and landmarks, but the visual composition still needs a deliberate art-direction pass to feel handcrafted rather than procedurally assembled.
+- The overworld has deterministic terrain accents for grass, flowers, stones, and leaf litter, kept clear of roads, buildings, and the Mosslight Crossing plaza; deeper geography and landmark composition still need a deliberate art-direction pass.
 - The Ember Vault is playable, but dungeon runs reset when its overlay closes and the integrated entry currently uses the default Mira/Ashen Human/Wayfarer build.
 
 ### Missing
