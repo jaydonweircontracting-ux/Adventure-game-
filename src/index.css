@@ -1262,6 +1262,19 @@
   border-right: 1px solid rgba(112, 76, 45, .42);
   box-shadow: inset 3px 0 0 rgba(255, 229, 156, .3), inset -3px 0 0 rgba(117, 78, 42, .13);
 }
+.field-accents { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
+.field-accent { position: absolute; display: block; transform-origin: center; opacity: .88; }
+.field-accent::before, .field-accent::after { content: ''; position: absolute; display: block; }
+.accent-grass { width: 13px; height: 10px; }
+.accent-grass::before { left: 6px; top: 0; width: 2px; height: 10px; background: #3e743f; transform: rotate(12deg); box-shadow: -4px 3px 0 #5f9148, 4px 2px 0 #2f683d; }
+.accent-grass::after { left: 2px; bottom: 0; width: 9px; height: 2px; border-radius: 50%; background: rgba(43, 83, 45, .42); }
+.accent-flower { width: 9px; height: 9px; border-radius: 50%; background: #e7bd5c; box-shadow: 0 0 0 2px rgba(255, 230, 151, .38), 0 2px 0 rgba(69, 91, 46, .3); }
+.accent-flower::before { left: 2px; top: 2px; width: 5px; height: 5px; border-radius: 50%; background: #f3e4a0; box-shadow: -4px 0 0 #d98e63, 4px 0 0 #d98e63, 0 -4px 0 #e4a86b, 0 4px 0 #e4a86b; }
+.accent-stone { width: 13px; height: 8px; border: 1px solid rgba(76, 85, 72, .75); border-radius: 58% 42% 48% 52%; background: linear-gradient(135deg, #c4c4a8 0 38%, #858d7b 39% 100%); box-shadow: 2px 3px 0 rgba(49, 61, 50, .2); }
+.accent-stone::before { left: 3px; top: 2px; width: 4px; height: 2px; border-radius: 50%; background: rgba(239, 231, 193, .58); }
+.accent-leaf { width: 14px; height: 7px; border-radius: 90% 18% 90% 18%; background: linear-gradient(135deg, #c87546 0 47%, #7c563b 48% 100%); box-shadow: 2px 2px 0 rgba(73, 53, 36, .2); }
+.accent-leaf::before { left: 2px; top: 3px; width: 10px; height: 1px; background: rgba(255, 201, 111, .55); transform: rotate(-18deg); }
+.world-field.world-is-sea .field-accents { display: none; }
 .field-trees { position: absolute; z-index: 3; inset: 0; pointer-events: none; }
 .field-tree {
   position: absolute;
