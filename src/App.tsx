@@ -10,6 +10,7 @@ import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/rpgBrain';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
+import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
@@ -943,6 +944,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [playerClass, setPlayerClass] = useState<PlayerClass>('Beginner');
   const [npcDialogue, setNpcDialogue] = useState<TownNpc | null>(null);
   const [npcStates, setNpcStates] = useState(startingTownNpcs);
+  const [simulatedAdventurers, setSimulatedAdventurers] = useState(initialSimulatedAdventurers);
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }, 1));
   const [droppedLoot, setDroppedLoot] = useState<DroppedLoot[]>([]);
   const [attacking, setAttacking] = useState(false);
@@ -972,6 +974,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const interiorPositionRef = useRef(interiorPosition);
   const interiorDoorwayIdRef = useRef<string | null>(STARTING_DOORWAY_ID);
   const goatWorldStepRef = useRef(0);
+  const simulatedTickRef = useRef(0);
   const playerAttackCooldownRef = useRef(0);
   const brainRef = useRef<RPGBrain | null>(null);
   if (brainRef.current === null) {
@@ -1138,6 +1141,17 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
         return { ...npc, position: nextPosition, facing: direction };
       }));
     }, 2600);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setSimulatedAdventurers((current) => {
+        const nextTick = simulatedTickRef.current + 1;
+        simulatedTickRef.current = nextTick;
+        return advanceSimulatedAdventurers(current, nextTick);
+      });
+    }, 1900);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -1497,6 +1511,11 @@ if (active) {
     setNpcDialogue(npc);
     setLogs((currentLogs) => [{ text: `${npc.name} turns to you: ${npc.title}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
   };
+  const inspectAdventurer = (adventurer: SimulatedAdventurer) => {
+    setLogs((currentLogs) => [{ text: `${adventurer.name}, level ${adventurer.level} ${adventurer.className}, is ${adventurer.activity}. Goal: ${adventurer.goal}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+    setAttackFlash(`${adventurer.name}: ${adventurer.goal}`);
+    window.setTimeout(() => setAttackFlash(null), 1600);
+  };
   const chooseClass = (nextClass: Exclude<PlayerClass, 'Beginner'>) => {
     if (playerLevelRef.current < 10) return;
     playerClassRef.current = nextClass;
@@ -1609,6 +1628,23 @@ if (active) {
                 <small>{npc.title}</small>
               </span>
               <span className="npc-sprite" aria-hidden="true" />
+            </button>
+          ))}
+          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && simulatedAdventurers.map((adventurer) => (
+            <button
+              className={'simulated-adventurer adventurer-' + adventurer.className.toLowerCase()}
+              onClick={() => inspectAdventurer(adventurer)}
+              style={{ left: adventurer.position.x + '%', top: adventurer.position.y + '%' }}
+              data-facing={adventurer.facing}
+              aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className}
+              title={adventurer.name + ' — ' + adventurer.goal}
+              data-testid={'simulated-adventurer-' + adventurer.id}
+            >
+              <span className="simulated-adventurer-nameplate">
+                <strong>{adventurer.name}</strong>
+                <small>Lv. {adventurer.level} · {adventurer.activity}</small>
+              </span>
+              <span className="simulated-adventurer-sprite" aria-hidden="true" />
             </button>
           ))}
           {showHorse && (
