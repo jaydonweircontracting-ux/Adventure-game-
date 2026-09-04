@@ -1632,6 +1632,7 @@ if (active) {
           ))}
           {currentWorldTile.landmark?.name === 'Mosslight Crossing' && simulatedAdventurers.map((adventurer) => (
             <button
+              key={adventurer.id}
               className={'simulated-adventurer adventurer-' + adventurer.className.toLowerCase()}
               onClick={() => inspectAdventurer(adventurer)}
               style={{ left: adventurer.position.x + '%', top: adventurer.position.y + '%' }}
