@@ -351,3 +351,13 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Fix: tightened only the table hitbox from left 38/top 55/right 63/bottom 72 to left 41/top 55/right 60/bottom 68; counter and shelf collision remain unchanged.
 - Published output: synchronized the active Pages JavaScript bundle and cache-busted docs/index.html to Build 031.
 - Verification: browser-targeted Bun build check passed before publication; Pages deployment status is pending.
+
+## Build 035 — handcrafted overworld composition pass
+
+- Date: 2026-09-04 (America/Vancouver)
+- Target: jaydonweircontracting-ux/Adventure-game-
+- User direction: advance ASHFALL from a procedural-looking prototype toward a more intentional RPG world without mounting or launching the game.
+- Change: added deterministic field accents for grass, flowers, stones, and autumn leaf litter. Placement avoids settlement footprints, roads, and the Mosslight Crossing central clearing; water fields stay uncluttered.
+- Scope guard: movement, collision, combat, inventory, saves, dungeon systems, AI behavior, and existing landmarks were not changed.
+- Verification: GitHub source-level checks only; no repository mount, build, runtime, or tests under the requested workflow.
+- Status: implemented and pushed.
