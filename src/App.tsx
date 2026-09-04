@@ -14,7 +14,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type Simulate
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '034';
+const BUILD_NUMBER = '035';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 type HorseState = { chunk: Point; position: Point };
@@ -253,6 +253,55 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
   }
 
   return trees;
+}
+
+type FieldAccentKind = 'grass' | 'flower' | 'stone' | 'leaf';
+type FieldAccent = { id: number; x: number; y: number; scale: number; rotation: number; kind: FieldAccentKind };
+
+function fieldAccentsFor(chunk: Point): FieldAccent[] {
+  const tile = mapTileFor(chunk);
+  if (tile.waterFeature) return [];
+
+  const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
+  const startingArea = isStartingArea(chunk);
+  const houseRects = landmark ? fieldHouseRects(landmark.kind, startingArea) : [];
+  let seed = Math.abs((chunk.x * 19349663) ^ (chunk.y * 83492791)) + 17;
+  const random = () => {
+    const value = Math.sin(seed++) * 10000;
+    return value - Math.floor(value);
+  };
+  const accents: FieldAccent[] = [];
+  const targetCount = startingArea ? 16 : tile.terrain === 'rock' ? 11 : 13 + Math.floor(random() * 7);
+  let attempts = 0;
+
+  while (accents.length < targetCount && attempts < targetCount * 20) {
+    attempts += 1;
+    const x = 8 + random() * 84;
+    const y = 9 + random() * 82;
+    const tooCloseToBuilding = houseRects.some((rect) => pointInRect({ x, y }, rect, 4));
+    const tooCloseToTownCenter = startingArea && Math.hypot(x - 50, y - 52) < 15;
+    const tooCloseToRoad = pointOnFieldRoad({ x, y }, tile.road);
+    const tooCloseToAccent = accents.some((accent) => Math.hypot(x - accent.x, y - accent.y) < 6);
+    if (tooCloseToBuilding || tooCloseToTownCenter || tooCloseToRoad || tooCloseToAccent) continue;
+
+    const kind: FieldAccentKind = tile.terrain === 'rock'
+      ? 'stone'
+      : tile.terrain === 'autumn'
+        ? (random() > 0.42 ? 'leaf' : 'grass')
+        : tile.terrain === 'woodland'
+          ? (random() > 0.5 ? 'leaf' : 'grass')
+          : (random() > 0.7 ? 'flower' : 'grass');
+    accents.push({
+      id: accents.length,
+      x,
+      y,
+      scale: 0.72 + random() * 0.56,
+      rotation: -18 + random() * 36,
+      kind,
+    });
+  }
+
+  return accents;
 }
 
 function isFieldPositionBlocked(position: Point, chunk: Point) {
@@ -1502,6 +1551,7 @@ if (active) {
   const currentWorldTile = mapTileFor(chunk);
   const playerMaxHp = playerMaxHpForStats(playerStats);
   const fieldTrees = fieldTreesFor(chunk);
+  const fieldAccents = fieldAccentsFor(chunk);
   const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
   const startingArea = isStartingArea(chunk);
   const xpIntoLevel = playerXp - (playerLevel - 1) * 100;
@@ -1555,6 +1605,15 @@ if (active) {
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
           <div className="field-world-layer">
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
+           <div className="field-accents" aria-hidden="true">
+             {fieldAccents.map((accent) => (
+               <span
+                 className={'field-accent accent-' + accent.kind}
+                 key={accent.id}
+                 style={{ left: accent.x + '%', top: accent.y + '%', transform: 'translate(-50%, -50%) rotate(' + accent.rotation + 'deg) scale(' + accent.scale + ')' }}
+               />
+             ))}
+           </div>
           {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road + (currentWorldTile.bridge ? ' field-bridge' : '')} aria-hidden="true" />}
           {startingArea && (
             <div className="starting-area-decor" aria-hidden="true">
