@@ -23,6 +23,32 @@ const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 const BUILD_NUMBER = '047';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
+const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
+const GOAT_COLLISION_BOX = { halfWidth: 2.8, halfHeight: 2.5 };
+const COLLISION_GAP = 0.8;
+
+function collisionBoxesOverlap(a: Point, aBox: typeof PLAYER_COLLISION_BOX, b: Point, bBox: typeof GOAT_COLLISION_BOX) {
+  return Math.abs(a.x - b.x) < aBox.halfWidth + bBox.halfWidth + COLLISION_GAP
+    && Math.abs(a.y - b.y) < aBox.halfHeight + bBox.halfHeight + COLLISION_GAP;
+}
+
+function isPositionOccupiedByGoat(position: Point, goats: GoatState[]) {
+  return goats.some((goat) => goat.disposition !== 'defeated' && collisionBoxesOverlap(position, PLAYER_COLLISION_BOX, goat.position, GOAT_COLLISION_BOX));
+}
+
+function separateGoatFromPlayer(goatPosition: Point, playerPosition: Point) {
+  const minimumX = PLAYER_COLLISION_BOX.halfWidth + GOAT_COLLISION_BOX.halfWidth + COLLISION_GAP;
+  const minimumY = PLAYER_COLLISION_BOX.halfHeight + GOAT_COLLISION_BOX.halfHeight + COLLISION_GAP;
+  const dx = goatPosition.x - playerPosition.x;
+  const dy = goatPosition.y - playerPosition.y;
+  const overlapX = minimumX - Math.abs(dx);
+  const overlapY = minimumY - Math.abs(dy);
+  if (overlapX <= 0 || overlapY <= 0) return null;
+  if (overlapX <= overlapY) {
+    return { x: playerPosition.x + (dx >= 0 ? minimumX : -minimumX), y: goatPosition.y };
+  }
+  return { x: goatPosition.x, y: playerPosition.y + (dy >= 0 ? minimumY : -minimumY) };
+}
 type HorseState = { chunk: Point; position: Point };
 
 function formatWorldClock(clock: WorldClockState) {
@@ -342,7 +368,7 @@ function wrapFieldPosition(position: Point, chunk: Point) {
   return { position: nextPosition, chunk: nextChunk, travelLabels };
 }
 
-function resolveFieldMovement(current: Point, movement: Point, chunk: Point) {
+function resolveFieldMovement(current: Point, movement: Point, chunk: Point, goats: GoatState[] = []) {
   const candidates = [
     { x: current.x + movement.x, y: current.y + movement.y },
     { x: current.x + movement.x, y: current.y },
@@ -350,7 +376,7 @@ function resolveFieldMovement(current: Point, movement: Point, chunk: Point) {
   ];
   for (const candidate of candidates) {
     const wrapped = wrapFieldPosition(candidate, chunk);
-    if (!isFieldPositionBlocked(wrapped.position, wrapped.chunk)) return wrapped;
+    if (!isFieldPositionBlocked(wrapped.position, wrapped.chunk) && !isPositionOccupiedByGoat(wrapped.position, goats)) return wrapped;
   }
   return null;
 }
@@ -778,7 +804,7 @@ function moveGoatIndependently(goat: GoatState, worldStep: number, playerPositio
       y: Math.min(90, Math.max(10, goat.position.y + (candidateDirection === 'down' ? GOAT_STEP : candidateDirection === 'up' ? -GOAT_STEP : 0))),
     };
     const occupied = goats.some((other) => other.id !== goat.id && other.disposition !== 'defeated' && Math.hypot(other.position.x - nextPosition.x, other.position.y - nextPosition.y) < 4.2);
-    if (!occupied && !isFieldPositionBlocked(nextPosition, chunk)) {
+    if (!occupied && !collisionBoxesOverlap(nextPosition, GOAT_COLLISION_BOX, playerPosition, PLAYER_COLLISION_BOX) && !isFieldPositionBlocked(nextPosition, chunk)) {
       return { ...goat, position: nextPosition, facing: candidateDirection, moving: true, attacking: false, wanderSeed, nextWanderTick: isWandering ? worldStep + goatWanderDelay(wanderSeed) : goat.nextWanderTick };
     }
   }
@@ -1323,6 +1349,12 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
           const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false }, currentPlayer, facingRef.current, currentGoats, elapsed * 1000);
           let next = result.goat;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: goat.position, moving: false };
+          const separatedPosition = separateGoatFromPlayer(next.position, currentPlayer);
+          if (separatedPosition) {
+            next = !isFieldPositionBlocked(separatedPosition, currentChunk)
+              ? { ...next, position: separatedPosition, moving: false }
+              : { ...next, position: goat.position, moving: false };
+          }
           if (result.attackHit) {
             const damage = goatAttackDamageForLevel(goat.level); damageTaken += damage;
             spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted);
@@ -1390,7 +1422,7 @@ if (active) {
           setLogs((currentLogs) => [{ text: 'You enter the ' + nearbyDoor.area.name + '.', color: 'blue' }, ...currentLogs].slice(0, 3));
           animationFrame = window.requestAnimationFrame(animate); return;
         }
-        const resolved = resolveFieldMovement(current, movement, currentChunk);
+        const resolved = resolveFieldMovement(current, movement, currentChunk, goatsRef.current);
         if (resolved) {
           if (resolved.travelLabels.length > 0 && playerClassRef.current === 'Beginner' && isStartingArea(currentChunk)) {
             positionRef.current = current;
