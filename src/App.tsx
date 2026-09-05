@@ -27,7 +27,9 @@ const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
 const GOAT_COLLISION_BOX = { halfWidth: 2.8, halfHeight: 2.5 };
 const COLLISION_GAP = 0.8;
 
-function collisionBoxesOverlap(a: Point, aBox: typeof PLAYER_COLLISION_BOX, b: Point, bBox: typeof GOAT_COLLISION_BOX) {
+type CollisionBox = { halfWidth: number; halfHeight: number };
+
+function collisionBoxesOverlap(a: Point, aBox: CollisionBox, b: Point, bBox: CollisionBox) {
   return Math.abs(a.x - b.x) < aBox.halfWidth + bBox.halfWidth + COLLISION_GAP
     && Math.abs(a.y - b.y) < aBox.halfHeight + bBox.halfHeight + COLLISION_GAP;
 }
