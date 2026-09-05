@@ -929,10 +929,10 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, playerStats
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="inventory-title" data-testid="overlay-inventory">
       <div className="map-sheet inventory-sheet">
         <div className="map-sheet-heading">
-          <h2 id="inventory-title">Satchel</h2>
-          <button className="map-close" onClick={onClose} aria-label="Close satchel" data-testid="button-close-inventory"><X size={19} /></button>
+          <h2 id="inventory-title">Menu</h2>
+          <button className="map-close" onClick={onClose} aria-label="Close menu" data-testid="button-close-inventory"><X size={19} /></button>
         </div>
-        <div className="satchel-tabs" role="tablist" aria-label="Satchel sections">
+        <div className="satchel-tabs" role="tablist" aria-label="Menu sections">
           <button className={'satchel-tab ' + (activeTab === 'inventory' ? 'is-active' : '')} role="tab" aria-selected={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} data-testid="tab-inventory">Inventory</button>
           <button className={'satchel-tab ' + (activeTab === 'equipment' ? 'is-active' : '')} role="tab" aria-selected={activeTab === 'equipment'} onClick={() => setActiveTab('equipment')} data-testid="tab-equipment">Equipment</button>
           <button className={'satchel-tab ' + (activeTab === 'stats' ? 'is-active' : '')} role="tab" aria-selected={activeTab === 'stats'} onClick={() => setActiveTab('stats')} data-testid="tab-stats">Stats</button>
@@ -940,7 +940,7 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, playerStats
         <div className="inventory-body">
           {activeTab === 'inventory' ? (
             <>
-              <div className="inventory-count">{itemCount > 0 ? itemCount + ' items carried' : 'Satchel is empty'} · {inventory.coins} gold</div>
+              <div className="inventory-count">{itemCount > 0 ? itemCount + ' items carried' : 'Menu is empty'} · {inventory.coins} gold</div>
               <div className="inventory-grid">
                 <div className="inventory-item" data-testid="inventory-coins"><span className="inventory-item-mark coin-mark"><Coins size={16} /></span><span><strong>Coins</strong><small>Spendable gold</small></span><b>{inventory.coins}</b></div>
                 {visibleItems.map((item) => {
@@ -1582,8 +1582,6 @@ if (active) {
   const fieldAccents = fieldAccentsFor(chunk);
   const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
   const startingArea = isStartingArea(chunk);
-  const xpIntoLevel = playerXp - (playerLevel - 1) * 100;
-  const levelProgress = Math.min(100, Math.max(0, (xpIntoLevel / 100) * 100));
   const inventoryItemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths;
   const talkToNpc = (npc: TownNpc) => {
     setNpcDialogue(npc);
@@ -1862,7 +1860,6 @@ if (active) {
         <div className="world-hud">
           <div className={'hud-card ' + (playerHp / playerMaxHp <= 0.25 ? 'is-wounded' : '')} data-testid="hud-player">
             <div className="hud-label"><span>Player</span><span data-testid="text-level">LV {playerLevel}</span></div>
-            <div className="hud-name"><span className="hud-class">{playerClass}</span></div>
             <div className="bar" aria-label={'Health ' + playerHp + ' of ' + playerMaxHp} ><div className="bar-fill health" style={{ width: (playerHp / playerMaxHp) * 100 + '%' }} /></div><span className="hud-health-value">{playerHp} / {playerMaxHp} HP</span>
             {selectedGoat && (
               <div className="hud-target" data-testid="hud-target">
@@ -1870,13 +1867,11 @@ if (active) {
                 <div className="bar target-bar" aria-label={'Target health ' + selectedGoat.hp + ' of ' + selectedGoat.maxHp}><div className="bar-fill target-health" style={{ width: (selectedGoat.hp / selectedGoat.maxHp) * 100 + '%' }} /></div>
               </div>
             )}
-            <div className="level-bar-label"><span>Experience</span><span>{xpIntoLevel} / 100 XP</span></div>
-            <div className="bar level-bar" aria-label={'Level ' + playerLevel + ', ' + playerXp + ' experience points'}><div className="bar-fill experience" style={{ width: levelProgress + '%' }} /></div>
             <span className="hud-build" data-testid="text-build-number">BUILD {BUILD_NUMBER}</span>
             {mounted && <button className="horse-dismount-button" onClick={toggleMount} aria-label="Dismount horse" data-testid="button-dismount-horse">Dismount</button>}
           </div>
           <button className="hud-card right hud-button" onClick={onOpenInventory} aria-label="Open inventory" data-testid="button-open-inventory">
-            <div className="hud-label"><span>Satchel</span><Coins size={12} /></div>
+            <div className="hud-label"><span>Menu</span><Coins size={12} /></div>
              <div className="hud-coins" data-testid="text-coin-count">{inventory.coins.toLocaleString()} gold</div>
              <div className="hud-items" data-testid="text-item-count">{inventoryItemCount} items</div>
             <div className="hud-time" data-testid="text-game-time">{time} / clear</div>
