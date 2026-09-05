@@ -887,8 +887,8 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   );
 }
 
-function InventorySheet({ inventory, equippedDagger, onToggleDagger, onClose }: { inventory: GameInventory; equippedDagger: boolean; onToggleDagger: () => void; onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<'inventory' | 'equipment'>('inventory');
+function InventorySheet({ inventory, equippedDagger, onToggleDagger, playerStats, statPoints, onAssignStat, onClose }: { inventory: GameInventory; equippedDagger: boolean; onToggleDagger: () => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; onClose: () => void }) {
+  const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats'>('inventory');
   const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths;
   const visibleItems = [
     { key: 'goatHorns', label: 'Goat horns', detail: 'Crafting material', mark: '✦', className: 'horn-mark' },
@@ -896,7 +896,6 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, onClose }: 
     { key: 'daggers', label: 'Goat-horn dagger', detail: 'Crafted weapon', mark: '†', className: 'dagger-mark' },
     { key: 'cloths', label: 'Field cloths', detail: 'Crafted gear', mark: '✚', className: 'cloths-mark' },
   ].filter((item) => inventory[item.key as keyof GameInventory] > 0);
-  const showGold = true;
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="inventory-title" data-testid="overlay-inventory">
       <div className="map-sheet inventory-sheet">
@@ -907,74 +906,32 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, onClose }: 
         <div className="satchel-tabs" role="tablist" aria-label="Satchel sections">
           <button className={'satchel-tab ' + (activeTab === 'inventory' ? 'is-active' : '')} role="tab" aria-selected={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} data-testid="tab-inventory">Inventory</button>
           <button className={'satchel-tab ' + (activeTab === 'equipment' ? 'is-active' : '')} role="tab" aria-selected={activeTab === 'equipment'} onClick={() => setActiveTab('equipment')} data-testid="tab-equipment">Equipment</button>
+          <button className={'satchel-tab ' + (activeTab === 'stats' ? 'is-active' : '')} role="tab" aria-selected={activeTab === 'stats'} onClick={() => setActiveTab('stats')} data-testid="tab-stats">Stats</button>
         </div>
         <div className="inventory-body">
           {activeTab === 'inventory' ? (
             <>
-              <div className="inventory-count">{itemCount > 0 ? itemCount + ' items carried' : 'Satchel is empty'}{showGold ? ' · ' + inventory.coins + ' gold' : ''}</div>
+              <div className="inventory-count">{itemCount > 0 ? itemCount + ' items carried' : 'Satchel is empty'} · {inventory.coins} gold</div>
               <div className="inventory-grid">
-                {showGold && <div className="inventory-item" data-testid="inventory-coins">
-                  <span className="inventory-item-mark coin-mark"><Coins size={16} /></span>
-                  <span><strong>Coins</strong><small>Spendable gold</small></span>
-                  <b>{inventory.coins}</b>
-                </div>}
+                <div className="inventory-item" data-testid="inventory-coins"><span className="inventory-item-mark coin-mark"><Coins size={16} /></span><span><strong>Coins</strong><small>Spendable gold</small></span><b>{inventory.coins}</b></div>
                 {visibleItems.map((item) => {
                   const count = inventory[item.key as keyof GameInventory] as number;
-                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}>
-                    <span className={'inventory-item-mark ' + item.className}>{item.mark}</span>
-                    <span><strong>{item.label}</strong><small>{item.detail}</small></span>
-                    <b>{count}</b>
-                    {item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}
-                  </div>;
+                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className}>{item.mark}</span><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div>;
                 })}
               </div>
-              {itemCount === 0 && (
-                <div className="inventory-empty">
-                  <Backpack size={30} strokeWidth={1.5} />
-                  <strong>Your satchel is empty</strong>
-                </div>
-              )}
+              {itemCount === 0 && <div className="inventory-empty"><Backpack size={30} strokeWidth={1.5} /><strong>Your satchel is empty</strong></div>}
             </>
-          ) : (
-            <div className="equipment-panel" role="tabpanel" aria-label="Equipment">
-              <div className="inventory-count">Equipped gear changes your character</div>
-              <div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot">
-                <span className="equipment-slot-mark dagger-mark">†</span>
-                <span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>
-                {(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}
-              </div>
-              <p className="equipment-hint">{equippedDagger ? 'The dagger is visible in your hand.' : 'Craft a dagger, then equip it from this tab.'}</p>
-            </div>
-          )}
+          ) : activeTab === 'equipment' ? (
+            <div className="equipment-panel" role="tabpanel" aria-label="Equipment"><div className="inventory-count">Equipped gear changes your character</div><div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot"><span className="equipment-slot-mark dagger-mark">†</span><span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>{(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div><p className="equipment-hint">{equippedDagger ? 'The dagger is visible in your hand.' : 'Craft a dagger, then equip it from this tab.'}</p></div>
+          ) : <StatsPanel playerStats={playerStats} statPoints={statPoints} onAssign={onAssignStat} />}
         </div>
       </div>
     </div>
   );
 }
 
-function StatsSheet({ playerStats, statPoints, onAssign, onClose }: { playerStats: PlayerStats; statPoints: number; onAssign: (stat: StatKey) => void; onClose: () => void }) {
-  return (
-    <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="stats-title">
-      <div className="map-sheet stats-sheet">
-        <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Character growth</span><h2 id="stats-title">Adventurer Stats</h2></div>
-          <button className="map-close" onClick={onClose} aria-label="Close character stats" data-testid="button-close-stats"><X size={19} /></button>
-        </div>
-        <div className="stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div>
-        <div className="stats-list">
-          {STAT_KEYS.map((stat) => (
-            <div className="stat-row" key={stat} data-testid={'stat-row-' + stat}>
-              <span className="stat-key">{stat.toUpperCase()}</span>
-              <span className="stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span>
-              <b className="stat-value">{playerStats[stat]}</b>
-              <button className="stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button>
-            </div>
-          ))}
-        </div>
-        <div className="stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div>
-      </div>
-    </div>
-  );
+function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: PlayerStats; statPoints: number; onAssign: (stat: StatKey) => void }) {
+  return <section className="satchel-stats-panel" role="tabpanel" aria-label="Adventurer Stats"><div className="satchel-stats-heading"><span className="atlas-eyebrow">Character growth</span><h3>Adventurer Stats</h3></div><div className="satchel-stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div><div className="satchel-stats-list">{STAT_KEYS.map((stat) => <div className="satchel-stat-row" key={stat} data-testid={'stat-row-' + stat}><span className="satchel-stat-key">{stat.toUpperCase()}</span><span className="satchel-stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span><b className="satchel-stat-value">{playerStats[stat]}</b><button className="satchel-stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button></div>)}</div><div className="satchel-stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div></section>;
 }
 
 function InteriorRoom({ area, position, facing, moving, inventory, equippedDagger, attacking, attackSequence, onCraft }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; inventory: GameInventory; equippedDagger: boolean; attacking: boolean; attackSequence: number; onCraft: (item: CraftItem) => void }) {
@@ -1010,7 +967,7 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
   );
 }
 
-function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenStats, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenStats: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void }) {
+function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void }) {
   const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
   const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -1871,7 +1828,6 @@ if (active) {
                 <div className="bar target-bar" aria-label={'Target health ' + selectedGoat.hp + ' of ' + selectedGoat.maxHp}><div className="bar-fill target-health" style={{ width: (selectedGoat.hp / selectedGoat.maxHp) * 100 + '%' }} /></div>
               </div>
             )}
-            <button className="hud-stats-button" onClick={onOpenStats} aria-label="Open character stats" data-testid="button-open-stats"><span>Stats</span><strong>{statPoints} points</strong></button>
             <div className="level-bar-label"><span>Experience</span><span>{xpIntoLevel} / 100 XP</span></div>
             <div className="bar level-bar" aria-label={'Level ' + playerLevel + ', ' + playerXp + ' experience points'}><div className="bar-fill experience" style={{ width: levelProgress + '%' }} /></div>
             <span className="hud-build" data-testid="text-build-number">BUILD {BUILD_NUMBER}</span>
@@ -1923,7 +1879,6 @@ function SaveIcon() {
 function Home() {
   const [mapOpen, setMapOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
-  const [statsOpen, setStatsOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
   const [inventory, setInventory] = useState<GameInventory>(initialInventory);
@@ -1989,7 +1944,7 @@ function Home() {
     setStatPoints(Math.max(0, Math.floor(parsed.statPoints || 0)));
     setEquippedDagger(savedEquippedDagger);
     setChunk(parsed.chunk);
-    setMapOpen(false); setInventoryOpen(false); setStatsOpen(false); setSaveNotice(notice); setMenuOpen(false);
+    setMapOpen(false); setInventoryOpen(false); setSaveNotice(notice); setMenuOpen(false);
   };
 
   const loadLocalSave = () => {
@@ -2092,12 +2047,11 @@ function Home() {
       ) : (
         <>
           <div className="game-layout">
-            <GameField inventory={inventory} equippedDagger={equippedDagger} playerStats={playerStats} statPoints={statPoints} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenStats={() => setStatsOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || statsOpen || dungeonOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} />
+            <GameField inventory={inventory} equippedDagger={equippedDagger} playerStats={playerStats} statPoints={statPoints} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} />
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
-          {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} onClose={() => setInventoryOpen(false)} />}
-          {statsOpen && <StatsSheet playerStats={playerStats} statPoints={statPoints} onAssign={assignStatPoint} onClose={() => setStatsOpen(false)} />}
+          {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} onClose={() => setInventoryOpen(false)} />}
           {saveNotice && <div className="save-notice save-notice-floating" role="status">{saveNotice}</div>}
         </>
       )}
