@@ -12,6 +12,10 @@ import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/r
 import type { WorldClockState } from '@/game/worldCore';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
+import { getAttackHitbox, getDirection, isEntityInHitbox } from '@/game/combat';
+import { updateGoat, type GoatAIState } from '@/game/ai';
+import { knockback, playCombatSound } from '@/game/effects';
+import { getSpriteState } from '@/game/animation';
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
@@ -432,6 +436,7 @@ function isInteriorPositionBlocked(position: Point, area: InteriorArea) {
 }
 
 type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
+type GoatStateName = GoatAIState;
 type PlayerClass = 'Beginner' | 'Warrior' | 'Mage' | 'Rogue';
 type StatKey = 'str' | 'dex' | 'int' | 'luk';
 type PlayerStats = Record<StatKey, number>;
@@ -460,6 +465,11 @@ type GoatState = {
   wanderSeed: number;
   moving: boolean;
   attacking: boolean;
+  state: GoatStateName;
+  hurtTimer: number;
+  attackTimer: number;
+  attackHitApplied: boolean;
+  hitFlash: boolean;
   nextWanderTick?: number;
 };
 const GOAT_STEP = 1.35;
@@ -474,6 +484,8 @@ const PLAYER_ATTACK_ANIMATION_MS = 480;
 const GOAT_RESPAWN_TICKS = Math.ceil(12000 / GOAT_TICK_MS);
 const GOAT_ATTACK_RANGE = 9;
 const GOAT_ATTACK_DAMAGE = 3;
+const PLAYER_ATTACK_COOLDOWN_MS = 500;
+const GOAT_ATTACK_COOLDOWN_MS = 1000;
 const GOAT_XP_REWARD = 25;
 const GOAT_MIN_XP_REWARD = 5;
 const GOAT_HP_PER_LEVEL = 4;
@@ -705,6 +717,11 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
       wanderSeed,
       moving: false,
       attacking: false,
+      state: 'idle',
+      hurtTimer: 0,
+      attackTimer: 0,
+      attackHitApplied: false,
+      hitFlash: false,
       nextWanderTick: GOAT_WANDER_MIN_TICKS + (wanderSeed % (GOAT_WANDER_MAX_TICKS - GOAT_WANDER_MIN_TICKS + 1)),
     };
   });
@@ -1035,6 +1052,11 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const goatWorldStepRef = useRef(0);
   const simulatedTickRef = useRef(0);
   const playerAttackCooldownRef = useRef(0);
+  const playerAttackStateRef = useRef<{ active: boolean; direction: Direction; targetId: number | null; elapsed: number; hitApplied: boolean }>({ active: false, direction: 'down', targetId: null, elapsed: 0, hitApplied: false });
+  const [attackCooldownMs, setAttackCooldownMs] = useState(0);
+  const [screenShake, setScreenShake] = useState(false);
+  const [damageTexts, setDamageTexts] = useState<Array<{ id: number; text: string; position: Point; kind: 'damage' | 'reward' | 'critical' }>>([]);
+  const combatTextIdRef = useRef(0);
   const brainRef = useRef<RPGBrain | null>(null);
   if (brainRef.current === null) {
     const brain = createAdventureBrain();
@@ -1080,7 +1102,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     mountedRef.current = loadState.mounted; setMounted(loadState.mounted);
     horseRef.current = loadState.horse; setHorse(loadState.horse);
     horseIdleAnchorRef.current = loadState.horse.position;
-    goatsRef.current = loadState.goats.map((goat) => ({ ...goat, attacking: goat.attacking ?? false })); setGoats(goatsRef.current);
+    goatsRef.current = loadState.goats.map((goat) => ({ ...goat, attacking: goat.attacking ?? false, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, hitFlash: false })); setGoats(goatsRef.current);
     targetGoatIdRef.current = null; setTargetGoatId(null);
     droppedLootRef.current = loadState.droppedLoot || []; setDroppedLoot(droppedLootRef.current);
     droppedLootIdRef.current = droppedLootRef.current.reduce((highest, drop) => Math.max(highest, drop.id), 0) + 1;
@@ -1136,53 +1158,6 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     }
   }, [inputLocked, optionsOpen]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      playerAttackCooldownRef.current = Math.max(0, playerAttackCooldownRef.current - 1);
-      const currentGoats = goatsRef.current;
-       if (currentGoats.length === 0) return;
-      goatWorldStepRef.current += 1;
-      const currentPlayer = positionRef.current;
-      const currentChunk = chunkRef.current;
-      let damageTaken = 0;
-      const nextGoats = currentGoats.map((goat) => {
-        if (goat.disposition === 'defeated') {
-          if (goat.respawnTicks >= GOAT_RESPAWN_TICKS) {
-            return {
-              ...goat,
-              attacking: false,
-              position: { ...goat.spawnPosition },
-              hp: goat.maxHp,
-              disposition: 'calm' as GoatDisposition,
-              attackCooldown: 0,
-              respawnTicks: 0,
-              moving: false,
-              nextWanderTick: goatWorldStepRef.current + goatWanderDelay(goat.wanderSeed),
-            };
-          }
-          return { ...goat, moving: false, attacking: false, respawnTicks: goat.respawnTicks + 1 };
-        }
-        if (goat.disposition !== 'aggressive' || goat.attackCooldown > 0) {
-          const moved = moveGoatIndependently(goat, goatWorldStepRef.current, currentPlayer, currentChunk, currentGoats);
-          return { ...moved, attackCooldown: Math.max(0, moved.attackCooldown - 1) };
-        }
-        if (goatDistance(goat, currentPlayer) <= GOAT_ATTACK_RANGE) {
-          damageTaken += goatAttackDamageForLevel(goat.level);
-          return { ...goat, attacking: true, attackCooldown: GOAT_ATTACK_COOLDOWN_TICKS };
-        }
-        return moveGoatIndependently(goat, goatWorldStepRef.current, currentPlayer, currentChunk, currentGoats);
-      });
-      goatsRef.current = nextGoats;
-      setGoats(nextGoats);
-      if (damageTaken > 0) {
-        const nextHp = Math.max(0, playerHpRef.current - damageTaken);
-        playerHpRef.current = nextHp;
-        setPlayerHp(nextHp);
-        setLogs((currentLogs) => [{ text: 'A hostile goat rams you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
-      }
-    }, GOAT_TICK_MS);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1306,16 +1281,87 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     const animate = (now: number) => {
       const elapsed = Math.min(50, now - lastFrame) / 1000;
       lastFrame = now;
+      const movementLocked = playerAttackStateRef.current.active;
       const input = {
-        x: inputLocked || optionsOpen ? 0 : (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
-        y: inputLocked || optionsOpen ? 0 : (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
+        x: inputLocked || optionsOpen || movementLocked ? 0 : (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
+        y: inputLocked || optionsOpen || movementLocked ? 0 : (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
       };
       const length = Math.hypot(input.x, input.y);
       const active = length > 0;
       setMoving(active);
 
       
-       const currentInterior = interiorRef.current;
+       playerAttackCooldownRef.current = Math.max(0, playerAttackCooldownRef.current - elapsed * 1000);
+      setAttackCooldownMs(playerAttackCooldownRef.current);
+      const playerAttack = playerAttackStateRef.current;
+      if (playerAttack.active) {
+        playerAttack.elapsed += elapsed * 1000;
+        if (!playerAttack.hitApplied && playerAttack.elapsed >= 100) {
+          playerAttack.hitApplied = true;
+          const attackTarget = playerAttack.targetId == null ? null : goatsRef.current.find((goat) => goat.id === playerAttack.targetId && goat.disposition !== 'defeated');
+          const attackHitbox = getAttackHitbox(positionRef.current, playerAttack.direction);
+          if (attackTarget && isEntityInHitbox(attackTarget.position, attackHitbox)) {
+            const stats = playerStatsRef.current;
+            const critical = Math.random() < playerCriticalChanceForStats(stats);
+            const damage = playerDamageForStats(stats) * (critical ? 2 : 1);
+            const nextHp = Math.max(0, attackTarget.hp - damage);
+            const defeated = nextHp <= 0;
+            const hitPosition = { ...attackTarget.position };
+            let updatedGoats = goatsRef.current.map((goat) => goat.id === attackTarget.id ? { ...goat, hp: nextHp, position: defeated ? goat.position : knockback(goat.position, getDirection(positionRef.current, goat.position), 4), disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, respawnTicks: defeated ? 0 : goat.respawnTicks } : goat);
+            goatsRef.current = updatedGoats; setGoats(updatedGoats);
+            spawnCombatText((critical ? 'CRIT ' : '') + '-' + damage, hitPosition, critical ? 'critical' : 'damage');
+            triggerScreenShake(); playCombatSound('baa', muted);
+            window.setTimeout(() => setGoats((current) => current.map((goat) => goat.id === attackTarget.id ? { ...goat, hitFlash: false } : goat)), 100);
+            setLogs((currentLogs) => [{ text: defeated ? 'Goat defeated. It drops experience and gold.' : 'You hit the goat for ' + damage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
+            if (defeated) {
+              const lootType = GOAT_LOOT_TYPES[Math.floor(Math.random() * GOAT_LOOT_TYPES.length)];
+              const lootAmount = Math.floor(Math.random() * (2 + Math.floor(playerStatsRef.current.luk / 10))) + 1;
+              const loot: GoatLoot = { [lootType]: lootAmount };
+              const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot };
+              droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
+              const xpReward = goatExperienceReward(attackTarget, playerLevelRef.current, playerStatsRef.current);
+              const nextXp = playerXpRef.current + xpReward; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
+              playerXpRef.current = nextXp; setPlayerXp(nextXp);
+              spawnCombatText('+' + xpReward + ' XP  +' + (loot.coins || 0) + ' gold', hitPosition, 'reward');
+              if (nextLevel > previousLevel) {
+                const awardedStatPoints = (nextLevel - previousLevel) * PLAYER_STAT_POINTS_PER_LEVEL;
+                playerLevelRef.current = nextLevel; setPlayerLevel(nextLevel); onStatPointsChange((current) => current + awardedStatPoints);
+                updatedGoats = scaleGoatsToPlayerLevel(updatedGoats, nextLevel); goatsRef.current = updatedGoats; setGoats(updatedGoats);
+              }
+              targetGoatIdRef.current = null; setTargetGoatId(null);
+            }
+          } else {
+            spawnCombatText('MISS', positionRef.current, 'damage');
+          }
+        }
+        if (playerAttack.elapsed >= 300) { playerAttack.active = false; setAttacking(false); }
+      }
+      if (!interiorRef.current && goatsRef.current.length > 0) {
+        const currentGoats = goatsRef.current; const currentPlayer = positionRef.current; const currentChunk = chunkRef.current;
+        let damageTaken = 0; let knockedPlayer = currentPlayer;
+        const nextGoats = currentGoats.map((goat) => {
+          if (goat.disposition === 'defeated') {
+            const respawnTicks = goat.respawnTicks + elapsed * 1000 / GOAT_TICK_MS;
+            if (respawnTicks >= GOAT_RESPAWN_TICKS) return { ...goat, state: 'idle' as GoatStateName, attacking: false, position: { ...goat.spawnPosition }, hp: goat.maxHp, disposition: 'aggressive' as GoatDisposition, attackCooldown: 0, respawnTicks: 0, moving: false, hitFlash: false };
+            return { ...goat, moving: false, attacking: false, respawnTicks };
+          }
+          const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false }, currentPlayer, currentGoats, elapsed * 1000);
+          let next = result.goat;
+          if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: goat.position, moving: false };
+          if (result.attackHit) {
+            const damage = goatAttackDamageForLevel(goat.level); damageTaken += damage;
+            knockedPlayer = knockback(knockedPlayer, getDirection(goat.position, currentPlayer), 4);
+            spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted); triggerScreenShake();
+          }
+          return next;
+        });
+        if (damageTaken > 0) {
+          const nextHp = Math.max(0, playerHpRef.current - damageTaken); playerHpRef.current = nextHp; setPlayerHp(nextHp); positionRef.current = knockedPlayer; setPosition(knockedPlayer);
+          setLogs((currentLogs) => [{ text: 'A hostile goat rams you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
+        }
+        goatsRef.current = nextGoats; setGoats(nextGoats);
+      }
+      const currentInterior = interiorRef.current;
        if (active && currentInterior) {
           const direction = input.x > 0 ? 'right' : input.x < 0 ? 'left' : input.y < 0 ? 'up' : 'down';
           setFacing(direction);
@@ -1411,86 +1457,24 @@ if (active) {
 
 
 
-  const playAttackAnimation = () => {
-    setAttackVariant((current) => (current + 1) % 3);
-    setAttackSequence((current) => current + 1);
-    setAttacking(true);
-    window.setTimeout(() => setAttacking(false), PLAYER_ATTACK_ANIMATION_MS);
+  const spawnCombatText = (text: string, position: Point, kind: 'damage' | 'reward' | 'critical') => {
+    const id = combatTextIdRef.current++;
+    setDamageTexts((current) => [...current, { id, text, position, kind }]);
+    window.setTimeout(() => setDamageTexts((current) => current.filter((entry) => entry.id !== id)), 900);
   };
+  const triggerScreenShake = () => { setScreenShake(true); window.setTimeout(() => setScreenShake(false), 100); };
+  const playAttackAnimation = () => { setAttackVariant((current) => (current + 1) % 3); setAttackSequence((current) => current + 1); setAttacking(true); };
 
   const attackGoat = (preferredTargetId?: number) => {
-    if (interiorRef.current) return;
-    if (playerAttackCooldownRef.current > 0) {
-      setAttackFlash('Your attack is still on cooldown.');
-      window.setTimeout(() => setAttackFlash(null), 700);
-      return;
-    }
+    if (interiorRef.current || playerAttackStateRef.current.active || playerAttackCooldownRef.current > 0) return;
     const currentPlayer = positionRef.current;
-    const lockedTargetId = preferredTargetId ?? targetGoatIdRef.current;
-    const lockedTarget = lockedTargetId == null ? null : goatsRef.current.find((goat) => goat.id === lockedTargetId && goat.disposition !== 'defeated');
-    const target = lockedTargetId != null
-      ? lockedTarget && goatIsInAttackArc(lockedTarget, currentPlayer, facingRef.current) ? lockedTarget : null
-      : goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goatIsInAttackArc(goat, currentPlayer, facingRef.current)).sort((a, b) => (a.disposition === 'aggressive' ? 0 : 1) - (b.disposition === 'aggressive' ? 0 : 1) || goatDistance(a, currentPlayer) - goatDistance(b, currentPlayer))[0];
-    if (!target) {
-      const message = lockedTarget ? 'Move closer and face your target to strike.' : 'No goat is close enough to strike.';
-      setAttackFlash(message);
-      window.setTimeout(() => setAttackFlash(null), 900);
-      return;
-    }
-    playAttackAnimation();
-    playerAttackCooldownRef.current = playerAttackCooldownForStats(playerStatsRef.current);
-    const attackStats = playerStatsRef.current;
-    const critical = Math.random() < playerCriticalChanceForStats(attackStats);
-    const damage = playerDamageForStats(attackStats) * (critical ? 2 : 1);
-    const nextHp = target.hp - damage;
-    const defeated = nextHp <= 0;
-    let nextGoats = goatsRef.current.map((goat) => goat.id === target.id ? {
-      ...goat,
-      hp: Math.max(0, nextHp),
-      disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition,
-      attackCooldown: 0,
-      respawnTicks: defeated ? 0 : goat.respawnTicks,
-    } : goat);
-    goatsRef.current = nextGoats;
-    setGoats(nextGoats);
-    if (defeated) {
-      targetGoatIdRef.current = null;
-      setTargetGoatId(null);
-      const lootType = GOAT_LOOT_TYPES[Math.floor(Math.random() * GOAT_LOOT_TYPES.length)];
-      const lootAmount = Math.floor(Math.random() * (2 + Math.floor(playerStatsRef.current.luk / 10))) + 1;
-      const loot: GoatLoot = { [lootType]: lootAmount };
-      const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: { ...target.position }, loot };
-      droppedLootRef.current = [...droppedLootRef.current, drop];
-      setDroppedLoot(droppedLootRef.current);
-      const xpReward = goatExperienceReward(target, playerLevelRef.current, playerStatsRef.current);
-       const nextXp = playerXpRef.current + xpReward;
-      const nextLevel = Math.floor(nextXp / 100) + 1;
-      const previousLevel = playerLevelRef.current;
-      setPlayerXp(nextXp);
-      playerXpRef.current = nextXp;
-      if (nextLevel > previousLevel) {
-        const levelsGained = nextLevel - previousLevel;
-        const awardedStatPoints = levelsGained * PLAYER_STAT_POINTS_PER_LEVEL;
-        setPlayerLevel(nextLevel);
-        playerLevelRef.current = nextLevel;
-        onStatPointsChange((current) => current + awardedStatPoints);
-        nextGoats = scaleGoatsToPlayerLevel(nextGoats, nextLevel);
-        goatsRef.current = nextGoats;
-        setGoats(nextGoats);
-        setAttackFlash(`Level up! Level ${nextLevel} reached · +${awardedStatPoints} stat points.`);
-      }
-      const message = `Goat defeated: +${xpReward} XP. A loot bag is waiting nearby.`;
-      setLogs((currentLogs) => [{ text: message, color: 'blue' }, ...currentLogs].slice(0, 3));
-      if (nextLevel <= previousLevel) {
-        setAttackFlash(message);
-      }
-      window.setTimeout(() => setAttackFlash(null), 1400);
-      return;
-    }
-    const message = 'You strike a goat. It bleats angrily and charges!';
-    setAttackFlash(message);
-    setLogs((currentLogs) => [{ text: message, color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
-    window.setTimeout(() => setAttackFlash(null), 1100);
+    const targetId = preferredTargetId ?? targetGoatIdRef.current;
+    const target = targetId == null ? goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goatDistance(goat, currentPlayer) <= PLAYER_ATTACK_RANGE + 2).sort((a, b) => goatDistance(a, currentPlayer) - goatDistance(b, currentPlayer))[0] : goatsRef.current.find((goat) => goat.id === targetId && goat.disposition !== 'defeated' && goatDistance(goat, currentPlayer) <= PLAYER_ATTACK_RANGE + 2);
+    if (!target) return;
+    const direction = getDirection(currentPlayer, target.position);
+    facingRef.current = direction; setFacing(direction);
+    playerAttackStateRef.current = { active: true, direction, targetId: target.id, elapsed: 0, hitApplied: false };
+    playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS; setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS); playAttackAnimation();
   };
 
   const pickupDrop = (drop: DroppedLoot) => {
@@ -1622,7 +1606,7 @@ if (active) {
 
   return (
     <div className="field-column">
-      <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
+      <div ref={gameFrameRef} className={'game-frame' + (screenShake ? ' is-shaking' : '')} tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
         {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={facing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} attacking={attacking} attackVariant={attackVariant} attackSequence={attackSequence} onCraft={craftItem} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
           '--field-color': fieldPalette.field,
@@ -1660,10 +1644,11 @@ if (active) {
             {goats.filter((goat) => goat.disposition !== 'defeated').map((goat) => (
               <button
                 type="button"
-                className={'goat goat-' + goat.disposition + (goat.moving ? ' is-moving' : '') + (goat.attacking ? ' is-attacking' : '') + (targetGoatId === goat.id ? ' is-targeted' : '')}
+                className={'goat goat-' + goat.disposition + ' goat-state-' + getSpriteState(goat.state, goat.facing) + (goat.moving ? ' is-moving' : '') + (goat.attacking ? ' is-attacking' : '') + (goat.hitFlash ? ' is-hit' : '') + (targetGoatId === goat.id ? ' is-targeted' : '')}
                 style={{ left: goat.position.x + '%', top: goat.position.y + '%' }}
                 data-facing={goat.facing}
-                data-disposition={goat.disposition}
+                 data-state={goat.state}
+                 data-disposition={goat.disposition}
                 aria-label={(goat.disposition === 'aggressive' ? 'Hostile goat' : 'Peaceful goat') + ', level ' + goat.level}
                 aria-pressed={targetGoatId === goat.id}
                 data-testid={'button-target-goat-' + goat.id}
@@ -1687,6 +1672,9 @@ if (active) {
                 <span className="goat-sprite" />
               </button>
             ))}
+          </div>
+          <div className="combat-text-layer" aria-live="polite">
+            {damageTexts.map((entry) => <span className={'combat-text ' + entry.kind} key={entry.id} style={{ left: entry.position.x + '%', top: entry.position.y + '%' }}>{entry.text}</span>)}
           </div>
           <div className="field-drops" aria-label="Dropped loot">
             {droppedLoot.filter((drop) => drop.chunk.x === chunk.x && drop.chunk.y === chunk.y).map((drop) => {
@@ -1770,7 +1758,8 @@ if (active) {
             </>
           )}
           </div>
-          {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-(attackVariant * 4 + attackDirectionRow[facing]) * 48}px` } as CSSProperties} data-facing={facing} data-testid="player-character">
+          {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
+             data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-(attackVariant * 4 + attackDirectionRow[facing]) * 48}px` } as CSSProperties} data-facing={facing} data-testid="player-character">
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-(attackVariant * 4 + attackDirectionRow[facing]) * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
             {equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}
@@ -1887,7 +1876,7 @@ if (active) {
            </section>
          )}
          <div className="field-actions">
-           <button className="icon-button field-attack-button" onClick={() => attackGoat()} aria-label={selectedGoat ? 'Strike selected goat' : 'Strike nearest goat'} title={selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space'} data-testid="button-attack"><Sword size={16} /></button>
+           <button className="icon-button field-attack-button" onClick={() => attackGoat()} aria-label={selectedGoat ? 'Strike selected goat' : 'Strike nearest goat'} title={selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space'} aria-disabled={attackCooldownMs > 0} data-testid="button-attack"><Sword size={16} />{attackCooldownMs > 0 && <span className="attack-cooldown-ring" style={{ background: 'conic-gradient(rgba(219, 120, 94, .95) ' + ((attackCooldownMs / PLAYER_ATTACK_COOLDOWN_MS) * 100) + '%, rgba(19, 43, 34, .2) 0)' }} aria-hidden="true" />}</button>
             <button className="icon-button field-log-toggle" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={16} /></button>
            <button className="icon-button map-button" onClick={onOpenMap} aria-label="Open field atlas" title="Open field atlas" data-testid="button-open-map"><Map size={16} /></button>
             <button className="icon-button field-sound-button" onClick={onToggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'} aria-pressed={muted} data-testid="button-toggle-sound">{muted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
