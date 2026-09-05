@@ -32,7 +32,7 @@ function formatWorldClock(clock: WorldClockState) {
   return hour + ':' + minute + ' · ' + season + ' · Y' + clock.year + ' D' + clock.day;
 }
 
-const WALK_SPEED = 96; // 3x the original walking speed
+const WALK_SPEED = 56; // Deliberately slower exploration pace
 const HORSE_SPEED = 180;
 const HORSE_MOUNT_DISTANCE = 4.5;
 const initialHorseState: HorseState = { chunk: { x: 4, y: 7 }, position: { x: 58, y: 52 } };
@@ -473,7 +473,7 @@ type GoatState = {
   hitFlash: boolean;
   nextWanderTick?: number;
 };
-const GOAT_STEP = 1.35;
+const GOAT_STEP = 0.8;
 const GOAT_TICK_MS = 500;
 const GOAT_WANDER_MIN_TICKS = 10;
 const GOAT_WANDER_MAX_TICKS = 20;
@@ -1064,7 +1064,6 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const playerAttackCooldownRef = useRef(0);
   const playerAttackStateRef = useRef<{ active: boolean; direction: Direction; targetId: number | null; elapsed: number; hitApplied: boolean }>({ active: false, direction: 'down', targetId: null, elapsed: 0, hitApplied: false });
   const [attackCooldownMs, setAttackCooldownMs] = useState(0);
-  const [screenShake, setScreenShake] = useState(false);
   const [damageTexts, setDamageTexts] = useState<Array<{ id: number; text: string; position: Point; kind: 'damage' | 'reward' | 'critical' }>>([]);
   const combatTextIdRef = useRef(0);
   const brainRef = useRef<RPGBrain | null>(null);
@@ -1477,7 +1476,6 @@ if (active) {
     setDamageTexts((current) => [...current, { id, text, position, kind }]);
     window.setTimeout(() => setDamageTexts((current) => current.filter((entry) => entry.id !== id)), 900);
   };
-  const triggerScreenShake = () => { setScreenShake(true); window.setTimeout(() => setScreenShake(false), 100); };
   const playAttackAnimation = () => { setAttackSequence((current) => current + 1); setAttacking(true); };
 
   const attackGoat = (preferredTargetId?: number) => {
@@ -1623,7 +1621,7 @@ if (active) {
 
   return (
     <div className="field-column">
-      <div ref={gameFrameRef} className={'game-frame' + (screenShake ? ' is-shaking' : '')} tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
+      <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
         {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} onCraft={craftItem} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
           '--field-color': fieldPalette.field,
