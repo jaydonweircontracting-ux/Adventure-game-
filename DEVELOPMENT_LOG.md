@@ -372,3 +372,11 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Bug found: attack animation starts before cooldown, interior, and target-range validation. Invalid strikes visibly swing while dealing no damage, making combat look broken.
 - Runtime status: deterministic simulation complete; browser playtest/build/typecheck remain NOT_RUN in this GitHub-only session.
 - Next fix: move attack animation playback after all strike validations, then record the corrected result.
+
+
+## Checkpoint 2026-09-05 — goat combat simulation after fix
+
+- Fix: attack animation now starts only after interior, cooldown, target, range, and facing validation succeeds.
+- Corrected simulation: the player exits at (30, 48), reaches (17, 43), lands 3 valid hits on the level-2 goat, defeats it, and survives with 92 HP after 2 counterattacks.
+- Corrected behavior: an invalid or cooldown strike deals no damage and now shows feedback without playing a false attack animation.
+- Verification: source-order readback passed and deterministic combat simulation passed. Browser playtest/build/typecheck remain NOT_RUN because this session is GitHub-only and the game was not mounted.
