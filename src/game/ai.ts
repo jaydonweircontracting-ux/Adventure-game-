@@ -3,7 +3,7 @@ import { getDirection, isAdjacentAndFacing, type CombatDirection, type CombatPoi
 export type GoatAIState = 'idle' | 'chase' | 'attack' | 'hurt' | 'die';
 export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean };
 export const GOAT_CHASE_RANGE = 24;
-export const GOAT_MELEE_RANGE = 5;
+export const GOAT_MELEE_RANGE = 9;
 export const GOAT_CHASE_SPEED = 10;
 export const GOAT_FLEE_HP_RATIO = 0.3;
 export const GOAT_FLEE_SPEED = 12;
@@ -26,8 +26,8 @@ function moveAwayFrom(from: CombatPoint, threat: CombatPoint, speed: number, del
   return { x: from.x + (dx / distance) * Math.min(step, distance), y: from.y + (dy / distance) * Math.min(step, distance) };
 }
 
-// Keep hostile goats one melee tile away so they can attack without occupying
-// the player's position or overlapping the player sprite.
+// Keep hostile goats far enough away for their sprites to avoid overlapping
+// the player while still allowing a clear melee attack lane.
 function keepMeleeDistance(position: CombatPoint, player: CombatPoint, playerFacing: CombatDirection): CombatPoint {
   const dx = position.x - player.x;
   const dy = position.y - player.y;
@@ -67,12 +67,12 @@ export function updateGoat(goat: GoatAIEntity, player: CombatPoint, playerFacing
   if (goat.state === 'attack') {
     const attackTimer = goat.attackTimer - deltaMs;
     if (attackTimer <= 0 && !goat.attackHitApplied) {
-      const attackHit = isAdjacentAndFacing(goat.position, player, facing, playerFacing);
+      const attackHit = isAdjacentAndFacing(goat.position, player, facing, playerFacing, GOAT_MELEE_RANGE);
       return { goat: { ...goat, state: 'chase', attackTimer: 0, attackHitApplied: true, attackCooldown: GOAT_ATTACK_COOLDOWN_MS, attacking: false, moving: false }, attackHit };
     }
     return { goat: { ...goat, attackTimer, attackCooldown: cooldown, attacking: attackTimer > 0, moving: false }, attackHit: false };
   }
-  const canStartAttack = cooldown <= 0 && isAdjacentAndFacing(goat.position, player, facing, playerFacing);
+  const canStartAttack = cooldown <= 0 && isAdjacentAndFacing(goat.position, player, facing, playerFacing, GOAT_MELEE_RANGE);
   if (canStartAttack) return { goat: { ...goat, state: 'attack', attackTimer: GOAT_ATTACK_WINDUP_MS, attackHitApplied: false, attackCooldown: 0, facing, attacking: true, moving: false }, attackHit: false };
   if (distance <= GOAT_CHASE_RANGE) {
     const separation = goats.reduce((force, other) => {
