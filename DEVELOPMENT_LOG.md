@@ -361,3 +361,14 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Scope guard: movement, collision, combat, inventory, saves, dungeon systems, AI behavior, and existing landmarks were not changed.
 - Verification: GitHub source-level checks only; no repository mount, build, runtime, or tests under the requested workflow.
 - Status: implemented and pushed.
+
+
+## Checkpoint 2026-09-05 — goat combat simulation baseline
+
+- Request: simulate the default RPG-brain startup, leave the Tutorial House, and fight a goat before fixing combat.
+- Scope: GitHub-only deterministic simulation; no repository mount or browser runtime was used.
+- Simulated path: start inside Tutorial House → exit at (30, 48) → approach goat id 4 at (17, 43) → face left → attack.
+- Baseline result: the close-range path is logically reachable; a level-2 goat takes 3 hits (9 damage each) and the player survives with 92 HP after counterattacks.
+- Bug found: attack animation starts before cooldown, interior, and target-range validation. Invalid strikes visibly swing while dealing no damage, making combat look broken.
+- Runtime status: deterministic simulation complete; browser playtest/build/typecheck remain NOT_RUN in this GitHub-only session.
+- Next fix: move attack animation playback after all strike validations, then record the corrected result.
