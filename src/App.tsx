@@ -1016,6 +1016,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
   const [moving, setMoving] = useState(false);
   const [facing, setFacing] = useState<Direction>('down');
+  const [attackFacing, setAttackFacing] = useState<Direction | null>(null);
   const [mounted, setMounted] = useState(false);
   const [horse, setHorse] = useState<HorseState>(initialHorseState);
   const [horseFacing, setHorseFacing] = useState<Direction>('down');
@@ -1346,7 +1347,11 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
             spawnCombatText('MISS', positionRef.current, 'damage');
           }
         }
-        if (playerAttack.elapsed >= PLAYER_ATTACK_ANIMATION_MS) { playerAttack.active = false; setAttacking(false); }
+        if (playerAttack.elapsed >= PLAYER_ATTACK_ANIMATION_MS) {
+          playerAttack.active = false;
+          setAttacking(false);
+          setAttackFacing(null);
+        }
       }
       if (!interiorRef.current && goatsRef.current.length > 0) {
         const currentGoats = goatsRef.current; const currentPlayer = positionRef.current; const currentChunk = chunkRef.current;
@@ -1475,7 +1480,11 @@ if (active) {
     setDamageTexts((current) => [...current, { id, text, position, kind }]);
     window.setTimeout(() => setDamageTexts((current) => current.filter((entry) => entry.id !== id)), 900);
   };
-  const playAttackAnimation = () => { setAttackSequence((current) => current + 1); setAttacking(true); };
+  const playAttackAnimation = (direction: Direction) => {
+    setAttackFacing(direction);
+    setAttackSequence((current) => current + 1);
+    setAttacking(true);
+  };
 
   const attackGoat = (preferredTargetId?: number) => {
     if (interiorRef.current || playerAttackStateRef.current.active || playerAttackCooldownRef.current > 0) return;
@@ -1487,7 +1496,9 @@ if (active) {
       : goatsRef.current.find((goat) => goat.id === targetId && goat.disposition !== 'defeated' && goatIsInAttackArc(goat, currentPlayer, currentFacing));
     if (!target) return;
     playerAttackStateRef.current = { active: true, direction: currentFacing, targetId: target.id, elapsed: 0, hitApplied: false };
-    playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS; setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS); playAttackAnimation();
+    playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS;
+    setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS);
+    playAttackAnimation(currentFacing);
   };
 
   const pickupDrop = (drop: DroppedLoot) => {
@@ -1571,7 +1582,7 @@ if (active) {
     setLogs((currentLogs) => [{ text: 'You mount the horse. The road opens ahead.', color: 'blue' }, ...currentLogs].slice(0, 3));
   };
 
-  const playerRenderFacing = attacking ? playerAttackStateRef.current.direction : facing;
+  const playerRenderFacing = attackFacing ?? facing;
   const currentWorldTile = mapTileFor(chunk);
   const selectedGoat = targetGoatId === null ? null : goats.find((goat) => goat.id === targetGoatId && goat.disposition !== 'defeated') || null;
   const playerMaxHp = playerMaxHpForStats(playerStats);
