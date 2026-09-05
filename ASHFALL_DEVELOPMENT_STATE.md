@@ -1,7 +1,7 @@
 # ASHFALL Development State
 
 Last updated: 2026-09-04
-Current milestone: Handcrafted overworld composition pass
+Current milestone: World-core foundation and GitHub recovery layer
 
 ## Current build state
 
@@ -29,9 +29,12 @@ Current milestone: Handcrafted overworld composition pass
 
 ## Architecture
 
+Project continuity is documented in PROJECT_RECOVERY.md and TODO.md.
+
 - src/App.tsx: main overworld UI, movement, rendering, NPCs, combat, inventory, saves, and dungeon entry.
 - src/index.css: overworld visual system and interaction styling.
 - src/game/rpgBrain.ts: deterministic world/RPG content model and game-state brain.
+- src/game/worldCore.ts: deterministic calendar, simulation speed, time events, queued events, and versioned world-core state.
 - src/game/simulatedAdventurers.ts: lightweight living-world adventurer identities and route simulation.
 - src/game/stoneSoupEngine.ts: dungeon rules, maps, monsters, items, spells, depth, victory, and defeat.
 - src/game/StoneSoupDungeon.tsx: dungeon overlay UI and turn controls.
@@ -69,3 +72,16 @@ Current milestone: Handcrafted overworld composition pass
 4. Expand simulated adventurers into persistent goal-driven agents with near/region/far simulation levels.
 5. Separate and persist world, player, AI, dungeon, quest, and inventory state.
 6. Add automated tests for deterministic generation, combat, AI lifecycle, dungeon progression, and save/load.
+
+
+## Latest incremental checkpoints
+
+- 8874198 — add deterministic world core foundation.
+- 190ae37 — persist world core in the RPG brain and existing save state.
+- fedb270 — expand the calendar, simulation speeds, time subscriptions, and schema migration.
+- 8b87ecb — add GitHub project recovery guide.
+- 940b881 — add prioritized ASHFALL task queue.
+
+## Current bounded next slice
+
+Connect WorldCore.advance to one existing game-state transition and persist that state through the current save path. Do not advance it from the render loop or begin NPC schedules, factions, or economy in the same slice.
