@@ -1,4 +1,6 @@
 // RPG brain: typed content registry and state layer for the Adventure Game.
+import { DEFAULT_WORLD_SEED, WorldCore, type WorldCoreState } from './worldCore';
+
 // Content is data; the UI can grow without rewriting the core relationships.
 
 export type ChunkCoordinates = { x: number; y: number };
@@ -55,9 +57,10 @@ export type EnemyDefinition = { id: string; name: string; type: EnemyType; level
 export type ItemDefinition = { id: string; name: string; type: ItemType; description: string; stats: Record<string, number | string> };
 export type LoreDefinition = { id: string; title: string; text: string; category: string };
 export type PlayerDefinition = { id: string; name: string; inventory: string[] };
-export type RpgGameState = { currentLocationId: string | null; currentChunkId: string | null; discoveredChunks: string[]; discoveredLocations: string[]; discoveredLore: string[]; enteredBuildings: string[]; completedDungeons: string[]; history: BrainHistoryEntry[]; tutorialStage?: TutorialStage; playerClass?: PlayerClass; playerLevel?: number };
+export type RpgGameState = { world?: WorldCoreState; currentLocationId: string | null; currentChunkId: string | null; discoveredChunks: string[]; discoveredLocations: string[]; discoveredLore: string[]; enteredBuildings: string[]; completedDungeons: string[]; history: BrainHistoryEntry[]; tutorialStage?: TutorialStage; playerClass?: PlayerClass; playerLevel?: number };
 
 export class RPGBrain {
+  readonly worldCore = new WorldCore(DEFAULT_WORLD_SEED);
   readonly world: Record<string, WorldDefinition> = {};
   readonly chunks: Record<string, ChunkDefinition> = {};
   readonly locations: Record<string, LocationDefinition> = {};
@@ -322,6 +325,7 @@ export class RPGBrain {
 
   getGameState(): RpgGameState {
     return {
+      world: this.worldCore.getState(),
       currentLocationId: this.currentLocationId,
       currentChunkId: this.currentChunkId,
       discoveredChunks: [...this.discoveredChunks].sort(),
@@ -337,6 +341,7 @@ export class RPGBrain {
   }
 
   loadGameState(state: RpgGameState) {
+    if (state.world) this.worldCore.loadState(state.world);
     this.currentLocationId = state.currentLocationId && this.locations[state.currentLocationId] ? state.currentLocationId : null;
     this.currentChunkId = state.currentChunkId && this.chunks[state.currentChunkId] ? state.currentChunkId : null;
     this.replaceSet(this.discoveredChunks, state.discoveredChunks, this.chunks);
