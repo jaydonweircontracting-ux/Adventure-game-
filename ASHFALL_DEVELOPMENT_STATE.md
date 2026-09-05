@@ -1,7 +1,7 @@
 # ASHFALL Development State
 
 Last updated: 2026-09-04
-Current milestone: World-core foundation and GitHub recovery layer
+Current milestone: Build 40 — world clock activation and combat polish
 
 ## Current build state
 
@@ -96,3 +96,14 @@ Connect WorldCore.advance to one existing game-state transition and persist that
 - The next bounded implementation remains: call WorldCore.advance from one authoritative gameplay transition, make the resulting time visible in the current UI, and persist it through the existing save path.
 - npm install, build, typecheck, browser launch, gameplay playtest, visual audit, and performance measurement: NOT_RUN.
 - No runtime or polish pass is claimed from this checkpoint.
+
+
+## Build 40 checkpoint
+
+- Visible build marker advanced from 035 to 040.
+- WorldCore.advance(1) now drives the overworld clock interval, and the saved brain clock is restored into the visible time display when available.
+- Overworld combat now has click-to-target, click-to-strike, selected-target persistence, target health HUD, and clearer attack labeling.
+- Low player health now changes the HUD treatment, and the health accessibility label reports current and maximum HP rather than treating HP as a percentage.
+- Static source verification passed for the build marker, world-clock activation, target selection, target HUD, low-health state, and combat styles.
+- npm build, typecheck, browser launch, gameplay playtest, visual audit, and performance measurement remain NOT_RUN.
+- No new dependencies were added.
