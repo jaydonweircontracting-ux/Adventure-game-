@@ -156,6 +156,10 @@ const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
 };
 
 function isStartingArea(point: Point) {
+  return point.x >= 3 && point.x <= 5 && point.y >= 6 && point.y <= 8;
+}
+
+function isTutorialCenter(point: Point) {
   return point.x === 4 && point.y === 7;
 }
 
@@ -254,12 +258,12 @@ function pointOnFieldRoad(point: Point, road: MapTile['road']) {
 }
 
 function fieldTreesFor(chunk: Point): FieldTree[] {
-  const startingArea = isStartingArea(chunk);
+  const startingCenter = isTutorialCenter(chunk);
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   const treeStyle = regionStyleFor(chunk);
   const road = mapTileFor(chunk).road;
 
-  if (startingArea) {
+  if (startingCenter) {
     const perimeterTrees = [
       { x: 12, y: 13, scale: 0.56, variant: 1 },
       { x: 77, y: 13, scale: 0.56, variant: 2 },
@@ -304,15 +308,15 @@ function fieldAccentsFor(chunk: Point): FieldAccent[] {
   if (tile.waterFeature) return [];
 
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
-  const startingArea = isStartingArea(chunk);
-  const houseRects = landmark ? fieldHouseRects(landmark.kind, startingArea) : [];
+  const startingCenter = isTutorialCenter(chunk);
+  const houseRects = landmark ? fieldHouseRects(landmark.kind, startingCenter) : [];
   let seed = Math.abs((chunk.x * 19349663) ^ (chunk.y * 83492791)) + 17;
   const random = () => {
     const value = Math.sin(seed++) * 10000;
     return value - Math.floor(value);
   };
   const accents: FieldAccent[] = [];
-  const targetCount = startingArea ? 16 : tile.terrain === 'rock' ? 11 : 13 + Math.floor(random() * 7);
+  const targetCount = startingCenter ? 16 : tile.terrain === 'rock' ? 11 : 13 + Math.floor(random() * 7);
   let attempts = 0;
 
   while (accents.length < targetCount && attempts < targetCount * 20) {
@@ -320,7 +324,7 @@ function fieldAccentsFor(chunk: Point): FieldAccent[] {
     const x = 8 + random() * 84;
     const y = 9 + random() * 82;
     const tooCloseToBuilding = houseRects.some((rect) => pointInRect({ x, y }, rect, 4));
-    const tooCloseToTownCenter = startingArea && Math.hypot(x - 50, y - 52) < 15;
+    const tooCloseToTownCenter = startingCenter && Math.hypot(x - 50, y - 52) < 15;
     const tooCloseToRoad = pointOnFieldRoad({ x, y }, tile.road);
     const tooCloseToAccent = accents.some((accent) => Math.hypot(x - accent.x, y - accent.y) < 6);
     if (tooCloseToBuilding || tooCloseToTownCenter || tooCloseToRoad || tooCloseToAccent) continue;
@@ -744,7 +748,7 @@ const startingGoatPositions: Point[] = [
 ];
 function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
   if (mapTileFor(chunk).terrain === 'ocean') return [];
-  const positions = isStartingArea(chunk) ? startingGoatPositions : Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 16 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % 68), y: 17 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % 66) }));
+  const positions = isTutorialCenter(chunk) ? startingGoatPositions : Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 16 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % 68), y: 17 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % 66) }));
   const safePositions = positions.filter((position) => !isFieldPositionBlocked(position, chunk));
   return safePositions.map((position, index) => {
     const wanderSeed = Math.abs(chunk.x * 97 + chunk.y * 193 + index * 53 + 17);
@@ -830,6 +834,7 @@ function mapTileClass(tile: MapTile & { current: boolean }) {
 function chunkRegion(chunk: Point) {
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   if (landmark) return landmark.name;
+  if (isStartingArea(chunk)) return 'Tutorial Island';
   if (!isContinentChunk(chunk)) return 'Open Water';
   if (chunk.y <= 4) return 'Northwatch Heights';
   if (chunk.x <= 1) return 'Brackenfen Wilds';
@@ -1582,6 +1587,7 @@ if (active) {
   const fieldAccents = fieldAccentsFor(chunk);
   const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
   const startingArea = isStartingArea(chunk);
+  const startingCenter = isTutorialCenter(chunk);
   const inventoryItemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths;
   const talkToNpc = (npc: TownNpc) => {
     setNpcDialogue(npc);
@@ -1641,7 +1647,7 @@ if (active) {
              ))}
            </div>
           {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road + (currentWorldTile.bridge ? ' field-bridge' : '')} aria-hidden="true" />}
-          {startingArea && (
+          {startingCenter && (
             <div className="starting-area-decor" aria-hidden="true">
               <span className="starting-flower flower-northwest" />
               <span className="starting-flower flower-northeast" />
