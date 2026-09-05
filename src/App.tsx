@@ -9,17 +9,18 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/rpgBrain';
-import type { WorldClockState } from '@/game/worldCore';
+import { DEFAULT_WORLD_SEED, type WorldClockState } from '@/game/worldCore';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { getAttackHitbox, getDirection, isEntityInHitbox } from '@/game/combat';
 import { updateGoat, type GoatAIState } from '@/game/ai';
 import { knockback, playCombatSound } from '@/game/effects';
 import { getSpriteState } from '@/game/animation';
+import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/persistence';
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '040';
+const BUILD_NUMBER = '041';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 type HorseState = { chunk: Point; position: Point };
@@ -511,8 +512,10 @@ function playerCriticalChanceForStats(stats: PlayerStats) {
 
 type SaveGameData = {
   format: 'adventure-game-save';
-  version: 1;
+  version: 2;
+  saveId: string;
   savedAt: string;
+  worldSeed: number;
   position: Point;
   chunk: Point;
   mounted: boolean;
@@ -527,6 +530,7 @@ type SaveGameData = {
   playerStats?: PlayerStats;
   statPoints?: number;
   npcStates: TownNpc[];
+  simulatedAdventurers: SimulatedAdventurer[];
   goats: GoatState[];
   interiorId: string | null;
   interiorPosition: Point;
@@ -535,13 +539,14 @@ type SaveGameData = {
   brainState: RpgGameState | null;
 };
 
-const SAVE_FILE_FORMAT = 'adventure-game-save';
-const SAVE_FILE_VERSION = 1;
-const SAVE_STORAGE_KEY = 'adventure-game-save-v1';
+const SAVE_FILE_VERSION = CURRENT_SAVE_VERSION;
+const SAVE_STORAGE_KEY = 'adventure-game-save-v2';
+const SAVE_LEGACY_STORAGE_KEY = 'adventure-game-save-v1';
 const saveDirections = ['up', 'down', 'left', 'right'];
 const savePlayerClasses = ['Beginner', 'Warrior', 'Mage', 'Rogue'];
 const saveNpcRoles = ['mage', 'warrior', 'guide', 'rogue'];
 const saveGoatDispositions = ['calm', 'aggressive', 'defeated'];
+const saveAdventurerClasses = ['Ranger', 'Mage', 'Rogue'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -600,6 +605,21 @@ function isGoatSave(value: unknown): value is GoatState {
     && (value.nextWanderTick === undefined || isFiniteNumber(value.nextWanderTick));
 }
 
+function isSimulatedAdventurerSave(value: unknown): value is SimulatedAdventurer {
+  return isRecord(value)
+    && typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && typeof value.className === 'string'
+    && saveAdventurerClasses.includes(value.className)
+    && isFiniteNumber(value.level)
+    && typeof value.goal === 'string'
+    && typeof value.activity === 'string'
+    && isSavePoint(value.position)
+    && typeof value.facing === 'string'
+    && saveDirections.includes(value.facing)
+    && isFiniteNumber(value.routeIndex);
+}
+
 function isDroppedLootSave(value: unknown): value is DroppedLoot {
   return isRecord(value)
     && isFiniteNumber(value.id)
@@ -625,6 +645,8 @@ function isSaveGameData(value: unknown): value is SaveGameData {
   return isRecord(value)
     && value.format === SAVE_FILE_FORMAT
     && value.version === SAVE_FILE_VERSION
+    && typeof value.saveId === 'string'
+    && isFiniteNumber(value.worldSeed)
     && typeof value.savedAt === 'string'
     && isSavePoint(value.position)
     && isSavePoint(value.chunk)
@@ -644,6 +666,8 @@ function isSaveGameData(value: unknown): value is SaveGameData {
     && (value.statPoints === undefined || (isFiniteNumber(value.statPoints) && value.statPoints >= 0))
     && Array.isArray(value.npcStates)
     && value.npcStates.every(isTownNpcSave)
+    && Array.isArray(value.simulatedAdventurers)
+    && value.simulatedAdventurers.every(isSimulatedAdventurerSave)
     && Array.isArray(value.goats)
     && value.goats.every(isGoatSave)
     && (value.interiorId === null || typeof value.interiorId === 'string')
@@ -1067,7 +1091,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const createSaveData = (): SaveGameData => ({
     format: SAVE_FILE_FORMAT,
     version: SAVE_FILE_VERSION,
+    saveId: 'save-' + Date.now().toString(36),
     savedAt: new Date().toISOString(),
+    worldSeed: DEFAULT_WORLD_SEED,
     position,
     chunk,
     mounted,
@@ -1082,6 +1108,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     playerStats,
     statPoints,
     npcStates,
+    simulatedAdventurers,
     goats,
     interiorId: interior?.id || null,
     interiorPosition,
@@ -1114,6 +1141,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     playerStatsRef.current = restoredStats; onPlayerStatsChange(restoredStats);
     onStatPointsChange(Math.max(0, Math.floor(loadState.statPoints || 0)));
     setNpcStates(loadState.npcStates);
+    setSimulatedAdventurers(loadState.simulatedAdventurers.length ? loadState.simulatedAdventurers : initialSimulatedAdventurers);
     interiorDoorwayIdRef.current = restoredDoorway?.id || null;
     interiorRef.current = restoredDoorway?.area || null; setInterior(restoredDoorway?.area || null);
     interiorPositionRef.current = loadState.interiorPosition; setInteriorPosition(loadState.interiorPosition);
@@ -1915,7 +1943,7 @@ function Home() {
 
   useEffect(() => {
     try {
-      setHasLocalSave(Boolean(window.localStorage.getItem(SAVE_STORAGE_KEY)));
+      setHasLocalSave(Boolean(window.localStorage.getItem(SAVE_STORAGE_KEY) || window.localStorage.getItem(SAVE_LEGACY_STORAGE_KEY)));
     } catch {
       setHasLocalSave(false);
     }
@@ -1968,12 +1996,12 @@ function Home() {
 
   const loadLocalSave = () => {
     try {
-      const raw = window.localStorage.getItem(SAVE_STORAGE_KEY);
+      const raw = window.localStorage.getItem(SAVE_STORAGE_KEY) || window.localStorage.getItem(SAVE_LEGACY_STORAGE_KEY);
       if (!raw) {
         setSaveNotice('No browser save found yet. Start a game and save from Options.');
         return;
       }
-      const parsed: unknown = JSON.parse(raw);
+      const parsed: unknown = migrateSave(JSON.parse(raw));
       if (!isSaveGameData(parsed)) throw new Error('invalid save');
       applyLoadedSave(parsed, 'Browser save loaded.');
     } catch {
@@ -2004,7 +2032,7 @@ function Home() {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const parsed: unknown = JSON.parse(String(reader.result));
+        const parsed: unknown = migrateSave(JSON.parse(String(reader.result)));
         if (!isSaveGameData(parsed)) throw new Error('invalid save');
         applyLoadedSave(parsed, 'Save file loaded.');
       } catch {
