@@ -383,9 +383,9 @@
 .player[data-facing='right'] .player-dagger { left: 28px; top: 19px; transform: rotate(34deg); }
 .interior-player[data-facing='up'] .player-dagger { left: 26px; top: 9px; }
 .interior-player[data-facing='left'] .player-dagger { left: 10px; top: 19px; transform: rotate(-34deg); }
-.player.is-attacking, .interior-player.is-attacking { z-index: 8; animation: player-lunge .48s ease-out both; }
-.player.is-attacking .player-dagger, .interior-player.is-attacking .player-dagger { animation: dagger-swing .48s ease-out both; }
-.player.is-attacking::after { content: '✦'; position: absolute; z-index: 5; left: 27px; top: 4px; color: #fff0a8; font: 17px/1 var(--app-font-mono); text-shadow: 2px 2px 0 rgba(85, 50, 38, .45); animation: attack-spark .48s ease-out both; pointer-events: none; }
+.player.is-attacking, .interior-player.is-attacking { z-index: 8; animation: player-lunge .65s ease-out both; }
+.player.is-attacking .player-dagger, .interior-player.is-attacking .player-dagger { animation: dagger-swing .65s ease-out both; }
+.player.is-attacking::after { content: '✦'; position: absolute; z-index: 5; left: 27px; top: 4px; color: #fff0a8; font: 17px/1 var(--app-font-mono); text-shadow: 2px 2px 0 rgba(85, 50, 38, .45); animation: attack-spark .65s ease-out both; pointer-events: none; }
 @keyframes player-lunge { 0%, 100% { translate: 0 0; } 35% { translate: 5px -2px; } 58% { translate: -2px 1px; } }
 @keyframes dagger-swing { 0% { rotate: 0deg; } 35% { rotate: -78deg; } 65% { rotate: 20deg; } 100% { rotate: 0deg; } }
 @keyframes attack-spark { 0% { opacity: 0; scale: .45; rotate: -18deg; } 35% { opacity: 1; scale: 1.15; rotate: 12deg; } 100% { opacity: 0; scale: 1.4; rotate: 34deg; } }
@@ -437,7 +437,7 @@
   background-size: 96px 576px;
   background-repeat: no-repeat;
   image-rendering: pixelated;
-  animation: player-attack-sprite .48s steps(2, jump-none) both;
+  animation: player-attack-sprite .65s steps(2, jump-none) both;
   will-change: background-position;
   pointer-events: none;
 }
@@ -1994,8 +1994,8 @@ body {
 .goat.is-moving .goat-sprite {
   animation: goat-walk .48s steps(4, end) infinite;
 }
-.goat.is-attacking .goat-sprite { animation: goat-attack .48s ease-out both; }
-.goat.is-attacking::after { content: ''; position: absolute; z-index: 4; left: 19px; top: 8px; width: 13px; height: 7px; border-top: 2px solid #fff0a8; border-right: 2px solid #fff0a8; opacity: 0; animation: goat-attack-flash .48s ease-out both; pointer-events: none; }
+.goat.is-attacking .goat-sprite { animation: goat-attack .65s ease-out both; }
+.goat.is-attacking::after { content: ''; position: absolute; z-index: 4; left: 19px; top: 8px; width: 13px; height: 7px; border-top: 2px solid #fff0a8; border-right: 2px solid #fff0a8; opacity: 0; animation: goat-attack-flash .65s ease-out both; pointer-events: none; }
 @keyframes goat-attack { 0%, 100% { transform: translateX(0) scale(1); } 32% { transform: translateX(3px) scale(1.04, .98); } 58% { transform: translateX(7px) scale(1.12, .9); } }
 @keyframes goat-attack-flash { 0%, 45% { opacity: 0; transform: translateX(-3px) rotate(-20deg); } 58% { opacity: 1; transform: translateX(3px) rotate(12deg); } 100% { opacity: 0; transform: translateX(9px) rotate(32deg); } }
 .goat.is-moving[data-facing='left'] .goat-sprite { background-position-y: -24px; }
@@ -2512,7 +2512,7 @@ body {
 .goat[data-state='attack'] .goat-sprite { animation: goat-attack .3s steps(3, end) both !important; }
 .goat[data-state='hurt'] .goat-sprite { animation: goat-hurt .3s steps(2, end) both !important; }
 @keyframes goat-hurt { 0%, 100% { transform: translateX(0); opacity: 1; } 35% { transform: translateX(-3px); opacity: .72; } 70% { transform: translateX(3px); opacity: .9; } }
-.player[data-state='attack'] .player-attack-sprite { animation: player-attack-sprite .3s steps(2, end) both !important; }
+.player[data-state='attack'] .player-attack-sprite { animation: player-attack-sprite .65s steps(2, end) both !important; }
 .combat-text-layer { position: absolute; inset: 0; z-index: 16; pointer-events: none; overflow: hidden; }
 .combat-text { position: absolute; display: block; color: #fff4cf; font: 700 12px/1 var(--app-font-mono); text-shadow: 2px 2px 0 #67372f, -1px -1px 0 #67372f; transform: translate(-50%, -50%); animation: combat-text-rise .9s ease-out both; }
 .combat-text.critical { color: #ffe17a; font-size: 14px; }
