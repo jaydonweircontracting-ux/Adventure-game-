@@ -1659,13 +1659,7 @@ if (active) {
               <span className="starting-flower flower-southeast" />
             </div>
           )}
-                    {startingArea && (
-            <button className="dungeon-staircase" onClick={onEnterDungeon} aria-label="Enter the Ember Vault dungeon" data-testid="button-enter-dungeon">
-              <span className="dungeon-staircase-stone" aria-hidden="true">▾</span>
-              <span className="dungeon-staircase-label">Ember Vault<br /><small>descend</small></span>
-            </button>
-          )}
-          <div className="field-goats" aria-label="Goats in the field">
+                    <div className="field-goats" aria-label="Goats in the field">
             {goats.filter((goat) => goat.disposition !== 'defeated').map((goat) => (
               <button
                 type="button"
@@ -1722,7 +1716,14 @@ if (active) {
           {currentWorldTile.landmark && (
             <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle} aria-label={currentWorldTile.landmark.name}>
               <span className="field-village-square" />
-              <span className="field-house house-1" /><span className="field-house house-2" /><span className="field-house house-3" />
+              <span className="field-house house-1" /><span className="field-house house-2" /><span className="field-house house-3">
+                {startingArea && (
+                  <button className="dungeon-staircase" onClick={onEnterDungeon} aria-label="Enter the Ember Vault dungeon" data-testid="button-enter-dungeon">
+                    <span className="dungeon-staircase-stone" aria-hidden="true">▾</span>
+                    <span className="dungeon-staircase-label">Ember Vault</span>
+                  </button>
+                )}
+              </span>
               <span className="field-house house-4" />
               {!startingArea && <>
                 <span className="field-house house-5" /><span className="field-house house-6" />
