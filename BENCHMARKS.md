@@ -105,3 +105,25 @@ The follow-up keeps the control visually associated with the horse and reduces t
 | Published cache key | rider-animal-head-1 | recorded |
 | npm install / build / typecheck | not run | pending local test |
 | Browser gameplay / riding feel | not run | pending local test |
+
+
+## Development operations baseline — Checkpoint 018
+
+| Metric | Result | Status |
+|---|---:|---|
+| GitHub branch | main | recorded |
+| Latest recorded commit before next implementation | c86bea0 | recorded |
+| src/App.tsx source size | 110,906 bytes | recorded by GitHub inspection |
+| src/game/rpgBrain.ts source size | 25,578 bytes | recorded by GitHub inspection |
+| src/game/worldCore.ts source size | 9,770 bytes | recorded by GitHub inspection |
+| New dependencies in this checkpoint | 0 | preserved |
+| npm install | not run | pending local test |
+| npm build | not run | pending local test |
+| Typecheck | not run | pending local test |
+| Browser launch and gameplay | not run | pending local test |
+| Visual QA and polish audit | not run | pending local test |
+| Performance and memory measurement | not run | pending local test |
+
+## Interpretation
+
+This is a static source and repository baseline, not a performance result. It records the exact starting point for the next bounded world-clock integration and prevents unrun tests from being mistaken for passing benchmarks.
