@@ -148,3 +148,27 @@ This is a static source and repository baseline, not a performance result. It re
 ## Interpretation
 
 This checkpoint records a source-level combat improvement inspired by classic 2D online RPG interaction: select a nearby overworld enemy directly, face it, and strike it without changing the existing damage or progression model. Runtime responsiveness, collision behavior, balance, and visual feel still require a local playtest.
+
+
+## Build 40 milestone — Checkpoint 020
+
+| Metric | Result | Status |
+|---|---:|---|
+| Visible build marker | 040 | recorded in source |
+| World clock driver | WorldCore.advance(1) | recorded in source |
+| World clock display | time + season + year + day | recorded in source |
+| Targeted overworld combat | click-to-target and click-to-strike | recorded in source |
+| Target health HUD | selected goat HP and level | recorded in source |
+| Low-health HUD state | visible wounded treatment | recorded in source |
+| Health accessibility label | current HP of maximum HP | corrected in source |
+| src/App.tsx source size | 114,073 bytes | recorded by GitHub inspection |
+| src/index.css source size | 95,422 bytes | recorded by GitHub inspection |
+| New package dependencies | 0 | preserved |
+| Static source marker verification | passed | recorded |
+| npm build / typecheck | not run | pending local test |
+| Browser gameplay / combat feel | not run | pending local test |
+| Visual regression / performance | not run | pending local test |
+
+## Interpretation
+
+Build 40 is a source-verified milestone with several player-facing improvements and the first active connection from the overworld loop to WorldCore. It is not a runtime pass: the build still needs local compilation, browser playtesting, combat balance review, and visual verification before it can be called stable.
