@@ -12,7 +12,7 @@ import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/r
 import { DEFAULT_WORLD_SEED, type WorldClockState } from '@/game/worldCore';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
-import { getDirection, isAdjacentAndFacing } from '@/game/combat';
+import { getDirection, isAdjacentAndFacing, isAdjacentTarget } from '@/game/combat';
 import { updateGoat, type GoatAIState } from '@/game/ai';
 import { playCombatSound } from '@/game/effects';
 import { getSpriteState } from '@/game/animation';
@@ -473,15 +473,15 @@ type GoatState = {
   hitFlash: boolean;
   nextWanderTick?: number;
 };
-const GOAT_STEP = 0.8;
+const GOAT_STEP = 0.5;
 const GOAT_TICK_MS = 500;
 const GOAT_WANDER_MIN_TICKS = 10;
 const GOAT_WANDER_MAX_TICKS = 20;
-const PLAYER_ATTACK_ANIMATION_MS = 480;
+const PLAYER_ATTACK_ANIMATION_MS = 650;
 const GOAT_RESPAWN_TICKS = Math.ceil(12000 / GOAT_TICK_MS);
-const GOAT_ATTACK_RANGE = 9;
+const GOAT_ATTACK_RANGE = 12;
 const GOAT_ATTACK_DAMAGE = 3;
-const PLAYER_ATTACK_COOLDOWN_MS = 500;
+const PLAYER_ATTACK_COOLDOWN_MS = 800;
 const GOAT_ATTACK_COOLDOWN_MS = 1000;
 const GOAT_XP_REWARD = 25;
 const GOAT_MIN_XP_REWARD = 5;
@@ -745,7 +745,8 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
 }
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
 function goatIsInAttackArc(goat: GoatState, position: Point, facing: Direction) {
-  return isAdjacentAndFacing(position, goat.position, facing, goat.facing);
+  return isAdjacentTarget(position, goat.position, GOAT_ATTACK_RANGE)
+    && getDirection(position, goat.position) === facing;
 }
 function goatWanderDelay(wanderSeed: number) {
   const range = GOAT_WANDER_MAX_TICKS - GOAT_WANDER_MIN_TICKS + 1;
