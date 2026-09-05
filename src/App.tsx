@@ -1362,7 +1362,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
             spawnCombatText('MISS', positionRef.current, 'damage');
           }
         }
-        if (playerAttack.elapsed >= 300) { playerAttack.active = false; setAttacking(false); }
+        if (playerAttack.elapsed >= PLAYER_ATTACK_ANIMATION_MS) { playerAttack.active = false; setAttacking(false); }
       }
       if (!interiorRef.current && goatsRef.current.length > 0) {
         const currentGoats = goatsRef.current; const currentPlayer = positionRef.current; const currentChunk = chunkRef.current;
@@ -1904,7 +1904,7 @@ if (active) {
            </section>
          )}
          <div className="field-actions">
-           <button className="icon-button field-attack-button" onClick={() => attackGoat()} aria-label={selectedGoat ? 'Strike selected goat' : 'Strike nearest goat'} title={selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space'} aria-disabled={attackCooldownMs > 0} data-testid="button-attack"><Sword size={16} />{attackCooldownMs > 0 && <span className="attack-cooldown-ring" style={{ background: 'conic-gradient(rgba(219, 120, 94, .95) ' + ((attackCooldownMs / PLAYER_ATTACK_COOLDOWN_MS) * 100) + '%, rgba(19, 43, 34, .2) 0)' }} aria-hidden="true" />}</button>
+           <button className="icon-button field-attack-button" onClick={() => attackGoat()} disabled={attackCooldownMs > 0 || attacking || inputLocked || Boolean(interior)} aria-label={selectedGoat ? 'Strike selected goat' : 'Strike nearest goat'} title={selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space'} aria-disabled={attackCooldownMs > 0 || attacking} data-testid="button-attack"><Sword size={16} />{attackCooldownMs > 0 && <span className="attack-cooldown-ring" style={{ background: 'conic-gradient(rgba(219, 120, 94, .95) ' + ((attackCooldownMs / PLAYER_ATTACK_COOLDOWN_MS) * 100) + '%, rgba(19, 43, 34, .2) 0)' }} aria-hidden="true" />}</button>
             <button className="icon-button field-log-toggle" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={16} /></button>
            <button className="icon-button map-button" onClick={onOpenMap} aria-label="Open field atlas" title="Open field atlas" data-testid="button-open-map"><Map size={16} /></button>
             <button className="icon-button field-sound-button" onClick={onToggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'} aria-pressed={muted} data-testid="button-toggle-sound">{muted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
