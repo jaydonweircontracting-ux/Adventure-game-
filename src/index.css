@@ -2553,3 +2553,34 @@ body {
 .options-sound-info small { color: var(--ink-soft); font: 9px var(--app-font-mono); }
 .options-sound-toggle { padding: 7px 10px; color: var(--ink); border: 1px solid var(--line); background: #f4eddd; font: 9px var(--app-font-mono); text-transform: uppercase; }
 .options-sound-toggle:hover, .options-sound-toggle:focus-visible { color: #fff0cc; border-color: var(--ink); background: var(--field-deep); outline: none; }
+
+
+/* Make the starting house exit read clearly against a darker lower wall. */
+.interior-inn::after {
+  background: linear-gradient(to bottom, transparent 0 76%, rgba(43, 29, 28, .46) 76% 100%), linear-gradient(135deg, rgba(255, 231, 167, .12), transparent 42%), #a47758;
+  box-shadow: inset 0 0 0 7px rgba(65, 45, 38, .22), inset 0 -24px 0 rgba(35, 25, 25, .32), inset 0 0 28px rgba(54, 40, 33, .25);
+}
+.interior-inn .interior-doorway {
+  border-color: #1f2428;
+  background: #171a20;
+  box-shadow: 0 0 0 4px rgba(244, 201, 93, .58), 0 7px 0 rgba(25, 19, 20, .5), inset 0 0 12px rgba(244, 201, 93, .18);
+}
+.interior-inn .interior-doorway::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(255, 226, 132, .7);
+  pointer-events: none;
+}
+.interior-inn .interior-doorway span {
+  z-index: 1;
+  font-size: 8px;
+  font-weight: 700;
+  text-shadow: 1px 1px 0 #2d2422;
+}
+.interior-inn .interior-exit-hint {
+  padding: 3px 7px;
+  color: #fff1b0;
+  background: rgba(35, 25, 25, .58);
+  text-shadow: 1px 1px 0 #2d2422;
+}
