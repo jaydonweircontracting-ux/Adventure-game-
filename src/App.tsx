@@ -1345,7 +1345,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
         const nextGoats = currentGoats.map((goat) => {
           if (goat.disposition === 'defeated') {
             const respawnTicks = goat.respawnTicks + elapsed * 1000 / GOAT_TICK_MS;
-            if (respawnTicks >= GOAT_RESPAWN_TICKS) return { ...goat, state: 'idle' as GoatStateName, attacking: false, position: { ...goat.spawnPosition }, hp: goat.maxHp, disposition: 'aggressive' as GoatDisposition, attackCooldown: 0, respawnTicks: 0, moving: false, hitFlash: false };
+            if (respawnTicks >= GOAT_RESPAWN_TICKS) return { ...goat, state: 'idle' as GoatStateName, attacking: false, position: { ...goat.spawnPosition }, hp: goat.maxHp, disposition: 'calm' as GoatDisposition, attackCooldown: GOAT_ATTACK_COOLDOWN_MS, respawnTicks: 0, moving: false, hitFlash: false };
             return { ...goat, moving: false, attacking: false, respawnTicks };
           }
           const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false }, currentPlayer, facingRef.current, currentGoats, elapsed * 1000);
