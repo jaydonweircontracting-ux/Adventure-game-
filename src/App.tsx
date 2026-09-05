@@ -1376,7 +1376,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
           setFacing(direction);
          const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
          const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
-         const movement = { x: (input.x / length) * 150 * elapsed * 100 / frameWidth, y: (input.y / length) * 150 * elapsed * 100 / frameHeight };
+         const movement = { x: (input.x / length) * WALK_SPEED * elapsed * 100 / frameWidth, y: (input.y / length) * WALK_SPEED * elapsed * 100 / frameHeight };
          const current = interiorPositionRef.current;
          const next = { x: Math.min(90, Math.max(10, current.x + movement.x)), y: current.y + movement.y };
          const horizontalStep = { x: next.x, y: current.y };
