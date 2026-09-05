@@ -1967,7 +1967,11 @@ body {
 
 /* Independent goat wildlife and light combat. */
 .field-goats { position: absolute; z-index: 5; inset: 0; pointer-events: none; }
-.goat { position: absolute; width: 24px; height: 24px; transform: translate(-50%, -50%); transition: none; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .2)); }
+.goat { position: absolute; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; font: inherit; cursor: crosshair; transform: translate(-50%, -50%); transition: none; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .2)); pointer-events: auto; }
+.goat:hover, .goat:focus-visible { filter: drop-shadow(0 0 4px rgba(255, 224, 147, .9)) drop-shadow(2px 3px 0 rgba(43, 61, 41, .2)); outline: none; }
+.goat.is-targeted { z-index: 7; }
+.goat-target-ring { position: absolute; z-index: 1; left: -7px; top: -7px; width: 36px; height: 36px; border: 2px solid rgba(255, 215, 123, .95); border-radius: 50%; box-shadow: 0 0 0 2px rgba(112, 54, 44, .42), inset 0 0 8px rgba(255, 207, 106, .22); opacity: 0; pointer-events: none; }
+.goat.is-targeted .goat-target-ring { opacity: 1; animation: target-pulse .9s ease-in-out infinite; }
 .goat-sprite {
   position: absolute;
   left: 0;
@@ -2002,13 +2006,14 @@ body {
 .goat-aggro .goat-hp { background: #b94d42; }
 .goat-aggro .goat-aggro { position: absolute; z-index: 4; right: -1px; top: -13px; display: grid; place-items: center; width: 13px; height: 13px; color: #fff4cf; border: 1px solid #67372f; border-radius: 50%; background: #b94d42; font: 10px/1 var(--app-font-mono); }
 @keyframes goat-angry { from { transform: translateX(-1px); } to { transform: translateX(1px); } }
+@keyframes target-pulse { 0%, 100% { transform: scale(.9); opacity: .72; } 50% { transform: scale(1.08); opacity: 1; } }
 .hud-health-value { display: block; margin-top: 3px; color: rgba(255, 244, 211, .78); font-family: var(--app-font-mono); font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
 .hud-build { display: block; margin-top: 4px; color: rgba(203, 216, 187, .72); font-family: var(--app-font-mono); font-size: 7px; letter-spacing: .12em; text-transform: uppercase; }
 .field-attack-button { color: #fff0cf; background: rgba(131, 67, 55, .9); border-color: rgba(238, 185, 133, .72); }
 .field-attack-button:hover, .field-attack-button:focus-visible { background: rgba(172, 78, 60, .98); }
 .combat-flash { position: absolute; z-index: 14; top: max(72px, calc(env(safe-area-inset-top) + 56px)); left: 50%; width: max-content; max-width: calc(100% - 32px); padding: 7px 11px; color: #fff4d5; border: 1px solid rgba(255, 221, 150, .74); background: rgba(101, 52, 42, .9); box-shadow: 3px 3px 0 rgba(48, 42, 32, .25); font-family: var(--app-font-mono); font-size: 9px; transform: translateX(-50%); animation: combat-pop .2s ease both; pointer-events: none; }
 @keyframes combat-pop { from { opacity: 0; transform: translate(-50%, -5px); } to { opacity: 1; transform: translate(-50%, 0); } }
-@media (prefers-reduced-motion: reduce) { .goat { transition: none; } .goat.is-moving .goat-sprite, .goat.is-attacking .goat-sprite, .player.is-attacking, .player.is-attacking .player-sprite, .player-attack-sprite, .player.is-attacking .player-dagger, .player.is-attacking::after, .goat.is-attacking::after { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .goat { transition: none; } .goat.is-moving .goat-sprite, .goat.is-attacking .goat-sprite, .goat.is-targeted .goat-target-ring, .player.is-attacking, .player.is-attacking .player-sprite, .player-attack-sprite, .player.is-attacking .player-dagger, .player.is-attacking::after, .goat.is-attacking::after { animation: none; } }
 
 
 /* Enterable town interiors. */
