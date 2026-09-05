@@ -26,6 +26,27 @@ function moveAwayFrom(from: CombatPoint, threat: CombatPoint, speed: number, del
   return { x: from.x + (dx / distance) * Math.min(step, distance), y: from.y + (dy / distance) * Math.min(step, distance) };
 }
 
+// Keep hostile goats one melee tile away so they can attack without occupying
+// the player's position or overlapping the player sprite.
+function keepMeleeDistance(position: CombatPoint, player: CombatPoint, playerFacing: CombatDirection): CombatPoint {
+  const dx = position.x - player.x;
+  const dy = position.y - player.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance >= GOAT_MELEE_RANGE) return position;
+  if (distance === 0) {
+    const facingOffset: Record<CombatDirection, CombatPoint> = {
+      up: { x: 0, y: -1 },
+      down: { x: 0, y: 1 },
+      left: { x: -1, y: 0 },
+      right: { x: 1, y: 0 },
+    };
+    const offset = facingOffset[playerFacing];
+    return { x: player.x + offset.x * GOAT_MELEE_RANGE, y: player.y + offset.y * GOAT_MELEE_RANGE };
+  }
+  const scale = GOAT_MELEE_RANGE / distance;
+  return { x: player.x + dx * scale, y: player.y + dy * scale };
+}
+
 export function updateGoat(goat: GoatAIEntity, player: CombatPoint, playerFacing: CombatDirection, goats: GoatAIEntity[], deltaMs: number): { goat: GoatAIEntity; attackHit: boolean } {
   const cooldown = Math.max(0, goat.attackCooldown - deltaMs);
   const hurtTimer = Math.max(0, goat.hurtTimer - deltaMs);
@@ -61,8 +82,9 @@ export function updateGoat(goat: GoatAIEntity, player: CombatPoint, playerFacing
       const d = Math.hypot(dx, dy);
       return d > 0 && d < 6 ? { x: force.x + dx / d * (6 - d), y: force.y + dy / d * (6 - d) } : force;
     }, { x: 0, y: 0 });
-    const position = moveTowards(goat.position, player, GOAT_CHASE_SPEED, deltaMs, separation);
-    return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(goat.position, player), moving: true, attacking: false }, attackHit: false };
+    const chasedPosition = moveTowards(goat.position, player, GOAT_CHASE_SPEED, deltaMs, separation);
+    const position = keepMeleeDistance(chasedPosition, player, playerFacing);
+    return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(position, player), moving: true, attacking: false }, attackHit: false };
   }
   return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false }, attackHit: false };
 }
