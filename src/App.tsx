@@ -9,15 +9,23 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/rpgBrain';
+import type { WorldClockState } from '@/game/worldCore';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '035';
+const BUILD_NUMBER = '040';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 type HorseState = { chunk: Point; position: Point };
+
+function formatWorldClock(clock: WorldClockState) {
+  const hour = String(clock.hour).padStart(2, '0');
+  const minute = String(clock.minuteOfDay % 60).padStart(2, '0');
+  const season = clock.season.charAt(0).toUpperCase() + clock.season.slice(1);
+  return hour + ':' + minute + ' · ' + season + ' · Y' + clock.year + ' D' + clock.day;
+}
 
 const WALK_SPEED = 96; // 3x the original walking speed
 const HORSE_SPEED = 180;
@@ -986,7 +994,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [logOpen, setLogOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [logs, setLogs] = useState(initialLogs);
-  const [time, setTime] = useState('08:43');
+  const [time, setTime] = useState('06:00 · Spring · Y1 D1');
   const [playerHp, setPlayerHp] = useState(PLAYER_MAX_HP);
   const [playerXp, setPlayerXp] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
@@ -1089,7 +1097,11 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     interiorPositionRef.current = loadState.interiorPosition; setInteriorPosition(loadState.interiorPosition);
     setLogs(loadState.logs); setTime(loadState.time);
     setNpcDialogue(null); setAttackFlash(null); setLogOpen(false); setMoving(false);
-    if (loadState.brainState) brainRef.current?.loadGameState(loadState.brainState);
+    if (loadState.brainState) {
+      brainRef.current?.loadGameState(loadState.brainState);
+      const restoredClock = brainRef.current?.worldCore.getClock();
+      if (restoredClock) setTime(formatWorldClock(restoredClock));
+    }
   }, [loadState, onChunkChange, onPlayerStatsChange, onStatPointsChange]);
 
   useEffect(() => {
@@ -1384,11 +1396,8 @@ if (active) {
     };
     animationFrame = window.requestAnimationFrame(animate);
     const clock = window.setInterval(() => {
-      setTime((current) => {
-        const [hours, minutes] = current.split(':').map(Number);
-        const nextMinutes = minutes + 1;
-        return String((hours + Math.floor(nextMinutes / 60)) % 24).padStart(2, '0') + ':' + String(nextMinutes % 60).padStart(2, '0');
-      });
+      const nextClock = brainRef.current?.worldCore.advance(1);
+      if (nextClock) setTime(formatWorldClock(nextClock));
     }, 3000);
     return () => {
       window.cancelAnimationFrame(animationFrame);
