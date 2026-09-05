@@ -2491,3 +2491,24 @@ body {
 .field-attack-button[aria-disabled='true'] { color: #b8b9a7; filter: grayscale(.8); }
 .attack-cooldown-ring { position: absolute; inset: 3px; border-radius: 50%; opacity: .78; pointer-events: none; -webkit-mask: radial-gradient(circle, transparent 52%, #000 55%); mask: radial-gradient(circle, transparent 52%, #000 55%); }
 @media (prefers-reduced-motion: reduce) { .game-frame.is-shaking { animation: none; } .combat-text { animation: none; opacity: 1; } }
+
+
+/* Stats tab inside the satchel */
+.satchel-stats-panel { display: grid; gap: 13px; }
+.satchel-stats-heading { display: grid; gap: 4px; }
+.satchel-stats-heading h3 { margin: 0; color: var(--ink); font-family: var(--app-font-display, Georgia, serif); font-size: 22px; }
+.satchel-stats-points { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 10px; padding: 10px 12px; border: 1px solid #d4c29f; background: rgba(251, 246, 233, .66); }
+.satchel-stats-points strong { grid-row: span 2; color: var(--field-deep); font: 28px/1 var(--app-font-mono, monospace); }
+.satchel-stats-points span { color: var(--ink); font: 10px var(--app-font-mono, monospace); text-transform: uppercase; letter-spacing: .08em; }
+.satchel-stats-points small { color: var(--ink-soft); font-size: 10px; }
+.satchel-stats-list { display: grid; gap: 8px; }
+.satchel-stat-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid #d4c29f; background: rgba(251, 246, 233, .55); }
+.satchel-stat-key { color: var(--sun-deep, #8b6b2d); font: 700 10px var(--app-font-mono, monospace); }
+.satchel-stat-copy { display: grid; gap: 2px; }
+.satchel-stat-copy strong { color: var(--ink); font-size: 12px; }
+.satchel-stat-copy small { color: var(--ink-soft); font-size: 9px; }
+.satchel-stat-value { min-width: 22px; color: var(--ink); text-align: center; font: 700 16px var(--app-font-mono, monospace); }
+.satchel-stat-add { display: inline-flex; align-items: center; gap: 3px; padding: 5px 7px; color: var(--ink); border: 1px solid var(--line); background: #f4eddd; font: 8px var(--app-font-mono, monospace); text-transform: uppercase; }
+.satchel-stat-add:disabled { opacity: .45; cursor: not-allowed; }
+.satchel-stats-footer { color: var(--ink-soft); font: 9px/1.45 var(--app-font-mono, monospace); }
+@media (max-width: 520px) { .satchel-stat-row { grid-template-columns: 28px minmax(0, 1fr) auto; } .satchel-stat-add { grid-column: 2 / -1; justify-self: start; } }
