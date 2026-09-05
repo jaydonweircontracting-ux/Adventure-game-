@@ -3,12 +3,12 @@ import { getDirection, isAdjacentAndFacing, type CombatDirection, type CombatPoi
 export type GoatAIState = 'idle' | 'chase' | 'attack' | 'hurt' | 'die';
 export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean };
 export const GOAT_CHASE_RANGE = 24;
-export const GOAT_MELEE_RANGE = 9;
-export const GOAT_CHASE_SPEED = 10;
+export const GOAT_MELEE_RANGE = 12;
+export const GOAT_CHASE_SPEED = 6;
 export const GOAT_FLEE_HP_RATIO = 0.3;
-export const GOAT_FLEE_SPEED = 12;
-export const GOAT_ATTACK_WINDUP_MS = 100;
-export const GOAT_ATTACK_COOLDOWN_MS = 1000;
+export const GOAT_FLEE_SPEED = 8;
+export const GOAT_ATTACK_WINDUP_MS = 220;
+export const GOAT_ATTACK_COOLDOWN_MS = 1500;
 
 export function moveTowards(from: CombatPoint, to: CombatPoint, speed: number, deltaMs: number, separation: CombatPoint = { x: 0, y: 0 }): CombatPoint {
   const dx = to.x - from.x + separation.x;
