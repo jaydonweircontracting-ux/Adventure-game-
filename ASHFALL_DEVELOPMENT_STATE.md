@@ -1,7 +1,7 @@
 # ASHFALL Development State
 
 Last updated: 2026-09-04
-Current milestone: Build 40 — world clock activation and combat polish
+Current milestone: Build 41 — versioned persistence foundation
 
 ## Current build state
 
@@ -107,3 +107,16 @@ Connect WorldCore.advance to one existing game-state transition and persist that
 - Static source verification passed for the build marker, world-clock activation, target selection, target HUD, low-health state, and combat styles.
 - npm build, typecheck, browser launch, gameplay playtest, visual audit, and performance measurement remain NOT_RUN.
 - No new dependencies were added.
+
+
+## Build 41 checkpoint — persistence foundation
+
+- Added src/game/persistence.ts as the migration boundary for browser and downloaded saves.
+- Advanced the application save format from v1 to v2 with a save id, deterministic world seed, and simulated-adventurer state.
+- Legacy v1 saves remain loadable and are upgraded in memory before validation.
+- Simulated adventurer positions, routes, activities, and facing now survive save/load instead of resetting on reload.
+- Existing combat, dungeon, world-clock, and RPG-brain work was preserved; this slice changes persistence only.
+
+### Next ground-up slice
+
+- Separate world simulation state from the React render loop, beginning with persistent NPC/adventurer events and a deterministic event ledger.
