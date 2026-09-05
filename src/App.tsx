@@ -499,9 +499,6 @@ function playerMaxHpForStats(stats: PlayerStats) {
 function playerDamageForStats(stats: PlayerStats) {
   return PLAYER_BASE_ATTACK_DAMAGE + stats.str;
 }
-function playerAttackCooldownForStats(stats: PlayerStats) {
-  return Math.max(2, PLAYER_BASE_ATTACK_COOLDOWN_TICKS - Math.floor(Math.max(0, stats.dex - 4) / 3));
-}
 function playerCriticalChanceForStats(stats: PlayerStats) {
   return Math.min(0.35, stats.luk * 0.01);
 }
@@ -1380,6 +1377,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
       const currentInterior = interiorRef.current;
        if (active && currentInterior) {
           const direction = input.x > 0 ? 'right' : input.x < 0 ? 'left' : input.y < 0 ? 'up' : 'down';
+          facingRef.current = direction;
           setFacing(direction);
          const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
          const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
@@ -1410,6 +1408,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
        }
 if (active) {
         const direction = input.x > 0 ? 'right' : input.x < 0 ? 'left' : input.y < 0 ? 'up' : 'down';
+        facingRef.current = direction;
         setFacing(direction);
         const speed = mountedRef.current ? HORSE_SPEED : WALK_SPEED;
         const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
@@ -1671,7 +1670,7 @@ if (active) {
                 aria-pressed={targetGoatId === goat.id}
                 data-testid={'button-target-goat-' + goat.id}
                 onClick={() => {
-                  if (inputLocked || optionsOpen) return;
+                  if (inputLocked || optionsOpen || playerAttackStateRef.current.active) return;
                   const dx = goat.position.x - position.x;
                   const dy = goat.position.y - position.y;
                   const nextFacing: Direction = Math.abs(dx) >= Math.abs(dy)
