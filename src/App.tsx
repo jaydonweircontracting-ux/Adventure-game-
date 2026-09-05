@@ -20,7 +20,7 @@ import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/pers
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '048';
+const BUILD_NUMBER = '049';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
@@ -511,7 +511,7 @@ const GOAT_WANDER_MIN_TICKS = 10;
 const GOAT_WANDER_MAX_TICKS = 20;
 const PLAYER_ATTACK_ANIMATION_MS = 650;
 const GOAT_RESPAWN_TICKS = Math.ceil(12000 / GOAT_TICK_MS);
-const GOAT_ATTACK_RANGE = 12;
+const GOAT_ATTACK_RANGE = 15;
 const GOAT_ATTACK_DAMAGE = 3;
 const PLAYER_ATTACK_COOLDOWN_MS = 800;
 const GOAT_ATTACK_COOLDOWN_MS = 1000;
@@ -1932,6 +1932,11 @@ function Home() {
   const [dungeonOpen, setDungeonOpen] = useState(false);
   const [loadedSave, setLoadedSave] = useState<SaveGameData | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!saveNotice) return;
+    const timeout = window.setTimeout(() => setSaveNotice(null), 2800);
+    return () => window.clearTimeout(timeout);
+  }, [saveNotice]);
   const [hasLocalSave, setHasLocalSave] = useState(false);
   const saveStateRef = useRef<(() => SaveGameData) | null>(null);
   const saveFileInputRef = useRef<HTMLInputElement>(null);
