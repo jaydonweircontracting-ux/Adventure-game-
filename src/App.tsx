@@ -1575,6 +1575,7 @@ if (active) {
   };
 
   const currentWorldTile = mapTileFor(chunk);
+  const selectedGoat = targetGoatId === null ? null : goats.find((goat) => goat.id === targetGoatId && goat.disposition !== 'defeated') || null;
   const playerMaxHp = playerMaxHpForStats(playerStats);
   const fieldTrees = fieldTreesFor(chunk);
   const fieldAccents = fieldAccentsFor(chunk);
@@ -1849,6 +1850,12 @@ if (active) {
             <div className="hud-label"><span>Player</span><span data-testid="text-level">LV {playerLevel}</span></div>
             <div className="hud-name"><span className="hud-class">{playerClass}</span></div>
             <div className="bar" aria-label={'Health ' + playerHp + ' percent'}><div className="bar-fill health" style={{ width: (playerHp / playerMaxHp) * 100 + '%' }} /></div><span className="hud-health-value">{playerHp} / {playerMaxHp} HP</span>
+            {selectedGoat && (
+              <div className="hud-target" data-testid="hud-target">
+                <div className="hud-target-label"><span>Target</span><strong>GOAT · LV {selectedGoat.level}</strong></div>
+                <div className="bar target-bar" aria-label={'Target health ' + selectedGoat.hp + ' of ' + selectedGoat.maxHp}><div className="bar-fill target-health" style={{ width: (selectedGoat.hp / selectedGoat.maxHp) * 100 + '%' }} /></div>
+              </div>
+            )}
             <button className="hud-stats-button" onClick={onOpenStats} aria-label="Open character stats" data-testid="button-open-stats"><span>Stats</span><strong>{statPoints} points</strong></button>
             <div className="level-bar-label"><span>Experience</span><span>{xpIntoLevel} / 100 XP</span></div>
             <div className="bar level-bar" aria-label={'Level ' + playerLevel + ', ' + playerXp + ' experience points'}><div className="bar-fill experience" style={{ width: levelProgress + '%' }} /></div>
@@ -1880,7 +1887,7 @@ if (active) {
            </section>
          )}
          <div className="field-actions">
-           <button className="icon-button field-attack-button" onClick={attackGoat} aria-label="Strike nearest goat" title="Strike (Space)" data-testid="button-attack"><Sword size={16} /></button>
+           <button className="icon-button field-attack-button" onClick={() => attackGoat()} aria-label={selectedGoat ? 'Strike selected goat' : 'Strike nearest goat'} title={selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space'} data-testid="button-attack"><Sword size={16} /></button>
             <button className="icon-button field-log-toggle" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={16} /></button>
            <button className="icon-button map-button" onClick={onOpenMap} aria-label="Open field atlas" title="Open field atlas" data-testid="button-open-map"><Map size={16} /></button>
             <button className="icon-button field-sound-button" onClick={onToggleMute} aria-label={muted ? 'Turn sound on' : 'Turn sound off'} aria-pressed={muted} data-testid="button-toggle-sound">{muted ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
