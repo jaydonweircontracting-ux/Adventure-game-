@@ -55,15 +55,14 @@ The current browser UI does not open this socket yet. That is intentional: run a
 
 ## GitHub Pages deployment
 
-This project is deployed automatically from the GitHub `main` branch by `.github/workflows/deploy-pages.yml`.
-
-- Build command: `npm run build`
-- Publish directory: `dist/public`
-- Node version: 20.x (declared in `package.json` and `.nvmrc`)
-- The workflow builds with the repository base path: `/Adventure-game-/`
-- GitHub Pages publishes the Vite browser client only; it does not run `server.js` or the optional WebSocket world server
-- Pages **Source** must be set to **GitHub Actions** under **Settings → Pages**
-
-The published site is available at:
+GitHub Pages currently publishes the **`main` branch `/docs` directory** (legacy Pages source). The published site is:
 
 `https://jaydonweircontracting-ux.github.io/Adventure-game-/`
+
+- `src/` is source code only; changing it does **not** update the live site by itself.
+- Build with Node 20 using `npm run build` and the repository base path `/Adventure-game-/`.
+- Copy the generated `dist/public/` output into `docs/`, including the generated JavaScript, CSS, and asset files.
+- Commit the source changes and the refreshed `docs/` bundle together.
+- Update the build/cache version in `docs/index.html` when publishing so browsers do not keep the previous bundle.
+- Confirm the GitHub Pages deployment reaches **built** and verify the live URL before calling the update live.
+- GitHub Pages publishes the browser client only; it does not run `server.js` or the optional WebSocket world server.
