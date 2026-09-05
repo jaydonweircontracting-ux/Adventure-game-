@@ -2008,6 +2008,11 @@ body {
 @keyframes goat-angry { from { transform: translateX(-1px); } to { transform: translateX(1px); } }
 @keyframes target-pulse { 0%, 100% { transform: scale(.9); opacity: .72; } 50% { transform: scale(1.08); opacity: 1; } }
 .hud-health-value { display: block; margin-top: 3px; color: rgba(255, 244, 211, .78); font-family: var(--app-font-mono); font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
+.hud-target { margin-top: 8px; padding: 6px 7px 7px; border: 1px solid rgba(245, 196, 109, .38); background: rgba(77, 42, 36, .48); box-shadow: inset 0 0 0 1px rgba(255, 230, 157, .06); }
+.hud-target-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: rgba(255, 231, 170, .74); font-family: var(--app-font-mono); font-size: 7px; letter-spacing: .1em; text-transform: uppercase; }
+.hud-target-label strong { color: #ffe0a0; font-size: 7px; font-weight: 600; }
+.target-bar { margin-top: 5px; height: 5px; background: rgba(44, 28, 28, .8); }
+.target-health { background: linear-gradient(90deg, #d05b48, #f0a05b); }
 .hud-build { display: block; margin-top: 4px; color: rgba(203, 216, 187, .72); font-family: var(--app-font-mono); font-size: 7px; letter-spacing: .12em; text-transform: uppercase; }
 .field-attack-button { color: #fff0cf; background: rgba(131, 67, 55, .9); border-color: rgba(238, 185, 133, .72); }
 .field-attack-button:hover, .field-attack-button:focus-visible { background: rgba(172, 78, 60, .98); }
