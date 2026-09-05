@@ -14,13 +14,13 @@ import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { getDirection, isAdjacentAndFacing } from '@/game/combat';
 import { updateGoat, type GoatAIState } from '@/game/ai';
-import { knockback, playCombatSound } from '@/game/effects';
+import { playCombatSound } from '@/game/effects';
 import { getSpriteState } from '@/game/animation';
 import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/persistence';
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '042';
+const BUILD_NUMBER = '043';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 type HorseState = { chunk: Point; position: Point };
@@ -1319,10 +1319,10 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
             const nextHp = Math.max(0, attackTarget.hp - damage);
             const defeated = nextHp <= 0;
             const hitPosition = { ...attackTarget.position };
-            let updatedGoats = goatsRef.current.map((goat) => goat.id === attackTarget.id ? { ...goat, hp: nextHp, position: defeated ? goat.position : knockback(goat.position, getDirection(positionRef.current, goat.position), 4), disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, respawnTicks: defeated ? 0 : goat.respawnTicks } : goat);
+            let updatedGoats = goatsRef.current.map((goat) => goat.id === attackTarget.id ? { ...goat, hp: nextHp, position: goat.position, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, respawnTicks: defeated ? 0 : goat.respawnTicks } : goat);
             goatsRef.current = updatedGoats; setGoats(updatedGoats);
             spawnCombatText((critical ? 'CRIT ' : '') + '-' + damage, hitPosition, critical ? 'critical' : 'damage');
-            triggerScreenShake(); playCombatSound('baa', muted);
+            playCombatSound('baa', muted);
             window.setTimeout(() => setGoats((current) => current.map((goat) => goat.id === attackTarget.id ? { ...goat, hitFlash: false } : goat)), 100);
             setLogs((currentLogs) => [{ text: defeated ? 'Goat defeated. It drops experience and gold.' : 'You hit the goat for ' + damage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
             if (defeated) {
@@ -1350,7 +1350,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
       }
       if (!interiorRef.current && goatsRef.current.length > 0) {
         const currentGoats = goatsRef.current; const currentPlayer = positionRef.current; const currentChunk = chunkRef.current;
-        let damageTaken = 0; let knockedPlayer = currentPlayer;
+        let damageTaken = 0;
         const nextGoats = currentGoats.map((goat) => {
           if (goat.disposition === 'defeated') {
             const respawnTicks = goat.respawnTicks + elapsed * 1000 / GOAT_TICK_MS;
@@ -1362,13 +1362,12 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: goat.position, moving: false };
           if (result.attackHit) {
             const damage = goatAttackDamageForLevel(goat.level); damageTaken += damage;
-            knockedPlayer = knockback(knockedPlayer, getDirection(goat.position, currentPlayer), 4);
-            spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted); triggerScreenShake();
+            spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted);
           }
           return next;
         });
         if (damageTaken > 0) {
-          const nextHp = Math.max(0, playerHpRef.current - damageTaken); playerHpRef.current = nextHp; setPlayerHp(nextHp); positionRef.current = knockedPlayer; setPosition(knockedPlayer);
+          const nextHp = Math.max(0, playerHpRef.current - damageTaken); playerHpRef.current = nextHp; setPlayerHp(nextHp); 
           setLogs((currentLogs) => [{ text: 'A hostile goat rams you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
         }
         goatsRef.current = nextGoats; setGoats(nextGoats);
