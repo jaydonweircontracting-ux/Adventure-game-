@@ -12,7 +12,7 @@ import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/r
 import { DEFAULT_WORLD_SEED, type WorldClockState } from '@/game/worldCore';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
-import { getDirection } from '@/game/combat';
+import { getDirection, isAdjacentAndFacing } from '@/game/combat';
 import { updateGoat, type GoatAIState } from '@/game/ai';
 import { knockback, playCombatSound } from '@/game/effects';
 import { getSpriteState } from '@/game/animation';
@@ -477,10 +477,6 @@ const GOAT_STEP = 1.35;
 const GOAT_TICK_MS = 500;
 const GOAT_WANDER_MIN_TICKS = 10;
 const GOAT_WANDER_MAX_TICKS = 20;
-const PLAYER_BASE_ATTACK_COOLDOWN_TICKS = 5;
-const GOAT_ATTACK_COOLDOWN_TICKS = 5;
-const PLAYER_ATTACK_RANGE = 5;
-const PLAYER_ATTACK_LANE = 3;
 const PLAYER_ATTACK_ANIMATION_MS = 480;
 const GOAT_RESPAWN_TICKS = Math.ceil(12000 / GOAT_TICK_MS);
 const GOAT_ATTACK_RANGE = 9;
@@ -752,13 +748,7 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
 }
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
 function goatIsInAttackArc(goat: GoatState, position: Point, facing: Direction) {
-  const dx = goat.position.x - position.x;
-  const dy = goat.position.y - position.y;
-  if (Math.hypot(dx, dy) > PLAYER_ATTACK_RANGE) return false;
-  if (facing === 'up') return dy < 0 && Math.abs(dx) <= PLAYER_ATTACK_LANE;
-  if (facing === 'down') return dy > 0 && Math.abs(dx) <= PLAYER_ATTACK_LANE;
-  if (facing === 'left') return dx < 0 && Math.abs(dy) <= PLAYER_ATTACK_LANE;
-  return dx > 0 && Math.abs(dy) <= PLAYER_ATTACK_LANE;
+  return isAdjacentAndFacing(position, goat.position, facing, goat.facing);
 }
 function goatWanderDelay(wanderSeed: number) {
   const range = GOAT_WANDER_MAX_TICKS - GOAT_WANDER_MIN_TICKS + 1;
@@ -1372,7 +1362,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
             if (respawnTicks >= GOAT_RESPAWN_TICKS) return { ...goat, state: 'idle' as GoatStateName, attacking: false, position: { ...goat.spawnPosition }, hp: goat.maxHp, disposition: 'aggressive' as GoatDisposition, attackCooldown: 0, respawnTicks: 0, moving: false, hitFlash: false };
             return { ...goat, moving: false, attacking: false, respawnTicks };
           }
-          const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false }, currentPlayer, currentGoats, elapsed * 1000);
+          const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false }, currentPlayer, facingRef.current, currentGoats, elapsed * 1000);
           let next = result.goat;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: goat.position, moving: false };
           if (result.attackHit) {
