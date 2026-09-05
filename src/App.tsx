@@ -12,7 +12,7 @@ import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/r
 import { DEFAULT_WORLD_SEED, type WorldClockState } from '@/game/worldCore';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
-import { getAttackHitbox, getDirection, isEntityInHitbox } from '@/game/combat';
+import { getDirection } from '@/game/combat';
 import { updateGoat, type GoatAIState } from '@/game/ai';
 import { knockback, playCombatSound } from '@/game/effects';
 import { getSpriteState } from '@/game/animation';
@@ -1327,8 +1327,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
         if (!playerAttack.hitApplied && playerAttack.elapsed >= 100) {
           playerAttack.hitApplied = true;
           const attackTarget = playerAttack.targetId == null ? null : goatsRef.current.find((goat) => goat.id === playerAttack.targetId && goat.disposition !== 'defeated');
-          const attackHitbox = getAttackHitbox(positionRef.current, playerAttack.direction);
-          if (attackTarget && isEntityInHitbox(attackTarget.position, attackHitbox)) {
+          if (attackTarget && goatIsInAttackArc(attackTarget, positionRef.current, playerAttack.direction)) {
             const stats = playerStatsRef.current;
             const critical = Math.random() < playerCriticalChanceForStats(stats);
             const damage = playerDamageForStats(stats) * (critical ? 2 : 1);
@@ -1496,12 +1495,13 @@ if (active) {
   const attackGoat = (preferredTargetId?: number) => {
     if (interiorRef.current || playerAttackStateRef.current.active || playerAttackCooldownRef.current > 0) return;
     const currentPlayer = positionRef.current;
+    const currentFacing = facingRef.current;
     const targetId = preferredTargetId ?? targetGoatIdRef.current;
-    const target = targetId == null ? goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goatDistance(goat, currentPlayer) <= PLAYER_ATTACK_RANGE + 2).sort((a, b) => goatDistance(a, currentPlayer) - goatDistance(b, currentPlayer))[0] : goatsRef.current.find((goat) => goat.id === targetId && goat.disposition !== 'defeated' && goatDistance(goat, currentPlayer) <= PLAYER_ATTACK_RANGE + 2);
+    const target = targetId == null
+      ? goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goatIsInAttackArc(goat, currentPlayer, currentFacing)).sort((a, b) => goatDistance(a, currentPlayer) - goatDistance(b, currentPlayer))[0]
+      : goatsRef.current.find((goat) => goat.id === targetId && goat.disposition !== 'defeated' && goatIsInAttackArc(goat, currentPlayer, currentFacing));
     if (!target) return;
-    const direction = getDirection(currentPlayer, target.position);
-    facingRef.current = direction; setFacing(direction);
-    playerAttackStateRef.current = { active: true, direction, targetId: target.id, elapsed: 0, hitApplied: false };
+    playerAttackStateRef.current = { active: true, direction: currentFacing, targetId: target.id, elapsed: 0, hitApplied: false };
     playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS; setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS); playAttackAnimation();
   };
 
