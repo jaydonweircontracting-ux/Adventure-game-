@@ -442,6 +442,8 @@
   pointer-events: none;
 }
 .player.is-attacking .player-dagger, .interior-player.is-attacking .player-dagger { display: none; }
+.player[data-facing='left'] .player-attack-sprite,
+.interior-player[data-facing='left'] .player-attack-sprite { transform: scaleX(-1); }
 @keyframes player-attack-sprite { 0%, 49% { background-position: 0 var(--attack-y); } 50%, 100% { background-position: -48px var(--attack-y); } }
 
 .player.is-mounted { z-index: 4; }
