@@ -85,3 +85,13 @@ Project continuity is documented in PROJECT_RECOVERY.md and TODO.md.
 ## Current bounded next slice
 
 Connect WorldCore.advance to one existing game-state transition and persist that state through the current save path. Do not advance it from the render loop or begin NPC schedules, factions, or economy in the same slice.
+
+
+## Checkpoint 2026-09-04 — development operations baseline
+
+- Repository source of truth: main branch, latest recorded commit c86bea0 (QA ledger).
+- This checkpoint made no game-code changes; it records the state before the next implementation slice.
+- Source inspection confirmed the existing world-core module, RPG-brain persistence hook, browser save boundary, and current requestAnimationFrame gameplay loop are present.
+- The next bounded implementation remains: call WorldCore.advance from one authoritative gameplay transition, make the resulting time visible in the current UI, and persist it through the existing save path.
+- npm install, build, typecheck, browser launch, gameplay playtest, visual audit, and performance measurement: NOT_RUN.
+- No runtime or polish pass is claimed from this checkpoint.
