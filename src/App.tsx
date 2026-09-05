@@ -1419,7 +1419,6 @@ if (active) {
   };
 
   const attackGoat = (preferredTargetId?: number) => {
-    playAttackAnimation();
     if (interiorRef.current) return;
     if (playerAttackCooldownRef.current > 0) {
       setAttackFlash('Your attack is still on cooldown.');
@@ -1438,6 +1437,7 @@ if (active) {
       window.setTimeout(() => setAttackFlash(null), 900);
       return;
     }
+    playAttackAnimation();
     playerAttackCooldownRef.current = playerAttackCooldownForStats(playerStatsRef.current);
     const attackStats = playerStatsRef.current;
     const critical = Math.random() < playerCriticalChanceForStats(attackStats);
