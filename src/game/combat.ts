@@ -11,16 +11,16 @@ export function getDirection(from: CombatPoint, to: CombatPoint): CombatDirectio
   return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'down' : 'up');
 }
 
-export function isAdjacentTarget(from: CombatPoint, to: CombatPoint): boolean {
+export function isAdjacentTarget(from: CombatPoint, to: CombatPoint, range = COMBAT_ADJACENT_RANGE): boolean {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const direction = getDirection(from, to);
   const lateralDistance = direction === 'up' || direction === 'down' ? Math.abs(dx) : Math.abs(dy);
-  return Math.hypot(dx, dy) <= COMBAT_ADJACENT_RANGE && lateralDistance <= COMBAT_ATTACK_LANE;
+  return Math.hypot(dx, dy) <= range && lateralDistance <= COMBAT_ATTACK_LANE;
 }
 
-export function isAdjacentAndFacing(attacker: CombatPoint, target: CombatPoint, attackerFacing: CombatDirection, targetFacing: CombatDirection): boolean {
-  return isAdjacentTarget(attacker, target)
+export function isAdjacentAndFacing(attacker: CombatPoint, target: CombatPoint, attackerFacing: CombatDirection, targetFacing: CombatDirection, range = COMBAT_ADJACENT_RANGE): boolean {
+  return isAdjacentTarget(attacker, target, range)
     && getDirection(attacker, target) === attackerFacing
     && getDirection(target, attacker) === targetFacing;
 }
