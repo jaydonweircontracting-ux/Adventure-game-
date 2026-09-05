@@ -50,6 +50,7 @@ Project continuity is documented in PROJECT_RECOVERY.md and TODO.md.
 ## RPG systems
 
 - Player movement, combat, goat enemies, loot, crafting, horse travel, XP, level progression, player stats, NPC dialogue, interiors, and class selection are present.
+- Overworld combat now supports click-to-target and click-to-strike goats, faces the player toward the clicked target, preserves the selected target for keyboard attacks, and shows a target ring. Runtime feel and build verification remain pending.
 - The browser save format stores overworld/player/NPC/goat/interior/RPG-brain state but does not yet store dungeon-run or simulated-adventurer state.
 
 ## Dungeon
