@@ -511,6 +511,7 @@ const GOAT_WANDER_MIN_TICKS = 10;
 const GOAT_WANDER_MAX_TICKS = 20;
 const PLAYER_ATTACK_ANIMATION_MS = 650;
 const GOAT_RESPAWN_TICKS = Math.ceil(12000 / GOAT_TICK_MS);
+const GOAT_SPAWN_DISPOSITION: GoatDisposition = 'calm';
 const GOAT_ATTACK_RANGE = 15;
 const GOAT_CLOSE_ATTACK_RANGE = 8;
 const GOAT_ATTACK_DAMAGE = 3;
@@ -761,7 +762,7 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
       level: monsterLevelForChunk(chunk, index, playerLevel),
       hp: goatMaxHpForLevel(monsterLevelForChunk(chunk, index, playerLevel)),
       maxHp: goatMaxHpForLevel(monsterLevelForChunk(chunk, index, playerLevel)),
-      disposition: 'calm',
+      disposition: GOAT_SPAWN_DISPOSITION,
       attackCooldown: 0,
       respawnTicks: 0,
       wanderSeed,
@@ -1352,7 +1353,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
         const nextGoats = currentGoats.map((goat) => {
           if (goat.disposition === 'defeated') {
             const respawnTicks = goat.respawnTicks + elapsed * 1000 / GOAT_TICK_MS;
-            if (respawnTicks >= GOAT_RESPAWN_TICKS) return { ...goat, state: 'idle' as GoatStateName, attacking: false, position: { ...goat.spawnPosition }, hp: goat.maxHp, disposition: 'calm' as GoatDisposition, attackCooldown: GOAT_ATTACK_COOLDOWN_MS, respawnTicks: 0, moving: false, hitFlash: false };
+            if (respawnTicks >= GOAT_RESPAWN_TICKS) return { ...goat, state: 'idle' as GoatStateName, attacking: false, position: { ...goat.spawnPosition }, hp: goat.maxHp, disposition: GOAT_SPAWN_DISPOSITION, attackCooldown: GOAT_ATTACK_COOLDOWN_MS, respawnTicks: 0, moving: false, attackTimer: 0, attackHitApplied: false, hurtTimer: 0, hitFlash: false };
             return { ...goat, moving: false, attacking: false, respawnTicks };
           }
           const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false }, currentPlayer, facingRef.current, currentGoats, elapsed * 1000);
