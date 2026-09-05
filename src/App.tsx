@@ -1915,7 +1915,8 @@ function Home() {
   const [playerStats, setPlayerStats] = useState<PlayerStats>(initialPlayerStats);
   const [statPoints, setStatPoints] = useState(0);
   const [equippedDagger, setEquippedDagger] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(true);
+  // Start with the RPG brain-backed game state active by default.
+  const [menuOpen, setMenuOpen] = useState(false);
   const [dungeonOpen, setDungeonOpen] = useState(false);
   const [loadedSave, setLoadedSave] = useState<SaveGameData | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
