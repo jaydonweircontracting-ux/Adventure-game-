@@ -4,9 +4,9 @@ export type GoatAIState = 'idle' | 'chase' | 'attack' | 'hurt' | 'die';
 export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean };
 export const GOAT_CHASE_RANGE = 24;
 export const GOAT_MELEE_RANGE = 5;
-export const GOAT_CHASE_SPEED = 18;
+export const GOAT_CHASE_SPEED = 10;
 export const GOAT_FLEE_HP_RATIO = 0.3;
-export const GOAT_FLEE_SPEED = 24;
+export const GOAT_FLEE_SPEED = 12;
 export const GOAT_ATTACK_WINDUP_MS = 100;
 export const GOAT_ATTACK_COOLDOWN_MS = 1000;
 
