@@ -3,8 +3,8 @@ import { getDirection, isAdjacentAndFacing, type CombatDirection, type CombatPoi
 export type GoatAIState = 'idle' | 'chase' | 'attack' | 'hurt' | 'die';
 export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean };
 export const GOAT_CHASE_RANGE = 24;
-export const GOAT_MELEE_RANGE = 12;
-export const GOAT_CHASE_SPEED = 6;
+export const GOAT_MELEE_RANGE = 15;
+export const GOAT_CHASE_SPEED = 4;
 export const GOAT_FLEE_HP_RATIO = 0.3;
 export const GOAT_FLEE_SPEED = 8;
 export const GOAT_ATTACK_WINDUP_MS = 220;
@@ -58,7 +58,7 @@ export function updateGoat(goat: GoatAIEntity, player: CombatPoint, playerFacing
     return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false }, attackHit: false };
   }
 
-  const facing = goat.facing;
+  const facing = getDirection(goat.position, player);
   const lowHealth = goat.hp / Math.max(1, goat.maxHp) <= GOAT_FLEE_HP_RATIO;
   if (lowHealth) {
     const position = moveAwayFrom(goat.position, player, GOAT_FLEE_SPEED, deltaMs);
