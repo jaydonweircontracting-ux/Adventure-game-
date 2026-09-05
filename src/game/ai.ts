@@ -34,9 +34,7 @@ export function updateGoat(goat: GoatAIEntity, player: CombatPoint, playerFacing
 
   const distance = Math.hypot(player.x - goat.position.x, player.y - goat.position.y);
   if (goat.disposition !== 'aggressive') {
-    if (distance > GOAT_CHASE_RANGE) return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false }, attackHit: false };
-    const facing = getDirection(goat.position, player);
-    return { goat: { ...goat, disposition: 'aggressive', state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing, moving: false, attacking: false }, attackHit: false };
+    return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false }, attackHit: false };
   }
 
   const facing = goat.facing;
