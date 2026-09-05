@@ -383,7 +383,7 @@
 .player[data-facing='right'] .player-dagger { left: 28px; top: 19px; transform: rotate(34deg); }
 .interior-player[data-facing='up'] .player-dagger { left: 26px; top: 9px; }
 .interior-player[data-facing='left'] .player-dagger { left: 10px; top: 19px; transform: rotate(-34deg); }
-.player.is-attacking, .interior-player.is-attacking { animation: player-lunge .48s ease-out both; }
+.player.is-attacking, .interior-player.is-attacking { z-index: 8; animation: player-lunge .48s ease-out both; }
 .player.is-attacking .player-dagger, .interior-player.is-attacking .player-dagger { animation: dagger-swing .48s ease-out both; }
 .player.is-attacking::after { content: '✦'; position: absolute; z-index: 5; left: 27px; top: 4px; color: #fff0a8; font: 17px/1 var(--app-font-mono); text-shadow: 2px 2px 0 rgba(85, 50, 38, .45); animation: attack-spark .48s ease-out both; pointer-events: none; }
 @keyframes player-lunge { 0%, 100% { translate: 0 0; } 35% { translate: 5px -2px; } 58% { translate: -2px 1px; } }
@@ -427,9 +427,9 @@
 .player.is-attacking .player-sprite, .interior-player.is-attacking .player-sprite { opacity: 0; }
 .player-attack-sprite {
   position: absolute;
-  z-index: 4;
+  z-index: 5;
   left: -1px;
-  top: 0;
+  top: -2px;
   width: 48px;
   height: 48px;
   background-image: var(--player-attack-sprite-url);
@@ -437,7 +437,7 @@
   background-size: 96px 576px;
   background-repeat: no-repeat;
   image-rendering: pixelated;
-  animation: player-attack-sprite .48s steps(2, end) both;
+  animation: player-attack-sprite .48s steps(2, jump-none) both;
   will-change: background-position;
   pointer-events: none;
 }
