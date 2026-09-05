@@ -20,7 +20,7 @@ import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/pers
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '049';
+const BUILD_NUMBER = '050';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
@@ -512,6 +512,7 @@ const GOAT_WANDER_MAX_TICKS = 20;
 const PLAYER_ATTACK_ANIMATION_MS = 650;
 const GOAT_RESPAWN_TICKS = Math.ceil(12000 / GOAT_TICK_MS);
 const GOAT_ATTACK_RANGE = 15;
+const GOAT_CLOSE_ATTACK_RANGE = 8;
 const GOAT_ATTACK_DAMAGE = 3;
 const PLAYER_ATTACK_COOLDOWN_MS = 800;
 const GOAT_ATTACK_COOLDOWN_MS = 1000;
@@ -777,8 +778,9 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
 }
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
 function goatIsInAttackArc(goat: GoatState, position: Point, facing: Direction) {
-  return isAdjacentTarget(position, goat.position, GOAT_ATTACK_RANGE)
-    && getDirection(position, goat.position) === facing;
+  const distance = goatDistance(goat, position);
+  return getDirection(position, goat.position) === facing
+    && (distance <= GOAT_CLOSE_ATTACK_RANGE || isAdjacentTarget(position, goat.position, GOAT_ATTACK_RANGE));
 }
 function goatWanderDelay(wanderSeed: number) {
   const range = GOAT_WANDER_MAX_TICKS - GOAT_WANDER_MIN_TICKS + 1;
