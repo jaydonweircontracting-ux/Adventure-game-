@@ -2474,7 +2474,36 @@ body {
   color: #fff0c9;
   box-shadow: 3px 3px 0 rgba(20, 34, 29, .25);
 }
-\n\n/* Stone Soup entrance in the tutorial field */\n.dungeon-staircase {\n  position: absolute;\n  z-index: 12;\n  left: 64%;\n  top: 72%;\n  display: grid;\n  place-items: center;\n  width: 86px;\n  min-height: 70px;\n  padding: 7px 4px 5px;\n  color: #f7e4b2;\n  background: rgba(37, 53, 39, .92);\n  border: 2px solid #d0a86a;\n  box-shadow: 0 0 0 3px rgba(25, 43, 33, .5), 0 8px 16px rgba(22, 39, 29, .32);\n  transform: translate(-50%, -50%);\n  cursor: pointer;\n  transition: transform .16s ease, background-color .16s ease, box-shadow .16s ease;\n}\n.dungeon-staircase:hover, .dungeon-staircase:focus-visible {\n  background: rgba(57, 70, 42, .98);\n  box-shadow: 0 0 0 4px rgba(244, 201, 93, .22), 0 10px 20px rgba(22, 39, 29, .42);\n  transform: translate(-50%, -54%);\n  outline: none;\n}\n.dungeon-staircase-stone {\n  display: grid;\n  place-items: center;\n  width: 32px;\n  height: 24px;\n  color: #211b18;\n  background: #c6a471;\n  border: 2px solid #f1d38d;\n  border-radius: 50% 50% 42% 42%;\n  font: 23px/18px Georgia, serif;\n}\n.dungeon-staircase-label {\n  margin-top: 4px;\n  font: 700 8px/1.1 var(--app-font-mono, monospace);\n  letter-spacing: .08em;\n  text-transform: uppercase;\n}\n.dungeon-staircase-label small {\n  color: #d2b678;\n  font-size: 7px;\n  letter-spacing: .12em;\n}\n@media (max-width: 650px) {\n  .dungeon-staircase { left: 68%; top: 74%; transform: translate(-50%, -50%) scale(.9); }\n}\n\n\n/* Living-world adventurers */\n.simulated-adventurer {\n  position: absolute;\n  z-index: 9;\n  display: grid;\n  justify-items: center;\n  width: 44px;\n  padding: 0;\n  color: #f8e6bf;\n  background: transparent;\n  border: 0;\n  transform: translate(-50%, -50%);\n  cursor: pointer;\n  filter: drop-shadow(0 3px 2px rgba(23, 42, 29, .32));\n  transition: transform .18s ease, filter .18s ease;\n}\n.simulated-adventurer:hover, .simulated-adventurer:focus-visible {\n  z-index: 14;\n  transform: translate(-50%, -53%) scale(1.08);\n  filter: drop-shadow(0 0 6px rgba(244, 201, 93, .7));\n  outline: none;\n}\n.simulated-adventurer-sprite {\n  display: block;\n  width: 19px;\n  height: 28px;\n  background: #3f7191;\n  border: 2px solid #182d2c;\n  border-radius: 9px 9px 5px 5px;\n  box-shadow: inset 0 8px 0 #d6a27a, inset 0 12px 0 #2c526b;\n}\n.adventurer-mage .simulated-adventurer-sprite { background: #7562a3; box-shadow: inset 0 8px 0 #d6a27a, inset 0 12px 0 #55457b; }\n.adventurer-rogue .simulated-adventurer-sprite { background: #5f7258; box-shadow: inset 0 8px 0 #d6a27a, inset 0 12px 0 #3b513d; }\n.simulated-adventurer-nameplate {\n  position: absolute;\n  bottom: 31px;\n  display: grid;\n  gap: 2px;\n  min-width: 94px;\n  padding: 4px 6px;\n  color: #f3dfb7;\n  background: rgba(29, 50, 39, .92);\n  border: 1px solid rgba(230, 191, 113, .5);\n  opacity: 0;\n  pointer-events: none;\n  transform: translateY(3px);\n  transition: opacity .16s ease, transform .16s ease;\n}\n.simulated-adventurer:hover .simulated-adventurer-nameplate, .simulated-adventurer:focus-visible .simulated-adventurer-nameplate { opacity: 1; transform: translateY(0); }\n.simulated-adventurer-nameplate strong { font: 700 9px/1.1 var(--app-font-mono, monospace); white-space: nowrap; }\n.simulated-adventurer-nameplate small { max-width: 130px; color: #d8bc87; font: 7px/1.15 var(--app-font-mono, monospace); }\n
+\n\n/* Compact Ember Vault entrance inside the bottom-left house */
+.dungeon-staircase {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  top: 48%;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  min-height: 22px;
+  padding: 2px;
+  color: #211b18;
+  background: #c6a471;
+  border: 1px solid #f1d38d;
+  border-radius: 5px 5px 3px 3px;
+  box-shadow: 0 0 0 2px rgba(25, 43, 33, .48), 0 3px 5px rgba(22, 39, 29, .32);
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  transition: transform .16s ease, background-color .16s ease, box-shadow .16s ease;
+}
+.dungeon-staircase:hover, .dungeon-staircase:focus-visible {
+  background: #e0bf7d;
+  box-shadow: 0 0 0 3px rgba(244, 201, 93, .28), 0 4px 7px rgba(22, 39, 29, .42);
+  transform: translate(-50%, -54%);
+  outline: none;
+}
+.dungeon-staircase-stone { display: grid; place-items: center; width: 22px; height: 15px; color: #211b18; font: 17px/13px Georgia, serif; }
+.dungeon-staircase-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* Living-world adventurers */\n.simulated-adventurer {\n  position: absolute;\n  z-index: 9;\n  display: grid;\n  justify-items: center;\n  width: 44px;\n  padding: 0;\n  color: #f8e6bf;\n  background: transparent;\n  border: 0;\n  transform: translate(-50%, -50%);\n  cursor: pointer;\n  filter: drop-shadow(0 3px 2px rgba(23, 42, 29, .32));\n  transition: transform .18s ease, filter .18s ease;\n}\n.simulated-adventurer:hover, .simulated-adventurer:focus-visible {\n  z-index: 14;\n  transform: translate(-50%, -53%) scale(1.08);\n  filter: drop-shadow(0 0 6px rgba(244, 201, 93, .7));\n  outline: none;\n}\n.simulated-adventurer-sprite {\n  display: block;\n  width: 19px;\n  height: 28px;\n  background: #3f7191;\n  border: 2px solid #182d2c;\n  border-radius: 9px 9px 5px 5px;\n  box-shadow: inset 0 8px 0 #d6a27a, inset 0 12px 0 #2c526b;\n}\n.adventurer-mage .simulated-adventurer-sprite { background: #7562a3; box-shadow: inset 0 8px 0 #d6a27a, inset 0 12px 0 #55457b; }\n.adventurer-rogue .simulated-adventurer-sprite { background: #5f7258; box-shadow: inset 0 8px 0 #d6a27a, inset 0 12px 0 #3b513d; }\n.simulated-adventurer-nameplate {\n  position: absolute;\n  bottom: 31px;\n  display: grid;\n  gap: 2px;\n  min-width: 94px;\n  padding: 4px 6px;\n  color: #f3dfb7;\n  background: rgba(29, 50, 39, .92);\n  border: 1px solid rgba(230, 191, 113, .5);\n  opacity: 0;\n  pointer-events: none;\n  transform: translateY(3px);\n  transition: opacity .16s ease, transform .16s ease;\n}\n.simulated-adventurer:hover .simulated-adventurer-nameplate, .simulated-adventurer:focus-visible .simulated-adventurer-nameplate { opacity: 1; transform: translateY(0); }\n.simulated-adventurer-nameplate strong { font: 700 9px/1.1 var(--app-font-mono, monospace); white-space: nowrap; }\n.simulated-adventurer-nameplate small { max-width: 130px; color: #d8bc87; font: 7px/1.15 var(--app-font-mono, monospace); }\n
 
 /* Endless Online combat pass */
 .goat.is-hit .goat-sprite { filter: brightness(2.4) grayscale(.3); }
@@ -2512,3 +2541,13 @@ body {
 .satchel-stat-add:disabled { opacity: .45; cursor: not-allowed; }
 .satchel-stats-footer { color: var(--ink-soft); font: 9px/1.45 var(--app-font-mono, monospace); }
 @media (max-width: 520px) { .satchel-stat-row { grid-template-columns: 28px minmax(0, 1fr) auto; } .satchel-stat-add { grid-column: 2 / -1; justify-self: start; } }
+
+
+/* Volume control inside Options */
+.options-sound-control { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 14px 0; padding: 11px 12px; border: 1px solid var(--line); background: rgba(251, 246, 233, .62); }
+.options-sound-info { display: flex; align-items: center; gap: 9px; color: var(--ink); }
+.options-sound-info > span { display: grid; gap: 3px; }
+.options-sound-info strong { font-size: 12px; }
+.options-sound-info small { color: var(--ink-soft); font: 9px var(--app-font-mono); }
+.options-sound-toggle { padding: 7px 10px; color: var(--ink); border: 1px solid var(--line); background: #f4eddd; font: 9px var(--app-font-mono); text-transform: uppercase; }
+.options-sound-toggle:hover, .options-sound-toggle:focus-visible { color: #fff0cc; border-color: var(--ink); background: var(--field-deep); outline: none; }
