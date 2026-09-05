@@ -127,3 +127,24 @@ The follow-up keeps the control visually associated with the horse and reduces t
 ## Interpretation
 
 This is a static source and repository baseline, not a performance result. It records the exact starting point for the next bounded world-clock integration and prevents unrun tests from being mistaken for passing benchmarks.
+
+
+## Targeted combat slice — Checkpoint 019
+
+| Metric | Result | Status |
+|---|---:|---|
+| Overworld target selection | click-to-target and click-to-strike | recorded in source |
+| Target persistence | selected goat remains the keyboard attack target | recorded in source |
+| Directional attack assist | player faces clicked target before strike | recorded in source |
+| Target feedback | persistent target ring with reduced-motion fallback | recorded in source |
+| Existing cooldown, damage, loot, and aggro rules | preserved | recorded in source |
+| src/App.tsx source size | 112,833 bytes | recorded by GitHub inspection |
+| src/index.css source size | 94,530 bytes | recorded by GitHub inspection |
+| New package dependencies | 0 | preserved |
+| npm build / typecheck | not run | pending local test |
+| Browser combat playtest | not run | pending local test |
+| Combat feel / balance audit | not run | pending local test |
+
+## Interpretation
+
+This checkpoint records a source-level combat improvement inspired by classic 2D online RPG interaction: select a nearby overworld enemy directly, face it, and strike it without changing the existing damage or progression model. Runtime responsiveness, collision behavior, balance, and visual feel still require a local playtest.
