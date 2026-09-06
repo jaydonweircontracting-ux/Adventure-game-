@@ -50,7 +50,7 @@ function keepMeleeDistance(position: CombatPoint, player: CombatPoint, playerFac
 export function updateGoat(goat: GoatAIEntity, player: CombatPoint, playerFacing: CombatDirection, goats: GoatAIEntity[], deltaMs: number): { goat: GoatAIEntity; attackHit: boolean } {
   const cooldown = Math.max(0, goat.attackCooldown - deltaMs);
   const hurtTimer = Math.max(0, goat.hurtTimer - deltaMs);
-  if (goat.disposition === 'defeated') return { goat: { ...goat, state: 'die', moving: false, attacking: false, attackCooldown: cooldown, hurtTimer }, attackHit: false };
+  if (goat.hp <= 0 || goat.disposition === 'defeated') return { goat: { ...goat, disposition: 'defeated', state: 'die', moving: false, attacking: false, attackCooldown: cooldown, hurtTimer, attackTimer: 0, attackHitApplied: false }, attackHit: false };
   if (goat.state === 'hurt' && hurtTimer > 0) return { goat: { ...goat, hurtTimer, attackCooldown: cooldown, moving: false, attacking: false }, attackHit: false };
 
   const distance = Math.hypot(player.x - goat.position.x, player.y - goat.position.y);
