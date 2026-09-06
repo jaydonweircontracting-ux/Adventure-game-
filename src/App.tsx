@@ -792,6 +792,24 @@ function goatWanderDelay(wanderSeed: number) {
 function nextGoatWanderSeed(goat: GoatState, worldStep: number) {
   return Math.abs((goat.wanderSeed * 1664525 + worldStep * 101 + goat.id * 17) % 2147483647);
 }
+function resetGoatAfterRespawn(goat: GoatState): GoatState {
+  return {
+    ...goat,
+    position: { ...goat.spawnPosition },
+    hp: goat.maxHp,
+    disposition: GOAT_SPAWN_DISPOSITION,
+    state: 'idle',
+    attackCooldown: GOAT_ATTACK_COOLDOWN_MS,
+    respawnTicks: 0,
+    moving: false,
+    attacking: false,
+    attackTimer: 0,
+    attackHitApplied: false,
+    hurtTimer: 0,
+    hitFlash: false,
+    nextWanderTick: goatWanderDelay(goat.wanderSeed),
+  };
+}
 function moveGoatIndependently(goat: GoatState, worldStep: number, playerPosition: Point, chunk: Point, goats: GoatState[]) {
   if (goat.disposition === 'defeated') return { ...goat, moving: false, attacking: false };
   const isWandering = goat.disposition === 'calm';
@@ -1360,7 +1378,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
         const nextGoats = currentGoats.map((goat) => {
           if (goat.disposition === 'defeated') {
             const respawnTicks = goat.respawnTicks + elapsed * 1000 / GOAT_TICK_MS;
-            if (respawnTicks >= GOAT_RESPAWN_TICKS) return { ...goat, state: 'idle' as GoatStateName, attacking: false, position: { ...goat.spawnPosition }, hp: goat.maxHp, disposition: GOAT_SPAWN_DISPOSITION, attackCooldown: GOAT_ATTACK_COOLDOWN_MS, respawnTicks: 0, moving: false, attackTimer: 0, attackHitApplied: false, hurtTimer: 0, hitFlash: false };
+            if (respawnTicks >= GOAT_RESPAWN_TICKS) return resetGoatAfterRespawn(goat);
             return { ...goat, moving: false, attacking: false, respawnTicks };
           }
           const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false }, currentPlayer, facingRef.current, currentGoats, elapsed * 1000);
