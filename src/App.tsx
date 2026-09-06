@@ -1038,7 +1038,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [logs, setLogs] = useState(initialLogs);
   const [time, setTime] = useState('06:00 · Spring · Y1 D1');
-  const [playerHp, setPlayerHp] = useState(PLAYER_MAX_HP);
+  const [playerHp, setPlayerHp] = useState(playerMaxHpForStats(initialPlayerStats));
   const [playerXp, setPlayerXp] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
   const [playerClass, setPlayerClass] = useState<PlayerClass>('Beginner');
@@ -1363,7 +1363,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
               targetGoatIdRef.current = null; setTargetGoatId(null);
             }
           } else {
-            spawnCombatText('MISS', positionRef.current, 'damage');
+            // Keep missed swings silent; combat feedback is reserved for actual hits.
           }
         }
         if (playerAttack.elapsed >= PLAYER_ATTACK_ANIMATION_MS) {
