@@ -959,7 +959,7 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, playerStats
                   return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className}>{item.mark}</span><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div>;
                 })}
               </div>
-              {itemCount === 0 && <div className="inventory-empty"><Backpack size={30} strokeWidth={1.5} /><strong>Your satchel is empty</strong></div>}
+              {itemCount === 0 && <div className="inventory-empty"><Backpack size={30} strokeWidth={1.5} /><strong>Menu is empty</strong></div>}
             </>
           ) : activeTab === 'equipment' ? (
             <div className="equipment-panel" role="tabpanel" aria-label="Equipment"><div className="inventory-count">Equipped gear changes your character</div><div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot"><span className="equipment-slot-mark dagger-mark">†</span><span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>{(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div><p className="equipment-hint">{equippedDagger ? 'The dagger is visible in your hand.' : 'Craft a dagger, then equip it from this tab.'}</p></div>
@@ -1442,14 +1442,7 @@ if (active) {
         }
         const resolved = resolveFieldMovement(current, movement, currentChunk, goatsRef.current);
         if (resolved) {
-          if (resolved.travelLabels.length > 0 && playerClassRef.current === 'Beginner' && isStartingArea(currentChunk)) {
-            positionRef.current = current;
-            setPosition(current);
-            setAttackFlash('Choose a class with Noah, Damon, or Shawn at level 10 before leaving the tutorial island.');
-            setLogs((currentLogs) => [{ text: 'The island gate is sealed. Reach level 10 and choose a class first.', color: 'red' }, ...currentLogs].slice(0, 3));
-            window.setTimeout(() => setAttackFlash(null), 1400);
-            animationFrame = window.requestAnimationFrame(animate); return;
-          }
+          // The current continent is the tutorial world. Its ocean edge is reserved for the future boat route.
           positionRef.current = resolved.position;
           setPosition(resolved.position);
           if (resolved.travelLabels.length > 0) {
@@ -1614,8 +1607,8 @@ if (active) {
     playerClassRef.current = nextClass;
     setPlayerClass(nextClass);
     setNpcDialogue(null);
-    setAttackFlash(`Class chosen: ${nextClass}. The roads beyond the island are open.`);
-    setLogs((currentLogs) => [{ text: `You become a ${nextClass}. The tutorial island gate is open.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+    setAttackFlash(`Class chosen: ${nextClass}. The boat route to the wider world is unlocked.`);
+    setLogs((currentLogs) => [{ text: `You become a ${nextClass}. The wider world will open by boat.`, color: 'blue' }, ...currentLogs].slice(0, 3));
     window.setTimeout(() => setAttackFlash(null), 1500);
   };
   const craftItem = (item: CraftItem) => {
