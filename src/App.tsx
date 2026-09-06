@@ -12,7 +12,7 @@ import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/r
 import { DEFAULT_WORLD_SEED, type WorldClockState } from '@/game/worldCore';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
-import { getDirection, isAdjacentAndFacing, isAdjacentTarget } from '@/game/combat';
+import { getAttackHitbox, getDirection, isEntityInHitbox } from '@/game/combat';
 import { updateGoat, type GoatAIState } from '@/game/ai';
 import { playCombatSound } from '@/game/effects';
 import { getSpriteState } from '@/game/animation';
@@ -20,7 +20,7 @@ import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/pers
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '051';
+const BUILD_NUMBER = '052';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
@@ -782,9 +782,8 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
 }
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
 function goatIsInAttackArc(goat: GoatState, position: Point, facing: Direction) {
-  const distance = goatDistance(goat, position);
-  return getDirection(position, goat.position) === facing
-    && (distance <= GOAT_CLOSE_ATTACK_RANGE || isAdjacentTarget(position, goat.position, GOAT_ATTACK_RANGE));
+  const attackHitbox = getAttackHitbox(position, facing);
+  return getDirection(position, goat.position) === facing && isEntityInHitbox(goat.position, attackHitbox);
 }
 function goatWanderDelay(wanderSeed: number) {
   const range = GOAT_WANDER_MAX_TICKS - GOAT_WANDER_MIN_TICKS + 1;
@@ -1309,7 +1308,12 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
         playerAttack.elapsed += elapsed * 1000;
         if (!playerAttack.hitApplied && playerAttack.elapsed >= 100) {
           playerAttack.hitApplied = true;
-          const attackTarget = playerAttack.targetId == null ? null : goatsRef.current.find((goat) => goat.id === playerAttack.targetId && goat.disposition !== 'defeated');
+          const attackCandidates = goatsRef.current
+            .filter((goat) => goat.disposition !== 'defeated' && goatIsInAttackArc(goat, positionRef.current, playerAttack.direction))
+            .sort((a, b) => goatDistance(a, positionRef.current) - goatDistance(b, positionRef.current));
+          const attackTarget = playerAttack.targetId == null
+            ? attackCandidates[0]
+            : attackCandidates.find((goat) => goat.id === playerAttack.targetId);
           if (attackTarget && goatIsInAttackArc(attackTarget, positionRef.current, playerAttack.direction)) {
             const stats = playerStatsRef.current;
             const critical = Math.random() < playerCriticalChanceForStats(stats);
@@ -1493,10 +1497,9 @@ if (active) {
     const currentFacing = facingRef.current;
     const targetId = preferredTargetId ?? targetGoatIdRef.current;
     const target = targetId == null
-      ? goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goatIsInAttackArc(goat, currentPlayer, currentFacing)).sort((a, b) => goatDistance(a, currentPlayer) - goatDistance(b, currentPlayer))[0]
-      : goatsRef.current.find((goat) => goat.id === targetId && goat.disposition !== 'defeated' && goatIsInAttackArc(goat, currentPlayer, currentFacing));
-    if (!target) return;
-    playerAttackStateRef.current = { active: true, direction: currentFacing, targetId: target.id, elapsed: 0, hitApplied: false };
+      ? null
+      : goatsRef.current.find((goat) => goat.id === targetId && goat.disposition !== 'defeated');
+    playerAttackStateRef.current = { active: true, direction: currentFacing, targetId: target?.id ?? null, elapsed: 0, hitApplied: false };
     playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS;
     setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS);
     playAttackAnimation(currentFacing);
@@ -1592,7 +1595,6 @@ if (active) {
   const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
   const startingArea = isStartingArea(chunk);
   const startingCenter = isTutorialCenter(chunk);
-  const inventoryItemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths;
   const talkToNpc = (npc: TownNpc) => {
     setNpcDialogue(npc);
     setLogs((currentLogs) => [{ text: `${npc.name} turns to you: ${npc.title}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
@@ -1882,8 +1884,6 @@ if (active) {
           </div>
           <button className="hud-card right hud-button" onClick={onOpenInventory} aria-label="Open inventory" data-testid="button-open-inventory">
             <div className="hud-label"><span>Menu</span><Coins size={12} /></div>
-             <div className="hud-coins" data-testid="text-coin-count">{inventory.coins.toLocaleString()} gold</div>
-             <div className="hud-items" data-testid="text-item-count">{inventoryItemCount} items</div>
             <div className="hud-time" data-testid="text-game-time">{time} / clear</div>
           </button>
         </div>
