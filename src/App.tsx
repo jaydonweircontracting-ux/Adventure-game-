@@ -20,10 +20,11 @@ import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/pers
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '054';
+const BUILD_NUMBER = '055';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
+const INTERIOR_PLAYER_COLLISION_BOX = { halfWidth: 2.8, halfHeight: 2.8 };
 const GOAT_COLLISION_BOX = { halfWidth: 2.8, halfHeight: 2.5 };
 const COLLISION_GAP = 0.8;
 const INTERIOR_DOORWAY_WIDTH_PX = 58;
@@ -470,7 +471,7 @@ function isInteriorPositionBlocked(position: Point, area: InteriorArea) {
   if (area.roomType === 'building') return false;
   return interiorFurnitureCollision.some((rect) => collisionBoxesOverlap(
     position,
-    PLAYER_COLLISION_BOX,
+    INTERIOR_PLAYER_COLLISION_BOX,
     { x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2 },
     { halfWidth: (rect.right - rect.left) / 2, halfHeight: (rect.bottom - rect.top) / 2 },
   ));
