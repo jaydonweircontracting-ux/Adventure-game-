@@ -26,8 +26,8 @@ export function isAdjacentAndFacing(attacker: CombatPoint, target: CombatPoint, 
 }
 
 export function getAttackHitbox(origin: CombatPoint, direction: CombatDirection): CombatRect {
-  const size = 5.5;
-  const reach = 5.2;
+  const size = 4.5;
+  const reach = 4.2;
   const center = { x: origin.x + (direction === 'right' ? reach : direction === 'left' ? -reach : 0), y: origin.y + (direction === 'down' ? reach : direction === 'up' ? -reach : 0) };
   return { x: center.x - size / 2, y: center.y - size / 2, width: size, height: size };
 }
