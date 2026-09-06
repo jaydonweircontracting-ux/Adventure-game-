@@ -26,6 +26,9 @@ type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
 const GOAT_COLLISION_BOX = { halfWidth: 2.8, halfHeight: 2.5 };
 const COLLISION_GAP = 0.8;
+const INTERIOR_DOORWAY_WIDTH_PX = 58;
+const INTERIOR_PLAYER_WIDTH_PX = 46;
+const INTERIOR_DOORWAY_PADDING_PX = 4;
 
 type CollisionBox = { halfWidth: number; halfHeight: number };
 
@@ -1396,7 +1399,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
                ? verticalStep
                : current
            : next;
-         if (next.y > 91) {
+         const doorwayHalfWidth = (((INTERIOR_DOORWAY_WIDTH_PX + INTERIOR_PLAYER_WIDTH_PX) / 2 + INTERIOR_DOORWAY_PADDING_PX) / Math.max(1, frameWidth)) * 100;
+         const atDoorway = Math.abs(next.x - 50) <= doorwayHalfWidth;
+         if (next.y > 91 && atDoorway) {
            const exitPosition = currentInterior.exteriorPosition;
            interiorDoorwayIdRef.current = null;
            interiorRef.current = null; setInterior(null);
@@ -1404,8 +1409,11 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
            positionRef.current = exitPosition; setPosition(exitPosition);
            setLogs((currentLogs) => [{ text: 'You step back outside into Mosslight Crossing.', color: 'blue' }, ...currentLogs].slice(0, 3));
          } else {
-           interiorPositionRef.current = resolvedInteriorPosition;
-           setInteriorPosition(resolvedInteriorPosition);
+           const interiorPosition = next.y > 91
+             ? { ...resolvedInteriorPosition, y: 91 }
+             : resolvedInteriorPosition;
+           interiorPositionRef.current = interiorPosition;
+           setInteriorPosition(interiorPosition);
          }
          animationFrame = window.requestAnimationFrame(animate); return;
        }
