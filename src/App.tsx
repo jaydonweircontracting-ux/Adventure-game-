@@ -20,7 +20,7 @@ import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/pers
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '057';
+const BUILD_NUMBER = '058';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
@@ -463,7 +463,7 @@ const interiorFurnitureCollision: InteriorCollisionRect[] = [
   { left: 20, top: 29, right: 80, bottom: 40 }, // counter
   { left: 17, top: 43, right: 30, bottom: 67 }, // left shelf — extra inner clearance
   { left: 70, top: 43, right: 83, bottom: 67 }, // right shelf — extra inner clearance
-  { left: 37, top: 57, right: 64, bottom: 68 }, // table and legs — side clearance only
+  { left: 39, top: 57, right: 62, bottom: 68 }, // table and legs — side clearance only
 ];
 
 function isInteriorPositionBlocked(position: Point, area: InteriorArea) {
