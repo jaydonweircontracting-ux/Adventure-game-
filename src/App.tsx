@@ -20,7 +20,7 @@ import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/pers
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '052';
+const BUILD_NUMBER = '053';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
@@ -458,7 +458,7 @@ function canEnterDoorway(currentPosition: Point, nextPosition: Point, doorway: D
 type InteriorCollisionRect = FieldRect;
 
 // These rectangles are in the interior scene's 0-100 coordinate space. They include
-// a little visual padding so the player cannot overlap the furniture sprites.
+// visual padding, then movement resolves them against the player's full collision box.
 const interiorFurnitureCollision: InteriorCollisionRect[] = [
   { left: 20, top: 29, right: 80, bottom: 40 }, // counter
   { left: 17, top: 43, right: 30, bottom: 67 }, // left shelf — extra inner clearance
@@ -468,7 +468,12 @@ const interiorFurnitureCollision: InteriorCollisionRect[] = [
 
 function isInteriorPositionBlocked(position: Point, area: InteriorArea) {
   if (area.roomType === 'building') return false;
-  return interiorFurnitureCollision.some((rect) => pointInRect(position, rect));
+  return interiorFurnitureCollision.some((rect) => collisionBoxesOverlap(
+    position,
+    PLAYER_COLLISION_BOX,
+    { x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2 },
+    { halfWidth: (rect.right - rect.left) / 2, halfHeight: (rect.bottom - rect.top) / 2 },
+  ));
 }
 
 type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
