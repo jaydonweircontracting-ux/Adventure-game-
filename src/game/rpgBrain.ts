@@ -34,7 +34,7 @@ export const ADVENTURE_STARTING_LOOP: readonly TutorialStepDefinition[] = [
   { stage: 'meet_class_guides', title: 'Meet the Class Guides', objective: 'Speak with Noah, Damon, and Shawn in the town square.', completion: 'The guides explain the three paths forward.' },
   { stage: 'hunt_goats', title: 'Learn the Hunt', objective: 'Defeat goats, survive their counterattacks, and collect useful materials.', completion: 'Your first supplies and experience are secured.' },
   { stage: 'choose_class', title: 'Choose a Class', objective: 'Reach level 10, then choose Mage, Warrior, or Rogue.', completion: 'Your class opens the roads beyond the tutorial.' },
-  { stage: 'leave_tutorial_island', title: 'Leave the Tutorial Island', objective: 'Take a connected road into the wider world.', completion: 'The larger map and its settlements are now available.' },
+  { stage: 'leave_tutorial_island', title: 'Reach the Wider World', objective: 'At level 10, take a boat into the wider world.', completion: 'The wider world is now available by boat.' },
 ];
 
 
@@ -394,11 +394,7 @@ export function createAdventureBrain(): RPGBrain {
   brain.connectChunks('greenvale-4-7', 'ironwood-gate-5-7');
   brain.connectChunks('greenvale-4-7', 'northwatch-foothills-4-6');
   brain.connectChunks('greenvale-4-7', 'sunwash-foothills-4-8');
-  const tutorialExitRequirement = { minLevel: 10, requiresClass: true };
-  brain.addTravelGate('tutorial-road-west', 'greenvale-4-7', 'brackenfen-gate-3-7', 'west', 'Brackenfen Road', tutorialExitRequirement);
-  brain.addTravelGate('tutorial-road-east', 'greenvale-4-7', 'ironwood-gate-5-7', 'east', 'Ironwood Road', tutorialExitRequirement);
-  brain.addTravelGate('tutorial-road-north', 'greenvale-4-7', 'northwatch-foothills-4-6', 'north', 'Northwatch Road', tutorialExitRequirement);
-  brain.addTravelGate('tutorial-road-south', 'greenvale-4-7', 'sunwash-foothills-4-8', 'south', 'Sunwash Road', tutorialExitRequirement);
+  // The current continent is the tutorial world; its future expansion will be reached by boat.
   brain.addLocation('mosslight-crossing', 'greenvale-4-7', 'Mosslight Crossing', 'town', 'A four-way town at the heart of Greenvale, where every road points toward another story.');
   brain.createCity('mosslight-crossing-city', 'mosslight-crossing', 'Mosslight Crossing', 'A welcoming crossroads with quiet corners, teaching halls, and an old fountain.');
   brain.addCityDistrict('mosslight-crossing-city', 'crossroads-square', 'Crossroads Square');
