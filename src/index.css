@@ -2740,3 +2740,17 @@ body {
 .map-overlay .atlas-region-label {
   display: none !important;
 }
+
+/* Use the uploaded map as four real tile quadrants, not as an underlay. */
+.map-overlay .map-background-art { display: none !important; }
+.map-overlay .map-tile.map-photo-tile {
+  background-image: var(--world-map-photo) !important;
+  background-size: 200% 200% !important;
+  background-position: var(--world-map-position) !important;
+  background-repeat: no-repeat !important;
+}
+.map-overlay .map-tile.map-photo-tile::before,
+.map-overlay .map-tile.map-photo-tile::after {
+  background: none !important;
+  opacity: 0 !important;
+}
