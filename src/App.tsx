@@ -140,7 +140,7 @@ type MapTile = {
   regionStyle: RegionStyle;
   waterFeature: 'river' | 'lake' | 'sea' | null;
   waterEdge: 'north' | 'south' | 'east' | 'west' | null;
-  road: 'horizontal' | 'vertical' | 'cross' | 'cross-no-north' | 'none';
+  road: 'horizontal' | 'vertical' | 'cross' | 'cross-no-north' | 'corner-down-left' | 'none';
   bridge: boolean;
   landmark: { name: string; kind: SettlementKind } | null;
 };
@@ -200,7 +200,21 @@ function mapTileFor(point: Point): MapTile {
     (point.x === 6 && point.y >= 7 && point.y <= 10)
   );
   // The starting field is a simple east-west road through the town; branches begin outside it.
-  const road = isTutorialCenter(point) ? 'horizontal' : horizontalRoad && verticalRoad ? 'cross' : horizontalRoad ? 'horizontal' : verticalRoad ? 'vertical' : 'none';
+  const road = isTutorialCenter(point) && horizontalRoad && verticalRoad
+    ? 'corner-down-left'
+    : point.x === 4 && point.y === 6
+      ? 'none'
+      : point.x === 5 && point.y === 7
+        ? 'none'
+        : point.x === 3 && point.y === 7
+          ? 'horizontal'
+          : horizontalRoad && verticalRoad
+            ? 'cross'
+            : horizontalRoad
+              ? 'horizontal'
+              : verticalRoad
+                ? 'vertical'
+                : 'none';
   const bridge = waterFeature !== null && !isOcean && road !== 'none';
 
   return {
@@ -258,7 +272,7 @@ function pointOnFieldRoad(point: Point, road: MapTile['road']) {
   // Keep tree canopies and trunks off the full road corridor, not just its center line.
   const onHorizontalRoad = point.y >= 44 && point.y <= 59;
   const onVerticalRoad = point.x >= 44 && point.x <= 59;
-  return road === 'horizontal' ? onHorizontalRoad : road === 'vertical' ? onVerticalRoad : road === 'cross' ? onHorizontalRoad || onVerticalRoad : false;
+  return road === 'horizontal' ? onHorizontalRoad : road === 'vertical' ? onVerticalRoad : road === 'cross' ? onHorizontalRoad || onVerticalRoad : road === 'corner-down-left' ? (onHorizontalRoad && point.x <= 50) || (onVerticalRoad && point.y >= 50) : false;
 }
 
 function fieldTreesFor(chunk: Point): FieldTree[] {
