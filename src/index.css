@@ -2584,3 +2584,34 @@ body {
   background: rgba(35, 25, 25, .58);
   text-shadow: 1px 1px 0 #2d2422;
 }
+
+/* Reference atlas map pass: visual-only world-map styling. The playable starting area is intentionally untouched. */
+.map-overlay .big-map {
+  border: 3px solid #17486b;
+  background: repeating-linear-gradient(0deg, rgba(92, 181, 201, .12) 0 2px, transparent 2px 19px), repeating-linear-gradient(90deg, rgba(92, 181, 201, .08) 0 2px, transparent 2px 25px), #216789;
+  box-shadow: inset 0 0 0 6px #174c70, inset 0 0 0 8px rgba(12, 45, 67, .48), inset 0 0 30px rgba(9, 49, 70, .28);
+  image-rendering: pixelated;
+}
+.map-overlay .map-grid { inset: 12px; border: 6px solid #dfc58d; box-shadow: 0 0 0 2px #173f5e, 0 7px 0 rgba(19, 54, 71, .28); background: #236c91; }
+.map-overlay .map-tile { border: 0; border-radius: 0; box-shadow: inset 0 0 0 1px rgba(30, 74, 61, .14); image-rendering: pixelated; }
+.map-overlay .map-tile:not(.is-sea) { box-shadow: inset 0 0 0 2px rgba(237, 209, 150, .58), inset 0 0 0 3px rgba(104, 104, 66, .12); }
+.map-overlay .map-tile::after { opacity: .26; background: repeating-linear-gradient(135deg, transparent 0 9px, rgba(38, 78, 52, .18) 9px 11px, transparent 11px 21px); }
+.map-overlay .map-terrain-meadow { background: radial-gradient(circle at 18% 24%, rgba(225, 237, 143, .42) 0 3%, transparent 4%), radial-gradient(circle at 72% 70%, rgba(54, 113, 56, .22) 0 4%, transparent 5%), #8fb85f; }
+.map-overlay .map-terrain-woodland { background: radial-gradient(circle at 15% 18%, #87a83d 0 6%, #285b3a 7% 12%, transparent 13%), radial-gradient(circle at 48% 54%, #769638 0 7%, #245638 8% 14%, transparent 15%), radial-gradient(circle at 82% 78%, #8aa844 0 6%, #285b3a 7% 13%, transparent 14%), #3b7444; }
+.map-overlay .map-terrain-rock { background: radial-gradient(circle at 18% 22%, #ffffff 0 5%, transparent 6%), radial-gradient(circle at 48% 44%, rgba(148, 167, 184, .7) 0 5%, transparent 6%), linear-gradient(135deg, transparent 0 30%, rgba(160, 177, 188, .65) 31% 38%, transparent 39% 100%), #eeeadd; }
+.map-overlay .map-terrain-shore { background: linear-gradient(145deg, #f0d69b, #d6b878); }
+.map-overlay .map-terrain-autumn { background: radial-gradient(circle at 22% 30%, rgba(218, 190, 101, .35) 0 4%, transparent 5%), radial-gradient(circle at 70% 70%, rgba(52, 111, 56, .22) 0 5%, transparent 6%), #83ad5e; }
+.map-overlay .map-tile.map-terrain-ocean, .map-overlay .map-tile.is-sea { border: 0; background: repeating-linear-gradient(0deg, transparent 0 16px, rgba(121, 202, 211, .28) 17px 19px, transparent 20px 31px), repeating-linear-gradient(90deg, transparent 0 27px, rgba(33, 119, 157, .28) 28px 31px, transparent 32px 52px), linear-gradient(145deg, #2d82a5, #1e5e83); box-shadow: inset 0 0 0 1px rgba(11, 65, 94, .22); }
+.map-overlay .map-tile.is-river::before, .map-overlay .map-tile.is-lake::before { background: repeating-linear-gradient(90deg, transparent 0 8px, rgba(210, 239, 218, .48) 9px 11px, transparent 12px 19px), linear-gradient(180deg, #4fa4ba, #2c789d); box-shadow: inset 0 0 0 2px rgba(207, 235, 208, .28); }
+.map-overlay .map-tile.is-river.water-edge-north::before, .map-overlay .map-tile.is-lake.water-edge-north::before, .map-overlay .map-tile.is-river.water-edge-south::before, .map-overlay .map-tile.is-lake.water-edge-south::before { background: repeating-linear-gradient(0deg, transparent 0 8px, rgba(210, 239, 218, .48) 9px 11px, transparent 12px 19px), linear-gradient(180deg, #4fa4ba, #2c789d); }
+.map-overlay .map-tile.has-road::before { filter: drop-shadow(0 1px 0 rgba(100, 69, 39, .35)); }
+.map-overlay .map-tile.road-horizontal::before, .map-overlay .map-tile.road-vertical::before, .map-overlay .map-tile.road-cross::before { background-color: #c9a86c; }
+.map-overlay .map-tile.is-current { border: 3px solid #f4d66f; box-shadow: 0 0 0 2px #274d45, 0 0 0 5px rgba(244, 214, 111, .35); }
+.map-overlay .map-settlement { background: #b95b3e; box-shadow: 2px 2px 0 rgba(52, 53, 37, .5); }
+.map-overlay .map-settlement.town { background: #a94637; box-shadow: 0 0 0 2px rgba(248, 208, 103, .65), 2px 2px 0 rgba(52, 53, 37, .5); }
+.map-overlay .map-settlement-name { color: #fff2c9; background: rgba(43, 67, 43, .78); border: 1px solid rgba(236, 204, 137, .44); }
+.map-overlay .atlas-region-label { display: none; }
+.map-overlay .atlas-compass { color: #fff2c9; text-shadow: 2px 2px 0 rgba(20, 55, 71, .7); }
+.map-overlay .map-grid > .map-tile:nth-child(22):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(23):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(24):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(25):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(35):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(36):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(37):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(38):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(48):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(49):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(50):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(51):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(61):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(62):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(63):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(64):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(75):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(76):not(.is-sea), .map-overlay .map-grid > .map-tile:nth-child(77):not(.is-sea) { background: radial-gradient(circle at 22% 28%, rgba(255, 236, 171, .55) 0 5%, transparent 6%), repeating-linear-gradient(135deg, rgba(244, 213, 144, .3) 0 4px, transparent 4px 15px), #d5b273; }
+.map-overlay .map-grid::after { content: ''; position: absolute; z-index: 4; left: 2%; bottom: 2%; width: 12%; height: 14%; border: 4px solid #dfc58d; background: radial-gradient(circle at 34% 32%, #90ad4f 0 8%, transparent 9%), radial-gradient(circle at 63% 57%, #6d943e 0 10%, transparent 11%), #3c7542; clip-path: polygon(18% 8%, 72% 0, 100% 30%, 88% 78%, 56% 100%, 12% 85%, 0 42%); box-shadow: 0 0 0 2px #173f5e; pointer-events: none; }
+@media (max-width: 700px) { .map-overlay .map-grid { inset: 8px; border-width: 4px; } .map-overlay .map-grid::after { border-width: 3px; } }
