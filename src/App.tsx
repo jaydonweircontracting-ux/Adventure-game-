@@ -20,7 +20,7 @@ import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/pers
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '063';
+const BUILD_NUMBER = '064';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
@@ -890,6 +890,7 @@ const startingTownNpcs: TownNpc[] = [
 const atlasBounds = { minX: -1, maxX: 11, minY: 1, maxY: 13 };
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
+  const [selectedTile, setSelectedTile] = useState<(MapTile & { current: boolean }) | null>(null);
   const atlasWidth = atlasBounds.maxX - atlasBounds.minX + 1;
   const atlasHeight = atlasBounds.maxY - atlasBounds.minY + 1;
   const mapScale = [0.84, 0.96, 1.08, 1.22][zoom - 1];
@@ -900,6 +901,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     return { ...mapTileFor(point), current: point.x === chunk.x && point.y === chunk.y };
   });
   const currentTile = mapTileFor(chunk);
+  const selectedAreaName = selectedTile ? selectedTile.landmark?.name || chunkRegion(selectedTile) : null;
 
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
@@ -923,14 +925,21 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
           <span className="atlas-region-label atlas-region-east">IRONWOOD MARCH</span>
           <span className="atlas-region-label atlas-region-south">SUNWASH COAST</span>
           <div className="map-grid" style={{ gridTemplateColumns: 'repeat(' + atlasWidth + ', minmax(0, 1fr))', gridTemplateRows: 'repeat(' + atlasHeight + ', minmax(0, 1fr))', transform: 'scale(' + mapScale + ')' }}>
-            {tiles.map((tile) => (
-              <div className={mapTileClass(tile)} key={tile.x + '-' + tile.y} title={'Chunk ' + tile.x + ', ' + tile.y + ' · ' + (tile.landmark?.name || chunkRegion(tile))}>
+            {tiles.map((tile) => {
+              const isSelected = selectedTile?.x === tile.x && selectedTile?.y === tile.y;
+              const tileAreaName = tile.landmark?.name || chunkRegion(tile);
+              return <div className={mapTileClass(tile) + (isSelected ? ' is-selected' : '')} key={tile.x + '-' + tile.y} title={'Chunk ' + tile.x + ', ' + tile.y + ' · ' + tileAreaName} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
                 {tile.landmark && <><span className={'map-settlement ' + tile.landmark.kind} aria-label={tile.landmark.name} /><span className="map-settlement-name">{tile.landmark.name}</span></>}
                 {tile.current && <span className="map-tile-player" aria-label="Your current position" />}
                 {tile.current && <span className="map-tile-label">{tile.x}, {tile.y}</span>}
-              </div>
-            ))}
+              </div>;
+            })}
           </div>
+        </div>
+        <div className={'map-selection' + (selectedTile ? ' has-selection' : '')} role="status" aria-live="polite">
+          <span className="map-selection-label">Selected area</span>
+          <strong>{selectedAreaName || 'Tap a tile'}</strong>
+          <small>{selectedTile ? selectedTile.terrain + ' · chunk ' + selectedTile.x + ', ' + selectedTile.y : 'Tap any tile on the map to inspect its area'}</small>
         </div>
         <div className="map-legend">
           <span className="legend-item"><span className="legend-dot" /> You are here</span>
@@ -943,7 +952,6 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     </div>
   );
 }
-
 function InventorySheet({ inventory, equippedDagger, onToggleDagger, playerStats, statPoints, onAssignStat, onClose }: { inventory: GameInventory; equippedDagger: boolean; onToggleDagger: () => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats'>('inventory');
   const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths;
