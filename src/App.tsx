@@ -20,7 +20,7 @@ import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/pers
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '078';
+const BUILD_NUMBER = '079';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
@@ -921,7 +921,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
           </div>
         </div>
         <div className="big-map" data-testid="map-world-preview">
-          <div className="map-background-art" aria-hidden="true" style={{ backgroundImage: `linear-gradient(rgba(27, 75, 73, .1), rgba(27, 75, 73, .1)), url("${assetUrl('assets/gameplay/shining-fields/maps/tutorial-island-starting-map.jpeg')}")` }} />
+          <div className="map-background-art" aria-hidden="true" style={{ backgroundImage: `linear-gradient(rgba(27, 75, 73, .1), rgba(27, 75, 73, .1)), url("${assetUrl('assets/gameplay/shining-fields/maps/world-map.jpeg')}")` }} />
           <span className="atlas-compass" aria-hidden="true"><strong>N</strong><span>↑</span></span>
           <span className="atlas-region-label atlas-region-north">NORTHWATCH HEIGHTS</span>
           <span className="atlas-region-label atlas-region-west">BRACKENFEN WILDS</span>
