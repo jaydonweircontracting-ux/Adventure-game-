@@ -2688,3 +2688,24 @@ body {
 .map-overlay .map-tile:not(.is-sea) {
   background: radial-gradient(circle at 18% 24%, rgba(210, 236, 135, .28) 0 3%, transparent 4%), linear-gradient(145deg, #8ab85a, #609b4e) !important;
 }
+
+/* Road pass: roads read as packed earth again; the starting field stays east-west. */
+.map-overlay .map-tile.road-horizontal::before {
+  background-image: linear-gradient(to bottom, transparent 27%, rgba(91, 57, 35, .84) 28% 32%, #d2a564 33% 67%, rgba(91, 57, 35, .84) 68% 72%, transparent 73%) !important;
+}
+.map-overlay .map-tile.road-vertical::before {
+  background-image: linear-gradient(to right, transparent 27%, rgba(91, 57, 35, .84) 28% 32%, #d2a564 33% 67%, rgba(91, 57, 35, .84) 68% 72%, transparent 73%) !important;
+}
+.map-overlay .map-tile.road-cross::before,
+.map-overlay .map-tile.road-cross-no-north::before {
+  background-image:
+    linear-gradient(to bottom, transparent 27%, rgba(91, 57, 35, .84) 28% 32%, #d2a564 33% 67%, rgba(91, 57, 35, .84) 68% 72%, transparent 73%),
+    linear-gradient(to right, transparent 27%, rgba(91, 57, 35, .84) 28% 32%, #d2a564 33% 67%, rgba(91, 57, 35, .84) 68% 72%, transparent 73%) !important;
+}
+.field-road:not(.field-bridge) {
+  background-color: #ae8152;
+  background-image: radial-gradient(ellipse at 50% 50%, rgba(255, 220, 158, .4) 0 34%, transparent 37%), repeating-linear-gradient(0deg, transparent 0 10px, rgba(79, 52, 33, .3) 10px 12px), repeating-linear-gradient(90deg, rgba(255, 233, 180, .18) 0 2px, transparent 2px 22px);
+  border-color: rgba(110, 74, 49, .72);
+  box-shadow: inset 0 3px 0 rgba(255, 226, 164, .32), inset 0 -3px 0 rgba(66, 43, 30, .28);
+}
+.legend-line.road { background: #d2a564; }
