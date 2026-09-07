@@ -2612,6 +2612,23 @@ body {
 .map-overlay .map-tile.is-river.water-edge-north::before, .map-overlay .map-tile.is-lake.water-edge-north::before, .map-overlay .map-tile.is-river.water-edge-south::before, .map-overlay .map-tile.is-lake.water-edge-south::before { background: repeating-linear-gradient(0deg, transparent 0 8px, rgba(210, 239, 218, .48) 9px 11px, transparent 12px 19px), linear-gradient(180deg, #4fa4ba, #2c789d); }
 .map-overlay .map-tile.has-road::before { filter: drop-shadow(0 1px 0 rgba(100, 69, 39, .35)); }
 .map-overlay .map-tile.road-horizontal::before, .map-overlay .map-tile.road-vertical::before, .map-overlay .map-tile.road-cross::before { background-color: #c9a86c; }
+/* The four-area atlas route stays visible over terrain and rivers. */
+.map-overlay .map-tile.has-road::before {
+  z-index: 6;
+  opacity: 1;
+}
+.map-overlay .map-tile.road-horizontal::before {
+  background-image: linear-gradient(to bottom, transparent 27%, rgba(74, 48, 29, .82) 28% 32%, #e6c276 33% 67%, rgba(74, 48, 29, .82) 68% 72%, transparent 73%);
+}
+.map-overlay .map-tile.road-vertical::before {
+  background-image: linear-gradient(to right, transparent 27%, rgba(74, 48, 29, .82) 28% 32%, #e6c276 33% 67%, rgba(74, 48, 29, .82) 68% 72%, transparent 73%);
+}
+.map-overlay .map-tile.road-cross::before,
+.map-overlay .map-tile.road-cross-no-north::before {
+  background-image:
+    linear-gradient(to bottom, transparent 27%, rgba(74, 48, 29, .82) 28% 32%, #e6c276 33% 67%, rgba(74, 48, 29, .82) 68% 72%, transparent 73%),
+    linear-gradient(to right, transparent 27%, rgba(74, 48, 29, .82) 28% 32%, #e6c276 33% 67%, rgba(74, 48, 29, .82) 68% 72%, transparent 73%);
+}
 .map-overlay .map-tile.is-current { border: 3px solid #f4d66f; box-shadow: 0 0 0 2px #274d45, 0 0 0 5px rgba(244, 214, 111, .35); }
 .map-overlay .map-settlement { background: #b95b3e; box-shadow: 2px 2px 0 rgba(52, 53, 37, .5); }
 .map-overlay .map-settlement.town { background: #a94637; box-shadow: 0 0 0 2px rgba(248, 208, 103, .65), 2px 2px 0 rgba(52, 53, 37, .5); }
