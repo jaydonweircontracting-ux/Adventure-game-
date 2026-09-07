@@ -591,7 +591,7 @@ const saveDirections = ['up', 'down', 'left', 'right'];
 const savePlayerClasses = ['Beginner', 'Warrior', 'Mage', 'Rogue'];
 const saveNpcRoles = ['mage', 'warrior', 'guide', 'rogue'];
 const saveGoatDispositions = ['calm', 'aggressive', 'defeated'];
-const saveAdventurerClasses = ['Ranger', 'Mage', 'Rogue'];
+const saveAdventurerClasses = ['Ranger', 'Mage', 'Rogue', 'Warrior'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -1018,7 +1018,7 @@ function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: Player
   return <section className="satchel-stats-panel" role="tabpanel" aria-label="Adventurer Stats"><div className="satchel-stats-heading"><span className="atlas-eyebrow">Character growth</span><h3>Adventurer Stats</h3></div><div className="satchel-stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div><div className="satchel-stats-list">{STAT_KEYS.map((stat) => <div className="satchel-stat-row" key={stat} data-testid={'stat-row-' + stat}><span className="satchel-stat-key">{stat.toUpperCase()}</span><span className="satchel-stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span><b className="satchel-stat-value">{playerStats[stat]}</b><button className="satchel-stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button></div>)}</div><div className="satchel-stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div></section>;
 }
 
-function InteriorRoom({ area, position, facing, moving, inventory, equippedDagger, attacking, attackSequence, onCraft }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; inventory: GameInventory; equippedDagger: boolean; attacking: boolean; attackSequence: number; onCraft: (item: CraftItem) => void }) {
+function InteriorRoom({ area, position, facing, moving, inventory, equippedDagger, attacking, attackSequence, simulatedAdventurers, onCraft }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; inventory: GameInventory; equippedDagger: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; onCraft: (item: CraftItem) => void }) {
   const canCraft = (item: CraftItem) => {
     const recipe = craftRecipes[item];
     return Object.entries(recipe.cost).every(([key, value]) => (inventory[key as keyof GameInventory] || 0) >= (value || 0));
@@ -1044,6 +1044,13 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
           </div>
         </section>
       )}
+      {area.id === 'tutorial-house' && simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') === 'starting-house').map((adventurer) => {
+        const housePosition = adventurer.interiorPosition || { x: 50, y: 47 };
+        return <div key={adventurer.id} className={'simulated-adventurer interior-simulated-adventurer adventurer-' + adventurer.className.toLowerCase()} style={{ left: housePosition.x + '%', top: housePosition.y + '%' }} data-facing={adventurer.facing} aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className}>
+          <span className="simulated-adventurer-nameplate"><strong>{adventurer.name}</strong><small>Lv. {adventurer.level} · {adventurer.activity}</small></span>
+          <span className="simulated-adventurer-sprite" aria-hidden="true" />
+        </div>;
+      })}
       <div className="interior-doorway" aria-label="Exit to Mosslight Crossing"><span>EXIT</span></div>
       <div className={'interior-player ' + (moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} data-facing={facing} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-attackDirectionRow[facing] * 48}px` } as CSSProperties}><span className="player-sprite" />{attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[facing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}{equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}</div>
       <div className="interior-exit-hint">Walk to the door to leave</div>
@@ -1103,6 +1110,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const interiorDoorwayIdRef = useRef<string | null>(STARTING_DOORWAY_ID);
   const goatWorldStepRef = useRef(0);
   const simulatedTickRef = useRef(0);
+  const simulatedAdventurersRef = useRef(initialSimulatedAdventurers);
   const playerAttackCooldownRef = useRef(0);
   const playerAttackStateRef = useRef<{ active: boolean; direction: Direction; targetId: number | null; elapsed: number; hitApplied: boolean }>({ active: false, direction: 'down', targetId: null, elapsed: 0, hitApplied: false });
   const [attackCooldownMs, setAttackCooldownMs] = useState(0);
@@ -1168,7 +1176,11 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     playerStatsRef.current = restoredStats; onPlayerStatsChange(restoredStats);
     onStatPointsChange(Math.max(0, Math.floor(loadState.statPoints || 0)));
     setNpcStates(loadState.npcStates);
-    setSimulatedAdventurers(loadState.simulatedAdventurers.length ? loadState.simulatedAdventurers : initialSimulatedAdventurers);
+    const restoredAdventurers = loadState.simulatedAdventurers.length
+      ? loadState.simulatedAdventurers.map((adventurer) => ({ ...adventurer, location: adventurer.location ?? 'field', interiorPosition: adventurer.interiorPosition ?? { x: 50, y: 47 } }))
+      : initialSimulatedAdventurers;
+    simulatedAdventurersRef.current = restoredAdventurers;
+    setSimulatedAdventurers(restoredAdventurers);
     interiorDoorwayIdRef.current = restoredDoorway?.id || null;
     interiorRef.current = restoredDoorway?.area || null; setInterior(restoredDoorway?.area || null);
     interiorPositionRef.current = loadState.interiorPosition; setInteriorPosition(loadState.interiorPosition);
@@ -1206,6 +1218,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   useEffect(() => { facingRef.current = facing; }, [facing]);
   useEffect(() => { interiorRef.current = interior; }, [interior]);
   useEffect(() => { interiorPositionRef.current = interiorPosition; }, [interiorPosition]);
+  useEffect(() => { simulatedAdventurersRef.current = simulatedAdventurers; }, [simulatedAdventurers]);
   useEffect(() => {
     if (inputLocked || optionsOpen) {
       keysRef.current = {};
@@ -1241,11 +1254,28 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      setSimulatedAdventurers((current) => {
-        const nextTick = simulatedTickRef.current + 1;
-        simulatedTickRef.current = nextTick;
-        return advanceSimulatedAdventurers(current, nextTick);
-      });
+      const nextTick = simulatedTickRef.current + 1;
+      simulatedTickRef.current = nextTick;
+      const liveGoats = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goat.hp > 0);
+      const next = advanceSimulatedAdventurers(simulatedAdventurersRef.current, nextTick, liveGoats.map((goat) => ({ id: goat.id, position: goat.position })));
+      const fieldAdventurers = next.filter((adventurer) => (adventurer.location || 'field') === 'field');
+      const attacker = fieldAdventurers
+        .map((adventurer) => ({ adventurer, goat: goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goat.hp > 0).sort((left, right) => Math.hypot(left.position.x - adventurer.position.x, left.position.y - adventurer.position.y) - Math.hypot(right.position.x - adventurer.position.x, right.position.y - adventurer.position.y))[0] }))
+        .filter((entry) => entry.goat && Math.hypot(entry.goat.position.x - entry.adventurer.position.x, entry.goat.position.y - entry.adventurer.position.y) <= 5)
+        .sort((left, right) => Math.hypot(left.goat.position.x - left.adventurer.position.x, left.goat.position.y - left.adventurer.position.y) - Math.hypot(right.goat.position.x - right.adventurer.position.x, right.goat.position.y - right.adventurer.position.y))[0];
+      let nextAdventurers = next;
+      if (attacker?.goat) {
+        const target = attacker.goat;
+        const nextHp = Math.max(0, target.hp - 7);
+        const defeated = nextHp <= 0;
+        const updatedGoats = goatsRef.current.map((goat) => goat.id === target.id ? { ...goat, hp: nextHp, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 350, attacking: false, moving: false, hitFlash: true, respawnTicks: 0 } : goat);
+        goatsRef.current = updatedGoats;
+        setGoats(updatedGoats);
+        nextAdventurers = next.map((adventurer) => adventurer.id === attacker.adventurer.id ? { ...adventurer, activity: defeated ? 'exploring after defeating a goat' : 'fighting a goat' } : adventurer);
+        if (defeated) setLogs((currentLogs) => [{ text: attacker.adventurer.name + ' defeated a goat nearby.', color: 'blue' }, ...currentLogs].slice(0, 3));
+      }
+      simulatedAdventurersRef.current = nextAdventurers;
+      setSimulatedAdventurers(nextAdventurers);
     }, 1900);
     return () => window.clearInterval(timer);
   }, []);
@@ -1679,7 +1709,7 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} onCraft={craftItem} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} onCraft={craftItem} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -1800,7 +1830,7 @@ if (active) {
               <span className="npc-sprite" aria-hidden="true" />
             </button>
           ))}
-          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && simulatedAdventurers.map((adventurer) => (
+          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') !== 'starting-house').map((adventurer) => (
             <button
               key={adventurer.id}
               className={'simulated-adventurer adventurer-' + adventurer.className.toLowerCase()}
