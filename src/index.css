@@ -2539,7 +2539,31 @@ body {
 .dungeon-staircase-stone { display: grid; place-items: center; width: 22px; height: 15px; color: #211b18; font: 17px/13px Georgia, serif; }
 .dungeon-staircase-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
-/* Living-world adventurers */\n.simulated-adventurer {\n  position: absolute;\n  z-index: 9;\n  display: grid;\n  justify-items: center;\n  width: 44px;\n  padding: 0;\n  color: #f8e6bf;\n  background: transparent;\n  border: 0;\n  transform: translate(-50%, -50%);\n  cursor: pointer;\n  filter: drop-shadow(0 3px 2px rgba(23, 42, 29, .32));\n  transition: transform .18s ease, filter .18s ease;\n}\n.simulated-adventurer:hover, .simulated-adventurer:focus-visible {\n  z-index: 14;\n  transform: translate(-50%, -53%) scale(1.08);\n  filter: drop-shadow(0 0 6px rgba(244, 201, 93, .7));\n  outline: none;\n}\n.simulated-adventurer-sprite {\n  display: block;\n  width: 19px;\n  height: 28px;\n  background: #3f7191;\n  border: 2px solid #182d2c;\n  border-radius: 9px 9px 5px 5px;\n  box-shadow: inset 0 8px 0 #d6a27a, inset 0 12px 0 #2c526b;\n}\n.adventurer-mage .simulated-adventurer-sprite { background: #7562a3; box-shadow: inset 0 8px 0 #d6a27a, inset 0 12px 0 #55457b; }\n.adventurer-rogue .simulated-adventurer-sprite { background: #5f7258; box-shadow: inset 0 8px 0 #d6a27a, inset 0 12px 0 #3b513d; }\n.simulated-adventurer-nameplate {\n  position: absolute;\n  bottom: 31px;\n  display: grid;\n  gap: 2px;\n  min-width: 94px;\n  padding: 4px 6px;\n  color: #f3dfb7;\n  background: rgba(29, 50, 39, .92);\n  border: 1px solid rgba(230, 191, 113, .5);\n  opacity: 0;\n  pointer-events: none;\n  transform: translateY(3px);\n  transition: opacity .16s ease, transform .16s ease;\n}\n.simulated-adventurer:hover .simulated-adventurer-nameplate, .simulated-adventurer:focus-visible .simulated-adventurer-nameplate { opacity: 1; transform: translateY(0); }\n.simulated-adventurer-nameplate strong { font: 700 9px/1.1 var(--app-font-mono, monospace); white-space: nowrap; }\n.simulated-adventurer-nameplate small { max-width: 130px; color: #d8bc87; font: 7px/1.15 var(--app-font-mono, monospace); }\n
+/* Living-world adventurers */\n.simulated-adventurer {\n  position: absolute;\n  z-index: 9;\n  display: grid;\n  justify-items: center;\n  width: 44px;\n  padding: 0;\n  color: #f8e6bf;\n  background: transparent;\n  border: 0;\n  transform: translate(-50%, -50%);\n  cursor: pointer;\n  filter: drop-shadow(0 3px 2px rgba(23, 42, 29, .32));\n  transition: transform .18s ease, filter .18s ease;\n}\n.simulated-adventurer:hover, .simulated-adventurer:focus-visible {\n  z-index: 14;\n  transform: translate(-50%, -53%) scale(1.08);\n  filter: drop-shadow(0 0 6px rgba(244, 201, 93, .7));\n  outline: none;\n}\n.simulated-adventurer-sprite {
+  display: block;
+  width: 32px;
+  height: 32px;
+  background-image: var(--player-sprite-url);
+  background-position: -32px 0;
+  background-size: 192px 320px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 1px rgba(23, 42, 29, .38));
+}
+.simulated-adventurer[data-facing='up'] .simulated-adventurer-sprite,
+.town-npc[data-facing='up'] .npc-sprite { background-position-y: -64px; }
+.simulated-adventurer[data-facing='left'] .simulated-adventurer-sprite,
+.town-npc[data-facing='left'] .npc-sprite { background-position-y: -128px; transform: scaleX(-1); }
+.simulated-adventurer[data-facing='right'] .simulated-adventurer-sprite,
+.town-npc[data-facing='right'] .npc-sprite { background-position-y: -128px; transform: none; }
+.adventurer-ranger .simulated-adventurer-sprite { background-position-x: -32px; filter: sepia(.3) saturate(1.35) hue-rotate(150deg) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
+.adventurer-mage .simulated-adventurer-sprite { background-position-x: -64px; filter: hue-rotate(178deg) saturate(1.55) brightness(.92) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
+.adventurer-rogue .simulated-adventurer-sprite { background-position-x: -128px; filter: sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
+.town-npc.npc-mage .npc-sprite { background-position-x: -64px; }
+.town-npc.npc-warrior .npc-sprite { background-position-x: -32px; }
+.town-npc.npc-guide .npc-sprite { background-position-x: -96px; }
+.town-npc.npc-rogue .npc-sprite { background-position-x: -128px; }
+.simulated-adventurer-nameplate {\n  position: absolute;\n  bottom: 31px;\n  display: grid;\n  gap: 2px;\n  min-width: 94px;\n  padding: 4px 6px;\n  color: #f3dfb7;\n  background: rgba(29, 50, 39, .92);\n  border: 1px solid rgba(230, 191, 113, .5);\n  opacity: 0;\n  pointer-events: none;\n  transform: translateY(3px);\n  transition: opacity .16s ease, transform .16s ease;\n}\n.simulated-adventurer:hover .simulated-adventurer-nameplate, .simulated-adventurer:focus-visible .simulated-adventurer-nameplate { opacity: 1; transform: translateY(0); }\n.simulated-adventurer-nameplate strong { font: 700 9px/1.1 var(--app-font-mono, monospace); white-space: nowrap; }\n.simulated-adventurer-nameplate small { max-width: 130px; color: #d8bc87; font: 7px/1.15 var(--app-font-mono, monospace); }\n
 
 /* Endless Online combat pass */
 .goat.is-hit .goat-sprite { filter: brightness(2.4) grayscale(.3); }
