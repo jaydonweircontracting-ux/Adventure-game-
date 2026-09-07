@@ -1159,6 +1159,12 @@
 .map-tile.road-cross::before {
   background: linear-gradient(to bottom, transparent 35%, rgba(223, 190, 112, .98) 36% 64%, transparent 65%), linear-gradient(to right, transparent 35%, rgba(223, 190, 112, .98) 36% 64%, transparent 65%);
 }
+.map-tile.road-cross-no-north::before {
+  background: linear-gradient(to bottom, transparent 35%, rgba(223, 190, 112, .98) 36% 64%, transparent 65%), linear-gradient(to right, transparent 35%, rgba(223, 190, 112, .98) 36% 64%, transparent 65%);
+  background-size: 100% 100%, 100% 50%;
+  background-position: 0 0, 0 100%;
+  background-repeat: no-repeat;
+}
 .map-settlement {
   position: absolute;
   z-index: 4;
