@@ -921,17 +921,19 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
           </div>
         </div>
         <div className="big-map" data-testid="map-world-preview">
-          <div className="map-background-art" aria-hidden="true" style={{ backgroundImage: `linear-gradient(rgba(27, 75, 73, .1), rgba(27, 75, 73, .1)), url("${assetUrl('assets/gameplay/shining-fields/maps/world-map.jpeg?v=081')}")` }} />
+          <div className="map-background-art" aria-hidden="true" style={{ backgroundImage: `linear-gradient(rgba(27, 75, 73, .1), rgba(27, 75, 73, .1)), url("${assetUrl('assets/gameplay/shining-fields/maps/world-map.jpeg?v=082')}")` }} />
           <span className="atlas-compass" aria-hidden="true"><strong>N</strong><span>↑</span></span>
           <span className="atlas-region-label atlas-region-north">NORTHWATCH HEIGHTS</span>
           <span className="atlas-region-label atlas-region-west">BRACKENFEN WILDS</span>
           <span className="atlas-region-label atlas-region-east">IRONWOOD MARCH</span>
           <span className="atlas-region-label atlas-region-south">SUNWASH COAST</span>
           <div className="map-grid" style={{ gridTemplateColumns: 'repeat(' + atlasWidth + ', minmax(0, 1fr))', gridTemplateRows: 'repeat(' + atlasHeight + ', minmax(0, 1fr))', transform: 'scale(' + mapScale + ')' }}>
-            {tiles.map((tile) => {
+            {tiles.map((tile, index) => {
+              const row = Math.floor(index / atlasWidth);
+              const column = index % atlasWidth;
               const isSelected = selectedTile?.x === tile.x && selectedTile?.y === tile.y;
               const tileAreaName = tile.waterFeature === 'sea' ? 'Open Water' : tile.landmark?.name || chunkRegion(tile);
-              return <div className={mapTileClass(tile) + (isSelected ? ' is-selected' : '')} key={tile.x + '-' + tile.y} title={'Chunk ' + tile.x + ', ' + tile.y + ' · ' + tileAreaName} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
+              return <div className={mapTileClass(tile) + ' map-photo-tile map-photo-quadrant-' + row + '-' + column + (isSelected ? ' is-selected' : '')} style={{ '--world-map-photo': 'url("' + assetUrl('assets/gameplay/shining-fields/maps/world-map.jpeg?v=082') + '")', '--world-map-position': column * 100 + '% ' + row * 100 + '%' } as CSSProperties} key={tile.x + '-' + tile.y} title={'Chunk ' + tile.x + ', ' + tile.y + ' · ' + tileAreaName} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
                 {tile.landmark && <><span className={'map-settlement ' + tile.landmark.kind} aria-label={tile.landmark.name} /><span className="map-settlement-name">{tile.landmark.name}</span></>}
                 {tile.current && <span className="map-tile-player" aria-label="Your current position" />}
                 {tile.current && <span className="map-tile-label">{tile.x}, {tile.y}</span>}
