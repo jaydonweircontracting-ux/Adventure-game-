@@ -2759,6 +2759,6 @@ body {
 /* Physical cropped assets: one supplied-map quadrant per world-map tile. */
 .map-overlay .map-tile.map-photo-tile { background-size: cover !important; background-repeat: no-repeat !important; background-position: center !important; }
 .map-overlay .map-tile.map-photo-quadrant-0-0 { background-image: url("gameplay/shining-fields/maps/quadrants/world-map-0-0.jpeg?v=083") !important; }
-.map-overlay .map-tile.map-photo-quadrant-1-0 { background-image: url("gameplay/shining-fields/maps/quadrants/world-map-1-0.jpeg?v=083") !important; }
-.map-overlay .map-tile.map-photo-quadrant-0-1 { background-image: url("gameplay/shining-fields/maps/quadrants/world-map-0-1.jpeg?v=083") !important; }
+.map-overlay .map-tile.map-photo-quadrant-1-0 { background-image: url("gameplay/shining-fields/maps/quadrants/world-map-0-1.jpeg?v=084") !important; }
+.map-overlay .map-tile.map-photo-quadrant-0-1 { background-image: url("gameplay/shining-fields/maps/quadrants/world-map-1-0.jpeg?v=084") !important; }
 .map-overlay .map-tile.map-photo-quadrant-1-1 { background-image: url("gameplay/shining-fields/maps/quadrants/world-map-1-1.jpeg?v=083") !important; }
