@@ -195,11 +195,13 @@ function mapTileFor(point: Point): MapTile {
   const verticalRoad = !isOcean && (
     (point.x === 4 && point.y >= 4 && point.y <= 8) ||
     (point.x === 5 && point.y >= 2 && point.y <= 4) ||
+    (point.x === 5 && point.y >= 7 && point.y <= 8) ||
     (point.x === 9 && point.y >= 3 && point.y <= 7) ||
     (point.x === 3 && point.y >= 7 && point.y <= 12) ||
     (point.x === 6 && point.y >= 7 && point.y <= 10)
   );
-  const road = isTutorialCenter(point) && horizontalRoad && verticalRoad ? 'cross-no-north' : horizontalRoad && verticalRoad ? 'cross' : horizontalRoad ? 'horizontal' : verticalRoad ? 'vertical' : 'none';
+  // Keep the hub fully open so the Northwatch, Brackenfen, Ironwood, and Sunwash roads meet in-game.
+  const road = horizontalRoad && verticalRoad ? 'cross' : horizontalRoad ? 'horizontal' : verticalRoad ? 'vertical' : 'none';
   const bridge = waterFeature !== null && !isOcean && road !== 'none';
 
   return {
