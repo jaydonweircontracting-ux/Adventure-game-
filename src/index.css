@@ -2709,3 +2709,34 @@ body {
   box-shadow: inset 0 3px 0 rgba(255, 226, 164, .32), inset 0 -3px 0 rgba(66, 43, 30, .28);
 }
 .legend-line.road { background: #d2a564; }
+
+/* Exact uploaded world-map image; interactive tile hit areas remain transparent above it. */
+.map-overlay .map-background-art {
+  z-index: 1;
+  opacity: 1;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: #789b7a;
+}
+.map-overlay .map-grid {
+  z-index: 2;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+.map-overlay .map-tile {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+.map-overlay .map-tile::before,
+.map-overlay .map-tile::after,
+.map-overlay .map-settlement,
+.map-overlay .map-settlement-name,
+.map-overlay .map-tile-player,
+.map-overlay .map-tile-label,
+.map-overlay .atlas-compass,
+.map-overlay .atlas-region-label {
+  display: none !important;
+}
