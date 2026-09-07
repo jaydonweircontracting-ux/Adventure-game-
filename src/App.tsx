@@ -20,7 +20,7 @@ import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/pers
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '075';
+const BUILD_NUMBER = '076';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
@@ -195,13 +195,12 @@ function mapTileFor(point: Point): MapTile {
   const verticalRoad = !isOcean && (
     (point.x === 4 && point.y >= 4 && point.y <= 8) ||
     (point.x === 5 && point.y >= 2 && point.y <= 4) ||
-    (point.x === 5 && point.y >= 7 && point.y <= 8) ||
     (point.x === 9 && point.y >= 3 && point.y <= 7) ||
     (point.x === 3 && point.y >= 7 && point.y <= 12) ||
     (point.x === 6 && point.y >= 7 && point.y <= 10)
   );
-  // Keep the hub fully open so the Northwatch, Brackenfen, Ironwood, and Sunwash roads meet in-game.
-  const road = horizontalRoad && verticalRoad ? 'cross' : horizontalRoad ? 'horizontal' : verticalRoad ? 'vertical' : 'none';
+  // The starting field is a simple east-west road through the town; branches begin outside it.
+  const road = isTutorialCenter(point) ? 'horizontal' : horizontalRoad && verticalRoad ? 'cross' : horizontalRoad ? 'horizontal' : verticalRoad ? 'vertical' : 'none';
   const bridge = waterFeature !== null && !isOcean && road !== 'none';
 
   return {
