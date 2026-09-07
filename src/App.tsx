@@ -921,7 +921,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
           </div>
         </div>
         <div className="big-map" data-testid="map-world-preview">
-          <div className="map-background-art" aria-hidden="true" style={{ backgroundImage: `linear-gradient(rgba(27, 75, 73, .1), rgba(27, 75, 73, .1)), url("${assetUrl('assets/gameplay/shining-fields/maps/world-map.jpeg')}")` }} />
+          <div className="map-background-art" aria-hidden="true" style={{ backgroundImage: `linear-gradient(rgba(27, 75, 73, .1), rgba(27, 75, 73, .1)), url("${assetUrl('assets/gameplay/shining-fields/maps/world-map.jpeg?v=081')}")` }} />
           <span className="atlas-compass" aria-hidden="true"><strong>N</strong><span>↑</span></span>
           <span className="atlas-region-label atlas-region-north">NORTHWATCH HEIGHTS</span>
           <span className="atlas-region-label atlas-region-west">BRACKENFEN WILDS</span>
