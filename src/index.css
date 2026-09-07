@@ -2563,6 +2563,9 @@ body {
 .town-npc.npc-warrior .npc-sprite { background-position-x: -32px; }
 .town-npc.npc-guide .npc-sprite { background-position-x: -96px; }
 .town-npc.npc-rogue .npc-sprite { background-position-x: -128px; }
+.adventurer-warrior .simulated-adventurer-sprite { background-position-x: -96px; filter: sepia(.7) saturate(1.45) hue-rotate(-8deg) brightness(.95) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
+.interior-simulated-adventurer { z-index: 8; pointer-events: none; }
+.interior-simulated-adventurer .simulated-adventurer-nameplate { opacity: 1; transform: translateY(0); }
 .simulated-adventurer-nameplate {\n  position: absolute;\n  bottom: 31px;\n  display: grid;\n  gap: 2px;\n  min-width: 94px;\n  padding: 4px 6px;\n  color: #f3dfb7;\n  background: rgba(29, 50, 39, .92);\n  border: 1px solid rgba(230, 191, 113, .5);\n  opacity: 0;\n  pointer-events: none;\n  transform: translateY(3px);\n  transition: opacity .16s ease, transform .16s ease;\n}\n.simulated-adventurer:hover .simulated-adventurer-nameplate, .simulated-adventurer:focus-visible .simulated-adventurer-nameplate { opacity: 1; transform: translateY(0); }\n.simulated-adventurer-nameplate strong { font: 700 9px/1.1 var(--app-font-mono, monospace); white-space: nowrap; }\n.simulated-adventurer-nameplate small { max-width: 130px; color: #d8bc87; font: 7px/1.15 var(--app-font-mono, monospace); }\n
 
 /* Endless Online combat pass */
