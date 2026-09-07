@@ -20,7 +20,7 @@ import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/pers
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '076';
+const BUILD_NUMBER = '077';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
@@ -887,8 +887,8 @@ const startingTownNpcs: TownNpc[] = [
   { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up' },
 ];
 
-// Keep the starting area visible with one connected area to the right, one below, and one below-right.
-const atlasBounds = { minX: 4, maxX: 5, minY: 7, maxY: 8 };
+// Keep the starting area visible with one connected area to the left, one below, and one below-left.
+const atlasBounds = { minX: 3, maxX: 4, minY: 7, maxY: 8 };
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
   const [selectedTile, setSelectedTile] = useState<(MapTile & { current: boolean }) | null>(null);
