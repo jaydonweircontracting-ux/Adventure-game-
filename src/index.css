@@ -2660,3 +2660,26 @@ body {
 .map-background-art { position: absolute; z-index: 0; inset: 0; background-position: center; background-size: cover; background-repeat: no-repeat; opacity: .62; filter: saturate(.88) contrast(.95); pointer-events: none; }
 .map-overlay .map-grid { z-index: 1; }
 .map-overlay .map-grid::after { display: none; }
+
+
+/* Temporary green road pass: keep the route readable while the map is finalized. */
+.map-overlay .map-tile.has-road::before { z-index: 6; }
+.map-overlay .map-tile.road-horizontal::before {
+  background-image: linear-gradient(to bottom, transparent 27%, rgba(31, 77, 42, .82) 28% 32%, #8fbd5b 33% 67%, rgba(31, 77, 42, .82) 68% 72%, transparent 73%) !important;
+}
+.map-overlay .map-tile.road-vertical::before {
+  background-image: linear-gradient(to right, transparent 27%, rgba(31, 77, 42, .82) 28% 32%, #8fbd5b 33% 67%, rgba(31, 77, 42, .82) 68% 72%, transparent 73%) !important;
+}
+.map-overlay .map-tile.road-cross::before,
+.map-overlay .map-tile.road-cross-no-north::before {
+  background-image:
+    linear-gradient(to bottom, transparent 27%, rgba(31, 77, 42, .82) 28% 32%, #8fbd5b 33% 67%, rgba(31, 77, 42, .82) 68% 72%, transparent 73%),
+    linear-gradient(to right, transparent 27%, rgba(31, 77, 42, .82) 28% 32%, #8fbd5b 33% 67%, rgba(31, 77, 42, .82) 68% 72%, transparent 73%) !important;
+}
+.field-road:not(.field-bridge) {
+  background-color: #6f9d4e;
+  background-image: radial-gradient(ellipse at 50% 50%, rgba(213, 239, 157, .38) 0 34%, transparent 37%), repeating-linear-gradient(0deg, transparent 0 10px, rgba(31, 77, 42, .28) 10px 12px), repeating-linear-gradient(90deg, rgba(220, 242, 169, .2) 0 2px, transparent 2px 22px);
+  border-color: rgba(38, 79, 45, .72);
+  box-shadow: inset 0 3px 0 rgba(220, 242, 169, .32), inset 0 -3px 0 rgba(31, 65, 40, .28);
+}
+.legend-line.road { background: #8fbd5b; }
