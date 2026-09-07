@@ -370,7 +370,7 @@
   left: 28px;
   top: 19px;
   width: 4px;
-  height: 16px;
+  height: 12px;
   border: 1px solid #51352d;
   background: linear-gradient(#f5e2a5 0 70%, #9e5c3f 71%);
   box-shadow: 1px 1px 0 rgba(39, 47, 35, .35);
@@ -2627,3 +2627,14 @@ body {
 .map-selection small { grid-column: 2; color: #617051; font-family: var(--app-font-mono); font-size: 9px; }
 .map-selection:not(.has-selection) { opacity: .82; }
 @media (max-width: 700px) { .map-selection { margin-inline: 10px; padding: 7px 8px; } .map-selection strong { font-size: 12px; } }
+
+
+/* Authored four-by-four starting map underlay and final combat sprite pass. */
+.player.is-attacking .player-sprite, .interior-player.is-attacking .player-sprite { opacity: 1; background-image: var(--player-attack-sprite-url); background-size: 160px 128px; background-position-x: 0; background-position-y: 0; animation: player-attack-frames .48s steps(5, end) both; }
+.player.is-attacking[data-facing='up'] .player-sprite { background-position-y: -32px; }
+.player.is-attacking[data-facing='left'] .player-sprite { background-position-y: -64px; transform: none; }
+.player.is-attacking[data-facing='right'] .player-sprite { background-position-y: -96px; transform: none; }
+@keyframes player-attack-frames { from { background-position-x: 0; } to { background-position-x: -128px; } }
+.map-background-art { position: absolute; z-index: 0; inset: 0; background-position: center; background-size: cover; background-repeat: no-repeat; opacity: .62; filter: saturate(.88) contrast(.95); pointer-events: none; }
+.map-overlay .map-grid { z-index: 1; }
+.map-overlay .map-grid::after { display: none; }
