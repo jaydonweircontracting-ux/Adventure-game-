@@ -886,8 +886,8 @@ const startingTownNpcs: TownNpc[] = [
   { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up' },
 ];
 
-// The authored starting map is a four-by-four atlas; the image supplies its coastal context.
-const atlasBounds = { minX: 3, maxX: 6, minY: 5, maxY: 8 };
+// Keep the starting area visible with one connected area to the right, one below, and one below-right.
+const atlasBounds = { minX: 4, maxX: 5, minY: 7, maxY: 8 };
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
   const [selectedTile, setSelectedTile] = useState<(MapTile & { current: boolean }) | null>(null);
