@@ -2683,3 +2683,8 @@ body {
   box-shadow: inset 0 3px 0 rgba(220, 242, 169, .32), inset 0 -3px 0 rgba(31, 65, 40, .28);
 }
 .legend-line.road { background: #8fbd5b; }
+
+/* Simple map pass: all land stays green; edge water keeps its blue overlay. */
+.map-overlay .map-tile:not(.is-sea) {
+  background: radial-gradient(circle at 18% 24%, rgba(210, 236, 135, .28) 0 3%, transparent 4%), linear-gradient(145deg, #8ab85a, #609b4e) !important;
+}
