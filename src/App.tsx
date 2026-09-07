@@ -140,7 +140,7 @@ type MapTile = {
   regionStyle: RegionStyle;
   waterFeature: 'river' | 'lake' | 'sea' | null;
   waterEdge: 'north' | 'south' | 'east' | 'west' | null;
-  road: 'horizontal' | 'vertical' | 'cross' | 'none';
+  road: 'horizontal' | 'vertical' | 'cross' | 'cross-no-north' | 'none';
   bridge: boolean;
   landmark: { name: string; kind: SettlementKind } | null;
 };
@@ -199,7 +199,7 @@ function mapTileFor(point: Point): MapTile {
     (point.x === 3 && point.y >= 7 && point.y <= 12) ||
     (point.x === 6 && point.y >= 7 && point.y <= 10)
   );
-  const road = horizontalRoad && verticalRoad ? 'cross' : horizontalRoad ? 'horizontal' : verticalRoad ? 'vertical' : 'none';
+  const road = isTutorialCenter(point) && horizontalRoad && verticalRoad ? 'cross-no-north' : horizontalRoad && verticalRoad ? 'cross' : horizontalRoad ? 'horizontal' : verticalRoad ? 'vertical' : 'none';
   const bridge = waterFeature !== null && !isOcean && road !== 'none';
 
   return {
