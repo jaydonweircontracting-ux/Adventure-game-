@@ -20,7 +20,7 @@ import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/pers
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '066';
+const BUILD_NUMBER = '067';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
@@ -900,8 +900,12 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     const point = { x: atlasBounds.minX + column - 1, y: atlasBounds.minY + row - 1 };
     const mapTile = mapTileFor(point);
     const waterBorder = row === 0 || row === atlasHeight - 1 || column === 0 || column === atlasWidth - 1;
+    const islandEdge = row === 1 || row === atlasHeight - 2 || column === 1 || column === atlasWidth - 2;
     if (waterBorder) {
       return { ...mapTile, terrain: 'ocean' as Terrain, regionStyle: 'ocean' as RegionStyle, waterFeature: 'sea' as const, waterEdge: null, road: 'none' as const, bridge: false, landmark: null, current: false };
+    }
+    if (islandEdge) {
+      return { ...mapTile, terrain: 'shore' as Terrain, waterFeature: null, waterEdge: null, road: 'none' as const, bridge: false, current: point.x === chunk.x && point.y === chunk.y };
     }
     return { ...mapTile, current: point.x === chunk.x && point.y === chunk.y };
   });
