@@ -886,27 +886,19 @@ const startingTownNpcs: TownNpc[] = [
   { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up' },
 ];
 
-// Keep the atlas compact while the water buffer frames the tutorial island.
-const atlasBounds = { minX: 2, maxX: 6, minY: 5, maxY: 9 };
+// The authored starting map is a four-by-four atlas; the image supplies its coastal context.
+const atlasBounds = { minX: 3, maxX: 6, minY: 5, maxY: 8 };
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
   const [selectedTile, setSelectedTile] = useState<(MapTile & { current: boolean }) | null>(null);
-  const atlasWidth = atlasBounds.maxX - atlasBounds.minX + 3;
-  const atlasHeight = atlasBounds.maxY - atlasBounds.minY + 3;
+  const atlasWidth = atlasBounds.maxX - atlasBounds.minX + 1;
+  const atlasHeight = atlasBounds.maxY - atlasBounds.minY + 1;
   const mapScale = [0.84, 0.96, 1.08, 1.22][zoom - 1];
   const tiles = Array.from({ length: atlasWidth * atlasHeight }, (_, index) => {
     const row = Math.floor(index / atlasWidth);
     const column = index % atlasWidth;
-    const point = { x: atlasBounds.minX + column - 1, y: atlasBounds.minY + row - 1 };
+    const point = { x: atlasBounds.minX + column, y: atlasBounds.minY + row };
     const mapTile = mapTileFor(point);
-    const waterBorder = row === 0 || row === atlasHeight - 1 || column === 0 || column === atlasWidth - 1;
-    const islandEdge = row === 1 || row === atlasHeight - 2 || column === 1 || column === atlasWidth - 2;
-    if (waterBorder) {
-      return { ...mapTile, terrain: 'ocean' as Terrain, regionStyle: 'ocean' as RegionStyle, waterFeature: 'sea' as const, waterEdge: null, road: 'none' as const, bridge: false, landmark: null, current: false };
-    }
-    if (islandEdge) {
-      return { ...mapTile, terrain: 'shore' as Terrain, waterFeature: null, waterEdge: null, road: 'none' as const, bridge: false, current: point.x === chunk.x && point.y === chunk.y };
-    }
     return { ...mapTile, current: point.x === chunk.x && point.y === chunk.y };
   });
   const currentTile = mapTileFor(chunk);
@@ -928,6 +920,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
           </div>
         </div>
         <div className="big-map" data-testid="map-world-preview">
+          <div className="map-background-art" aria-hidden="true" style={{ backgroundImage: `linear-gradient(rgba(27, 75, 73, .1), rgba(27, 75, 73, .1)), url("${assetUrl('assets/gameplay/shining-fields/maps/tutorial-island-starting-map.jpeg')}")` }} />
           <span className="atlas-compass" aria-hidden="true"><strong>N</strong><span>↑</span></span>
           <span className="atlas-region-label atlas-region-north">NORTHWATCH HEIGHTS</span>
           <span className="atlas-region-label atlas-region-west">BRACKENFEN WILDS</span>
