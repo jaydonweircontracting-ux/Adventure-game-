@@ -30,10 +30,10 @@ const houseRoutes: Record<string, Point[]> = {
 };
 
 export const initialSimulatedAdventurers: SimulatedAdventurer[] = [
-  { id: 'kael', name: 'Kael Thorn', className: 'Ranger', level: 4, goal: 'scouting the old quarry', activity: 'waiting by the starting hearth', position: { x: 43, y: 48 }, interiorPosition: { x: 36, y: 46 }, location: 'starting-house', facing: 'right', routeIndex: 0 },
-  { id: 'sera', name: 'Sera Flint', className: 'Mage', level: 3, goal: 'selling gathered ember-reeds', activity: 'waiting by the starting hearth', position: { x: 38, y: 61 }, interiorPosition: { x: 64, y: 46 }, location: 'starting-house', facing: 'left', routeIndex: 0 },
-  { id: 'orin', name: 'Orin Vale', className: 'Rogue', level: 5, goal: 'finding a better dagger', activity: 'waiting by the starting hearth', position: { x: 71, y: 49 }, interiorPosition: { x: 38, y: 62 }, location: 'starting-house', facing: 'right', routeIndex: 0 },
-  { id: 'bram', name: 'Bram Oak', className: 'Warrior', level: 2, goal: 'clearing the eastern pasture', activity: 'waiting by the starting hearth', position: { x: 58, y: 78 }, interiorPosition: { x: 62, y: 62 }, location: 'starting-house', facing: 'left', routeIndex: 0 },
+  { id: 'kael', name: 'Kael Thorn', className: 'Ranger', level: 1, goal: 'scouting the old quarry', activity: 'waiting by the starting hearth', position: { x: 43, y: 48 }, interiorPosition: { x: 36, y: 46 }, location: 'starting-house', facing: 'right', routeIndex: 0 },
+  { id: 'sera', name: 'Sera Flint', className: 'Mage', level: 1, goal: 'selling gathered ember-reeds', activity: 'waiting by the starting hearth', position: { x: 38, y: 61 }, interiorPosition: { x: 64, y: 46 }, location: 'starting-house', facing: 'left', routeIndex: 0 },
+  { id: 'orin', name: 'Orin Vale', className: 'Rogue', level: 1, goal: 'finding a better dagger', activity: 'waiting by the starting hearth', position: { x: 71, y: 49 }, interiorPosition: { x: 38, y: 62 }, location: 'starting-house', facing: 'right', routeIndex: 0 },
+  { id: 'bram', name: 'Bram Oak', className: 'Warrior', level: 1, goal: 'clearing the eastern pasture', activity: 'waiting by the starting hearth', position: { x: 58, y: 78 }, interiorPosition: { x: 62, y: 62 }, location: 'starting-house', facing: 'left', routeIndex: 0 },
 ];
 
 function clamp(value: number, minimum: number, maximum: number) {
