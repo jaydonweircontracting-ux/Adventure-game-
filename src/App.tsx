@@ -1773,7 +1773,6 @@ if (active) {
                   setFacing(nextFacing);
                   targetGoatIdRef.current = goat.id;
                   setTargetGoatId(goat.id);
-                  attackGoat(goat.id);
                 }}
               >
                 <span className="goat-target-ring" aria-hidden="true" />
