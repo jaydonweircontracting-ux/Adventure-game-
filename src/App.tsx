@@ -377,18 +377,30 @@ function fieldAccentsFor(chunk: Point): FieldAccent[] {
   return accents;
 }
 
+function fieldTreeBaseRect(tree: FieldTree): FieldRect {
+  // The visible tree is a canopy with a narrow trunk. Only its lower base is
+  // solid, so the player can pass beside the canopy without hitting an unseen wall.
+  const centerX = tree.x + 3.2 * tree.scale;
+  const baseY = tree.y + 4 * tree.scale;
+  return {
+    left: centerX - 2.1 * tree.scale,
+    top: baseY - 1.1 * tree.scale,
+    right: centerX + 2.1 * tree.scale,
+    bottom: baseY + 1.7 * tree.scale,
+  };
+}
+
 function isFieldPositionBlocked(position: Point, chunk: Point) {
   const tile = mapTileFor(chunk);
   if (pointInWater(position, tile)) return true;
 
-  const treeBlocked = fieldTreesFor(chunk).some((tree) => {
-    const center = { x: tree.x + 3.2 * tree.scale, y: tree.y + 2.5 * tree.scale };
-    return Math.hypot(position.x - center.x, position.y - center.y) < 2.8 * tree.scale;
-  });
+  const treeBlocked = fieldTreesFor(chunk).some((tree) => pointInRect(position, fieldTreeBaseRect(tree), 0.45));
   if (treeBlocked) return true;
 
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
-  return landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk)).some((rect) => pointInRect(position, rect, 1.1)) : false;
+  // Keep the visible building/base solid, but do not extend its collision far
+  // into the surrounding grass where it reads as a random invisible wall.
+  return landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk)).some((rect) => pointInRect(position, rect, 0.35)) : false;
 }
 
 function wrapFieldPosition(position: Point, chunk: Point) {
