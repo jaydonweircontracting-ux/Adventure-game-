@@ -23,9 +23,9 @@ const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 const BUILD_NUMBER = '080';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
-const PLAYER_COLLISION_BOX = { halfWidth: 4.6, halfHeight: 3.4 };
-const GOAT_COLLISION_BOX = { halfWidth: 2.8, halfHeight: 2.5 };
-const COLLISION_GAP = 0.8;
+const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
+const GOAT_COLLISION_BOX = { halfWidth: 1.7, halfHeight: 1.5 };
+const COLLISION_GAP = 0.35;
 const INTERIOR_DOORWAY_WIDTH_PX = 58;
 const INTERIOR_PLAYER_WIDTH_PX = 46;
 const INTERIOR_DOORWAY_PADDING_PX = 4;
@@ -268,6 +268,16 @@ function pointInRect(point: Point, rect: FieldRect, padding = 0) {
   return point.x >= rect.left - padding && point.x <= rect.right + padding && point.y >= rect.top - padding && point.y <= rect.bottom + padding;
 }
 
+function pointInWater(position: Point, tile: MapTile) {
+  if (tile.waterFeature === 'sea') return true;
+  if (!tile.waterFeature || tile.bridge) return false;
+  if (tile.waterEdge === 'east') return position.x >= 75;
+  if (tile.waterEdge === 'west') return position.x <= 25;
+  if (tile.waterEdge === 'north') return position.y <= 25;
+  if (tile.waterEdge === 'south') return position.y >= 75;
+  return false;
+}
+
 function pointOnFieldRoad(point: Point, road: MapTile['road']) {
   // Keep tree canopies and trunks off the full road corridor, not just its center line.
   const onHorizontalRoad = point.y >= 44 && point.y <= 59;
@@ -369,16 +379,16 @@ function fieldAccentsFor(chunk: Point): FieldAccent[] {
 
 function isFieldPositionBlocked(position: Point, chunk: Point) {
   const tile = mapTileFor(chunk);
-  if (tile.waterFeature === 'sea' || (tile.waterFeature !== null && !tile.bridge)) return true;
+  if (pointInWater(position, tile)) return true;
 
   const treeBlocked = fieldTreesFor(chunk).some((tree) => {
     const center = { x: tree.x + 3.2 * tree.scale, y: tree.y + 2.5 * tree.scale };
-    return Math.hypot(position.x - center.x, position.y - center.y) < 5.2 * tree.scale;
+    return Math.hypot(position.x - center.x, position.y - center.y) < 2.8 * tree.scale;
   });
   if (treeBlocked) return true;
 
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
-  return landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk)).some((rect) => pointInRect(position, rect, 2.5)) : false;
+  return landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk)).some((rect) => pointInRect(position, rect, 1.1)) : false;
 }
 
 function wrapFieldPosition(position: Point, chunk: Point) {
