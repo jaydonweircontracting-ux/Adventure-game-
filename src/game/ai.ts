@@ -6,7 +6,7 @@ export const GOAT_CHASE_RANGE = 24;
 export const GOAT_MELEE_RANGE = 6;
 export const GOAT_CHASE_SPEED = 4;
 export const GOAT_FLEE_HP_RATIO = 0.3;
-export const GOAT_FLEE_SPEED = 8;
+export const GOAT_FLEE_SPEED = 3;
 export const GOAT_ATTACK_WINDUP_MS = 220;
 export const GOAT_ATTACK_COOLDOWN_MS = 1500;
 
