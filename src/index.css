@@ -2510,7 +2510,9 @@ body {
   color: #fff0c9;
   box-shadow: 3px 3px 0 rgba(20, 34, 29, .25);
 }
-\n\n/* Compact Ember Vault entrance inside the bottom-left house */
+
+
+/* Compact Ember Vault entrance inside the bottom-left house */
 .dungeon-staircase {
   position: absolute;
   z-index: 5;
@@ -2539,7 +2541,29 @@ body {
 .dungeon-staircase-stone { display: grid; place-items: center; width: 22px; height: 15px; color: #211b18; font: 17px/13px Georgia, serif; }
 .dungeon-staircase-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
-/* Living-world adventurers */\n.simulated-adventurer {\n  position: absolute;\n  z-index: 9;\n  display: grid;\n  justify-items: center;\n  width: 44px;\n  padding: 0;\n  color: #f8e6bf;\n  background: transparent;\n  border: 0;\n  transform: translate(-50%, -50%);\n  cursor: pointer;\n  filter: drop-shadow(0 3px 2px rgba(23, 42, 29, .32));\n  transition: transform .18s ease, filter .18s ease;\n}\n.simulated-adventurer:hover, .simulated-adventurer:focus-visible {\n  z-index: 14;\n  transform: translate(-50%, -53%) scale(1.08);\n  filter: drop-shadow(0 0 6px rgba(244, 201, 93, .7));\n  outline: none;\n}\n.simulated-adventurer-sprite {
+/* Living-world adventurers */
+.simulated-adventurer {
+  position: absolute;
+  z-index: 9;
+  display: grid;
+  justify-items: center;
+  width: 44px;
+  padding: 0;
+  color: #f8e6bf;
+  background: transparent;
+  border: 0;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  filter: drop-shadow(0 3px 2px rgba(23, 42, 29, .32));
+  transition: transform .18s ease, filter .18s ease;
+}
+.simulated-adventurer:hover, .simulated-adventurer:focus-visible {
+  z-index: 14;
+  transform: translate(-50%, -53%) scale(1.08);
+  filter: drop-shadow(0 0 6px rgba(244, 201, 93, .7));
+  outline: none;
+}
+.simulated-adventurer-sprite {
   display: block;
   width: 32px;
   height: 32px;
@@ -2566,7 +2590,25 @@ body {
 .adventurer-warrior .simulated-adventurer-sprite { background-position-x: -96px; filter: sepia(.7) saturate(1.45) hue-rotate(-8deg) brightness(.95) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
 .interior-simulated-adventurer { z-index: 8; pointer-events: none; }
 .interior-simulated-adventurer .simulated-adventurer-nameplate { opacity: 1; transform: translateY(0); }
-.simulated-adventurer-nameplate {\n  position: absolute;\n  bottom: 31px;\n  display: grid;\n  gap: 2px;\n  min-width: 94px;\n  padding: 4px 6px;\n  color: #f3dfb7;\n  background: rgba(29, 50, 39, .92);\n  border: 1px solid rgba(230, 191, 113, .5);\n  opacity: 0;\n  pointer-events: none;\n  transform: translateY(3px);\n  transition: opacity .16s ease, transform .16s ease;\n}\n.simulated-adventurer:hover .simulated-adventurer-nameplate, .simulated-adventurer:focus-visible .simulated-adventurer-nameplate { opacity: 1; transform: translateY(0); }\n.simulated-adventurer-nameplate strong { font: 700 9px/1.1 var(--app-font-mono, monospace); white-space: nowrap; }\n.simulated-adventurer-nameplate small { max-width: 130px; color: #d8bc87; font: 7px/1.15 var(--app-font-mono, monospace); }\n
+.simulated-adventurer-nameplate {
+  position: absolute;
+  bottom: 31px;
+  display: grid;
+  gap: 2px;
+  min-width: 94px;
+  padding: 4px 6px;
+  color: #f3dfb7;
+  background: rgba(29, 50, 39, .92);
+  border: 1px solid rgba(230, 191, 113, .5);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition: opacity .16s ease, transform .16s ease;
+}
+.simulated-adventurer:hover .simulated-adventurer-nameplate, .simulated-adventurer:focus-visible .simulated-adventurer-nameplate { opacity: 1; transform: translateY(0); }
+.simulated-adventurer-nameplate strong { font: 700 9px/1.1 var(--app-font-mono, monospace); white-space: nowrap; }
+.simulated-adventurer-nameplate small { max-width: 130px; color: #d8bc87; font: 7px/1.15 var(--app-font-mono, monospace); }
+
 
 /* Endless Online combat pass */
 .goat.is-hit .goat-sprite { filter: brightness(2.4) grayscale(.3); }
