@@ -1018,7 +1018,7 @@ function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: Player
   return <section className="satchel-stats-panel" role="tabpanel" aria-label="Adventurer Stats"><div className="satchel-stats-heading"><span className="atlas-eyebrow">Character growth</span><h3>Adventurer Stats</h3></div><div className="satchel-stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div><div className="satchel-stats-list">{STAT_KEYS.map((stat) => <div className="satchel-stat-row" key={stat} data-testid={'stat-row-' + stat}><span className="satchel-stat-key">{stat.toUpperCase()}</span><span className="satchel-stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span><b className="satchel-stat-value">{playerStats[stat]}</b><button className="satchel-stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button></div>)}</div><div className="satchel-stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div></section>;
 }
 
-function InteriorRoom({ area, position, facing, moving, inventory, equippedDagger, attacking, attackSequence, simulatedAdventurers, onCraft }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; inventory: GameInventory; equippedDagger: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; onCraft: (item: CraftItem) => void }) {
+function InteriorRoom({ area, position, facing, moving, inventory, equippedDagger, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onCraft }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; inventory: GameInventory; equippedDagger: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onCraft: (item: CraftItem) => void }) {
   const canCraft = (item: CraftItem) => {
     const recipe = craftRecipes[item];
     return Object.entries(recipe.cost).every(([key, value]) => (inventory[key as keyof GameInventory] || 0) >= (value || 0));
@@ -1046,10 +1046,10 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
       )}
       {area.id === 'tutorial-house' && simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') === 'starting-house').map((adventurer) => {
         const housePosition = adventurer.interiorPosition || { x: 50, y: 47 };
-        return <div key={adventurer.id} className={'simulated-adventurer interior-simulated-adventurer adventurer-' + adventurer.className.toLowerCase()} style={{ left: housePosition.x + '%', top: housePosition.y + '%' }} data-facing={adventurer.facing} aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className}>
+        return <button type="button" key={adventurer.id} className={'simulated-adventurer interior-simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '')} onClick={() => onInspect(adventurer)} style={{ left: housePosition.x + '%', top: housePosition.y + '%' }} data-facing={adventurer.facing} aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className} data-testid={'simulated-adventurer-' + adventurer.id}>
           <span className="simulated-adventurer-nameplate"><strong>{adventurer.name}</strong><small>Lv. {adventurer.level} · {adventurer.activity}</small></span>
           <span className="simulated-adventurer-sprite" aria-hidden="true" />
-        </div>;
+        </button>;
       })}
       <div className="interior-doorway" aria-label="Exit to Mosslight Crossing"><span>EXIT</span></div>
       <div className={'interior-player ' + (moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} data-facing={facing} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-attackDirectionRow[facing] * 48}px` } as CSSProperties}><span className="player-sprite" />{attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[facing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}{equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}</div>
@@ -1079,6 +1079,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [npcDialogue, setNpcDialogue] = useState<TownNpc | null>(null);
   const [npcStates, setNpcStates] = useState(startingTownNpcs);
   const [simulatedAdventurers, setSimulatedAdventurers] = useState(initialSimulatedAdventurers);
+  const [selectedAdventurerId, setSelectedAdventurerId] = useState<string | null>(null);
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }, 1));
   const [targetGoatId, setTargetGoatId] = useState<number | null>(null);
   const [droppedLoot, setDroppedLoot] = useState<DroppedLoot[]>([]);
@@ -1177,7 +1178,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     onStatPointsChange(Math.max(0, Math.floor(loadState.statPoints || 0)));
     setNpcStates(loadState.npcStates);
     const restoredAdventurers = loadState.simulatedAdventurers.length
-      ? loadState.simulatedAdventurers.map((adventurer) => ({ ...adventurer, location: adventurer.location ?? 'field', interiorPosition: adventurer.interiorPosition ?? { x: 50, y: 47 } }))
+      ? loadState.simulatedAdventurers.map((adventurer) => ({ ...adventurer, level: 1, location: adventurer.location ?? 'field', interiorPosition: adventurer.interiorPosition ?? { x: 50, y: 47 } }))
       : initialSimulatedAdventurers;
     simulatedAdventurersRef.current = restoredAdventurers;
     setSimulatedAdventurers(restoredAdventurers);
@@ -1675,6 +1676,9 @@ if (active) {
     setLogs((currentLogs) => [{ text: `${npc.name} turns to you: ${npc.title}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
   };
   const inspectAdventurer = (adventurer: SimulatedAdventurer) => {
+    const closingNameplate = selectedAdventurerId === adventurer.id;
+    setSelectedAdventurerId((current) => current === adventurer.id ? null : adventurer.id);
+    if (closingNameplate) return;
     setLogs((currentLogs) => [{ text: `${adventurer.name}, level ${adventurer.level} ${adventurer.className}, is ${adventurer.activity}. Goal: ${adventurer.goal}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
     setAttackFlash(`${adventurer.name}: ${adventurer.goal}`);
     window.setTimeout(() => setAttackFlash(null), 1600);
@@ -1709,7 +1713,7 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} onCraft={craftItem} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onCraft={craftItem} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -1832,8 +1836,9 @@ if (active) {
           ))}
           {currentWorldTile.landmark?.name === 'Mosslight Crossing' && simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') !== 'starting-house').map((adventurer) => (
             <button
+              type="button"
               key={adventurer.id}
-              className={'simulated-adventurer adventurer-' + adventurer.className.toLowerCase()}
+              className={'simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '')}
               onClick={() => inspectAdventurer(adventurer)}
               style={{ left: adventurer.position.x + '%', top: adventurer.position.y + '%' }}
               data-facing={adventurer.facing}
