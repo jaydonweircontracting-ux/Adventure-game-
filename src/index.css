@@ -2588,8 +2588,7 @@ body {
 .town-npc.npc-guide .npc-sprite { background-position-x: -96px; }
 .town-npc.npc-rogue .npc-sprite { background-position-x: -128px; }
 .adventurer-warrior .simulated-adventurer-sprite { background-position-x: -96px; filter: sepia(.7) saturate(1.45) hue-rotate(-8deg) brightness(.95) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
-.interior-simulated-adventurer { z-index: 8; pointer-events: none; }
-.interior-simulated-adventurer .simulated-adventurer-nameplate { opacity: 1; transform: translateY(0); }
+.interior-simulated-adventurer { z-index: 8; pointer-events: auto; }
 .simulated-adventurer-nameplate {
   position: absolute;
   bottom: 31px;
@@ -2605,7 +2604,7 @@ body {
   transform: translateY(3px);
   transition: opacity .16s ease, transform .16s ease;
 }
-.simulated-adventurer:hover .simulated-adventurer-nameplate, .simulated-adventurer:focus-visible .simulated-adventurer-nameplate { opacity: 1; transform: translateY(0); }
+.simulated-adventurer.is-nameplate-visible .simulated-adventurer-nameplate { opacity: 1; transform: translateY(0); }
 .simulated-adventurer-nameplate strong { font: 700 9px/1.1 var(--app-font-mono, monospace); white-space: nowrap; }
 .simulated-adventurer-nameplate small { max-width: 130px; color: #d8bc87; font: 7px/1.15 var(--app-font-mono, monospace); }
 
