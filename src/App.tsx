@@ -10,6 +10,7 @@ import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/rpgBrain';
 import { DEFAULT_WORLD_SEED, type WorldClockState } from '@/game/worldCore';
+import { generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { getAttackHitbox, getDirection, isEntityInHitbox } from '@/game/combat';
@@ -923,54 +924,47 @@ const startingTownNpcs: TownNpc[] = [
   { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up' },
 ];
 
-// Keep the starting area visible with one connected area to the left, one below, and one below-left.
-const atlasBounds = { minX: 3, maxX: 4, minY: 7, maxY: 8 };
+const worldMapBounds = { minX: 0, maxX: 10, minY: 2, maxY: 12 };
+type WorldMapDisplayTile = MapTile & { current: boolean; world: GeneratedWorldTile };
+function detailGlyph(detail: GeneratedWorldTile['detail']) {
+  return { waves: '≋', pebbles: '·', bush: '✿', trees: '♣', cactus: '♠', munchleaf: '❋', ridge: '⌁', null: '' }[String(detail) as keyof Record<string, string>] || '';
+}
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
-  const [selectedTile, setSelectedTile] = useState<(MapTile & { current: boolean }) | null>(null);
-  const atlasWidth = atlasBounds.maxX - atlasBounds.minX + 1;
-  const atlasHeight = atlasBounds.maxY - atlasBounds.minY + 1;
+  const [selectedTile, setSelectedTile] = useState<WorldMapDisplayTile | null>(null);
   const mapScale = [0.84, 0.96, 1.08, 1.22][zoom - 1];
-  const tiles = Array.from({ length: atlasWidth * atlasHeight }, (_, index) => {
-    const row = Math.floor(index / atlasWidth);
-    const column = index % atlasWidth;
-    const point = { x: atlasBounds.minX + column, y: atlasBounds.minY + row };
-    const mapTile = mapTileFor(point);
-    return { ...mapTile, current: point.x === chunk.x && point.y === chunk.y };
+  const worldTiles = generateWorldMap(DEFAULT_WORLD_SEED, worldMapBounds);
+  const tiles = worldTiles.map((world) => {
+    const point = { x: world.x, y: world.y };
+    return { ...mapTileFor(point), world, current: point.x === chunk.x && point.y === chunk.y };
   });
-  const currentTile = mapTileFor(chunk);
-  const selectedAreaName = selectedTile ? (selectedTile.waterFeature === 'sea' ? 'Open Water' : selectedTile.landmark?.name || chunkRegion(selectedTile)) : null;
-
+  const currentTile = tiles.find((tile) => tile.current) || tiles[0];
+  const selectedAreaName = selectedTile ? (selectedTile.landmark?.name || worldMapBiomeLabel(selectedTile.world.biome)) : null;
+  const currentAreaName = currentTile.landmark?.name || worldMapBiomeLabel(currentTile.world.biome);
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Chart of the known coast</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Seeded hex atlas · natural region rules</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
-          <span className="map-area-label">{currentTile.landmark?.name || chunkRegion(chunk)} · {currentTile.terrain}</span>
+          <span className="map-area-label">{currentAreaName} · {currentTile.world.biome}</span>
           <div className="map-zoom-controls" aria-label="Map zoom controls">
             <button className="map-zoom-button" onClick={() => setZoom((value) => Math.max(1, value - 1))} disabled={zoom === 1} aria-label="Zoom out" data-testid="button-map-zoom-out"><Minus size={15} /></button>
             <span className="map-zoom-level">×{zoom}</span>
             <button className="map-zoom-button" onClick={() => setZoom((value) => Math.min(4, value + 1))} disabled={zoom === 4} aria-label="Zoom in" data-testid="button-map-zoom-in"><Plus size={15} /></button>
           </div>
         </div>
-        <div className="big-map" data-testid="map-world-preview">
-          <div className="map-background-art" aria-hidden="true" style={{ backgroundImage: `linear-gradient(rgba(27, 75, 73, .1), rgba(27, 75, 73, .1)), url("${assetUrl('assets/gameplay/shining-fields/maps/world-map.jpeg?v=082')}")` }} />
+        <div className="big-map world-map-stage" data-testid="map-world-preview">
           <span className="atlas-compass" aria-hidden="true"><strong>N</strong><span>↑</span></span>
-          <span className="atlas-region-label atlas-region-north">NORTHWATCH HEIGHTS</span>
-          <span className="atlas-region-label atlas-region-west">BRACKENFEN WILDS</span>
-          <span className="atlas-region-label atlas-region-east">IRONWOOD MARCH</span>
-          <span className="atlas-region-label atlas-region-south">SUNWASH COAST</span>
-          <div className="map-grid" style={{ gridTemplateColumns: 'repeat(' + atlasWidth + ', minmax(0, 1fr))', gridTemplateRows: 'repeat(' + atlasHeight + ', minmax(0, 1fr))', transform: 'scale(' + mapScale + ')' }}>
-            {tiles.map((tile, index) => {
-              const row = Math.floor(index / atlasWidth);
-              const column = index % atlasWidth;
+          <div className="map-grid world-map-hex-grid" style={{ gridTemplateColumns: 'repeat(' + (worldMapBounds.maxX - worldMapBounds.minX + 1) + ', minmax(0, 1fr))', gridTemplateRows: 'repeat(' + (worldMapBounds.maxY - worldMapBounds.minY + 1) + ', minmax(0, 1fr))', transform: 'scale(' + mapScale + ')' }}>
+            {tiles.map((tile) => {
               const isSelected = selectedTile?.x === tile.x && selectedTile?.y === tile.y;
-              const tileAreaName = tile.waterFeature === 'sea' ? 'Open Water' : tile.landmark?.name || chunkRegion(tile);
-              return <div className={mapTileClass(tile) + ' map-photo-tile map-photo-quadrant-' + row + '-' + column + (isSelected ? ' is-selected' : '')} style={{ '--world-map-photo': 'url("' + assetUrl('assets/gameplay/shining-fields/maps/world-map.jpeg?v=082') + '")', '--world-map-position': column * 100 + '% ' + row * 100 + '%' } as CSSProperties} key={tile.x + '-' + tile.y} title={'Chunk ' + tile.x + ', ' + tile.y + ' · ' + tileAreaName} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
-                {tile.landmark && <><span className={'map-settlement ' + tile.landmark.kind} aria-label={tile.landmark.name} /><span className="map-settlement-name">{tile.landmark.name}</span></>}
+              const tileAreaName = tile.landmark?.name || worldMapBiomeLabel(tile.world.biome);
+              return <div className={'map-tile world-map-hex world-map-biome-' + tile.world.biome + (tile.current ? ' is-current' : '') + (isSelected ? ' is-selected' : '')} style={{ gridColumn: tile.world.column + 1, gridRow: tile.world.row + 1, '--hex-offset': tile.world.row % 2 ? '4%' : '0%' } as CSSProperties} key={tile.x + '-' + tile.y} title={tileAreaName + ' · chunk ' + tile.x + ', ' + tile.y} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
+                <span className="world-map-detail" aria-hidden="true">{detailGlyph(tile.world.detail)}</span>
+                {tile.landmark && <span className="world-map-landmark">{tile.landmark.name}</span>}
                 {tile.current && <span className="map-tile-player" aria-label="Your current position" />}
                 {tile.current && <span className="map-tile-label">{tile.x}, {tile.y}</span>}
               </div>;
@@ -979,15 +973,16 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
         </div>
         <div className={'map-selection' + (selectedTile ? ' has-selection' : '')} role="status" aria-live="polite">
           <span className="map-selection-label">Selected area</span>
-          <strong>{selectedAreaName || 'Tap a tile'}</strong>
-          <small>{selectedTile ? selectedTile.terrain + ' · chunk ' + selectedTile.x + ', ' + selectedTile.y : 'Tap any tile on the map to inspect its area'}</small>
+          <strong>{selectedAreaName || 'Tap a hex'}</strong>
+          <small>{selectedTile ? worldMapBiomeLabel(selectedTile.world.biome) + ' · chunk ' + selectedTile.x + ', ' + selectedTile.y : 'Tap any hex to inspect its biome and region'}</small>
         </div>
-        <div className="map-legend">
+        <div className="map-legend world-map-legend">
           <span className="legend-item"><span className="legend-dot" /> You are here</span>
-          <span className="legend-item"><span className="legend-town" /> Town</span>
-          <span className="legend-item"><span className="legend-line river" /> River</span>
-          <span className="legend-item"><span className="legend-line road" /> King’s road</span>
-          <span className="legend-item">Chunk {chunk.x}, {chunk.y} · {chunkRegion(chunk)}</span>
+          <span className="legend-item"><span className="world-map-legend-swatch forest" /> Forest</span>
+          <span className="legend-item"><span className="world-map-legend-swatch desert" /> Desert</span>
+          <span className="legend-item"><span className="world-map-legend-swatch tundra" /> Tundra</span>
+          <span className="legend-item"><span className="world-map-legend-swatch ocean" /> Water</span>
+          <span className="legend-item">Seed {DEFAULT_WORLD_SEED} · hex adjacency</span>
         </div>
       </div>
     </div>
