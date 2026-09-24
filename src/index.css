@@ -2855,3 +2855,29 @@ body {
 .map-overlay .map-tile.map-photo-quadrant-1-1 { background-image: url("gameplay/shining-fields/maps/quadrants/world-map-1-1.jpeg?v=083") !important; }
 
 .map-overlay .map-tile.road-corner-down-left::before { background-image: linear-gradient(to bottom, transparent 27%, rgba(91, 57, 35, .84) 28% 32%, #d2a564 33% 67%, rgba(91, 57, 35, .84) 68% 72%, transparent 73%), linear-gradient(to right, transparent 27%, rgba(91, 57, 35, .84) 28% 32%, #d2a564 33% 67%, rgba(91, 57, 35, .84) 68% 72%, transparent 73%) !important; background-size: 50% 100%, 100% 50%; background-position: 0 0, 0 100%; background-repeat: no-repeat; }
+
+
+/* Procedural hex atlas: the map is generated from seeded biome adjacency rules. */
+.map-overlay .world-map-stage { position: relative; overflow: hidden; min-height: 520px; background: radial-gradient(circle at 20% 18%, rgba(255, 236, 165, .18), transparent 28%), linear-gradient(145deg, #235f76, #173f5f); }
+.map-overlay .world-map-hex-grid { inset: 18px !important; display: grid !important; gap: 3px !important; padding: 8px !important; border: 5px solid rgba(238, 222, 174, .68) !important; background: rgba(20, 61, 74, .42) !important; box-shadow: 0 0 0 2px rgba(24, 64, 58, .6), inset 0 0 24px rgba(8, 36, 49, .5) !important; transform-origin: center !important; overflow: visible !important; }
+.map-overlay .world-map-hex { position: relative !important; min-width: 0 !important; min-height: 0 !important; width: 100% !important; height: 100% !important; overflow: visible !important; border: 0 !important; border-radius: 0 !important; clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%); transform: translateX(var(--hex-offset, 0)) !important; transition: filter .16s ease, transform .16s ease; cursor: pointer; box-shadow: none !important; z-index: 1; }
+.map-overlay .world-map-hex::before, .map-overlay .world-map-hex::after { display: none !important; content: none !important; }
+.map-overlay .world-map-hex:hover, .map-overlay .world-map-hex:focus-visible { filter: brightness(1.18) saturate(1.08); outline: 2px solid #ffe29b; outline-offset: -4px; z-index: 4; }
+.map-overlay .world-map-hex.is-selected { outline: 3px solid #fff0a6; outline-offset: -5px; z-index: 5; filter: brightness(1.12); }
+.map-overlay .world-map-hex.is-current { outline: 3px solid #ffd46b; outline-offset: -4px; z-index: 6; }
+.map-overlay .world-map-biome-ocean { background: repeating-linear-gradient(165deg, transparent 0 10px, rgba(171, 229, 223, .42) 11px 13px, transparent 14px 23px), linear-gradient(145deg, #3a91a6, #205e82) !important; }
+.map-overlay .world-map-biome-shore { background: linear-gradient(145deg, #f0d69b, #cda96d) !important; }
+.map-overlay .world-map-biome-meadow { background: radial-gradient(circle at 18% 24%, rgba(240, 239, 151, .4) 0 4%, transparent 5%), #83aa60 !important; }
+.map-overlay .world-map-biome-forest { background: radial-gradient(circle at 22% 28%, #274e3c 0 10%, transparent 11%), radial-gradient(circle at 70% 64%, #356947 0 13%, transparent 14%), #477b4d !important; }
+.map-overlay .world-map-biome-desert { background: radial-gradient(circle at 28% 35%, rgba(245, 210, 126, .4) 0 9%, transparent 10%), #c49b5d !important; }
+.map-overlay .world-map-biome-tundra { background: radial-gradient(circle at 68% 34%, rgba(255, 255, 255, .5) 0 8%, transparent 9%), #aebfba !important; }
+.map-overlay .world-map-biome-rock { background: linear-gradient(135deg, transparent 0 30%, rgba(232, 224, 188, .56) 31% 38%, transparent 39% 54%, rgba(69, 82, 72, .36) 55% 62%, transparent 63%), #7f8b7b !important; }
+.world-map-detail { position: absolute; left: 50%; top: 44%; color: rgba(255, 243, 188, .9); font-size: clamp(10px, 1.7vw, 19px); line-height: 1; transform: translate(-50%, -50%); text-shadow: 1px 1px 0 rgba(31, 63, 45, .55); pointer-events: none; }
+.world-map-biome-ocean .world-map-detail { color: rgba(217, 247, 237, .72); }
+.world-map-landmark { position: absolute; left: 50%; bottom: 9%; max-width: 96%; padding: 2px 4px; color: #fff4d0; background: rgba(32, 61, 48, .82); font-family: var(--app-font-mono); font-size: clamp(5px, .72vw, 8px); line-height: 1.05; text-align: center; text-shadow: 1px 1px 0 rgba(26, 48, 38, .7); transform: translateX(-50%); pointer-events: none; white-space: nowrap; }
+.map-overlay .world-map-hex .map-tile-player { display: block !important; position: absolute; left: 50%; top: 50%; width: 11px; height: 11px; border: 2px solid #fff0a8; border-radius: 50%; background: #c9584b; box-shadow: 0 0 0 2px rgba(40, 54, 38, .64); transform: translate(-50%, -50%); z-index: 3; }
+.map-overlay .world-map-hex .map-tile-label { display: block !important; position: absolute; left: 50%; top: 68%; color: #fff2bd; font-family: var(--app-font-mono); font-size: 7px; transform: translateX(-50%); pointer-events: none; z-index: 3; }
+.world-map-legend-swatch { display: inline-block; width: 10px; height: 10px; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); vertical-align: -1px; }
+.world-map-legend-swatch.forest { background: #477b4d; } .world-map-legend-swatch.desert { background: #c49b5d; } .world-map-legend-swatch.tundra { background: #aebfba; } .world-map-legend-swatch.ocean { background: #2b7898; }
+.map-overlay .world-map-stage .atlas-compass { display: grid !important; }
+@media (max-width: 700px) { .map-overlay .world-map-stage { min-height: 390px; } .map-overlay .world-map-hex-grid { inset: 10px !important; padding: 4px !important; gap: 2px !important; } .world-map-landmark { font-size: 5px; max-width: 90%; } .world-map-detail { font-size: 12px; } }
