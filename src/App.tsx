@@ -928,6 +928,7 @@ const WORLD_MAP_TILE_ART: Record<GeneratedWorldTile['biome'], string> = {
   rock: assetUrl('map-tiles/rock.webp'),
 };
 const WORLD_MAP_TILE_ART_POSITIONS = ['18% 24%', '72% 18%', '38% 68%', '82% 76%', '12% 72%'];
+const WORLD_MAP_TILE_ART_ZOOMS = ['102%', '110%', '118%', '126%'];
 function detailGlyph(detail: GeneratedWorldTile['detail']) {
   return { waves: '≋', pebbles: '·', bush: '✿', trees: '♣', cactus: '♠', munchleaf: '❋', ridge: '⌁', null: '' }[String(detail) as keyof Record<string, string>] || '';
 }
@@ -966,7 +967,8 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
               const tileAreaName = tile.landmark?.name || worldMapBiomeLabel(tile.world.biome);
               const tileShade = Math.min(1.07, Math.max(0.9, 0.93 + tile.world.climate.elevation * 0.12)).toFixed(3);
               const tileArtPosition = WORLD_MAP_TILE_ART_POSITIONS[Math.abs(tile.world.x * 37 + tile.world.y * 91) % WORLD_MAP_TILE_ART_POSITIONS.length];
-              return <div className={'map-tile world-map-hex world-map-biome-' + tile.world.biome + (tile.current ? ' is-current' : '') + (isSelected ? ' is-selected' : '')} style={{ gridColumn: tile.world.column + 1, gridRow: tile.world.row + 1, '--hex-offset': tile.world.row % 2 ? '4%' : '0%', '--tile-shade': tileShade, '--tile-art': 'url("' + WORLD_MAP_TILE_ART[tile.world.biome] + '")', '--tile-art-pos': tileArtPosition } as CSSProperties} key={tile.x + '-' + tile.y} title={tileAreaName + ' · chunk ' + tile.x + ', ' + tile.y} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
+              const tileArtZoom = WORLD_MAP_TILE_ART_ZOOMS[Math.abs(tile.world.x * 13 + tile.world.y * 29) % WORLD_MAP_TILE_ART_ZOOMS.length];
+              return <div className={'map-tile world-map-hex world-map-biome-' + tile.world.biome + (tile.world.nearBiomeBorder ? ' is-border' : '') + (tile.current ? ' is-current' : '') + (isSelected ? ' is-selected' : '')} style={{ gridColumn: tile.world.column + 1, gridRow: tile.world.row + 1, '--hex-offset': tile.world.row % 2 ? '4%' : '0%', '--tile-shade': tileShade, '--tile-art': 'url("' + WORLD_MAP_TILE_ART[tile.world.biome] + '")', '--tile-art-pos': tileArtPosition, '--tile-art-zoom': tileArtZoom } as CSSProperties} key={tile.x + '-' + tile.y} title={tileAreaName + ' · chunk ' + tile.x + ', ' + tile.y} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
                 {tile.road !== 'none' && <span className={'world-map-road world-map-road-' + tile.road} aria-hidden="true" />}
                 {tile.landmark && <span className="world-map-landmark">{tile.landmark.name}</span>}
                 {tile.current && <span className="map-tile-player" aria-label="Your current position" />}
