@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Download, Map, Menu, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
+import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Download, Map as MapIcon, Menu, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
 import { type ChangeEvent, type PointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -1995,7 +1995,7 @@ if (active) {
          <div className="field-actions">
            <button className="icon-button field-attack-button" onClick={() => attackGoat()} disabled={attackCooldownMs > 0 || attacking || inputLocked || Boolean(interior)} aria-label={selectedGoat ? 'Strike selected goat' : 'Strike nearest goat'} title={selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space'} aria-disabled={attackCooldownMs > 0 || attacking} data-testid="button-attack"><Sword size={16} />{attackCooldownMs > 0 && <span className="attack-cooldown-ring" style={{ background: 'conic-gradient(rgba(219, 120, 94, .95) ' + ((attackCooldownMs / PLAYER_ATTACK_COOLDOWN_MS) * 100) + '%, rgba(19, 43, 34, .2) 0)' }} aria-hidden="true" />}</button>
             <button className="icon-button field-log-toggle" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={16} /></button>
-           <button className="icon-button map-button" onClick={onOpenMap} aria-label="Open field atlas" title="Open field atlas" data-testid="button-open-map"><Map size={16} /></button>
+           <button className="icon-button map-button" onClick={onOpenMap} aria-label="Open field atlas" title="Open field atlas" data-testid="button-open-map"><MapIcon size={16} /></button>
             <button className="icon-button" onClick={() => setOptionsOpen(true)} aria-label="Open options" title="Options" data-testid="button-open-options"><Settings size={15} /></button>
          </div>
       </div>
