@@ -2881,3 +2881,9 @@ body {
 .world-map-legend-swatch.forest { background: #477b4d; } .world-map-legend-swatch.desert { background: #c49b5d; } .world-map-legend-swatch.tundra { background: #aebfba; } .world-map-legend-swatch.ocean { background: #2b7898; }
 .map-overlay .world-map-stage .atlas-compass { display: grid !important; }
 @media (max-width: 700px) { .map-overlay .world-map-stage { min-height: 390px; } .map-overlay .world-map-hex-grid { inset: 10px !important; padding: 4px !important; gap: 2px !important; } .world-map-landmark { font-size: 5px; max-width: 90%; } .world-map-detail { font-size: 12px; } }
+
+
+/* Generated world biome textures. Gameplay uses the same biome as the atlas. */
+.world-field.map-terrain-forest { background-image: radial-gradient(circle at 17% 23%, rgba(38, 103, 64, .42) 0 5%, transparent 6%), radial-gradient(circle at 68% 70%, rgba(38, 103, 64, .32) 0 7%, transparent 8%), repeating-linear-gradient(25deg, transparent 0 12px, rgba(33, 91, 53, .15) 13px 15px, transparent 16px 25px); }
+.world-field.map-terrain-desert { background-image: radial-gradient(circle at 18% 26%, rgba(226, 159, 71, .24) 0 5%, transparent 6%), radial-gradient(circle at 74% 62%, rgba(106, 69, 46, .2) 0 7%, transparent 8%), linear-gradient(135deg, rgba(255, 214, 127, .14), transparent 48%); }
+.world-field.map-terrain-tundra { background-image: radial-gradient(circle at 22% 24%, rgba(255, 255, 255, .42) 0 6%, transparent 7%), linear-gradient(135deg, rgba(224, 239, 236, .18), transparent 52%); }
