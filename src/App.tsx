@@ -10,7 +10,7 @@ import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/rpgBrain';
 import { DEFAULT_WORLD_SEED, type WorldClockState } from '@/game/worldCore';
-import { generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile } from '@/game/worldMap';
+import { WORLD_MAP_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { getAttackHitbox, getDirection, isEntityInHitbox } from '@/game/combat';
@@ -21,7 +21,7 @@ import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/pers
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILD_NUMBER = '080';
+const BUILD_NUMBER = '081';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -77,16 +77,38 @@ const attackDirectionRow: Record<Direction, number> = { right: 0, down: 1, up: 2
 const delta: Record<Direction, Point> = {
   up: { x: 0, y: -2.4 }, down: { x: 0, y: 2.4 }, left: { x: -2.4, y: 0 }, right: { x: 2.4, y: 0 },
 };
-const terrainTypes = ['meadow', 'woodland', 'rock', 'shore', 'autumn', 'ocean'] as const;
+const terrainTypes = ['meadow', 'forest', 'rock', 'shore', 'desert', 'tundra', 'ocean'] as const;
 type Terrain = (typeof terrainTypes)[number];
 const fieldPalettes: Record<Terrain, { field: string; path: string; glow: string }> = {
   meadow: { field: '#77a45b', path: '#d9b979', glow: 'rgba(255, 227, 157, .22)' },
-  woodland: { field: '#658e58', path: '#c7a66b', glow: 'rgba(180, 214, 141, .18)' },
+  forest: { field: '#4f7c50', path: '#c7a66b', glow: 'rgba(180, 214, 141, .18)' },
   rock: { field: '#87927a', path: '#c9b27d', glow: 'rgba(238, 228, 186, .2)' },
-  shore: { field: '#6f9b88', path: '#dfc58d', glow: 'rgba(218, 239, 194, .2)' },
-  autumn: { field: '#9b785d', path: '#d6ae70', glow: 'rgba(255, 198, 123, .2)' },
+  shore: { field: '#c4a06a', path: '#dfc58d', glow: 'rgba(218, 239, 194, .2)' },
+  desert: { field: '#bd9157', path: '#d7ac6b', glow: 'rgba(255, 198, 123, .2)' },
+  tundra: { field: '#aebfba', path: '#d0d8d0', glow: 'rgba(222, 239, 236, .24)' },
   ocean: { field: '#2a6f8d', path: '#8ab8bd', glow: 'rgba(140, 213, 219, .2)' },
 };
+
+const worldMapBounds = WORLD_MAP_BOUNDS;
+const generatedWorldTiles = generateWorldMap(DEFAULT_WORLD_SEED, worldMapBounds);
+const generatedWorldTileByKey = new Map(generatedWorldTiles.map((tile) => [tile.x + ',' + tile.y, tile]));
+
+function generatedWorldTileFor(point: Point) {
+  return generatedWorldTileByKey.get(point.x + ',' + point.y) || null;
+}
+
+function terrainForWorldBiome(biome: GeneratedWorldTile['biome']): Terrain {
+  return biome === 'forest' ? 'forest' : biome === 'desert' ? 'desert' : biome === 'tundra' ? 'tundra' : biome;
+}
+
+function regionStyleForWorldBiome(biome: GeneratedWorldTile['biome']): RegionStyle {
+  if (biome === 'ocean') return 'ocean';
+  if (biome === 'forest') return 'ironwood';
+  if (biome === 'desert') return 'sunwash';
+  if (biome === 'tundra' || biome === 'rock') return 'northwatch';
+  if (biome === 'shore') return 'brackenfen';
+  return 'greenvale';
+}
 
 type RegionStyle = 'greenvale' | 'brackenfen' | 'ironwood' | 'northwatch' | 'sunwash' | 'ocean';
 const regionPalettes: Record<Exclude<RegionStyle, 'ocean'>, { field: string; path: string; glow: string }> = {
@@ -97,40 +119,19 @@ const regionPalettes: Record<Exclude<RegionStyle, 'ocean'>, { field: string; pat
   sunwash: { field: '#9a7658', path: '#d7ac6b', glow: 'rgba(255, 198, 123, .2)' },
 };
 
-const coastlineWater = new Set([
-  '-3,1', '-2,1', '-1,1', '0,1', '1,1', '2,1', '9,1', '10,1', '11,1',
-  '-3,2', '-2,2', '10,2', '11,2', '-3,3', '11,3', '-3,4', '11,4',
-  '-3,5', '11,5', '-3,6', '11,6', '-3,7', '11,7', '-3,8', '11,8',
-  '-3,9', '11,9', '-3,10', '10,10', '11,10', '-3,11', '9,11', '10,11', '11,11',
-  '-3,12', '-2,12', '8,12', '9,12', '10,12', '11,12', '-3,13', '-2,13', '-1,13', '0,13', '1,13', '7,13', '8,13', '9,13', '10,13', '11,13',
-]);
-
-// Give the tutorial island a clear water buffer without changing the starting field.
-for (let x = -1; x <= 11; x += 1) {
-  coastlineWater.add(x + ',1');
-  coastlineWater.add(x + ',13');
-}
-for (let y = 1; y <= 13; y += 1) {
-  coastlineWater.add('-1,' + y);
-  coastlineWater.add('11,' + y);
-}
-
 function isContinentChunk(point: Point) {
-  return point.x >= -3 && point.x <= 11 && point.y >= 1 && point.y <= 13 && !coastlineWater.has(point.x + ',' + point.y);
+  const tile = generatedWorldTileFor(point);
+  return Boolean(tile && tile.biome !== 'ocean');
 }
 
 function regionStyleFor(point: Point): RegionStyle {
-  if (!isContinentChunk(point)) return 'ocean';
-  if (point.y <= 4 || (point.y === 5 && point.x >= 5)) return 'northwatch';
-  if (point.x <= 1) return 'brackenfen';
-  if (point.x >= 7) return 'ironwood';
-  if (point.y >= 10) return 'sunwash';
-  return 'greenvale';
+  const tile = generatedWorldTileFor(point);
+  return tile ? regionStyleForWorldBiome(tile.biome) : 'ocean';
 }
 
 function chunkTerrain(chunk: Point): Terrain {
-  const seed = Math.abs((chunk.x * 73856093) ^ (chunk.y * 19349663));
-  return terrainTypes[seed % terrainTypes.length];
+  const tile = generatedWorldTileFor(chunk);
+  return tile ? terrainForWorldBiome(tile.biome) : 'ocean';
 }
 
 type SettlementKind = 'village' | 'town';
@@ -138,6 +139,7 @@ type MapTile = {
   x: number;
   y: number;
   terrain: Terrain;
+  worldBiome: GeneratedWorldTile['biome'];
   regionStyle: RegionStyle;
   waterFeature: 'river' | 'lake' | 'sea' | null;
   waterEdge: 'north' | 'south' | 'east' | 'west' | null;
@@ -168,23 +170,13 @@ function isTutorialCenter(point: Point) {
 }
 
 function mapTileFor(point: Point): MapTile {
-  const regionStyle = regionStyleFor(point);
-  const isOcean = regionStyle === 'ocean';
-  const mainRiverX = Math.round(4.5 + Math.sin((point.y - 2) * 0.48) * 1.35);
-  const mainRiver = !isOcean && point.y >= 2 && point.y <= 12 && point.x === mainRiverX;
-  const westBranchY = Math.round(7 + Math.sin((point.x + 1) * 0.72) * 0.85);
-  const westBranch = !isOcean && point.x >= -1 && point.x <= 4 && point.y === westBranchY;
-  const southBranchY = Math.round(10 + Math.sin(point.x * 0.65) * 0.45);
-  const southBranch = !isOcean && point.x >= 4 && point.x <= 9 && point.y === southBranchY;
-  const lake = !isOcean && ((point.x === 6 && point.y === 5) || (point.x === 7 && point.y === 5) || (point.x === 7 && point.y === 6));
-  const waterFeature = isStartingArea(point) ? null : isOcean ? 'sea' : lake ? 'lake' : mainRiver || westBranch || southBranch ? 'river' : null;
-  const waterEdge = isStartingArea(point) ? null : isOcean ? null : lake ? 'south' : mainRiver ? (Math.sin((point.y - 2) * 0.48) >= 0 ? 'east' : 'west') : westBranch || southBranch ? 'south' : null;
-
-  const ridgeLine = 3.2 + Math.sin(point.x * 0.55) * 0.7;
-  const isRidge = !isOcean && (point.y <= ridgeLine || (point.x >= 8 && point.y <= 4));
-  const isWoodland = !isOcean && !isRidge && ((point.x <= 2 && point.y >= 5) || (point.x >= 6 && point.y >= 7) || (point.x === 4 && point.y === 5));
-  const isAutumn = !isOcean && !isRidge && !isWoodland && point.y >= 10 && point.x <= 3;
-  const terrain = isOcean ? 'ocean' : isRidge ? 'rock' : isWoodland ? 'woodland' : isAutumn ? 'autumn' : 'meadow';
+  const worldTile = generatedWorldTileFor(point);
+  const biome = worldTile?.biome || 'ocean';
+  const regionStyle = regionStyleForWorldBiome(biome);
+  const isOcean = biome === 'ocean';
+  const terrain = terrainForWorldBiome(biome);
+  const waterFeature = isOcean ? 'sea' : null;
+  const waterEdge = null;
 
   const horizontalRoad = !isOcean && (
     (point.y === 7 && point.x >= -1 && point.x <= 8) ||
@@ -221,6 +213,7 @@ function mapTileFor(point: Point): MapTile {
   return {
     ...point,
     terrain,
+    worldBiome: biome,
     regionStyle,
     waterFeature,
     waterEdge,
@@ -360,11 +353,13 @@ function fieldAccentsFor(chunk: Point): FieldAccent[] {
 
     const kind: FieldAccentKind = tile.terrain === 'rock'
       ? 'stone'
-      : tile.terrain === 'autumn'
-        ? (random() > 0.42 ? 'leaf' : 'grass')
-        : tile.terrain === 'woodland'
+      : tile.terrain === 'desert'
+        ? (random() > 0.42 ? 'stone' : 'grass')
+        : tile.terrain === 'forest'
           ? (random() > 0.5 ? 'leaf' : 'grass')
-          : (random() > 0.7 ? 'flower' : 'grass');
+          : tile.terrain === 'tundra'
+            ? 'stone'
+            : (random() > 0.7 ? 'flower' : 'grass');
     accents.push({
       id: accents.length,
       x,
@@ -412,6 +407,7 @@ function wrapFieldPosition(position: Point, chunk: Point) {
   if (nextPosition.x > 96) { nextPosition.x = 6; nextChunk.x += 1; travelLabels.push('east'); }
   if (nextPosition.y < 4) { nextPosition.y = 94; nextChunk.y -= 1; travelLabels.push('north'); }
   if (nextPosition.y > 96) { nextPosition.y = 6; nextChunk.y += 1; travelLabels.push('south'); }
+  if (travelLabels.length > 0 && (!generatedWorldTileFor(nextChunk) || generatedWorldTileFor(nextChunk)?.biome === 'ocean')) return null;
   return { position: nextPosition, chunk: nextChunk, travelLabels };
 }
 
@@ -423,7 +419,7 @@ function resolveFieldMovement(current: Point, movement: Point, chunk: Point, goa
   ];
   for (const candidate of candidates) {
     const wrapped = wrapFieldPosition(candidate, chunk);
-    if (!isFieldPositionBlocked(wrapped.position, wrapped.chunk) && !isPositionOccupiedByGoat(wrapped.position, goats)) return wrapped;
+    if (wrapped && !isFieldPositionBlocked(wrapped.position, wrapped.chunk) && !isPositionOccupiedByGoat(wrapped.position, goats)) return wrapped;
   }
   return null;
 }
@@ -895,13 +891,8 @@ function mapTileClass(tile: MapTile & { current: boolean }) {
 function chunkRegion(chunk: Point) {
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   if (landmark) return landmark.name;
-  if (isStartingArea(chunk)) return 'Tutorial Island';
-  if (!isContinentChunk(chunk)) return 'Open Water';
-  if (chunk.y <= 4) return 'Northwatch Heights';
-  if (chunk.x <= 1) return 'Brackenfen Wilds';
-  if (chunk.x >= 7) return 'Ironwood March';
-  if (chunk.y >= 10) return 'Sunwash Coast';
-  return 'Greenvale';
+  const tile = generatedWorldTileFor(chunk);
+  return tile ? worldMapBiomeLabel(tile.biome) : 'Open Water';
 }
 
 const initialLogs = [
@@ -924,7 +915,6 @@ const startingTownNpcs: TownNpc[] = [
   { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up' },
 ];
 
-const worldMapBounds = { minX: 0, maxX: 10, minY: 2, maxY: 12 };
 type WorldMapDisplayTile = MapTile & { current: boolean; world: GeneratedWorldTile };
 function detailGlyph(detail: GeneratedWorldTile['detail']) {
   return { waves: '≋', pebbles: '·', bush: '✿', trees: '♣', cactus: '♠', munchleaf: '❋', ridge: '⌁', null: '' }[String(detail) as keyof Record<string, string>] || '';
@@ -933,7 +923,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
   const [selectedTile, setSelectedTile] = useState<WorldMapDisplayTile | null>(null);
   const mapScale = [0.84, 0.96, 1.08, 1.22][zoom - 1];
-  const worldTiles = generateWorldMap(DEFAULT_WORLD_SEED, worldMapBounds);
+  const worldTiles = generatedWorldTiles;
   const tiles = worldTiles.map((world) => {
     const point = { x: world.x, y: world.y };
     return { ...mapTileFor(point), world, current: point.x === chunk.x && point.y === chunk.y };
@@ -1685,7 +1675,7 @@ if (active) {
   const playerMaxHp = playerMaxHpForStats(playerStats);
   const fieldTrees = fieldTreesFor(chunk);
   const fieldAccents = fieldAccentsFor(chunk);
-  const fieldPalette = currentWorldTile.regionStyle === 'ocean' ? fieldPalettes.ocean : regionPalettes[currentWorldTile.regionStyle];
+  const fieldPalette = fieldPalettes[currentWorldTile.terrain];
   const startingArea = isStartingArea(chunk);
   const startingCenter = isTutorialCenter(chunk);
   const talkToNpc = (npc: TownNpc) => {
@@ -1731,7 +1721,7 @@ if (active) {
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
         {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onCraft={craftItem} /> : (
-        <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} style={{
+        <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
           '--field-glow': fieldPalette.glow,
