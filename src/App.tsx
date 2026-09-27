@@ -918,25 +918,12 @@ const startingTownNpcs: TownNpc[] = [
 ];
 
 type WorldMapDisplayTile = MapTile & { current: boolean; world: GeneratedWorldTile };
-const WORLD_MAP_TILE_ART: Record<GeneratedWorldTile['biome'], string> = {
-  ocean: assetUrl('map-tiles/ocean.webp'),
-  shore: assetUrl('map-tiles/shore.webp'),
-  meadow: assetUrl('map-tiles/meadow.webp'),
-  forest: assetUrl('map-tiles/forest.webp'),
-  desert: assetUrl('map-tiles/desert.webp'),
-  tundra: assetUrl('map-tiles/tundra.webp'),
-  rock: assetUrl('map-tiles/rock.webp'),
-};
-const WORLD_MAP_TILE_ART_POSITIONS = ['18% 24%', '72% 18%', '38% 68%', '82% 76%', '12% 72%'];
-const WORLD_MAP_TILE_ART_ZOOMS = ['102%', '110%', '118%', '126%'];
-function detailGlyph(detail: GeneratedWorldTile['detail']) {
-  return { waves: '≋', pebbles: '·', bush: '✿', trees: '♣', cactus: '♠', munchleaf: '❋', ridge: '⌁', null: '' }[String(detail) as keyof Record<string, string>] || '';
-}
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
   const [selectedTile, setSelectedTile] = useState<WorldMapDisplayTile | null>(null);
   const mapScale = [0.84, 0.96, 1.08, 1.22][zoom - 1];
   const worldTiles = generatedWorldTiles;
+  const oceanKeys = new Set(worldTiles.filter((world) => world.biome === 'ocean').map((world) => world.x + ',' + world.y));
   const tiles = worldTiles.map((world) => {
     const point = { x: world.x, y: world.y };
     return { ...mapTileFor(point), world, current: point.x === chunk.x && point.y === chunk.y };
@@ -948,7 +935,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Seeded hex atlas · natural region rules</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · natural region rules</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -966,10 +953,16 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
               const isSelected = selectedTile?.x === tile.x && selectedTile?.y === tile.y;
               const tileAreaName = tile.landmark?.name || worldMapBiomeLabel(tile.world.biome);
               const tileShade = Math.min(1.07, Math.max(0.9, 0.93 + tile.world.climate.elevation * 0.12)).toFixed(3);
-              const tileArtPosition = WORLD_MAP_TILE_ART_POSITIONS[Math.abs(tile.world.x * 37 + tile.world.y * 91) % WORLD_MAP_TILE_ART_POSITIONS.length];
-              const tileArtZoom = WORLD_MAP_TILE_ART_ZOOMS[Math.abs(tile.world.x * 13 + tile.world.y * 29) % WORLD_MAP_TILE_ART_ZOOMS.length];
-              return <div className={'map-tile world-map-hex world-map-biome-' + tile.world.biome + (tile.world.nearBiomeBorder ? ' is-border' : '') + (tile.current ? ' is-current' : '') + (isSelected ? ' is-selected' : '')} style={{ gridColumn: tile.world.column + 1, gridRow: tile.world.row + 1, '--hex-offset': tile.world.row % 2 ? '4%' : '0%', '--tile-shade': tileShade } as CSSProperties} key={tile.x + '-' + tile.y} title={tileAreaName + ' · chunk ' + tile.x + ', ' + tile.y} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
-                <span className="world-map-tile-art" aria-hidden="true" style={{ backgroundImage: 'url("' + WORLD_MAP_TILE_ART[tile.world.biome] + '")', backgroundPosition: tileArtPosition, backgroundSize: tileArtZoom }} />
+              // Yellow shoreline rim on the land side of every water edge, like a beach outline.
+              const rim: string[] = [];
+              if (tile.world.biome !== 'ocean') {
+                const touchesWater = (x: number, y: number) => oceanKeys.has(x + ',' + y);
+                if (touchesWater(tile.world.x, tile.world.y - 1)) rim.push('inset 0 6px 0 0 #d3e04e');
+                if (touchesWater(tile.world.x, tile.world.y + 1)) rim.push('inset 0 -6px 0 0 #d3e04e');
+                if (touchesWater(tile.world.x - 1, tile.world.y)) rim.push('inset 6px 0 0 0 #d3e04e');
+                if (touchesWater(tile.world.x + 1, tile.world.y)) rim.push('inset -6px 0 0 0 #d3e04e');
+              }
+              return <div className={'map-tile world-map-hex world-map-biome-' + tile.world.biome + (tile.world.nearBiomeBorder ? ' is-border' : '') + (tile.current ? ' is-current' : '') + (isSelected ? ' is-selected' : '')} style={{ gridColumn: tile.world.column + 1, gridRow: tile.world.row + 1, '--tile-shade': tileShade, boxShadow: rim.length ? 'inset 0 0 0 1px rgba(20, 20, 90, .28), ' + rim.join(', ') : undefined } as CSSProperties} key={tile.x + '-' + tile.y} title={tileAreaName + ' · chunk ' + tile.x + ', ' + tile.y} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
                 {tile.road !== 'none' && <span className={'world-map-road world-map-road-' + tile.road} aria-hidden="true" />}
                 {tile.landmark && <span className="world-map-landmark">{tile.landmark.name}</span>}
                 {tile.current && <span className="map-tile-player" aria-label="Your current position" />}
@@ -980,8 +973,8 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
         </div>
         <div className={'map-selection' + (selectedTile ? ' has-selection' : '')} role="status" aria-live="polite">
           <span className="map-selection-label">Selected area</span>
-          <strong>{selectedAreaName || 'Tap a hex'}</strong>
-          <small>{selectedTile ? worldMapBiomeLabel(selectedTile.world.biome) + ' · chunk ' + selectedTile.x + ', ' + selectedTile.y : 'Tap any hex to inspect its biome and region'}</small>
+          <strong>{selectedAreaName || 'Tap a tile'}</strong>
+          <small>{selectedTile ? worldMapBiomeLabel(selectedTile.world.biome) + ' · chunk ' + selectedTile.x + ', ' + selectedTile.y : 'Tap any tile to inspect its biome and region'}</small>
         </div>
         <div className="map-legend world-map-legend">
           <span className="legend-item"><span className="legend-dot" /> You are here</span>
@@ -989,7 +982,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
           <span className="legend-item"><span className="world-map-legend-swatch desert" /> Desert</span>
           <span className="legend-item"><span className="world-map-legend-swatch tundra" /> Tundra</span>
           <span className="legend-item"><span className="world-map-legend-swatch ocean" /> Water</span>
-          <span className="legend-item">Seed {DEFAULT_WORLD_SEED} · hex adjacency</span>
+          <span className="legend-item">Seed {DEFAULT_WORLD_SEED} · square tile atlas</span>
         </div>
       </div>
     </div>

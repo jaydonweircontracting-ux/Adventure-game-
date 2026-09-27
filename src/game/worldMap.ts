@@ -24,7 +24,7 @@ const ALLOWED_NEIGHBORS: Record<WorldMapBiome, WorldMapBiome[]> = {
   tundra: ['meadow', 'forest', 'tundra', 'rock'],
   rock: ['meadow', 'forest', 'desert', 'tundra', 'rock'],
 };
-const HEX_DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, -1], [-1, 1]] as const;
+const GRID_DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
 
 // Sea level for the elevation field: below it is ocean, just above it is shore.
 const SEA_LEVEL = 0.42;
@@ -136,7 +136,7 @@ function climateBiomeWeights(climate: WorldMapClimate): Record<WorldMapBiome, nu
 const cellKey = (x: number, y: number) => x + ',' + y;
 const inside = (x: number, y: number, bounds: WorldMapBounds) => x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY;
 function neighbors(x: number, y: number, bounds: WorldMapBounds) {
-  return HEX_DIRECTIONS.map(([dx, dy]) => ({ x: x + dx, y: y + dy })).filter((point) => inside(point.x, point.y, bounds));
+  return GRID_DIRECTIONS.map(([dx, dy]) => ({ x: x + dx, y: y + dy })).filter((point) => inside(point.x, point.y, bounds));
 }
 function canTouch(source: WorldMapBiome, candidate: WorldMapBiome) { return ALLOWED_NEIGHBORS[source].includes(candidate); }
 function chooseWeighted(options: WorldMapBiome[], weights: Record<WorldMapBiome, number>, cells: Map<string, Set<WorldMapBiome>>, x: number, y: number, bounds: WorldMapBounds, rng: MapRng) {
