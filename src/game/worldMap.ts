@@ -1,9 +1,17 @@
 export type WorldMapBiome = 'ocean' | 'shore' | 'meadow' | 'forest' | 'desert' | 'tundra' | 'rock';
 export type WorldMapDetail = 'waves' | 'pebbles' | 'bush' | 'trees' | 'cactus' | 'munchleaf' | 'ridge' | null;
 export type WorldMapBounds = { minX: number; maxX: number; minY: number; maxY: number };
+export const WORLD_MAP_BOUNDS: WorldMapBounds = { minX: 0, maxX: 10, minY: 2, maxY: 12 };
+export const WORLD_MAP_RESERVED_MEADOW_COORDINATES = [
+  '3,6', '4,6', '5,6', '3,7', '4,7', '5,7', '3,8', '4,8', '5,8',
+] as const;
+export const WORLD_MAP_LAND_COORDINATES = [
+  '0,7', '8,7', '5,2', '2,4', '9,3', '3,12', '6,10', '10,10', '1,3',
+] as const;
 export type GeneratedWorldTile = { x: number; y: number; row: number; column: number; biome: WorldMapBiome; detail: WorldMapDetail; nearBiomeBorder: boolean };
 
 const BIOMES: WorldMapBiome[] = ['ocean', 'shore', 'meadow', 'forest', 'desert', 'tundra', 'rock'];
+const LAND_BIOMES: WorldMapBiome[] = ['shore', 'meadow', 'forest', 'desert', 'tundra', 'rock'];
 const BASE_WEIGHTS: Record<WorldMapBiome, number> = { ocean: 1.1, shore: 1.4, meadow: 4.8, forest: 2.8, desert: 1.8, tundra: 1.7, rock: 1.9 };
 const ALLOWED_NEIGHBORS: Record<WorldMapBiome, WorldMapBiome[]> = {
   ocean: ['ocean', 'shore'],
@@ -64,13 +72,17 @@ function detailFor(biome: WorldMapBiome, nearWater: boolean, nearBiomeBorder: bo
   return null;
 }
 
-export function generateWorldMap(seed: number, bounds: WorldMapBounds = { minX: 0, maxX: 10, minY: 2, maxY: 12 }): GeneratedWorldTile[] {
+export function generateWorldMap(seed: number, bounds: WorldMapBounds = WORLD_MAP_BOUNDS): GeneratedWorldTile[] {
   const rng = new MapRng(seed);
   const cells = new Map<string, Set<WorldMapBiome>>();
+  const reservedMeadow = new Set<string>(WORLD_MAP_RESERVED_MEADOW_COORDINATES);
+  const reservedLand = new Set<string>(WORLD_MAP_LAND_COORDINATES);
   for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
     for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+      const key = cellKey(x, y);
       const edge = x === bounds.minX || x === bounds.maxX || y === bounds.minY || y === bounds.maxY;
-      cells.set(cellKey(x, y), new Set(edge ? ['ocean'] : BIOMES));
+      const initialOptions = edge ? ['ocean'] : reservedMeadow.has(key) ? ['meadow'] : reservedLand.has(key) ? LAND_BIOMES : BIOMES;
+      cells.set(key, new Set(initialOptions));
     }
   }
   const startKey = cellKey(4, 7);
