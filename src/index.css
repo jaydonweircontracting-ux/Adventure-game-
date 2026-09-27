@@ -2775,10 +2775,7 @@ body {
 }
 .legend-line.road { background: #8fbd5b; }
 
-/* Simple map pass: all land stays green; edge water keeps its blue overlay. */
-.map-overlay .map-tile:not(.is-sea) {
-  background: radial-gradient(circle at 18% 24%, rgba(210, 236, 135, .28) 0 3%, transparent 4%), linear-gradient(145deg, #8ab85a, #609b4e) !important;
-}
+/* (removed stale "Simple map pass" override; pixel tile atlas paints via inline styles) */
 
 /* Road pass: roads read as packed earth again; the starting field stays east-west. */
 .map-overlay .map-tile.road-horizontal::before {
@@ -2810,17 +2807,7 @@ body {
   background-repeat: no-repeat;
   background-color: #789b7a;
 }
-.map-overlay .map-grid {
-  z-index: 2;
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-}
-.map-overlay .map-tile {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-}
+/* (removed stale "uploaded world-map image" overrides; pixel tile atlas paints via inline styles) */
 .map-overlay .map-tile::before,
 .map-overlay .map-tile::after,
 .map-overlay .map-settlement,
