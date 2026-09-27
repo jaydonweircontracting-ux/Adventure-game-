@@ -19,9 +19,9 @@ const ALLOWED_NEIGHBORS: Record<WorldMapBiome, WorldMapBiome[]> = {
   ocean: ['ocean', 'shore'],
   shore: ['ocean', 'shore', 'meadow'],
   meadow: ['shore', 'meadow', 'forest', 'desert', 'tundra', 'rock'],
-  forest: ['meadow', 'forest', 'rock'],
-  desert: ['meadow', 'desert', 'shore', 'rock'],
-  tundra: ['meadow', 'tundra', 'rock'],
+  forest: ['meadow', 'forest', 'tundra', 'rock'],
+  desert: ['meadow', 'forest', 'desert', 'shore', 'rock'],
+  tundra: ['meadow', 'forest', 'tundra', 'rock'],
   rock: ['meadow', 'forest', 'desert', 'tundra', 'rock'],
 };
 const HEX_DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, -1], [-1, 1]] as const;
@@ -99,9 +99,13 @@ function climateFor(
   const ny = (y - bounds.minY) / Math.max(1, bounds.maxY - bounds.minY);
   const dist = Math.hypot(nx - 0.5, ny - 0.5) / Math.SQRT1_2;
   const falloff = Math.max(0, 1 - dist * dist);
-  const elevation = 0.2 + falloff * 0.6 + (elevationNoise(x * 0.32 + 11.7, y * 0.32 + 5.3) - 0.5) * 0.4;
-  const temperature = Math.min(1, Math.max(0, ny * 1.0 - 0.1 + (temperatureNoise(x * 0.3 + 41.2, y * 0.3 + 17.9) - 0.5) * 0.5));
-  const moisture = moistureNoise(x * 0.27 + 71.4, y * 0.27 + 29.6);
+  // Low sampling frequencies: climate features span several tiles so biomes
+  // form regions (bands, blobs, coastlines) instead of per-tile speckle.
+  // Temperature runs cold north to hot south; moisture dries toward the south
+  // so deserts form a southern band while the temperate middle grows forests.
+  const elevation = 0.2 + falloff * 0.6 + (elevationNoise(x * 0.3 + 11.7, y * 0.3 + 5.3) - 0.5) * 0.32;
+  const temperature = Math.min(1, Math.max(0, 0.25 + ny * 0.55 + (temperatureNoise(x * 0.28 + 41.2, y * 0.28 + 17.9) - 0.5) * 0.2));
+  const moisture = Math.min(1, Math.max(0, moistureNoise(x * 0.26 + 71.4, y * 0.26 + 29.6) * 0.75 + (0.5 - ny) * 0.45 + 0.125));
   return { elevation, temperature, moisture };
 }
 
@@ -115,15 +119,16 @@ function climateBiomeWeights(climate: WorldMapClimate): Record<WorldMapBiome, nu
   const dry = 1 - smoothstep(0.35, 0.55, moisture);
   const wet = smoothstep(0.45, 0.65, moisture);
   const mild = smoothstep(0.3, 0.45, temperature) * (1 - smoothstep(0.62, 0.8, temperature));
-  const high = smoothstep(0.55, 0.75, elevation);
+  const high = smoothstep(0.68, 0.82, elevation);
   const coastal = 1 - smoothstep(0.02, 0.1, elevation - SEA_LEVEL);
   return {
     ocean: 0,
     shore: 3.5 * coastal,
-    meadow: 1.6 + 2.0 * mild,
-    forest: 0.5 + 8 * wet * (0.3 + 0.7 * mild),
+    meadow: 1.0 + 1.4 * mild,
+    // Forests dislike true heat: hot+wet grows a little jungle, hot+dry is desert.
+    forest: (0.5 + 8 * wet * (0.3 + 0.7 * mild)) * (1 - 0.7 * hot),
     desert: 0.2 + 9 * hot * dry,
-    tundra: 0.2 + 9 * cold * (0.35 + 0.65 * (1 - wet)),
+    tundra: 0.2 + 10 * cold * (0.45 + 0.55 * (1 - wet)),
     rock: 0.5 + 8 * high,
   };
 }
@@ -140,8 +145,8 @@ function chooseWeighted(options: WorldMapBiome[], weights: Record<WorldMapBiome,
     let score = weights[biome];
     for (const point of adjacent) {
       const neighborOptions = cells.get(cellKey(point.x, point.y));
-      if (neighborOptions?.has(biome)) score += 0.6;
-      if (neighborOptions?.size === 1 && neighborOptions.has(biome)) score += 2.2;
+      if (neighborOptions?.has(biome)) score += 0.15;
+      if (neighborOptions?.size === 1 && neighborOptions.has(biome)) score += 1.5;
     }
     return { biome, score };
   });
@@ -233,11 +238,51 @@ export function generateWorldMap(seed: number, bounds: WorldMapBounds = WORLD_MA
       }
     }
   }
+  // Collapse to a plain biome grid, then run cellular-automata smoothing:
+  // isolated singletons adopt the surrounding region so the map reads as a
+  // world (tundra band, desert expanse, forest, highland ridges) instead of
+  // confetti. Protected cells (spawn meadow, ocean ring, deep water,
+  // coastline) never change.
+  const smoothed = new Map<string, WorldMapBiome>();
+  for (const [key, options] of cells) smoothed.set(key, [...options][0]);
+  const protectedMeadow = new Set<string>(WORLD_MAP_RESERVED_MEADOW_COORDINATES);
+  for (let pass = 0; pass < 3; pass++) {
+    const flips: Array<[string, WorldMapBiome]> = [];
+    for (let y = bounds.minY; y <= bounds.maxY; y++) {
+      for (let x = bounds.minX; x <= bounds.maxX; x++) {
+        const key = cellKey(x, y);
+        if (protectedMeadow.has(key)) continue;
+        if (x === bounds.minX || x === bounds.maxX || y === bounds.minY || y === bounds.maxY) continue;
+        if (climates.get(key)!.elevation < SEA_LEVEL - 0.07) continue;
+        const current = smoothed.get(key)!;
+        if (current === 'ocean' || current === 'shore') continue;
+        const adjacent = neighbors(x, y, bounds).map((point) => smoothed.get(cellKey(point.x, point.y))!);
+        if (adjacent.filter((biome) => biome === current).length > 1) continue;
+        const counts = new Map<WorldMapBiome, number>();
+        for (const biome of adjacent) {
+          if (biome === 'ocean' || biome === 'shore') continue;
+          counts.set(biome, (counts.get(biome) ?? 0) + 1);
+        }
+        let best: WorldMapBiome | null = null;
+        let bestCount = 0;
+        for (const [biome, count] of counts) {
+          if (count > bestCount) { best = biome; bestCount = count; }
+        }
+        if (!best || best === current) continue;
+        if (!adjacent.every((biome) => canTouch(biome, best!))) continue;
+        const tileWeights = weights.get(key)!;
+        if (tileWeights[best] < tileWeights[current] * 0.3) continue;
+        flips.push([key, best]);
+      }
+    }
+    if (!flips.length) break;
+    for (const [key, biome] of flips) smoothed.set(key, biome);
+  }
   const tiles: GeneratedWorldTile[] = [];
   for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
     for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
-      const biome = [...cells.get(cellKey(x, y))!][0];
-      const adjacentBiomes = neighbors(x, y, bounds).map((point) => [...cells.get(cellKey(point.x, point.y))!][0]);
+      const biome = smoothed.get(cellKey(x, y))!;
+      const adjacentBiomes = neighbors(x, y, bounds).map((point) => smoothed.get(cellKey(point.x, point.y))!);
       const nearBiomeBorder = adjacentBiomes.some((neighbor) => neighbor !== biome);
       const nearWater = biome === 'ocean' || biome === 'shore' || adjacentBiomes.some((neighbor) => neighbor === 'ocean' || neighbor === 'shore');
       tiles.push({ x, y, row: y - bounds.minY, column: x - bounds.minX, biome, nearBiomeBorder, detail: detailFor(biome, nearWater, nearBiomeBorder, seed, x, y), climate: climates.get(cellKey(x, y))! });
