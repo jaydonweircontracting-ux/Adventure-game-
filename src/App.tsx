@@ -13,7 +13,7 @@ import { DEFAULT_WORLD_SEED, type WorldClockState } from '@/game/worldCore';
 import { WORLD_MAP_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
-import { getAttackHitbox, getDirection, isEntityInHitbox } from '@/game/combat';
+import { isInMeleeArc } from '@/game/combat';
 import { updateGoat, type GoatAIState } from '@/game/ai';
 import { playCombatSound } from '@/game/effects';
 import { getSpriteState } from '@/game/animation';
@@ -816,10 +816,10 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
 }
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
 function goatIsInAttackArc(goat: GoatState, position: Point, facing: Direction) {
-  const attackHitbox = getAttackHitbox(position, facing);
-  // The directional hitbox already limits the swing to the facing lane; do not
-  // reject a visible goat just because its center is slightly diagonal.
-  return isEntityInHitbox(goat.position, attackHitbox);
+  // Judge the swing by reach in the facing arc: goats hold ~6 units of melee
+  // distance, so a rectangle hitbox misses diagonal goats that are clearly
+  // in range. Anything in front within reach connects.
+  return isInMeleeArc(position, goat.position, facing);
 }
 function goatWanderDelay(wanderSeed: number) {
   const range = GOAT_WANDER_MAX_TICKS - GOAT_WANDER_MIN_TICKS + 1;

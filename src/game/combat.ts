@@ -41,3 +41,19 @@ export function isEntityInHitbox(entity: CombatPoint, hitbox: CombatRect): boole
   const target = entityRect(entity);
   return target.x < hitbox.x + hitbox.width && target.x + target.width > hitbox.x && target.y < hitbox.y + hitbox.height && target.y + target.height > hitbox.y;
 }
+
+// Player swing reach: goats hold ~6 units of melee distance (see keepMeleeDistance
+// in ai.ts), so the swing must connect reliably across that whole band at any
+// angle, not just on the razor's edge of a rectangle.
+export const PLAYER_MELEE_REACH = 8.5;
+// Targets slightly behind the attacker still connect (overlap forgiveness);
+// only targets clearly behind the back are excluded.
+export const PLAYER_MELEE_BEHIND_TOLERANCE = 2;
+
+export function isInMeleeArc(attacker: CombatPoint, target: CombatPoint, facing: CombatDirection, reach = PLAYER_MELEE_REACH): boolean {
+  const dx = target.x - attacker.x;
+  const dy = target.y - attacker.y;
+  if (Math.hypot(dx, dy) > reach) return false;
+  const forward = facing === 'right' ? dx : facing === 'left' ? -dx : facing === 'down' ? dy : -dy;
+  return forward >= -PLAYER_MELEE_BEHIND_TOLERANCE;
+}
