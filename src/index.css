@@ -2865,62 +2865,7 @@ body {
 .map-overlay .world-map-hex:hover, .map-overlay .world-map-hex:focus-visible { filter: brightness(calc(var(--tile-shade, 1) * 1.18)) saturate(1.08); outline: 2px solid #ffe29b; outline-offset: -4px; z-index: 4; }
 .map-overlay .world-map-hex.is-selected { outline: 3px solid #fff0a6; outline-offset: -5px; z-index: 5; filter: brightness(calc(var(--tile-shade, 1) * 1.12)); }
 .map-overlay .world-map-hex.is-current { z-index: 6; }
-.map-overlay .world-map-biome-ocean {
-  background-color: #2b2bd9 !important;
-  background-image: url("../map-tiles-pixel/ocean.png") !important;
-  background-size: 100% 100% !important;
-  background-repeat: no-repeat !important;
-  background-position: 0 0 !important;
-  image-rendering: pixelated !important;
-}
-.map-overlay .world-map-biome-shore {
-  background-color: #e6d49a !important;
-  background-image: url("../map-tiles-pixel/shore.png") !important;
-  background-size: 100% 100% !important;
-  background-repeat: no-repeat !important;
-  background-position: 0 0 !important;
-  image-rendering: pixelated !important;
-}
-.map-overlay .world-map-biome-meadow {
-  background-color: #47a13d !important;
-  background-image: url("../map-tiles-pixel/meadow.png") !important;
-  background-size: 100% 100% !important;
-  background-repeat: no-repeat !important;
-  background-position: 0 0 !important;
-  image-rendering: pixelated !important;
-}
-.map-overlay .world-map-biome-forest {
-  background-color: #47a13d !important;
-  background-image: url("../map-tiles-pixel/forest.png") !important;
-  background-size: 100% 100% !important;
-  background-repeat: no-repeat !important;
-  background-position: 0 0 !important;
-  image-rendering: pixelated !important;
-}
-.map-overlay .world-map-biome-desert {
-  background-color: #e0c184 !important;
-  background-image: url("../map-tiles-pixel/desert.png") !important;
-  background-size: 100% 100% !important;
-  background-repeat: no-repeat !important;
-  background-position: 0 0 !important;
-  image-rendering: pixelated !important;
-}
-.map-overlay .world-map-biome-tundra {
-  background-color: #edf0ec !important;
-  background-image: url("../map-tiles-pixel/tundra.png") !important;
-  background-size: 100% 100% !important;
-  background-repeat: no-repeat !important;
-  background-position: 0 0 !important;
-  image-rendering: pixelated !important;
-}
-.map-overlay .world-map-biome-rock {
-  background-color: #9a9a9a !important;
-  background-image: url("../map-tiles-pixel/rock.png") !important;
-  background-size: 100% 100% !important;
-  background-repeat: no-repeat !important;
-  background-position: 0 0 !important;
-  image-rendering: pixelated !important;
-}
+/* World map tile art is applied inline per tile (see WORLD_TILE_BG in App.tsx). */
 .world-map-road { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
 .map-overlay .world-map-road-horizontal {
   background: repeating-linear-gradient(to right, #eed69b 0 5px, rgba(238, 214, 155, 0) 5px 11px), linear-gradient(to bottom, transparent 0 37%, #8a5f36 37% 42%, #a9743f 42% 58%, #8a5f36 58% 63%, transparent 63% 100%) !important;
@@ -2943,7 +2888,7 @@ body {
   background-size: 50% 10%, 10% 100%, 50% 100%, 100% 50% !important; background-position: 0 50%, 20% 0, 0 0, 0 100% !important; background-repeat: repeat-x, repeat-y, no-repeat, no-repeat !important;
 }
 
-.map-overlay .world-map-hex.is-border { box-shadow: inset 0 0 0 2px rgba(46, 32, 18, .38) !important; }
+.map-overlay .world-map-hex.is-border { box-shadow: inset 0 0 0 2px rgba(46, 32, 18, .38); }
 .world-map-detail { position: absolute; left: 50%; top: 44%; color: rgba(255, 243, 188, .9); font-size: clamp(10px, 1.7vw, 19px); line-height: 1; transform: translate(-50%, -50%); text-shadow: 1px 1px 0 rgba(31, 63, 45, .55); pointer-events: none; }
 .world-map-biome-ocean .world-map-detail { color: rgba(217, 247, 237, .72); }
 .world-map-landmark { position: absolute; left: 50%; bottom: 9%; max-width: 96%; padding: 2px 4px; color: #fff4d0; background: rgba(32, 61, 48, .82); font-family: var(--app-font-mono); font-size: clamp(5px, .72vw, 8px); line-height: 1.05; text-align: center; text-shadow: 1px 1px 0 rgba(26, 48, 38, .7); transform: translateX(-50%); pointer-events: none; white-space: nowrap; }
