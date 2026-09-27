@@ -817,7 +817,9 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
 function goatIsInAttackArc(goat: GoatState, position: Point, facing: Direction) {
   const attackHitbox = getAttackHitbox(position, facing);
-  return getDirection(position, goat.position) === facing && isEntityInHitbox(goat.position, attackHitbox);
+  // The directional hitbox already limits the swing to the facing lane; do not
+  // reject a visible goat just because its center is slightly diagonal.
+  return isEntityInHitbox(goat.position, attackHitbox);
 }
 function goatWanderDelay(wanderSeed: number) {
   const range = GOAT_WANDER_MAX_TICKS - GOAT_WANDER_MIN_TICKS + 1;
