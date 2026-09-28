@@ -1,5 +1,5 @@
 /**
- * Character creation sprite pipeline (build v150).
+ * Character creation sprite pipeline (build v151).
  *
  * Rebuilt around the ORIGINAL chibi player sprite
  * (`assets/cute-fantasy/player.png`, 192x320, 6 columns x 10 rows of 32x32
@@ -177,12 +177,12 @@ function loadSprite(url: string): Promise<HTMLImageElement> {
 
 const SHEET_W = 192;
 const SHEET_H = 320;
-const PLAYER_COL_W = 32;
 
 /**
- * Build the player sheet: the original sprite with column 0 recolored to
- * the player's choices. Columns 1-5 (original NPC faces) are untouched.
- * Returns a PNG data URL suitable for `--player-sprite-url`.
+ * Build the player sheet: the original sprite recolored to the player's
+ * choices. The whole sheet is the player's own frames (idle, walk, attack),
+ * so every column is recolored. Returns a PNG data URL for
+ * `--player-sprite-url`.
  */
 export async function compositeCharacterSheet(
   choices: CharacterChoices,
@@ -201,8 +201,6 @@ export async function compositeCharacterSheet(
   const px = data.data;
   for (let i = 0; i < px.length; i += 4) {
     if (px[i + 3] === 0) continue;
-    const x = (i / 4) % SHEET_W;
-    if (x >= PLAYER_COL_W) continue; // only recolor the player's column
     const entry = ROLE_LOOKUP.get(rgbToHex(px[i], px[i + 1], px[i + 2]));
     if (!entry) continue;
     const shades = palette[entry.role];
