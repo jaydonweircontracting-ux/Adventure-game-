@@ -202,11 +202,15 @@ function mapTileFor(point: Point): MapTile {
   // no mid-road T-junctions at (6,7) or (9,7) — the main east-west road runs straight through.
   // Each road tile renders only the arms that connect to neighboring road tiles, so
   // T-junctions and corners never draw phantom arms "to nowhere".
-  const piece =
-    (worldRoadAt(point.x, point.y - 1) ? 'n' : '') +
-    (worldRoadAt(point.x, point.y + 1) ? 's' : '') +
-    (worldRoadAt(point.x + 1, point.y) ? 'e' : '') +
-    (worldRoadAt(point.x - 1, point.y) ? 'w' : '');
+  // (The piece is only computed for tiles that are actually on the road —
+  // neighbors of a road must not get phantom stubs pointing at it.)
+  const onRoad = worldRoadAt(point.x, point.y);
+  const piece = onRoad
+    ? (worldRoadAt(point.x, point.y - 1) ? 'n' : '') +
+      (worldRoadAt(point.x, point.y + 1) ? 's' : '') +
+      (worldRoadAt(point.x + 1, point.y) ? 'e' : '') +
+      (worldRoadAt(point.x - 1, point.y) ? 'w' : '')
+    : '';
   const road = (piece === '' ? 'none' : piece) as MapTile['road'];
   const bridge = isOcean && road !== 'none';
 
@@ -952,7 +956,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v118</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v119</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
