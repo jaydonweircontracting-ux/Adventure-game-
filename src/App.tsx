@@ -31,7 +31,7 @@ const BUILD_NUMBER = '081';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
-const GOAT_COLLISION_BOX = { halfWidth: 0.9, halfHeight: 1.1 };
+const GOAT_COLLISION_BOX = { halfWidth: 0.5, halfHeight: 0.6 };
 const COLLISION_GAP = 0.35;
 const INTERIOR_DOORWAY_WIDTH_PX = 58;
 const INTERIOR_PLAYER_WIDTH_PX = 46;
@@ -284,16 +284,48 @@ function envSpriteForTerrain(terrain: Terrain, variant: number): EnvSpriteKey {
 }
 type FieldRect = { left: number; top: number; right: number; bottom: number };
 
-function fieldHouseRects(kind: SettlementKind, startingArea = false): FieldRect[] {
+function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed = 0): FieldRect[] {
   const parent = kind === 'town'
     ? { left: 19, top: 21, width: 62, height: 58 }
     : { left: 23, top: 24, width: 54, height: 52 };
-  const specs = [
-    { left: 8, top: 11, width: 19, height: 13, scale: 1 },
-    { left: 73, top: 12, width: 19, height: 13, scale: 1 },
-    { left: 8, top: 75, width: 19, height: 13, scale: 1 },
-    { left: 73, top: 75, width: 19, height: 13, scale: 1 },
-  ];
+  // Unique layouts per town: variant cycles 0-3 based on location seed.
+  // 0 = four corners (Mosslight Crossing), 1 = main street row,
+  // 2 = courtyard cluster, 3 = scattered hamlet.
+  const variant = startingArea ? 0 : (Math.abs(variantSeed) % 3) + 1;
+  let specs: { left: number; top: number; width: number; height: number; scale: number }[];
+  if (variant === 1) {
+    // Main street: houses line the road.
+    specs = [
+      { left: 8, top: 30, width: 19, height: 13, scale: 1 },
+      { left: 8, top: 55, width: 19, height: 13, scale: 0.9 },
+      { left: 73, top: 30, width: 19, height: 13, scale: 0.9 },
+      { left: 73, top: 55, width: 19, height: 13, scale: 1 },
+    ];
+  } else if (variant === 2) {
+    // Courtyard cluster: houses around a central green.
+    specs = [
+      { left: 30, top: 8, width: 19, height: 13, scale: 1 },
+      { left: 55, top: 15, width: 19, height: 13, scale: 0.85 },
+      { left: 25, top: 70, width: 19, height: 13, scale: 0.85 },
+      { left: 55, top: 68, width: 19, height: 13, scale: 1 },
+    ];
+  } else if (variant === 3) {
+    // Scattered hamlet: irregular placement.
+    specs = [
+      { left: 12, top: 20, width: 19, height: 13, scale: 0.9 },
+      { left: 65, top: 12, width: 19, height: 13, scale: 1 },
+      { left: 20, top: 65, width: 19, height: 13, scale: 1 },
+      { left: 68, top: 70, width: 19, height: 13, scale: 0.8 },
+    ];
+  } else {
+    // Four corners (starting area default).
+    specs = [
+      { left: 8, top: 11, width: 19, height: 13, scale: 1 },
+      { left: 73, top: 12, width: 19, height: 13, scale: 1 },
+      { left: 8, top: 75, width: 19, height: 13, scale: 1 },
+      { left: 73, top: 75, width: 19, height: 13, scale: 1 },
+    ];
+  }
 
   if (!startingArea) {
     specs.push(
@@ -349,11 +381,12 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
   const road = mapTileFor(chunk).road;
 
   if (startingCenter) {
+    // Keep trees fully inside the field so sprites aren't clipped at edges.
     const perimeterTrees = [
-      { x: 12, y: 13, scale: 0.56, variant: 1 },
-      { x: 77, y: 13, scale: 0.56, variant: 2 },
-      { x: 12, y: 78, scale: 0.56, variant: 2 },
-      { x: 77, y: 78, scale: 0.56, variant: 1 },
+      { x: 20, y: 22, scale: 0.56, variant: 1 },
+      { x: 70, y: 22, scale: 0.56, variant: 2 },
+      { x: 20, y: 68, scale: 0.56, variant: 2 },
+      { x: 70, y: 68, scale: 0.56, variant: 1 },
     ];
     return perimeterTrees.map((tree, id) => ({ ...tree, id, style: treeStyle, sprite: (tree.variant === 1 ? 'bigpine' : 'pine2') as EnvSpriteKey }));
   }
@@ -363,7 +396,7 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
     const value = Math.sin(seed++) * 10000;
     return value - Math.floor(value);
   };
-  const houseRects = landmark ? fieldHouseRects(landmark.kind) : [];
+  const houseRects = landmark ? fieldHouseRects(landmark.kind, false, chunk.x * 31 + chunk.y * 17) : [];
   const trees: FieldTree[] = [];
   const targetCount = 8 + Math.floor(random() * 5);
   let attempts = 0;
@@ -395,7 +428,7 @@ function fieldAccentsFor(chunk: Point): FieldAccent[] {
 
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   const startingCenter = isTutorialCenter(chunk);
-  const houseRects = landmark ? fieldHouseRects(landmark.kind, startingCenter) : [];
+  const houseRects = landmark ? fieldHouseRects(landmark.kind, startingCenter, chunk.x * 31 + chunk.y * 17) : [];
   let seed = Math.abs((chunk.x * 19349663) ^ (chunk.y * 83492791)) + 17;
   const random = () => {
     const value = Math.sin(seed++) * 10000;
@@ -460,7 +493,15 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   // Keep the visible building/base solid, but do not extend its collision far
   // into the surrounding grass where it reads as a random invisible wall.
-  return landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk)).some((rect) => pointInRect(position, rect, 0.35)) : false;
+  if (landmark && fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17).some((rect) => pointInRect(position, rect, 0.35))) return true;
+
+  // Mosslight Crossing fountain: solid stone circle at the plaza center.
+  if (landmark?.name === 'Mosslight Crossing') {
+    const fountainRect = { left: 47.5, top: 48.5, right: 52.5, bottom: 51.5 };
+    if (pointInRect(position, fountainRect, 0.3)) return true;
+  }
+
+  return false;
 }
 
 function wrapFieldPosition(position: Point, chunk: Point) {
@@ -499,7 +540,7 @@ const startingDoorways: Doorway[] = [
 function buildingDoorwaysFor(chunk: Point): Doorway[] {
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   if (!landmark) return [];
-  return fieldHouseRects(landmark.kind, isStartingArea(chunk)).map((rect, index) => {
+  return fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17).map((rect, index) => {
     const namedDoorway = isStartingArea(chunk) ? startingDoorways.find((doorway) => doorway.buildingIndex === index) : null;
     const position = fieldDoorPosition(rect);
     if (namedDoorway) {
@@ -908,7 +949,10 @@ const startingGoatPositions: Point[] = [
 ];
 function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
   if (mapTileFor(chunk).terrain === 'ocean') return [];
-  const positions = isTutorialCenter(chunk) ? startingGoatPositions : Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 16 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % 68), y: 17 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % 66) }));
+  // Starting town is a safe zone: no goats wandering through Mosslight Crossing.
+  // Goats roam meadows and outskirts (danger 1+), RuneScape-style.
+  if (isTutorialCenter(chunk)) return [];
+  const positions = Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 16 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % 68), y: 17 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % 66) }));
   const safePositions = positions.filter((position) => !isFieldPositionBlocked(position, chunk));
   return safePositions.map((position, index) => {
     const wanderSeed = Math.abs(chunk.x * 97 + chunk.y * 193 + index * 53 + 17);
@@ -1029,10 +1073,12 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
 function birdsForChunk(chunk: Point): BirdState[] {
   const terrain = mapTileFor(chunk).terrain;
   if (terrain === 'ocean') return [];
-  // Bird density by biome: forests and meadows get more.
-  const count = terrain === 'forest' ? 4 : terrain === 'meadow' ? 3 : 2;
+  // Birds are rare: only forests/meadows, and only half the chunks have one.
+  if (terrain !== 'forest' && terrain !== 'meadow') return [];
+  const chunkSeed = Math.abs(chunk.x * 131 + chunk.y * 197 + 7);
+  if (chunkSeed % 2 !== 0) return [];
   const birds: BirdState[] = [];
-  for (let index = 0; index < count; index++) {
+  for (let index = 0; index < 1; index++) {
     const seed = Math.abs(chunk.x * 131 + chunk.y * 197 + index * 61 + 7);
     const position = { x: 14 + ((seed * 37) % 72), y: 15 + ((seed * 53) % 70) };
     if (isFieldPositionBlocked(position, chunk)) continue;
@@ -1602,7 +1648,7 @@ function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: Player
   return <section className="satchel-stats-panel" role="tabpanel" aria-label="Adventurer Stats"><div className="satchel-stats-heading"><span className="atlas-eyebrow">Character growth</span><h3>Adventurer Stats</h3></div><div className="satchel-stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div><div className="satchel-stats-list">{STAT_KEYS.map((stat) => <div className="satchel-stat-row" key={stat} data-testid={'stat-row-' + stat}><span className="satchel-stat-key">{stat.toUpperCase()}</span><span className="satchel-stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span><b className="satchel-stat-value">{playerStats[stat]}</b><button className="satchel-stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button></div>)}</div><div className="satchel-stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div></section>;
 }
 
-function InteriorRoom({ area, position, facing, moving, inventory, equippedDagger, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onCraft }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; inventory: GameInventory; equippedDagger: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onCraft: (item: CraftItem) => void }) {
+function InteriorRoom({ area, position, facing, moving, inventory, equippedDagger, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onCraft, onEnterDungeon }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; inventory: GameInventory; equippedDagger: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onCraft: (item: CraftItem) => void; onEnterDungeon: () => void }) {
   const canCraft = (item: CraftItem) => {
     const recipe = craftRecipes[item];
     return Object.entries(recipe.cost).every(([key, value]) => (inventory[key as keyof GameInventory] || 0) >= (value || 0));
@@ -1615,7 +1661,7 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
     building: (<><span className="interior-rug" /><span className="interior-bed bed-left" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
   }[area.roomType];
   return (
-    <div className={'interior-scene interior-' + area.roomType} aria-label={area.name + ' interior'} data-testid={'interior-' + area.id}>
+    <div className={'interior-scene interior-' + area.roomType + ' interior-variant-' + (Math.abs(area.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={area.name + ' interior'} data-testid={'interior-' + area.id}>
       <div className="interior-room" aria-hidden="true">{furniture}</div>
       {area.roomType === 'guild' && (
         <section className="crafting-panel" aria-label="Crafting bench" data-testid="crafting-panel">
@@ -1643,6 +1689,12 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
         </button>;
       })}
       <div className="interior-doorway" aria-label="Exit to Mosslight Crossing"><span>EXIT</span></div>
+      {area.id === 'rootbound-chapel' && (
+        <button className="interior-dungeon-staircase" onClick={onEnterDungeon} aria-label="Descend to the Ember Vault dungeon" data-testid="button-enter-dungeon">
+          <span className="dungeon-stairs-visual" aria-hidden="true" />
+          <span className="dungeon-stairs-label">Ember Vault</span>
+        </button>
+      )}
       <div className={'interior-player ' + (moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} data-facing={facing} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-attackDirectionRow[facing] * 48}px` } as CSSProperties}><span className="player-sprite" />{attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[facing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}{equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}</div>
       <div className="interior-exit-hint">Walk to the door to leave</div>
     </div>
@@ -2456,7 +2508,7 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onCraft={craftItem} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onCraft={craftItem} onEnterDungeon={onEnterDungeon} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -2624,16 +2676,9 @@ if (active) {
             })}
           </div>
           {currentWorldTile.landmark && (
-            <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle} aria-label={currentWorldTile.landmark.name}>
+            <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle + ' town-variant-' + (Math.abs(currentWorldTile.landmark.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={currentWorldTile.landmark.name}>
               <span className="field-village-square" />
-              <span className="field-house house-1" /><span className="field-house house-2" /><span className="field-house house-3">
-                {startingArea && (
-                  <button className="dungeon-staircase" onClick={onEnterDungeon} aria-label="Enter the Ember Vault dungeon" data-testid="button-enter-dungeon">
-                    <span className="dungeon-staircase-stone" aria-hidden="true">▾</span>
-                    <span className="dungeon-staircase-label">Ember Vault</span>
-                  </button>
-                )}
-              </span>
+              <span className="field-house house-1" /><span className="field-house house-2" /><span className="field-house house-3" />
               <span className="field-house house-4" />
               {!startingArea && <>
                 <span className="field-house house-5" /><span className="field-house house-6" />

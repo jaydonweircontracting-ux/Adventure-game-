@@ -1393,6 +1393,16 @@
   background: #604331;
 }
 .field-house.house-1 { left: 8%; top: 11%; }
+/* Town variants: each settlement gets a unique exterior palette. */
+.town-variant-1 .field-house { background: #7a8a9a; border-color: #4a5a6a; }
+.town-variant-1 .field-house::before { background: #5a6a7a; }
+.town-variant-1 .field-house::after { background: #3a4a5a; }
+.town-variant-2 .field-house { background: #8a6a4a; border-color: #5a3a2a; }
+.town-variant-2 .field-house::before { background: #6a4a32; }
+.town-variant-2 .field-house::after { background: #4a2e1e; }
+.town-variant-3 .field-house { background: #d8c8a8; border-color: #8a7a5a; }
+.town-variant-3 .field-house::before { background: #a89878; }
+.town-variant-3 .field-house::after { background: #6a5a42; }
 .field-house.house-2 { right: 8%; top: 12%; }
 .field-house.house-3 { left: 8%; bottom: 12%; }
 .field-house.house-4 { right: 8%; bottom: 12%; }
@@ -1950,9 +1960,9 @@ body {
 .field-monsters { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 .monster { position: absolute; width: 24px; height: 28px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: crosshair; transform: translate(-50%, -50%); filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .25)); pointer-events: auto; }
 .monster-sprite { position: absolute; inset: 0; }
-.monster-goblin .monster-sprite { background: linear-gradient(180deg, #5a8a3a 0 35%, #3a6a2a 36% 70%, #2a4a1a 71% 100%); border-radius: 40% 40% 30% 30%; }
-.monster-goblin .monster-sprite::before { content: ''; position: absolute; left: 3px; top: -5px; width: 18px; height: 8px; background: #5a8a3a; clip-path: polygon(0 100%, 15% 0, 30% 100%, 45% 20%, 60% 100%, 75% 0, 90% 100%, 100% 60%, 100% 100%); }
-.monster-goblin .monster-sprite::after { content: ''; position: absolute; left: 7px; top: 8px; width: 10px; height: 4px; background: #ff4444; border-radius: 2px; box-shadow: 0 0 4px rgba(255, 68, 68, .8); }
+.monster-goblin .monster-sprite { background-image: url('/mobs/goblin.png'); background-size: contain; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
+.monster-goblin .monster-sprite::before { content: none; }
+.monster-goblin .monster-sprite::after { content: none; }
 /* Bandits use the player/NPC sprite sheet (rogue column, dark-red tint so they read hostile). */
 .monster-bandit .monster-sprite {
   left: 50%; top: 50%;
@@ -1973,26 +1983,26 @@ body {
 .monster-bandit[data-facing='left'] .monster-sprite { --npc-row: 1; --npc-walk-row: 4; transform: scaleX(-1); }
 .monster-bandit[data-facing='right'] .monster-sprite { --npc-row: 1; --npc-walk-row: 4; transform: none; }
 .monster-bandit.is-moving .monster-sprite { animation: npc-step .5s step-end infinite; }
-.monster-skeleton .monster-sprite { background: linear-gradient(180deg, #e8e4d8 0 40%, #c8c4b8 41% 75%, #a8a498 76% 100%); border-radius: 35% 35% 25% 25%; }
-.monster-skeleton .monster-sprite::before { content: ''; position: absolute; left: 3px; top: 2px; width: 18px; height: 12px; background: radial-gradient(circle at 6px 6px, #1a1a1a 3px, transparent 3px), radial-gradient(circle at 18px 6px, #1a1a1a 3px, transparent 3px); }
-.monster-skeleton .monster-sprite::after { content: ''; position: absolute; left: 10px; top: 16px; width: 4px; height: 8px; background: #e8e4d8; box-shadow: -6px 0 0 #e8e4d8, 6px 0 0 #e8e4d8; }
+.monster-skeleton .monster-sprite { background-image: url('/mobs/skeleton.png'); background-size: contain; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
+.monster-skeleton .monster-sprite::before { content: none; }
+.monster-skeleton .monster-sprite::after { content: none; }
 .monster-troll { width: 36px; height: 42px; }
-.monster-troll .monster-sprite { background: linear-gradient(180deg, #6a8a5a 0 35%, #4a6a42 36% 70%, #2a4a2a 71% 100%); border-radius: 30% 30% 25% 25%; }
-.monster-troll .monster-sprite::before { content: ''; position: absolute; left: 6px; top: 6px; width: 24px; height: 10px; background: radial-gradient(circle at 8px 5px, #ffdd44 3px, transparent 3px), radial-gradient(circle at 16px 5px, #ffdd44 3px, transparent 3px); }
-.monster-troll .monster-sprite::after { content: ''; position: absolute; left: 12px; top: 20px; width: 12px; height: 6px; background: #1a2a1a; border-radius: 0 0 6px 6px; }
+.monster-troll .monster-sprite { background-image: url('/mobs/troll.png'); background-size: contain; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
+.monster-troll .monster-sprite::before { content: none; }
+.monster-troll .monster-sprite::after { content: none; }
 .monster-snake { width: 22px; height: 14px; }
-.monster-snake .monster-sprite { background: linear-gradient(90deg, #4a8a3a 0 60%, #2a6a2a 61% 100%); border-radius: 40%; }
-.monster-snake .monster-sprite::before { content: ''; position: absolute; right: -4px; top: 3px; width: 8px; height: 8px; background: #4a8a3a; border-radius: 50%; }
+.monster-snake .monster-sprite { background-image: url('/mobs/snake.png'); background-size: contain; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
+.monster-snake .monster-sprite::before { content: none; }
 .monster-snake .monster-sprite::after { content: ''; position: absolute; right: -2px; top: 5px; width: 3px; height: 3px; background: #ff4444; border-radius: 50%; box-shadow: 5px 0 0 #ff4444; }
 .monster-spider { width: 20px; height: 20px; }
-.monster-spider .monster-sprite { background: radial-gradient(circle, #3a2a4a 40%, #2a1a3a 41% 100%); border-radius: 50%; }
-.monster-spider .monster-sprite::before { content: ''; position: absolute; left: -6px; top: 2px; width: 32px; height: 16px; background: linear-gradient(180deg, transparent 44%, #2a1a3a 44% 56%, transparent 56%), linear-gradient(90deg, transparent 44%, #2a1a3a 44% 56%, transparent 56%); }
-.monster-spider .monster-sprite::after { content: ''; position: absolute; left: 6px; top: 6px; width: 8px; height: 6px; background: radial-gradient(circle at 2px 3px, #ff4444 2px, transparent 2px), radial-gradient(circle at 6px 3px, #ff4444 2px, transparent 2px); }
+.monster-spider .monster-sprite { background-image: url('/mobs/spider.png'); background-size: contain; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
+.monster-spider .monster-sprite::before { content: none; }
+.monster-spider .monster-sprite::after { content: none; }
 .monster-dragon { width: 52px; height: 44px; }
-.monster-dragon .monster-sprite { background: linear-gradient(180deg, #a83a3a 0 35%, #7a2a2a 36% 70%, #4a1a1a 71% 100%); border-radius: 35% 35% 30% 30%; }
-.monster-dragon .monster-sprite::before { content: ''; position: absolute; left: -12px; top: 2px; width: 76px; height: 20px; background: linear-gradient(180deg, rgba(168, 58, 58, .85), rgba(122, 42, 42, .6)); clip-path: polygon(0 100%, 20% 0, 35% 100%, 50% 20%, 65% 100%, 80% 0, 100% 100%); animation: dragon-wings 1.2s ease-in-out infinite; }
-.monster-dragon .monster-sprite::after { content: ''; position: absolute; left: 16px; top: 12px; width: 20px; height: 8px; background: radial-gradient(circle at 6px 4px, #ffdd44 3px, transparent 3px), radial-gradient(circle at 14px 4px, #ffdd44 3px, transparent 3px); }
-@keyframes dragon-wings { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.7); } }
+.monster-dragon .monster-sprite { background-image: url('/mobs/dragon.png'); background-size: contain; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; animation: dragon-bob 2s ease-in-out infinite; }
+.monster-dragon .monster-sprite::before { content: none; }
+.monster-dragon .monster-sprite::after { content: none; }
+@keyframes dragon-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 .monster-aggro { position: absolute; left: 50%; top: -14px; transform: translateX(-50%); color: #ff4444; font-weight: bold; font-size: 14px; text-shadow: 1px 1px 0 rgba(0,0,0,.5); animation: aggro-bounce .6s ease-in-out infinite; }
 @keyframes aggro-bounce { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-3px); } }
 .monster.is-moving .monster-sprite { animation: wildlife-bob .4s ease-in-out infinite; }
@@ -2174,6 +2184,10 @@ body {
 .interior-header span:last-child { color: rgba(255, 239, 204, .76); font-size: 10px; line-height: 1.4; }
 .interior-kicker { color: #f2c96f; font-family: var(--app-font-mono); font-size: 8px; letter-spacing: .14em; text-transform: uppercase; }
 .interior-room { position: absolute; z-index: 3; inset: 24% 8% 7%; pointer-events: none; }
+/* Interior variants: each town's buildings get a unique color scheme. */
+.interior-variant-1 .interior-scene { filter: hue-rotate(30deg) saturate(1.1); }
+.interior-variant-2 .interior-scene { filter: hue-rotate(-30deg) saturate(1.1); }
+.interior-variant-3 .interior-scene { filter: hue-rotate(60deg) saturate(0.9); }
 .interior-rug { position: absolute; left: 27%; top: 27%; width: 46%; height: 42%; border: 2px solid rgba(101, 57, 47, .54); background: repeating-linear-gradient(90deg, rgba(227, 165, 87, .26) 0 9px, rgba(151, 85, 61, .2) 9px 18px), #b86e54; box-shadow: 0 4px 0 rgba(65, 45, 38, .22); }
 .interior-table { position: absolute; left: 39%; top: 48%; width: 23%; height: 14%; border: 2px solid #5c3d32; border-radius: 3px; background: #895737; box-shadow: inset 0 4px 0 rgba(223, 157, 79, .34), 3px 4px 0 rgba(65, 45, 38, .22); }
 .interior-table::after { content: ''; position: absolute; left: 13%; right: 13%; bottom: -13px; height: 12px; border-left: 3px solid #5c3d32; border-right: 3px solid #5c3d32; }
@@ -2756,6 +2770,43 @@ body {
 }
 .dungeon-staircase-stone { display: grid; place-items: center; width: 22px; height: 15px; color: #211b18; font: 17px/13px Georgia, serif; }
 .dungeon-staircase-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* Dungeon staircase inside the chapel: stone steps descending into darkness. */
+.interior-dungeon-staircase {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  transform: translate(-50%, 0);
+  width: 64px;
+  height: 48px;
+  padding: 0;
+  border: 2px solid #3a332c;
+  background: transparent;
+  cursor: pointer;
+}
+.dungeon-stairs-visual {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background:
+    linear-gradient(180deg, transparent 0 10%, rgba(0,0,0,.85) 10% 100%),
+    repeating-linear-gradient(180deg, #6a625a 0 8px, #4a443c 8px 10px);
+  clip-path: polygon(15% 0, 85% 0, 100% 100%, 0 100%);
+  box-shadow: inset 0 -12px 16px rgba(0,0,0,.7);
+}
+.dungeon-stairs-label {
+  position: absolute;
+  left: 50%;
+  bottom: -20px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: #e8dcc0;
+  text-shadow: 1px 1px 0 #000;
+  white-space: nowrap;
+}
+.interior-dungeon-staircase:hover .dungeon-stairs-visual,
+.interior-dungeon-staircase:focus-visible .dungeon-stairs-visual {
+  filter: brightness(1.25);
+}
 
 /* Living-world adventurers */
 .simulated-adventurer {
