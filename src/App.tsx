@@ -29,11 +29,12 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '180';
+const BUILD_NUMBER = '181';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
-const CAMERA_ZOOM = 1.35;
+// Zoom removed per user request — camera panning disabled, full chunk visible.
+const CAMERA_ZOOM = 1.0;
 // Convert field units (0..FIELD_SIZE) to CSS percentage for positioning.
 function fieldPct(v: number): string { return (v / FIELD_SIZE * 100) + '%'; }
 type Direction = 'up' | 'down' | 'left' | 'right';
@@ -755,7 +756,7 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
           name: landmark.name + ' House ' + (index + 1),
           description: 'A simple brown room waiting to be furnished.',
           roomType: 'building' as const,
-          exteriorPosition: { x: position.x, y: Math.min(94, position.y + 4) },
+          exteriorPosition: { x: position.x, y: Math.min(FIELD_SIZE - 6, position.y + 4) },
         },
       };
     });
@@ -772,7 +773,7 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
         name: 'Farmhouse',
         description: 'A cozy farmhouse smelling of hay and baked bread.',
         roomType: 'building' as const,
-        exteriorPosition: { x: position.x, y: Math.min(94, position.y + 4) },
+        exteriorPosition: { x: position.x, y: Math.min(FIELD_SIZE - 6, position.y + 4) },
       },
     };
   });
@@ -780,7 +781,7 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
 
 function doorwayExteriorPosition(rect: FieldRect, doorway: Point): Point {
   // Spawn beyond the house's collision padding so the first frame outside is safe.
-  return { x: doorway.x, y: Math.min(94, Math.max(doorway.y + 4, rect.bottom + 4.5)) };
+  return { x: doorway.x, y: Math.min(FIELD_SIZE - 6, Math.max(doorway.y + 4, rect.bottom + 4.5)) };
 }
 
 const STARTING_DOORWAY_ID = 'tutorial-house-door';
@@ -3075,7 +3076,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
           setFacing(direction);
          const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
          const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
-         const movement = { x: (input.x / length) * WALK_SPEED * elapsed * 100 / frameWidth, y: (input.y / length) * WALK_SPEED * elapsed * 100 / frameHeight };
+         const movement = { x: (input.x / length) * WALK_SPEED * elapsed * FIELD_SIZE / frameWidth, y: (input.y / length) * WALK_SPEED * elapsed * FIELD_SIZE / frameHeight };
          const current = interiorPositionRef.current;
          const next = { x: Math.min(90, Math.max(10, current.x + movement.x)), y: current.y + movement.y };
          const horizontalStep = { x: next.x, y: current.y };
@@ -3116,8 +3117,8 @@ if (active) {
         const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
         const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
         const movement = {
-          x: (input.x / length) * speed * elapsed * 100 / frameWidth,
-          y: (input.y / length) * speed * elapsed * 100 / frameHeight,
+          x: (input.x / length) * speed * elapsed * FIELD_SIZE / frameWidth,
+          y: (input.y / length) * speed * elapsed * FIELD_SIZE / frameHeight,
         };
         const current = positionRef.current;
         const currentChunk = chunkRef.current;
