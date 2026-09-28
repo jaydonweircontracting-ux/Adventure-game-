@@ -1344,7 +1344,41 @@ type WorldMapDisplayTile = MapTile & { current: boolean; world: GeneratedWorldTi
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(2);
   const [selectedTile, setSelectedTile] = useState<WorldMapDisplayTile | null>(null);
-  const mapScale = [0.84, 0.96, 1.08, 1.22][zoom - 1];
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [panning, setPanning] = useState(false);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number; moved: boolean } | null>(null);
+  const suppressClickRef = useRef(false);
+  const ZOOM_SCALES = [0.84, 1.0, 1.25, 1.6, 2.0, 2.5];
+  const mapScale = ZOOM_SCALES[zoom - 1];
+  const clampPan = (x: number, y: number, scale: number) => {
+    const stage = stageRef.current; const grid = gridRef.current;
+    if (!stage || !grid) return { x, y };
+    const maxX = Math.max(0, (grid.scrollWidth * scale - stage.clientWidth) / 2);
+    const maxY = Math.max(0, (grid.scrollHeight * scale - stage.clientHeight) / 2);
+    return { x: Math.min(maxX, Math.max(-maxX, x)), y: Math.min(maxY, Math.max(-maxY, y)) };
+  };
+  const changeZoom = (next: number) => {
+    const clamped = Math.min(ZOOM_SCALES.length, Math.max(1, next));
+    setZoom(clamped);
+    setPan((p) => clampPan(p.x, p.y, ZOOM_SCALES[clamped - 1]));
+  };
+  const nudgePan = (dx: number, dy: number) => setPan((p) => clampPan(p.x + dx, p.y + dy, mapScale));
+  const onStagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragRef.current = { startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y, moved: false };
+  };
+  const onStagePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current; if (!drag) return;
+    const dx = event.clientX - drag.startX; const dy = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) > 6) { drag.moved = true; setPanning(true); }
+    if (drag.moved) setPan(clampPan(drag.panX + dx, drag.panY + dy, mapScale));
+  };
+  const endStageDrag = () => {
+    const drag = dragRef.current; dragRef.current = null; setPanning(false);
+    if (drag?.moved) { suppressClickRef.current = true; window.setTimeout(() => { suppressClickRef.current = false; }, 0); }
+  };
   const worldTiles = generatedWorldTiles;
   const oceanKeys = new Set(worldTiles.filter((world) => world.biome === 'ocean').map((world) => world.x + ',' + world.y));
   const tiles = worldTiles.map((world) => {
@@ -1359,20 +1393,21 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v127</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v128</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
           <span className="map-area-label">{currentAreaName} · {currentTile.world.biome}</span>
           <div className="map-zoom-controls" aria-label="Map zoom controls">
-            <button className="map-zoom-button" onClick={() => setZoom((value) => Math.max(1, value - 1))} disabled={zoom === 1} aria-label="Zoom out" data-testid="button-map-zoom-out"><Minus size={15} /></button>
-            <span className="map-zoom-level">×{zoom}</span>
-            <button className="map-zoom-button" onClick={() => setZoom((value) => Math.min(4, value + 1))} disabled={zoom === 4} aria-label="Zoom in" data-testid="button-map-zoom-in"><Plus size={15} /></button>
+            <button className="map-zoom-button" onClick={() => changeZoom(zoom - 1)} disabled={zoom === 1} aria-label="Zoom out" data-testid="button-map-zoom-out"><Minus size={15} /></button>
+            <span className="map-zoom-level">×{mapScale}</span>
+            <button className="map-zoom-button" onClick={() => changeZoom(zoom + 1)} disabled={zoom === ZOOM_SCALES.length} aria-label="Zoom in" data-testid="button-map-zoom-in"><Plus size={15} /></button>
           </div>
         </div>
-        <div className="big-map world-map-stage" data-testid="map-world-preview">
+        <div ref={stageRef} className={'big-map world-map-stage' + (panning ? ' is-panning' : '')} data-testid="map-world-preview"
+          onPointerDown={onStagePointerDown} onPointerMove={onStagePointerMove} onPointerUp={endStageDrag} onPointerCancel={endStageDrag}>
           <span className="atlas-compass" aria-hidden="true"><strong>N</strong><span>↑</span></span>
-          <div className="map-grid world-map-hex-grid" style={{ gridTemplateColumns: 'repeat(' + (worldMapBounds.maxX - worldMapBounds.minX + 1) + ', minmax(0, 1fr))', gridTemplateRows: 'repeat(' + (worldMapBounds.maxY - worldMapBounds.minY + 1) + ', minmax(0, 1fr))', transform: 'scale(' + mapScale + ')' }}>
+          <div ref={gridRef} className="map-grid world-map-hex-grid" style={{ gridTemplateColumns: 'repeat(' + (worldMapBounds.maxX - worldMapBounds.minX + 1) + ', minmax(0, 1fr))', gridTemplateRows: 'repeat(' + (worldMapBounds.maxY - worldMapBounds.minY + 1) + ', minmax(0, 1fr))', transform: 'translate(' + pan.x + 'px, ' + pan.y + 'px) scale(' + mapScale + ')' }}>
             {tiles.map((tile) => {
               const isSelected = selectedTile?.x === tile.x && selectedTile?.y === tile.y;
               const tileAreaName = tile.landmark?.name || worldMapBiomeLabel(tile.world.biome);
@@ -1398,7 +1433,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
               }
               const boxShadows = [...elevShadows];
               if (rim.length) boxShadows.push('inset 0 0 0 1px rgba(20, 20, 90, .28)', ...rim);
-              return <div className={'map-tile world-map-hex world-map-biome-' + tile.world.biome + ' elev-' + tile.elevationLevel + (tile.world.nearBiomeBorder ? ' is-border' : '') + (tile.current ? ' is-current' : '') + (isSelected ? ' is-selected' : '')} style={{ gridColumn: tile.world.column + 1, gridRow: tile.world.row + 1, '--tile-shade': tileShade, backgroundColor: WORLD_TILE_BG[tile.world.biome] || '#47a13d', backgroundImage: 'url("' + assetUrl('map-tiles-pixel/' + tile.world.biome + '.png') + '")', backgroundSize: '100% 100%', backgroundRepeat: 'no-repeat', imageRendering: 'pixelated', boxShadow: boxShadows.length ? boxShadows.join(', ') : undefined } as CSSProperties} key={tile.x + '-' + tile.y} title={tileAreaName + ' · chunk ' + tile.x + ', ' + tile.y} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
+              return <div className={'map-tile world-map-hex world-map-biome-' + tile.world.biome + ' elev-' + tile.elevationLevel + (tile.world.nearBiomeBorder ? ' is-border' : '') + (tile.current ? ' is-current' : '') + (isSelected ? ' is-selected' : '')} style={{ gridColumn: tile.world.column + 1, gridRow: tile.world.row + 1, '--tile-shade': tileShade, backgroundColor: WORLD_TILE_BG[tile.world.biome] || '#47a13d', backgroundImage: 'url("' + assetUrl('map-tiles-pixel/' + tile.world.biome + '.png') + '")', backgroundSize: '100% 100%', backgroundRepeat: 'no-repeat', imageRendering: 'pixelated', boxShadow: boxShadows.length ? boxShadows.join(', ') : undefined } as CSSProperties} key={tile.x + '-' + tile.y} title={tileAreaName + ' · chunk ' + tile.x + ', ' + tile.y} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => { if (suppressClickRef.current) return; setSelectedTile(tile); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
                 {tile.bridge
                   ? <span className="world-map-bridge" aria-hidden="true" />
                   : tile.road !== 'none' && <span className={'world-map-road world-map-road-' + tile.road} aria-hidden="true" />}
@@ -1408,6 +1443,12 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
                 {tile.current && <span className="map-tile-label">{tile.x}, {tile.y}</span>}
               </div>;
             })}
+          </div>
+          <div className="map-pan-pad" aria-label="Pan map controls" onPointerDown={(event) => event.stopPropagation()}>
+            <button type="button" className="map-pan-button map-pan-up" onClick={() => nudgePan(0, 70)} aria-label="Pan map up" data-testid="button-map-pan-up">▲</button>
+            <button type="button" className="map-pan-button map-pan-left" onClick={() => nudgePan(70, 0)} aria-label="Pan map left" data-testid="button-map-pan-left">◀</button>
+            <button type="button" className="map-pan-button map-pan-right" onClick={() => nudgePan(-70, 0)} aria-label="Pan map right" data-testid="button-map-pan-right">▶</button>
+            <button type="button" className="map-pan-button map-pan-down" onClick={() => nudgePan(0, -70)} aria-label="Pan map down" data-testid="button-map-pan-down">▼</button>
           </div>
         </div>
         <div className={'map-selection' + (selectedTile ? ' has-selection' : '')} role="status" aria-live="polite">
