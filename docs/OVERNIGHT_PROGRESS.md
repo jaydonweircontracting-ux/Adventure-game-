@@ -1,13 +1,13 @@
 # Overnight Progress Log
 
 Autonomous development session. Updated after every major completed task.
-Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 162** (in progress).
+Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 183** (live).
 
 ## Current Phase
-MAP REBUILD per the Map Rebuild Master Prompt (audit → fix real bottlenecks → verify).
+User-directed fixes (camera removal, NPC size, beds) + continuous autonomous work.
 
 ## Current Task
-Build 162: cache the map atlas at module level, zoom-LOD label overlay, Stormhaven
+BUILD 183 live-verified. Continuing autonomous work queue.
 ocean fix, tutorial-house beds removed + smith NPC, debug/playtest tooling.
 
 ## Completed Tasks
