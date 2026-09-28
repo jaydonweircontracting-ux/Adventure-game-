@@ -29,12 +29,10 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '182';
+const BUILD_NUMBER = '183';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
-// Zoom removed per user request — camera panning disabled, full chunk visible.
-const CAMERA_ZOOM = 1.0;
 // Convert field units (0..FIELD_SIZE) to CSS percentage for positioning.
 function fieldPct(v: number): string { return (v / FIELD_SIZE * 100) + '%'; }
 type Direction = 'up' | 'down' | 'left' | 'right';
@@ -853,7 +851,6 @@ const interiorFurnitureCollision: Record<InteriorArea['roomType'], InteriorColli
     { left: 58, top: 52, right: 88, bottom: 60 }, // pew right
   ],
   building: [
-    { left: 13, top: 32, right: 31, bottom: 52 }, // bed
     { left: 39, top: 57, right: 62, bottom: 68 }, // table
     { left: 42, top: 28, right: 58, bottom: 52 }, // fireplace
     { left: 17, top: 43, right: 30, bottom: 67 }, // shelf left
@@ -2429,7 +2426,7 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, attackin
     guild: (<><span className="interior-rug" /><span className="interior-workbench" /><span className="interior-forge" aria-hidden="true"><span className="forge-fire"><span className="forge-flame forge-flame-back" /><span className="forge-flame forge-flame-mid" /><span className="forge-flame forge-flame-core" /><span className="forge-sparks"><i /><i /><i /><i /><i /></span></span><span className="forge-logs" /></span><span className="interior-weapon-rack" aria-hidden="true"><span className="rack-weapon" style={{ left: '8%', height: '58%', transform: 'rotate(-6deg)' }} /><span className="rack-weapon" style={{ left: '27%', height: '66%', transform: 'rotate(4deg)' }} /><span className="rack-weapon" style={{ left: '46%', height: '60%', transform: 'rotate(-3deg)' }} /><span className="rack-weapon" style={{ left: '65%', height: '68%', transform: 'rotate(5deg)' }} /><span className="rack-weapon" style={{ left: '82%', height: '56%', transform: 'rotate(-5deg)' }} /></span><span className="interior-quest-board" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     inn: (<><span className="interior-rug" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-bar" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     chapel: (<><span className="interior-rug" /><span className="interior-altar" /><span className="interior-pew pew-left" /><span className="interior-pew pew-right" /><span className="interior-candle candle-left" /><span className="interior-candle candle-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
-    building: (<><span className="interior-rug" /><span className="interior-bed bed-left" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
+    building: (<><span className="interior-rug" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     prison: (<><span className="prison-bars" /><span className="prison-straw-bed" /><span className="prison-sewer-grate" /><span className="prison-torch" /><span className="interior-lantern lantern-left" /></>),
   }[area.roomType];
   return (
@@ -2529,18 +2526,6 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const horseRef = useRef(horse);
   const horseIdleAnchorRef = useRef(initialHorseState.position);
   const gameFrameRef = useRef<HTMLDivElement>(null);
-  // Camera: follows the player with a slight zoom so each chunk feels large.
-  // Measured frame size drives the pan math; updated on resize.
-  const [frameSize, setFrameSize] = useState({ w: 0, h: 0 });
-  useLayoutEffect(() => {
-    const measure = () => {
-      const el = gameFrameRef.current;
-      if (el) setFrameSize({ w: el.clientWidth, h: el.clientHeight });
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, []);
   const areaFlashIdRef = useRef(0);
   const goatsRef = useRef(goats);
   const cornStalksRef = useRef<CornStalk[]>(cornStalks);
@@ -3396,18 +3381,7 @@ if (active) {
           '--field-glow': fieldPalette.glow,
         } as CSSProperties}>
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
-          <div className="field-world-layer" style={(() => {
-            // Camera follows the player: zoom in slightly and pan so the
-            // chunk feels large. Clamped so we never show outside the chunk.
-            const z = CAMERA_ZOOM;
-            const w = frameSize.w || 1;
-            const h = frameSize.h || 1;
-            const px = position.x / FIELD_SIZE * w * z;
-            const py = position.y / FIELD_SIZE * h * z;
-            const tx = Math.min(0, Math.max(w - w * z, w / 2 - px));
-            const ty = Math.min(0, Math.max(h - h * z, h / 2 - py));
-            return { transform: `translate(${tx}px, ${ty}px) scale(${z})`, transformOrigin: '0 0' } as CSSProperties;
-          })()}>
+          <div className="field-world-layer">
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
            <div className="field-accents" aria-hidden="true">
              {fieldAccents.map((accent) => (
