@@ -1609,7 +1609,7 @@ function npcScheduleTarget(npc: TownNpc, hour: number): Point {
 
 type WorldMapDisplayTile = MapTile & { current: boolean; world: GeneratedWorldTile };
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
-  const [zoom, setZoom] = useState(4);
+  const [zoom, setZoom] = useState(5);
   const [selectedTile, setSelectedTile] = useState<WorldMapDisplayTile | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panning, setPanning] = useState(false);
