@@ -549,7 +549,7 @@
   position: absolute;
   z-index: 6;
   width: 46px;
-  height: 62px;
+  height: 48px;
   transform: translate(-50%, -50%);
   appearance: none;
   padding: 0;
@@ -568,7 +568,7 @@
 .town-npc .npc-sprite {
   position: absolute;
   left: 7px;
-  top: 24px;
+  top: 4px;
   width: 32px;
   height: 32px;
   background-image: var(--player-sprite-url);
