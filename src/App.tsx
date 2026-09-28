@@ -571,7 +571,7 @@ const statDetails: Record<StatKey, { label: string; description: string }> = {
   luk: { label: 'Luck', description: 'Improves critical hits and loot rolls.' },
 };
 const initialPlayerStats: PlayerStats = { str: 4, dex: 4, int: 4, luk: 4 };
-type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number };
+type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number };
 type GoatLoot = Partial<GameInventory>;
 type DroppedLoot = { id: number; chunk: Point; position: Point; loot: GoatLoot };
 type GoatState = {
@@ -597,7 +597,7 @@ type GoatState = {
   nextWanderTick?: number;
 };
 // Hostile mobs: goblins and bandits. Reuse the goat combat AI shape.
-type MonsterKind = 'goblin' | 'bandit';
+type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'snake' | 'spider';
 type MonsterState = GoatState & { kind: MonsterKind };
 const GOAT_STEP = 0.5;
 // Ambient birds: lightweight wildlife, deterministic per chunk, not persisted.
@@ -646,7 +646,7 @@ const PLAYER_MAX_HP = 88;
 const PLAYER_BASE_ATTACK_DAMAGE = 5;
 const PLAYER_STAT_POINTS_PER_LEVEL = 5;
 const GOAT_LOOT_TYPES: Array<keyof GameInventory> = ['goatHorns', 'fabric', 'coins'];
-const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0 };
+const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0 };
 
 function playerMaxHpForStats(stats: PlayerStats) {
   return PLAYER_MAX_HP + stats.int * 3;
@@ -714,7 +714,10 @@ function isGameInventory(value: unknown): value is GameInventory {
     && isFiniteNumber(value.goatHorns)
     && isFiniteNumber(value.fabric)
     && isFiniteNumber(value.daggers)
-    && isFiniteNumber(value.cloths);
+    && isFiniteNumber(value.cloths)
+    && (value.bone == null || isFiniteNumber(value.bone))
+    && (value.pelt == null || isFiniteNumber(value.pelt))
+    && (value.fang == null || isFiniteNumber(value.fang));
 }
 
 function isPlayerStats(value: unknown): value is PlayerStats {
@@ -899,8 +902,18 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
     };
   });
 }
-function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {
-  const terrain = mapTileFor(chunk).terrain;
+// Per-creature loot identity: each monster drops recognizable physical loot.
+function monsterLootForKind(kind: MonsterKind): GoatLoot {
+  switch (kind) {
+    case 'goblin': return { coins: 1 + Math.floor(Math.random() * 3), fabric: Math.random() < 0.3 ? 1 : 0 };
+    case 'bandit': return { coins: 3 + Math.floor(Math.random() * 5), fabric: Math.random() < 0.5 ? 1 : 0 };
+    case 'skeleton': return { bone: 1 + Math.floor(Math.random() * 2), coins: Math.random() < 0.5 ? 1 : 0 };
+    case 'troll': return { pelt: 1, coins: 2 + Math.floor(Math.random() * 4) };
+    case 'snake': return { fang: 1, coins: Math.random() < 0.3 ? 1 : 0 };
+    case 'spider': return { fang: 1 + Math.floor(Math.random() * 2) };
+  }
+}
+function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  const terrain = mapTileFor(chunk).terrain;
   if (terrain === 'ocean') return [];
   const danger = dangerForChunk(chunk);
   const monsters: MonsterState[] = [];
@@ -943,6 +956,23 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {
   if (danger >= 1 && mapTileFor(chunk).road !== 'none') {
     const count = 1 + (Math.abs(chunk.x * 11 + chunk.y * 17) % 2);
     for (let i = 0; i < count; i++) spawn('bandit', i, 6000, 1.2);
+  }
+  // Skeletons: undead in rocky ruins and deep wilderness (danger 2+).
+  if ((terrain === 'rock' || terrain === 'desert') && danger >= 2) {
+    const count = 1 + (Math.abs(chunk.x * 13 + chunk.y * 19) % 2);
+    for (let i = 0; i < count; i++) spawn('skeleton', i, 7000, 1.0);
+  }
+  // Spiders: dark forests (danger 2+).
+  if (terrain === 'forest' && danger >= 2 && Math.abs(chunk.x * 5 + chunk.y * 23) % 2 === 0) {
+    spawn('spider', 0, 8000, 0.7);
+  }
+  // Snakes: deserts and meadows (danger 1+).
+  if ((terrain === 'desert' || terrain === 'meadow') && danger >= 1) {
+    spawn('snake', 0, 9000, 0.5);
+  }
+  // Trolls: remote wilderness only (danger 3). Slow, huge, brutal.
+  if (danger >= 3 && (terrain === 'forest' || terrain === 'rock' || terrain === 'tundra')) {
+    spawn('troll', 0, 10000, 2.5);
   }
   return monsters;
 }
@@ -1260,7 +1290,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v125</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v126</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -1330,12 +1360,15 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
 }
 function InventorySheet({ inventory, equippedDagger, onToggleDagger, playerStats, statPoints, onAssignStat, onClose }: { inventory: GameInventory; equippedDagger: boolean; onToggleDagger: () => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats'>('inventory');
-  const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths;
+  const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang;
   const visibleItems = [
     { key: 'goatHorns', label: 'Goat horns', detail: 'Crafting material', mark: '✦', className: 'horn-mark' },
     { key: 'fabric', label: 'Fabric', detail: 'Useful cloth', mark: '▤', className: 'fabric-mark' },
     { key: 'daggers', label: 'Goat-horn dagger', detail: 'Crafted weapon', mark: '†', className: 'dagger-mark' },
     { key: 'cloths', label: 'Field cloths', detail: 'Crafted gear', mark: '✚', className: 'cloths-mark' },
+    { key: 'bone', label: 'Bone', detail: 'Skeleton remains', mark: '☠', className: 'bone-mark' },
+    { key: 'pelt', label: 'Pelt', detail: 'Thick animal hide', mark: '❖', className: 'pelt-mark' },
+    { key: 'fang', label: 'Fang', detail: 'Sharp monster fang', mark: '⸙', className: 'fang-mark' },
   ].filter((item) => inventory[item.key as keyof GameInventory] > 0);
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="inventory-title" data-testid="overlay-inventory">
@@ -1790,7 +1823,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
               window.setTimeout(() => setMonsters((current) => current.map((monster) => monster.id === monsterTarget.id ? { ...monster, hitFlash: false } : monster)), 100);
               setLogs((currentLogs) => [{ text: defeated ? targetLabel + ' defeated.' : 'You hit the ' + targetLabel + ' for ' + damage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
               if (defeated) {
-                const loot: GoatLoot = { coins: 2 + Math.floor(Math.random() * 4), fabric: Math.random() < 0.4 ? 1 : 0 };
+                const loot: GoatLoot = monsterLootForKind(monsterTarget.kind);
                 const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot };
                 droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
                 const xpReward = goatExperienceReward(monsterTarget, playerLevelRef.current, playerStatsRef.current);
@@ -2031,6 +2064,9 @@ if (active) {
       drop.loot.goatHorns ? `+${drop.loot.goatHorns} horn${drop.loot.goatHorns === 1 ? '' : 's'}` : '',
       drop.loot.fabric ? `+${drop.loot.fabric} fabric` : '',
       drop.loot.coins ? `+${drop.loot.coins} gold` : '',
+      drop.loot.bone ? `+${drop.loot.bone} bone${drop.loot.bone === 1 ? '' : 's'}` : '',
+      drop.loot.pelt ? `+${drop.loot.pelt} pelt${drop.loot.pelt === 1 ? '' : 's'}` : '',
+      drop.loot.fang ? `+${drop.loot.fang} fang${drop.loot.fang === 1 ? '' : 's'}` : '',
     ].filter(Boolean).join(' · ');
     const message = `Picked up goat loot: ${contents}.`;
     setLogs((currentLogs) => [{ text: message, color: 'blue' }, ...currentLogs].slice(0, 3));
@@ -2262,9 +2298,13 @@ if (active) {
             {droppedLoot.filter((drop) => drop.chunk.x === chunk.x && drop.chunk.y === chunk.y).map((drop) => {
               const nearby = Math.hypot(drop.position.x - position.x, drop.position.y - position.y) <= 16;
               // Monster-specific loot visual: show what actually dropped, not a generic bag.
-              const lootKind = (drop.loot.goatHorns || 0) > 0 && !(drop.loot.fabric || drop.loot.coins) ? 'horn'
-                : (drop.loot.fabric || 0) > 0 && !(drop.loot.goatHorns || drop.loot.coins) ? 'cloth'
-                : (drop.loot.coins || 0) > 0 && !(drop.loot.goatHorns || drop.loot.fabric) ? 'coins' : 'bag';
+              const only = (key: keyof GoatLoot) => (drop.loot[key] || 0) > 0 && (Object.keys(drop.loot) as Array<keyof GoatLoot>).every((k) => k === key || !(drop.loot[k] || 0));
+              const lootKind = only('goatHorns') ? 'horn'
+                : only('fabric') ? 'cloth'
+                : only('coins') ? 'coins'
+                : only('bone') ? 'bone'
+                : only('pelt') ? 'pelt'
+                : only('fang') ? 'fang' : 'bag';
               return <div className="loot-drop" key={drop.id} style={{ left: drop.position.x + '%', top: drop.position.y + '%' }}>
                 <span className={'loot-visual loot-' + lootKind} aria-label={'Dropped ' + lootKind} />
                 {nearby && <button className="pickup-button" onClick={() => pickupDrop(drop)} data-testid={'button-pickup-loot-' + drop.id}>Pick up</button>}
@@ -2524,6 +2564,9 @@ function Home() {
     fabric: Math.max(0, current.fabric + (loot.fabric || 0)),
     daggers: Math.max(0, current.daggers + (loot.daggers || 0)),
     cloths: Math.max(0, current.cloths + (loot.cloths || 0)),
+    bone: Math.max(0, current.bone + (loot.bone || 0)),
+    pelt: Math.max(0, current.pelt + (loot.pelt || 0)),
+    fang: Math.max(0, current.fang + (loot.fang || 0)),
   }));
 
   const toggleDagger = () => {
@@ -2556,7 +2599,7 @@ function Home() {
   const applyLoadedSave = (parsed: SaveGameData, notice: string) => {
     setLoadedSave(parsed);
     const savedEquippedDagger = Boolean(parsed.equippedDagger);
-    setInventory({ ...parsed.inventory, daggers: Math.max(0, parsed.inventory.daggers - (savedEquippedDagger ? 1 : 0)) });
+    setInventory({ ...initialInventory, ...parsed.inventory, daggers: Math.max(0, parsed.inventory.daggers - (savedEquippedDagger ? 1 : 0)) });
     setPlayerStats(parsed.playerStats || initialPlayerStats);
     setStatPoints(Math.max(0, Math.floor(parsed.statPoints || 0)));
     setEquippedDagger(savedEquippedDagger);

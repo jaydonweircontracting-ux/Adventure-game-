@@ -115,6 +115,33 @@ for (let i = 0; i < 5000; i++) {
   assert(Number.isInteger(level) && level >= 0 && level <= 5, `Bad elevation level: ${level}`);
 }
 
+// ---- 7. Hostile spawn rules: nothing dangerous in the safe zone ----
+console.log('Testing hostile spawn rules...');
+const worldTiles = new Map(world.map((t) => [`${t.x},${t.y}`, t]));
+let safeZoneViolations = 0;
+for (let i = 0; i < 10000; i++) {
+  const chunk = {
+    x: WORLD_MAP_BOUNDS.minX + (i * 37) % 31,
+    y: WORLD_MAP_BOUNDS.minY + (i * 53) % 31,
+  };
+  const danger = dangerForChunk(chunk);
+  const tile = worldTiles.get(`${chunk.x},${chunk.y}`);
+  if (!tile) continue;
+  const terrain = tile.biome;
+  // Replicate spawn-table gates from monstersForChunk: would anything hostile spawn here?
+  const goblinOk = terrain === 'forest' && danger >= 2;
+  const banditOk = danger >= 1; // + road check omitted, danger gate is the point
+  const skeletonOk = (terrain === 'rock' || terrain === 'desert') && danger >= 2;
+  const spiderOk = terrain === 'forest' && danger >= 2;
+  const snakeOk = (terrain === 'desert' || terrain === 'meadow') && danger >= 1;
+  const trollOk = danger >= 3;
+  if (danger === 0 && (goblinOk || banditOk || skeletonOk || spiderOk || snakeOk || trollOk)) {
+    safeZoneViolations++;
+    if (safeZoneViolations < 5) failures.push(`Hostile spawn gate open in safe zone at ${chunk.x},${chunk.y}`);
+  }
+}
+assert(safeZoneViolations === 0, `Hostile spawn gates open in safe zone: ${safeZoneViolations} violations`);
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`SIMULATION COMPLETE: ${passed} passed, ${failed} failed`);

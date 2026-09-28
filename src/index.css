@@ -2014,6 +2014,21 @@ body {
 .monster-bandit .monster-sprite { background: linear-gradient(180deg, #4a4a5a 0 40%, #2a2a3a 41% 75%, #1a1a2a 76% 100%); border-radius: 35% 35% 25% 25%; }
 .monster-bandit .monster-sprite::before { content: ''; position: absolute; left: 2px; top: -4px; width: 20px; height: 10px; background: #2a2a3a; border-radius: 50% 50% 0 0; }
 .monster-bandit .monster-sprite::after { content: ''; position: absolute; left: 8px; top: 9px; width: 8px; height: 3px; background: #ffcc55; border-radius: 2px; }
+.monster-skeleton .monster-sprite { background: linear-gradient(180deg, #e8e4d8 0 40%, #c8c4b8 41% 75%, #a8a498 76% 100%); border-radius: 35% 35% 25% 25%; }
+.monster-skeleton .monster-sprite::before { content: ''; position: absolute; left: 3px; top: 2px; width: 18px; height: 12px; background: radial-gradient(circle at 6px 6px, #1a1a1a 3px, transparent 3px), radial-gradient(circle at 18px 6px, #1a1a1a 3px, transparent 3px); }
+.monster-skeleton .monster-sprite::after { content: ''; position: absolute; left: 10px; top: 16px; width: 4px; height: 8px; background: #e8e4d8; box-shadow: -6px 0 0 #e8e4d8, 6px 0 0 #e8e4d8; }
+.monster-troll { width: 36px; height: 42px; }
+.monster-troll .monster-sprite { background: linear-gradient(180deg, #6a8a5a 0 35%, #4a6a42 36% 70%, #2a4a2a 71% 100%); border-radius: 30% 30% 25% 25%; }
+.monster-troll .monster-sprite::before { content: ''; position: absolute; left: 6px; top: 6px; width: 24px; height: 10px; background: radial-gradient(circle at 8px 5px, #ffdd44 3px, transparent 3px), radial-gradient(circle at 16px 5px, #ffdd44 3px, transparent 3px); }
+.monster-troll .monster-sprite::after { content: ''; position: absolute; left: 12px; top: 20px; width: 12px; height: 6px; background: #1a2a1a; border-radius: 0 0 6px 6px; }
+.monster-snake { width: 22px; height: 14px; }
+.monster-snake .monster-sprite { background: linear-gradient(90deg, #4a8a3a 0 60%, #2a6a2a 61% 100%); border-radius: 40%; }
+.monster-snake .monster-sprite::before { content: ''; position: absolute; right: -4px; top: 3px; width: 8px; height: 8px; background: #4a8a3a; border-radius: 50%; }
+.monster-snake .monster-sprite::after { content: ''; position: absolute; right: -2px; top: 5px; width: 3px; height: 3px; background: #ff4444; border-radius: 50%; box-shadow: 5px 0 0 #ff4444; }
+.monster-spider { width: 20px; height: 20px; }
+.monster-spider .monster-sprite { background: radial-gradient(circle, #3a2a4a 40%, #2a1a3a 41% 100%); border-radius: 50%; }
+.monster-spider .monster-sprite::before { content: ''; position: absolute; left: -6px; top: 2px; width: 32px; height: 16px; background: linear-gradient(180deg, transparent 44%, #2a1a3a 44% 56%, transparent 56%), linear-gradient(90deg, transparent 44%, #2a1a3a 44% 56%, transparent 56%); }
+.monster-spider .monster-sprite::after { content: ''; position: absolute; left: 6px; top: 6px; width: 8px; height: 6px; background: radial-gradient(circle at 2px 3px, #ff4444 2px, transparent 2px), radial-gradient(circle at 6px 3px, #ff4444 2px, transparent 2px); }
 .monster-aggro { position: absolute; left: 50%; top: -14px; transform: translateX(-50%); color: #ff4444; font-weight: bold; font-size: 14px; text-shadow: 1px 1px 0 rgba(0,0,0,.5); animation: aggro-bounce .6s ease-in-out infinite; }
 @keyframes aggro-bounce { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-3px); } }
 .monster.is-moving .monster-sprite { animation: wildlife-bob .4s ease-in-out infinite; }
@@ -2299,6 +2314,12 @@ body {
 .loot-cloth { background: linear-gradient(135deg, #a85a5a 0 50%, #7a3a3a 51% 100%); border-radius: 3px; transform: rotate(-8deg); box-shadow: 2px 3px 0 rgba(43, 61, 41, .25); }
 .loot-cloth::before { content: ''; position: absolute; inset: 3px; border: 1px dashed rgba(255, 255, 255, .4); border-radius: 2px; }
 .loot-coins { background: radial-gradient(circle at 30% 30%, #ffd955 0%, #e8a93d 50%, #b87a25 100%); border-radius: 50%; box-shadow: 2px 3px 0 rgba(43, 61, 41, .25), inset -2px -2px 0 rgba(150, 100, 30, .4); }
+.loot-bone { background: linear-gradient(135deg, #f0ece0 0 60%, #d0ccc0 61% 100%); border-radius: 4px; transform: rotate(24deg); box-shadow: 2px 3px 0 rgba(43, 61, 41, .25); }
+.loot-bone::before, .loot-bone::after { content: ''; position: absolute; width: 7px; height: 7px; background: #f0ece0; border-radius: 50%; }
+.loot-bone::before { left: -3px; top: -3px; box-shadow: 12px 0 0 #f0ece0; }
+.loot-bone::after { left: -3px; bottom: -3px; box-shadow: 12px 0 0 #f0ece0; }
+.loot-pelt { background: linear-gradient(135deg, #8a6a4a 0 50%, #6a4a32 51% 100%); border-radius: 40% 55% 45% 50%; box-shadow: 2px 3px 0 rgba(43, 61, 41, .25), inset 2px 2px 4px rgba(255, 255, 255, .15); }
+.loot-fang { background: linear-gradient(180deg, #ffffff 0 60%, #d8d4c8 61% 100%); clip-path: polygon(35% 0%, 65% 0%, 55% 100%, 45% 100%); filter: drop-shadow(2px 2px 0 rgba(43, 61, 41, .25)); }
 .loot-coins::before { content: ''; position: absolute; left: -4px; top: 4px; width: 14px; height: 14px; background: radial-gradient(circle at 30% 30%, #ffd955 0%, #e8a93d 60%, #b87a25 100%); border-radius: 50%; box-shadow: 1px 2px 0 rgba(43, 61, 41, .2); }
 .pickup-button { position: absolute; z-index: 2; left: 50%; top: 29px; padding: 4px 7px; color: #fff2cf; border: 1px solid #52372c; background: rgba(47, 73, 53, .94); box-shadow: 2px 2px 0 rgba(43, 61, 41, .25); font: 8px var(--app-font-mono); text-transform: uppercase; transform: translateX(-50%); white-space: nowrap; pointer-events: auto; }
 .pickup-button:hover, .pickup-button:focus-visible { background: #b26b48; }
