@@ -17,14 +17,14 @@ Priorities re-evaluated after each pass. P0 first.
 - [ ] Playtest tooling: `?debug=1` diagnostics overlay — build 162
 - [ ] Map<->world validation function + sim tests — build 162
 - [ ] Debug map mode (`?mapdebug=1` chunk coords) — build 162
-- [ ] Button segment compression nit (build-160 playtest)
-- [ ] "EnterWayfarer Guild" missing space (build-160 playtest)
+- [x] Button segment compression nit (build-160 playtest) — NOT REPRODUCED: build-162 and build-163 playtests both confirmed 3-part buttons render correctly; closed, no change
+- [x] "EnterWayfarer Guild" missing space (build-160 playtest) — NOT REPRODUCED: door prompt has always rendered `Enter {name}` with a space (App.tsx:3677, since 63fd751); closed, no change
 - [ ] Tree overlapping bottom-right house door (build-160 playtest)
 
 ## P3 — Polish
 - [ ] Cartographic polish pass on atlas (parchment frame, vignette)
 - [ ] Discovery-aware map markers (dim undiscovered) — decision needed
-- [ ] Map legend expansion (roads, dungeons)
+- [x] Map legend expansion (roads, towns, villages, mountains) — build 164 (swatches match actual atlas render colors)
 
 ## P4 — Optional
 - [ ] Second continent content: dungeons/POIs beyond the 7 settlements

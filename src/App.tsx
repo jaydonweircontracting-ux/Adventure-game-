@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '163';
+const BUILD_NUMBER = '164';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -2266,6 +2266,10 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
         </div>
         <div className="map-legend world-map-legend">
           <span className="legend-item"><span className="legend-dot" /> You are here</span>
+          <span className="legend-item"><span className="legend-swatch legend-swatch-town" /> Town</span>
+          <span className="legend-item"><span className="legend-swatch legend-swatch-village" /> Village</span>
+          <span className="legend-item"><span className="legend-swatch legend-swatch-road" /> Road</span>
+          <span className="legend-item"><span className="legend-swatch legend-swatch-mountain">▲</span> Mountain</span>
           <span className="legend-item"><span className="world-map-legend-swatch forest" /> Forest</span>
           <span className="legend-item"><span className="world-map-legend-swatch desert" /> Desert</span>
           <span className="legend-item"><span className="world-map-legend-swatch tundra" /> Tundra</span>
