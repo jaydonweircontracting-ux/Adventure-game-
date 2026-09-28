@@ -580,13 +580,13 @@
 }
 .town-npc[data-facing='left'] .npc-sprite { transform: scaleX(-1); }
 .town-npc.npc-mage .npc-sprite {
-  filter: hue-rotate(178deg) saturate(1.55) brightness(.92);
+  filter: sepia(.35) saturate(1.5) hue-rotate(-12deg) brightness(.95);
 }
 .town-npc.npc-warrior .npc-sprite {
   filter: sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9);
 }
 .town-npc.npc-guide .npc-sprite {
-  filter: hue-rotate(32deg) saturate(1.25) brightness(1.05);
+  filter: hue-rotate(10deg) saturate(1.25) brightness(1.05);
 }
 .npc-nameplate {
   position: absolute;
@@ -1924,8 +1924,8 @@ body {
 .horse.is-mounted.is-moving .animal-head { animation: horse-walk .48s steps(4, end) infinite; }
 
 
-/* Shawn teaches roguecraft: a distinct stealth-school marker and tint. */
-.town-npc.npc-rogue .npc-sprite { filter: hue-rotate(268deg) saturate(1.42) brightness(.9); }
+/* Shawn teaches roguecraft: a distinct stealth-school marker and tint (natural skin preserved). */
+.town-npc.npc-rogue .npc-sprite { filter: sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9); }
 .npc-rogue .npc-role-mark { background: #8b67b0; transform: rotate(45deg) scale(.78); }
 
 /* Compact action icons: labels remain available through aria-label and title. */
@@ -2361,10 +2361,12 @@ body {
 .interior-header span:last-child { color: rgba(255, 239, 204, .76); font-size: 10px; line-height: 1.4; }
 .interior-kicker { color: #f2c96f; font-family: var(--app-font-mono); font-size: 8px; letter-spacing: .14em; text-transform: uppercase; }
 .interior-room { position: absolute; z-index: 3; inset: 24% 8% 7%; pointer-events: none; }
-/* Interior variants: each town's buildings get a unique color scheme. */
-.interior-variant-1 .interior-scene { filter: hue-rotate(30deg) saturate(1.1); }
-.interior-variant-2 .interior-scene { filter: hue-rotate(-30deg) saturate(1.1); }
-.interior-variant-3 .interior-scene { filter: hue-rotate(60deg) saturate(0.9); }
+/* Interior variants: each town's buildings get a unique color scheme.
+   The tint applies to the room (furniture/background) only, so NPCs and the
+   player keep natural skin tones. */
+.interior-variant-1 .interior-room { filter: hue-rotate(30deg) saturate(1.1); }
+.interior-variant-2 .interior-room { filter: hue-rotate(-30deg) saturate(1.1); }
+.interior-variant-3 .interior-room { filter: hue-rotate(60deg) saturate(0.9); }
 .interior-rug { position: absolute; left: 27%; top: 27%; width: 46%; height: 42%; border: 2px solid rgba(101, 57, 47, .54); background: repeating-linear-gradient(90deg, rgba(227, 165, 87, .26) 0 9px, rgba(151, 85, 61, .2) 9px 18px), #b86e54; box-shadow: 0 4px 0 rgba(65, 45, 38, .22); }
 .interior-table { position: absolute; left: 39%; top: 48%; width: 23%; height: 14%; border: 2px solid #5c3d32; border-radius: 3px; background: #895737; box-shadow: inset 0 4px 0 rgba(223, 157, 79, .34), 3px 4px 0 rgba(65, 45, 38, .22); }
 .interior-table::after { content: ''; position: absolute; left: 13%; right: 13%; bottom: -13px; height: 12px; border-left: 3px solid #5c3d32; border-right: 3px solid #5c3d32; }
@@ -3040,8 +3042,8 @@ body {
   --npc-walk-row: 3;
   background-position: var(--npc-x) calc(var(--npc-row) * -32px);
 }
-.adventurer-ranger .simulated-adventurer-sprite { --npc-x: -32px; filter: sepia(.3) saturate(1.35) hue-rotate(150deg) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
-.adventurer-mage .simulated-adventurer-sprite { --npc-x: -64px; filter: hue-rotate(178deg) saturate(1.55) brightness(.92) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
+.adventurer-ranger .simulated-adventurer-sprite { --npc-x: -32px; filter: sepia(.4) saturate(1.45) hue-rotate(-22deg) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
+.adventurer-mage .simulated-adventurer-sprite { --npc-x: -64px; filter: sepia(.35) saturate(1.5) hue-rotate(-12deg) brightness(.95) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
 .adventurer-rogue .simulated-adventurer-sprite { --npc-x: -128px; filter: sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
 .town-npc.npc-mage .npc-sprite { --npc-x: -64px; }
 .town-npc.npc-warrior .npc-sprite { --npc-x: -32px; }

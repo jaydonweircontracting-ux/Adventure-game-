@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '172';
+const BUILD_NUMBER = '173';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -1437,10 +1437,10 @@ function wildlifeForChunk(chunk: Point): WildlifeState[] {
   //   const count = terrain === 'meadow' ? 3 : 2;
   //   for (let i = 0; i < count; i++) spawn('rabbit', i, 1000);
   // }
-  // Deer: forests and meadows.
-  if (terrain === 'forest' || terrain === 'meadow') {
-    for (let i = 0; i < 2; i++) spawn('deer', i, 2000);
-  }
+  // Deer removed (brown-blob sprites) — uncomment to re-enable.
+  // if (terrain === 'forest' || terrain === 'meadow') {
+  //   for (let i = 0; i < 2; i++) spawn('deer', i, 2000);
+  // }
   // Wolves: forests only, danger 2+ (never near the starting town).
   if (terrain === 'forest' && danger >= 2) {
     for (let i = 0; i < 2; i++) spawn('wolf', i, 3000);

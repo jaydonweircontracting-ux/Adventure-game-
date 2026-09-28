@@ -35,7 +35,7 @@ export const OUTFIT_OPTIONS = [
 
 export const HAIR_COLOR_OPTIONS = [
   'v00', 'v01', 'v02', 'v03', 'v04', 'v05', 'v06',
-  'v07', 'v08', 'v09', 'v10', 'v11', 'v12', 'v13',
+  'v07', 'v08', 'v13',
 ];
 
 export const DEFAULT_CHARACTER: CharacterChoices = {
@@ -45,7 +45,7 @@ export const DEFAULT_CHARACTER: CharacterChoices = {
   hairColor: 'v02',
 };
 
-/** [light, dark] skin tones, light = base. */
+/** [light, dark] skin tones, light = base. Realistic tones only (no blue/green/purple/yellow). */
 export const SKIN_TONES: Record<string, [string, string]> = {
   v00: ['f6ca9f', 'd29f70'],
   v01: ['ffd9b3', 'd9ae86'],
@@ -57,7 +57,7 @@ export const SKIN_TONES: Record<string, [string, string]> = {
   v07: ['53301e', '402416'],
 };
 
-/** [light, dark] hair colors, light = base. */
+/** [light, dark] hair colors, light = base. Realistic colors only (no blue/green/purple). */
 export const HAIR_COLORS: Record<string, [string, string]> = {
   v00: ['33333d', '232328'],
   v01: ['5d2c28', '452019'],
@@ -68,10 +68,6 @@ export const HAIR_COLORS: Record<string, [string, string]> = {
   v06: ['f2d98c', 'b8a468'],
   v07: ['f5e9c8', 'bab194'],
   v08: ['a8352a', '7e281f'],
-  v09: ['2f6db3', '235286'],
-  v10: ['2fa08e', '23786a'],
-  v11: ['45a04e', '34783a'],
-  v12: ['7d4da3', '5e3a7b'],
   v13: ['c9c9d4', '9797a0'],
 };
 
