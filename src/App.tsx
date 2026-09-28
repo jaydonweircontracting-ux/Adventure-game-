@@ -593,7 +593,7 @@ function resolveFieldMovement(current: Point, movement: Point, chunk: Point, goa
   return null;
 }
 
-type InteriorArea = { id: string; name: string; description: string; roomType: 'guild' | 'inn' | 'chapel' | 'building'; exteriorPosition: Point };
+type InteriorArea = { id: string; name: string; description: string; roomType: 'guild' | 'inn' | 'chapel' | 'building' | 'prison'; exteriorPosition: Point };
 type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number };
 const startingDoorways: Doorway[] = [
   { id: 'tutorial-house-door', buildingIndex: 0, position: { x: 30, y: 36 }, area: { id: 'tutorial-house', name: 'Tutorial House', description: 'A small safe house on the tutorial island.', roomType: 'inn', exteriorPosition: { x: 30, y: 48 } } },
@@ -687,6 +687,11 @@ const interiorFurnitureCollision: Record<InteriorArea['roomType'], InteriorColli
     { left: 42, top: 28, right: 58, bottom: 52 }, // fireplace
     { left: 17, top: 43, right: 30, bottom: 67 }, // shelf left
     { left: 70, top: 43, right: 83, bottom: 67 }, // shelf right
+  ],
+  prison: [
+    { left: 12, top: 30, right: 32, bottom: 50 }, // straw bed
+    { left: 68, top: 60, right: 88, bottom: 80 }, // sewer grate (interactable, not blocking)
+    { left: 40, top: 8, right: 60, bottom: 20 }, // cell bars (wall)
   ],
 };
 
@@ -1723,6 +1728,7 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
     inn: (<><span className="interior-rug" /><span className="interior-bed bed-left" /><span className="interior-bed bed-right" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-bar" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     chapel: (<><span className="interior-rug" /><span className="interior-altar" /><span className="interior-pew pew-left" /><span className="interior-pew pew-right" /><span className="interior-candle candle-left" /><span className="interior-candle candle-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     building: (<><span className="interior-rug" /><span className="interior-bed bed-left" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
+    prison: (<><span className="prison-bars" /><span className="prison-straw-bed" /><span className="prison-sewer-grate" /><span className="prison-torch" /><span className="interior-lantern lantern-left" /></>),
   }[area.roomType];
   return (
     <div className={'interior-scene interior-' + area.roomType + ' interior-variant-' + (Math.abs(area.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={area.name + ' interior'} data-testid={'interior-' + area.id}>
@@ -1815,6 +1821,14 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   // Spawn on clear floor below the furniture: (50, 47) sits inside the
   // inn/building fireplace collision rect and permanently soft-locks movement.
   const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 78 });
+  // Prison opening: player starts in a cell, escapes to the overworld
+  const [inPrison, setInPrison] = useState(false);
+  const [prisonState, setPrisonState] = useState({
+    foundShiv: false,
+    talkedToPrisoner: false,
+    helpedPrisoner: false,
+    escapeRoute: null as 'sewer' | 'gate' | null,
+  });
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
   const facingRef = useRef(facing);
@@ -3046,6 +3060,9 @@ function Home() {
     setPlayerStats(initialPlayerStats);
     setStatPoints(0);
     setEquippedDagger(false);
+    // Start in prison cell (opening scenario)
+    setInPrison(true);
+    setPrisonState({ foundShiv: false, talkedToPrisoner: false, helpedPrisoner: false, escapeRoute: null });
     setChunk({ x: 4, y: 7 });
     setMapOpen(false); setInventoryOpen(false); setSaveNotice(null); setMenuOpen(false);
   };
@@ -3062,6 +3079,31 @@ function Home() {
       .then((url) => setPlayerAttackSpriteUrl(url))
       .catch(() => setPlayerAttackSpriteUrl(null));
     startNewGame();
+  };
+  // Prison opening interactions
+  const searchPrisonBed = () => {
+    if (!prisonState.foundShiv) {
+      setPrisonState(s => ({ ...s, foundShiv: true }));
+      setInventory(inv => ({ ...inv, dagger: (inv.dagger || 0) + 1 }));
+    }
+  };
+  const talkToPrisoner = () => {
+    setPrisonState(s => ({ ...s, talkedToPrisoner: true }));
+  };
+  const helpPrisoner = () => {
+    setPrisonState(s => ({ ...s, helpedPrisoner: true, talkedToPrisoner: true }));
+  };
+  const escapeViaSewer = () => {
+    setPrisonState(s => ({ ...s, escapeRoute: 'sewer' }));
+    setInPrison(false);
+    setChunk({ x: 3, y: 8 });
+    setPosition({ x: 50, y: 50 });
+  };
+  const escapeViaGate = () => {
+    setPrisonState(s => ({ ...s, escapeRoute: 'gate' }));
+    setInPrison(false);
+    setChunk({ x: 4, y: 7 });
+    setPosition({ x: 50, y: 85 });
   };
 
   const assignStatPoint = (stat: StatKey) => {
@@ -3190,6 +3232,34 @@ function Home() {
       {menuOpen ? (
         creatingCharacter ? (
           <CharacterCreator onConfirm={confirmCharacter} onCancel={() => setCreatingCharacter(false)} />
+        ) : inPrison ? (
+          <section className="prison-scene" aria-label="Prison cell" data-testid="prison-scene">
+            <div className="prison-cell">
+              <h2>You wake in a cold stone cell...</h2>
+              <p className="prison-desc">Damp walls. The clink of chains from the next cell. A sliver of light through the bars.</p>
+              <div className="prison-actions">
+                {!prisonState.foundShiv && (
+                  <button className="main-menu-button" onClick={searchPrisonBed}>Search the straw bed</button>
+                )}
+                {prisonState.foundShiv && <p className="prison-found">Found: Rusty Shiv (weapon)</p>}
+                {!prisonState.talkedToPrisoner && (
+                  <button className="main-menu-button" onClick={talkToPrisoner}>Talk to the prisoner next door</button>
+                )}
+                {prisonState.talkedToPrisoner && !prisonState.helpedPrisoner && (
+                  <div>
+                    <p className="prison-dialogue">"Psst... there's a loose grate in the floor. Leads to the sewers. Or you could try the gate when the guard changes... I can help, if you help me."</p>
+                    <button className="main-menu-button" onClick={helpPrisoner}>Promise to help him escape too</button>
+                  </div>
+                )}
+                {prisonState.helpedPrisoner && <p className="prison-dialogue">"Good. I'll remember this. Now go!"</p>}
+                <div className="prison-escape">
+                  <h3>Choose your escape:</h3>
+                  <button className="main-menu-button primary" onClick={escapeViaSewer}>Crawl through the sewer grate</button>
+                  <button className="main-menu-button" onClick={escapeViaGate}>Make a break for the gate</button>
+                </div>
+              </div>
+            </div>
+          </section>
         ) : (
         <section className="main-menu" aria-label="Main menu" data-testid="main-menu">
           <div className="main-menu-card">

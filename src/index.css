@@ -3530,3 +3530,106 @@ body {
 .env-berries { width: 14px; height: 18px; background-position: -457px -72px; }
 .env-tomato { width: 17px; height: 19px; background-position: -423px -104px; }
 .env-corn { width: 12px; height: 22px; background-position: -458px -101px; }
+
+/* Prison cell interior */
+.interior-prison { background: linear-gradient(to bottom, #2a2a35 0%, #1a1a22 100%); }
+.prison-bars {
+  position: absolute;
+  left: 40%; top: 8%; width: 20%; height: 12%;
+  background: repeating-linear-gradient(90deg, #4a4a55 0px, #4a4a55 4px, transparent 4px, transparent 12px);
+  border-top: 3px solid #3a3a45;
+  border-bottom: 3px solid #3a3a45;
+}
+.prison-straw-bed {
+  position: absolute;
+  left: 12%; top: 30%; width: 20%; height: 20%;
+  background: #8a7a4a;
+  border: 2px solid #6a5a35;
+  border-radius: 2px;
+}
+.prison-straw-bed::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  background: repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(0,0,0,0.1) 3px, rgba(0,0,0,0.1) 6px);
+}
+.prison-sewer-grate {
+  position: absolute;
+  left: 68%; top: 60%; width: 20%; height: 20%;
+  background: #3a3a45;
+  border: 2px solid #2a2a35;
+  background-image: repeating-linear-gradient(0deg, transparent, transparent 6px, #1a1a22 6px, #1a1a22 8px),
+                    repeating-linear-gradient(90deg, transparent, transparent 6px, #1a1a22 6px, #1a1a22 8px);
+  cursor: pointer;
+}
+.prison-torch {
+  position: absolute;
+  left: 8%; top: 15%; width: 6px; height: 20px;
+  background: #5a3a20;
+}
+.prison-torch::before {
+  content: '';
+  position: absolute;
+  left: -4px; top: -10px; width: 14px; height: 14px;
+  background: radial-gradient(circle, #ffaa33 0%, #ff6600 60%, transparent 70%);
+  border-radius: 50%;
+  animation: torch-flicker 0.5s ease-in-out infinite alternate;
+}
+@keyframes torch-flicker {
+  from { transform: scale(1); opacity: 0.9; }
+  to { transform: scale(1.15); opacity: 1; }
+}
+
+/* Prison opening scene */
+.prison-scene {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(to bottom, #1a1a22 0%, #0a0a0f 100%);
+  z-index: 100;
+  padding: 20px;
+}
+.prison-cell {
+  max-width: 600px;
+  background: rgba(40, 40, 50, 0.9);
+  border: 3px solid #4a4a55;
+  border-radius: 8px;
+  padding: 30px;
+  color: #e0e0e0;
+}
+.prison-cell h2 {
+  color: #ffaa33;
+  margin-bottom: 10px;
+}
+.prison-desc {
+  color: #aaa;
+  font-style: italic;
+  margin-bottom: 20px;
+}
+.prison-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.prison-found {
+  color: #66bb6a;
+  font-weight: bold;
+}
+.prison-dialogue {
+  background: rgba(0, 0, 0, 0.3);
+  border-left: 3px solid #ffaa33;
+  padding: 12px;
+  font-style: italic;
+  color: #ddd;
+}
+.prison-escape {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 2px solid #4a4a55;
+}
+.prison-escape h3 {
+  color: #ff6666;
+  margin-bottom: 12px;
+}
