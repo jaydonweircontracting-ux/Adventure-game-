@@ -3,7 +3,9 @@ import { getDirection, isAdjacentAndFacing, type CombatDirection, type CombatPoi
 export type GoatAIState = 'idle' | 'chase' | 'attack' | 'hurt' | 'die';
 export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean; spawnPosition?: CombatPoint; roamRadius?: number };
 export const GOAT_CHASE_RANGE = 24;
-export const GOAT_MELEE_RANGE = 6;
+// Keep hostile goats close enough that sprites nearly touch the player:
+// melee happens up close, and the player's 5-unit swing reach connects.
+export const GOAT_MELEE_RANGE = 4;
 export const GOAT_CHASE_SPEED = 4;
 export const GOAT_FLEE_HP_RATIO = 0.3;
 export const GOAT_FLEE_SPEED = 3;
@@ -47,8 +49,8 @@ function shouldReturnHome(goat: GoatAIEntity, player: CombatPoint): boolean {
   return playerDistFromHome > goat.roamRadius * 1.2 && goatDistFromHome >= goat.roamRadius * 0.9;
 }
 
-// Keep hostile goats far enough away for their sprites to avoid overlapping
-// the player while still allowing a clear melee attack lane.
+// Keep hostile goats close enough that sprites nearly touch the player:
+// melee happens up close, and the player's 5-unit swing reach connects.
 function keepMeleeDistance(position: CombatPoint, player: CombatPoint, playerFacing: CombatDirection): CombatPoint {
   const dx = position.x - player.x;
   const dy = position.y - player.y;

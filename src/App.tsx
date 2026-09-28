@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '159';
+const BUILD_NUMBER = '160';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -258,11 +258,11 @@ type FieldTree = { id: number; x: number; y: number; scale: number; variant: num
 // 512x384). Boxes are the trimmed alpha bounds of each sprite: { x, y, w, h }.
 type EnvSpriteKey = 'bigpine' | 'pine2' | 'pine3' | 'snowpine' | 'deadtree' | 'saguaro1' | 'saguaro2' | 'pear' | 'grass1' | 'grass2' | 'rock' | 'icerock' | 'coral1' | 'coral2' | 'coral3' | 'apple' | 'berries' | 'tomato' | 'corn';
 const ENV_SPRITE_BOXES: Record<EnvSpriteKey, { x: number; y: number; w: number; h: number }> = {
-  bigpine: { x: 10, y: 120, w: 85, h: 136 },
-  pine2: { x: 130, y: 275, w: 22, h: 100 },
-  pine3: { x: 210, y: 280, w: 39, h: 100 },
-  snowpine: { x: 10, y: 273, w: 51, h: 107 },
-  deadtree: { x: 295, y: 276, w: 58, h: 99 },
+  bigpine: { x: 7, y: 100, w: 96, h: 156 },
+  pine2: { x: 105, y: 272, w: 47, h: 112 },
+  pine3: { x: 202, y: 272, w: 47, h: 112 },
+  snowpine: { x: 5, y: 273, w: 56, h: 111 },
+  deadtree: { x: 294, y: 276, w: 59, h: 108 },
   saguaro1: { x: 15, y: 11, w: 39, h: 117 },
   saguaro2: { x: 78, y: 20, w: 32, h: 108 },
   pear: { x: 290, y: 66, w: 65, h: 62 },
@@ -590,6 +590,11 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
   // into the surrounding grass where it reads as a random invisible wall.
   if (landmark && fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17).some((rect) => pointInRect(position, rect, 0.35))) return true;
 
+  // Farmhouses are solid enterable buildings too.
+  if (!landmark && ['meadow', 'grassland', 'greenvale'].includes(tile.terrain)) {
+    if (fieldFarmRects(chunk.x, chunk.y).houses.some((rect) => pointInRect(position, rect, 0.35))) return true;
+  }
+
   // Mosslight Crossing fountain: solid stone circle at the plaza center.
   if (landmark?.name === 'Mosslight Crossing') {
     const fountainRect = { left: 47.5, top: 48.5, right: 52.5, bottom: 51.5 };
@@ -655,30 +660,74 @@ const startingDoorways: Doorway[] = [
   { id: 'crafting-guild-door', buildingIndex: 1, position: { x: 70, y: 36 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'A workbench, maps, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 70, y: 48 } } },
   { id: 'chapel-door', buildingIndex: 2, position: { x: 30, y: 72 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 30, y: 60 } } },
 ];
+// Bram the smith works the Wayfarer Guild in the starting area. Talking to
+// him opens the crafting / sell / rumours flow.
+const GUILD_SMITH: TownNpc = {
+  name: 'Bram',
+  title: 'Guild smith',
+  role: 'warrior',
+  position: { x: 62, y: 42 },
+  facing: 'down',
+  moving: false,
+  target: null,
+  smith: true,
+};
+// What Bram pays for monster drops (gold per item).
+const SMITH_SELL_PRICES: { key: 'bone' | 'pelt' | 'fang' | 'goatHorns' | 'fabric'; name: string; price: number }[] = [
+  { key: 'bone', name: 'Bone', price: 2 },
+  { key: 'pelt', name: 'Pelt', price: 3 },
+  { key: 'fang', name: 'Fang', price: 4 },
+  { key: 'goatHorns', name: 'Goat horn', price: 5 },
+  { key: 'fabric', name: 'Fabric', price: 2 },
+];
+const WORLD_RUMORS = [
+  'I heard there are strange ruins to the north.',
+  'A traveler said the caves east of here are dangerous.',
+  'They say a dragon was spotted far to the south.',
+  'The merchants are talking about bandits on the roads.',
+  'Someone found an old shrine in the forest.',
+];
 
 function buildingDoorwaysFor(chunk: Point): Doorway[] {
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
-  if (!landmark) return [];
-  return fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17).map((rect, index) => {
-    const namedDoorway = isStartingArea(chunk) ? startingDoorways.find((doorway) => doorway.buildingIndex === index) : null;
-    const position = fieldDoorPosition(rect);
-    if (namedDoorway) {
+  if (landmark) {
+    return fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17).map((rect, index) => {
+      const namedDoorway = isStartingArea(chunk) ? startingDoorways.find((doorway) => doorway.buildingIndex === index) : null;
+      const position = fieldDoorPosition(rect);
+      if (namedDoorway) {
+        return {
+          ...namedDoorway,
+          position,
+          area: {
+            ...namedDoorway.area,
+            exteriorPosition: doorwayExteriorPosition(rect, position),
+          },
+        };
+      }
       return {
-        ...namedDoorway,
+        id: chunk.x + ',' + chunk.y + '-building-' + index,
         position,
         area: {
-          ...namedDoorway.area,
-          exteriorPosition: doorwayExteriorPosition(rect, position),
+          id: chunk.x + '-' + chunk.y + '-building-' + index,
+          name: landmark.name + ' House ' + (index + 1),
+          description: 'A simple brown room waiting to be furnished.',
+          roomType: 'building' as const,
+          exteriorPosition: { x: position.x, y: Math.min(94, position.y + 4) },
         },
       };
-    }
+    });
+  }
+  // Farmhouses in non-settlement chunks are enterable too.
+  if (!['meadow', 'grassland', 'greenvale'].includes(mapTileFor(chunk).terrain)) return [];
+  return fieldFarmRects(chunk.x, chunk.y).houses.map((rect, index) => {
+    const position = fieldDoorPosition(rect);
     return {
-      id: chunk.x + ',' + chunk.y + '-building-' + index,
+      id: chunk.x + ',' + chunk.y + '-farm-' + index,
       position,
       area: {
-        id: chunk.x + '-' + chunk.y + '-building-' + index,
-        name: landmark.name + ' House ' + (index + 1),
-        description: 'A simple brown room waiting to be furnished.',
+        id: chunk.x + '-' + chunk.y + '-farm-' + index,
+        name: 'Farmhouse',
+        description: 'A cozy farmhouse smelling of hay and baked bread.',
         roomType: 'building' as const,
         exteriorPosition: { x: position.x, y: Math.min(94, position.y + 4) },
       },
@@ -1485,9 +1534,9 @@ function updateWildlife(animal: WildlifeState, tick: number, chunk: Point): Wild
 }
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
 function goatIsInAttackArc(goat: GoatState, position: Point, facing: Direction) {
-  // Judge the swing by reach in the facing arc: goats hold ~6 units of melee
-  // distance, so a rectangle hitbox misses diagonal goats that are clearly
-  // in range. Anything in front within reach connects.
+  // Judge the swing by reach in the facing arc: combat is up close, so the
+  // swing only connects within a short reach in front of the player.
+  // Anything in front within reach connects.
   return isInMeleeArc(position, goat.position, facing);
 }
 function goatWanderDelay(wanderSeed: number) {
@@ -1592,6 +1641,8 @@ type TownNpc = {
   home?: Point;
   work?: Point;
   leisure?: Point;
+  /** Guild smith: talk opens the crafting / sell / rumours flow. */
+  smith?: boolean;
 };
 
 const startingTownNpcs: TownNpc[] = [
@@ -1823,11 +1874,7 @@ function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: Player
   return <section className="satchel-stats-panel" role="tabpanel" aria-label="Adventurer Stats"><div className="satchel-stats-heading"><span className="atlas-eyebrow">Character growth</span><h3>Adventurer Stats</h3></div><div className="satchel-stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div><div className="satchel-stats-list">{STAT_KEYS.map((stat) => <div className="satchel-stat-row" key={stat} data-testid={'stat-row-' + stat}><span className="satchel-stat-key">{stat.toUpperCase()}</span><span className="satchel-stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span><b className="satchel-stat-value">{playerStats[stat]}</b><button className="satchel-stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button></div>)}</div><div className="satchel-stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div></section>;
 }
 
-function InteriorRoom({ area, position, facing, moving, inventory, equippedDagger, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onCraft, onEnterDungeon }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; inventory: GameInventory; equippedDagger: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onCraft: (item: CraftItem) => void; onEnterDungeon: () => void }) {
-  const canCraft = (item: CraftItem) => {
-    const recipe = craftRecipes[item];
-    return Object.entries(recipe.cost).every(([key, value]) => (inventory[key as keyof GameInventory] || 0) >= (value || 0));
-  };
+function InteriorRoom({ area, position, facing, moving, equippedDagger, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onEnterDungeon }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onEnterDungeon: () => void }) {
   // Room-type-specific furniture: each building type gets its own visual identity.
   const furniture = {
     guild: (<><span className="interior-rug" /><span className="interior-workbench" /><span className="interior-forge" aria-hidden="true"><span className="forge-fire"><span className="forge-flame forge-flame-back" /><span className="forge-flame forge-flame-mid" /><span className="forge-flame forge-flame-core" /><span className="forge-sparks"><i /><i /><i /><i /><i /></span></span><span className="forge-logs" /></span><span className="interior-weapon-rack" /><span className="interior-quest-board" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
@@ -1839,23 +1886,11 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
   return (
     <div className={'interior-scene interior-' + area.roomType + ' interior-variant-' + (Math.abs(area.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={area.name + ' interior'} data-testid={'interior-' + area.id}>
       <div className="interior-room" aria-hidden="true">{furniture}</div>
-      {area.roomType === 'guild' && (
-        <section className="crafting-panel" aria-label="Crafting bench" data-testid="crafting-panel">
-          <span className="crafting-kicker">Guild workbench</span>
-          <strong>Turn goat drops into gear</strong>
-          <div className="crafting-options">
-            {(Object.keys(craftRecipes) as CraftItem[]).map((item) => {
-              const recipe = craftRecipes[item];
-              const costLabel = item === 'dagger' ? `${inventory.goatHorns}/2 horns` : `${inventory.fabric}/2 fabric`;
-              return (
-                <button className="craft-button" key={item} onClick={() => onCraft(item)} disabled={!canCraft(item)} data-testid={'button-craft-' + item}>
-                  <span><b>{recipe.name}</b><small>{recipe.description}</small></span>
-                  <em>{costLabel}</em>
-                </button>
-              );
-            })}
-          </div>
-        </section>
+      {area.id === 'wayfarer-guild' && (
+        <button type="button" className="interior-npc npc-warrior" onClick={onTalkToSmith} style={{ left: '62%', top: '40%' }} aria-label="Talk to Bram, the guild smith" data-testid="guild-smith" data-facing="down">
+          <span className="interior-npc-nameplate" aria-hidden="true"><strong>Bram</strong><small>Guild smith · Talk</small></span>
+          <span className="npc-sprite" aria-hidden="true" />
+        </button>
       )}
       {area.id === 'tutorial-house' && simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') === 'starting-house').map((adventurer) => {
         const housePosition = adventurer.interiorPosition || { x: 50, y: 47 };
@@ -2156,9 +2191,12 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
       const liveGoats = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goat.hp > 0);
       const next = advanceSimulatedAdventurers(simulatedAdventurersRef.current, nextTick, liveGoats.map((goat) => ({ id: goat.id, position: goat.position })));
       const fieldAdventurers = next.filter((adventurer) => (adventurer.location || 'field') === 'field');
+      // Background adventurers only scuffle with goats far from the player
+      // (off-screen): goats near the player never take "random" damage.
+      const playerPos = positionRef.current;
       const attacker = fieldAdventurers
         .map((adventurer) => ({ adventurer, goat: goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goat.hp > 0).sort((left, right) => Math.hypot(left.position.x - adventurer.position.x, left.position.y - adventurer.position.y) - Math.hypot(right.position.x - adventurer.position.x, right.position.y - adventurer.position.y))[0] }))
-        .filter((entry) => entry.goat && Math.hypot(entry.goat.position.x - entry.adventurer.position.x, entry.goat.position.y - entry.adventurer.position.y) <= 5)
+        .filter((entry) => entry.goat && Math.hypot(entry.goat.position.x - entry.adventurer.position.x, entry.goat.position.y - entry.adventurer.position.y) <= 5 && Math.hypot(entry.goat.position.x - playerPos.x, entry.goat.position.y - playerPos.y) > 30)
         .sort((left, right) => Math.hypot(left.goat.position.x - left.adventurer.position.x, left.goat.position.y - left.adventurer.position.y) - Math.hypot(right.goat.position.x - right.adventurer.position.x, right.goat.position.y - right.adventurer.position.y))[0];
       let nextAdventurers = next;
       if (attacker?.goat) {
@@ -2170,7 +2208,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
         setGoats(updatedGoats);
         window.setTimeout(() => setGoats((current) => current.map((goat) => goat.id === target.id ? { ...goat, hitFlash: false } : goat)), 100);
         nextAdventurers = next.map((adventurer) => adventurer.id === attacker.adventurer.id ? { ...adventurer, activity: defeated ? 'exploring after defeating a goat' : 'fighting a goat' } : adventurer);
-        if (defeated) setLogs((currentLogs) => [{ text: attacker.adventurer.name + ' defeated a goat nearby.', color: 'blue' }, ...currentLogs].slice(0, 3));
+        if (defeated) setLogs((currentLogs) => [{ text: attacker.adventurer.name + ' defeated a goat out in the wilds.', color: 'blue' }, ...currentLogs].slice(0, 3));
       }
       simulatedAdventurersRef.current = nextAdventurers;
       setSimulatedAdventurers(nextAdventurers);
@@ -2684,14 +2722,7 @@ if (active) {
     setLogs((currentLogs) => [{ text: `${npc.name} turns to you: ${npc.title}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
     // NPCs occasionally share rumors
     if (Math.random() < 0.4) {
-      const rumors = [
-        'I heard there are strange ruins to the north.',
-        'A traveler said the caves east of here are dangerous.',
-        'They say a dragon was spotted far to the south.',
-        'The merchants are talking about bandits on the roads.',
-        'Someone found an old shrine in the forest.',
-      ];
-      const rumor = rumors[Math.floor(Math.random() * rumors.length)];
+      const rumor = WORLD_RUMORS[Math.floor(Math.random() * WORLD_RUMORS.length)];
       onAddRumor(rumor, npc.name);
       setLogs((currentLogs) => [{ text: `${npc.name} shares a rumor: "${rumor}"`, color: 'purple' }, ...currentLogs].slice(0, 5));
     }
@@ -2737,11 +2768,40 @@ if (active) {
     setLogs((currentLogs) => [{ text: `${recipe.name} added to your satchel.`, color: 'blue' }, ...currentLogs].slice(0, 3));
     window.setTimeout(() => setAttackFlash(null), 1100);
   };
+  // Guild smith (Bram) talk flow: Talk -> Crafting / Sell / Rumours.
+  const [smithTab, setSmithTab] = useState<'talk' | 'craft' | 'sell' | 'rumors'>('talk');
+  const [smithRumor, setSmithRumor] = useState<string | null>(null);
+  const talkToSmith = () => {
+    setSmithTab('talk');
+    setSmithRumor(null);
+    setNpcDialogue(GUILD_SMITH);
+    setLogs((currentLogs) => [{ text: 'Bram the smith looks up from his workbench.', color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
+  const closeSmithDialogue = () => {
+    setNpcDialogue(null);
+    setSmithTab('talk');
+    setSmithRumor(null);
+  };
+  const canCraftSmith = (item: CraftItem) => {
+    const recipe = craftRecipes[item];
+    return Object.entries(recipe.cost).every(([key, value]) => (inventory[key as keyof GameInventory] || 0) >= (value || 0));
+  };
+  const sellItem = (key: 'bone' | 'pelt' | 'fang' | 'goatHorns' | 'fabric', price: number, label: string) => {
+    if ((inventory[key] || 0) < 1) return;
+    onLoot({ [key]: -1, coins: price } as GoatLoot);
+    setLogs((currentLogs) => [{ text: `Sold ${label} for ${price} gold.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
+  const askSmithRumor = () => {
+    const rumor = WORLD_RUMORS[Math.floor(Math.random() * WORLD_RUMORS.length)];
+    setSmithRumor(rumor);
+    onAddRumor(rumor, 'Bram');
+    setLogs((currentLogs) => [{ text: `Bram shares a rumor: "${rumor}"`, color: 'purple' }, ...currentLogs].slice(0, 5));
+  };
 
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} inventory={inventory} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onCraft={craftItem} onEnterDungeon={onEnterDungeon} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onEnterDungeon={onEnterDungeon} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -3075,6 +3135,53 @@ if (active) {
               <div className="npc-dialogue-copy">
                 <span className="dialogue-kicker">{npcDialogue.title}</span>
                 <h2 id="npc-dialogue-title">{npcDialogue.name}</h2>
+                {npcDialogue.smith ? (
+                  <>
+                    <p>
+                      {smithTab === 'talk' && 'Bram wipes his hands on his apron. "Need gear, coin, or gossip, traveler?"'}
+                      {smithTab === 'craft' && '"Bring me horns and fabric and I\'ll hammer them into something useful."'}
+                      {smithTab === 'sell' && '"Got monster bits to unload? I pay fair coin."'}
+                      {smithTab === 'rumors' && '"Heard anything on the roads? I\'ve heard plenty."'}
+                    </p>
+                    <div className="dialogue-options" role="group" aria-label="Talk options">
+                      <button type="button" className={'dialogue-option' + (smithTab === 'craft' ? ' is-active' : '')} onClick={() => setSmithTab('craft')} data-testid="button-smith-craft">Crafting</button>
+                      <button type="button" className={'dialogue-option' + (smithTab === 'sell' ? ' is-active' : '')} onClick={() => setSmithTab('sell')} data-testid="button-smith-sell">Sell</button>
+                      <button type="button" className={'dialogue-option' + (smithTab === 'rumors' ? ' is-active' : '')} onClick={() => setSmithTab('rumors')} data-testid="button-smith-rumors">Rumours</button>
+                    </div>
+                    {smithTab === 'craft' && (
+                      <div className="crafting-options" data-testid="smith-crafting-options">
+                        {(Object.keys(craftRecipes) as CraftItem[]).map((item) => {
+                          const recipe = craftRecipes[item];
+                          const costLabel = Object.entries(recipe.cost).map(([key, value]) => `${inventory[key as keyof GameInventory] || 0}/${value} ${key === 'goatHorns' ? 'horns' : key}`).join(' · ');
+                          return (
+                            <button className="craft-button" key={item} onClick={() => craftItem(item)} disabled={!canCraftSmith(item)} data-testid={'button-craft-' + item}>
+                              <span><b>{recipe.name}</b><small>{recipe.description}</small></span>
+                              <em>{costLabel}</em>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {smithTab === 'sell' && (
+                      <div className="sell-options" data-testid="smith-sell-options">
+                        {SMITH_SELL_PRICES.map(({ key, name, price }) => (
+                          <button className="craft-button sell-button" key={key} onClick={() => sellItem(key, price, name)} disabled={(inventory[key] || 0) < 1} data-testid={'button-sell-' + key}>
+                            <span><b>{name}</b><small>You have {inventory[key] || 0}</small></span>
+                            <em>+{price} gold</em>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {smithTab === 'rumors' && (
+                      <div className="smith-rumors" data-testid="smith-rumors">
+                        <p className="smith-rumor-text">{smithRumor ? `"${smithRumor}"` : 'Ask and I\'ll tell you what the road folk are saying.'}</p>
+                        <button type="button" className="dialogue-option" onClick={askSmithRumor} data-testid="button-smith-ask-rumor">Ask for rumours</button>
+                      </div>
+                    )}
+                    <button className="dialogue-close" onClick={closeSmithDialogue} data-testid="button-close-dialogue">Leave</button>
+                  </>
+                ) : (
+                  <>
                 <p>
                   {playerLevel < 10
                     ? `Welcome, Beginner. Earn ${10 - playerLevel} more levels by exploring and defeating goats, then return here for your class choice.`
@@ -3095,6 +3202,8 @@ if (active) {
                 <button className="dialogue-close" onClick={() => setNpcDialogue(null)} data-testid="button-close-dialogue">
                   {playerLevel >= 10 && playerClass === 'Beginner' ? 'Not yet' : 'Continue'}
                 </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -3286,8 +3395,8 @@ function Home() {
     setPlayerStats(initialPlayerStats);
     setStatPoints(0);
     setEquippedDagger(false);
-    // Start in prison cell (opening scenario)
-    setInPrison(true);
+    // No prison opening for now: new games start directly in the world.
+    setInPrison(false);
     setPrisonState({ foundShiv: false, talkedToPrisoner: false, helpedPrisoner: false, escapeRoute: null });
     setChunk({ x: 4, y: 7 });
     setMapOpen(false); setInventoryOpen(false); setSaveNotice(null); setMenuOpen(false);

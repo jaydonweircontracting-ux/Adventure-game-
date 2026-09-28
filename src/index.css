@@ -1316,11 +1316,11 @@
 .field-tree::after { content: none; }
 /* Biome vegetation sprites (FreeEnvironment pack). Each class crops one
    trimmed sprite from the sheet; width/height match the sprite's box. */
-.env-bigpine { width: 85px; height: 136px; background-position: -10px -120px; }
-.env-pine2 { width: 22px; height: 100px; background-position: -130px -275px; }
-.env-pine3 { width: 39px; height: 100px; background-position: -210px -280px; }
-.env-snowpine { width: 51px; height: 107px; background-position: -10px -273px; }
-.env-deadtree { width: 58px; height: 99px; background-position: -295px -276px; }
+.env-bigpine { width: 96px; height: 156px; background-position: -7px -100px; }
+.env-pine2 { width: 47px; height: 112px; background-position: -105px -272px; }
+.env-pine3 { width: 47px; height: 112px; background-position: -202px -272px; }
+.env-snowpine { width: 56px; height: 111px; background-position: -5px -273px; }
+.env-deadtree { width: 59px; height: 108px; background-position: -294px -276px; }
 .env-saguaro1 { width: 39px; height: 117px; background-position: -15px -11px; }
 .env-saguaro2 { width: 32px; height: 108px; background-position: -78px -20px; }
 .env-pear { width: 65px; height: 62px; background-position: -290px -66px; }
@@ -2199,6 +2199,69 @@ body {
 
 /* Enterable town interiors. */
 .interior-scene { position: absolute; inset: 0; overflow: hidden; background: #7d5b46; isolation: isolate; }
+/* Clickable interior NPC (Bram the smith in the Wayfarer Guild). */
+.interior-npc {
+  position: absolute;
+  z-index: 6;
+  width: 46px;
+  height: 62px;
+  transform: translate(-50%, -50%);
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.interior-npc .npc-sprite {
+  position: absolute;
+  left: 7px;
+  top: 24px;
+  width: 32px;
+  height: 32px;
+  background-image: var(--player-sprite-url);
+  background-size: 192px 320px;
+  background-position: -32px 0;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+.interior-npc-nameplate {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  padding: 3px 7px;
+  background: rgba(255, 247, 217, .94);
+  border: 1px solid rgba(57, 38, 28, .6);
+  font: 8px var(--app-font-mono);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.interior-npc-nameplate small { color: var(--ink-soft); font-size: 7px; }
+/* Smith talk flow inside the light dialogue card. */
+.dialogue-options { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.dialogue-option {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  background: #f4eddd;
+  color: var(--ink);
+  font: 9px var(--app-font-mono);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+.dialogue-option:hover { border-color: var(--sun); background: #fff7d9; }
+.dialogue-option.is-active { background: var(--ink); border-color: var(--ink); color: #fff0cc; }
+.npc-dialogue-copy .crafting-options,
+.sell-options { display: grid; gap: 6px; margin-top: 10px; }
+.npc-dialogue-copy .craft-button { border-color: var(--line); background: #f4eddd; color: var(--ink); }
+.npc-dialogue-copy .craft-button:hover:not(:disabled) { background: #fff7d9; border-color: var(--sun); }
+.npc-dialogue-copy .craft-button small { color: var(--ink-soft); }
+.npc-dialogue-copy .craft-button em { color: var(--clay); }
+.smith-rumors { display: grid; gap: 8px; margin-top: 10px; justify-items: start; }
+.smith-rumor-text { font-style: italic; }
 .interior-scene::before { content: ''; position: absolute; inset: 0; z-index: 0; background: linear-gradient(90deg, rgba(52, 39, 37, .24) 0 4%, transparent 4% 96%, rgba(52, 39, 37, .24) 96%), repeating-linear-gradient(0deg, rgba(52, 39, 37, .12) 0 2px, transparent 2px 11px), linear-gradient(135deg, rgba(255, 227, 157, .13), transparent 48%); }
 .interior-scene::after { content: ''; position: absolute; z-index: 1; left: 8%; right: 8%; top: 24%; bottom: 7%; border: 2px solid rgba(45, 36, 34, .48); background: linear-gradient(135deg, rgba(255, 231, 167, .12), transparent 42%), #a47758; box-shadow: inset 0 0 0 7px rgba(65, 45, 38, .22), inset 0 0 28px rgba(54, 40, 33, .25); }
 .interior-header { position: absolute; z-index: 8; top: 20px; left: 22px; display: grid; gap: 3px; max-width: min(340px, calc(100% - 44px)); color: #fff0cc; text-shadow: 1px 1px 0 rgba(45, 36, 34, .55); }
@@ -3463,11 +3526,20 @@ body {
 }
 .main-menu-button.primary {
   border: 0;
-  background: url("../gui/btn_mid.png") repeat-x left center / auto 100%;
+  border-radius: 0;
+  min-height: 32px;
+  padding: 8px 20px;
   color: #3d2b18;
   font-weight: 700;
+  image-rendering: pixelated;
+  background:
+    url("../gui/btn_left.png") left center / 32px 32px no-repeat,
+    url("../gui/btn_right.png") right center / 32px 32px no-repeat,
+    url("../gui/btn_mid.png") center / 44px 32px repeat-x;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 .main-menu-button.primary:hover { filter: brightness(1.08); }
+.main-menu-button.primary:active { filter: brightness(0.94); }
 .main-menu-button:disabled { opacity: .55; cursor: default; }
 /* Inventory item icons (Raven Fantasy Icons strip). */
 .inventory-item-mark {
