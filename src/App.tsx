@@ -596,6 +596,9 @@ type GoatState = {
   hitFlash: boolean;
   nextWanderTick?: number;
 };
+// Hostile mobs: goblins and bandits. Reuse the goat combat AI shape.
+type MonsterKind = 'goblin' | 'bandit';
+type MonsterState = GoatState & { kind: MonsterKind };
 const GOAT_STEP = 0.5;
 // Ambient birds: lightweight wildlife, deterministic per chunk, not persisted.
 type BirdStateName = 'idle' | 'hop' | 'peck' | 'fly';
@@ -610,7 +613,7 @@ type BirdState = {
   facing: Direction;
 };
 // Living-world wildlife: biome + danger-zone based spawning.
-type WildlifeSpecies = 'rabbit' | 'deer' | 'wolf' | 'boar';
+type WildlifeSpecies = 'rabbit' | 'deer' | 'wolf' | 'boar' | 'bear';
 type WildlifeState = {
   id: number;
   species: WildlifeSpecies;
@@ -896,6 +899,53 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
     };
   });
 }
+function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {
+  const terrain = mapTileFor(chunk).terrain;
+  if (terrain === 'ocean') return [];
+  const danger = dangerForChunk(chunk);
+  const monsters: MonsterState[] = [];
+  let id = 0;
+  const spawn = (kind: MonsterKind, index: number, seedSalt: number, hpMult: number) => {
+    const seed = Math.abs(chunk.x * 173 + chunk.y * 227 + index * 89 + seedSalt);
+    const position = { x: 12 + ((seed * 43) % 76), y: 14 + ((seed * 61) % 72) };
+    if (isFieldPositionBlocked(position, chunk)) return;
+    const level = monsterLevelForChunk(chunk, index, playerLevel);
+    const maxHp = Math.round(goatMaxHpForLevel(level) * hpMult);
+    monsters.push({
+      id: id++,
+      kind,
+      position,
+      spawnPosition: { ...position },
+      roamRadius: 20 + (seed % 8),
+      facing: (['up', 'right', 'down', 'left'] as Direction[])[seed % 4],
+      level,
+      hp: maxHp,
+      maxHp,
+      disposition: 'aggressive',
+      attackCooldown: 0,
+      respawnTicks: 0,
+      wanderSeed: seed,
+      moving: false,
+      attacking: false,
+      state: 'idle',
+      hurtTimer: 0,
+      attackTimer: 0,
+      attackHitApplied: false,
+      hitFlash: false,
+    });
+  };
+  // Goblins: forest packs in deep wilderness (danger 2+).
+  if (terrain === 'forest' && danger >= 2) {
+    const packSize = 2 + (Math.abs(chunk.x * 7 + chunk.y * 13) % 2);
+    for (let i = 0; i < packSize; i++) spawn('goblin', i, 5000, 0.8);
+  }
+  // Bandits: near roads in outskirts and beyond (danger 1+).
+  if (danger >= 1 && mapTileFor(chunk).road !== 'none') {
+    const count = 1 + (Math.abs(chunk.x * 11 + chunk.y * 17) % 2);
+    for (let i = 0; i < count; i++) spawn('bandit', i, 6000, 1.2);
+  }
+  return monsters;
+}
 function birdsForChunk(chunk: Point): BirdState[] {
   const terrain = mapTileFor(chunk).terrain;
   if (terrain === 'ocean') return [];
@@ -965,6 +1015,10 @@ function wildlifeForChunk(chunk: Point): WildlifeState[] {
   // Boars: forests/meadows, danger 1+.
   if ((terrain === 'forest' || terrain === 'meadow') && danger >= 1) {
     spawn('boar', 0, 4000);
+  }
+  // Bears: forests and mountains, danger 2+ only. Slow, solitary.
+  if ((terrain === 'forest' || terrain === 'rock') && danger >= 2) {
+    spawn('bear', 0, 5000);
   }
   return wildlife;
 }
@@ -1040,7 +1094,7 @@ function updateBird(bird: BirdState, nowMs: number, deltaMs: number, chunk: Poin
 // Wildlife wander: pick a nearby target, walk to it, idle. Stays near home.
 function updateWildlife(animal: WildlifeState, tick: number, chunk: Point): WildlifeState {
   const next = { ...animal, position: { ...animal.position } };
-  const speed = animal.species === 'rabbit' ? 1.6 : animal.species === 'deer' ? 1.0 : animal.species === 'wolf' ? 1.2 : 0.8;
+  const speed = animal.species === 'rabbit' ? 1.6 : animal.species === 'deer' ? 1.0 : animal.species === 'wolf' ? 1.2 : animal.species === 'bear' ? 0.6 : 0.8;
   if (next.target) {
     const dx = next.target.x - next.position.x;
     const dy = next.target.y - next.position.y;
@@ -1206,7 +1260,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v124</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v125</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -1391,6 +1445,8 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [simulatedAdventurers, setSimulatedAdventurers] = useState(initialSimulatedAdventurers);
   const [selectedAdventurerId, setSelectedAdventurerId] = useState<string | null>(null);
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }, 1));
+  const [monsters, setMonsters] = useState<MonsterState[]>(() => monstersForChunk({ x: 4, y: 7 }, 1));
+  const monstersRef = useRef<MonsterState[]>(monsters);
   const [birds, setBirds] = useState<BirdState[]>(() => birdsForChunk({ x: 4, y: 7 }));
   const birdsRef = useRef<BirdState[]>(birds);
   const [wildlife, setWildlife] = useState<WildlifeState[]>(() => wildlifeForChunk({ x: 4, y: 7 }));
@@ -1640,6 +1696,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     const nextGoats = goatsForChunk(chunk, playerLevelRef.current);
     goatsRef.current = nextGoats;
     setGoats(nextGoats);
+    const nextMonsters = monstersForChunk(chunk, playerLevelRef.current);
+    monstersRef.current = nextMonsters;
+    setMonsters(nextMonsters);
     const nextBirds = birdsForChunk(chunk);
     birdsRef.current = nextBirds;
     setBirds(nextBirds);
@@ -1704,8 +1763,12 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
         playerAttack.elapsed += elapsed * 1000;
         if (!playerAttack.hitApplied && playerAttack.elapsed >= 100) {
           playerAttack.hitApplied = true;
-          const attackCandidates = goatsRef.current
+          const attackCandidates = (goatsRef.current as (GoatState & { entityKind?: string })[])
             .filter((goat) => goat.disposition !== 'defeated' && goatIsInAttackArc(goat, positionRef.current, playerAttack.direction))
+            .map((goat) => ({ ...goat, entityKind: 'goat' as const }))
+            .concat((monstersRef.current as (MonsterState & { entityKind?: string })[])
+              .filter((monster) => monster.disposition !== 'defeated' && goatIsInAttackArc(monster, positionRef.current, playerAttack.direction))
+              .map((monster) => ({ ...monster, entityKind: 'monster' as const })))
             .sort((a, b) => goatDistance(a, positionRef.current) - goatDistance(b, positionRef.current));
           const attackTarget = playerAttack.targetId == null
             ? attackCandidates[0]
@@ -1717,6 +1780,29 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
             const nextHp = Math.max(0, attackTarget.hp - damage);
             const defeated = nextHp <= 0;
             const hitPosition = { ...attackTarget.position };
+            const targetLabel = attackTarget.entityKind === 'monster' ? (attackTarget as MonsterState).kind : 'goat';
+            if (attackTarget.entityKind === 'monster') {
+              const monsterTarget = attackTarget as MonsterState;
+              const updatedMonsters = monstersRef.current.map((monster) => monster.id === monsterTarget.id ? { ...monster, hp: nextHp, position: monster.position, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true } : monster);
+              monstersRef.current = updatedMonsters; setMonsters(updatedMonsters);
+              spawnCombatText((critical ? 'CRIT ' : '') + '-' + damage, hitPosition, critical ? 'critical' : 'damage');
+              playCombatSound('shing', muted);
+              window.setTimeout(() => setMonsters((current) => current.map((monster) => monster.id === monsterTarget.id ? { ...monster, hitFlash: false } : monster)), 100);
+              setLogs((currentLogs) => [{ text: defeated ? targetLabel + ' defeated.' : 'You hit the ' + targetLabel + ' for ' + damage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
+              if (defeated) {
+                const loot: GoatLoot = { coins: 2 + Math.floor(Math.random() * 4), fabric: Math.random() < 0.4 ? 1 : 0 };
+                const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot };
+                droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
+                const xpReward = goatExperienceReward(monsterTarget, playerLevelRef.current, playerStatsRef.current);
+                const nextXp = playerXpRef.current + xpReward; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
+                playerXpRef.current = nextXp; setPlayerXp(nextXp);
+                spawnCombatText('+' + xpReward + ' XP', hitPosition, 'reward');
+                if (nextLevel > previousLevel) {
+                  const awardedStatPoints = (nextLevel - previousLevel) * PLAYER_STAT_POINTS_PER_LEVEL;
+                  playerLevelRef.current = nextLevel; setPlayerLevel(nextLevel); onStatPointsChange((current) => current + awardedStatPoints);
+                }
+              }
+            } else {
             let updatedGoats = goatsRef.current.map((goat) => goat.id === attackTarget.id ? { ...goat, hp: nextHp, position: goat.position, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, respawnTicks: defeated ? 0 : goat.respawnTicks } : goat);
             goatsRef.current = updatedGoats; setGoats(updatedGoats);
             spawnCombatText((critical ? 'CRIT ' : '') + '-' + damage, hitPosition, critical ? 'critical' : 'damage');
@@ -1740,6 +1826,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
               }
               targetGoatIdRef.current = null; setTargetGoatId(null);
             }
+            } // end goat branch
           } else {
             // Keep missed swings silent; combat feedback is reserved for actual hits.
           }
@@ -1779,6 +1866,29 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
           setLogs((currentLogs) => [{ text: 'A hostile goat rams you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
         }
         goatsRef.current = nextGoats; setGoats(nextGoats);
+      }
+      // Hostile monsters (goblins, bandits): same combat AI as goats.
+      if (!interiorRef.current && monstersRef.current.length > 0) {
+        const currentMonsters = monstersRef.current; const currentPlayer = positionRef.current; const currentChunk = chunkRef.current;
+        let damageTaken = 0;
+        const nextMonsters = currentMonsters.map((monster) => {
+          if (monster.disposition === 'defeated') {
+            return { ...monster, moving: false, attacking: false };
+          }
+          const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false }, currentPlayer, facingRef.current, currentMonsters, elapsed * 1000);
+          let next = { ...result.goat, kind: monster.kind, id: monster.id, spawnPosition: monster.spawnPosition, roamRadius: monster.roamRadius, level: monster.level, maxHp: monster.maxHp, wanderSeed: monster.wanderSeed, hitFlash: monster.hitFlash, respawnTicks: monster.respawnTicks } as MonsterState;
+          if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: monster.position, moving: false };
+          if (result.attackHit) {
+            const damage = goatAttackDamageForLevel(monster.level); damageTaken += damage;
+            spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted);
+          }
+          return next;
+        });
+        if (damageTaken > 0) {
+          const nextHp = Math.max(0, playerHpRef.current - damageTaken); playerHpRef.current = nextHp; setPlayerHp(nextHp);
+          setLogs((currentLogs) => [{ text: 'A hostile creature strikes you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
+        }
+        monstersRef.current = nextMonsters; setMonsters(nextMonsters);
       }
       // Ambient birds: lightweight, tick alongside goats.
       if (!interiorRef.current && birdsRef.current.length > 0) {
@@ -2101,6 +2211,27 @@ if (active) {
                 <span className="goat-hp" style={{ width: (goat.hp / goat.maxHp) * 100 + '%' }} />
                 {goat.disposition === 'aggressive' && <span className="goat-aggro">!</span>}
                 <span className="goat-sprite" />
+              </button>
+            ))}
+          </div>
+          <div className="field-monsters" aria-label="Hostile monsters">
+            {monsters.filter((monster) => monster.disposition !== 'defeated').map((monster) => (
+              <button
+                type="button"
+                key={'monster-' + monster.kind + '-' + monster.id}
+                className={'monster monster-' + monster.kind + ' monster-state-' + getSpriteState(monster.state, monster.facing) + (monster.moving ? ' is-moving' : '') + (monster.attacking ? ' is-attacking' : '') + (monster.hitFlash ? ' is-hit' : '')}
+                style={{ left: monster.position.x + '%', top: monster.position.y + '%' }}
+                data-facing={monster.facing}
+                data-state={monster.state}
+                aria-label={'Hostile ' + monster.kind + ', level ' + monster.level}
+                data-testid={'button-target-monster-' + monster.id}
+                onClick={() => {
+                  if (inputLocked || optionsOpen || playerAttackStateRef.current.active) return;
+                  attackGoat();
+                }}
+              >
+                <span className="monster-aggro">!</span>
+                <span className="monster-sprite" />
               </button>
             ))}
           </div>

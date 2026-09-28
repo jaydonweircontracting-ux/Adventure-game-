@@ -2004,6 +2004,21 @@ body {
 /* Independent goat wildlife and light combat. */
 .field-goats { position: absolute; z-index: 5; inset: 0; pointer-events: none; }
 .goat { position: absolute; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; font: inherit; cursor: crosshair; transform: translate(-50%, -50%); transition: none; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .2)); pointer-events: auto; }
+/* Hostile monsters: goblins and bandits. */
+.field-monsters { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.monster { position: absolute; width: 24px; height: 28px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: crosshair; transform: translate(-50%, -50%); filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .25)); pointer-events: auto; }
+.monster-sprite { position: absolute; inset: 0; }
+.monster-goblin .monster-sprite { background: linear-gradient(180deg, #5a8a3a 0 35%, #3a6a2a 36% 70%, #2a4a1a 71% 100%); border-radius: 40% 40% 30% 30%; }
+.monster-goblin .monster-sprite::before { content: ''; position: absolute; left: 3px; top: -5px; width: 18px; height: 8px; background: #5a8a3a; clip-path: polygon(0 100%, 15% 0, 30% 100%, 45% 20%, 60% 100%, 75% 0, 90% 100%, 100% 60%, 100% 100%); }
+.monster-goblin .monster-sprite::after { content: ''; position: absolute; left: 7px; top: 8px; width: 10px; height: 4px; background: #ff4444; border-radius: 2px; box-shadow: 0 0 4px rgba(255, 68, 68, .8); }
+.monster-bandit .monster-sprite { background: linear-gradient(180deg, #4a4a5a 0 40%, #2a2a3a 41% 75%, #1a1a2a 76% 100%); border-radius: 35% 35% 25% 25%; }
+.monster-bandit .monster-sprite::before { content: ''; position: absolute; left: 2px; top: -4px; width: 20px; height: 10px; background: #2a2a3a; border-radius: 50% 50% 0 0; }
+.monster-bandit .monster-sprite::after { content: ''; position: absolute; left: 8px; top: 9px; width: 8px; height: 3px; background: #ffcc55; border-radius: 2px; }
+.monster-aggro { position: absolute; left: 50%; top: -14px; transform: translateX(-50%); color: #ff4444; font-weight: bold; font-size: 14px; text-shadow: 1px 1px 0 rgba(0,0,0,.5); animation: aggro-bounce .6s ease-in-out infinite; }
+@keyframes aggro-bounce { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-3px); } }
+.monster.is-moving .monster-sprite { animation: wildlife-bob .4s ease-in-out infinite; }
+.monster.is-hit .monster-sprite { filter: brightness(1.8) saturate(0.5); }
+.monster[data-facing='left'] .monster-sprite { transform: scaleX(-1); }
 .goat:hover, .goat:focus-visible { filter: drop-shadow(0 0 4px rgba(255, 224, 147, .9)) drop-shadow(2px 3px 0 rgba(43, 61, 41, .2)); outline: none; }
 .goat.is-targeted { z-index: 7; }
 .goat-target-ring { position: absolute; z-index: 1; left: -7px; top: -7px; width: 36px; height: 36px; border: 2px solid rgba(255, 215, 123, .95); border-radius: 50%; box-shadow: 0 0 0 2px rgba(112, 54, 44, .42), inset 0 0 8px rgba(255, 207, 106, .22); opacity: 0; pointer-events: none; }
@@ -2053,6 +2068,9 @@ body {
 .wildlife-wolf::before { content: ''; position: absolute; left: 5px; top: -6px; width: 10px; height: 8px; background: #6a6a72; clip-path: polygon(0 100%, 20% 0, 40% 100%, 60% 100%, 80% 0, 100% 100%); }
 .wildlife-boar { background: radial-gradient(ellipse at 50% 55%, #7a5a48 0 60%, #5a4234 61% 100%); border-radius: 45% 45% 40% 40%; }
 .wildlife-boar::before { content: ''; position: absolute; right: -3px; top: 2px; width: 6px; height: 6px; background: #e8e0d0; clip-path: polygon(0 50%, 100% 0, 100% 100%); }
+.wildlife-bear { width: 28px; height: 22px; margin: -11px 0 0 -14px; background: linear-gradient(180deg, #6a4a32 0 55%, #4a3220 56% 100%); border-radius: 40% 40% 35% 35%; }
+.wildlife-bear::before { content: ''; position: absolute; left: 8px; top: -8px; width: 12px; height: 10px; background: #6a4a32; border-radius: 50%; }
+.wildlife-bear::after { content: ''; position: absolute; left: 4px; top: -10px; width: 6px; height: 6px; background: #6a4a32; border-radius: 50%; box-shadow: 14px 0 0 #6a4a32; }
 .wildlife.is-moving { animation: wildlife-bob .5s ease-in-out infinite; }
 @keyframes wildlife-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 .wildlife[data-facing='left'] { transform: scaleX(-1); }
