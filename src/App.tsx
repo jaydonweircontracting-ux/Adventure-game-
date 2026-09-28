@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '184';
+const BUILD_NUMBER = '185';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -2889,7 +2889,13 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
             .filter((monster) => monster.disposition !== 'defeated' && goatIsInAttackArc(monster, positionRef.current, playerAttack.direction))
             .map((monster) => ({ ...monster, entityKind: 'monster' as const }));
           const cornCandidates = cornStalksRef.current
-            .filter((stalk) => !stalk.harvested && goatIsInAttackArc(stalk as unknown as GoatState, positionRef.current, playerAttack.direction))
+            .filter((stalk) => {
+              if (stalk.harvested) return false;
+              // Corn is harvested with a scythe-like swing: any stalk within
+              // reach counts, not just the facing arc (player stands among rows).
+              const dist = Math.hypot(stalk.position.x - positionRef.current.x, stalk.position.y - positionRef.current.y);
+              return dist <= 4.5 || goatIsInAttackArc(stalk as unknown as GoatState, positionRef.current, playerAttack.direction);
+            })
             .map((stalk) => ({ ...stalk, entityKind: 'corn' as const }));
           const attackCandidates: Array<(typeof goatCandidates)[number] | (typeof monsterCandidates)[number] | (typeof cornCandidates)[number]> =
             [...goatCandidates, ...monsterCandidates, ...cornCandidates]
