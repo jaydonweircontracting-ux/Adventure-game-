@@ -23,10 +23,12 @@ const routes: Record<string, Point[]> = {
 };
 
 const houseRoutes: Record<string, Point[]> = {
-  kael: [{ x: 36, y: 46 }, { x: 42, y: 60 }, { x: 50, y: 76 }, { x: 50, y: 89 }],
-  sera: [{ x: 64, y: 46 }, { x: 58, y: 60 }, { x: 50, y: 76 }, { x: 50, y: 89 }],
-  orin: [{ x: 38, y: 62 }, { x: 44, y: 72 }, { x: 50, y: 82 }, { x: 50, y: 89 }],
-  bram: [{ x: 62, y: 62 }, { x: 56, y: 72 }, { x: 50, y: 82 }, { x: 50, y: 89 }],
+  // Final waypoint sits just above the door (y=83): moveToward clamps interior
+  // y to 84, so a y=89 waypoint could never be reached and NPCs piled up forever.
+  kael: [{ x: 36, y: 46 }, { x: 42, y: 60 }, { x: 50, y: 76 }, { x: 50, y: 83 }],
+  sera: [{ x: 64, y: 46 }, { x: 58, y: 60 }, { x: 50, y: 76 }, { x: 50, y: 83 }],
+  orin: [{ x: 38, y: 62 }, { x: 44, y: 72 }, { x: 50, y: 82 }, { x: 50, y: 83 }],
+  bram: [{ x: 62, y: 62 }, { x: 56, y: 72 }, { x: 50, y: 82 }, { x: 50, y: 83 }],
 };
 
 export const initialSimulatedAdventurers: SimulatedAdventurer[] = [

@@ -2,6 +2,7 @@
 // Run with: npx tsx scripts/simulate.ts
 import { generateWorldMap, WORLD_MAP_BOUNDS, elevationLevelFor } from '../src/game/worldMap';
 import { updateGoat, type GoatAIEntity } from '../src/game/ai';
+import { advanceSimulatedAdventurers, initialSimulatedAdventurers } from '../src/game/simulatedAdventurers';
 
 let passed = 0;
 let failed = 0;
@@ -142,6 +143,26 @@ for (let i = 0; i < 10000; i++) {
   }
 }
 assert(safeZoneViolations === 0, `Hostile spawn gates open in safe zone: ${safeZoneViolations} violations`);
+
+// ---- 7. Adventurers leave the starting house (no doorway pile-up) ----
+console.log('Testing adventurer house exit...');
+let leavers = initialSimulatedAdventurers.map((a) => ({ ...a }));
+for (let tick = 0; tick < 500; tick++) {
+  leavers = advanceSimulatedAdventurers(leavers, tick);
+}
+for (const a of leavers) {
+  assert(a.location === 'field', `${a.name} never left the starting house (stuck at ${a.interiorPosition?.x},${a.interiorPosition?.y})`);
+}
+// While still inside, nobody should be past the door or outside the room.
+let insideOk = initialSimulatedAdventurers.map((a) => ({ ...a }));
+for (let tick = 0; tick < 60; tick++) {
+  insideOk = advanceSimulatedAdventurers(insideOk, tick);
+  for (const a of insideOk) {
+    if ((a.location || 'field') === 'starting-house' && a.interiorPosition) {
+      assert(a.interiorPosition.y <= 84, `${a.name} escaped interior bounds at y=${a.interiorPosition.y}`);
+    }
+  }
+}
 
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
