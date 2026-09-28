@@ -239,7 +239,38 @@ function mapTileFor(point: Point): MapTile {
   };
 }
 
-type FieldTree = { id: number; x: number; y: number; scale: number; variant: number; style: RegionStyle };
+type FieldTree = { id: number; x: number; y: number; scale: number; variant: number; style: RegionStyle; sprite: EnvSpriteKey };
+
+// Biome vegetation from the FreeEnvironment pack (public/environment/FreePack.png,
+// 512x384). Boxes are the trimmed alpha bounds of each sprite: { x, y, w, h }.
+type EnvSpriteKey = 'bigpine' | 'pine2' | 'pine3' | 'snowpine' | 'deadtree' | 'saguaro1' | 'saguaro2' | 'pear' | 'grass1' | 'grass2' | 'rock' | 'icerock';
+const ENV_SPRITE_BOXES: Record<EnvSpriteKey, { x: number; y: number; w: number; h: number }> = {
+  bigpine: { x: 10, y: 120, w: 85, h: 136 },
+  pine2: { x: 130, y: 275, w: 22, h: 100 },
+  pine3: { x: 210, y: 280, w: 39, h: 100 },
+  snowpine: { x: 10, y: 273, w: 51, h: 107 },
+  deadtree: { x: 295, y: 276, w: 58, h: 99 },
+  saguaro1: { x: 15, y: 11, w: 39, h: 117 },
+  saguaro2: { x: 78, y: 20, w: 32, h: 108 },
+  pear: { x: 290, y: 66, w: 65, h: 62 },
+  grass1: { x: 110, y: 25, w: 75, h: 103 },
+  grass2: { x: 190, y: 52, w: 85, h: 76 },
+  rock: { x: 400, y: 171, w: 100, h: 69 },
+  icerock: { x: 390, y: 271, w: 110, h: 102 },
+};
+
+function envSpriteForTerrain(terrain: Terrain, variant: number): EnvSpriteKey {
+  // variant is 0-2 from the chunk's deterministic seed; each terrain maps it
+  // to a fixed sprite so placement stays deterministic and order-independent.
+  switch (terrain) {
+    case 'forest': return (['bigpine', 'pine2', 'pine3'] as EnvSpriteKey[])[variant] || 'bigpine';
+    case 'tundra': return (['snowpine', 'icerock', 'deadtree'] as EnvSpriteKey[])[variant] || 'snowpine';
+    case 'rock': return (['rock', 'deadtree', 'icerock'] as EnvSpriteKey[])[variant] || 'rock';
+    case 'desert': return (['saguaro1', 'saguaro2', 'pear'] as EnvSpriteKey[])[variant] || 'saguaro1';
+    case 'shore': return (['grass1', 'grass2', 'pine3'] as EnvSpriteKey[])[variant] || 'grass1';
+    default: return (['grass1', 'grass2', 'pine2'] as EnvSpriteKey[])[variant] || 'grass1';
+  }
+}
 type FieldRect = { left: number; top: number; right: number; bottom: number };
 
 function fieldHouseRects(kind: SettlementKind, startingArea = false): FieldRect[] {
@@ -313,7 +344,7 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
       { x: 12, y: 78, scale: 0.56, variant: 2 },
       { x: 77, y: 78, scale: 0.56, variant: 1 },
     ];
-    return perimeterTrees.map((tree, id) => ({ ...tree, id, style: treeStyle }));
+    return perimeterTrees.map((tree, id) => ({ ...tree, id, style: treeStyle, sprite: (tree.variant === 1 ? 'bigpine' : 'pine2') as EnvSpriteKey }));
   }
 
   let seed = Math.abs((chunk.x * 92837111) + (chunk.y * 689287499)) + 1;
@@ -337,7 +368,8 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
     const tooCloseToTree = trees.some((tree) => Math.hypot(center.x - (tree.x + 3.2 * tree.scale), center.y - (tree.y + 2.5 * tree.scale)) < 9);
     const tooCloseToRoad = pointOnFieldRoad(center, road);
     if (tooCloseToStart || tooCloseToBuilding || tooCloseToTree || tooCloseToRoad) continue;
-    trees.push({ id: trees.length, x, y, scale, variant: Math.floor(random() * 3), style: treeStyle });
+    const variant = Math.floor(random() * 3);
+    trees.push({ id: trees.length, x, y, scale, variant, style: treeStyle, sprite: envSpriteForTerrain(mapTileFor(chunk).terrain, variant) });
   }
 
   return trees;
@@ -1385,7 +1417,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v142</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v143</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -2488,14 +2520,28 @@ if (active) {
               </div>;
             })}
           </div>
-          <div className="field-trees" aria-hidden="true">
-            {fieldTrees.map((tree) => (
-              <span
-                className={'field-tree tree-' + tree.style + ' variant-' + tree.variant}
-                key={tree.id}
-                style={{ left: tree.x + '%', top: tree.y + '%', transform: 'scale(' + tree.scale + ')' }}
-              />
-            ))}
+          <div className="field-trees" aria-hidden="true" style={{ '--env-sprites': 'url("' + assetUrl('environment/FreePack.png') + '")' } as CSSProperties}>
+            {fieldTrees.map((tree) => {
+              // Anchor the sprite's bottom-center on its collision base so the
+              // visible trunk sits exactly where movement is blocked.
+              const box = ENV_SPRITE_BOXES[tree.sprite];
+              const anchorX = tree.x + 3.2 * tree.scale;
+              const anchorY = tree.y + 4 * tree.scale;
+              return (
+                <span
+                  className={'field-tree env-' + tree.sprite}
+                  key={tree.id}
+                  style={{
+                    left: 'calc(' + anchorX + '% - ' + (box.w / 2) * tree.scale + 'px)',
+                    top: 'calc(' + anchorY + '% - ' + box.h * tree.scale + 'px)',
+                    width: box.w,
+                    height: box.h,
+                    transform: 'scale(' + tree.scale + ')',
+                    transformOrigin: 'top left',
+                  }}
+                />
+              );
+            })}
           </div>
           {currentWorldTile.landmark && (
             <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle} aria-label={currentWorldTile.landmark.name}>

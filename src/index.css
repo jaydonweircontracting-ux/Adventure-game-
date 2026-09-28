@@ -1301,46 +1301,27 @@
 .field-trees { position: absolute; z-index: 3; inset: 0; pointer-events: none; }
 .field-tree {
   position: absolute;
-  width: 31px;
-  height: 25px;
-  border: 2px solid #28583c;
-  border-radius: 52% 48% 48% 52%;
-  background: #39734a;
-  box-shadow: inset 6px 4px 0 rgba(126, 161, 60, .5), 3px 4px 0 rgba(37, 73, 45, .2);
+  border: 0;
+  background-image: var(--env-sprites);
+  background-repeat: no-repeat;
+  background-size: 512px 384px;
+  image-rendering: pixelated;
 }
-.field-tree::after {
-  content: '';
-  position: absolute;
-  left: 12px;
-  bottom: -9px;
-  width: 6px;
-  height: 11px;
-  background: #765338;
-  border-left: 1px solid #4d392c;
-  border-right: 1px solid #4d392c;
-}
-.field-tree.variant-1 {
-  background: #4a804e;
-  border-radius: 44% 56% 52% 48%;
-  box-shadow: inset 5px 3px 0 rgba(155, 184, 75, .46), 3px 4px 0 rgba(37, 73, 45, .2);
-}
-.field-tree.variant-2 {
-  background: #2f6847;
-  border-radius: 58% 42% 46% 54%;
-  box-shadow: inset 7px 4px 0 rgba(91, 143, 62, .42), 3px 4px 0 rgba(37, 73, 45, .2);
-}
-.field-tree.tree-1 { left: 8%; top: 16%; }
-.field-tree.tree-2 { left: 19%; top: 9%; transform: scale(.8); }
-.field-tree.tree-3 { right: 10%; top: 15%; transform: scale(1.1); }
-.field-tree.tree-4 { right: 20%; top: 8%; transform: scale(.72); }
-.field-tree.tree-5 { left: 7%; bottom: 18%; transform: scale(1.12); }
-.field-tree.tree-6 { left: 18%; bottom: 9%; transform: scale(.78); }
-.field-tree.tree-7 { right: 8%; bottom: 18%; }
-.field-tree.tree-8 { right: 19%; bottom: 9%; transform: scale(.82); }
-.field-tree.tree-9 { left: 34%; top: 13%; transform: scale(.58); }
-.field-tree.tree-10 { right: 34%; top: 12%; transform: scale(.62); }
-.field-tree.tree-11 { left: 31%; bottom: 13%; transform: scale(.64); }
-.field-tree.tree-12 { right: 31%; bottom: 12%; transform: scale(.58); }
+.field-tree::after { content: none; }
+/* Biome vegetation sprites (FreeEnvironment pack). Each class crops one
+   trimmed sprite from the sheet; width/height match the sprite's box. */
+.env-bigpine { width: 85px; height: 136px; background-position: -10px -120px; }
+.env-pine2 { width: 22px; height: 100px; background-position: -130px -275px; }
+.env-pine3 { width: 39px; height: 100px; background-position: -210px -280px; }
+.env-snowpine { width: 51px; height: 107px; background-position: -10px -273px; }
+.env-deadtree { width: 58px; height: 99px; background-position: -295px -276px; }
+.env-saguaro1 { width: 39px; height: 117px; background-position: -15px -11px; }
+.env-saguaro2 { width: 32px; height: 108px; background-position: -78px -20px; }
+.env-pear { width: 65px; height: 62px; background-position: -290px -66px; }
+.env-grass1 { width: 75px; height: 103px; background-position: -110px -25px; }
+.env-grass2 { width: 85px; height: 76px; background-position: -190px -52px; }
+.env-rock { width: 100px; height: 69px; background-position: -400px -171px; }
+.env-icerock { width: 110px; height: 102px; background-position: -390px -271px; }
 .world-field.world-is-sea .field-trees,
 .world-field.world-is-sea .field-road,
 .world-field.world-is-sea .field-village { display: none; }
@@ -1750,41 +1731,8 @@ body {
   background: repeating-linear-gradient(0deg, rgba(240, 197, 126, .55) 0 3px, transparent 3px 11px);
   opacity: .9;
 }
-.field-tree.tree-northwatch {
-  width: 25px;
-  height: 34px;
-  border-radius: 48% 48% 25% 25%;
-  background: #486646;
-  border-color: #294a37;
-  box-shadow: inset 5px 3px 0 rgba(161, 177, 97, .34), 3px 4px 0 rgba(37, 73, 45, .2);
-}
-.field-tree.tree-brackenfen {
-  width: 35px;
-  height: 27px;
-  border-radius: 58% 42% 46% 54%;
-  background: #3f7049;
-  border-color: #27553b;
-  box-shadow: inset 7px 4px 0 rgba(115, 157, 66, .42), 3px 4px 0 rgba(37, 73, 45, .2);
-}
-.field-tree.tree-ironwood {
-  width: 38px;
-  height: 31px;
-  border-radius: 48% 52% 55% 45%;
-  background: #356844;
-  border-color: #234e37;
-  box-shadow: inset 7px 4px 0 rgba(116, 157, 65, .4), 3px 4px 0 rgba(37, 73, 45, .2);
-}
-.field-tree.tree-sunwash {
-  width: 31px;
-  height: 28px;
-  border-radius: 42% 58% 48% 52%;
-  background: #8e7043;
-  border-color: #634b35;
-  box-shadow: inset 6px 4px 0 rgba(209, 151, 66, .48), 3px 4px 0 rgba(78, 56, 35, .2);
-}
-.field-tree.tree-greenvale {
-  background: #39734a;
-}
+/* Region tree tints retired: field trees now render biome sprites from the
+   FreeEnvironment pack (.env-* classes above). */
 .world-field.world-region-northwatch .field-village {
   background: rgba(192, 185, 151, .3);
   border-color: rgba(76, 76, 59, .55);
