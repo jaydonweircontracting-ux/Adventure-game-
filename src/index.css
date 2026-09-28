@@ -1250,53 +1250,42 @@
   background: repeating-linear-gradient(165deg, transparent 0 15px, rgba(184, 232, 223, .4) 16px 19px, transparent 20px 31px);
   pointer-events: none;
 }
+/* Field roads are composable arms driven by the chunk's exact road piece —
+   the same neighbor-aware piece the world map draws. Dead ends, corners and
+   T-junctions render only their real arms, never phantom stubs "to nowhere". */
 .field-road {
   position: absolute;
+  inset: 0;
   z-index: 2;
+  pointer-events: none;
+  --road-x: 47%;
+  --road-w: 9%;
+  --road-y: 47%;
+  --road-h: 9%;
+}
+.field-road-center,
+.field-road-arm {
+  position: absolute;
   background-color: #ae8152;
   background-image:
     radial-gradient(ellipse at 50% 50%, rgba(255, 220, 158, .4) 0 34%, transparent 37%),
     repeating-linear-gradient(0deg, transparent 0 10px, rgba(79, 52, 33, .3) 10px 12px),
     repeating-linear-gradient(90deg, rgba(255, 233, 180, .18) 0 2px, transparent 2px 22px);
   background-size: 24px 16px, auto, 24px auto;
-  border: 1px solid rgba(110, 74, 49, .72);
   box-shadow: inset 0 3px 0 rgba(255, 226, 164, .32), inset 0 -3px 0 rgba(66, 43, 30, .28);
-  pointer-events: none;
 }
-.field-road-horizontal { left: -5%; right: -5%; top: 47%; height: 9%; }
-.field-road-vertical { top: -5%; bottom: -5%; left: 47%; width: 9%; }
-.field-road-cross { left: -5%; right: -5%; top: 47%; height: 9%; }
-.field-road-cross::after {
-  content: '';
-  position: absolute;
-  top: -510%;
-  bottom: -510%;
-  left: 47%;
-  width: 9%;
-  background: inherit;
-  border-left: 1px solid rgba(48, 47, 45, .72);
-  border-right: 1px solid rgba(112, 76, 45, .42);
-  box-shadow: inset 3px 0 0 rgba(255, 229, 156, .3), inset -3px 0 0 rgba(117, 78, 42, .13);
-}
-.field-road-corner-down-left {
-  left: -5%;
-  right: auto;
-  top: 47%;
-  width: 59%;
-  height: 9%;
-  border-radius: 0;
-}
-.field-road-corner-down-left::after {
-  content: '';
-  background: inherit;
-  border-left: 1px solid rgba(48, 47, 45, .72);
-  border-right: 1px solid rgba(112, 76, 45, .42);
-  width: 15.25%;
-  position: absolute;
-  top: 33%;
-  bottom: -560%;
-  left: 88%;
-  box-shadow: inset 3px 0 rgba(255, 229, 156, .3), inset -3px 0 rgba(117, 78, 42, .13);
+.field-road-center { left: var(--road-x); top: var(--road-y); width: var(--road-w); height: var(--road-h); }
+.field-road-arm-n { left: var(--road-x); width: var(--road-w); top: -5%; height: 54%; }
+.field-road-arm-s { left: var(--road-x); width: var(--road-w); top: 51%; bottom: -5%; }
+.field-road-arm-e { top: var(--road-y); height: var(--road-h); left: 51%; right: -5%; }
+.field-road-arm-w { top: var(--road-y); height: var(--road-h); right: 51%; left: -5%; }
+/* Wheel ruts run along the direction of travel. */
+.field-road-arm-n,
+.field-road-arm-s {
+  background-image:
+    radial-gradient(ellipse at 50% 50%, rgba(255, 220, 158, .4) 0 34%, transparent 37%),
+    repeating-linear-gradient(90deg, transparent 0 10px, rgba(79, 52, 33, .3) 10px 12px),
+    repeating-linear-gradient(0deg, rgba(255, 233, 180, .18) 0 2px, transparent 2px 22px);
 }
 .field-accents { position: absolute; z-index: 2; inset: 0; pointer-events: none; }
 .field-accent { position: absolute; display: block; transform-origin: center; opacity: .88; }
@@ -1740,30 +1729,28 @@ body {
 .map-tile.has-bridge.road-vertical::before {
   background-image: repeating-linear-gradient(0deg, rgba(239, 194, 122, .52) 0 2px, transparent 2px 6px), linear-gradient(90deg, #a87649, #70482f);
 }
-.field-road.field-bridge {
-  background: #8b603d;
-  border-color: rgba(78, 48, 31, .65);
+.field-road.field-bridge .field-road-center,
+.field-road.field-bridge .field-road-arm {
+  background-color: #8b603d;
+  background-image: none;
   box-shadow: inset 0 3px 0 rgba(255, 224, 158, .32), inset 0 -3px 0 rgba(66, 43, 30, .3);
 }
-.field-road-horizontal.field-bridge::after,
-.field-road-vertical.field-bridge::after,
-.field-road-cross.field-bridge::after {
+.field-road.field-bridge .field-road-arm-e::after,
+.field-road.field-bridge .field-road-arm-w::after,
+.field-road.field-bridge .field-road-center::after {
   content: '';
   position: absolute;
   inset: 0;
   background: repeating-linear-gradient(90deg, rgba(240, 197, 126, .55) 0 3px, transparent 3px 11px);
   opacity: .9;
 }
-.field-road-vertical.field-bridge::after {
+.field-road.field-bridge .field-road-arm-n::after,
+.field-road.field-bridge .field-road-arm-s::after {
+  content: '';
+  position: absolute;
+  inset: 0;
   background: repeating-linear-gradient(0deg, rgba(240, 197, 126, .55) 0 3px, transparent 3px 11px);
-}
-.field-road-cross.field-bridge::after {
-  top: -510%;
-  bottom: -510%;
-  left: 47%;
-  right: auto;
-  width: 9%;
-  background: repeating-linear-gradient(0deg, rgba(240, 197, 126, .55) 0 3px, transparent 3px 11px);
+  opacity: .9;
 }
 .field-tree.tree-northwatch {
   width: 25px;
@@ -1926,19 +1913,11 @@ body {
 }
 
 /* Starting-area redesign: a clean, decorated four-way clearing with safe tree bounds. */
-.starting-area .field-road-cross {
-  left: -7%;
-  right: -7%;
-  top: 45%;
-  height: 11%;
-  border-radius: 0;
-}
-.starting-area .field-road-cross::after {
-  top: -420%;
-  bottom: -420%;
-  left: 45%;
-  width: 11%;
-  border-radius: 0;
+.starting-area .field-road {
+  --road-x: 45%;
+  --road-w: 11%;
+  --road-y: 45%;
+  --road-h: 11%;
 }
 .starting-area .field-trees {
   z-index: 5;
@@ -2944,7 +2923,8 @@ body {
     linear-gradient(to bottom, transparent 27%, rgba(31, 77, 42, .82) 28% 32%, #8fbd5b 33% 67%, rgba(31, 77, 42, .82) 68% 72%, transparent 73%),
     linear-gradient(to right, transparent 27%, rgba(31, 77, 42, .82) 28% 32%, #8fbd5b 33% 67%, rgba(31, 77, 42, .82) 68% 72%, transparent 73%) !important;
 }
-.field-road:not(.field-bridge) {
+.field-road:not(.field-bridge) .field-road-center,
+.field-road:not(.field-bridge) .field-road-arm {
   background-color: #6f9d4e;
   background-image: radial-gradient(ellipse at 50% 50%, rgba(213, 239, 157, .38) 0 34%, transparent 37%), repeating-linear-gradient(0deg, transparent 0 10px, rgba(31, 77, 42, .28) 10px 12px), repeating-linear-gradient(90deg, rgba(220, 242, 169, .2) 0 2px, transparent 2px 22px);
   border-color: rgba(38, 79, 45, .72);
@@ -2967,11 +2947,17 @@ body {
     linear-gradient(to bottom, transparent 27%, rgba(91, 57, 35, .84) 28% 32%, #d2a564 33% 67%, rgba(91, 57, 35, .84) 68% 72%, transparent 73%),
     linear-gradient(to right, transparent 27%, rgba(91, 57, 35, .84) 28% 32%, #d2a564 33% 67%, rgba(91, 57, 35, .84) 68% 72%, transparent 73%) !important;
 }
-.field-road:not(.field-bridge) {
+.field-road:not(.field-bridge) .field-road-center,
+.field-road:not(.field-bridge) .field-road-arm {
   background-color: #ae8152;
   background-image: radial-gradient(ellipse at 50% 50%, rgba(255, 220, 158, .4) 0 34%, transparent 37%), repeating-linear-gradient(0deg, transparent 0 10px, rgba(79, 52, 33, .3) 10px 12px), repeating-linear-gradient(90deg, rgba(255, 233, 180, .18) 0 2px, transparent 2px 22px);
   border-color: rgba(110, 74, 49, .72);
   box-shadow: inset 0 3px 0 rgba(255, 226, 164, .32), inset 0 -3px 0 rgba(66, 43, 30, .28);
+}
+/* Wheel ruts run along the direction of travel on north/south arms. */
+.field-road:not(.field-bridge) .field-road-arm-n,
+.field-road:not(.field-bridge) .field-road-arm-s {
+  background-image: radial-gradient(ellipse at 50% 50%, rgba(255, 220, 158, .4) 0 34%, transparent 37%), repeating-linear-gradient(90deg, transparent 0 10px, rgba(79, 52, 33, .3) 10px 12px), repeating-linear-gradient(0deg, rgba(255, 233, 180, .18) 0 2px, transparent 2px 22px);
 }
 .legend-line.road { background: #d2a564; }
 

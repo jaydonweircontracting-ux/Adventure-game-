@@ -288,18 +288,6 @@ function pointInWater(position: Point, tile: MapTile) {
   return false;
 }
 
-function fieldRoadClass(road: MapTile['road']): string {
-  if (road === 'none') return '';
-  if (road === 'ew' || road === 'e' || road === 'w') return 'field-road-horizontal';
-  if (road === 'ns' || road === 'n' || road === 's') return 'field-road-vertical';
-  if (road === 'nsew') return 'field-road-cross';
-  if (road === 'sew') return 'field-road-cross-no-north';
-  if (road === 'sw') return 'field-road-corner-down-left';
-  const hasH = road.includes('e') || road.includes('w');
-  const hasV = road.includes('n') || road.includes('s');
-  return hasH && hasV ? 'field-road-cross' : hasH ? 'field-road-horizontal' : 'field-road-vertical';
-}
-
 function pointOnFieldRoad(point: Point, road: MapTile['road']) {
   // Keep tree canopies and trunks off the road arms, not just the center lines.
   if (road === 'none') return false;
@@ -1393,7 +1381,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v131</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v132</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -2339,7 +2327,15 @@ if (active) {
                />
              ))}
            </div>
-          {currentWorldTile.road !== 'none' && <div className={'field-road ' + fieldRoadClass(currentWorldTile.road) + (currentWorldTile.bridge ? ' field-bridge' : '')} aria-hidden="true" />}
+          {currentWorldTile.road !== 'none' && (
+            <div className={'field-road' + (currentWorldTile.bridge ? ' field-bridge' : '')} aria-hidden="true">
+              <span className="field-road-center" />
+              {currentWorldTile.road.includes('n') && <span className="field-road-arm field-road-arm-n" />}
+              {currentWorldTile.road.includes('s') && <span className="field-road-arm field-road-arm-s" />}
+              {currentWorldTile.road.includes('e') && <span className="field-road-arm field-road-arm-e" />}
+              {currentWorldTile.road.includes('w') && <span className="field-road-arm field-road-arm-w" />}
+            </div>
+          )}
           {startingCenter && (
             <div className="starting-area-decor" aria-hidden="true">
               <span className="starting-flower flower-northwest" />
