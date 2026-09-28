@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '175';
+const BUILD_NUMBER = '176';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -2754,7 +2754,11 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
         const target = attacker.goat;
         const nextHp = Math.max(0, target.hp - 7);
         const defeated = nextHp <= 0;
-        const updatedGoats = goatsRef.current.map((goat) => goat.id === target.id ? { ...goat, hp: nextHp, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 350, attacking: false, moving: false, hitFlash: true, respawnTicks: 0 } : goat);
+        // Background scuffle: the goat takes damage, but it must NOT turn
+        // aggressive toward the player — the player didn't hit it. Preserve
+        // whatever disposition it already had (a goat the player provoked
+        // stays aggressive; a calm goat stays calm).
+        const updatedGoats = goatsRef.current.map((goat) => goat.id === target.id ? { ...goat, hp: nextHp, disposition: defeated ? 'defeated' as GoatDisposition : goat.disposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 350, attacking: false, moving: false, hitFlash: true, respawnTicks: 0 } : goat);
         goatsRef.current = updatedGoats;
         setGoats(updatedGoats);
         window.setTimeout(() => setGoats((current) => current.map((goat) => goat.id === target.id ? { ...goat, hitFlash: false } : goat)), 100);
