@@ -180,6 +180,7 @@ const expectedLandmarks: Array<[string, string]> = [
   ['130,-16', 'Stormhaven'], ['140,-20', 'Frostwatch'], ['155,0', 'Oakfield'],
   ['174,-8', 'Stonebridge'], ['165,25', 'Saltmarsh'], ['184,15', 'Emberhold'],
   ['144,35', 'Dunmere'],
+  ['136,-12', 'Sunken Crypt'], ['188,20', 'Ember Ruins'], ['150,6', 'Whispering Stones'],
 ];
 for (const [key, name] of expectedLandmarks) {
   const tile = tileByKey.get(key);

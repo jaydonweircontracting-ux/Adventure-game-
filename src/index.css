@@ -736,6 +736,45 @@
   transition: transform .16s ease, background-color .16s ease;
 }
 .horse-mount-button:hover { transform: translate(-50%, -50%) scale(1.03); background: rgba(65, 110, 75, .98); }
+/* Dungeon POI descend button: same floating-button pattern as Mount. */
+.dungeon-descend-button {
+  position: absolute;
+  z-index: 12;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-height: 44px;
+  min-width: 72px;
+  padding: 0 9px;
+  border: 1px solid rgba(232, 211, 161, .88);
+  color: #fff3d4;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  background: rgba(46, 38, 58, .96);
+  box-shadow: 3px 3px 0 rgba(25, 20, 35, .25);
+  font-family: var(--app-font-mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  transform: translate(-50%, -50%);
+  transition: transform .16s ease, background-color .16s ease;
+}
+.dungeon-descend-button:hover { transform: translate(-50%, -50%) scale(1.03); background: rgba(72, 58, 92, .98); }
+/* Dungeon POI: crypt entrance mound with a dark stairwell. */
+.field-dungeon-entrance { position: absolute; left: 38%; top: 34%; width: 24%; height: 20%; z-index: 3; }
+.dungeon-mound { position: absolute; inset: 0; background: linear-gradient(180deg, #6b6f75 0%, #4a4f55 60%, #3a3e44 100%); border: 2px solid #2b2e33; border-radius: 45% 45% 8% 8% / 60% 60% 8% 8%; box-shadow: 2px 3px 0 rgba(30, 30, 35, .35); }
+.dungeon-stairs { position: absolute; left: 50%; bottom: 6%; width: 26%; height: 52%; transform: translateX(-50%); background: #141518; border: 2px solid #2b2e33; border-bottom: none; border-radius: 50% 50% 0 0 / 30% 30% 0 0; }
+.dungeon-stairs::after { content: ''; position: absolute; left: 15%; right: 15%; top: 30%; bottom: 0; background: repeating-linear-gradient(180deg, #2b2e33 0 3px, #0c0d0f 3px 6px); }
+.dungeon-entrance-label { position: absolute; left: 50%; top: -16px; transform: translateX(-50%); white-space: nowrap; font-size: 10px; color: #e8e2d2; text-shadow: 1px 1px 0 #000; }
+/* Ruin POI: broken standing stones. */
+.field-ruin { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.ruin-stone { position: absolute; background: linear-gradient(90deg, #7d7668 0%, #a09a8c 50%, #7d7668 100%); border: 1px solid #5d574b; box-shadow: 2px 2px 0 rgba(50, 45, 35, .3); }
+.ruin-stone-1 { left: 28%; top: 28%; width: 15%; height: 9%; clip-path: polygon(0 100%, 0 35%, 30% 35%, 35% 0, 70% 0, 75% 40%, 100% 40%, 100% 100%); }
+.ruin-stone-2 { left: 57%; top: 42%; width: 13%; height: 9%; clip-path: polygon(0 100%, 0 20%, 45% 20%, 50% 55%, 100% 55%, 100% 100%); }
+.ruin-stone-3 { left: 39%; top: 62%; width: 19%; height: 8%; clip-path: polygon(0 100%, 0 45%, 25% 45%, 30% 10%, 55% 10%, 60% 50%, 100% 50%, 100% 100%); }
+.ruin-label { position: absolute; left: 50%; top: 20%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; color: #e8e2d2; text-shadow: 1px 1px 0 #000; }
 .horse-dismount-button {
   pointer-events: auto;
   cursor: pointer;
@@ -3396,6 +3435,9 @@ body {
 .legend-swatch-village { width: 9px; height: 5px; background: #7d5f43; margin-top: 5px; }
 .legend-swatch-village::after { content: ""; position: absolute; left: -1px; right: -1px; top: -4px; border-left: 5.5px solid transparent; border-right: 5.5px solid transparent; border-bottom: 4px solid #b5463c; }
 .legend-swatch-road { width: 16px; height: 5px; background: #6b5a3e; }
+.legend-swatch-dungeon { width: 10px; height: 10px; background: #4a4f55; margin-top: 3px; }
+.legend-swatch-dungeon::after { content: ""; position: absolute; left: 2px; right: 2px; top: 3px; bottom: 0; background: #1a1c1f; border-radius: 4px 4px 0 0; }
+.legend-swatch-ruin { width: 10px; height: 8px; background: transparent; border-left: 3px solid #8d8577; border-right: 3px solid #8d8577; margin-top: 5px; }
 .legend-swatch-road::after { content: ""; position: absolute; left: 0; right: 0; top: 1.5px; height: 2px; background: #d3b06f; }
 .legend-swatch-mountain { color: #4a463e; font-size: 10px; line-height: 1; }
 .map-overlay .world-map-stage .atlas-compass { display: grid !important; }

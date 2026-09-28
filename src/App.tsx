@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '168';
+const BUILD_NUMBER = '169';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -143,7 +143,7 @@ function chunkTerrain(chunk: Point): Terrain {
   return tile ? terrainForWorldBiome(tile.biome) : 'ocean';
 }
 
-type SettlementKind = 'village' | 'town';
+type SettlementKind = 'village' | 'town' | 'dungeon' | 'ruin';
 type MapTile = {
   x: number;
   y: number;
@@ -187,6 +187,12 @@ const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
   '165,25': { name: 'Saltmarsh', kind: 'village' },
   '184,15': { name: 'Emberhold', kind: 'town' },
   '144,35': { name: 'Dunmere', kind: 'village' },
+  // Second-continent points of interest (enterable dungeon + ruins).
+  // Coordinates validated against the real DEFAULT_WORLD_SEED (847291583);
+  // every site is on verified inland land. See BUG-001.
+  '136,-12': { name: 'Sunken Crypt', kind: 'dungeon' },
+  '188,20': { name: 'Ember Ruins', kind: 'ruin' },
+  '150,6': { name: 'Whispering Stones', kind: 'ruin' },
 };
 
 function isStartingArea(point: Point) {
@@ -312,6 +318,14 @@ function envSpriteForTerrain(terrain: Terrain, variant: number): EnvSpriteKey {
 type FieldRect = { left: number; top: number; right: number; bottom: number };
 
 function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed = 0): FieldRect[] {
+  // Points of interest don't get houses: a dungeon gets one crypt mound, a ruin
+  // gets scattered broken walls. Collision + doorway logic reuse these rects.
+  if (kind === 'dungeon') return [{ left: 38, top: 34, right: 62, bottom: 54 }];
+  if (kind === 'ruin') return [
+    { left: 28, top: 28, right: 43, bottom: 37 },
+    { left: 57, top: 42, right: 70, bottom: 51 },
+    { left: 39, top: 62, right: 58, bottom: 70 },
+  ];
   const parent = kind === 'town'
     ? { left: 19, top: 21, width: 62, height: 58 }
     : { left: 23, top: 24, width: 54, height: 52 };
@@ -710,6 +724,8 @@ const WORLD_RUMORS = [
 
 function buildingDoorwaysFor(chunk: Point): Doorway[] {
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
+  // Points of interest have no house doors (the dungeon gets its own entrance).
+  if (landmark && (landmark.kind === 'dungeon' || landmark.kind === 'ruin')) return [];
   if (landmark) {
     return fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17).map((rect, index) => {
       const namedDoorway = isStartingArea(chunk) ? startingDoorways.find((doorway) => doorway.buildingIndex === index) : null;
@@ -776,6 +792,15 @@ const playtestInteriorArea: InteriorArea | null = (() => {
 // horse, so mounted-sprite sizing can be checked without walking to the horse.
 // Param-gated; no effect on normal play.
 const playtestMounted: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('playtestMount') === '1';
+// Playtest tooling (?playtestChunk=x,y): start in a given chunk's field (e.g.
+// ?playtestChunk=136,-12 for the Sunken Crypt POI). Param-gated.
+const playtestChunk: Point | null = (() => {
+  if (typeof window === 'undefined') return null;
+  const raw = new URLSearchParams(window.location.search).get('playtestChunk');
+  if (!raw) return null;
+  const [x, y] = raw.split(',').map(Number);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+})();
 
 function fieldDoorPosition(rect: FieldRect): Point {
   // Match .field-house::after: left 43%, width 16%, bottom 0, height 44%.
@@ -1991,6 +2016,32 @@ function renderMapOverlay(tiles: AtlasTile[], cols: number, rows: number, tier: 
     ctx.fillStyle = '#5d646b';
     ctx.fillRect(cx - 2, cy + 1, 4, 5);
   };
+  const drawDungeon = (cx: number, cy: number) => {
+    // Dark stone arch with a stairwell: reads as a dungeon entrance.
+    ctx.fillStyle = '#4a4f55';
+    ctx.fillRect(cx - 7, cy - 8, 14, 14);
+    ctx.fillStyle = '#2b2e33';
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, cy + 6);
+    ctx.lineTo(cx - 4, cy - 1);
+    ctx.arc(cx, cy - 1, 4, Math.PI, 0);
+    ctx.lineTo(cx + 4, cy + 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#1a1c1f';
+    for (let i = 0; i < 3; i++) ctx.fillRect(cx - 3 + i * 2, cy + 2 + i, 6 - i * 2, 1);
+  };
+  const drawRuin = (cx: number, cy: number) => {
+    // Broken pillar stubs: reads as ancient ruins.
+    ctx.fillStyle = '#8d8577';
+    ctx.fillRect(cx - 7, cy - 2, 4, 8);
+    ctx.fillRect(cx + 3, cy - 5, 4, 11);
+    ctx.fillStyle = '#6e675b';
+    ctx.fillRect(cx - 7, cy - 4, 4, 2);
+    ctx.fillRect(cx + 3, cy - 7, 4, 2);
+    ctx.fillStyle = '#a09a8c';
+    ctx.fillRect(cx - 2, cy + 3, 4, 3);
+  };
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   for (const tile of tiles) {
@@ -2000,6 +2051,8 @@ function renderMapOverlay(tiles: AtlasTile[], cols: number, rows: number, tier: 
     const cx = px(tile.world.x) + T / 2;
     const cy = py(tile.world.y) + T / 2;
     if (tile.landmark.kind === 'town') drawTown(cx, cy - 3);
+    else if (tile.landmark.kind === 'dungeon') drawDungeon(cx, cy - 3);
+    else if (tile.landmark.kind === 'ruin') drawRuin(cx, cy - 3);
     else drawVillage(cx, cy - 3);
     const label = tile.landmark.name.toUpperCase();
     ctx.font = '700 10px Verdana, Geneva, sans-serif';
@@ -2284,6 +2337,8 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
           <span className="legend-item"><span className="legend-swatch legend-swatch-village" /> Village</span>
           <span className="legend-item"><span className="legend-swatch legend-swatch-road" /> Road</span>
           <span className="legend-item"><span className="legend-swatch legend-swatch-mountain">▲</span> Mountain</span>
+          <span className="legend-item"><span className="legend-swatch legend-swatch-dungeon">▣</span> Dungeon</span>
+          <span className="legend-item"><span className="legend-swatch legend-swatch-ruin">▤</span> Ruin</span>
           <span className="legend-item"><span className="world-map-legend-swatch forest" /> Forest</span>
           <span className="legend-item"><span className="world-map-legend-swatch desert" /> Desert</span>
           <span className="legend-item"><span className="world-map-legend-swatch tundra" /> Tundra</span>
@@ -2397,7 +2452,7 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, attackin
 
 function GameField({ inventory, equippedDagger, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null }) {
   const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
-  const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
+  const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
   const [moving, setMoving] = useState(false);
   const [facing, setFacing] = useState<Direction>('down');
@@ -2441,7 +2496,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const [attacking, setAttacking] = useState(false);
   const [attackSequence, setAttackSequence] = useState(0);
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
-  const [interior, setInterior] = useState<InteriorArea | null>(playtestInteriorArea ?? (playtestMounted ? null : startingHouse));
+  const [interior, setInterior] = useState<InteriorArea | null>(playtestInteriorArea ?? (playtestMounted || playtestChunk ? null : startingHouse));
   // Spawn on clear floor below the furniture: (50, 47) sits inside the
   // inn/building fireplace collision rect and permanently soft-locks movement.
   const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 78 });
@@ -3451,7 +3506,22 @@ if (active) {
               );
             })}
           </div>
-          {currentWorldTile.landmark && (
+          {currentWorldTile.landmark && currentWorldTile.landmark.kind === 'dungeon' && (
+            <div className="field-dungeon-entrance" aria-label={currentWorldTile.landmark.name + ' entrance'} data-testid="dungeon-entrance">
+              <span className="dungeon-mound" aria-hidden="true" />
+              <span className="dungeon-stairs" aria-hidden="true" />
+              <span className="dungeon-entrance-label" aria-hidden="true">{currentWorldTile.landmark.name}</span>
+            </div>
+          )}
+          {currentWorldTile.landmark && currentWorldTile.landmark.kind === 'ruin' && (
+            <div className="field-ruin" aria-label={currentWorldTile.landmark.name} data-testid="ruin-remains">
+              <span className="ruin-stone ruin-stone-1" aria-hidden="true" />
+              <span className="ruin-stone ruin-stone-2" aria-hidden="true" />
+              <span className="ruin-stone ruin-stone-3" aria-hidden="true" />
+              <span className="ruin-label" aria-hidden="true">{currentWorldTile.landmark.name}</span>
+            </div>
+          )}
+          {currentWorldTile.landmark && currentWorldTile.landmark.kind !== 'dungeon' && currentWorldTile.landmark.kind !== 'ruin' && (
             <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle + ' town-variant-' + (Math.abs(currentWorldTile.landmark.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={currentWorldTile.landmark.name}>
               <span className="field-village-square" />
               <span className="field-house house-1" /><span className="field-house house-2" /><span className="field-house house-3" />
@@ -3564,6 +3634,14 @@ if (active) {
                 <span className="horse-sprite" />
               </div>
               {canMount && <button className="horse-mount-button" style={{ left: horseDisplayPosition.x + '%', top: Math.min(88, Math.max(12, horseDisplayPosition.y + 10)) + '%' }} onClick={toggleMount} aria-label="Mount horse" data-testid="button-toggle-mount">Mount</button>}
+              {(() => {
+                // Dungeon POI entrance: offer Descend when the player is near the crypt stairs.
+                const dungeon = currentWorldTile.landmark && currentWorldTile.landmark.kind === 'dungeon' ? currentWorldTile.landmark : null;
+                if (!dungeon) return null;
+                const entrance = { x: 50, y: 44 };
+                if (Math.hypot(position.x - entrance.x, position.y - entrance.y) > 10) return null;
+                return <button className="dungeon-descend-button" style={{ left: entrance.x + '%', top: Math.min(88, entrance.y + 10) + '%' }} onClick={onEnterDungeon} aria-label={'Descend into ' + dungeon.name} data-testid="button-enter-field-dungeon">Descend</button>;
+              })()}
             </>
           )}
           </div>
