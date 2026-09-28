@@ -2080,34 +2080,22 @@ body {
 .field-wildlife { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
 .wildlife { position: absolute; width: 20px; height: 16px; margin: -8px 0 0 -10px; }
 .wildlife-rabbit {
-  background:
-    radial-gradient(circle at 2.5px 9px, #ffffff 2.6px, transparent 2.7px),
-    radial-gradient(ellipse at 55% 68%, #f2ede2 0 55%, #d3c9b6 56% 100%);
+  width: 32px;
+  height: 32px;
+  margin: -16px 0 0 -16px;
+  background-image: var(--rabbit-sheet);
+  background-size: 288px 384px;
   background-repeat: no-repeat;
-  border-radius: 48% 52% 50% 50%;
+  image-rendering: pixelated;
+  border-radius: 0;
+  background-position: 0 calc(var(--rabbit-row, 0) * -32px);
 }
-.wildlife-rabbit::before {
-  content: ''; position: absolute; left: 8px; top: -11px; width: 12px; height: 13px;
-  background:
-    radial-gradient(ellipse 2.6px 5.5px at 3.4px 6px, #e8a0a8 55%, transparent 56%),
-    radial-gradient(ellipse 3.6px 6.8px at 3.4px 6.4px, #f2ede2 58%, transparent 59%),
-    radial-gradient(ellipse 2.6px 5.5px at 8.6px 6px, #e8a0a8 55%, transparent 56%),
-    radial-gradient(ellipse 3.6px 6.8px at 8.6px 6.4px, #e2dac8 58%, transparent 59%);
-  background-repeat: no-repeat;
-  transform: rotate(8deg);
-}
-.wildlife-rabbit::after {
-  content: ''; position: absolute; right: -8px; top: 0; width: 15px; height: 15px;
-  background:
-    radial-gradient(circle at 10.5px 5.5px, #2b2b2b 1.3px, transparent 1.4px),
-    radial-gradient(circle at 8px 7.5px, #f6f2e8 5px, transparent 5.1px);
-  background-repeat: no-repeat;
-}
-.wildlife-rabbit[data-facing='left'] { transform: scaleX(-1); }
-.wildlife-rabbit.is-moving { animation: rabbit-hop .45s ease-in-out infinite; }
-.wildlife-rabbit[data-facing='left'].is-moving { animation: rabbit-hop-flip .45s ease-in-out infinite; }
-@keyframes rabbit-hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-3px); } }
-@keyframes rabbit-hop-flip { 0%, 100% { transform: scaleX(-1) translateY(0); } 40% { transform: scaleX(-1) translateY(-3px); } }
+.wildlife-rabbit[data-facing='down'] { --rabbit-row: 0; }
+.wildlife-rabbit[data-facing='left'] { --rabbit-row: 1; }
+.wildlife-rabbit[data-facing='right'] { --rabbit-row: 2; }
+.wildlife-rabbit[data-facing='up'] { --rabbit-row: 3; }
+.wildlife-rabbit.is-moving { animation: rabbit-hop .45s steps(3, end) infinite; }
+@keyframes rabbit-hop { from { background-position-x: 0; } to { background-position-x: -96px; } }
 .wildlife-deer { background: linear-gradient(180deg, #a8764a 0 60%, #8a5f3a 61% 100%); border-radius: 40% 40% 30% 30%; }
 .wildlife-deer::before { content: ''; position: absolute; left: 6px; top: -10px; width: 8px; height: 12px; background: #a8764a; border-radius: 4px 4px 0 0; }
 .wildlife-deer::after { content: ''; position: absolute; left: 3px; top: -14px; width: 14px; height: 6px; background: repeating-linear-gradient(90deg, #7a5a3a 0 2px, transparent 2px 5px); }

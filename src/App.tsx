@@ -1181,7 +1181,8 @@ function updateBird(bird: BirdState, nowMs: number, deltaMs: number, chunk: Poin
 // Wildlife wander: pick a nearby target, walk to it, idle. Stays near home.
 function updateWildlife(animal: WildlifeState, tick: number, chunk: Point): WildlifeState {
   const next = { ...animal, position: { ...animal.position } };
-  const speed = animal.species === 'rabbit' ? 1.6 : animal.species === 'deer' ? 1.0 : animal.species === 'wolf' ? 1.2 : animal.species === 'bear' ? 0.6 : 0.8;
+  const isRabbit = animal.species === 'rabbit';
+  const speed = isRabbit ? 1.6 : animal.species === 'deer' ? 1.0 : animal.species === 'wolf' ? 1.2 : animal.species === 'bear' ? 0.6 : 0.8;
   if (next.target) {
     const dx = next.target.x - next.position.x;
     const dy = next.target.y - next.position.y;
@@ -1189,7 +1190,8 @@ function updateWildlife(animal: WildlifeState, tick: number, chunk: Point): Wild
     if (dist < 1.5) {
       next.target = null;
       next.moving = false;
-      next.nextWanderTick = tick + 40 + (next.wanderSeed % 80);
+      // Rabbits hop often with short pauses; other wildlife rests longer.
+      next.nextWanderTick = tick + (isRabbit ? 6 + (next.wanderSeed % 14) : 40 + (next.wanderSeed % 80));
     } else {
       const step = Math.min(speed, dist);
       const candidate = { x: next.position.x + (dx / dist) * step, y: next.position.y + (dy / dist) * step };
@@ -1203,14 +1205,14 @@ function updateWildlife(animal: WildlifeState, tick: number, chunk: Point): Wild
       }
     }
   } else if (tick >= next.nextWanderTick) {
-    // Pick a wander target within home range (radius ~14).
+    // Pick a wander target within home range (radius ~14); rabbits take short hops.
     const angle = ((next.wanderSeed * 37 + tick * 13) % 360) * (Math.PI / 180);
-    const radius = 4 + ((next.wanderSeed * 53 + tick * 7) % 10);
+    const radius = isRabbit ? 2 + ((next.wanderSeed * 53 + tick * 7) % 5) : 4 + ((next.wanderSeed * 53 + tick * 7) % 10);
     next.target = {
       x: Math.max(8, Math.min(92, next.homePosition.x + Math.cos(angle) * radius)),
       y: Math.max(8, Math.min(92, next.homePosition.y + Math.sin(angle) * radius)),
     };
-    next.nextWanderTick = tick + 60 + (next.wanderSeed % 100);
+    next.nextWanderTick = tick + (isRabbit ? 8 + (next.wanderSeed % 24) : 60 + (next.wanderSeed % 100));
   } else {
     next.moving = false;
   }
@@ -1383,7 +1385,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v139</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v140</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -2452,7 +2454,7 @@ if (active) {
                 key={'wildlife-' + animal.species + '-' + animal.id}
                 className={'wildlife wildlife-' + animal.species + (animal.moving ? ' is-moving' : '')}
                 data-facing={animal.facing}
-                style={{ left: animal.position.x + '%', top: animal.position.y + '%', ...(animal.species === 'wolf' ? { '--wolf-sheet': `url("${assetUrl('wolves/wolf_' + (['gray', 'brown', 'black'] as const)[Math.abs(animal.id) % 3] + '_full.png')}")` } : {}) } as CSSProperties}
+                style={{ left: animal.position.x + '%', top: animal.position.y + '%', ...(animal.species === 'wolf' ? { '--wolf-sheet': `url("${assetUrl('wolves/wolf_' + (['gray', 'brown', 'black'] as const)[Math.abs(animal.id) % 3] + '_full.png')}")` } : {}), ...(animal.species === 'rabbit' ? { '--rabbit-sheet': `url("${assetUrl('rabbits/rabbit_white_full.png')}")` } : {}) } as CSSProperties}
               />
             ))}
           </div>
