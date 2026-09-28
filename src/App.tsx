@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '156';
+const BUILD_NUMBER = '157';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -395,6 +395,37 @@ function fieldFarmRects(chunkX: number, chunkY: number): { houses: FieldRect[]; 
     });
   }
   return { houses, fields };
+}
+
+// Points of Interest: ruins, caves, camps, shrines scattered in the wilderness.
+// Deterministic per-chunk, ~25% of non-settlement chunks get a POI.
+type POIKind = 'ruin' | 'cave' | 'camp' | 'shrine';
+type PointOfInterest = { kind: POIKind; x: number; y: number; name: string };
+
+function poisForChunk(chunkX: number, chunkY: number): PointOfInterest[] {
+  const seed = Math.abs(chunkX * 83492791 ^ chunkY * 2971215073) >>> 0;
+  const rng = () => {
+    const x = Math.sin(seed + 7) * 10000;
+    return x - Math.floor(x);
+  };
+  // Only ~25% of chunks get a POI
+  if (rng() > 0.25) return [];
+  
+  const kinds: POIKind[] = ['ruin', 'cave', 'camp', 'shrine'];
+  const kind = kinds[Math.floor(rng() * kinds.length)];
+  const x = 25 + rng() * 50;
+  const y = 25 + rng() * 50;
+  
+  const names: Record<POIKind, string[]> = {
+    ruin: ['Ancient Ruins', 'Forgotten Stones', 'Old Watchtower'],
+    cave: ['Dark Cave', 'Goblin Den', 'Echo Cavern'],
+    camp: ['Bandit Camp', 'Abandoned Camp', 'Hunter\'s Camp'],
+    shrine: ['Old Shrine', 'Forest Altar', 'Stone Circle'],
+  };
+  const nameList = names[kind];
+  const name = nameList[Math.floor(rng() * nameList.length)];
+  
+  return [{ kind, x, y, name }];
 }
 
 function pointInWater(position: Point, tile: MapTile) {
@@ -2797,6 +2828,23 @@ if (active) {
                       height: (rect.bottom - rect.top) + '%',
                     }}
                     aria-label="Crop field"
+                  />
+                ))}
+              </>
+            );
+          })()}
+          {/* Points of Interest: ruins, caves, camps, shrines */}
+          {!currentWorldTile.landmark && (() => {
+            const pois = poisForChunk(currentChunk.x, currentChunk.y);
+            return (
+              <>
+                {pois.map((poi, i) => (
+                  <span
+                    key={'poi-' + i}
+                    className={'poi poi-' + poi.kind}
+                    style={{ left: poi.x + '%', top: poi.y + '%' }}
+                    aria-label={poi.name}
+                    title={poi.name}
                   />
                 ))}
               </>
