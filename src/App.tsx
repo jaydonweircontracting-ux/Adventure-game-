@@ -1393,7 +1393,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v128</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v129</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -1525,7 +1525,7 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
   };
   // Room-type-specific furniture: each building type gets its own visual identity.
   const furniture = {
-    guild: (<><span className="interior-rug" /><span className="interior-workbench" /><span className="interior-forge" /><span className="interior-weapon-rack" /><span className="interior-quest-board" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
+    guild: (<><span className="interior-rug" /><span className="interior-workbench" /><span className="interior-forge" aria-hidden="true"><span className="forge-fire"><span className="forge-flame forge-flame-back" /><span className="forge-flame forge-flame-mid" /><span className="forge-flame forge-flame-core" /><span className="forge-sparks"><i /><i /><i /><i /><i /></span></span><span className="forge-logs" /></span><span className="interior-weapon-rack" /><span className="interior-quest-board" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     inn: (<><span className="interior-rug" /><span className="interior-bed bed-left" /><span className="interior-bed bed-right" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-bar" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     chapel: (<><span className="interior-rug" /><span className="interior-altar" /><span className="interior-pew pew-left" /><span className="interior-pew pew-right" /><span className="interior-candle candle-left" /><span className="interior-candle candle-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     building: (<><span className="interior-rug" /><span className="interior-bed bed-left" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
@@ -1603,7 +1603,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [attackSequence, setAttackSequence] = useState(0);
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
   const [interior, setInterior] = useState<InteriorArea | null>(startingHouse);
-  const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 47 });
+  // Spawn on clear floor below the furniture: (50, 47) sits inside the
+  // inn/building fireplace collision rect and permanently soft-locks movement.
+  const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 78 });
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
   const facingRef = useRef(facing);
@@ -2068,13 +2070,16 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
          const next = { x: Math.min(90, Math.max(10, current.x + movement.x)), y: current.y + movement.y };
          const horizontalStep = { x: next.x, y: current.y };
          const verticalStep = { x: current.x, y: next.y };
-         const resolvedInteriorPosition = isInteriorPositionBlocked(next, currentInterior)
-           ? !isInteriorPositionBlocked(horizontalStep, currentInterior)
+         // If the current spot is somehow blocked (e.g. an old save), let the
+         // player walk out instead of pinning them in place forever.
+         const startsBlocked = isInteriorPositionBlocked(current, currentInterior);
+         const resolvedInteriorPosition = startsBlocked || !isInteriorPositionBlocked(next, currentInterior)
+           ? next
+           : !isInteriorPositionBlocked(horizontalStep, currentInterior)
              ? horizontalStep
              : !isInteriorPositionBlocked(verticalStep, currentInterior)
                ? verticalStep
-               : current
-           : next;
+               : current;
          const doorwayHalfWidth = (((INTERIOR_DOORWAY_WIDTH_PX + INTERIOR_PLAYER_WIDTH_PX) / 2 + INTERIOR_DOORWAY_PADDING_PX) / Math.max(1, frameWidth)) * 100;
          const atDoorway = Math.abs(next.x - 50) <= doorwayHalfWidth;
          if (next.y > 91 && atDoorway) {
