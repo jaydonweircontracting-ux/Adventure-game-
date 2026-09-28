@@ -3,6 +3,7 @@
 import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLevelFor } from '../src/game/worldMap';
 import { updateGoat, type GoatAIEntity } from '../src/game/ai';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers } from '../src/game/simulatedAdventurers';
+import { cornStalksForChunk } from '../src/game/cornfield';
 
 let passed = 0;
 let failed = 0;
@@ -203,6 +204,53 @@ for (const t of mapTiles) {
   if (t.x >= -10 && t.x <= 20 && t.y >= -8 && t.y <= 22 && isLand) homeLand++;
 }
 assert(continentLand > homeLand * 3, `Second continent too small: ${continentLand} land tiles vs home ${homeLand}`);
+
+// ---- Cornfields: deterministic clustered harvestable corn ----
+// Corn must be deterministic per chunk.
+for (let i = 0; i < 200; i++) {
+  const chunk = { x: (i * 7) % 31 - 10, y: (i * 13) % 31 - 8 };
+  const a = cornStalksForChunk(chunk, 'meadow', () => false);
+  const b = cornStalksForChunk(chunk, 'meadow', () => false);
+  assert(a.length === b.length && a.every((s, idx) => s.position.x === b[idx].position.x && s.position.y === b[idx].position.y),
+    `Cornfield not deterministic for chunk ${chunk.x},${chunk.y}`);
+}
+// Corn only grows in meadow-like terrain, never scattered in other biomes.
+for (const terrain of ['forest', 'tundra', 'desert', 'rock', 'shore', 'ocean']) {
+  const stalks = cornStalksForChunk({ x: 5, y: 5 }, terrain, () => false);
+  assert(stalks.length === 0, `Corn spawned in ${terrain} terrain (${stalks.length} stalks)`);
+}
+// When corn spawns, it must be clustered (a field), not scattered singles:
+// nearly every stalk has a neighbor within 12 units.
+let clusteredOk = 0;
+let clusteredTotal = 0;
+let allClustered = true;
+for (let i = 0; i < 300; i++) {
+  const chunk = { x: (i * 11) % 40 - 10, y: (i * 17) % 40 - 8 };
+  const stalks = cornStalksForChunk(chunk, 'meadow', () => false);
+  if (stalks.length === 0) continue;
+  clusteredTotal++;
+  if (stalks.length < 8) { allClustered = false; continue; }
+  let lonely = 0;
+  for (let a = 0; a < stalks.length; a++) {
+    let nearest = Infinity;
+    for (let b = 0; b < stalks.length; b++) {
+      if (a === b) continue;
+      const d = Math.hypot(stalks[a].position.x - stalks[b].position.x, stalks[a].position.y - stalks[b].position.y);
+      if (d < nearest) nearest = d;
+    }
+    if (nearest > 12) lonely++;
+  }
+  if (lonely === 0) clusteredOk++; else allClustered = false;
+}
+assert(clusteredTotal > 0, 'No cornfields generated in 300 meadow chunks');
+assert(allClustered && clusteredOk === clusteredTotal, `Corn not clustered: ${clusteredOk}/${clusteredTotal} fields have all stalks grouped`);
+// Blocked positions are skipped (no stalks inside buildings/water).
+{
+  const blocked = (pos: { x: number; y: number }) => pos.x > 40 && pos.x < 60 && pos.y > 40 && pos.y < 60;
+  const stalks = cornStalksForChunk({ x: 4, y: 7 }, 'meadow', blocked);
+  const inBlocked = stalks.filter((s) => blocked(s.position));
+  assert(inBlocked.length === 0, `${inBlocked.length} corn stalks spawned inside blocked area`);
+}
 
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);

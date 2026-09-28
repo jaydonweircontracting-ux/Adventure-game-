@@ -16,6 +16,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type Simulate
 import { isInMeleeArc } from '@/game/combat';
 import { updateGoat, type GoatAIState } from '@/game/ai';
 import { playCombatSound } from '@/game/effects';
+import { cornStalksForChunk, type CornStalk } from '@/game/cornfield';
 import { getSpriteState } from '@/game/animation';
 import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/persistence';
 import CharacterCreator from '@/components/CharacterCreator';
@@ -28,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '176';
+const BUILD_NUMBER = '177';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -312,7 +313,7 @@ function envSpriteForTerrain(terrain: Terrain, variant: number): EnvSpriteKey {
     case 'rock': return (['rock', 'deadtree', 'rock', 'icerock'] as EnvSpriteKey[])[variant] || 'rock';
     case 'desert': return (['saguaro1', 'saguaro2', 'pear', 'tomato'] as EnvSpriteKey[])[variant] || 'saguaro1';
     case 'shore': return (['grass1', 'coral1', 'coral2', 'coral3'] as EnvSpriteKey[])[variant] || 'grass1';
-    default: return (['grass1', 'grass2', 'pine2', 'corn'] as EnvSpriteKey[])[variant] || 'grass1';
+    default: return (['grass1', 'grass2', 'pine2', 'pear'] as EnvSpriteKey[])[variant] || 'grass1';
   }
 }
 type FieldRect = { left: number; top: number; right: number; bottom: number };
@@ -875,7 +876,7 @@ const statDetails: Record<StatKey, { label: string; description: string }> = {
   luk: { label: 'Luck', description: 'Improves critical hits and loot rolls.' },
 };
 const initialPlayerStats: PlayerStats = { str: 4, dex: 4, int: 4, luk: 4 };
-type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number };
+type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number };
 type GoatLoot = Partial<GameInventory>;
 type DroppedLoot = { id: number; chunk: Point; position: Point; loot: GoatLoot };
 type GoatState = {
@@ -952,7 +953,7 @@ const PLAYER_MAX_HP = 88;
 const PLAYER_BASE_ATTACK_DAMAGE = 5;
 const PLAYER_STAT_POINTS_PER_LEVEL = 5;
 const GOAT_LOOT_TYPES: Array<keyof GameInventory> = ['goatHorns', 'fabric', 'coins'];
-const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0 };
+const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0 };
 
 function playerMaxHpForStats(stats: PlayerStats) {
   return PLAYER_MAX_HP + stats.int * 3;
@@ -1028,7 +1029,8 @@ function isGameInventory(value: unknown): value is GameInventory {
     && isFiniteNumber(value.cloths)
     && (value.bone == null || isFiniteNumber(value.bone))
     && (value.pelt == null || isFiniteNumber(value.pelt))
-    && (value.fang == null || isFiniteNumber(value.fang));
+    && (value.fang == null || isFiniteNumber(value.fang))
+    && (value.corn == null || isFiniteNumber(value.corn));
 }
 
 function isPlayerStats(value: unknown): value is PlayerStats {
@@ -2358,7 +2360,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
 }
 function InventorySheet({ inventory, equippedDagger, onToggleDagger, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose }: { inventory: GameInventory; equippedDagger: boolean; onToggleDagger: () => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats'>('inventory');
-  const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang;
+  const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn;
   const visibleItems = [
     { key: 'goatHorns', label: 'Goat horns', detail: 'Crafting material', mark: '✦', className: 'horn-mark' },
     { key: 'fabric', label: 'Fabric', detail: 'Useful cloth', mark: '▤', className: 'fabric-mark' },
@@ -2367,6 +2369,7 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, playerStats
     { key: 'bone', label: 'Bone', detail: 'Skeleton remains', mark: '☠', className: 'bone-mark' },
     { key: 'pelt', label: 'Pelt', detail: 'Thick animal hide', mark: '❖', className: 'pelt-mark' },
     { key: 'fang', label: 'Fang', detail: 'Sharp monster fang', mark: '⸙', className: 'fang-mark' },
+    { key: 'corn', label: 'Corn', detail: 'Harvested crop', mark: '🌽', className: 'corn-mark' },
   ].filter((item) => inventory[item.key as keyof GameInventory] > 0);
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="inventory-title" data-testid="overlay-inventory">
@@ -2486,6 +2489,10 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const [selectedAdventurerId, setSelectedAdventurerId] = useState<string | null>(null);
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }, 1));
   const [monsters, setMonsters] = useState<MonsterState[]>(() => monstersForChunk({ x: 4, y: 7 }, 1));
+  const [cornStalks, setCornStalks] = useState<CornStalk[]>(() => {
+    const startChunk = { x: 4, y: 7 };
+    return cornStalksForChunk(startChunk, mapTileFor(startChunk).terrain, (pos) => isFieldPositionBlocked(pos, startChunk));
+  });
   const monstersRef = useRef<MonsterState[]>(monsters);
   const [birds, setBirds] = useState<BirdState[]>(() => birdsForChunk({ x: 4, y: 7 }));
   const birdsRef = useRef<BirdState[]>(birds);
@@ -2517,6 +2524,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const gameFrameRef = useRef<HTMLDivElement>(null);
   const areaFlashIdRef = useRef(0);
   const goatsRef = useRef(goats);
+  const cornStalksRef = useRef<CornStalk[]>(cornStalks);
   const targetGoatIdRef = useRef<number | null>(null);
   const droppedLootRef = useRef(droppedLoot);
   const droppedLootIdRef = useRef(1);
@@ -2661,6 +2669,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   useEffect(() => { mountedRef.current = mounted; }, [mounted]);
   useEffect(() => { horseRef.current = horse; }, [horse]);
   useEffect(() => { goatsRef.current = goats; }, [goats]);
+  useEffect(() => { cornStalksRef.current = cornStalks; }, [cornStalks]);
   useEffect(() => { targetGoatIdRef.current = targetGoatId; }, [targetGoatId]);
   useEffect(() => { droppedLootRef.current = droppedLoot; }, [droppedLoot]);
   useEffect(() => { playerHpRef.current = playerHp; }, [playerHp]);
@@ -2819,6 +2828,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
     const nextMonsters = monstersForChunk(chunk, playerLevelRef.current);
     monstersRef.current = nextMonsters;
     setMonsters(nextMonsters);
+    const nextCorn = cornStalksForChunk(chunk, mapTileFor(chunk).terrain, (pos) => isFieldPositionBlocked(pos, chunk));
+    cornStalksRef.current = nextCorn;
+    setCornStalks(nextCorn);
     const nextBirds = birdsForChunk(chunk);
     birdsRef.current = nextBirds;
     setBirds(nextBirds);
@@ -2887,17 +2899,38 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
         playerAttack.elapsed += elapsed * 1000;
         if (!playerAttack.hitApplied && playerAttack.elapsed >= 100) {
           playerAttack.hitApplied = true;
-          const attackCandidates = (goatsRef.current as (GoatState & { entityKind?: string })[])
+          const goatCandidates = (goatsRef.current as (GoatState & { entityKind?: string })[])
             .filter((goat) => goat.disposition !== 'defeated' && goatIsInAttackArc(goat, positionRef.current, playerAttack.direction))
-            .map((goat) => ({ ...goat, entityKind: 'goat' as const }))
-            .concat((monstersRef.current as (MonsterState & { entityKind?: string })[])
-              .filter((monster) => monster.disposition !== 'defeated' && goatIsInAttackArc(monster, positionRef.current, playerAttack.direction))
-              .map((monster) => ({ ...monster, entityKind: 'monster' as const })))
-            .sort((a, b) => goatDistance(a, positionRef.current) - goatDistance(b, positionRef.current));
+            .map((goat) => ({ ...goat, entityKind: 'goat' as const }));
+          const monsterCandidates = (monstersRef.current as (MonsterState & { entityKind?: string })[])
+            .filter((monster) => monster.disposition !== 'defeated' && goatIsInAttackArc(monster, positionRef.current, playerAttack.direction))
+            .map((monster) => ({ ...monster, entityKind: 'monster' as const }));
+          const cornCandidates = cornStalksRef.current
+            .filter((stalk) => !stalk.harvested && goatIsInAttackArc(stalk as unknown as GoatState, positionRef.current, playerAttack.direction))
+            .map((stalk) => ({ ...stalk, entityKind: 'corn' as const }));
+          const attackCandidates: Array<(typeof goatCandidates)[number] | (typeof monsterCandidates)[number] | (typeof cornCandidates)[number]> =
+            [...goatCandidates, ...monsterCandidates, ...cornCandidates]
+              .sort((a, b) => goatDistance(a as unknown as GoatState, positionRef.current) - goatDistance(b as unknown as GoatState, positionRef.current));
           const attackTarget = playerAttack.targetId == null
             ? attackCandidates[0]
             : attackCandidates.find((goat) => goat.id === playerAttack.targetId);
-          if (attackTarget && goatIsInAttackArc(attackTarget, positionRef.current, playerAttack.direction)) {
+          if (attackTarget && goatIsInAttackArc(attackTarget as GoatState, positionRef.current, playerAttack.direction)) {
+            // Harvesting corn: one swing cuts the stalk, which disappears and
+            // drops corn loot. No HP, no combat — it's a crop, not a creature.
+            if (attackTarget.entityKind === 'corn') {
+              const stalkId = attackTarget.id;
+              const hitPosition = { ...attackTarget.position };
+              const nextStalks = cornStalksRef.current.filter((stalk) => stalk.id !== stalkId);
+              cornStalksRef.current = nextStalks;
+              setCornStalks(nextStalks);
+              const cornCount = 1 + Math.floor(Math.random() * 2);
+              const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot: { corn: cornCount } };
+              droppedLootRef.current = [...droppedLootRef.current, drop];
+              setDroppedLoot(droppedLootRef.current);
+              spawnCombatText('+' + cornCount + ' corn', hitPosition, 'reward');
+              playCombatSound('shing', muted);
+              setLogs((currentLogs) => [{ text: 'Harvested ' + cornCount + ' corn.', color: 'blue' }, ...currentLogs].slice(0, 3));
+            } else {
             const stats = playerStatsRef.current;
             const critical = Math.random() < playerCriticalChanceForStats(stats);
             const damage = playerDamageForStats(stats) * (critical ? 2 : 1);
@@ -2955,6 +2988,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
               targetGoatIdRef.current = null; setTargetGoatId(null);
             }
             } // end goat branch
+            } // end harvest else
           } else {
             // Keep missed swings silent; combat feedback is reserved for actual hits.
           }
@@ -3183,6 +3217,7 @@ if (active) {
       drop.loot.bone ? `+${drop.loot.bone} bone${drop.loot.bone === 1 ? '' : 's'}` : '',
       drop.loot.pelt ? `+${drop.loot.pelt} pelt${drop.loot.pelt === 1 ? '' : 's'}` : '',
       drop.loot.fang ? `+${drop.loot.fang} fang${drop.loot.fang === 1 ? '' : 's'}` : '',
+      drop.loot.corn ? `+${drop.loot.corn} corn` : '',
     ].filter(Boolean).join(' · ');
     const message = `Picked up goat loot: ${contents}.`;
     setLogs((currentLogs) => [{ text: message, color: 'blue' }, ...currentLogs].slice(0, 3));
@@ -3493,7 +3528,8 @@ if (active) {
                 : only('coins') ? 'coins'
                 : only('bone') ? 'bone'
                 : only('pelt') ? 'pelt'
-                : only('fang') ? 'fang' : 'bag';
+                : only('fang') ? 'fang'
+                : only('corn') ? 'corn' : 'bag';
               return <div className="loot-drop" key={drop.id} style={{ left: drop.position.x + '%', top: drop.position.y + '%' }}>
                 <span className={'loot-visual loot-' + lootKind} aria-label={'Dropped ' + lootKind} />
                 {nearby && <button className="pickup-button" onClick={() => pickupDrop(drop)} data-testid={'button-pickup-loot-' + drop.id}>Pick up</button>}
@@ -3523,6 +3559,25 @@ if (active) {
               );
             })}
           </div>
+          {cornStalks.length > 0 && (
+            <div className="field-corn" aria-hidden="true" style={{ '--env-sprites': 'url("' + assetUrl('environment/FreePack.png') + '")' } as CSSProperties} data-testid="cornfield">
+              {cornStalks.map((stalk) => {
+                const box = ENV_SPRITE_BOXES.corn;
+                return (
+                  <span
+                    className="field-corn-stalk env-corn"
+                    key={stalk.id}
+                    style={{
+                      left: 'calc(' + stalk.position.x + '% - ' + box.w / 2 + 'px)',
+                      top: 'calc(' + stalk.position.y + '% - ' + box.h + 'px)',
+                      width: box.w,
+                      height: box.h,
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
           {currentWorldTile.landmark && currentWorldTile.landmark.kind === 'dungeon' && (
             <div className="field-dungeon-entrance" aria-label={currentWorldTile.landmark.name + ' entrance'} data-testid="dungeon-entrance">
               <span className="dungeon-mound" aria-hidden="true" />
@@ -3954,6 +4009,7 @@ function Home() {
     bone: Math.max(0, current.bone + (loot.bone || 0)),
     pelt: Math.max(0, current.pelt + (loot.pelt || 0)),
     fang: Math.max(0, current.fang + (loot.fang || 0)),
+    corn: Math.max(0, current.corn + (loot.corn || 0)),
   }));
 
   const toggleDagger = () => {

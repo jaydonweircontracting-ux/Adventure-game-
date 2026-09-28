@@ -1355,6 +1355,16 @@
   image-rendering: pixelated;
 }
 .field-tree::after { content: none; }
+/* Cornfields: clusters of harvestable corn stalks. Same sprite sheet as trees. */
+.field-corn { position: absolute; z-index: 3; inset: 0; pointer-events: none; }
+.field-corn-stalk {
+  position: absolute;
+  border: 0;
+  background-image: var(--env-sprites);
+  background-repeat: no-repeat;
+  background-size: 512px 384px;
+  image-rendering: pixelated;
+}
 /* Biome vegetation sprites (FreeEnvironment pack). Each class crops one
    trimmed sprite from the sheet; width/height match the sprite's box. */
 .env-bigpine { width: 96px; height: 156px; background-position: -7px -100px; }
@@ -2560,6 +2570,9 @@ body {
 .loot-bag { border: 2px solid #5b3d2e; border-radius: 4px 4px 7px 7px; background: linear-gradient(135deg, #c28a4c 0 48%, #8c5a39 49% 100%); box-shadow: 2px 3px 0 rgba(43, 61, 41, .25); }
 .loot-bag::before { content: ''; position: absolute; left: 5px; top: -6px; width: 8px; height: 7px; border: 2px solid #5b3d2e; border-bottom: 0; border-radius: 7px 7px 0 0; }
 .loot-horn { background: linear-gradient(135deg, #e8e0d0 0 40%, #c8b898 41% 100%); clip-path: polygon(20% 100%, 35% 40%, 50% 0%, 65% 40%, 80% 100%); filter: drop-shadow(2px 2px 0 rgba(43, 61, 41, .25)); }
+/* Corn drop: a yellow cob with green husk. */
+.loot-corn { background: linear-gradient(135deg, #f2c531 0 55%, #d9a41f 56% 100%); border-radius: 9px 9px 9px 9px / 12px 12px 12px 12px; box-shadow: 2px 3px 0 rgba(43, 61, 41, .25); }
+.loot-corn::before { content: ''; position: absolute; left: -4px; top: 2px; width: 8px; height: 14px; background: linear-gradient(135deg, #5da24a 0 60%, #3f7a33 61% 100%); border-radius: 4px 0 0 4px; transform: rotate(-18deg); }
 .loot-cloth { background: linear-gradient(135deg, #a85a5a 0 50%, #7a3a3a 51% 100%); border-radius: 3px; transform: rotate(-8deg); box-shadow: 2px 3px 0 rgba(43, 61, 41, .25); }
 .loot-cloth::before { content: ''; position: absolute; inset: 3px; border: 1px dashed rgba(255, 255, 255, .4); border-radius: 2px; }
 .loot-coins { background: radial-gradient(circle at 30% 30%, #ffd955 0%, #e8a93d 50%, #b87a25 100%); border-radius: 50%; box-shadow: 2px 3px 0 rgba(43, 61, 41, .25), inset -2px -2px 0 rgba(150, 100, 30, .4); }
@@ -3666,6 +3679,9 @@ body {
 .bone-mark { background-position: -320px 0; }
 .pelt-mark { background-position: -384px 0; }
 .fang-mark { background-position: -448px 0; }
+/* Corn has no icon in the 8-slot sheet; render the emoji instead. */
+.corn-mark { background-image: none; font-size: 20px; display: inline-flex; align-items: center; justify-content: center; }
+.corn-mark::before { content: '🌽'; }
 /* Orc mob: Tiny RPG orc, 6-frame idle / 8-frame walk, 56x46. Faces right natively. */
 .monster-orc .monster-sprite {
   left: 50%; top: 50%;
