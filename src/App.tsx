@@ -18,6 +18,9 @@ import { updateGoat, type GoatAIState } from '@/game/ai';
 import { playCombatSound } from '@/game/effects';
 import { getSpriteState } from '@/game/animation';
 import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/persistence';
+import CharacterCreator from '@/components/CharacterCreator';
+import { compositeCharacterSheet, sanitizeCharacterChoices, type CharacterChoices } from '@/game/characterCreator';
+const CHARACTER_PART_URL = (file: string) => `${import.meta.env.BASE_URL}manaseed/${file}`;
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
@@ -697,6 +700,7 @@ type SaveGameData = {
   playerClass: PlayerClass;
   playerStats?: PlayerStats;
   statPoints?: number;
+  characterChoices?: CharacterChoices | null;
   npcStates: TownNpc[];
   simulatedAdventurers: SimulatedAdventurer[];
   goats: GoatState[];
@@ -1417,7 +1421,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v143</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v144</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -1696,6 +1700,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     playerClass,
     playerStats,
     statPoints,
+    characterChoices,
     npcStates,
     simulatedAdventurers,
     goats,
@@ -2761,6 +2766,10 @@ function Home() {
   const [equippedDagger, setEquippedDagger] = useState(false);
   // Start at the title screen so New Game mounts a fresh full-health session.
   const [menuOpen, setMenuOpen] = useState(true);
+  // Character creation: custom player sprite composited from Mana Seed parts.
+  const [creatingCharacter, setCreatingCharacter] = useState(false);
+  const [characterChoices, setCharacterChoices] = useState<CharacterChoices | null>(null);
+  const [playerSpriteUrl, setPlayerSpriteUrl] = useState<string | null>(null);
   const [dungeonOpen, setDungeonOpen] = useState(false);
   const [loadedSave, setLoadedSave] = useState<SaveGameData | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
@@ -2812,6 +2821,17 @@ function Home() {
     setMapOpen(false); setInventoryOpen(false); setSaveNotice(null); setMenuOpen(false);
   };
 
+  // Character creation confirm: build the custom sprite sheet, then start.
+  // Falls back to the default sprite if compositing fails.
+  const confirmCharacter = (choices: CharacterChoices) => {
+    setCharacterChoices(choices);
+    setCreatingCharacter(false);
+    compositeCharacterSheet(choices, CHARACTER_PART_URL)
+      .then((url) => setPlayerSpriteUrl(url))
+      .catch(() => setPlayerSpriteUrl(null));
+    startNewGame();
+  };
+
   const assignStatPoint = (stat: StatKey) => {
     if (statPoints < 1) return;
     setStatPoints((current) => current - 1);
@@ -2826,6 +2846,16 @@ function Home() {
     setStatPoints(Math.max(0, Math.floor(parsed.statPoints || 0)));
     setEquippedDagger(savedEquippedDagger);
     setChunk(parsed.chunk);
+    // Restore the custom character sprite when the save has one.
+    const savedCharacter = sanitizeCharacterChoices(parsed.characterChoices);
+    setCharacterChoices(savedCharacter);
+    if (savedCharacter) {
+      compositeCharacterSheet(savedCharacter, CHARACTER_PART_URL)
+        .then((url) => setPlayerSpriteUrl(url))
+        .catch(() => setPlayerSpriteUrl(null));
+    } else {
+      setPlayerSpriteUrl(null);
+    }
     setMapOpen(false); setInventoryOpen(false); setSaveNotice(notice); setMenuOpen(false);
   };
 
@@ -2905,20 +2935,26 @@ function Home() {
     <main
       className={menuOpen ? 'game-app menu-mode' : 'game-app'}
       style={{
-        '--player-sprite-url': `url("${assetUrl('assets/cute-fantasy/player.png')}")`,
+        '--player-sprite-url': playerSpriteUrl ? `url("${playerSpriteUrl}")` : `url("${assetUrl('assets/cute-fantasy/player.png')}")`,
+        // Bandits stay pinned to the original player sprite sheet even when the
+        // player creates a custom character.
+        '--bandit-sprite-url': `url("${assetUrl('assets/cute-fantasy/player.png')}")`,
         '--player-attack-sprite-url': `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")`,
         '--horse-sprite-url': `url("${assetUrl('assets/farm-male-cow-brown.png')}")`,
          '--goat-sprite-url': `url("${assetUrl('assets/gameplay/characters/goat/goat.png')}")`,
       } as CSSProperties}
     >
       {menuOpen ? (
+        creatingCharacter ? (
+          <CharacterCreator onConfirm={confirmCharacter} onCancel={() => setCreatingCharacter(false)} />
+        ) : (
         <section className="main-menu" aria-label="Main menu" data-testid="main-menu">
           <div className="main-menu-card">
             <span className="main-menu-kicker">THE FAR MEADOW · BUILD {BUILD_NUMBER}</span>
             <h1>Adventure Game</h1>
             <p>Follow the roads, learn the first hunt, and choose the path that carries you beyond Mosslight Crossing.</p>
             <div className="main-menu-actions">
-              <button className="main-menu-button primary" onClick={startNewGame} data-testid="button-new-game">New Game</button>
+              <button className="main-menu-button primary" onClick={() => setCreatingCharacter(true)} data-testid="button-new-game">New Game</button>
               <button className="main-menu-button" onClick={loadLocalSave} disabled={!hasLocalSave} data-testid="button-load-game-menu">{hasLocalSave ? 'Load Game' : 'Load Game · No Save Yet'}</button>
               <button className="main-menu-button" onClick={openLoadPicker} data-testid="button-load-save-menu">Import Save File</button>
             </div>
@@ -2926,6 +2962,7 @@ function Home() {
             {saveNotice && <div className="save-notice" role="status">{saveNotice}</div>}
           </div>
         </section>
+        )
       ) : (
         <>
           <div className="game-layout">

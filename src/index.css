@@ -1952,7 +1952,7 @@ body {
   left: 50%; top: 50%;
   width: 32px; height: 32px;
   margin: -16px 0 0 -16px;
-  background-image: var(--player-sprite-url);
+  background-image: var(--bandit-sprite-url);
   background-size: 192px 320px;
   background-repeat: no-repeat;
   image-rendering: pixelated;
@@ -2307,6 +2307,11 @@ body {
 .dialogue-portrait[data-facing='up'] .npc-sprite { background-position-y: -64px; }
 .dialogue-portrait[data-facing='left'] .npc-sprite { background-position-y: -128px; transform: scaleX(-1); }
 .dialogue-portrait[data-facing='right'] .npc-sprite { background-position-y: -128px; }
+/* Portraits show each role's own sheet column, not the player's column. */
+.dialogue-portrait.npc-warrior .npc-sprite { background-position-x: -32px; }
+.dialogue-portrait.npc-mage .npc-sprite { background-position-x: -64px; }
+.dialogue-portrait.npc-guide .npc-sprite { background-position-x: -96px; }
+.dialogue-portrait.npc-rogue .npc-sprite { background-position-x: -128px; }
 .npc-dialogue-copy { min-width: 0; }
 .dialogue-kicker { color: var(--clay); font: 9px var(--app-font-mono); letter-spacing: .1em; text-transform: uppercase; }
 .npc-dialogue-copy h2 { margin: 3px 0 5px; font-size: 20px; }
@@ -3152,3 +3157,136 @@ body {
 .world-field.map-terrain-forest { background-image: radial-gradient(circle at 17% 23%, rgba(38, 103, 64, .42) 0 5%, transparent 6%), radial-gradient(circle at 68% 70%, rgba(38, 103, 64, .32) 0 7%, transparent 8%), repeating-linear-gradient(25deg, transparent 0 12px, rgba(33, 91, 53, .15) 13px 15px, transparent 16px 25px); }
 .world-field.map-terrain-desert { background-image: radial-gradient(circle at 18% 26%, rgba(226, 159, 71, .24) 0 5%, transparent 6%), radial-gradient(circle at 74% 62%, rgba(106, 69, 46, .2) 0 7%, transparent 8%), linear-gradient(135deg, rgba(255, 214, 127, .14), transparent 48%); }
 .world-field.map-terrain-tundra { background-image: radial-gradient(circle at 22% 24%, rgba(255, 255, 255, .42) 0 6%, transparent 7%), linear-gradient(135deg, rgba(224, 239, 236, .18), transparent 52%); }
+
+/* Character creation (build v144). */
+.character-creator {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  max-height: 100dvh;
+  overflow-y: auto;
+  padding: clamp(12px, 3vw, 32px);
+}
+.character-creator-card {
+  width: min(860px, 100%);
+  padding: clamp(20px, 4vw, 36px);
+  border: 1px solid rgba(235, 206, 139, .48);
+  background: rgba(243, 235, 213, .97);
+  color: var(--ink);
+  box-shadow: 8px 8px 0 rgba(7, 22, 22, .34), 0 24px 70px rgba(5, 18, 18, .28);
+  text-align: center;
+}
+.character-creator-card h1 {
+  margin: 10px 0 6px;
+  color: var(--field-deep);
+  font-family: var(--app-font-display);
+  font-size: clamp(28px, 6vw, 42px);
+  line-height: 1;
+}
+.creator-sub { margin: 0 0 16px; opacity: .75; font-size: 13px; }
+.creator-body {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 20px;
+  text-align: left;
+  align-items: start;
+}
+.creator-preview-pane {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 8px;
+  background: rgba(20, 34, 28, .08);
+  border: 1px solid rgba(20, 34, 28, .14);
+}
+.creator-portrait {
+  width: 128px; height: 128px;
+  background-size: 192px 320px;
+  background-position: 0 0;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+.creator-walk {
+  width: 64px; height: 64px;
+  background-size: 192px 320px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  background-position: 0 -96px;
+  animation: creator-walk .48s steps(5, end) infinite;
+}
+@keyframes creator-walk {
+  from { background-position-x: 0; }
+  to { background-position-x: -160px; }
+}
+.creator-facings { display: flex; gap: 8px; }
+.creator-facing {
+  width: 32px; height: 32px;
+  background-size: 192px 320px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  border: 1px solid rgba(20, 34, 28, .2);
+  background-color: rgba(255, 255, 255, .35);
+}
+.creator-preview-label { font-size: 11px; opacity: .6; }
+.creator-options { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.creator-group { display: flex; flex-direction: column; gap: 8px; }
+.creator-group-title {
+  font: 10px var(--app-font-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  opacity: .65;
+}
+.creator-name-input {
+  padding: 10px 12px;
+  font-size: 16px;
+  border: 1px solid rgba(20, 34, 28, .25);
+  background: rgba(255, 255, 255, .6);
+  color: var(--ink);
+  border-radius: 6px;
+  max-width: 280px;
+}
+.creator-thumb-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.creator-thumb {
+  width: 48px; height: 48px;
+  padding: 0;
+  border: 2px solid rgba(20, 34, 28, .18);
+  border-radius: 8px;
+  background-color: rgba(255, 255, 255, .4);
+  background-size: 384px 384px;
+  background-position: 0 -192px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  cursor: pointer;
+}
+.creator-thumb.is-selected {
+  border-color: var(--clay);
+  box-shadow: 0 0 0 2px rgba(235, 206, 139, .55);
+}
+.creator-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.creator-chip {
+  padding: 8px 14px;
+  border: 2px solid rgba(20, 34, 28, .18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .5);
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+}
+.creator-chip.is-selected {
+  border-color: var(--clay);
+  background: rgba(235, 206, 139, .35);
+  font-weight: 700;
+}
+.creator-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 22px;
+}
+@media (max-width: 640px) {
+  .creator-body { grid-template-columns: 1fr; }
+  .creator-preview-pane { flex-direction: row; justify-content: center; flex-wrap: wrap; }
+  .creator-portrait { width: 96px; height: 96px; }
+}
