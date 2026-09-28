@@ -11,6 +11,8 @@ export type SimulatedAdventurer = {
   facing: 'up' | 'down' | 'left' | 'right';
   routeIndex: number;
   moving?: boolean;
+  status?: 'healthy' | 'injured' | 'resting';
+  reputation?: number;
 };
 
 type Point = { x: number; y: number };
@@ -33,10 +35,24 @@ const houseRoutes: Record<string, Point[]> = {
 };
 
 export const initialSimulatedAdventurers: SimulatedAdventurer[] = [
-  { id: 'kael', name: 'Kael Thorn', className: 'Ranger', level: 1, goal: 'scouting the old quarry', activity: 'waiting by the starting hearth', position: { x: 43, y: 48 }, interiorPosition: { x: 36, y: 46 }, location: 'starting-house', facing: 'right', routeIndex: 0 },
-  { id: 'sera', name: 'Sera Flint', className: 'Mage', level: 1, goal: 'gathering ember-reeds to sell', activity: 'waiting by the starting hearth', position: { x: 38, y: 61 }, interiorPosition: { x: 64, y: 46 }, location: 'starting-house', facing: 'left', routeIndex: 0 },
-  { id: 'orin', name: 'Orin Vale', className: 'Rogue', level: 1, goal: 'finding a better dagger', activity: 'waiting by the starting hearth', position: { x: 71, y: 49 }, interiorPosition: { x: 38, y: 62 }, location: 'starting-house', facing: 'right', routeIndex: 0 },
-  { id: 'bram', name: 'Bram Oak', className: 'Warrior', level: 1, goal: 'clearing the eastern pasture', activity: 'waiting by the starting hearth', position: { x: 58, y: 78 }, interiorPosition: { x: 62, y: 62 }, location: 'starting-house', facing: 'left', routeIndex: 0 },
+  { id: 'kael', name: 'Kael Thorn', className: 'Ranger', level: 1, goal: 'scouting the old quarry', activity: 'waiting by the starting hearth', position: { x: 43, y: 48 }, interiorPosition: { x: 36, y: 46 }, location: 'starting-house', facing: 'right', routeIndex: 0, status: 'healthy', reputation: 0 },
+  { id: 'sera', name: 'Sera Flint', className: 'Mage', level: 1, goal: 'gathering ember-reeds to sell', activity: 'waiting by the starting hearth', position: { x: 38, y: 61 }, interiorPosition: { x: 64, y: 46 }, location: 'starting-house', facing: 'left', routeIndex: 0, status: 'healthy', reputation: 0 },
+  { id: 'orin', name: 'Orin Vale', className: 'Rogue', level: 1, goal: 'finding a better dagger', activity: 'waiting by the starting hearth', position: { x: 71, y: 49 }, interiorPosition: { x: 38, y: 62 }, location: 'starting-house', facing: 'right', routeIndex: 0, status: 'healthy', reputation: 0 },
+  { id: 'bram', name: 'Bram Oak', className: 'Warrior', level: 1, goal: 'clearing the eastern pasture', activity: 'waiting by the starting hearth', position: { x: 58, y: 78 }, interiorPosition: { x: 62, y: 62 }, location: 'starting-house', facing: 'left', routeIndex: 0, status: 'healthy', reputation: 0 },
+];
+
+// Dynamic goals that adventurers cycle through
+const dynamicGoals = [
+  'scouting the old quarry',
+  'gathering ember-reeds to sell',
+  'finding a better dagger',
+  'clearing the eastern pasture',
+  'mapping the northern ruins',
+  'hunting wolves in the forest',
+  'trading with the merchants',
+  'exploring the cave system',
+  'helping farmers with pests',
+  'searching for ancient artifacts',
 ];
 
 function clamp(value: number, minimum: number, maximum: number) {
@@ -82,14 +98,31 @@ function advanceFromHouse(adventurer: SimulatedAdventurer) {
 export function advanceSimulatedAdventurers(adventurers: SimulatedAdventurer[], tick: number, goatTargets: GoatTarget[] = []) {
   return adventurers.map((adventurer) => {
     if ((adventurer.location || 'field') === 'starting-house') return advanceFromHouse(adventurer);
+    // Occasionally change goals (every ~100 ticks)
+    let goal = adventurer.goal;
+    let status = adventurer.status || 'healthy';
+    if (tick % 100 === 0 && Math.random() < 0.3) {
+      goal = dynamicGoals[Math.floor(Math.random() * dynamicGoals.length)];
+    }
+    // Injured adventurers rest and recover
+    if (status === 'injured') {
+      if (Math.random() < 0.05) {
+        status = 'healthy';
+        return { ...adventurer, goal, status, activity: 'recovered and ready to go' };
+      }
+      return { ...adventurer, goal, status, activity: 'resting from injuries', moving: false };
+    }
+    // Small chance to get injured while fighting
     const aliveTargets = goatTargets.filter((target) => Number.isFinite(target.position.x) && Number.isFinite(target.position.y));
     const nearestGoat = aliveTargets.sort((left, right) => Math.hypot(left.position.x - adventurer.position.x, left.position.y - adventurer.position.y) - Math.hypot(right.position.x - adventurer.position.x, right.position.y - adventurer.position.y))[0];
     if (nearestGoat) {
       const hunt = moveToward(adventurer.position, nearestGoat.position, 4.5);
       if (hunt.distance <= 5) {
-        return { ...adventurer, position: hunt.position, facing: nearestGoat.position.x >= adventurer.position.x ? 'right' : 'left', moving: true, activity: 'fighting a goat' };
+        // Small chance to get injured in combat
+        const newStatus = Math.random() < 0.02 ? 'injured' : status;
+        return { ...adventurer, goal, status: newStatus, position: hunt.position, facing: nearestGoat.position.x >= adventurer.position.x ? 'right' : 'left', moving: true, activity: newStatus === 'injured' ? 'injured fighting a goat' : 'fighting a goat' };
       }
-      return { ...adventurer, position: hunt.position, facing: Math.abs(nearestGoat.position.x - adventurer.position.x) >= Math.abs(nearestGoat.position.y - adventurer.position.y) ? (nearestGoat.position.x >= adventurer.position.x ? 'right' : 'left') : (nearestGoat.position.y >= adventurer.position.y ? 'down' : 'up'), moving: true, activity: 'tracking a goat' };
+      return { ...adventurer, goal, status, position: hunt.position, facing: Math.abs(nearestGoat.position.x - adventurer.position.x) >= Math.abs(nearestGoat.position.y - adventurer.position.y) ? (nearestGoat.position.x >= adventurer.position.x ? 'right' : 'left') : (nearestGoat.position.y >= adventurer.position.y ? 'down' : 'up'), moving: true, activity: 'tracking a goat' };
     }
     const route = routes[adventurer.id] || [];
     if (!route.length) return adventurer;

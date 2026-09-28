@@ -857,6 +857,21 @@ type SaveGameData = {
   goats: GoatState[];
   interiorId: string | null;
   interiorPosition: Point;
+  inPrison?: boolean;
+  prisonState?: { foundShiv: boolean; talkedToPrisoner: boolean; helpedPrisoner: boolean; escapeRoute: 'sewer' | 'gate' | null };
+  journal?: {
+    discoveredLocations: Array<{ name: string; kind: string; chunk: Point; discoveredAt: string }>;
+    activeQuests: Array<{ id: string; title: string; description: string; progress: string }>;
+    completedQuests: Array<{ id: string; title: string; completedAt: string }>;
+    rumors: Array<{ text: string; source: string; heardAt: string }>;
+    notes: Array<{ text: string; writtenAt: string }>;
+  };
+  reputation?: {
+    mosslight: number;
+    guards: number;
+    merchants: number;
+    wilderness: number;
+  };
   logs: Array<{ text: string; color: string }>;
   time: string;
   brainState: RpgGameState | null;
@@ -943,7 +958,9 @@ function isSimulatedAdventurerSave(value: unknown): value is SimulatedAdventurer
     && isSavePoint(value.position)
     && typeof value.facing === 'string'
     && saveDirections.includes(value.facing)
-    && isFiniteNumber(value.routeIndex);
+    && isFiniteNumber(value.routeIndex)
+    && (value.status === undefined || value.status === 'healthy' || value.status === 'injured' || value.status === 'resting')
+    && (value.reputation === undefined || isFiniteNumber(value.reputation));
 }
 
 function isDroppedLootSave(value: unknown): value is DroppedLoot {
@@ -998,6 +1015,10 @@ function isSaveGameData(value: unknown): value is SaveGameData {
     && value.goats.every(isGoatSave)
     && (value.interiorId === null || typeof value.interiorId === 'string')
     && isSavePoint(value.interiorPosition)
+    && (value.inPrison === undefined || typeof value.inPrison === 'boolean')
+    && (value.prisonState === undefined || (isRecord(value.prisonState) && typeof value.prisonState.foundShiv === 'boolean' && typeof value.prisonState.talkedToPrisoner === 'boolean' && typeof value.prisonState.helpedPrisoner === 'boolean' && (value.prisonState.escapeRoute === null || value.prisonState.escapeRoute === 'sewer' || value.prisonState.escapeRoute === 'gate')))
+    && (value.journal === undefined || isRecord(value.journal))
+    && (value.reputation === undefined || isRecord(value.reputation))
     && typeof value.time === 'string'
     && Array.isArray(value.logs)
     && value.logs.every((log) => isRecord(log) && typeof log.text === 'string' && typeof log.color === 'string')
@@ -1555,13 +1576,23 @@ type TownNpc = {
   facing: Direction;
   moving: boolean;
   target: Point | null;
+  home?: Point;
+  work?: Point;
+  leisure?: Point;
 };
 
 const startingTownNpcs: TownNpc[] = [
-  { name: 'Noah', title: 'Mage teacher', role: 'mage', position: { x: 40, y: 47 }, facing: 'right', moving: false, target: null },
-  { name: 'Damon', title: 'Warrior teacher', role: 'warrior', position: { x: 60, y: 47 }, facing: 'left', moving: false, target: null },
-  { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up', moving: false, target: null },
+  { name: 'Noah', title: 'Mage teacher', role: 'mage', position: { x: 40, y: 47 }, facing: 'right', moving: false, target: null, home: { x: 35, y: 60 }, work: { x: 40, y: 47 }, leisure: { x: 50, y: 50 } },
+  { name: 'Damon', title: 'Warrior teacher', role: 'warrior', position: { x: 60, y: 47 }, facing: 'left', moving: false, target: null, home: { x: 65, y: 60 }, work: { x: 60, y: 47 }, leisure: { x: 50, y: 55 } },
+  { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up', moving: false, target: null, home: { x: 45, y: 65 }, work: { x: 50, y: 64 }, leisure: { x: 55, y: 50 } },
 ];
+
+// Get where an NPC should be based on the time of day
+function npcScheduleTarget(npc: TownNpc, hour: number): Point {
+  if (hour >= 22 || hour < 6) return npc.home || npc.position; // Night: home
+  if (hour >= 9 && hour < 17) return npc.work || npc.position; // Day: work
+  return npc.leisure || npc.position; // Evening/morning: leisure
+}
 
 type WorldMapDisplayTile = MapTile & { current: boolean; world: GeneratedWorldTile };
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
@@ -1802,7 +1833,7 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
   );
 }
 
-function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string } | null } }) {
+function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string } | null } }) {
   const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
   const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -1922,6 +1953,10 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     goats,
     interiorId: interior?.id || null,
     interiorPosition,
+    inPrison,
+    prisonState,
+    journal,
+    reputation,
     logs,
     time,
     brainState: brainRef.current?.getGameState() || null,
@@ -1959,6 +1994,10 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     interiorDoorwayIdRef.current = restoredDoorway?.id || null;
     interiorRef.current = restoredDoorway?.area || null; setInterior(restoredDoorway?.area || null);
     interiorPositionRef.current = loadState.interiorPosition; setInteriorPosition(loadState.interiorPosition);
+    setInPrison(loadState.inPrison || false);
+    if (loadState.prisonState) setPrisonState(loadState.prisonState);
+    if (loadState.journal) setJournal(loadState.journal);
+    if (loadState.reputation) setReputation(loadState.reputation);
     setLogs(loadState.logs); setTime(loadState.time);
     setNpcDialogue(null); setAttackFlash(null); setLogOpen(false); setMoving(false);
     if (loadState.brainState) {
@@ -2021,11 +2060,19 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
         let target = npc.target;
         let facing = npc.facing;
         if (!target) {
-          if (Math.random() < 0.05) {
+          // Use schedule-based target instead of random wandering
+          const clock = brainRef.current?.worldCore.getClock();
+          const hour = clock?.hour ?? 12;
+          const scheduleTarget = npcScheduleTarget(npc, hour);
+          const distToSchedule = Math.hypot(scheduleTarget.x - npc.position.x, scheduleTarget.y - npc.position.y);
+          // If far from schedule location, head there; otherwise wander nearby
+          if (distToSchedule > 8) {
+            target = scheduleTarget;
+          } else if (Math.random() < 0.05) {
             facing = directions[Math.floor(Math.random() * directions.length)];
             target = {
-              x: Math.min(86, Math.max(14, npc.position.x + (Math.random() * 12 - 6))),
-              y: Math.min(76, Math.max(32, npc.position.y + (Math.random() * 12 - 6))),
+              x: Math.min(86, Math.max(14, scheduleTarget.x + (Math.random() * 12 - 6))),
+              y: Math.min(76, Math.max(32, scheduleTarget.y + (Math.random() * 12 - 6))),
             };
           } else if (Math.random() < 0.02) {
             facing = directions.filter((candidate) => candidate !== npc.facing)[Math.floor(Math.random() * 3)];
@@ -2571,6 +2618,26 @@ if (active) {
       nameplateTimerRef.current = null;
     }, 4000);
     setLogs((currentLogs) => [{ text: `${npc.name} turns to you: ${npc.title}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+    // NPCs occasionally share rumors
+    if (Math.random() < 0.4) {
+      const rumors = [
+        'I heard there are strange ruins to the north.',
+        'A traveler said the caves east of here are dangerous.',
+        'They say a dragon was spotted far to the south.',
+        'The merchants are talking about bandits on the roads.',
+        'Someone found an old shrine in the forest.',
+      ];
+      const rumor = rumors[Math.floor(Math.random() * rumors.length)];
+      const timeCopy = time;
+      setJournal((j) => {
+        if (j.rumors.some((r) => r.text === rumor)) return j;
+        return {
+          ...j,
+          rumors: [...j.rumors, { text: rumor, source: npc.name, heardAt: timeCopy }],
+        };
+      });
+      setLogs((currentLogs) => [{ text: `${npc.name} shares a rumor: "${rumor}"`, color: 'purple' }, ...currentLogs].slice(0, 5));
+    }
   };
   useEffect(() => () => {
     if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
@@ -2992,6 +3059,7 @@ if (active) {
             <div className="hud-quick-actions">
               <button className="hud-quick-button" onClick={onOpenMap} aria-label="Open world map" title="World map" data-testid="button-open-map"><MapIcon size={15} /></button>
               <button className="hud-quick-button" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={15} /></button>
+              <button className="hud-quick-button" onClick={onOpenJournal} aria-label="Open journal" title="Journal" data-testid="button-open-journal"><BookOpen size={15} /></button>
             </div>
             {selectedGoat && (
               <div className="hud-target" data-testid="hud-target">
@@ -3064,6 +3132,64 @@ function Home() {
   const [dungeonOpen, setDungeonOpen] = useState(false);
   const [loadedSave, setLoadedSave] = useState<SaveGameData | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  // Journal: discovered locations, quests, rumors, notes
+  const [journalOpen, setJournalOpen] = useState(false);
+  const [journal, setJournal] = useState({
+    discoveredLocations: [] as Array<{ name: string; kind: string; chunk: Point; discoveredAt: string }>,
+    activeQuests: [] as Array<{ id: string; title: string; description: string; progress: string }>,
+    completedQuests: [] as Array<{ id: string; title: string; completedAt: string }>,
+    rumors: [] as Array<{ text: string; source: string; heardAt: string }>,
+    notes: [] as Array<{ text: string; writtenAt: string }>,
+  });
+  // Reputation: tracked per faction/region
+  const [reputation, setReputation] = useState({
+    mosslight: 0,
+    guards: 0,
+    merchants: 0,
+    wilderness: 0,
+  });
+  // Auto-discover locations when entering chunks with landmarks or POIs
+  useEffect(() => {
+    if (menuOpen || inPrison) return;
+    // Check for landmark discovery
+    const worldTile = mapTileFor(chunk);
+    if (worldTile?.landmark) {
+      const landmarkName = worldTile.landmark.name;
+      const landmarkKind = worldTile.landmark.kind;
+      const chunkCopy = { ...chunk };
+      const timeCopy = time;
+      setJournal((j) => {
+        if (j.discoveredLocations.some((loc) => loc.name === landmarkName)) return j;
+        const newLocation = {
+          name: landmarkName,
+          kind: landmarkKind,
+          chunk: chunkCopy,
+          discoveredAt: timeCopy,
+        };
+        setLogs((logs) => [{ text: 'Discovered: ' + landmarkName, color: 'green' }, ...logs].slice(0, 5));
+        return { ...j, discoveredLocations: [...j.discoveredLocations, newLocation] };
+      });
+    }
+    // Check for POI discovery
+    const pois = poisForChunk(chunk.x, chunk.y);
+    pois.forEach((poi) => {
+      const poiName = poi.name;
+      const poiKind = poi.kind;
+      const chunkCopy = { ...chunk };
+      const timeCopy = time;
+      setJournal((j) => {
+        if (j.discoveredLocations.some((loc) => loc.name === poiName)) return j;
+        const newLocation = {
+          name: poiName,
+          kind: poiKind,
+          chunk: chunkCopy,
+          discoveredAt: timeCopy,
+        };
+        setLogs((logs) => [{ text: 'Discovered: ' + poiName, color: 'green' }, ...logs].slice(0, 5));
+        return { ...j, discoveredLocations: [...j.discoveredLocations, newLocation] };
+      });
+    });
+  }, [chunk, menuOpen, inPrison, time]);
   useEffect(() => {
     if (!saveNotice) return;
     const timeout = window.setTimeout(() => setSaveNotice(null), 2800);
@@ -3132,7 +3258,7 @@ function Home() {
   const searchPrisonBed = () => {
     if (!prisonState.foundShiv) {
       setPrisonState(s => ({ ...s, foundShiv: true }));
-      setInventory(inv => ({ ...inv, dagger: (inv.dagger || 0) + 1 }));
+      setInventory(inv => ({ ...inv, daggers: (inv.daggers || 0) + 1 }));
     }
   };
   const talkToPrisoner = () => {
@@ -3144,12 +3270,35 @@ function Home() {
   const escapeViaSewer = () => {
     setPrisonState(s => ({ ...s, escapeRoute: 'sewer' }));
     setInPrison(false);
+    // Reputation consequences
+    setReputation((r) => ({
+      ...r,
+      guards: r.guards - 5, // Escaped prisoner
+      wilderness: r.wilderness + (prisonState.helpedPrisoner ? 10 : 0),
+    }));
+    setLogs((currentLogs) => [
+      { text: 'You crawl through the sewers and emerge by the river. Free at last.', color: 'green' },
+      { text: prisonState.helpedPrisoner ? 'You promised to help your fellow prisoner. He will remember this.' : 'You left the prisoner behind.', color: 'blue' },
+      ...currentLogs
+    ].slice(0, 5));
     setChunk({ x: 3, y: 8 });
     setPosition({ x: 50, y: 50 });
   };
   const escapeViaGate = () => {
     setPrisonState(s => ({ ...s, escapeRoute: 'gate' }));
     setInPrison(false);
+    // Reputation consequences: gate escape is bolder, angers guards more
+    setReputation((r) => ({
+      ...r,
+      guards: r.guards - 10,
+      mosslight: r.mosslight - 5,
+      wilderness: r.wilderness + (prisonState.helpedPrisoner ? 10 : 0),
+    }));
+    setLogs((currentLogs) => [
+      { text: 'You make a break for the gate and escape to the town outskirts. The guards will be watching.', color: 'orange' },
+      { text: prisonState.helpedPrisoner ? 'You promised to help your fellow prisoner. He will remember this.' : 'You left the prisoner behind.', color: 'blue' },
+      ...currentLogs
+    ].slice(0, 5));
     setChunk({ x: 4, y: 7 });
     setPosition({ x: 50, y: 85 });
   };
@@ -3327,11 +3476,66 @@ function Home() {
       ) : (
         <>
           <div className="game-layout">
-            <GameField inventory={inventory} equippedDagger={equippedDagger} playerStats={playerStats} statPoints={statPoints} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} menuBridgeRef={menuBridgeRef} />
+            <GameField inventory={inventory} equippedDagger={equippedDagger} playerStats={playerStats} statPoints={statPoints} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} menuBridgeRef={menuBridgeRef} />
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
           {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} />}
+          {journalOpen && (
+            <div className="sheet journal-sheet" role="dialog" aria-label="Adventure journal" data-testid="journal-sheet">
+              <div className="sheet-header">
+                <h2>Journal</h2>
+                <button className="sheet-close" onClick={() => setJournalOpen(false)} aria-label="Close journal"><X size={18} /></button>
+              </div>
+              <div className="journal-tabs">
+                <div className="journal-section">
+                  <h3>Reputation</h3>
+                  <ul className="journal-list">
+                    <li>Mosslight Crossing: <strong className={reputation.mosslight >= 0 ? 'rep-positive' : 'rep-negative'}>{reputation.mosslight}</strong></li>
+                    <li>Guards: <strong className={reputation.guards >= 0 ? 'rep-positive' : 'rep-negative'}>{reputation.guards}</strong></li>
+                    <li>Merchants: <strong className={reputation.merchants >= 0 ? 'rep-positive' : 'rep-negative'}>{reputation.merchants}</strong></li>
+                    <li>Wilderness: <strong className={reputation.wilderness >= 0 ? 'rep-positive' : 'rep-negative'}>{reputation.wilderness}</strong></li>
+                  </ul>
+                </div>
+                <div className="journal-section">
+                  <h3>Discovered Locations ({journal.discoveredLocations.length})</h3>
+                  {journal.discoveredLocations.length === 0 ? (
+                    <p className="journal-empty">No locations discovered yet. Explore the world!</p>
+                  ) : (
+                    <ul className="journal-list">
+                      {journal.discoveredLocations.map((loc, i) => (
+                        <li key={i}><strong>{loc.name}</strong> <span className="journal-kind">({loc.kind})</span></li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="journal-section">
+                  <h3>Active Quests ({journal.activeQuests.length})</h3>
+                  {journal.activeQuests.length === 0 ? (
+                    <p className="journal-empty">No active quests.</p>
+                  ) : (
+                    <ul className="journal-list">
+                      {journal.activeQuests.map((q) => (
+                        <li key={q.id}><strong>{q.title}</strong><p>{q.description}</p><p className="journal-progress">{q.progress}</p></li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="journal-section">
+                  <h3>Rumors ({journal.rumors.length})</h3>
+                  {journal.rumors.length === 0 ? (
+                    <p className="journal-empty">No rumors heard yet. Talk to travelers.</p>
+                  ) : (
+                    <ul className="journal-list">
+                      {journal.rumors.map((r, i) => (
+                        <li key={i}>"{r.text}" <span className="journal-source">— {r.source}</span></li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           {saveNotice && <div className="save-notice save-notice-floating" role="status">{saveNotice}</div>}
         </>
       )}
