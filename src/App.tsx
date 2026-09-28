@@ -180,36 +180,26 @@ function mapTileFor(point: Point): MapTile {
   const waterFeature = isOcean ? 'sea' : null;
   const waterEdge = null;
 
-  const horizontalRoad = !isOcean && (
-    (point.y === 7 && point.x >= -1 && point.x <= 8) ||
+  // Roads stay continuous: water tiles become causeways, and Mosslight Crossing is a full crossroads.
+  const horizontalRoad =
+    (point.y === 7 && point.x >= -1 && point.x <= 9) ||
     (point.y === 4 && point.x >= 2 && point.x <= 5) ||
     (point.y === 3 && point.x >= 5 && point.x <= 9) ||
     (point.y === 10 && point.x >= 3 && point.x <= 10) ||
-    (point.y === 12 && point.x >= 1 && point.x <= 3)
-  );
-  const verticalRoad = !isOcean && (
+    (point.y === 12 && point.x >= 1 && point.x <= 3);
+  const verticalRoad =
     (point.x === 4 && point.y >= 4 && point.y <= 8) ||
     (point.x === 5 && point.y >= 2 && point.y <= 4) ||
     (point.x === 9 && point.y >= 3 && point.y <= 7) ||
     (point.x === 3 && point.y >= 7 && point.y <= 12) ||
-    (point.x === 6 && point.y >= 7 && point.y <= 10)
-  );
-  // The starting field is a simple east-west road through the town; branches begin outside it.
-  const road = isTutorialCenter(point) && horizontalRoad && verticalRoad
-    ? 'corner-down-left'
-    : point.x === 4 && point.y === 6
-      ? 'none'
-      : point.x === 5 && point.y === 7
-        ? 'none'
-        : point.x === 3 && point.y === 7
-          ? 'horizontal'
-          : horizontalRoad && verticalRoad
-            ? 'cross'
-            : horizontalRoad
-              ? 'horizontal'
-              : verticalRoad
-                ? 'vertical'
-                : 'none';
+    (point.x === 6 && point.y >= 7 && point.y <= 10);
+  const road = horizontalRoad && verticalRoad
+    ? 'cross'
+    : horizontalRoad
+      ? 'horizontal'
+      : verticalRoad
+        ? 'vertical'
+        : 'none';
   const bridge = waterFeature !== null && !isOcean && road !== 'none';
 
   return {
@@ -937,7 +927,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v112</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v113</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
