@@ -60,3 +60,19 @@
 - **Test:** Algebraic verification of the transform math; sim suite unaffected
   (UI state only).
 - **Status:** **FIXED in build 175.**
+
+## BUG-006 — Background adventurer hits make goats aggro the player
+- **Severity:** P1 (gameplay)
+- **Description:** Goats flash white / take damage seemingly at random, then
+  chase and attack the player even though the player never hit them.
+- **Reproduction:** Stand near goats; every 1.9s the background adventurer sim
+  can hit a goat >30 units away; the goat's disposition was forced to
+  'aggressive', and goat AI only chases the player.
+- **Root cause:** The simulated-adventurer scuffle block copied the player-hit
+  goat update verbatim, including `disposition: 'aggressive'`. Goat AI has no
+  target tracking — aggressive always means "chase the player".
+- **Fix:** Preserve the goat's existing disposition on background hits
+  (`disposition: defeated ? 'defeated' : goat.disposition`). Player hits still
+  set aggressive as before.
+- **Test:** Sim suite 33,067 passed; tsc 8 pre-existing errors, no new ones.
+- **Status:** **FIXED in build 176, VERIFIED live.**
