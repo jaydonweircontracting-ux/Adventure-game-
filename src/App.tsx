@@ -29,7 +29,13 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '179';
+const BUILD_NUMBER = '180';
+// Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
+// follows the player with a slight zoom so each area feels large to explore.
+const FIELD_SIZE = 140;
+const CAMERA_ZOOM = 1.35;
+// Convert field units (0..FIELD_SIZE) to CSS percentage for positioning.
+function fieldPct(v: number): string { return (v / FIELD_SIZE * 100) + '%'; }
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -518,10 +524,10 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
 
   while (trees.length < targetCount && attempts < targetCount * 24) {
     attempts += 1;
-    const x = 14 + random() * 72;
-    const y = 13 + random() * 74;
+    const x = 14 + random() * (FIELD_SIZE - 28);
+    const y = 13 + random() * (FIELD_SIZE - 26);
     // Minecraft-style: use Perlin noise for natural clustering (trees grow in patches)
-    const worldX = chunk.x * 100 + x;
+    const worldX = chunk.x * FIELD_SIZE + x;
     const worldY = chunk.y * 100 + y;
     if (!shouldPlaceVegetation(worldX, worldY, 0.42)) continue;
     const scale = 0.72 + random() * 0.48;
@@ -566,14 +572,14 @@ function fieldAccentsFor(chunk: Point): FieldAccent[] {
 
   while (accents.length < targetCount && attempts < targetCount * 20) {
     attempts += 1;
-    const x = 8 + random() * 84;
-    const y = 9 + random() * 82;
+    const x = 8 + random() * (FIELD_SIZE - 16);
+    const y = 9 + random() * (FIELD_SIZE - 18);
     // Minecraft-style: use noise for natural patchy distribution
-    const worldX = chunk.x * 100 + x;
-    const worldY = chunk.y * 100 + y;
+    const worldX = chunk.x * FIELD_SIZE + x;
+    const worldY = chunk.y * FIELD_SIZE + y;
     if (!shouldPlaceVegetation(worldX, worldY, 0.35)) continue;
     const tooCloseToBuilding = houseRects.some((rect) => pointInRect({ x, y }, rect, 4));
-    const tooCloseToTownCenter = startingCenter && Math.hypot(x - 50, y - 52) < 15;
+    const tooCloseToTownCenter = startingCenter && Math.hypot(x - FIELD_SIZE / 2, y - FIELD_SIZE / 2) < 15;
     const tooCloseToRoad = pointOnFieldRoad({ x, y }, tile.road);
     const tooCloseToAccent = accents.some((accent) => Math.hypot(x - accent.x, y - accent.y) < 6);
     if (tooCloseToBuilding || tooCloseToTownCenter || tooCloseToRoad || tooCloseToAccent) continue;
@@ -643,10 +649,10 @@ function wrapFieldPosition(position: Point, chunk: Point) {
   const nextPosition = { ...position };
   const nextChunk = { ...chunk };
   const travelLabels: string[] = [];
-  if (nextPosition.x < 4) { nextPosition.x = 94; nextChunk.x -= 1; travelLabels.push('west'); }
-  if (nextPosition.x > 96) { nextPosition.x = 6; nextChunk.x += 1; travelLabels.push('east'); }
-  if (nextPosition.y < 4) { nextPosition.y = 94; nextChunk.y -= 1; travelLabels.push('north'); }
-  if (nextPosition.y > 96) { nextPosition.y = 6; nextChunk.y += 1; travelLabels.push('south'); }
+  if (nextPosition.x < 4) { nextPosition.x = FIELD_SIZE - 6; nextChunk.x -= 1; travelLabels.push('west'); }
+  if (nextPosition.x > FIELD_SIZE - 4) { nextPosition.x = 6; nextChunk.x += 1; travelLabels.push('east'); }
+  if (nextPosition.y < 4) { nextPosition.y = FIELD_SIZE - 6; nextChunk.y -= 1; travelLabels.push('north'); }
+  if (nextPosition.y > FIELD_SIZE - 4) { nextPosition.y = 6; nextChunk.y += 1; travelLabels.push('south'); }
   if (travelLabels.length > 0 && (!generatedWorldTileFor(nextChunk) || generatedWorldTileFor(nextChunk)?.biome === 'ocean')) return null;
   return { position: nextPosition, chunk: nextChunk, travelLabels };
 }
@@ -1196,7 +1202,7 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
   // Starting town is a safe zone: no goats wandering through Mosslight Crossing.
   // Goats roam meadows and outskirts (danger 1+), RuneScape-style.
   if (isTutorialCenter(chunk)) return [];
-  const positions = Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 16 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % 68), y: 17 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % 66) }));
+  const positions = Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 20 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % (FIELD_SIZE - 40)), y: 20 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % (FIELD_SIZE - 40)) }));
   const safePositions = positions.filter((position) => !isFieldPositionBlocked(position, chunk));
   return safePositions.map((position, index) => {
     const wanderSeed = Math.abs(chunk.x * 97 + chunk.y * 193 + index * 53 + 17);
@@ -1245,7 +1251,7 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
   let id = 0;
   const spawn = (kind: MonsterKind, index: number, seedSalt: number, hpMult: number) => {
     const seed = Math.abs(chunk.x * 173 + chunk.y * 227 + index * 89 + seedSalt);
-    const position = { x: 12 + ((seed * 43) % 76), y: 14 + ((seed * 61) % 72) };
+    const position = { x: 16 + ((seed * 43) % (FIELD_SIZE - 32)), y: 16 + ((seed * 61) % (FIELD_SIZE - 32)) };
     if (isFieldPositionBlocked(position, chunk)) return;
     const level = monsterLevelForChunk(chunk, index, playerLevel);
     const maxHp = Math.round(goatMaxHpForLevel(level) * hpMult);
@@ -2461,7 +2467,7 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, attackin
 }
 
 function GameField({ inventory, equippedDagger, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null }) {
-  const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
+  const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
   const [moving, setMoving] = useState(false);
@@ -2522,6 +2528,18 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const horseRef = useRef(horse);
   const horseIdleAnchorRef = useRef(initialHorseState.position);
   const gameFrameRef = useRef<HTMLDivElement>(null);
+  // Camera: follows the player with a slight zoom so each chunk feels large.
+  // Measured frame size drives the pan math; updated on resize.
+  const [frameSize, setFrameSize] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = gameFrameRef.current;
+      if (el) setFrameSize({ w: el.clientWidth, h: el.clientHeight });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
   const areaFlashIdRef = useRef(0);
   const goatsRef = useRef(goats);
   const cornStalksRef = useRef<CornStalk[]>(cornStalks);
@@ -3377,14 +3395,25 @@ if (active) {
           '--field-glow': fieldPalette.glow,
         } as CSSProperties}>
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
-          <div className="field-world-layer">
+          <div className="field-world-layer" style={(() => {
+            // Camera follows the player: zoom in slightly and pan so the
+            // chunk feels large. Clamped so we never show outside the chunk.
+            const z = CAMERA_ZOOM;
+            const w = frameSize.w || 1;
+            const h = frameSize.h || 1;
+            const px = position.x / FIELD_SIZE * w * z;
+            const py = position.y / FIELD_SIZE * h * z;
+            const tx = Math.min(0, Math.max(w - w * z, w / 2 - px));
+            const ty = Math.min(0, Math.max(h - h * z, h / 2 - py));
+            return { transform: `translate(${tx}px, ${ty}px) scale(${z})`, transformOrigin: '0 0' } as CSSProperties;
+          })()}>
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
            <div className="field-accents" aria-hidden="true">
              {fieldAccents.map((accent) => (
                <span
                  className={'field-accent accent-' + accent.kind}
                  key={accent.id}
-                 style={{ left: accent.x + '%', top: accent.y + '%', transform: 'translate(-50%, -50%) rotate(' + accent.rotation + 'deg) scale(' + accent.scale + ')' }}
+                 style={{ left: fieldPct(accent.x), top: fieldPct(accent.y), transform: 'translate(-50%, -50%) rotate(' + accent.rotation + 'deg) scale(' + accent.scale + ')' }}
                />
              ))}
            </div>
@@ -3410,7 +3439,7 @@ if (active) {
               <button
                 type="button"
                 className={'goat goat-' + goat.disposition + ' goat-state-' + getSpriteState(goat.state, goat.facing) + (goat.moving ? ' is-moving' : '') + (goat.attacking ? ' is-attacking' : '') + (goat.hitFlash ? ' is-hit' : '') + (targetGoatId === goat.id ? ' is-targeted' : '')}
-                style={{ left: goat.position.x + '%', top: goat.position.y + '%' }}
+                style={{ left: fieldPct(goat.position.x), top: fieldPct(goat.position.y) }}
                 data-facing={goat.facing}
                  data-state={goat.state}
                  data-disposition={goat.disposition}
@@ -3437,7 +3466,7 @@ if (active) {
                 }}
               >
                 <span className="goat-target-ring" aria-hidden="true" />
-                <span className="goat-hp" style={{ width: (goat.hp / goat.maxHp) * 100 + '%' }} />
+                <span className="goat-hp" style={{ width: ((goat.hp / goat.maxHp) * 100) + '%' }} />
                 {goat.disposition === 'aggressive' && <span className="goat-aggro">!</span>}
                 <span className="goat-sprite" />
               </button>
@@ -3449,7 +3478,7 @@ if (active) {
                 type="button"
                 key={'monster-' + monster.kind + '-' + monster.id}
                 className={'monster monster-' + monster.kind + ' monster-state-' + getSpriteState(monster.state, monster.facing) + (monster.moving ? ' is-moving' : '') + (monster.attacking ? ' is-attacking' : '') + (monster.hitFlash ? ' is-hit' : '')}
-                style={{ left: monster.position.x + '%', top: monster.position.y + '%' }}
+                style={{ left: fieldPct(monster.position.x), top: fieldPct(monster.position.y) }}
                 data-facing={monster.facing}
                 data-state={monster.state}
                 aria-label={'Hostile ' + monster.kind + ', level ' + monster.level}
@@ -3470,7 +3499,7 @@ if (active) {
                 key={'bird-' + bird.id}
                 className={'bird bird-variant-' + bird.variant + ' bird-' + bird.state}
                 data-facing={bird.facing}
-                style={{ left: bird.position.x + '%', top: bird.position.y + '%' }}
+                style={{ left: fieldPct(bird.position.x), top: fieldPct(bird.position.y) }}
               />
             ))}
           </div>
@@ -3480,7 +3509,7 @@ if (active) {
                 key={'wildlife-' + animal.species + '-' + animal.id}
                 className={'wildlife wildlife-' + animal.species + (animal.moving ? ' is-moving' : '')}
                 data-facing={animal.facing}
-                style={{ left: animal.position.x + '%', top: animal.position.y + '%', ...(animal.species === 'wolf' ? { '--wolf-sheet': `url("${assetUrl('wolves/wolf_' + (['gray', 'brown', 'black'] as const)[Math.abs(animal.id) % 3] + '_full.png')}")` } : {}), ...(animal.species === 'rabbit' ? { '--rabbit-sheet': `url("${assetUrl('rabbits/rabbit_white_full.png')}")` } : {}) } as CSSProperties}
+                style={{ left: fieldPct(animal.position.x), top: fieldPct(animal.position.y), ...(animal.species === 'wolf' ? { '--wolf-sheet': `url("${assetUrl('wolves/wolf_' + (['gray', 'brown', 'black'] as const)[Math.abs(animal.id) % 3] + '_full.png')}")` } : {}), ...(animal.species === 'rabbit' ? { '--rabbit-sheet': `url("${assetUrl('rabbits/rabbit_white_full.png')}")` } : {}) } as CSSProperties}
               />
             ))}
           </div>
@@ -3490,12 +3519,12 @@ if (active) {
                 key={'waterlife-' + animal.kind + '-' + animal.id}
                 className={'waterlife waterlife-' + animal.kind + ' waterlife-variant-' + animal.variant}
                 data-facing={animal.facing}
-                style={{ left: animal.position.x + '%', top: animal.position.y + '%' }}
+                style={{ left: fieldPct(animal.position.x), top: fieldPct(animal.position.y) }}
               />
             ))}
           </div>
           <div className="combat-text-layer" aria-live="polite">
-            {damageTexts.map((entry) => <span className={'combat-text ' + entry.kind} key={entry.id} style={{ left: entry.position.x + '%', top: entry.position.y + '%' }}>{entry.text}</span>)}
+            {damageTexts.map((entry) => <span className={'combat-text ' + entry.kind} key={entry.id} style={{ left: fieldPct(entry.position.x), top: fieldPct(entry.position.y) }}>{entry.text}</span>)}
           </div>
           <div className="field-drops" aria-label="Dropped loot">
             {droppedLoot.filter((drop) => drop.chunk.x === chunk.x && drop.chunk.y === chunk.y).map((drop) => {
@@ -3509,7 +3538,7 @@ if (active) {
                 : only('pelt') ? 'pelt'
                 : only('fang') ? 'fang'
                 : only('corn') ? 'corn' : 'bag';
-              return <div className="loot-drop" key={drop.id} style={{ left: drop.position.x + '%', top: drop.position.y + '%' }}>
+              return <div className="loot-drop" key={drop.id} style={{ left: fieldPct(drop.position.x), top: fieldPct(drop.position.y) }}>
                 <span className={'loot-visual loot-' + lootKind} aria-label={'Dropped ' + lootKind} />
                 {nearby && <button className="pickup-button" onClick={() => pickupDrop(drop)} data-testid={'button-pickup-loot-' + drop.id}>Pick up</button>}
               </div>;
@@ -3597,10 +3626,10 @@ if (active) {
                     key={'farm-house-' + i}
                     className="field-house farm-house"
                     style={{
-                      left: rect.left + '%',
-                      top: rect.top + '%',
-                      width: (rect.right - rect.left) + '%',
-                      height: (rect.bottom - rect.top) + '%',
+                      left: fieldPct(rect.left),
+                      top: fieldPct(rect.top),
+                      width: fieldPct((rect.right - rect.left)),
+                      height: fieldPct((rect.bottom - rect.top)),
                     }}
                     aria-label="Farmhouse"
                   />
@@ -3610,10 +3639,10 @@ if (active) {
                     key={'farm-field-' + i}
                     className="farm-field"
                     style={{
-                      left: rect.left + '%',
-                      top: rect.top + '%',
-                      width: (rect.right - rect.left) + '%',
-                      height: (rect.bottom - rect.top) + '%',
+                      left: fieldPct(rect.left),
+                      top: fieldPct(rect.top),
+                      width: fieldPct((rect.right - rect.left)),
+                      height: fieldPct((rect.bottom - rect.top)),
                     }}
                     aria-label="Crop field"
                   />
@@ -3630,7 +3659,7 @@ if (active) {
                   <span
                     key={'poi-' + i}
                     className={'poi poi-' + poi.kind}
-                    style={{ left: poi.x + '%', top: poi.y + '%' }}
+                    style={{ left: fieldPct(poi.x), top: fieldPct(poi.y) }}
                     aria-label={poi.name}
                     title={poi.name}
                   />
@@ -3642,7 +3671,7 @@ if (active) {
             <button
               className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '')}
               onClick={() => talkToNpc(npc)}
-              style={{ left: npc.position.x + '%', top: npc.position.y + '%' }}
+              style={{ left: fieldPct(npc.position.x), top: fieldPct(npc.position.y) }}
               data-role={npc.role}
               data-facing={npc.facing}
               aria-label={npc.name + ', ' + npc.title}
@@ -3662,7 +3691,7 @@ if (active) {
               key={adventurer.id}
               className={'simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (adventurer.moving ? ' is-moving' : '') + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '')}
               onClick={() => inspectAdventurer(adventurer)}
-              style={{ left: adventurer.position.x + '%', top: adventurer.position.y + '%' }}
+              style={{ left: fieldPct(adventurer.position.x), top: fieldPct(adventurer.position.y) }}
               data-facing={adventurer.facing}
               aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className}
               title={adventurer.name + ' — ' + adventurer.goal}
@@ -3677,14 +3706,14 @@ if (active) {
           ))}
           {showHorse && (
             <>
-              <div className={'horse ' + (mounted ? 'is-mounted ' : '') + (mounted && moving ? 'is-moving' : '')} style={{ left: horseDisplayPosition.x + '%', top: horseDisplayPosition.y + '%' }} data-facing={mounted ? facing : horseFacing} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">
+              <div className={'horse ' + (mounted ? 'is-mounted ' : '') + (mounted && moving ? 'is-moving' : '')} style={{ left: fieldPct(horseDisplayPosition.x), top: fieldPct(horseDisplayPosition.y) }} data-facing={mounted ? facing : horseFacing} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">
                 {mounted && <>
                   <span className="rider-sprite" aria-hidden="true" />
                   <span className="animal-head" aria-hidden="true" />
                 </>}
                 <span className="horse-sprite" />
               </div>
-              {canMount && <button className="horse-mount-button" style={{ left: horseDisplayPosition.x + '%', top: Math.min(88, Math.max(12, horseDisplayPosition.y + 10)) + '%' }} onClick={toggleMount} aria-label="Mount horse" data-testid="button-toggle-mount">Mount</button>}
+              {canMount && <button className="horse-mount-button" style={{ left: fieldPct(horseDisplayPosition.x), top: fieldPct(Math.min(FIELD_SIZE - 12, Math.max(12, horseDisplayPosition.y + 10))) }} onClick={toggleMount} aria-label="Mount horse" data-testid="button-toggle-mount">Mount</button>}
             </>
           )}
           {(() => {
@@ -3693,11 +3722,11 @@ if (active) {
             if (!dungeon) return null;
             const entrance = { x: 50, y: 44 };
             if (Math.hypot(position.x - entrance.x, position.y - entrance.y) > 10) return null;
-            return <button className="dungeon-descend-button" style={{ left: (entrance.x + 16) + '%', top: entrance.y + '%' }} onClick={onEnterDungeon} aria-label={'Descend into ' + dungeon.name} data-testid="button-enter-field-dungeon">Descend</button>;
+            return <button className="dungeon-descend-button" style={{ left: fieldPct((entrance.x + 16)), top: fieldPct(entrance.y) }} onClick={onEnterDungeon} aria-label={'Descend into ' + dungeon.name} data-testid="button-enter-field-dungeon">Descend</button>;
           })()}
           </div>
           {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
-             data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px` } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
+             data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: fieldPct(position.x), top: fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px` } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
             {equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}
@@ -3831,8 +3860,8 @@ if (active) {
         <div className="world-hud">
           <div className={'hud-card ' + (playerHp / playerMaxHp <= 0.25 ? 'is-wounded' : '')} data-testid="hud-player">
             <div className="hud-label"><span>Player</span><span data-testid="text-level">LV {playerLevel}</span></div>
-            <div className="bar" aria-label={'Health ' + playerHp + ' of ' + playerMaxHp} ><div className="bar-fill health" style={{ width: (playerHp / playerMaxHp) * 100 + '%' }} /></div><span className="hud-health-value">{playerHp} / {playerMaxHp} HP</span>
-            <div className="bar xp-bar" aria-label={'Experience ' + (playerXp % 100) + ' of 100 to next level'}><div className="bar-fill xp-fill" style={{ width: (playerXp % 100) + '%' }} /></div><span className="hud-xp-value">{playerXp % 100} / 100 XP</span>
+            <div className="bar" aria-label={'Health ' + playerHp + ' of ' + playerMaxHp} ><div className="bar-fill health" style={{ width: ((playerHp / playerMaxHp) * 100) + '%' }} /></div><span className="hud-health-value">{playerHp} / {playerMaxHp} HP</span>
+            <div className="bar xp-bar" aria-label={'Experience ' + (playerXp % 100) + ' of 100 to next level'}><div className="bar-fill xp-fill" style={{ width: ((playerXp % 100)) + '%' }} /></div><span className="hud-xp-value">{playerXp % 100} / 100 XP</span>
             <span className="hud-clock" data-testid="text-hud-time">{time}</span>
             <div className="hud-quick-actions">
               <button className="hud-quick-button" onClick={onOpenMap} aria-label="Open world map" title="World map" data-testid="button-open-map"><MapIcon size={15} /></button>
@@ -3842,7 +3871,7 @@ if (active) {
             {selectedGoat && (
               <div className="hud-target" data-testid="hud-target">
                 <div className="hud-target-label"><span>Target</span><strong>GOAT · LV {selectedGoat.level}</strong></div>
-                <div className="bar target-bar" aria-label={'Target health ' + selectedGoat.hp + ' of ' + selectedGoat.maxHp}><div className="bar-fill target-health" style={{ width: (selectedGoat.hp / selectedGoat.maxHp) * 100 + '%' }} /></div>
+                <div className="bar target-bar" aria-label={'Target health ' + selectedGoat.hp + ' of ' + selectedGoat.maxHp}><div className="bar-fill target-health" style={{ width: ((selectedGoat.hp / selectedGoat.maxHp) * 100) + '%' }} /></div>
               </div>
             )}
             {mounted && <button className="horse-dismount-button" onClick={toggleMount} aria-label="Dismount horse" data-testid="button-dismount-horse">Dismount</button>}

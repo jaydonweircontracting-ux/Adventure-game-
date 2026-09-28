@@ -28,9 +28,9 @@ export function cornStalksForChunk(
   const patchCount = (rng() < 0.45 ? 1 : 0) + (rng() < 0.15 ? 1 : 0);
   for (let p = 0; p < patchCount; p++) {
     // Patch origin kept clear of chunk center (buildings) and edges.
-    // Patch is up to ~33 wide x ~21 tall, so origin stays in 12..55.
-    const originX = 12 + rng() * 43;
-    const originY = 12 + rng() * 43;
+    // Patch is up to ~33 wide x ~21 tall. FIELD_SIZE is 140.
+    const originX = 16 + rng() * 75;
+    const originY = 16 + rng() * 75;
     const cols = 8 + Math.floor(rng() * 3); // 8-10
     const rows = 5 + Math.floor(rng() * 3); // 5-7
     const spacing = 3;
@@ -38,7 +38,7 @@ export function cornStalksForChunk(
       for (let c = 0; c < cols; c++) {
         const x = originX + c * spacing + (rng() - 0.5) * 1.6;
         const y = originY + r * spacing + (rng() - 0.5) * 1.6;
-        const pos = { x: Math.min(90, Math.max(10, x)), y: Math.min(90, Math.max(10, y)) };
+        const pos = { x: Math.min(130, Math.max(10, x)), y: Math.min(130, Math.max(10, y)) };
         if (isBlocked(pos)) continue;
         stalks.push({ id: id++, position: pos, harvested: false });
       }
