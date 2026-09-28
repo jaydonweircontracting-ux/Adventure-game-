@@ -605,6 +605,12 @@
   color: #223a2d;
   text-align: left;
   white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease;
+}
+.town-npc.show-nameplate .npc-nameplate {
+  opacity: 1;
 }
 .npc-nameplate strong {
   font-family: var(--app-font-display);
@@ -2008,6 +2014,8 @@ body {
   background-position: 0 0;
   image-rendering: pixelated;
   animation: none;
+  /* Uniform grey coat for every goat. */
+  filter: grayscale(.42) brightness(.96);
 }
 /* Ambient birds: tiny pixel-style sprites, purely decorative. */
 .field-birds { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
@@ -2123,7 +2131,7 @@ body {
 .goat.is-moving[data-facing='right'] .goat-sprite { background-position-y: -48px; }
 .goat.is-moving[data-facing='down'] .goat-sprite { background-position-y: 0; }
 .goat.is-moving[data-facing='up'] .goat-sprite { background-position-y: -72px; }
-.goat-aggro .goat-sprite { filter: sepia(.35) saturate(1.4) drop-shadow(0 0 2px rgba(185, 77, 66, .55)); }
+.goat-aggro .goat-sprite { filter: grayscale(.42) sepia(.35) saturate(1.4) drop-shadow(0 0 2px rgba(185, 77, 66, .55)); }
 @keyframes goat-walk { from { background-position-x: 0; } to { background-position-x: -96px; } }
 .goat-hp { position: absolute; z-index: 2; left: 5px; top: 2px; height: 3px; border: 1px solid rgba(50, 53, 37, .7); background: #80a457; }
 .goat-aggro .goat-hp { background: #b94d42; }

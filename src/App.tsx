@@ -1439,7 +1439,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v145</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v146</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -1637,6 +1637,10 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [playerLevel, setPlayerLevel] = useState(1);
   const [playerClass, setPlayerClass] = useState<PlayerClass>('Beginner');
   const [npcDialogue, setNpcDialogue] = useState<TownNpc | null>(null);
+  // Town NPC nameplates (Noah/Damon/Shawn) stay hidden until the NPC is
+  // tapped, then auto-hide after a few seconds.
+  const [nameplateNpc, setNameplateNpc] = useState<string | null>(null);
+  const nameplateTimerRef = useRef<number | null>(null);
   const [npcStates, setNpcStates] = useState(startingTownNpcs);
   const [simulatedAdventurers, setSimulatedAdventurers] = useState(initialSimulatedAdventurers);
   const [selectedAdventurerId, setSelectedAdventurerId] = useState<string | null>(null);
@@ -1870,6 +1874,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
         const updatedGoats = goatsRef.current.map((goat) => goat.id === target.id ? { ...goat, hp: nextHp, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 350, attacking: false, moving: false, hitFlash: true, respawnTicks: 0 } : goat);
         goatsRef.current = updatedGoats;
         setGoats(updatedGoats);
+        window.setTimeout(() => setGoats((current) => current.map((goat) => goat.id === target.id ? { ...goat, hitFlash: false } : goat)), 100);
         nextAdventurers = next.map((adventurer) => adventurer.id === attacker.adventurer.id ? { ...adventurer, activity: defeated ? 'exploring after defeating a goat' : 'fighting a goat' } : adventurer);
         if (defeated) setLogs((currentLogs) => [{ text: attacker.adventurer.name + ' defeated a goat nearby.', color: 'blue' }, ...currentLogs].slice(0, 3));
       }
@@ -2361,8 +2366,18 @@ if (active) {
   const startingCenter = isTutorialCenter(chunk);
   const talkToNpc = (npc: TownNpc) => {
     setNpcDialogue(npc);
+    // Pop the nameplate up on tap; auto-hide it after 4 seconds.
+    setNameplateNpc(npc.name);
+    if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
+    nameplateTimerRef.current = window.setTimeout(() => {
+      setNameplateNpc(null);
+      nameplateTimerRef.current = null;
+    }, 4000);
     setLogs((currentLogs) => [{ text: `${npc.name} turns to you: ${npc.title}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
   };
+  useEffect(() => () => {
+    if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
+  }, []);
   const inspectAdventurer = (adventurer: SimulatedAdventurer) => {
     const closingNameplate = selectedAdventurerId === adventurer.id;
     setSelectedAdventurerId((current) => current === adventurer.id ? null : adventurer.id);
@@ -2590,7 +2605,7 @@ if (active) {
           )}
           {currentWorldTile.landmark?.name === 'Mosslight Crossing' && npcStates.map((npc) => (
             <button
-              className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '')}
+              className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '')}
               onClick={() => talkToNpc(npc)}
               style={{ left: npc.position.x + '%', top: npc.position.y + '%' }}
               data-role={npc.role}
