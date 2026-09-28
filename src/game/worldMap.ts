@@ -6,13 +6,13 @@ export type WorldMapBounds = { minX: number; maxX: number; minY: number; maxY: n
 // is generated deterministically around it.
 export const WORLD_MAP_BOUNDS: WorldMapBounds = { minX: -10, maxX: 20, minY: -8, maxY: 22 };
 export const CORE_WORLD_BOUNDS: WorldMapBounds = { minX: 0, maxX: 10, minY: 2, maxY: 12 };
-// Second continent: a huge landmass far to the east of the original world,
-// separated by a wide ocean gap. It shows on the world map when zoomed out.
-// The original 31x31 world always generates bit-identically; the second
-// continent is purely additive.
-export const SECOND_CONTINENT_BOUNDS: WorldMapBounds = { minX: 33, maxX: 57, minY: -8, maxY: 22 };
-export const EXPANDED_WORLD_BOUNDS: WorldMapBounds = { minX: -10, maxX: 57, minY: -8, maxY: 22 };
-// Ocean gap between the original world and the second continent (x 21..32).
+// Second continent: a truly huge landmass far to the east of the original world,
+// separated by a vast ocean gap. It reads as a real continent next to the home
+// region: many times its size and a long voyage away. The original 31x31 world
+// always generates bit-identically; the second continent is purely additive.
+export const SECOND_CONTINENT_BOUNDS: WorldMapBounds = { minX: 69, maxX: 148, minY: -28, maxY: 51 };
+export const EXPANDED_WORLD_BOUNDS: WorldMapBounds = { minX: -10, maxX: 148, minY: -28, maxY: 51 };
+// Ocean gap between the original world and the second continent (x 21..68).
 const SECOND_CONTINENT_GAP_MIN_X = WORLD_MAP_BOUNDS.maxX + 1;
 const SECOND_CONTINENT_GAP_MAX_X = SECOND_CONTINENT_BOUNDS.minX - 1;
 export const WORLD_MAP_RESERVED_MEADOW_COORDINATES = [
@@ -476,7 +476,27 @@ export function generateWorldMap(seed: number, bounds: WorldMapBounds = WORLD_MA
       column: tile.x - bounds.minX,
     }))];
   }
-  const all = [...originalTiles, ...extraTiles];
+  // Fill every remaining cell in the requested bounds with open ocean so the
+  // atlas grid has no holes (e.g. the stretches above and below the home region
+  // once the bounds grow taller than it).
+  const covered = new Set([...originalTiles, ...extraTiles].map((tile) => cellKey(tile.x, tile.y)));
+  const fillTiles: GeneratedWorldTile[] = [];
+  for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+    for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+      if (covered.has(cellKey(x, y))) continue;
+      fillTiles.push({
+        x, y,
+        row: y - bounds.minY,
+        column: x - bounds.minX,
+        biome: 'ocean',
+        nearBiomeBorder: false,
+        detail: detailFor('ocean', false, false, seed, x, y),
+        climate: { elevation: 0.1, temperature: 0.5, moisture: 0.5 },
+        elevationLevel: 0,
+      });
+    }
+  }
+  const all = [...originalTiles, ...extraTiles, ...fillTiles];
   all.sort((a, b) => a.y - b.y || a.x - b.x);
   return all;
 }

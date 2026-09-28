@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Map as MapIcon, Menu, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
 import { type ChangeEvent, type PointerEvent, type ReactNode } from 'react';
@@ -1632,6 +1632,24 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     setPan((p) => clampPan(p.x, p.y, ZOOM_SCALES[clamped - 1]));
   };
   const nudgePan = (dx: number, dy: number) => setPan((p) => clampPan(p.x + dx, p.y + dy, mapScale));
+  // Open centered on the player's current chunk (the starting area), not on
+  // the middle of the whole atlas — the far continent is found by panning east.
+  useLayoutEffect(() => {
+    const stage = stageRef.current; const grid = gridRef.current;
+    if (!stage || !grid || grid.scrollWidth === 0) return;
+    const cols = worldMapBounds.maxX - worldMapBounds.minX + 1;
+    const rows = worldMapBounds.maxY - worldMapBounds.minY + 1;
+    const cellW = grid.scrollWidth / cols;
+    const cellH = grid.scrollHeight / rows;
+    const scale = ZOOM_SCALES[zoom - 1];
+    const col = chunk.x - worldMapBounds.minX;
+    const row = chunk.y - worldMapBounds.minY;
+    const targetX = -scale * ((col + 0.5) * cellW - grid.scrollWidth / 2);
+    const targetY = -scale * ((row + 0.5) * cellH - grid.scrollHeight / 2);
+    setPan(clampPan(targetX, targetY, scale));
+    // Run once on mount; refs and props are fixed for the lifetime of the sheet.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const onStagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture?.(event.pointerId);
     dragRef.current = { startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y, moved: false };
@@ -1648,9 +1666,21 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   };
   const worldTiles = generatedWorldTiles;
   const oceanKeys = new Set(worldTiles.filter((world) => world.biome === 'ocean').map((world) => world.x + ',' + world.y));
+  // Deep open water (ocean with no land within one tile) is not rendered as
+  // individual tile divs at all — the atlas ocean backdrop shows through.
+  // This keeps the much larger world cheap to open.
+  const landKeys = new Set(worldTiles.filter((world) => world.biome !== 'ocean').map((world) => world.x + ',' + world.y));
+  const isDeepOcean = (x: number, y: number) => {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        if (landKeys.has((x + dx) + ',' + (y + dy))) return false;
+      }
+    }
+    return true;
+  };
   const tiles = worldTiles.map((world) => {
     const point = { x: world.x, y: world.y };
-    return { ...mapTileFor(point), world, current: point.x === chunk.x && point.y === chunk.y };
+    return { ...mapTileFor(point), world, current: point.x === chunk.x && point.y === chunk.y, deepOcean: world.biome === 'ocean' && isDeepOcean(world.x, world.y) };
   });
   const elevationByKey = new Map(tiles.map((tile) => [tile.x + ',' + tile.y, tile.elevationLevel]));
   const currentTile = tiles.find((tile) => tile.current) || tiles[0];
@@ -1676,6 +1706,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
           <span className="atlas-compass" aria-hidden="true"><strong>N</strong><span>↑</span></span>
           <div ref={gridRef} className="map-grid world-map-hex-grid" style={{ gridTemplateColumns: 'repeat(' + (worldMapBounds.maxX - worldMapBounds.minX + 1) + ', minmax(0, 1fr))', gridTemplateRows: 'repeat(' + (worldMapBounds.maxY - worldMapBounds.minY + 1) + ', minmax(0, 1fr))', transform: 'translate(' + pan.x + 'px, ' + pan.y + 'px) scale(' + mapScale + ')' }}>
             {tiles.map((tile) => {
+              if (tile.deepOcean) return null;
               const isSelected = selectedTile?.x === tile.x && selectedTile?.y === tile.y;
               const tileAreaName = tile.landmark?.name || worldMapBiomeLabel(tile.world.biome);
               const tileShade = Math.min(1.07, Math.max(0.9, 0.93 + tile.world.climate.elevation * 0.12)).toFixed(3);
