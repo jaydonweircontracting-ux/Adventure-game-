@@ -609,6 +609,19 @@ type BirdState = {
   variant: number;
   facing: Direction;
 };
+// Living-world wildlife: biome + danger-zone based spawning.
+type WildlifeSpecies = 'rabbit' | 'deer' | 'wolf' | 'boar';
+type WildlifeState = {
+  id: number;
+  species: WildlifeSpecies;
+  position: Point;
+  homePosition: Point;
+  facing: Direction;
+  moving: boolean;
+  wanderSeed: number;
+  nextWanderTick: number;
+  target: Point | null;
+};
 const BIRD_STEP = 1.2;
 const BIRD_FLY_STEP = 3.5;
 const GOAT_TICK_MS = 500;
@@ -906,6 +919,55 @@ function birdsForChunk(chunk: Point): BirdState[] {
   }
   return birds;
 }
+// Danger zone: chunk distance from the starting town (Mosslight Crossing area).
+function dangerForChunk(chunk: Point): number {
+  const dist = Math.max(Math.abs(chunk.x - 4), Math.abs(chunk.y - 7));
+  if (dist <= 1) return 0; // starting region: safe
+  if (dist <= 3) return 1; // outskirts
+  if (dist <= 6) return 2; // deep wilderness
+  return 3; // remote / dangerous
+}
+function wildlifeForChunk(chunk: Point): WildlifeState[] {
+  const terrain = mapTileFor(chunk).terrain;
+  if (terrain === 'ocean') return [];
+  const danger = dangerForChunk(chunk);
+  const wildlife: WildlifeState[] = [];
+  let id = 0;
+  const spawn = (species: WildlifeSpecies, index: number, seedSalt: number) => {
+    const seed = Math.abs(chunk.x * 149 + chunk.y * 211 + index * 73 + seedSalt);
+    const position = { x: 12 + ((seed * 41) % 76), y: 14 + ((seed * 59) % 72) };
+    if (isFieldPositionBlocked(position, chunk)) return;
+    wildlife.push({
+      id: id++,
+      species,
+      position,
+      homePosition: { ...position },
+      facing: (['up', 'right', 'down', 'left'] as Direction[])[seed % 4],
+      moving: false,
+      wanderSeed: seed,
+      nextWanderTick: 60 + (seed % 120),
+      target: null,
+    });
+  };
+  // Rabbits: meadows and forests, everywhere safe.
+  if (terrain === 'meadow' || terrain === 'forest') {
+    const count = terrain === 'meadow' ? 3 : 2;
+    for (let i = 0; i < count; i++) spawn('rabbit', i, 1000);
+  }
+  // Deer: forests and meadows.
+  if (terrain === 'forest' || terrain === 'meadow') {
+    for (let i = 0; i < 2; i++) spawn('deer', i, 2000);
+  }
+  // Wolves: forests only, danger 2+ (never near the starting town).
+  if (terrain === 'forest' && danger >= 2) {
+    for (let i = 0; i < 2; i++) spawn('wolf', i, 3000);
+  }
+  // Boars: forests/meadows, danger 1+.
+  if ((terrain === 'forest' || terrain === 'meadow') && danger >= 1) {
+    spawn('boar', 0, 4000);
+  }
+  return wildlife;
+}
 function updateBird(bird: BirdState, tick: number): BirdState {
   const next = { ...bird, stateTimer: bird.stateTimer - 1 };
   if (next.stateTimer > 0) {
@@ -964,6 +1026,44 @@ function updateBird(bird: BirdState, tick: number): BirdState {
       y: Math.min(90, Math.max(10, bird.position.y + Math.sin(angle) * flyDist)),
     };
     next.stateTimer = 10;
+  }
+  return next;
+}
+// Wildlife wander: pick a nearby target, walk to it, idle. Stays near home.
+function updateWildlife(animal: WildlifeState, tick: number, chunk: Point): WildlifeState {
+  const next = { ...animal, position: { ...animal.position } };
+  const speed = animal.species === 'rabbit' ? 1.6 : animal.species === 'deer' ? 1.0 : animal.species === 'wolf' ? 1.2 : 0.8;
+  if (next.target) {
+    const dx = next.target.x - next.position.x;
+    const dy = next.target.y - next.position.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1.5) {
+      next.target = null;
+      next.moving = false;
+      next.nextWanderTick = tick + 40 + (next.wanderSeed % 80);
+    } else {
+      const step = Math.min(speed, dist);
+      const candidate = { x: next.position.x + (dx / dist) * step, y: next.position.y + (dy / dist) * step };
+      if (!isFieldPositionBlocked(candidate, chunk)) {
+        next.position = candidate;
+        next.facing = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+        next.moving = true;
+      } else {
+        next.target = null;
+        next.moving = false;
+      }
+    }
+  } else if (tick >= next.nextWanderTick) {
+    // Pick a wander target within home range (radius ~14).
+    const angle = ((next.wanderSeed * 37 + tick * 13) % 360) * (Math.PI / 180);
+    const radius = 4 + ((next.wanderSeed * 53 + tick * 7) % 10);
+    next.target = {
+      x: Math.max(8, Math.min(92, next.homePosition.x + Math.cos(angle) * radius)),
+      y: Math.max(8, Math.min(92, next.homePosition.y + Math.sin(angle) * radius)),
+    };
+    next.nextWanderTick = tick + 60 + (next.wanderSeed % 100);
+  } else {
+    next.moving = false;
   }
   return next;
 }
@@ -1098,7 +1198,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v122</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v123</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -1285,6 +1385,8 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }, 1));
   const [birds, setBirds] = useState<BirdState[]>(() => birdsForChunk({ x: 4, y: 7 }));
   const birdsRef = useRef<BirdState[]>(birds);
+  const [wildlife, setWildlife] = useState<WildlifeState[]>(() => wildlifeForChunk({ x: 4, y: 7 }));
+  const wildlifeRef = useRef<WildlifeState[]>(wildlife);
   const [targetGoatId, setTargetGoatId] = useState<number | null>(null);
   const [droppedLoot, setDroppedLoot] = useState<DroppedLoot[]>([]);
   const [attacking, setAttacking] = useState(false);
@@ -1533,6 +1635,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     const nextBirds = birdsForChunk(chunk);
     birdsRef.current = nextBirds;
     setBirds(nextBirds);
+    const nextWildlife = wildlifeForChunk(chunk);
+    wildlifeRef.current = nextWildlife;
+    setWildlife(nextWildlife);
     goatWorldStepRef.current = 0;
     targetGoatIdRef.current = null;
     setTargetGoatId(null);
@@ -1672,6 +1777,12 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
         const tick = Math.floor(performance.now() / 700);
         const nextBirds = birdsRef.current.map((bird) => updateBird(bird, tick));
         birdsRef.current = nextBirds; setBirds(nextBirds);
+      }
+      // Wildlife wander: simple home-range movement, tick-throttled.
+      if (!interiorRef.current && wildlifeRef.current.length > 0) {
+        const tick = Math.floor(performance.now() / 500);
+        const nextWildlife = wildlifeRef.current.map((animal) => updateWildlife(animal, tick, chunkRef.current));
+        wildlifeRef.current = nextWildlife; setWildlife(nextWildlife);
       }
       const currentInterior = interiorRef.current;
        if (active && currentInterior) {
@@ -1992,6 +2103,16 @@ if (active) {
                 className={'bird bird-variant-' + bird.variant + ' bird-' + bird.state}
                 data-facing={bird.facing}
                 style={{ left: bird.position.x + '%', top: bird.position.y + '%' }}
+              />
+            ))}
+          </div>
+          <div className="field-wildlife" aria-hidden="true">
+            {wildlife.map((animal) => (
+              <span
+                key={'wildlife-' + animal.species + '-' + animal.id}
+                className={'wildlife wildlife-' + animal.species + (animal.moving ? ' is-moving' : '')}
+                data-facing={animal.facing}
+                style={{ left: animal.position.x + '%', top: animal.position.y + '%' }}
               />
             ))}
           </div>
