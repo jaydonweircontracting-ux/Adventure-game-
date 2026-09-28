@@ -1320,12 +1320,14 @@ type TownNpc = {
   role: 'mage' | 'warrior' | 'guide' | 'rogue';
   position: Point;
   facing: Direction;
+  moving: boolean;
+  target: Point | null;
 };
 
 const startingTownNpcs: TownNpc[] = [
-  { name: 'Noah', title: 'Mage teacher', role: 'mage', position: { x: 40, y: 47 }, facing: 'right' },
-  { name: 'Damon', title: 'Warrior teacher', role: 'warrior', position: { x: 60, y: 47 }, facing: 'left' },
-  { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up' },
+  { name: 'Noah', title: 'Mage teacher', role: 'mage', position: { x: 40, y: 47 }, facing: 'right', moving: false, target: null },
+  { name: 'Damon', title: 'Warrior teacher', role: 'warrior', position: { x: 60, y: 47 }, facing: 'left', moving: false, target: null },
+  { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up', moving: false, target: null },
 ];
 
 type WorldMapDisplayTile = MapTile & { current: boolean; world: GeneratedWorldTile };
@@ -1381,7 +1383,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v137</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v138</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -1548,7 +1550,7 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
       )}
       {area.id === 'tutorial-house' && simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') === 'starting-house').map((adventurer) => {
         const housePosition = adventurer.interiorPosition || { x: 50, y: 47 };
-        return <button type="button" key={adventurer.id} className={'simulated-adventurer interior-simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '')} onClick={() => onInspect(adventurer)} style={{ left: housePosition.x + '%', top: housePosition.y + '%' }} data-facing={adventurer.facing} aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className} data-testid={'simulated-adventurer-' + adventurer.id}>
+        return <button type="button" key={adventurer.id} className={'simulated-adventurer interior-simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (adventurer.moving ? ' is-moving' : '') + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '')} onClick={() => onInspect(adventurer)} style={{ left: housePosition.x + '%', top: housePosition.y + '%' }} data-facing={adventurer.facing} aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className} data-testid={'simulated-adventurer-' + adventurer.id}>
           <span className="simulated-adventurer-nameplate"><strong>{adventurer.name}</strong><small>Lv. {adventurer.level} · {adventurer.activity}</small></span>
           <span className="simulated-adventurer-sprite" aria-hidden="true" />
         </button>;
@@ -1745,28 +1747,50 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   }, [inputLocked, optionsOpen]);
 
 
+  // Town NPCs amble smoothly toward nearby waypoints instead of teleporting
+  // every few seconds. Facing the player pauses them.
   useEffect(() => {
     const timer = window.setInterval(() => {
-      setNpcStates((current) => current.map((npc, index) => {
+      setNpcStates((current) => current.map((npc) => {
         const player = positionRef.current;
         const nearby = Math.hypot(player.x - npc.position.x, player.y - npc.position.y) < 18;
         const directions: Direction[] = ['up', 'right', 'down', 'left'];
         const facePlayer: Direction = Math.abs(player.x - npc.position.x) >= Math.abs(player.y - npc.position.y)
           ? (player.x >= npc.position.x ? 'right' : 'left')
           : (player.y >= npc.position.y ? 'down' : 'up');
-        const direction = nearby
-          ? facePlayer
-          : Math.random() < 0.08
-            ? directions.filter((candidate) => candidate !== npc.facing)[Math.floor(Math.random() * 3)]
-            : npc.facing;
-        const step = nearby ? 0 : Math.random() < 0.08 ? 1.2 : 0;
-        const nextPosition = {
-          x: Math.min(86, Math.max(14, npc.position.x + (direction === 'right' ? step : direction === 'left' ? -step : 0))),
-          y: Math.min(76, Math.max(32, npc.position.y + (direction === 'down' ? step : direction === 'up' ? -step : 0))),
+        if (nearby) {
+          return npc.moving || npc.target || npc.facing !== facePlayer
+            ? { ...npc, facing: facePlayer, moving: false, target: null }
+            : npc;
+        }
+        let target = npc.target;
+        let facing = npc.facing;
+        if (!target) {
+          if (Math.random() < 0.05) {
+            facing = directions[Math.floor(Math.random() * directions.length)];
+            target = {
+              x: Math.min(86, Math.max(14, npc.position.x + (Math.random() * 12 - 6))),
+              y: Math.min(76, Math.max(32, npc.position.y + (Math.random() * 12 - 6))),
+            };
+          } else if (Math.random() < 0.02) {
+            facing = directions.filter((candidate) => candidate !== npc.facing)[Math.floor(Math.random() * 3)];
+          }
+          return target || facing !== npc.facing ? { ...npc, facing, target, moving: false } : npc;
+        }
+        const dx = target.x - npc.position.x;
+        const dy = target.y - npc.position.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 0.4) return { ...npc, target: null, moving: false };
+        const step = Math.min(0.14, dist);
+        facing = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'down' : 'up');
+        return {
+          ...npc,
+          position: { x: npc.position.x + (dx / dist) * step, y: npc.position.y + (dy / dist) * step },
+          facing,
+          moving: true,
         };
-        return { ...npc, position: nextPosition, facing: direction };
       }));
-    }, 2600);
+    }, 120);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -2428,7 +2452,7 @@ if (active) {
                 key={'wildlife-' + animal.species + '-' + animal.id}
                 className={'wildlife wildlife-' + animal.species + (animal.moving ? ' is-moving' : '')}
                 data-facing={animal.facing}
-                style={{ left: animal.position.x + '%', top: animal.position.y + '%' }}
+                style={{ left: animal.position.x + '%', top: animal.position.y + '%', ...(animal.species === 'wolf' ? { '--wolf-sheet': `url("${assetUrl('wolves/wolf_' + (['gray', 'brown', 'black'] as const)[Math.abs(animal.id) % 3] + '_full.png')}")` } : {}) } as CSSProperties}
               />
             ))}
           </div>
@@ -2495,7 +2519,7 @@ if (active) {
           )}
           {currentWorldTile.landmark?.name === 'Mosslight Crossing' && npcStates.map((npc) => (
             <button
-              className={'town-npc npc-' + npc.role}
+              className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '')}
               onClick={() => talkToNpc(npc)}
               style={{ left: npc.position.x + '%', top: npc.position.y + '%' }}
               data-role={npc.role}
@@ -2515,7 +2539,7 @@ if (active) {
             <button
               type="button"
               key={adventurer.id}
-              className={'simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '')}
+              className={'simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (adventurer.moving ? ' is-moving' : '') + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '')}
               onClick={() => inspectAdventurer(adventurer)}
               style={{ left: adventurer.position.x + '%', top: adventurer.position.y + '%' }}
               data-facing={adventurer.facing}

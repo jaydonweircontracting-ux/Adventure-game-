@@ -576,9 +576,7 @@
   background-repeat: no-repeat;
   image-rendering: pixelated;
 }
-.town-npc[data-facing='up'] .npc-sprite { background-position-y: -64px; }
-.town-npc[data-facing='left'] .npc-sprite { background-position-y: -128px; transform: scaleX(-1); }
-.town-npc[data-facing='right'] .npc-sprite { background-position-y: -128px; }
+.town-npc[data-facing='left'] .npc-sprite { transform: scaleX(-1); }
 .town-npc.npc-mage .npc-sprite {
   filter: hue-rotate(178deg) saturate(1.55) brightness(.92);
 }
@@ -2086,8 +2084,23 @@ body {
 .wildlife-deer { background: linear-gradient(180deg, #a8764a 0 60%, #8a5f3a 61% 100%); border-radius: 40% 40% 30% 30%; }
 .wildlife-deer::before { content: ''; position: absolute; left: 6px; top: -10px; width: 8px; height: 12px; background: #a8764a; border-radius: 4px 4px 0 0; }
 .wildlife-deer::after { content: ''; position: absolute; left: 3px; top: -14px; width: 14px; height: 6px; background: repeating-linear-gradient(90deg, #7a5a3a 0 2px, transparent 2px 5px); }
-.wildlife-wolf { background: linear-gradient(180deg, #6a6a72 0 60%, #4a4a52 61% 100%); border-radius: 35% 35% 30% 30%; }
-.wildlife-wolf::before { content: ''; position: absolute; left: 5px; top: -6px; width: 10px; height: 8px; background: #6a6a72; clip-path: polygon(0 100%, 20% 0, 40% 100%, 60% 100%, 80% 0, 100% 100%); }
+.wildlife-wolf {
+  width: 32px;
+  height: 32px;
+  margin: -16px 0 0 -16px;
+  background-image: var(--wolf-sheet);
+  background-size: 384px 256px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  border-radius: 0;
+  background-position: 0 calc(var(--wolf-row, 0) * -32px);
+}
+.wildlife-wolf[data-facing='down'] { --wolf-row: 0; }
+.wildlife-wolf[data-facing='left'] { --wolf-row: 1; }
+.wildlife-wolf[data-facing='right'] { --wolf-row: 2; }
+.wildlife-wolf[data-facing='up'] { --wolf-row: 3; }
+.wildlife-wolf.is-moving { animation: wolf-walk .5s steps(3, end) infinite; }
+@keyframes wolf-walk { from { background-position-x: 0; } to { background-position-x: -96px; } }
 .wildlife-boar { background: radial-gradient(ellipse at 42% 42%, #8a6a4e 0 55%, #5f4632 56% 100%); border-radius: 48% 52% 46% 44%; }
 .wildlife-boar::before { content: ''; position: absolute; right: -4px; top: 2px; width: 10px; height: 12px; border-radius: 50%; background: radial-gradient(circle at 3px 9px, #f2ede2 1.3px, transparent 1.4px), radial-gradient(circle at 7px 9px, #f2ede2 1.3px, transparent 1.4px), radial-gradient(circle at 5px 6px, #c89878 2.2px, transparent 2.3px), #6a4a34; }
 .wildlife-boar::after { content: ''; position: absolute; left: 3px; right: 3px; bottom: -4px; height: 5px; background: linear-gradient(90deg, #3a2a1e 0 20%, transparent 20% 40%, #3a2a1e 40% 60%, transparent 60% 80%, #3a2a1e 80% 100%); border-radius: 0 0 2px 2px; }
@@ -2744,19 +2757,41 @@ body {
   filter: drop-shadow(0 2px 1px rgba(23, 42, 29, .38));
 }
 .simulated-adventurer[data-facing='up'] .simulated-adventurer-sprite,
-.town-npc[data-facing='up'] .npc-sprite { background-position-y: -64px; }
+.town-npc[data-facing='up'] .npc-sprite { --npc-row: 2; --npc-walk-row: 5; }
 .simulated-adventurer[data-facing='left'] .simulated-adventurer-sprite,
-.town-npc[data-facing='left'] .npc-sprite { background-position-y: -128px; transform: scaleX(-1); }
+.town-npc[data-facing='left'] .npc-sprite { --npc-row: 1; --npc-walk-row: 4; transform: scaleX(-1); }
 .simulated-adventurer[data-facing='right'] .simulated-adventurer-sprite,
-.town-npc[data-facing='right'] .npc-sprite { background-position-y: -128px; transform: none; }
-.adventurer-ranger .simulated-adventurer-sprite { background-position-x: -32px; filter: sepia(.3) saturate(1.35) hue-rotate(150deg) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
-.adventurer-mage .simulated-adventurer-sprite { background-position-x: -64px; filter: hue-rotate(178deg) saturate(1.55) brightness(.92) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
-.adventurer-rogue .simulated-adventurer-sprite { background-position-x: -128px; filter: sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
-.town-npc.npc-mage .npc-sprite { background-position-x: -64px; }
-.town-npc.npc-warrior .npc-sprite { background-position-x: -32px; }
-.town-npc.npc-guide .npc-sprite { background-position-x: -96px; }
-.town-npc.npc-rogue .npc-sprite { background-position-x: -128px; }
-.adventurer-warrior .simulated-adventurer-sprite { background-position-x: -96px; filter: sepia(.7) saturate(1.45) hue-rotate(-8deg) brightness(.95) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
+.town-npc[data-facing='right'] .npc-sprite { --npc-row: 1; --npc-walk-row: 4; transform: none; }
+/* NPC walk system: idle row <-> walk row 2-frame cycle via sprite-sheet rows. */
+.town-npc .npc-sprite {
+  --npc-x: 0px;
+  --npc-row: 0;
+  --npc-walk-row: 3;
+  background-position: var(--npc-x) calc(var(--npc-row) * -32px);
+}
+.simulated-adventurer .simulated-adventurer-sprite {
+  --npc-x: -32px;
+  --npc-row: 0;
+  --npc-walk-row: 3;
+  background-position: var(--npc-x) calc(var(--npc-row) * -32px);
+}
+.adventurer-ranger .simulated-adventurer-sprite { --npc-x: -32px; filter: sepia(.3) saturate(1.35) hue-rotate(150deg) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
+.adventurer-mage .simulated-adventurer-sprite { --npc-x: -64px; filter: hue-rotate(178deg) saturate(1.55) brightness(.92) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
+.adventurer-rogue .simulated-adventurer-sprite { --npc-x: -128px; filter: sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
+.town-npc.npc-mage .npc-sprite { --npc-x: -64px; }
+.town-npc.npc-warrior .npc-sprite { --npc-x: -32px; }
+.town-npc.npc-guide .npc-sprite { --npc-x: -96px; }
+.town-npc.npc-rogue .npc-sprite { --npc-x: -128px; }
+.adventurer-warrior .simulated-adventurer-sprite { --npc-x: -96px; filter: sepia(.7) saturate(1.45) hue-rotate(-8deg) brightness(.95) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
+.town-npc.is-moving .npc-sprite,
+.simulated-adventurer.is-moving .simulated-adventurer-sprite { animation: npc-step .5s step-end infinite; }
+@keyframes npc-step {
+  0% { background-position-y: calc(var(--npc-row) * -32px); }
+  50% { background-position-y: calc(var(--npc-walk-row) * -32px); }
+  100% { background-position-y: calc(var(--npc-row) * -32px); }
+}
+/* Adventurers glide between waypoints instead of teleporting each tick. */
+.simulated-adventurer { transition: transform .18s ease, filter .18s ease, left 1.85s linear, top 1.85s linear; }
 .interior-simulated-adventurer { z-index: 8; pointer-events: auto; }
 .simulated-adventurer-nameplate {
   position: absolute;

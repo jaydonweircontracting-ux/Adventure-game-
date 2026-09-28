@@ -10,6 +10,7 @@ export type SimulatedAdventurer = {
   location?: 'starting-house' | 'field';
   facing: 'up' | 'down' | 'left' | 'right';
   routeIndex: number;
+  moving?: boolean;
 };
 
 type Point = { x: number; y: number };
@@ -62,20 +63,20 @@ function advanceFromHouse(adventurer: SimulatedAdventurer) {
   const path = houseRoutes[adventurer.id] || [];
   const current = adventurer.interiorPosition || { x: 50, y: 48 };
   const target = path[adventurer.routeIndex] || path[path.length - 1];
-  if (!target) return { ...adventurer, location: 'field' as const };
+  if (!target) return { ...adventurer, location: 'field' as const, moving: false };
   const moved = moveToward(current, target, 5);
   if (moved.distance < 1.25) {
     const nextIndex = adventurer.routeIndex + 1;
     if (nextIndex >= path.length) {
       const fieldStart = routes[adventurer.id]?.[0] || adventurer.position;
-      return { ...adventurer, location: 'field' as const, position: fieldStart, interiorPosition: target, routeIndex: 0, facing: 'down', activity: 'stepping out to explore Mosslight Crossing' };
+      return { ...adventurer, location: 'field' as const, position: fieldStart, interiorPosition: target, routeIndex: 0, facing: 'down', moving: false, activity: 'stepping out to explore Mosslight Crossing' };
     }
-    return { ...adventurer, interiorPosition: target, routeIndex: nextIndex, facing: target.x >= current.x ? 'right' : 'left', activity: 'heading for the front door' };
+    return { ...adventurer, interiorPosition: target, routeIndex: nextIndex, facing: target.x >= current.x ? 'right' : 'left', moving: false, activity: 'heading for the front door' };
   }
   const facing = Math.abs(target.x - current.x) >= Math.abs(target.y - current.y)
     ? (target.x >= current.x ? 'right' : 'left')
     : (target.y >= current.y ? 'down' : 'up');
-  return { ...adventurer, interiorPosition: moved.position, facing, activity: 'heading for the front door' };
+  return { ...adventurer, interiorPosition: moved.position, facing, moving: true, activity: 'heading for the front door' };
 }
 
 export function advanceSimulatedAdventurers(adventurers: SimulatedAdventurer[], tick: number, goatTargets: GoatTarget[] = []) {
@@ -86,9 +87,9 @@ export function advanceSimulatedAdventurers(adventurers: SimulatedAdventurer[], 
     if (nearestGoat) {
       const hunt = moveToward(adventurer.position, nearestGoat.position, 4.5);
       if (hunt.distance <= 5) {
-        return { ...adventurer, position: hunt.position, facing: nearestGoat.position.x >= adventurer.position.x ? 'right' : 'left', activity: 'fighting a goat' };
+        return { ...adventurer, position: hunt.position, facing: nearestGoat.position.x >= adventurer.position.x ? 'right' : 'left', moving: true, activity: 'fighting a goat' };
       }
-      return { ...adventurer, position: hunt.position, facing: Math.abs(nearestGoat.position.x - adventurer.position.x) >= Math.abs(nearestGoat.position.y - adventurer.position.y) ? (nearestGoat.position.x >= adventurer.position.x ? 'right' : 'left') : (nearestGoat.position.y >= adventurer.position.y ? 'down' : 'up'), activity: 'tracking a goat' };
+      return { ...adventurer, position: hunt.position, facing: Math.abs(nearestGoat.position.x - adventurer.position.x) >= Math.abs(nearestGoat.position.y - adventurer.position.y) ? (nearestGoat.position.x >= adventurer.position.x ? 'right' : 'left') : (nearestGoat.position.y >= adventurer.position.y ? 'down' : 'up'), moving: true, activity: 'tracking a goat' };
     }
     const route = routes[adventurer.id] || [];
     if (!route.length) return adventurer;
@@ -97,10 +98,10 @@ export function advanceSimulatedAdventurers(adventurers: SimulatedAdventurer[], 
     if (moved.distance < 1.25) {
       const nextIndex = (adventurer.routeIndex + 1) % route.length;
       const activities = ['checking the town noticeboard', 'sharing a road rumor', 'preparing to leave again'];
-      return { ...adventurer, routeIndex: nextIndex, activity: activities[(tick + adventurer.routeIndex) % activities.length] };
+      return { ...adventurer, routeIndex: nextIndex, moving: false, activity: activities[(tick + adventurer.routeIndex) % activities.length] };
     }
     const horizontal = Math.abs(target.x - adventurer.position.x) >= Math.abs(target.y - adventurer.position.y);
     const facing = horizontal ? (target.x >= adventurer.position.x ? 'right' : 'left') : (target.y >= adventurer.position.y ? 'down' : 'up');
-    return { ...adventurer, position: moved.position, facing };
+    return { ...adventurer, position: moved.position, facing, moving: true };
   });
 }
