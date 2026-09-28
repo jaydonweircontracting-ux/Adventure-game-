@@ -25,9 +25,11 @@
 - **Status:** Fix in progress (build 162).
 
 ## BUG-003 — Mounted sprites enlarged (build 161)
-- **Severity:** P2 (visual) — **FIXED in build 161**
+- **Severity:** P2 (visual) — **FIXED in build 161, VERIFIED live in build 168**
 - **Root cause:** `.horse { transform: ... scale(1.35) }` scaled rider + cow.
-- **Status:** Fixed in source; awaiting live visual confirmation.
+- **Fix:** Removed the scale; horse/rider render at authored size.
+- **Test:** Live playtest with `?playtestMount=1` (starts mounted in the field): horse + rider normal-sized relative to NPCs/houses/trees; no console errors. Verdict NORMAL SIZE.
+- **Status:** Closed 2026-09-28.
 
 ## BUG-004 — Playtester could not find Saltmarsh / Emberhold / Dunmere (build 161)
 - **Severity:** P2 (report) — **NOT REPRODUCED, no code change**

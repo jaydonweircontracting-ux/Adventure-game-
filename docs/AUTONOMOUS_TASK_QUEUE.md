@@ -27,5 +27,5 @@ Priorities re-evaluated after each pass. P0 first.
 - [x] Map legend expansion (roads, towns, villages, mountains) — build 164 (swatches match actual atlas render colors)
 
 ## P4 — Optional
-- [ ] Second continent content: dungeons/POIs beyond the 7 settlements
+- [ ] Second continent content: dungeons/POIs beyond the 7 settlements (next up)
 - [ ] Ocean travel gameplay (the 96-tile gap is currently scenery)
