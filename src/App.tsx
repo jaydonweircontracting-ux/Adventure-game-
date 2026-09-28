@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Map as MapIcon, Menu, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
 import { type ChangeEvent, type PointerEvent, type ReactNode } from 'react';
@@ -10,7 +10,7 @@ import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/rpgBrain';
 import { DEFAULT_WORLD_SEED, type WorldClockState } from '@/game/worldCore';
-import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile } from '@/game/worldMap';
+import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc } from '@/game/combat';
@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '160';
+const BUILD_NUMBER = '161';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -177,12 +177,15 @@ const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
   '4,19': { name: 'Dunewatch', kind: 'village' },
   '17,7': { name: 'Eastmarch', kind: 'town' },
   '-7,7': { name: 'Westhold', kind: 'village' },
-  // Second continent settlements (huge continent: x 33..57, y -8..22)
-  '45,7': { name: 'Stormhaven', kind: 'town' },
-  '38,12': { name: 'Oakfield', kind: 'village' },
-  '50,3': { name: 'Stonebridge', kind: 'village' },
-  '42,-2': { name: 'Frostwatch', kind: 'village' },
-  '53,15': { name: 'Saltmarsh', kind: 'village' },
+  // Second continent settlements (far-eastern continent: x 117..196, y -28..51).
+  // Placed on verified inland meadow/forest tiles, spread across the landmass.
+  '125,-16': { name: 'Stormhaven', kind: 'town' },
+  '140,-20': { name: 'Frostwatch', kind: 'village' },
+  '155,0': { name: 'Oakfield', kind: 'village' },
+  '174,-8': { name: 'Stonebridge', kind: 'village' },
+  '165,25': { name: 'Saltmarsh', kind: 'village' },
+  '184,15': { name: 'Emberhold', kind: 'town' },
+  '144,35': { name: 'Dunmere', kind: 'village' },
 };
 
 function isStartingArea(point: Point) {
@@ -208,7 +211,21 @@ function worldRoadAt(x: number, y: number): boolean {
   const outerHorizontalRoad =
     (y === 7 && x >= 9 && x <= 17) ||
     (y === 7 && x >= -7 && x <= 0);
-  return horizontalRoad || verticalRoad || outerHorizontalRoad;
+  // Second-continent road web: L-shaped packed-dirt runs linking the far-east
+  // settlements. Pieces are neighbor-aware, so junctions render cleanly.
+  const continentRoad =
+    (y === -16 && x >= 125 && x <= 140) || // Stormhaven -> Frostwatch junction
+    (x === 140 && y >= -20 && y <= -16) ||
+    (x === 140 && y >= -20 && y <= 0) || // Frostwatch -> Oakfield
+    (y === 0 && x >= 140 && x <= 165) || // Oakfield west road / Stonebridge leg
+    (x === 165 && y >= -8 && y <= 0) ||
+    (y === -8 && x >= 165 && x <= 174) || // -> Stonebridge
+    (x === 160 && y >= 0 && y <= 25) || // Oakfield -> Saltmarsh
+    (y === 25 && x >= 160 && x <= 184) ||
+    (x === 184 && y >= 15 && y <= 25) || // Saltmarsh -> Emberhold
+    (x === 150 && y >= 0 && y <= 35) || // Oakfield -> Dunmere
+    (y === 35 && x >= 144 && x <= 150);
+  return horizontalRoad || verticalRoad || outerHorizontalRoad || continentRoad;
 }
 
 function mapTileFor(point: Point): MapTile {
@@ -1658,23 +1675,359 @@ function npcScheduleTarget(npc: TownNpc, hour: number): Point {
   return npc.leisure || npc.position; // Evening/morning: leisure
 }
 
-type WorldMapDisplayTile = MapTile & { current: boolean; world: GeneratedWorldTile };
+// ---------------------------------------------------------------------------
+// Canvas world-map atlas (build 161).
+// The atlas is pre-rendered once to an offscreen canvas at a fixed 26px per
+// tile. Pan/zoom is a single GPU-composited transform, tile picking is O(1)
+// coordinate math, and the art is drawn vector-crisp. This replaces the old
+// per-tile React divs (16k+ DOM nodes with per-tile image downloads) that
+// made opening the map laggy and rendered everything squished.
+// ---------------------------------------------------------------------------
+const MAP_TILE_PX = 26;
+
+type AtlasTile = {
+  world: GeneratedWorldTile;
+  landmark: { name: string; kind: SettlementKind } | null;
+  roadN: boolean;
+  roadS: boolean;
+  roadE: boolean;
+  roadW: boolean;
+  bridge: boolean;
+};
+
+function atlasTileHash(x: number, y: number): number {
+  let h = Math.imul(x + 1000, 374761393) ^ Math.imul(y + 1000, 668265263) ^ Math.imul(x - y + 7, 2246822519);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+function shadeHex(hex: string, factor: number): string {
+  const r = Math.min(255, Math.max(0, Math.round(parseInt(hex.slice(1, 3), 16) * factor)));
+  const g = Math.min(255, Math.max(0, Math.round(parseInt(hex.slice(3, 5), 16) * factor)));
+  const b = Math.min(255, Math.max(0, Math.round(parseInt(hex.slice(5, 7), 16) * factor)));
+  return 'rgb(' + r + ', ' + g + ', ' + b + ')';
+}
+
+const ATLAS_BIOME_COLORS: Record<WorldMapBiome, string> = {
+  ocean: '#1e6a97',
+  shore: '#dcc084',
+  meadow: '#6fa055',
+  forest: '#3f7a45',
+  desert: '#d9b96a',
+  tundra: '#c3d4d1',
+  rock: '#8f8b84',
+};
+
+function buildAtlasTiles(): AtlasTile[] {
+  return generatedWorldTiles.map((world) => {
+    const onRoad = worldRoadAt(world.x, world.y);
+    return {
+      world,
+      landmark: mapLandmarks[world.x + ',' + world.y] || null,
+      roadN: onRoad && worldRoadAt(world.x, world.y - 1),
+      roadS: onRoad && worldRoadAt(world.x, world.y + 1),
+      roadE: onRoad && worldRoadAt(world.x + 1, world.y),
+      roadW: onRoad && worldRoadAt(world.x - 1, world.y),
+      bridge: onRoad && world.biome === 'ocean',
+    };
+  });
+}
+
+function renderAtlasCanvas(tiles: AtlasTile[], cols: number, rows: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  const T = MAP_TILE_PX;
+  canvas.width = cols * T;
+  canvas.height = rows * T;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  const minX = worldMapBounds.minX;
+  const minY = worldMapBounds.minY;
+  const byKey = new Map<string, AtlasTile>();
+  for (const tile of tiles) byKey.set(tile.world.x + ',' + tile.world.y, tile);
+  const at = (x: number, y: number) => byKey.get(x + ',' + y);
+  const px = (x: number) => (x - minX) * T;
+  const py = (y: number) => (y - minY) * T;
+
+  // Deep open water (no land within 2 tiles) renders darker and flat.
+  const deepWater = new Set<string>();
+  for (const tile of tiles) {
+    if (tile.world.biome !== 'ocean') continue;
+    const { x, y } = tile.world;
+    let deep = true;
+    for (let dy = -2; dy <= 2 && deep; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        const n = at(x + dx, y + dy);
+        if (n && n.world.biome !== 'ocean') { deep = false; break; }
+      }
+    }
+    if (deep) deepWater.add(x + ',' + y);
+  }
+
+  // Pass 1: base terrain with per-tile variation and elevation relief.
+  for (const tile of tiles) {
+    const { x, y, biome, elevationLevel } = tile.world;
+    const h = atlasTileHash(x, y);
+    const base = deepWater.has(x + ',' + y) ? '#175177' : ATLAS_BIOME_COLORS[biome];
+    ctx.fillStyle = shadeHex(base, 0.94 + h * 0.12);
+    ctx.fillRect(px(x), py(y), T, T);
+    if (biome !== 'ocean') {
+      if (elevationLevel >= 3) {
+        ctx.fillStyle = 'rgba(255, 250, 228, ' + (0.05 * (elevationLevel - 2)).toFixed(3) + ')';
+        ctx.fillRect(px(x), py(y), T, T);
+      } else if (elevationLevel <= 1) {
+        ctx.fillStyle = 'rgba(24, 44, 24, 0.07)';
+        ctx.fillRect(px(x), py(y), T, T);
+      }
+    }
+  }
+
+  // Pass 2: biome detail glyphs — forests read as forests, ridges as ridges.
+  const dot = (cx: number, cy: number, r: number, color: string) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  const pine = (cx: number, baseY: number, size: number, color: string) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(cx, baseY - size);
+    ctx.lineTo(cx - size * 0.62, baseY);
+    ctx.lineTo(cx + size * 0.62, baseY);
+    ctx.closePath();
+    ctx.fill();
+  };
+  for (const tile of tiles) {
+    const { x, y, biome, detail } = tile.world;
+    const X0 = px(x);
+    const Y0 = py(y);
+    const h1 = atlasTileHash(x * 3 + 11, y * 7 + 5);
+    const h2 = atlasTileHash(x * 5 + 3, y * 11 + 17);
+    const ax = X0 + 5 + h1 * (T - 10);
+    const ay = Y0 + 5 + h2 * (T - 10);
+    switch (detail) {
+      case 'trees':
+        pine(ax - 4, ay + 2, 8, 'rgba(22, 64, 30, 0.9)');
+        pine(ax + 5, ay + 5, 6, 'rgba(30, 80, 38, 0.9)');
+        break;
+      case 'ridge':
+        ctx.strokeStyle = 'rgba(74, 70, 62, 0.85)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(X0 + 4, Y0 + T - 7);
+        ctx.lineTo(X0 + T / 2, Y0 + 6);
+        ctx.lineTo(X0 + T - 4, Y0 + T - 7);
+        ctx.stroke();
+        break;
+      case 'cactus':
+        dot(ax, ay, 2.2, 'rgba(46, 110, 58, 0.9)');
+        dot(ax + 6, ay + 4, 1.7, 'rgba(46, 110, 58, 0.8)');
+        break;
+      case 'bush':
+        dot(ax, ay, 2.4, 'rgba(52, 96, 44, 0.9)');
+        dot(ax + 6, ay - 3, 2, 'rgba(52, 96, 44, 0.85)');
+        dot(ax + 3, ay + 5, 1.8, 'rgba(62, 110, 52, 0.85)');
+        break;
+      case 'pebbles':
+        dot(ax, ay, 1.6, biome === 'shore' ? 'rgba(150, 124, 80, 0.9)' : 'rgba(220, 220, 210, 0.7)');
+        dot(ax + 7, ay + 5, 1.4, biome === 'shore' ? 'rgba(150, 124, 80, 0.8)' : 'rgba(220, 220, 210, 0.6)');
+        dot(ax + 3, ay - 4, 1.2, biome === 'shore' ? 'rgba(160, 134, 88, 0.8)' : 'rgba(220, 220, 210, 0.5)');
+        break;
+      case 'munchleaf':
+        dot(ax, ay, 2, 'rgba(126, 168, 158, 0.9)');
+        dot(ax + 6, ay + 4, 1.6, 'rgba(140, 180, 170, 0.85)');
+        break;
+      case 'waves':
+        if (!deepWater.has(x + ',' + y)) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+          ctx.lineWidth = 1.4;
+          for (let w = 0; w < 2; w++) {
+            const wy = Y0 + 8 + w * 9 + h1 * 4;
+            ctx.beginPath();
+            ctx.arc(X0 + 8 + h2 * 8, wy, 3.4, Math.PI * 0.15, Math.PI * 0.85);
+            ctx.stroke();
+          }
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  // Pass 3: coastlines — sand rim on the land side, foam on the water side.
+  for (const tile of tiles) {
+    const { x, y, biome } = tile.world;
+    if (biome === 'ocean') continue;
+    const X0 = px(x);
+    const Y0 = py(y);
+    ctx.fillStyle = 'rgba(190, 158, 96, 0.85)';
+    if (at(x, y - 1)?.world.biome === 'ocean') ctx.fillRect(X0, Y0, T, 3);
+    if (at(x, y + 1)?.world.biome === 'ocean') ctx.fillRect(X0, Y0 + T - 3, T, 3);
+    if (at(x - 1, y)?.world.biome === 'ocean') ctx.fillRect(X0, Y0, 3, T);
+    if (at(x + 1, y)?.world.biome === 'ocean') ctx.fillRect(X0 + T - 3, Y0, 3, T);
+  }
+  for (const tile of tiles) {
+    const { x, y, biome } = tile.world;
+    if (biome !== 'ocean' || deepWater.has(x + ',' + y)) continue;
+    const X0 = px(x);
+    const Y0 = py(y);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+    if (at(x, y - 1)?.world.biome !== 'ocean') ctx.fillRect(X0, Y0, T, 2);
+    if (at(x, y + 1)?.world.biome !== 'ocean') ctx.fillRect(X0, Y0 + T - 2, T, 2);
+    if (at(x - 1, y)?.world.biome !== 'ocean') ctx.fillRect(X0, Y0, 2, T);
+    if (at(x + 1, y)?.world.biome !== 'ocean') ctx.fillRect(X0 + T - 2, Y0, 2, T);
+  }
+
+  // Pass 4: roads as continuous cased paths; bridges over water.
+  for (const tile of tiles) {
+    if (!tile.roadN && !tile.roadS && !tile.roadE && !tile.roadW) continue;
+    const cx = px(tile.world.x) + T / 2;
+    const cy = py(tile.world.y) + T / 2;
+    const arms: Array<[boolean, number, number]> = [
+      [tile.roadN, 0, -1],
+      [tile.roadS, 0, 1],
+      [tile.roadE, 1, 0],
+      [tile.roadW, -1, 0],
+    ];
+    const layers: Array<[string, number]> = tile.bridge
+      ? [['#5d4a36', 10], ['#b08a5e', 5]]
+      : [['#6b5a3e', 9], ['#d3b06f', 4.5]];
+    for (const [color, width] of layers) {
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = width;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (const [on, dx, dy] of arms) {
+        if (!on) continue;
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + (dx * T) / 2, cy + (dy * T) / 2);
+      }
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, width / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (tile.bridge) {
+      ctx.strokeStyle = 'rgba(70, 48, 30, 0.65)';
+      ctx.lineWidth = 1;
+      const horiz = (tile.roadE || tile.roadW) && !tile.roadN && !tile.roadS;
+      ctx.beginPath();
+      for (let i = -1; i <= 1; i++) {
+        const off = i * 6;
+        if (horiz) { ctx.moveTo(cx + off, cy - 4); ctx.lineTo(cx + off, cy + 4); }
+        else { ctx.moveTo(cx - 4, cy + off); ctx.lineTo(cx + 4, cy + off); }
+      }
+      ctx.stroke();
+    }
+  }
+
+  // Pass 5: settlements — drawn keep/cottage icons plus name labels.
+  const drawVillage = (cx: number, cy: number) => {
+    const house = (hx: number, hy: number, s: number) => {
+      ctx.fillStyle = '#7d5f43';
+      ctx.fillRect(hx - s / 2, hy - s / 4, s, s / 2);
+      ctx.fillStyle = '#b5463c';
+      ctx.beginPath();
+      ctx.moveTo(hx - s / 2 - 1, hy - s / 4);
+      ctx.lineTo(hx, hy - s / 4 - s / 2);
+      ctx.lineTo(hx + s / 2 + 1, hy - s / 4);
+      ctx.closePath();
+      ctx.fill();
+    };
+    house(cx - 5, cy + 2, 9);
+    house(cx + 5, cy - 1, 7);
+  };
+  const drawTown = (cx: number, cy: number) => {
+    ctx.fillStyle = '#9aa0a6';
+    ctx.fillRect(cx - 7, cy - 6, 14, 12);
+    ctx.fillStyle = '#7e848a';
+    for (let i = 0; i < 3; i++) ctx.fillRect(cx - 7 + i * 5, cy - 9, 3, 3);
+    ctx.fillStyle = '#b5463c';
+    ctx.beginPath();
+    ctx.moveTo(cx - 8, cy - 6);
+    ctx.lineTo(cx, cy - 13);
+    ctx.lineTo(cx + 8, cy - 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#5d646b';
+    ctx.fillRect(cx - 2, cy + 1, 4, 5);
+  };
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (const tile of tiles) {
+    if (!tile.landmark) continue;
+    const cx = px(tile.world.x) + T / 2;
+    const cy = py(tile.world.y) + T / 2;
+    if (tile.landmark.kind === 'town') drawTown(cx, cy - 3);
+    else drawVillage(cx, cy - 3);
+    const label = tile.landmark.name.toUpperCase();
+    ctx.font = '700 10px Verdana, Geneva, sans-serif';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(32, 26, 18, 0.9)';
+    ctx.strokeText(label, cx, cy + 8);
+    ctx.fillStyle = '#fff6dd';
+    ctx.fillText(label, cx, cy + 8);
+  }
+
+  // Pass 6: region names.
+  const regionLabel = (text: string, wx: number, wy: number) => {
+    ctx.font = '800 30px Verdana, Geneva, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const stylable = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
+    stylable.letterSpacing = '10px';
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = 'rgba(255, 248, 225, 0.45)';
+    ctx.strokeText(text, px(wx), py(wy));
+    ctx.fillStyle = 'rgba(38, 50, 60, 0.55)';
+    ctx.fillText(text, px(wx), py(wy));
+    stylable.letterSpacing = '0px';
+  };
+  regionLabel('THE FAR MEADOW', 4, -3);
+  regionLabel('THE EASTERN REACHES', 157, -19);
+  return canvas;
+}
+
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const [zoom, setZoom] = useState(5);
-  const [selectedTile, setSelectedTile] = useState<WorldMapDisplayTile | null>(null);
+  const [selected, setSelected] = useState<AtlasTile | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panning, setPanning] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number; moved: boolean } | null>(null);
-  const suppressClickRef = useRef(false);
   const ZOOM_SCALES = [0.4, 0.6, 0.84, 1.0, 1.25, 1.6, 2.0, 2.5];
   const mapScale = ZOOM_SCALES[zoom - 1];
+
+  // Pre-rendered once: the full atlas is a single canvas, so opening the map
+  // costs one blit instead of 16k DOM nodes.
+  const atlas = useMemo(() => {
+    const tiles = buildAtlasTiles();
+    const cols = worldMapBounds.maxX - worldMapBounds.minX + 1;
+    const rows = worldMapBounds.maxY - worldMapBounds.minY + 1;
+    const canvas = renderAtlasCanvas(tiles, cols, rows);
+    const byKey = new Map<string, AtlasTile>();
+    for (const tile of tiles) byKey.set(tile.world.x + ',' + tile.world.y, tile);
+    return { canvas, byKey, width: cols * MAP_TILE_PX, height: rows * MAP_TILE_PX };
+    // generatedWorldTiles / worldMapBounds are module constants.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const target = canvasRef.current;
+    if (!target) return;
+    const ctx = target.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, target.width, target.height);
+    ctx.drawImage(atlas.canvas, 0, 0);
+  }, [atlas]);
+
   const clampPan = (x: number, y: number, scale: number) => {
-    const stage = stageRef.current; const grid = gridRef.current;
-    if (!stage || !grid) return { x, y };
-    const maxX = Math.max(0, (grid.scrollWidth * scale - stage.clientWidth) / 2);
-    const maxY = Math.max(0, (grid.scrollHeight * scale - stage.clientHeight) / 2);
+    const stage = stageRef.current;
+    if (!stage) return { x, y };
+    const maxX = Math.max(0, (atlas.width * scale - stage.clientWidth) / 2);
+    const maxY = Math.max(0, (atlas.height * scale - stage.clientHeight) / 2);
     return { x: Math.min(maxX, Math.max(-maxX, x)), y: Math.min(maxY, Math.max(-maxY, y)) };
   };
   const changeZoom = (next: number) => {
@@ -1683,24 +2036,33 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     setPan((p) => clampPan(p.x, p.y, ZOOM_SCALES[clamped - 1]));
   };
   const nudgePan = (dx: number, dy: number) => setPan((p) => clampPan(p.x + dx, p.y + dy, mapScale));
-  // Open centered on the player's current chunk (the starting area), not on
-  // the middle of the whole atlas — the far continent is found by panning east.
+  // Open centered on the player's current chunk (the starting island area),
+  // not the middle of the whole atlas — the far continent is east, by pan.
   useLayoutEffect(() => {
-    const stage = stageRef.current; const grid = gridRef.current;
-    if (!stage || !grid || grid.scrollWidth === 0) return;
-    const cols = worldMapBounds.maxX - worldMapBounds.minX + 1;
-    const rows = worldMapBounds.maxY - worldMapBounds.minY + 1;
-    const cellW = grid.scrollWidth / cols;
-    const cellH = grid.scrollHeight / rows;
+    const stage = stageRef.current;
+    if (!stage) return;
     const scale = ZOOM_SCALES[zoom - 1];
     const col = chunk.x - worldMapBounds.minX;
     const row = chunk.y - worldMapBounds.minY;
-    const targetX = -scale * ((col + 0.5) * cellW - grid.scrollWidth / 2);
-    const targetY = -scale * ((row + 0.5) * cellH - grid.scrollHeight / 2);
+    const targetX = -scale * ((col + 0.5) * MAP_TILE_PX - atlas.width / 2);
+    const targetY = -scale * ((row + 0.5) * MAP_TILE_PX - atlas.height / 2);
     setPan(clampPan(targetX, targetY, scale));
     // Run once on mount; refs and props are fixed for the lifetime of the sheet.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const tileAtClientPoint = (clientX: number, clientY: number): AtlasTile | null => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0) return null;
+    const ax = ((clientX - rect.left) / rect.width) * canvas.width;
+    const ay = ((clientY - rect.top) / rect.height) * canvas.height;
+    const col = Math.floor(ax / MAP_TILE_PX);
+    const row = Math.floor(ay / MAP_TILE_PX);
+    return atlas.byKey.get((worldMapBounds.minX + col) + ',' + (worldMapBounds.minY + row)) || null;
+  };
+
   const onStagePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture?.(event.pointerId);
     dragRef.current = { startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y, moved: false };
@@ -1711,41 +2073,26 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     if (!drag.moved && Math.hypot(dx, dy) > 6) { drag.moved = true; setPanning(true); }
     if (drag.moved) setPan(clampPan(drag.panX + dx, drag.panY + dy, mapScale));
   };
-  const endStageDrag = () => {
+  const endStageDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current; dragRef.current = null; setPanning(false);
-    if (drag?.moved) { suppressClickRef.current = true; window.setTimeout(() => { suppressClickRef.current = false; }, 0); }
+    // A tap (no drag) selects the tile under the finger/cursor.
+    if (drag && !drag.moved) setSelected(tileAtClientPoint(event.clientX, event.clientY));
   };
-  const worldTiles = generatedWorldTiles;
-  const oceanKeys = new Set(worldTiles.filter((world) => world.biome === 'ocean').map((world) => world.x + ',' + world.y));
-  // Deep open water (ocean with no land within one tile) is not rendered as
-  // individual tile divs at all — the atlas ocean backdrop shows through.
-  // This keeps the much larger world cheap to open.
-  const landKeys = new Set(worldTiles.filter((world) => world.biome !== 'ocean').map((world) => world.x + ',' + world.y));
-  const isDeepOcean = (x: number, y: number) => {
-    for (let dy = -1; dy <= 1; dy += 1) {
-      for (let dx = -1; dx <= 1; dx += 1) {
-        if (landKeys.has((x + dx) + ',' + (y + dy))) return false;
-      }
-    }
-    return true;
-  };
-  const tiles = worldTiles.map((world) => {
-    const point = { x: world.x, y: world.y };
-    return { ...mapTileFor(point), world, current: point.x === chunk.x && point.y === chunk.y, deepOcean: world.biome === 'ocean' && isDeepOcean(world.x, world.y) };
-  });
-  const elevationByKey = new Map(tiles.map((tile) => [tile.x + ',' + tile.y, tile.elevationLevel]));
-  const currentTile = tiles.find((tile) => tile.current) || tiles[0];
-  const selectedAreaName = selectedTile ? (selectedTile.landmark?.name || worldMapBiomeLabel(selectedTile.world.biome)) : null;
-  const currentAreaName = currentTile.landmark?.name || worldMapBiomeLabel(currentTile.world.biome);
+
+  const selectedAreaName = selected ? (selected.landmark?.name || worldMapBiomeLabel(selected.world.biome)) : null;
+  const currentEntry = atlas.byKey.get(chunk.x + ',' + chunk.y);
+  const currentAreaName = currentEntry ? (currentEntry.landmark?.name || worldMapBiomeLabel(currentEntry.world.biome)) : 'Unknown lands';
+  const playerPX = (chunk.x - worldMapBounds.minX + 0.5) * MAP_TILE_PX;
+  const playerPY = (chunk.y - worldMapBounds.minY + 0.5) * MAP_TILE_PX;
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v152</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Hand-drawn atlas · build v{BUILD_NUMBER}</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
-          <span className="map-area-label">{currentAreaName} · {currentTile.world.biome}</span>
+          <span className="map-area-label">{currentAreaName} · {currentEntry ? worldMapBiomeLabel(currentEntry.world.biome) : ''}</span>
           <div className="map-zoom-controls" aria-label="Map zoom controls">
             <button className="map-zoom-button" onClick={() => changeZoom(zoom - 1)} disabled={zoom === 1} aria-label="Zoom out" data-testid="button-map-zoom-out"><Minus size={15} /></button>
             <span className="map-zoom-level">×{mapScale}</span>
@@ -1753,45 +2100,14 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
           </div>
         </div>
         <div ref={stageRef} className={'big-map world-map-stage' + (panning ? ' is-panning' : '')} data-testid="map-world-preview"
-          onPointerDown={onStagePointerDown} onPointerMove={onStagePointerMove} onPointerUp={endStageDrag} onPointerCancel={endStageDrag}>
+          onPointerDown={onStagePointerDown} onPointerMove={onStagePointerMove} onPointerUp={endStageDrag} onPointerCancel={() => { dragRef.current = null; setPanning(false); }}>
           <span className="atlas-compass" aria-hidden="true"><strong>N</strong><span>↑</span></span>
-          <div ref={gridRef} className="map-grid world-map-hex-grid" style={{ gridTemplateColumns: 'repeat(' + (worldMapBounds.maxX - worldMapBounds.minX + 1) + ', minmax(0, 1fr))', gridTemplateRows: 'repeat(' + (worldMapBounds.maxY - worldMapBounds.minY + 1) + ', minmax(0, 1fr))', transform: 'translate(' + pan.x + 'px, ' + pan.y + 'px) scale(' + mapScale + ')' }}>
-            {tiles.map((tile) => {
-              if (tile.deepOcean) return null;
-              const isSelected = selectedTile?.x === tile.x && selectedTile?.y === tile.y;
-              const tileAreaName = tile.landmark?.name || worldMapBiomeLabel(tile.world.biome);
-              const tileShade = Math.min(1.07, Math.max(0.9, 0.93 + tile.world.climate.elevation * 0.12)).toFixed(3);
-              // Elevation readability: higher tiles get a lifted highlight;
-              // where elevation drops 2+ levels to a neighbor, draw a cliff-face shadow.
-              const elevShadows: string[] = [];
-              const elevAt = (x: number, y: number) => elevationByKey.get(x + ',' + y) ?? tile.elevationLevel;
-              if (tile.world.biome !== 'ocean' && tile.elevationLevel >= 2) {
-                if (elevAt(tile.x, tile.y - 1) <= tile.elevationLevel - 2) elevShadows.push('inset 0 7px 0 0 rgba(40, 26, 16, .42)');
-                if (elevAt(tile.x, tile.y + 1) <= tile.elevationLevel - 2) elevShadows.push('inset 0 -7px 0 0 rgba(40, 26, 16, .42)');
-                if (elevAt(tile.x - 1, tile.y) <= tile.elevationLevel - 2) elevShadows.push('inset 7px 0 0 0 rgba(40, 26, 16, .42)');
-                if (elevAt(tile.x + 1, tile.y) <= tile.elevationLevel - 2) elevShadows.push('inset -7px 0 0 0 rgba(40, 26, 16, .42)');
-              }
-              // Yellow shoreline rim on the land side of every water edge, like a beach outline.
-              const rim: string[] = [];
-              if (tile.world.biome !== 'ocean') {
-                const touchesWater = (x: number, y: number) => oceanKeys.has(x + ',' + y);
-                if (touchesWater(tile.world.x, tile.world.y - 1)) rim.push('inset 0 6px 0 0 #d3e04e');
-                if (touchesWater(tile.world.x, tile.world.y + 1)) rim.push('inset 0 -6px 0 0 #d3e04e');
-                if (touchesWater(tile.world.x - 1, tile.world.y)) rim.push('inset 6px 0 0 0 #d3e04e');
-                if (touchesWater(tile.world.x + 1, tile.world.y)) rim.push('inset -6px 0 0 0 #d3e04e');
-              }
-              const boxShadows = [...elevShadows];
-              if (rim.length) boxShadows.push('inset 0 0 0 1px rgba(20, 20, 90, .28)', ...rim);
-              return <div className={'map-tile world-map-hex world-map-biome-' + tile.world.biome + ' elev-' + tile.elevationLevel + (tile.world.nearBiomeBorder ? ' is-border' : '') + (tile.current ? ' is-current' : '') + (isSelected ? ' is-selected' : '')} style={{ gridColumn: tile.world.column + 1, gridRow: tile.world.row + 1, '--tile-shade': tileShade, backgroundColor: WORLD_TILE_BG[tile.world.biome] || '#47a13d', backgroundImage: 'url("' + assetUrl('map-tiles-pixel/' + tile.world.biome + '.png') + '")', backgroundSize: '100% 100%', backgroundRepeat: 'no-repeat', imageRendering: 'pixelated', boxShadow: boxShadows.length ? boxShadows.join(', ') : undefined } as CSSProperties} key={tile.x + '-' + tile.y} title={tileAreaName + ' · chunk ' + tile.x + ', ' + tile.y} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => { if (suppressClickRef.current) return; setSelectedTile(tile); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
-                {tile.bridge
-                  ? <span className="world-map-bridge" aria-hidden="true" />
-                  : tile.road !== 'none' && <span className={'world-map-road world-map-road-' + tile.road} aria-hidden="true" />}
-                {tile.landmark && <span className={'world-map-settlement world-map-settlement-' + tile.landmark.kind} style={{ backgroundImage: 'url("' + assetUrl('map-tiles-pixel/' + tile.landmark.kind + '.png') + '")' } as CSSProperties} aria-hidden="true" />}
-                {tile.landmark && <span className="world-map-landmark">{tile.landmark.name}</span>}
-                {tile.current && <span className="map-tile-player" aria-label="Your current position" />}
-                {tile.current && <span className="map-tile-label">{tile.x}, {tile.y}</span>}
-              </div>;
-            })}
+          <div className="world-map-canvas-wrap" style={{ width: atlas.width, height: atlas.height, marginLeft: -atlas.width / 2, marginTop: -atlas.height / 2, transform: 'translate(' + pan.x + 'px, ' + pan.y + 'px) scale(' + mapScale + ')' }}>
+            <canvas ref={canvasRef} className="world-map-canvas" width={atlas.width} height={atlas.height} />
+            {selected && (
+              <span className="map-selection-ring" aria-hidden="true" style={{ left: (selected.world.x - worldMapBounds.minX + 0.5) * MAP_TILE_PX, top: (selected.world.y - worldMapBounds.minY + 0.5) * MAP_TILE_PX }} />
+            )}
+            <span className="map-player-dot" aria-label="Your current position" style={{ left: playerPX, top: playerPY }} />
           </div>
           <div className="map-pan-pad" aria-label="Pan map controls" onPointerDown={(event) => event.stopPropagation()}>
             <button type="button" className="map-pan-button map-pan-up" onClick={() => nudgePan(0, 70)} aria-label="Pan map up" data-testid="button-map-pan-up">▲</button>
@@ -1800,10 +2116,10 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
             <button type="button" className="map-pan-button map-pan-down" onClick={() => nudgePan(0, -70)} aria-label="Pan map down" data-testid="button-map-pan-down">▼</button>
           </div>
         </div>
-        <div className={'map-selection' + (selectedTile ? ' has-selection' : '')} role="status" aria-live="polite">
+        <div className={'map-selection' + (selected ? ' has-selection' : '')} role="status" aria-live="polite">
           <span className="map-selection-label">Selected area</span>
           <strong>{selectedAreaName || 'Tap a tile'}</strong>
-          <small>{selectedTile ? worldMapBiomeLabel(selectedTile.world.biome) + ' · chunk ' + selectedTile.x + ', ' + selectedTile.y : 'Tap any tile to inspect its biome and region'}</small>
+          <small>{selected ? worldMapBiomeLabel(selected.world.biome) + ' · chunk ' + selected.world.x + ', ' + selected.world.y : 'Tap any tile to inspect its biome and region'}</small>
         </div>
         <div className="map-legend world-map-legend">
           <span className="legend-item"><span className="legend-dot" /> You are here</span>
@@ -1811,7 +2127,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
           <span className="legend-item"><span className="world-map-legend-swatch desert" /> Desert</span>
           <span className="legend-item"><span className="world-map-legend-swatch tundra" /> Tundra</span>
           <span className="legend-item"><span className="world-map-legend-swatch ocean" /> Water</span>
-          <span className="legend-item">Seed {DEFAULT_WORLD_SEED} · square tile atlas</span>
+          <span className="legend-item">Seed {DEFAULT_WORLD_SEED} · hand-drawn atlas</span>
         </div>
       </div>
     </div>

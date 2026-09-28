@@ -453,7 +453,9 @@
   z-index: 5;
   width: 42px;
   height: 42px;
-  transform: translate(-50%, -50%) scale(1.35);
+  /* No scale: the horse and rider render at the same 32px sprite size as the
+     player on foot. (A previous scale(1.35) made both grow when mounting.) */
+  transform: translate(-50%, -50%);
   transform-origin: center;
   pointer-events: none;
   will-change: left, top;
@@ -1943,6 +1945,47 @@ body {
 .world-map-stage { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
 .world-map-stage.is-panning { cursor: grabbing; }
 .world-map-stage.is-panning .map-grid { transition: none; }
+/* Canvas atlas: one pre-rendered sheet, centered in the stage; pan/zoom is a
+   single GPU transform. Fixed 26px tiles — nothing squishes. */
+.world-map-canvas-wrap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: center;
+  border: 4px solid rgba(238, 222, 174, .58);
+  box-shadow: 0 0 0 2px rgba(34, 73, 57, .5), 0 8px 12px rgba(21, 54, 45, .28);
+  transition: transform .18s ease;
+  will-change: transform;
+}
+.world-map-stage.is-panning .world-map-canvas-wrap { transition: none; }
+.world-map-canvas { display: block; width: 100%; height: 100%; }
+.map-player-dot {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: #ffd94d;
+  border: 2px solid #7a4d12;
+  box-shadow: 0 0 0 3px rgba(255, 217, 77, .35);
+  animation: map-player-pulse 1.6s ease-in-out infinite;
+  z-index: 5;
+  pointer-events: none;
+}
+@keyframes map-player-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(255, 217, 77, .35); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 217, 77, .12); }
+}
+.map-selection-ring {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border: 2px solid #ffe9a8;
+  box-shadow: 0 0 0 2px rgba(60, 40, 20, .6), inset 0 0 0 1px rgba(255, 255, 255, .4);
+  z-index: 4;
+  pointer-events: none;
+}
 .map-pan-pad { position: absolute; right: 10px; bottom: 10px; display: grid; grid-template-columns: repeat(3, 30px); grid-template-rows: repeat(3, 30px); gap: 2px; z-index: 6; opacity: .92; }
 .map-pan-button { border: 1px solid rgba(34, 73, 57, .65); border-radius: 7px; background: rgba(238, 222, 174, .92); color: #2a4a35; font-size: 13px; line-height: 1; padding: 0; cursor: pointer; box-shadow: 0 2px 4px rgba(21, 54, 45, .3); }
 .map-pan-button:active { background: #d8c89a; transform: translateY(1px); }

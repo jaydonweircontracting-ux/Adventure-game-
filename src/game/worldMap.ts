@@ -7,12 +7,13 @@ export type WorldMapBounds = { minX: number; maxX: number; minY: number; maxY: n
 export const WORLD_MAP_BOUNDS: WorldMapBounds = { minX: -10, maxX: 20, minY: -8, maxY: 22 };
 export const CORE_WORLD_BOUNDS: WorldMapBounds = { minX: 0, maxX: 10, minY: 2, maxY: 12 };
 // Second continent: a truly huge landmass far to the east of the original world,
-// separated by a vast ocean gap. It reads as a real continent next to the home
-// region: many times its size and a long voyage away. The original 31x31 world
-// always generates bit-identically; the second continent is purely additive.
-export const SECOND_CONTINENT_BOUNDS: WorldMapBounds = { minX: 69, maxX: 148, minY: -28, maxY: 51 };
-export const EXPANDED_WORLD_BOUNDS: WorldMapBounds = { minX: -10, maxX: 148, minY: -28, maxY: 51 };
-// Ocean gap between the original world and the second continent (x 21..68).
+// separated by a vast ocean gap (96 tiles of open water). It reads as a real
+// continent next to the home region: many times its size and a long voyage
+// away. The original 31x31 world always generates bit-identically; the second
+// continent is purely additive.
+export const SECOND_CONTINENT_BOUNDS: WorldMapBounds = { minX: 117, maxX: 196, minY: -28, maxY: 51 };
+export const EXPANDED_WORLD_BOUNDS: WorldMapBounds = { minX: -10, maxX: 196, minY: -28, maxY: 51 };
+// Ocean gap between the original world and the second continent (x 21..116).
 const SECOND_CONTINENT_GAP_MIN_X = WORLD_MAP_BOUNDS.maxX + 1;
 const SECOND_CONTINENT_GAP_MAX_X = SECOND_CONTINENT_BOUNDS.minX - 1;
 export const WORLD_MAP_RESERVED_MEADOW_COORDINATES = [
