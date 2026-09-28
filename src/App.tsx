@@ -641,6 +641,7 @@ type BirdState = {
   target: Point;
   variant: number;
   facing: Direction;
+  fleeing: boolean; // true while fleeing the player off screen
 };
 // Living-world wildlife: biome + danger-zone based spawning.
 type WildlifeSpecies = 'rabbit' | 'deer' | 'wolf' | 'boar' | 'bear';
@@ -657,6 +658,7 @@ type WildlifeState = {
 };
 const BIRD_STEP = 1.2;
 const BIRD_FLY_STEP = 3.5;
+const BIRD_FLEE_RADIUS = 14; // player closeness that startles a bird into flight
 const GOAT_TICK_MS = 500;
 const GOAT_WANDER_MIN_TICKS = 10;
 const GOAT_WANDER_MAX_TICKS = 20;
@@ -1042,6 +1044,7 @@ function birdsForChunk(chunk: Point): BirdState[] {
       target: { ...position },
       variant: seed % 3,
       facing: (['left', 'right'] as Direction[])[seed % 2],
+      fleeing: false,
     });
   }
   return birds;
@@ -1163,8 +1166,35 @@ function wildlifeForChunk(chunk: Point): WildlifeState[] {
   }
   return wildlife;
 }
-function updateBird(bird: BirdState, nowMs: number, deltaMs: number, chunk: Point): BirdState {
+function updateBird(bird: BirdState, nowMs: number, deltaMs: number, chunk: Point, playerPos: Point): BirdState {
   const next = { ...bird, position: { ...bird.position }, stateTimer: bird.stateTimer - deltaMs / 1000 };
+  // Startled: player got close — take off and fly away off screen.
+  const pdx = next.position.x - playerPos.x;
+  const pdy = next.position.y - playerPos.y;
+  const distPlayer = Math.hypot(pdx, pdy);
+  if (!next.fleeing && distPlayer < BIRD_FLEE_RADIUS) {
+    const d = distPlayer || 1;
+    next.fleeing = true;
+    next.state = 'fly';
+    // Aim well past the field edge, away from the player, so the bird leaves the screen.
+    next.target = {
+      x: next.position.x + (pdx / d) * 140,
+      y: next.position.y + (pdy / d) * 140,
+    };
+    next.stateTimer = 6;
+  }
+  if (next.fleeing) {
+    const offScreen = next.position.x < -3 || next.position.x > 103 || next.position.y < -3 || next.position.y > 103;
+    if (offScreen) {
+      // Gone: stop fleeing; the normal behavior pick below flies it back home.
+      next.fleeing = false;
+      next.stateTimer = 0;
+    } else if (next.stateTimer <= 0) {
+      // Still on screen: keep flying, don't fall through to normal behavior yet.
+      next.state = 'fly';
+      next.stateTimer = 6;
+    }
+  }
   if (next.stateTimer > 0) {
     // Continue current state movement.
     if (next.state === 'hop' || next.state === 'fly') {
@@ -2133,7 +2163,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
       // Ambient birds: lightweight, tick alongside goats.
       if (!interiorRef.current && birdsRef.current.length > 0) {
         const nowMs = performance.now();
-        const nextBirds = birdsRef.current.map((bird) => updateBird(bird, nowMs, elapsed * 1000, chunkRef.current));
+        const nextBirds = birdsRef.current.map((bird) => updateBird(bird, nowMs, elapsed * 1000, chunkRef.current, positionRef.current));
         birdsRef.current = nextBirds; setBirds(nextBirds);
       }
       // Wildlife wander: simple home-range movement, tick-throttled.
