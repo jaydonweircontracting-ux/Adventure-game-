@@ -27,5 +27,7 @@ Priorities re-evaluated after each pass. P0 first.
 - [x] Map legend expansion (roads, towns, villages, mountains) — build 164 (swatches match actual atlas render colors)
 
 ## P4 — Optional
-- [x] Second continent content: dungeons/POIs — build 169/170 (Sunken Crypt/Ember Ruins/Whispering Stones); build-170 regression fixes (Descend button, map centering); re-verification running
+- [x] Second continent content: dungeons/POIs — build 169/170 (Sunken Crypt/Ember Ruins/Whispering Stones); build-170 regression fixes (Descend button, map centering); re-verification PASSED
 - [ ] Ocean travel gameplay (the 96-tile gap is currently scenery)
+
+- [ ] P3: map zoom anchors toward top-right instead of viewport center (noted in build-170 QA; pre-existing)

@@ -739,7 +739,7 @@
 /* Dungeon POI descend button: same floating-button pattern as Mount. */
 .dungeon-descend-button {
   position: absolute;
-  z-index: 12;
+  z-index: 20;
   display: inline-flex;
   align-items: center;
   justify-content: center;

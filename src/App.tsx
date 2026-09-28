@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '170';
+const BUILD_NUMBER = '171';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -3648,7 +3648,7 @@ if (active) {
             if (!dungeon) return null;
             const entrance = { x: 50, y: 44 };
             if (Math.hypot(position.x - entrance.x, position.y - entrance.y) > 10) return null;
-            return <button className="dungeon-descend-button" style={{ left: entrance.x + '%', top: Math.min(88, entrance.y + 10) + '%' }} onClick={onEnterDungeon} aria-label={'Descend into ' + dungeon.name} data-testid="button-enter-field-dungeon">Descend</button>;
+            return <button className="dungeon-descend-button" style={{ left: (entrance.x + 16) + '%', top: entrance.y + '%' }} onClick={onEnterDungeon} aria-label={'Descend into ' + dungeon.name} data-testid="button-enter-field-dungeon">Descend</button>;
           })()}
           </div>
           {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
