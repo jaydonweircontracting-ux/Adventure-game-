@@ -174,6 +174,12 @@ const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
   '4,19': { name: 'Dunewatch', kind: 'village' },
   '17,7': { name: 'Eastmarch', kind: 'town' },
   '-7,7': { name: 'Westhold', kind: 'village' },
+  // Second continent settlements (huge continent: x 33..57, y -8..22)
+  '45,7': { name: 'Stormhaven', kind: 'town' },
+  '38,12': { name: 'Oakfield', kind: 'village' },
+  '50,3': { name: 'Stonebridge', kind: 'village' },
+  '42,-2': { name: 'Frostwatch', kind: 'village' },
+  '53,15': { name: 'Saltmarsh', kind: 'village' },
 };
 
 function isStartingArea(point: Point) {
@@ -352,6 +358,42 @@ function pointInRect(point: Point, rect: FieldRect, padding = 0) {
   return point.x >= rect.left - padding && point.x <= rect.right + padding && point.y >= rect.top - padding && point.y <= rect.bottom + padding;
 }
 
+// Farms and homesteads in non-settlement chunks: deterministic per-chunk.
+// Returns house rects + crop field rects for rural flavor.
+function fieldFarmRects(chunkX: number, chunkY: number): { houses: FieldRect[]; fields: FieldRect[] } {
+  const seed = Math.abs(chunkX * 73856093 ^ chunkY * 19349663) >>> 0;
+  const rng = () => {
+    const x = Math.sin(seed + 1) * 10000;
+    return x - Math.floor(x);
+  };
+  // Only ~40% of non-settlement chunks get farms.
+  if (rng() > 0.4) return { houses: [], fields: [] };
+  
+  const houses: FieldRect[] = [];
+  const fields: FieldRect[] = [];
+  const count = 1 + Math.floor(rng() * 2); // 1-2 farmsteads
+  
+  for (let i = 0; i < count; i++) {
+    const bx = 20 + rng() * 60;
+    const by = 20 + rng() * 60;
+    // Farmhouse (smaller than town houses)
+    houses.push({
+      left: bx,
+      top: by,
+      right: bx + 12,
+      bottom: by + 9,
+    });
+    // Crop field adjacent
+    fields.push({
+      left: bx - 15,
+      top: by + 12,
+      right: bx + 15,
+      bottom: by + 25,
+    });
+  }
+  return { houses, fields };
+}
+
 function pointInWater(position: Point, tile: MapTile) {
   if (tile.waterFeature === 'sea') return true;
   if (!tile.waterFeature || tile.bridge) return false;
@@ -397,6 +439,10 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
     return value - Math.floor(value);
   };
   const houseRects = landmark ? fieldHouseRects(landmark.kind, false, chunk.x * 31 + chunk.y * 17) : [];
+  // Farms/homesteads in non-settlement chunks (only on farmable terrain)
+  const farmable = ['meadow', 'grassland', 'greenvale'].includes(mapTileFor(chunk).terrain);
+  const farmData = (!landmark && farmable) ? fieldFarmRects(chunk.x, chunk.y) : { houses: [], fields: [] };
+  const allHouseRects = [...houseRects, ...farmData.houses];
   const trees: FieldTree[] = [];
   const targetCount = 8 + Math.floor(random() * 5);
   let attempts = 0;
@@ -408,7 +454,7 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
     const scale = 0.72 + random() * 0.48;
     const center = { x: x + 3.2 * scale, y: y + 2.5 * scale };
     const tooCloseToStart = Math.hypot(center.x - 50, center.y - 52) < 12;
-    const tooCloseToBuilding = houseRects.some((rect) => pointInRect(center, rect, 5));
+    const tooCloseToBuilding = allHouseRects.some((rect) => pointInRect(center, rect, 5));
     const tooCloseToTree = trees.some((tree) => Math.hypot(center.x - (tree.x + 3.2 * tree.scale), center.y - (tree.y + 2.5 * tree.scale)) < 9);
     const tooCloseToRoad = pointOnFieldRoad(center, road);
     if (tooCloseToStart || tooCloseToBuilding || tooCloseToTree || tooCloseToRoad) continue;
@@ -2690,6 +2736,40 @@ if (active) {
               )}
             </div>
           )}
+          {/* Farms/homesteads in non-settlement chunks (only on farmable terrain) */}
+          {!currentWorldTile.landmark && ['meadow', 'grassland', 'greenvale'].includes(mapTileFor(currentChunk).terrain) && (() => {
+            const farmData = fieldFarmRects(currentChunk.x, currentChunk.y);
+            return (
+              <>
+                {farmData.houses.map((rect, i) => (
+                  <span
+                    key={'farm-house-' + i}
+                    className="field-house farm-house"
+                    style={{
+                      left: rect.left + '%',
+                      top: rect.top + '%',
+                      width: (rect.right - rect.left) + '%',
+                      height: (rect.bottom - rect.top) + '%',
+                    }}
+                    aria-label="Farmhouse"
+                  />
+                ))}
+                {farmData.fields.map((rect, i) => (
+                  <span
+                    key={'farm-field-' + i}
+                    className="farm-field"
+                    style={{
+                      left: rect.left + '%',
+                      top: rect.top + '%',
+                      width: (rect.right - rect.left) + '%',
+                      height: (rect.bottom - rect.top) + '%',
+                    }}
+                    aria-label="Crop field"
+                  />
+                ))}
+              </>
+            );
+          })()}
           {currentWorldTile.landmark?.name === 'Mosslight Crossing' && npcStates.map((npc) => (
             <button
               className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '')}
