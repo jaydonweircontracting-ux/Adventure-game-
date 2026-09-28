@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '169';
+const BUILD_NUMBER = '170';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -2572,6 +2572,12 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   });
   saveStateRef.current = createSaveData;
 
+  // Sync the starting chunk to the parent on mount so the world map centers on
+  // the true starting chunk (matters for ?playtestChunk starts).
+  useEffect(() => {
+    onChunkChange(chunkRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (!loadState) return;
     const restoredDoorway = loadState.interiorId
@@ -3634,16 +3640,16 @@ if (active) {
                 <span className="horse-sprite" />
               </div>
               {canMount && <button className="horse-mount-button" style={{ left: horseDisplayPosition.x + '%', top: Math.min(88, Math.max(12, horseDisplayPosition.y + 10)) + '%' }} onClick={toggleMount} aria-label="Mount horse" data-testid="button-toggle-mount">Mount</button>}
-              {(() => {
-                // Dungeon POI entrance: offer Descend when the player is near the crypt stairs.
-                const dungeon = currentWorldTile.landmark && currentWorldTile.landmark.kind === 'dungeon' ? currentWorldTile.landmark : null;
-                if (!dungeon) return null;
-                const entrance = { x: 50, y: 44 };
-                if (Math.hypot(position.x - entrance.x, position.y - entrance.y) > 10) return null;
-                return <button className="dungeon-descend-button" style={{ left: entrance.x + '%', top: Math.min(88, entrance.y + 10) + '%' }} onClick={onEnterDungeon} aria-label={'Descend into ' + dungeon.name} data-testid="button-enter-field-dungeon">Descend</button>;
-              })()}
             </>
           )}
+          {(() => {
+            // Dungeon POI entrance: offer Descend when the player is near the crypt stairs.
+            const dungeon = currentWorldTile.landmark && currentWorldTile.landmark.kind === 'dungeon' ? currentWorldTile.landmark : null;
+            if (!dungeon) return null;
+            const entrance = { x: 50, y: 44 };
+            if (Math.hypot(position.x - entrance.x, position.y - entrance.y) > 10) return null;
+            return <button className="dungeon-descend-button" style={{ left: entrance.x + '%', top: Math.min(88, entrance.y + 10) + '%' }} onClick={onEnterDungeon} aria-label={'Descend into ' + dungeon.name} data-testid="button-enter-field-dungeon">Descend</button>;
+          })()}
           </div>
           {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
              data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px` } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
