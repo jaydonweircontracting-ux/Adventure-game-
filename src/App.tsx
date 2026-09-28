@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '162';
+const BUILD_NUMBER = '163';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -476,11 +476,13 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
 
   if (startingCenter) {
     // Keep trees fully inside the field so sprites aren't clipped at edges.
+    // Anchors sit clear of the four corner houses (x 24-36 / 64-76,
+    // y 27-36 / 64-72) and clear of the road corridors (x/y 44-59).
     const perimeterTrees = [
       { x: 20, y: 22, scale: 0.56, variant: 1 },
       { x: 70, y: 22, scale: 0.56, variant: 2 },
-      { x: 20, y: 68, scale: 0.56, variant: 2 },
-      { x: 70, y: 68, scale: 0.56, variant: 1 },
+      { x: 18, y: 68, scale: 0.56, variant: 2 },
+      { x: 86, y: 64, scale: 0.56, variant: 1 },
     ];
     return perimeterTrees.map((tree, id) => ({ ...tree, id, style: treeStyle, sprite: (tree.variant === 1 ? 'bigpine' : 'pine2') as EnvSpriteKey }));
   }

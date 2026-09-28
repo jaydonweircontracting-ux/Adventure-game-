@@ -58,4 +58,23 @@ ocean fix, tutorial-house beds removed + smith NPC, debug/playtest tooling.
 3. Continue priority loop: perf -> world consistency -> gameplay -> visuals.
 
 ## Last Verified Build
-BUILD 161 (pushed c348c9d, 2026-09-28). BUILD 162 in progress, not yet pushed.
+BUILD 162 (pushed 6605daf, 2026-09-28). Awaiting live playtest.
+
+## Build 162 changelog (2026-09-28)
+- Map audit: world gen runs once at module load (never on map open). Remaining
+  open-lag was the per-mount atlas re-render; fixed with module-level
+  getTerrainAtlas() cache (open = one blit + tiny overlay).
+- renderAtlasCanvas split: renderTerrainAtlas (cached, passes 1-4) +
+  renderMapOverlay (settlements/region labels, redrawn per zoom tier).
+  LOD tiers: far = region labels + towns; mid = + villages; near = all +
+  chunk coords in ?mapdebug=1.
+- BUG-001 fixed: Stormhaven 125,-16 (ocean under real seed) -> 130,-16
+  (forest, on road leg); road leg trimmed to x 129..140.
+- Tutorial house: giant beds removed (inn furniture); Bram the smith NPC added
+  by the fireplace (data-testid="tutorial-smith"), reuses smith dialogue.
+- Playtest tooling: ?debug=1 diagnostics overlay (build, fps, chunk, atlas
+  cache/build-ms, map-sync validation); validateMapData() + getMapDebugStats().
+- Sim: +47 map-validation tests (21 landmarks on land under real seed, ocean
+  gap water, continent size). 33,061 passed, 0 failed. Typecheck: 8 pre-existing.
+- Docs: OVERNIGHT_PROGRESS.md, AUTONOMOUS_TASK_QUEUE.md, BUG_DATABASE.md,
+  DECISIONS.md created in docs/.
