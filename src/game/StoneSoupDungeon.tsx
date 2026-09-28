@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import {
   castSpell,
   collectItem,
@@ -17,6 +17,8 @@ import {
 import './stoneSoupDungeon.css';
 
 type Props = { onExit: () => void };
+
+const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 
 const glyphs: Record<GameState['tiles'][number][number]['kind'], string> = {
   wall: '', floor: '·', door: '+', stairs: '↓', altar: 'A', water: '≈', lava: '^',
@@ -80,7 +82,20 @@ export default function StoneSoupDungeon({ onExit }: Props) {
   const restart = () => setGame(createGame());
 
   return (
-    <div className="stone-soup-dungeon" role="dialog" aria-modal="true" aria-label="Stone Soup dungeon">
+    <div
+      className="stone-soup-dungeon"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Stone Soup dungeon"
+      style={{
+        '--ssd-tiles': `url("${assetUrl('dungeon/character%20and%20tileset/Dungeon_Tileset.png')}")`,
+        '--ssd-hero': `url("${assetUrl('dungeon/character%20and%20tileset/Dungeon_Character.png')}")`,
+        '--ssd-mon1': `url("${assetUrl('dungeon/Character_animation/monsters_idle/skeleton1/v1/skeleton_v1_1.png')}")`,
+        '--ssd-mon2': `url("${assetUrl('dungeon/Character_animation/monsters_idle/skeleton1/v1/skeleton_v1_2.png')}")`,
+        '--ssd-mon3': `url("${assetUrl('dungeon/Character_animation/monsters_idle/skeleton1/v1/skeleton_v1_3.png')}")`,
+        '--ssd-mon4': `url("${assetUrl('dungeon/Character_animation/monsters_idle/skeleton1/v1/skeleton_v1_4.png')}")`,
+      } as CSSProperties}
+    >
       <div className="ssd-shell">
         <header className="ssd-header">
           <div className="ssd-brand"><span className="ssd-brand-mark">◈</span><span><strong>Stone Soup</strong><small>The Ember Vault</small></span></div>
@@ -89,7 +104,7 @@ export default function StoneSoupDungeon({ onExit }: Props) {
         <div className="ssd-layout">
           <main className="ssd-main">
             <section className="ssd-panel ssd-hero"><div><span className="ssd-kicker">dungeon descent / procedural gallery</span><h1>{game.player.name}</h1><p>{game.player.species} · {game.player.background} · level {String(game.player.level).padStart(2, '0')}</p></div><div className="ssd-seed">seed {game.seed.toString(16).slice(-6).toUpperCase()}</div><div className="ssd-meters"><Meter label="vitality" value={game.player.hp + ' / ' + game.player.maxHp} percent={hpPercent} className="hp" /><Meter label="focus" value={game.player.mp + ' / ' + game.player.maxMp} percent={mpPercent} className="mp" /><Meter label="attunement" value={game.player.xp + ' / ' + game.player.nextXp} percent={xpPercent} className="xp" /></div></section>
-            <section className="ssd-panel ssd-map-panel"><div className="ssd-panel-head"><h2>The Cinder Galleries</h2><span>{alive.length} signatures · fog of war active</span></div><div className="ssd-map-scroll"><div className="ssd-map" role="grid" aria-label="Dungeon map" style={{ gridTemplateColumns: 'repeat(' + game.width + ', minmax(17px, 1fr))' }}>{game.tiles.flatMap((row) => row.map((tile) => { const explored = tile.visible || tile.seen; const monster = game.monsters.find((entry) => entry.x === tile.x && entry.y === tile.y && entry.hp > 0); const item = game.groundItems.find((entry) => entry.x === tile.x && entry.y === tile.y); const player = game.player.x === tile.x && game.player.y === tile.y; const className = ['ssd-tile', !explored ? 'unknown' : tile.kind === 'wall' ? 'wall' : tile.visible ? 'floor' : 'seen', monster && tile.visible ? 'monster' : '', item && tile.visible ? 'loot' : '', tile.kind === 'stairs' ? 'stairs' : '', tile.kind === 'altar' ? 'altar' : '', player ? 'player' : ''].filter(Boolean).join(' '); return <button key={tile.x + '-' + tile.y} className={className} disabled={!tile.visible || tile.kind === 'wall'} onClick={() => tileClick(tile.x, tile.y)} aria-label={explored ? tile.kind : 'unexplored stone'}><span>{!explored ? '' : player ? '@' : monster && tile.visible ? monster.glyph : item && tile.visible ? item.glyph : glyphs[tile.kind]}</span></button>; }))}</div></div><div className="ssd-actions"><span><b>@</b> you</span><span><b className="red">s</b> threat</span><span><b className="gold">*</b> loot</span><span><b className="blue">↓</b> stairs</span>{currentItem && <button onClick={() => run(collectItem)}>E · collect {currentItem.name}</button>}{currentTile.kind === 'stairs' && <button onClick={() => run(descend)}>&gt; · descend</button>}{currentTile.kind === 'altar' && <button onClick={() => run(tryOpenVault)}>attune altar</button>}</div></section>
+            <section className="ssd-panel ssd-map-panel"><div className="ssd-panel-head"><h2>The Cinder Galleries</h2><span>{alive.length} signatures · fog of war active</span></div><div className="ssd-map-scroll"><div className="ssd-map" role="grid" aria-label="Dungeon map" style={{ gridTemplateColumns: 'repeat(' + game.width + ', minmax(17px, 1fr))' }}>{game.tiles.flatMap((row) => row.map((tile) => { const explored = tile.visible || tile.seen; const monster = game.monsters.find((entry) => entry.x === tile.x && entry.y === tile.y && entry.hp > 0); const item = game.groundItems.find((entry) => entry.x === tile.x && entry.y === tile.y); const player = game.player.x === tile.x && game.player.y === tile.y; const className = ['ssd-tile', !explored ? 'unknown' : tile.kind === 'wall' ? 'wall' : tile.kind === 'door' && tile.visible ? 'door' : tile.visible ? 'floor' : 'seen', monster && tile.visible ? 'monster' : '', item && tile.visible ? 'loot' : '', tile.kind === 'stairs' ? 'stairs' : '', tile.kind === 'altar' ? 'altar' : '', player ? 'player' : ''].filter(Boolean).join(' '); return <button key={tile.x + '-' + tile.y} className={className} disabled={!tile.visible || tile.kind === 'wall'} onClick={() => tileClick(tile.x, tile.y)} aria-label={explored ? tile.kind : 'unexplored stone'}><span>{!explored ? '' : player ? '@' : monster && tile.visible ? monster.glyph : item && tile.visible ? item.glyph : glyphs[tile.kind]}</span></button>; }))}</div></div><div className="ssd-actions"><span><i className="ssd-legend-chip ssd-chip-hero" /> you</span><span><i className="ssd-legend-chip ssd-chip-monster" /> threat</span><span><i className="ssd-legend-chip ssd-chip-loot" /> loot</span><span><i className="ssd-legend-chip ssd-chip-stairs" /> stairs</span>{currentItem && <button onClick={() => run(collectItem)}>E · collect {currentItem.name}</button>}{currentTile.kind === 'stairs' && <button onClick={() => run(descend)}>&gt; · descend</button>}{currentTile.kind === 'altar' && <button onClick={() => run(tryOpenVault)}>attune altar</button>}</div></section>
             <section className="ssd-panel ssd-log"><div className="ssd-panel-head"><h2>Field readout</h2><span>one turn at a time</span></div>{game.log.map((entry, index) => <div className={'ssd-log-row ' + (index === 0 ? 'latest' : '')} key={entry + index}><time>t.{String(Math.max(1, game.turn - index)).padStart(2, '0')}</time><span>{entry}</span></div>)}</section>
           </main>
           <aside className="ssd-side"><section className="ssd-panel ssd-card"><span className="ssd-kicker">next decision</span><h2>Bearing</h2><p>{objective}</p><div className="ssd-stats"><span>gold <b>{game.player.gold}</b></span><span>kills <b>{game.player.kills}</b></span><span>armor <b>{game.player.armor}</b></span></div></section><section className="ssd-panel ssd-card"><div className="ssd-card-head"><h2>Ember rites</h2><span>mana {game.player.mp}</span></div>{(Object.keys(spellBook) as SpellId[]).map((spellId, index) => { const spell = spellBook[spellId]; const learned = game.player.spells.includes(spellId); return <button className="ssd-spell" key={spellId} disabled={!learned || game.player.mp < spell.cost || game.phase !== 'playing'} onClick={() => run((state) => castSpell(state, spellId))}><b>{index + 1}</b><span><strong>{spell.name}</strong><small>{learned ? spell.description : 'not learned in this calling'}</small></span><em>{spell.cost} fp</em></button>; })}</section><section className="ssd-panel ssd-card"><div className="ssd-card-head"><h2>Satchel</h2><span>{game.player.inventory.length} items</span></div><div className="ssd-inventory">{game.player.inventory.map((item) => <button key={item.id} className={'ssd-item ' + (selectedItem === item.id ? 'selected' : '')} onClick={() => useItem(item)} title={item.description}><b>{item.glyph}</b><small>{item.name}</small></button>)}</div><p className="ssd-item-note">{itemDescription}</p></section><section className="ssd-panel ssd-card ssd-controls"><p><kbd>WASD</kbd> / arrows · move</p><p><kbd>1 2 3</kbd> · rites · <kbd>E</kbd> · collect</p><p><kbd>space</kbd> · wait · <kbd>&gt;</kbd> · descend</p></section></aside>
