@@ -6,6 +6,15 @@ export type WorldMapBounds = { minX: number; maxX: number; minY: number; maxY: n
 // is generated deterministically around it.
 export const WORLD_MAP_BOUNDS: WorldMapBounds = { minX: -10, maxX: 20, minY: -8, maxY: 22 };
 export const CORE_WORLD_BOUNDS: WorldMapBounds = { minX: 0, maxX: 10, minY: 2, maxY: 12 };
+// Second continent: a huge landmass far to the east of the original world,
+// separated by a wide ocean gap. It shows on the world map when zoomed out.
+// The original 31x31 world always generates bit-identically; the second
+// continent is purely additive.
+export const SECOND_CONTINENT_BOUNDS: WorldMapBounds = { minX: 33, maxX: 57, minY: -8, maxY: 22 };
+export const EXPANDED_WORLD_BOUNDS: WorldMapBounds = { minX: -10, maxX: 57, minY: -8, maxY: 22 };
+// Ocean gap between the original world and the second continent (x 21..32).
+const SECOND_CONTINENT_GAP_MIN_X = WORLD_MAP_BOUNDS.maxX + 1;
+const SECOND_CONTINENT_GAP_MAX_X = SECOND_CONTINENT_BOUNDS.minX - 1;
 export const WORLD_MAP_RESERVED_MEADOW_COORDINATES = [
   '3,6', '4,6', '5,6', '3,7', '4,7', '5,7', '3,8', '4,8', '5,8',
 ] as const;
@@ -319,31 +328,39 @@ export function elevationLevelFor(climate: WorldMapClimate, biome: WorldMapBiome
 // fields (pure functions of x/y/seed) blended with already-generated
 // neighbors, so the boundary stays continuous and the result is fully
 // deterministic regardless of generation order within the ring.
+//
+// tileBounds: which tiles to generate. climateBounds: bounds used for the
+// climate normalization (the falloff centers on this region). skipBounds:
+// region to skip (the frozen core); null generates every tile in tileBounds.
+// This powers both the original world's outer ring and the second continent.
 function generateOuterTiles(
   seed: number,
-  bounds: WorldMapBounds,
+  tileBounds: WorldMapBounds,
+  climateBounds: WorldMapBounds,
   coreTiles: Map<string, GeneratedWorldTile>,
+  skipBounds: WorldMapBounds | null,
 ): GeneratedWorldTile[] {
   const elevationNoise = makeSeededNoise((seed ^ 0x9e3779b9) >>> 0);
   const temperatureNoise = makeSeededNoise((seed ^ 0x85ebca6b) >>> 0);
   const moistureNoise = makeSeededNoise((seed ^ 0xc2b2ae35) >>> 0);
-  const isCore = (x: number, y: number) =>
-    x >= CORE_WORLD_BOUNDS.minX && x <= CORE_WORLD_BOUNDS.maxX &&
-    y >= CORE_WORLD_BOUNDS.minY && y <= CORE_WORLD_BOUNDS.maxY;
+  const isSkipped = (x: number, y: number) =>
+    skipBounds !== null &&
+    x >= skipBounds.minX && x <= skipBounds.maxX &&
+    y >= skipBounds.minY && y <= skipBounds.maxY;
   const tiles: GeneratedWorldTile[] = [];
   const generated = new Map<string, WorldMapBiome>();
   // Seed the map with core biomes so the ring blends with the frozen edge.
   for (const [key, tile] of coreTiles) generated.set(key, tile.biome);
   // Process outward from the core in row-major order for determinism.
   const outerCoords: Array<{ x: number; y: number }> = [];
-  for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
-    for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
-      if (!isCore(x, y)) outerCoords.push({ x, y });
+  for (let y = tileBounds.minY; y <= tileBounds.maxY; y += 1) {
+    for (let x = tileBounds.minX; x <= tileBounds.maxX; x += 1) {
+      if (!isSkipped(x, y)) outerCoords.push({ x, y });
     }
   }
   for (const { x, y } of outerCoords) {
-    const edge = x === bounds.minX || x === bounds.maxX || y === bounds.minY || y === bounds.maxY;
-    const climate = climateFor(x, y, bounds, elevationNoise, temperatureNoise, moistureNoise);
+    const edge = x === tileBounds.minX || x === tileBounds.maxX || y === tileBounds.minY || y === tileBounds.maxY;
+    const climate = climateFor(x, y, climateBounds, elevationNoise, temperatureNoise, moistureNoise);
     let biome: WorldMapBiome;
     if (edge) {
       biome = 'ocean';
@@ -392,7 +409,7 @@ function generateOuterTiles(
     const nearBiomeBorder = adjacentBiomes.some((neighbor) => neighbor !== biome);
     const nearWater = biome === 'ocean' || biome === 'shore' || adjacentBiomes.some((neighbor) => neighbor === 'ocean' || neighbor === 'shore');
     tiles.push({
-      x, y, row: y - bounds.minY, column: x - bounds.minX, biome, nearBiomeBorder,
+      x, y, row: y - tileBounds.minY, column: x - tileBounds.minX, biome, nearBiomeBorder,
       detail: detailFor(biome, nearWater, nearBiomeBorder, seed, x, y),
       climate, elevationLevel: elevationLevelFor(climate, biome),
     });
@@ -400,16 +417,66 @@ function generateOuterTiles(
   return tiles;
 }
 
+// Second continent: a huge standalone landmass in SECOND_CONTINENT_BOUNDS.
+// Reuses the outer-ring machinery with its own seed and climate centering,
+// and no frozen core to preserve. The edge tiles become ocean, giving the
+// new continent its own coastline.
+function generateSecondContinent(seed: number): GeneratedWorldTile[] {
+  const continentSeed = (seed ^ 0x5bd1e995) >>> 0;
+  return generateOuterTiles(
+    continentSeed,
+    SECOND_CONTINENT_BOUNDS,
+    SECOND_CONTINENT_BOUNDS,
+    new Map(),
+    null,
+  );
+}
+
+// Ocean gap tiles between the original world and the second continent.
+// Pure open water with a simple climate; the atlas shades ocean uniformly.
+function generateOceanGap(seed: number, bounds: WorldMapBounds): GeneratedWorldTile[] {
+  const tiles: GeneratedWorldTile[] = [];
+  for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+    for (let x = SECOND_CONTINENT_GAP_MIN_X; x <= SECOND_CONTINENT_GAP_MAX_X; x += 1) {
+      if (x < bounds.minX || x > bounds.maxX) continue;
+      const climate: WorldMapClimate = { elevation: 0.1, temperature: 0.5, moisture: 0.5 };
+      tiles.push({
+        x, y,
+        row: y - bounds.minY,
+        column: x - bounds.minX,
+        biome: 'ocean',
+        nearBiomeBorder: false,
+        detail: detailFor('ocean', true, false, seed, x, y),
+        climate,
+        elevationLevel: 0,
+      });
+    }
+  }
+  return tiles;
+}
+
 export function generateWorldMap(seed: number, bounds: WorldMapBounds = WORLD_MAP_BOUNDS): GeneratedWorldTile[] {
+  // Original world: always generated against WORLD_MAP_BOUNDS so it stays
+  // bit-identical no matter how far the requested bounds expand.
   const coreTiles = generateCoreWorldMap(seed);
-  // Row/column are relative to the full bounds for the atlas grid.
   const coreByKey = new Map(coreTiles.map((tile) => [cellKey(tile.x, tile.y), tile]));
-  const outerTiles = generateOuterTiles(seed, bounds, coreByKey);
-  const all = [...coreTiles.map((tile) => ({
+  const outerTiles = generateOuterTiles(seed, WORLD_MAP_BOUNDS, WORLD_MAP_BOUNDS, coreByKey, CORE_WORLD_BOUNDS);
+  // Row/column are relative to the requested bounds for the atlas grid.
+  const originalTiles = [...coreTiles, ...outerTiles].map((tile) => ({
     ...tile,
     row: tile.y - bounds.minY,
     column: tile.x - bounds.minX,
-  })), ...outerTiles];
+  }));
+  // Second continent: purely additive, only when the requested bounds reach it.
+  let extraTiles: GeneratedWorldTile[] = [];
+  if (bounds.maxX >= SECOND_CONTINENT_BOUNDS.maxX && bounds.minX <= SECOND_CONTINENT_GAP_MIN_X) {
+    extraTiles = [...generateOceanGap(seed, bounds), ...generateSecondContinent(seed).map((tile) => ({
+      ...tile,
+      row: tile.y - bounds.minY,
+      column: tile.x - bounds.minX,
+    }))];
+  }
+  const all = [...originalTiles, ...extraTiles];
   all.sort((a, b) => a.y - b.y || a.x - b.x);
   return all;
 }

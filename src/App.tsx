@@ -10,7 +10,7 @@ import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/rpgBrain';
 import { DEFAULT_WORLD_SEED, type WorldClockState } from '@/game/worldCore';
-import { WORLD_MAP_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile } from '@/game/worldMap';
+import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc } from '@/game/combat';
@@ -19,8 +19,9 @@ import { playCombatSound } from '@/game/effects';
 import { getSpriteState } from '@/game/animation';
 import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/persistence';
 import CharacterCreator from '@/components/CharacterCreator';
-import { compositeCharacterSheet, sanitizeCharacterChoices, type CharacterChoices } from '@/game/characterCreator';
+import { compositeAttackSprite, compositeCharacterSheet, sanitizeCharacterChoices, type CharacterChoices } from '@/game/characterCreator';
 const PLAYER_SPRITE_URL = `${import.meta.env.BASE_URL}assets/cute-fantasy/player.png`;
+const PLAYER_ATTACK_SPRITE_URL = `${import.meta.env.BASE_URL}assets/gameplay/shining-fields/characters/player/attack.png`;
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
@@ -94,7 +95,7 @@ const fieldPalettes: Record<Terrain, { field: string; path: string; glow: string
   ocean: { field: '#2a6f8d', path: '#8ab8bd', glow: 'rgba(140, 213, 219, .2)' },
 };
 
-const worldMapBounds = WORLD_MAP_BOUNDS;
+const worldMapBounds = EXPANDED_WORLD_BOUNDS;
 const generatedWorldTiles = generateWorldMap(DEFAULT_WORLD_SEED, worldMapBounds);
 const generatedWorldTileByKey = new Map(generatedWorldTiles.map((tile) => [tile.x + ',' + tile.y, tile]));
 
@@ -667,13 +668,13 @@ const GOAT_RESPAWN_TICKS = Math.ceil(12000 / GOAT_TICK_MS);
 const GOAT_SPAWN_DISPOSITION: GoatDisposition = 'calm';
 const GOAT_ATTACK_RANGE = 15;
 const GOAT_CLOSE_ATTACK_RANGE = 8;
-const GOAT_ATTACK_DAMAGE = 3;
+const GOAT_ATTACK_DAMAGE = 9;
 const PLAYER_ATTACK_COOLDOWN_MS = 800;
 const GOAT_ATTACK_COOLDOWN_MS = 1000;
 const GOAT_XP_REWARD = 25;
 const GOAT_MIN_XP_REWARD = 5;
-const GOAT_HP_PER_LEVEL = 4;
-const GOAT_DAMAGE_PER_LEVEL = 1;
+const GOAT_HP_PER_LEVEL = 12;
+const GOAT_DAMAGE_PER_LEVEL = 3;
 const PLAYER_MAX_HP = 88;
 const PLAYER_BASE_ATTACK_DAMAGE = 5;
 const PLAYER_STAT_POINTS_PER_LEVEL = 5;
@@ -869,7 +870,7 @@ function monsterLevelForChunk(chunk: Point, index: number, playerLevel = 1) {
 }
 
 function goatMaxHpForLevel(level: number) {
-  return 18 + Math.max(0, level - 1) * GOAT_HP_PER_LEVEL;
+  return 32 + Math.max(0, level - 1) * GOAT_HP_PER_LEVEL;
 }
 
 function goatAttackDamageForLevel(level: number) {
@@ -1418,7 +1419,7 @@ const startingTownNpcs: TownNpc[] = [
 
 type WorldMapDisplayTile = MapTile & { current: boolean; world: GeneratedWorldTile };
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
-  const [zoom, setZoom] = useState(2);
+  const [zoom, setZoom] = useState(4);
   const [selectedTile, setSelectedTile] = useState<WorldMapDisplayTile | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panning, setPanning] = useState(false);
@@ -1426,7 +1427,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const gridRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number; moved: boolean } | null>(null);
   const suppressClickRef = useRef(false);
-  const ZOOM_SCALES = [0.84, 1.0, 1.25, 1.6, 2.0, 2.5];
+  const ZOOM_SCALES = [0.4, 0.6, 0.84, 1.0, 1.25, 1.6, 2.0, 2.5];
   const mapScale = ZOOM_SCALES[zoom - 1];
   const clampPan = (x: number, y: number, scale: number) => {
     const stage = stageRef.current; const grid = gridRef.current;
@@ -1469,7 +1470,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v151</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v152</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -1663,6 +1664,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [logs, setLogs] = useState(initialLogs);
   const [time, setTime] = useState('06:00 · Spring · Y1 D1');
   const [playerHp, setPlayerHp] = useState(playerMaxHpForStats(initialPlayerStats));
+  const [gameOver, setGameOver] = useState(false);
   const [playerXp, setPlayerXp] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
   const [playerClass, setPlayerClass] = useState<PlayerClass>('Beginner');
@@ -1711,6 +1713,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const droppedLootRef = useRef(droppedLoot);
   const droppedLootIdRef = useRef(1);
   const playerHpRef = useRef(playerHp);
+  const gameOverRef = useRef(false);
   const playerXpRef = useRef(playerXp);
   const playerLevelRef = useRef(playerLevel);
   const playerStatsRef = useRef(playerStats);
@@ -2010,6 +2013,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     let animationFrame = 0;
     let lastFrame = performance.now();
     const animate = (now: number) => {
+      if (gameOverRef.current) { animationFrame = window.requestAnimationFrame(animate); return; }
       const elapsed = Math.min(50, now - lastFrame) / 1000;
       lastFrame = now;
       const movementLocked = playerAttackStateRef.current.active;
@@ -2134,6 +2138,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
         if (damageTaken > 0) {
           const nextHp = Math.max(0, playerHpRef.current - damageTaken); playerHpRef.current = nextHp; setPlayerHp(nextHp); 
           setLogs((currentLogs) => [{ text: 'A hostile goat rams you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
+          if (nextHp <= 0 && !gameOverRef.current) { gameOverRef.current = true; setGameOver(true); }
         }
         goatsRef.current = nextGoats; setGoats(nextGoats);
       }
@@ -2157,6 +2162,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
         if (damageTaken > 0) {
           const nextHp = Math.max(0, playerHpRef.current - damageTaken); playerHpRef.current = nextHp; setPlayerHp(nextHp);
           setLogs((currentLogs) => [{ text: 'A hostile creature strikes you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
+          if (nextHp <= 0 && !gameOverRef.current) { gameOverRef.current = true; setGameOver(true); }
         }
         monstersRef.current = nextMonsters; setMonsters(nextMonsters);
       }
@@ -2816,6 +2822,15 @@ if (active) {
       <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? (mounted ? 'Riding through Mosslight Crossing' : 'Moving through Mosslight Crossing') : (mounted ? 'Mounted and ready' : 'Standing still')}</div>
       <div className="sr-only" aria-live="polite" data-testid="status-mount">{mounted ? 'Mounted on the horse' : canMount ? 'Horse nearby and ready to mount' : horseHere ? 'Horse is parked in this field' : 'Horse is in another field'}</div>
       <div className="sr-only" aria-live="polite" data-testid="status-field-log">{logs[0].text}</div>
+      {gameOver && (
+        <div className="game-over-overlay" role="alertdialog" aria-label="Game over">
+          <div className="game-over-panel">
+            <h2 className="game-over-title">GAME OVER</h2>
+            <p className="game-over-sub">Your adventure has ended.</p>
+            <button className="game-over-button" onClick={onOpenMenu}>Return to Title</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2840,6 +2855,7 @@ function Home() {
   const [creatingCharacter, setCreatingCharacter] = useState(false);
   const [characterChoices, setCharacterChoices] = useState<CharacterChoices | null>(null);
   const [playerSpriteUrl, setPlayerSpriteUrl] = useState<string | null>(null);
+  const [playerAttackSpriteUrl, setPlayerAttackSpriteUrl] = useState<string | null>(null);
   const [dungeonOpen, setDungeonOpen] = useState(false);
   const [loadedSave, setLoadedSave] = useState<SaveGameData | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
@@ -2899,6 +2915,9 @@ function Home() {
     compositeCharacterSheet(choices, PLAYER_SPRITE_URL)
       .then((url) => setPlayerSpriteUrl(url))
       .catch(() => setPlayerSpriteUrl(null));
+    compositeAttackSprite(choices, PLAYER_ATTACK_SPRITE_URL)
+      .then((url) => setPlayerAttackSpriteUrl(url))
+      .catch(() => setPlayerAttackSpriteUrl(null));
     startNewGame();
   };
 
@@ -2923,8 +2942,12 @@ function Home() {
       compositeCharacterSheet(savedCharacter, PLAYER_SPRITE_URL)
         .then((url) => setPlayerSpriteUrl(url))
         .catch(() => setPlayerSpriteUrl(null));
+      compositeAttackSprite(savedCharacter, PLAYER_ATTACK_SPRITE_URL)
+        .then((url) => setPlayerAttackSpriteUrl(url))
+        .catch(() => setPlayerAttackSpriteUrl(null));
     } else {
       setPlayerSpriteUrl(null);
+      setPlayerAttackSpriteUrl(null);
     }
     setMapOpen(false); setInventoryOpen(false); setSaveNotice(notice); setMenuOpen(false);
   };
@@ -3016,7 +3039,7 @@ function Home() {
         '--soldier-walk-url': `url("${assetUrl('mobs/soldier_walk.png')}")`,
         // Inventory item icons (Raven Fantasy Icons).
         '--inventory-icons-url': `url("${assetUrl('icons/inventory.png')}")`,
-        '--player-attack-sprite-url': `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")`,
+        '--player-attack-sprite-url': playerAttackSpriteUrl ? `url("${playerAttackSpriteUrl}")` : `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")`,
         '--horse-sprite-url': `url("${assetUrl('assets/farm-male-cow-brown.png')}")`,
          '--goat-sprite-url': `url("${assetUrl('assets/gameplay/characters/goat/goat.png')}")`,
       } as CSSProperties}

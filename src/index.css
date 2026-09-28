@@ -2686,6 +2686,47 @@ body {
   box-shadow: 3px 3px 0 rgba(20, 34, 29, .25);
 }
 
+/* Game over overlay */
+.game-over-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 8, 12, .82);
+}
+.game-over-panel {
+  text-align: center;
+  padding: 40px 56px;
+  border: 2px solid #8a2b2b;
+  background: rgba(20, 12, 12, .95);
+  box-shadow: 0 0 60px rgba(180, 40, 40, .25);
+}
+.game-over-title {
+  margin: 0 0 8px;
+  font-size: 44px;
+  letter-spacing: 6px;
+  color: #c0392b;
+  text-shadow: 2px 2px 0 #4a0f0f;
+}
+.game-over-sub {
+  margin: 0 0 28px;
+  color: #d8c9b8;
+  font-size: 16px;
+}
+.game-over-button {
+  padding: 12px 32px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff0c9;
+  background: #5a3a1e;
+  border: 2px solid #e7b942;
+  cursor: pointer;
+}
+.game-over-button:hover { background: #6e4a26; }
+.game-over-button:active { transform: translateY(1px); }
+
 
 /* Compact Ember Vault entrance inside the bottom-left house */
 .dungeon-staircase {
@@ -3302,12 +3343,12 @@ body {
 /* ============ BUILD 145: Cryo Mini GUI refresh + new mobs + new vegetation ============ */
 /* HP/XP bars use Cryo's segmented pixel bars. */
 .bar { height: 10px; }
-.bar-fill.health { background: url("gui/bar_hp.png") repeat-x left center / auto 100%; image-rendering: pixelated; }
-.bar-fill.xp-fill { background: url("gui/bar_xp.png") repeat-x left center / auto 100%; image-rendering: pixelated; }
+.bar-fill.health { background: url("../gui/bar_hp.png") repeat-x left center / auto 100%; image-rendering: pixelated; }
+.bar-fill.xp-fill { background: url("../gui/bar_xp.png") repeat-x left center / auto 100%; image-rendering: pixelated; }
 /* HUD player card: wooden Cryo panel frame. */
 .hud-card[data-testid="hud-player"] {
   border: 8px solid transparent;
-  border-image: url("gui/panel_wood.png") 8 fill / 8px;
+  border-image: url("../gui/panel_wood.png") 8 fill / 8px;
   background: none;
   background-color: transparent;
   padding: 3px 7px 8px;
@@ -3325,7 +3366,7 @@ body {
 .main-menu-button {
   position: relative;
   border: 0;
-  background: url("gui/btn_mid.png") repeat-x left center / auto 100%;
+  background: url("../gui/btn_mid.png") repeat-x left center / auto 100%;
   image-rendering: pixelated;
   color: #3d2b18;
   padding: 11px 24px;
@@ -3342,11 +3383,11 @@ body {
   image-rendering: pixelated;
   pointer-events: none;
 }
-.main-menu-button::before { left: 0; background-image: url("gui/btn_left.png"); }
-.main-menu-button::after { right: 0; background-image: url("gui/btn_right.png"); }
+.main-menu-button::before { left: 0; background-image: url("../gui/btn_left.png"); }
+.main-menu-button::after { right: 0; background-image: url("../gui/btn_right.png"); }
 .main-menu-button.primary {
   border: 0;
-  background: url("gui/btn_mid.png") repeat-x left center / auto 100%;
+  background: url("../gui/btn_mid.png") repeat-x left center / auto 100%;
   color: #3d2b18;
   font-weight: 700;
 }

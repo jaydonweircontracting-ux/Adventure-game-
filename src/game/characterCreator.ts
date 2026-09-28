@@ -1,12 +1,14 @@
 /**
- * Character creation sprite pipeline (build v151).
+ * Character creation sprite pipeline (build v152).
  *
  * Rebuilt around the ORIGINAL chibi player sprite
  * (`assets/cute-fantasy/player.png`, 192x320, 6 columns x 10 rows of 32x32
- * frames). The player's column (0) is recolored from the sprite's own
- * palette regions (hair / skin / shirt / pants); columns 1-5 are the
- * original NPC faces, untouched. Output geometry is identical to the
- * original sheet, so `--player-sprite-url` consumers need no changes.
+ * frames). The whole sheet is the player's own frames (idle, walk, attack),
+ * recolored from the sprite's own palette regions (hair / skin / shirt /
+ * pants). Output geometry is identical to the original sheet, so
+ * `--player-sprite-url` consumers need no changes. The attack sprite
+ * (`assets/gameplay/shining-fields/characters/player/attack.png`) uses the
+ * same palette and is recolored the same way for `--player-attack-sprite-url`.
  *
  * Choice keys keep the v144 vocabulary (skin 'v00'-'v07', outfit keys,
  * hairColor 'v00'-'v13') so existing saves still validate; the old
@@ -160,14 +162,15 @@ function paletteFor(choices: CharacterChoices): RecolorPalette {
   };
 }
 
-let spriteCache: { url: string; img: HTMLImageElement } | null = null;
+const spriteCache = new Map<string, HTMLImageElement>();
 
 function loadSprite(url: string): Promise<HTMLImageElement> {
-  if (spriteCache && spriteCache.url === url) return Promise.resolve(spriteCache.img);
+  const cached = spriteCache.get(url);
+  if (cached) return Promise.resolve(cached);
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      spriteCache = { url, img };
+      spriteCache.set(url, img);
       resolve(img);
     };
     img.onerror = () => reject(new Error('player sprite failed to load: ' + url));
@@ -179,25 +182,24 @@ const SHEET_W = 192;
 const SHEET_H = 320;
 
 /**
- * Build the player sheet: the original sprite recolored to the player's
- * choices. The whole sheet is the player's own frames (idle, walk, attack),
- * so every column is recolored. Returns a PNG data URL for
- * `--player-sprite-url`.
+ * Recolor an image's pixels with the palette and return a PNG data URL.
+ * Only exact palette-region colors are swapped; outline, eyes, weapons,
+ * and effects are untouched.
  */
-export async function compositeCharacterSheet(
-  choices: CharacterChoices,
-  playerSpriteUrl: string,
-): Promise<string> {
-  const img = await loadSprite(playerSpriteUrl);
+function recolorToDataUrl(
+  img: HTMLImageElement,
+  w: number,
+  h: number,
+  palette: RecolorPalette,
+): string {
   const canvas = document.createElement('canvas');
-  canvas.width = SHEET_W;
-  canvas.height = SHEET_H;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('2d canvas unavailable');
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(img, 0, 0, SHEET_W, SHEET_H);
-  const palette = paletteFor(choices);
-  const data = ctx.getImageData(0, 0, SHEET_W, SHEET_H);
+  ctx.drawImage(img, 0, 0, w, h);
+  const data = ctx.getImageData(0, 0, w, h);
   const px = data.data;
   for (let i = 0; i < px.length; i += 4) {
     if (px[i + 3] === 0) continue;
@@ -211,6 +213,33 @@ export async function compositeCharacterSheet(
   }
   ctx.putImageData(data, 0, 0);
   return canvas.toDataURL('image/png');
+}
+
+/**
+ * Build the player sheet: the original sprite recolored to the player's
+ * choices. The whole sheet is the player's own frames (idle, walk, attack),
+ * so every column is recolored. Returns a PNG data URL for
+ * `--player-sprite-url`.
+ */
+export async function compositeCharacterSheet(
+  choices: CharacterChoices,
+  playerSpriteUrl: string,
+): Promise<string> {
+  const img = await loadSprite(playerSpriteUrl);
+  return recolorToDataUrl(img, SHEET_W, SHEET_H, paletteFor(choices));
+}
+
+/**
+ * Build the attack sprite recolored to the player's choices. Same palette
+ * regions as the main sheet; the weapon stays as-is. Returns a PNG data
+ * URL for `--player-attack-sprite-url`.
+ */
+export async function compositeAttackSprite(
+  choices: CharacterChoices,
+  attackSpriteUrl: string,
+): Promise<string> {
+  const img = await loadSprite(attackSpriteUrl);
+  return recolorToDataUrl(img, img.naturalWidth, img.naturalHeight, paletteFor(choices));
 }
 
 /** Validate choices loaded from a save before compositing. */
