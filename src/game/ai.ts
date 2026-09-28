@@ -1,7 +1,7 @@
 import { getDirection, isAdjacentAndFacing, type CombatDirection, type CombatPoint } from './combat';
 
 export type GoatAIState = 'idle' | 'chase' | 'attack' | 'hurt' | 'die';
-export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean };
+export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean; spawnPosition?: CombatPoint; roamRadius?: number };
 export const GOAT_CHASE_RANGE = 24;
 export const GOAT_MELEE_RANGE = 6;
 export const GOAT_CHASE_SPEED = 4;
@@ -24,6 +24,27 @@ function moveAwayFrom(from: CombatPoint, threat: CombatPoint, speed: number, del
   const distance = Math.hypot(dx, dy) || 1;
   const step = speed * deltaMs / 1000;
   return { x: from.x + (dx / distance) * Math.min(step, distance), y: from.y + (dy / distance) * Math.min(step, distance) };
+}
+
+// Home-range constraint: keep goats from wandering infinitely far from spawn.
+// Returns the position clamped to within roamRadius of spawnPosition.
+function clampToHomeRange(position: CombatPoint, spawnPosition: CombatPoint | undefined, roamRadius: number | undefined): CombatPoint {
+  if (!spawnPosition || !roamRadius || roamRadius <= 0) return position;
+  const dx = position.x - spawnPosition.x;
+  const dy = position.y - spawnPosition.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance <= roamRadius) return position;
+  const scale = roamRadius / distance;
+  return { x: spawnPosition.x + dx * scale, y: spawnPosition.y + dy * scale };
+}
+
+// Should this goat give up the chase and head home? True when the player is
+// beyond the goat's territory and the goat is already at its range edge.
+function shouldReturnHome(goat: GoatAIEntity, player: CombatPoint): boolean {
+  if (!goat.spawnPosition || !goat.roamRadius) return false;
+  const playerDistFromHome = Math.hypot(player.x - goat.spawnPosition.x, player.y - goat.spawnPosition.y);
+  const goatDistFromHome = Math.hypot(goat.position.x - goat.spawnPosition.x, goat.position.y - goat.spawnPosition.y);
+  return playerDistFromHome > goat.roamRadius * 1.2 && goatDistFromHome >= goat.roamRadius * 0.9;
 }
 
 // Keep hostile goats far enough away for their sprites to avoid overlapping
@@ -61,7 +82,8 @@ export function updateGoat(goat: GoatAIEntity, player: CombatPoint, playerFacing
   const facing = getDirection(goat.position, player);
   const lowHealth = goat.hp / Math.max(1, goat.maxHp) <= GOAT_FLEE_HP_RATIO;
   if (lowHealth) {
-    const position = moveAwayFrom(goat.position, player, GOAT_FLEE_SPEED, deltaMs);
+    const fled = moveAwayFrom(goat.position, player, GOAT_FLEE_SPEED, deltaMs);
+    const position = clampToHomeRange(fled, goat.spawnPosition, goat.roamRadius);
     return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(player, position), moving: true, attacking: false }, attackHit: false };
   }
   if (goat.state === 'attack') {
@@ -75,6 +97,12 @@ export function updateGoat(goat: GoatAIEntity, player: CombatPoint, playerFacing
   const canStartAttack = cooldown <= 0 && isAdjacentAndFacing(goat.position, player, facing, playerFacing, GOAT_MELEE_RANGE);
   if (canStartAttack) return { goat: { ...goat, state: 'attack', attackTimer: GOAT_ATTACK_WINDUP_MS, attackHitApplied: false, attackCooldown: 0, facing, attacking: true, moving: false }, attackHit: false };
   if (distance <= GOAT_CHASE_RANGE) {
+    // Give up the chase when the player lures the goat out of its territory.
+    if (shouldReturnHome(goat, player) && goat.spawnPosition) {
+      const homePosition = moveTowards(goat.position, goat.spawnPosition, GOAT_CHASE_SPEED, deltaMs);
+      const position = clampToHomeRange(homePosition, goat.spawnPosition, goat.roamRadius);
+      return { goat: { ...goat, position, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(position, goat.spawnPosition), moving: true, attacking: false }, attackHit: false };
+    }
     const separation = goats.reduce((force, other) => {
       if (other === goat) return force;
       const dx = goat.position.x - other.position.x;
@@ -83,7 +111,8 @@ export function updateGoat(goat: GoatAIEntity, player: CombatPoint, playerFacing
       return d > 0 && d < 6 ? { x: force.x + dx / d * (6 - d), y: force.y + dy / d * (6 - d) } : force;
     }, { x: 0, y: 0 });
     const chasedPosition = moveTowards(goat.position, player, GOAT_CHASE_SPEED, deltaMs, separation);
-    const position = keepMeleeDistance(chasedPosition, player, playerFacing);
+    const rangedPosition = clampToHomeRange(chasedPosition, goat.spawnPosition, goat.roamRadius);
+    const position = keepMeleeDistance(rangedPosition, player, playerFacing);
     return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(position, player), moving: true, attacking: false }, attackHit: false };
   }
   return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false }, attackHit: false };

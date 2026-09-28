@@ -968,8 +968,8 @@ function wildlifeForChunk(chunk: Point): WildlifeState[] {
   }
   return wildlife;
 }
-function updateBird(bird: BirdState, tick: number): BirdState {
-  const next = { ...bird, stateTimer: bird.stateTimer - 1 };
+function updateBird(bird: BirdState, nowMs: number, deltaMs: number, chunk: Point): BirdState {
+  const next = { ...bird, position: { ...bird.position }, stateTimer: bird.stateTimer - deltaMs / 1000 };
   if (next.stateTimer > 0) {
     // Continue current state movement.
     if (next.state === 'hop' || next.state === 'fly') {
@@ -978,54 +978,62 @@ function updateBird(bird: BirdState, tick: number): BirdState {
       const dist = Math.hypot(dx, dy);
       const step = next.state === 'fly' ? BIRD_FLY_STEP : BIRD_STEP;
       if (dist > 0.5) {
-        next.position = {
+        const candidate = {
           x: next.position.x + (dx / dist) * Math.min(step, dist),
           y: next.position.y + (dy / dist) * Math.min(step, dist),
         };
-        next.facing = dx >= 0 ? 'right' : 'left';
+        // Validate terrain/collision each step; flying birds can cross anything, hopping birds cannot.
+        if (next.state === 'fly' || !isFieldPositionBlocked(candidate, chunk)) {
+          next.position = candidate;
+          next.facing = dx >= 0 ? 'right' : 'left';
+        } else {
+          next.stateTimer = 0; // blocked: pick a new behavior next update
+        }
       } else {
         next.stateTimer = 0;
       }
     }
     return next;
   }
-  // Pick a new behavior.
+  // Pick a new behavior (durations in seconds).
+  const tick = Math.floor(nowMs / 700);
   const seed = Math.abs(tick * 31 + bird.id * 101 + Math.floor(bird.homePosition.x));
   const roll = seed % 100;
   const homeDx = bird.homePosition.x - bird.position.x;
   const homeDy = bird.homePosition.y - bird.position.y;
   const distHome = Math.hypot(homeDx, homeDy);
+  const clampTarget = (p: Point): Point => ({ x: Math.min(90, Math.max(10, p.x)), y: Math.min(90, Math.max(10, p.y)) });
   if (distHome > 25) {
     // Too far: fly back toward home.
     next.state = 'fly';
-    next.target = { x: bird.homePosition.x + ((seed * 7) % 10) - 5, y: bird.homePosition.y + ((seed * 13) % 10) - 5 };
-    next.stateTimer = 8;
+    next.target = clampTarget({ x: bird.homePosition.x + ((seed * 7) % 10) - 5, y: bird.homePosition.y + ((seed * 13) % 10) - 5 });
+    next.stateTimer = 2.5;
   } else if (roll < 30) {
     next.state = 'idle';
-    next.stateTimer = 3 + (seed % 6);
+    next.stateTimer = 1.5 + (seed % 6) * 0.5;
   } else if (roll < 55) {
     next.state = 'peck';
-    next.stateTimer = 2 + (seed % 3);
+    next.stateTimer = 1 + (seed % 3) * 0.5;
   } else if (roll < 80) {
     // Hop to a nearby spot.
     const angle = (seed % 360) * (Math.PI / 180);
     const hopDist = 3 + (seed % 6);
     next.state = 'hop';
-    next.target = {
-      x: Math.min(90, Math.max(10, bird.position.x + Math.cos(angle) * hopDist)),
-      y: Math.min(90, Math.max(10, bird.position.y + Math.sin(angle) * hopDist)),
-    };
-    next.stateTimer = 6;
+    next.target = clampTarget({
+      x: bird.position.x + Math.cos(angle) * hopDist,
+      y: bird.position.y + Math.sin(angle) * hopDist,
+    });
+    next.stateTimer = 2;
   } else {
     // Fly a short distance.
     const angle = ((seed * 3) % 360) * (Math.PI / 180);
     const flyDist = 10 + (seed % 15);
     next.state = 'fly';
-    next.target = {
-      x: Math.min(90, Math.max(10, bird.position.x + Math.cos(angle) * flyDist)),
-      y: Math.min(90, Math.max(10, bird.position.y + Math.sin(angle) * flyDist)),
-    };
-    next.stateTimer = 10;
+    next.target = clampTarget({
+      x: bird.position.x + Math.cos(angle) * flyDist,
+      y: bird.position.y + Math.sin(angle) * flyDist,
+    });
+    next.stateTimer = 3;
   }
   return next;
 }
@@ -1198,7 +1206,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v123</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v124</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -1774,8 +1782,8 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
       }
       // Ambient birds: lightweight, tick alongside goats.
       if (!interiorRef.current && birdsRef.current.length > 0) {
-        const tick = Math.floor(performance.now() / 700);
-        const nextBirds = birdsRef.current.map((bird) => updateBird(bird, tick));
+        const nowMs = performance.now();
+        const nextBirds = birdsRef.current.map((bird) => updateBird(bird, nowMs, elapsed * 1000, chunkRef.current));
         birdsRef.current = nextBirds; setBirds(nextBirds);
       }
       // Wildlife wander: simple home-range movement, tick-throttled.
