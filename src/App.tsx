@@ -526,16 +526,36 @@ type InteriorCollisionRect = FieldRect;
 
 // These rectangles are in the interior scene's 0-100 coordinate space. They include
 // a little visual padding so the player cannot overlap the furniture sprites.
-const interiorFurnitureCollision: InteriorCollisionRect[] = [
-  { left: 20, top: 29, right: 80, bottom: 40 }, // counter
-  { left: 17, top: 43, right: 30, bottom: 67 }, // left shelf — extra inner clearance
-  { left: 70, top: 43, right: 83, bottom: 67 }, // right shelf — extra inner clearance
-  { left: 39, top: 57, right: 62, bottom: 68 }, // table and legs — side clearance only
-];
+const interiorFurnitureCollision: Record<InteriorArea['roomType'], InteriorCollisionRect[]> = {
+  guild: [
+    { left: 36, top: 52, right: 64, bottom: 65 }, // workbench
+    { left: 14, top: 30, right: 30, bottom: 52 }, // forge
+    { left: 74, top: 30, right: 86, bottom: 56 }, // weapon rack
+    { left: 38, top: 12, right: 62, bottom: 26 }, // quest board (wall, low)
+  ],
+  inn: [
+    { left: 13, top: 32, right: 31, bottom: 52 }, // bed left
+    { left: 69, top: 32, right: 87, bottom: 52 }, // bed right
+    { left: 39, top: 57, right: 62, bottom: 68 }, // table
+    { left: 42, top: 28, right: 58, bottom: 52 }, // fireplace
+    { left: 20, top: 62, right: 80, bottom: 71 }, // bar
+  ],
+  chapel: [
+    { left: 40, top: 26, right: 60, bottom: 42 }, // altar
+    { left: 12, top: 52, right: 42, bottom: 60 }, // pew left
+    { left: 58, top: 52, right: 88, bottom: 60 }, // pew right
+  ],
+  building: [
+    { left: 13, top: 32, right: 31, bottom: 52 }, // bed
+    { left: 39, top: 57, right: 62, bottom: 68 }, // table
+    { left: 42, top: 28, right: 58, bottom: 52 }, // fireplace
+    { left: 17, top: 43, right: 30, bottom: 67 }, // shelf left
+    { left: 70, top: 43, right: 83, bottom: 67 }, // shelf right
+  ],
+};
 
 function isInteriorPositionBlocked(position: Point, area: InteriorArea) {
-  if (area.roomType === 'building') return false;
-  return interiorFurnitureCollision.some((rect) => pointInRect(position, rect));
+  return (interiorFurnitureCollision[area.roomType] || []).some((rect) => pointInRect(position, rect));
 }
 
 type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
@@ -1078,7 +1098,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v121</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v122</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -1198,9 +1218,16 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
     const recipe = craftRecipes[item];
     return Object.entries(recipe.cost).every(([key, value]) => (inventory[key as keyof GameInventory] || 0) >= (value || 0));
   };
+  // Room-type-specific furniture: each building type gets its own visual identity.
+  const furniture = {
+    guild: (<><span className="interior-rug" /><span className="interior-workbench" /><span className="interior-forge" /><span className="interior-weapon-rack" /><span className="interior-quest-board" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
+    inn: (<><span className="interior-rug" /><span className="interior-bed bed-left" /><span className="interior-bed bed-right" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-bar" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
+    chapel: (<><span className="interior-rug" /><span className="interior-altar" /><span className="interior-pew pew-left" /><span className="interior-pew pew-right" /><span className="interior-candle candle-left" /><span className="interior-candle candle-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
+    building: (<><span className="interior-rug" /><span className="interior-bed bed-left" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
+  }[area.roomType];
   return (
     <div className={'interior-scene interior-' + area.roomType} aria-label={area.name + ' interior'} data-testid={'interior-' + area.id}>
-      <div className="interior-room" aria-hidden="true"><span className="interior-rug" /><span className="interior-table" /><span className="interior-counter" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></div>
+      <div className="interior-room" aria-hidden="true">{furniture}</div>
       {area.roomType === 'guild' && (
         <section className="crafting-panel" aria-label="Crafting bench" data-testid="crafting-panel">
           <span className="crafting-kicker">Guild workbench</span>
@@ -1974,8 +2001,12 @@ if (active) {
           <div className="field-drops" aria-label="Dropped loot">
             {droppedLoot.filter((drop) => drop.chunk.x === chunk.x && drop.chunk.y === chunk.y).map((drop) => {
               const nearby = Math.hypot(drop.position.x - position.x, drop.position.y - position.y) <= 16;
+              // Monster-specific loot visual: show what actually dropped, not a generic bag.
+              const lootKind = (drop.loot.goatHorns || 0) > 0 && !(drop.loot.fabric || drop.loot.coins) ? 'horn'
+                : (drop.loot.fabric || 0) > 0 && !(drop.loot.goatHorns || drop.loot.coins) ? 'cloth'
+                : (drop.loot.coins || 0) > 0 && !(drop.loot.goatHorns || drop.loot.fabric) ? 'coins' : 'bag';
               return <div className="loot-drop" key={drop.id} style={{ left: drop.position.x + '%', top: drop.position.y + '%' }}>
-                <span className="loot-bag" aria-label="Dropped goat loot bag" />
+                <span className={'loot-visual loot-' + lootKind} aria-label={'Dropped ' + lootKind} />
                 {nearby && <button className="pickup-button" onClick={() => pickupDrop(drop)} data-testid={'button-pickup-loot-' + drop.id}>Pick up</button>}
               </div>;
             })}
