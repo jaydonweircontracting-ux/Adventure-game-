@@ -1381,7 +1381,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v136</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v137</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -1475,6 +1475,7 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, playerStats
           <div className="menu-heading-title">
             <h2 id="inventory-title">Menu</h2>
             {time && <span className="menu-time" data-testid="text-game-time">{time}</span>}
+            <span className="menu-build" data-testid="text-build-number">BUILD {BUILD_NUMBER}</span>
           </div>
           <div className="menu-heading-actions">
             <button className="map-close" onClick={() => { onClose(); onOpenOptions(); }} aria-label="Open options" title="Options" data-testid="button-open-options"><Settings size={18} /></button>
@@ -2640,7 +2641,6 @@ if (active) {
                 <div className="bar target-bar" aria-label={'Target health ' + selectedGoat.hp + ' of ' + selectedGoat.maxHp}><div className="bar-fill target-health" style={{ width: (selectedGoat.hp / selectedGoat.maxHp) * 100 + '%' }} /></div>
               </div>
             )}
-            <span className="hud-build" data-testid="text-build-number">BUILD {BUILD_NUMBER}</span>
             {mounted && <button className="horse-dismount-button" onClick={toggleMount} aria-label="Dismount horse" data-testid="button-dismount-horse">Dismount</button>}
           </div>
           <button className="hud-bag-button" onClick={onOpenInventory} aria-label="Open menu" title="Menu" data-testid="button-open-inventory"><Backpack size={17} /></button>
