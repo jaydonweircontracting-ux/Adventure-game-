@@ -75,7 +75,7 @@ function moveToward(position: Point, target: Point, step: number) {
   };
 }
 
-function advanceFromHouse(adventurer: SimulatedAdventurer) {
+function advanceFromHouse(adventurer: SimulatedAdventurer): SimulatedAdventurer {
   const path = houseRoutes[adventurer.id] || [];
   const current = adventurer.interiorPosition || { x: 50, y: 48 };
   const target = path[adventurer.routeIndex] || path[path.length - 1];
@@ -87,20 +87,20 @@ function advanceFromHouse(adventurer: SimulatedAdventurer) {
       const fieldStart = routes[adventurer.id]?.[0] || adventurer.position;
       return { ...adventurer, location: 'field' as const, position: fieldStart, interiorPosition: target, routeIndex: 0, facing: 'down', moving: false, activity: 'stepping out to explore Mosslight Crossing' };
     }
-    return { ...adventurer, interiorPosition: target, routeIndex: nextIndex, facing: target.x >= current.x ? 'right' : 'left', moving: false, activity: 'heading for the front door' };
+    return { ...adventurer, interiorPosition: target, routeIndex: nextIndex, facing: (target.x >= current.x ? 'right' : 'left') as 'right' | 'left', moving: false, activity: 'heading for the front door' };
   }
-  const facing = Math.abs(target.x - current.x) >= Math.abs(target.y - current.y)
+  const facing: 'up' | 'down' | 'left' | 'right' = Math.abs(target.x - current.x) >= Math.abs(target.y - current.y)
     ? (target.x >= current.x ? 'right' : 'left')
     : (target.y >= current.y ? 'down' : 'up');
   return { ...adventurer, interiorPosition: moved.position, facing, moving: true, activity: 'heading for the front door' };
 }
 
-export function advanceSimulatedAdventurers(adventurers: SimulatedAdventurer[], tick: number, goatTargets: GoatTarget[] = []) {
+export function advanceSimulatedAdventurers(adventurers: SimulatedAdventurer[], tick: number, goatTargets: GoatTarget[] = []): SimulatedAdventurer[] {
   return adventurers.map((adventurer) => {
     if ((adventurer.location || 'field') === 'starting-house') return advanceFromHouse(adventurer);
     // Occasionally change goals (every ~100 ticks)
     let goal = adventurer.goal;
-    let status = adventurer.status || 'healthy';
+    let status: 'healthy' | 'injured' | 'resting' = adventurer.status || 'healthy';
     if (tick % 100 === 0 && Math.random() < 0.3) {
       goal = dynamicGoals[Math.floor(Math.random() * dynamicGoals.length)];
     }
@@ -119,10 +119,10 @@ export function advanceSimulatedAdventurers(adventurers: SimulatedAdventurer[], 
       const hunt = moveToward(adventurer.position, nearestGoat.position, 4.5);
       if (hunt.distance <= 5) {
         // Small chance to get injured in combat
-        const newStatus = Math.random() < 0.02 ? 'injured' : status;
-        return { ...adventurer, goal, status: newStatus, position: hunt.position, facing: nearestGoat.position.x >= adventurer.position.x ? 'right' : 'left', moving: true, activity: newStatus === 'injured' ? 'injured fighting a goat' : 'fighting a goat' };
+        const newStatus: 'healthy' | 'injured' | 'resting' = Math.random() < 0.02 ? 'injured' : status;
+        return { ...adventurer, goal, status: newStatus, position: hunt.position, facing: (nearestGoat.position.x >= adventurer.position.x ? 'right' : 'left') as 'right' | 'left', moving: true, activity: newStatus === 'injured' ? 'injured fighting a goat' : 'fighting a goat' };
       }
-      return { ...adventurer, goal, status, position: hunt.position, facing: Math.abs(nearestGoat.position.x - adventurer.position.x) >= Math.abs(nearestGoat.position.y - adventurer.position.y) ? (nearestGoat.position.x >= adventurer.position.x ? 'right' : 'left') : (nearestGoat.position.y >= adventurer.position.y ? 'down' : 'up'), moving: true, activity: 'tracking a goat' };
+      return { ...adventurer, goal, status, position: hunt.position, facing: (Math.abs(nearestGoat.position.x - adventurer.position.x) >= Math.abs(nearestGoat.position.y - adventurer.position.y) ? (nearestGoat.position.x >= adventurer.position.x ? 'right' : 'left') : (nearestGoat.position.y >= adventurer.position.y ? 'down' : 'up')) as 'up' | 'down' | 'left' | 'right', moving: true, activity: 'tracking a goat' };
     }
     const route = routes[adventurer.id] || [];
     if (!route.length) return adventurer;
@@ -134,7 +134,7 @@ export function advanceSimulatedAdventurers(adventurers: SimulatedAdventurer[], 
       return { ...adventurer, routeIndex: nextIndex, moving: false, activity: activities[(tick + adventurer.routeIndex) % activities.length] };
     }
     const horizontal = Math.abs(target.x - adventurer.position.x) >= Math.abs(target.y - adventurer.position.y);
-    const facing = horizontal ? (target.x >= adventurer.position.x ? 'right' : 'left') : (target.y >= adventurer.position.y ? 'down' : 'up');
+    const facing: 'up' | 'down' | 'left' | 'right' = horizontal ? (target.x >= adventurer.position.x ? 'right' : 'left') : (target.y >= adventurer.position.y ? 'down' : 'up');
     return { ...adventurer, position: moved.position, facing, moving: true };
   });
 }

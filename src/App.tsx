@@ -625,6 +625,30 @@ function resolveFieldMovement(current: Point, movement: Point, chunk: Point, goa
 }
 
 type InteriorArea = { id: string; name: string; description: string; roomType: 'guild' | 'inn' | 'chapel' | 'building' | 'prison'; exteriorPosition: Point };
+type PrisonState = {
+  foundShiv: boolean;
+  talkedToPrisoner: boolean;
+  helpedPrisoner: boolean;
+  escapeRoute: 'sewer' | 'gate' | null;
+};
+type JournalState = {
+  discoveredLocations: Array<{ name: string; kind: string; chunk: Point; discoveredAt: string }>;
+  activeQuests: Array<{ id: string; title: string; description: string; progress: string }>;
+  completedQuests: Array<{ id: string; title: string; completedAt: string }>;
+  rumors: Array<{ text: string; source: string; heardAt: string }>;
+  notes: Array<{ text: string; writtenAt: string }>;
+};
+type ReputationState = {
+  mosslight: number;
+  guards: number;
+  merchants: number;
+  wilderness: number;
+};
+type EscapeSpawn = {
+  chunk: Point;
+  position: Point;
+  logs: Array<{ text: string; color: string }>;
+};
 type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number };
 const startingDoorways: Doorway[] = [
   { id: 'tutorial-house-door', buildingIndex: 0, position: { x: 30, y: 36 }, area: { id: 'tutorial-house', name: 'Tutorial House', description: 'A small safe house on the tutorial island.', roomType: 'inn', exteriorPosition: { x: 30, y: 48 } } },
@@ -859,19 +883,8 @@ type SaveGameData = {
   interiorPosition: Point;
   inPrison?: boolean;
   prisonState?: { foundShiv: boolean; talkedToPrisoner: boolean; helpedPrisoner: boolean; escapeRoute: 'sewer' | 'gate' | null };
-  journal?: {
-    discoveredLocations: Array<{ name: string; kind: string; chunk: Point; discoveredAt: string }>;
-    activeQuests: Array<{ id: string; title: string; description: string; progress: string }>;
-    completedQuests: Array<{ id: string; title: string; completedAt: string }>;
-    rumors: Array<{ text: string; source: string; heardAt: string }>;
-    notes: Array<{ text: string; writtenAt: string }>;
-  };
-  reputation?: {
-    mosslight: number;
-    guards: number;
-    merchants: number;
-    wilderness: number;
-  };
+  journal?: JournalState;
+  reputation?: ReputationState;
   logs: Array<{ text: string; color: string }>;
   time: string;
   brainState: RpgGameState | null;
@@ -1833,7 +1846,7 @@ function InteriorRoom({ area, position, facing, moving, inventory, equippedDagge
   );
 }
 
-function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string } | null } }) {
+function GameField({ inventory, equippedDagger, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null }) {
   const [position, setPosition] = useState<Point>({ x: 51, y: 52 });
   const [chunk, setChunk] = useState<Point>({ x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -1883,14 +1896,6 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   // Spawn on clear floor below the furniture: (50, 47) sits inside the
   // inn/building fireplace collision rect and permanently soft-locks movement.
   const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 78 });
-  // Prison opening: player starts in a cell, escapes to the overworld
-  const [inPrison, setInPrison] = useState(false);
-  const [prisonState, setPrisonState] = useState({
-    foundShiv: false,
-    talkedToPrisoner: false,
-    helpedPrisoner: false,
-    escapeRoute: null as 'sewer' | 'gate' | null,
-  });
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   const positionRef = useRef(position);
   const facingRef = useRef(facing);
@@ -1994,10 +1999,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     interiorDoorwayIdRef.current = restoredDoorway?.id || null;
     interiorRef.current = restoredDoorway?.area || null; setInterior(restoredDoorway?.area || null);
     interiorPositionRef.current = loadState.interiorPosition; setInteriorPosition(loadState.interiorPosition);
-    setInPrison(loadState.inPrison || false);
-    if (loadState.prisonState) setPrisonState(loadState.prisonState);
-    if (loadState.journal) setJournal(loadState.journal);
-    if (loadState.reputation) setReputation(loadState.reputation);
+    onRestorePrison(loadState.inPrison || false, loadState.prisonState);
+    if (loadState.journal) onRestoreJournal(loadState.journal);
+    if (loadState.reputation) onRestoreReputation(loadState.reputation);
     setLogs(loadState.logs); setTime(loadState.time);
     setNpcDialogue(null); setAttackFlash(null); setLogOpen(false); setMoving(false);
     if (loadState.brainState) {
@@ -2006,6 +2010,24 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
       if (restoredClock) setTime(formatWorldClock(restoredClock));
     }
   }, [loadState, onChunkChange, onPlayerStatsChange, onStatPointsChange]);
+
+  // Prison escape handoff: Home sets escapeSpawn, GameField applies it on mount
+  // (the escaped prisoner appears in the overworld, not the starting house).
+  useEffect(() => {
+    if (!escapeSpawn) return;
+    chunkRef.current = escapeSpawn.chunk;
+    setChunk(escapeSpawn.chunk);
+    positionRef.current = escapeSpawn.position;
+    setPosition(escapeSpawn.position);
+    interiorRef.current = null;
+    setInterior(null);
+    interiorDoorwayIdRef.current = null;
+    interiorPositionRef.current = { x: 50, y: 89 };
+    setInteriorPosition({ x: 50, y: 89 });
+    setLogs((currentLogs) => [...escapeSpawn.logs, ...currentLogs].slice(0, 5));
+    onChunkChange(escapeSpawn.chunk);
+    onEscapeSpawnConsumed();
+  }, [escapeSpawn]);
 
   useEffect(() => {
     [
@@ -2464,6 +2486,17 @@ if (active) {
             chunkRef.current = resolved.chunk;
             setChunk(resolved.chunk);
             onChunkChange(resolved.chunk);
+            // Journal auto-discovery: landmarks and POIs in the new chunk.
+            const discoveredTile = mapTileFor(resolved.chunk);
+            const discoveredLandmark = discoveredTile?.landmark;
+            if (discoveredLandmark) {
+              onDiscoverLocation(discoveredLandmark.name, discoveredLandmark.kind, resolved.chunk);
+              setLogs((currentLogs) => [{ text: 'Discovered: ' + discoveredLandmark.name, color: 'green' }, ...currentLogs].slice(0, 5));
+            }
+            poisForChunk(resolved.chunk.x, resolved.chunk.y).forEach((poi) => {
+              onDiscoverLocation(poi.name, poi.kind, resolved.chunk);
+              setLogs((currentLogs) => [{ text: 'Discovered: ' + poi.name, color: 'green' }, ...currentLogs].slice(0, 5));
+            });
             setLogs((currentLogs) => [{
               text: `You travel ${resolved.travelLabels.join(' and ')} into ${chunkRegion(resolved.chunk)} · chunk ${resolved.chunk.x}, ${resolved.chunk.y}.`,
               color: 'blue',
@@ -2628,14 +2661,7 @@ if (active) {
         'Someone found an old shrine in the forest.',
       ];
       const rumor = rumors[Math.floor(Math.random() * rumors.length)];
-      const timeCopy = time;
-      setJournal((j) => {
-        if (j.rumors.some((r) => r.text === rumor)) return j;
-        return {
-          ...j,
-          rumors: [...j.rumors, { text: rumor, source: npc.name, heardAt: timeCopy }],
-        };
-      });
+      onAddRumor(rumor, npc.name);
       setLogs((currentLogs) => [{ text: `${npc.name} shares a rumor: "${rumor}"`, color: 'purple' }, ...currentLogs].slice(0, 5));
     }
   };
@@ -2867,8 +2893,8 @@ if (active) {
             </div>
           )}
           {/* Farms/homesteads in non-settlement chunks (only on farmable terrain) */}
-          {!currentWorldTile.landmark && ['meadow', 'grassland', 'greenvale'].includes(mapTileFor(currentChunk).terrain) && (() => {
-            const farmData = fieldFarmRects(currentChunk.x, currentChunk.y);
+          {!currentWorldTile.landmark && ['meadow', 'grassland', 'greenvale'].includes(mapTileFor(chunk).terrain) && (() => {
+            const farmData = fieldFarmRects(chunk.x, chunk.y);
             return (
               <>
                 {farmData.houses.map((rect, i) => (
@@ -2902,7 +2928,7 @@ if (active) {
           })()}
           {/* Points of Interest: ruins, caves, camps, shrines */}
           {!currentWorldTile.landmark && (() => {
-            const pois = poisForChunk(currentChunk.x, currentChunk.y);
+            const pois = poisForChunk(chunk.x, chunk.y);
             return (
               <>
                 {pois.map((poi, i) => (
@@ -3134,62 +3160,57 @@ function Home() {
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   // Journal: discovered locations, quests, rumors, notes
   const [journalOpen, setJournalOpen] = useState(false);
-  const [journal, setJournal] = useState({
-    discoveredLocations: [] as Array<{ name: string; kind: string; chunk: Point; discoveredAt: string }>,
-    activeQuests: [] as Array<{ id: string; title: string; description: string; progress: string }>,
-    completedQuests: [] as Array<{ id: string; title: string; completedAt: string }>,
-    rumors: [] as Array<{ text: string; source: string; heardAt: string }>,
-    notes: [] as Array<{ text: string; writtenAt: string }>,
+  const [journal, setJournal] = useState<JournalState>({
+    discoveredLocations: [],
+    activeQuests: [],
+    completedQuests: [],
+    rumors: [],
+    notes: [],
   });
+  // Prison opening: player starts in a cell, escapes to the overworld
+  const [inPrison, setInPrison] = useState(false);
+  const [prisonState, setPrisonState] = useState<PrisonState>({
+    foundShiv: false,
+    talkedToPrisoner: false,
+    helpedPrisoner: false,
+    escapeRoute: null,
+  });
+  // Handoff consumed by GameField on mount: where the escaped prisoner appears.
+  const [escapeSpawn, setEscapeSpawn] = useState<EscapeSpawn | null>(null);
   // Reputation: tracked per faction/region
-  const [reputation, setReputation] = useState({
+  const [reputation, setReputation] = useState<ReputationState>({
     mosslight: 0,
     guards: 0,
     merchants: 0,
     wilderness: 0,
   });
-  // Auto-discover locations when entering chunks with landmarks or POIs
-  useEffect(() => {
-    if (menuOpen || inPrison) return;
-    // Check for landmark discovery
-    const worldTile = mapTileFor(chunk);
-    if (worldTile?.landmark) {
-      const landmarkName = worldTile.landmark.name;
-      const landmarkKind = worldTile.landmark.kind;
-      const chunkCopy = { ...chunk };
-      const timeCopy = time;
-      setJournal((j) => {
-        if (j.discoveredLocations.some((loc) => loc.name === landmarkName)) return j;
-        const newLocation = {
-          name: landmarkName,
-          kind: landmarkKind,
-          chunk: chunkCopy,
-          discoveredAt: timeCopy,
-        };
-        setLogs((logs) => [{ text: 'Discovered: ' + landmarkName, color: 'green' }, ...logs].slice(0, 5));
-        return { ...j, discoveredLocations: [...j.discoveredLocations, newLocation] };
-      });
-    }
-    // Check for POI discovery
-    const pois = poisForChunk(chunk.x, chunk.y);
-    pois.forEach((poi) => {
-      const poiName = poi.name;
-      const poiKind = poi.kind;
-      const chunkCopy = { ...chunk };
-      const timeCopy = time;
-      setJournal((j) => {
-        if (j.discoveredLocations.some((loc) => loc.name === poiName)) return j;
-        const newLocation = {
-          name: poiName,
-          kind: poiKind,
-          chunk: chunkCopy,
-          discoveredAt: timeCopy,
-        };
-        setLogs((logs) => [{ text: 'Discovered: ' + poiName, color: 'green' }, ...logs].slice(0, 5));
-        return { ...j, discoveredLocations: [...j.discoveredLocations, newLocation] };
-      });
+  // Journal discovery callback: GameField calls this when the player enters a
+  // chunk with a landmark or POI. Dedupe by name; timestamp from the menu bridge.
+  const discoverLocation = (name: string, kind: string, chunkPos: Point) => {
+    const discoveredAt = menuBridgeRef.current?.getTime() ?? '';
+    setJournal((j) => {
+      if (j.discoveredLocations.some((loc) => loc.name === name)) return j;
+      return { ...j, discoveredLocations: [...j.discoveredLocations, { name, kind, chunk: { ...chunkPos }, discoveredAt }] };
     });
-  }, [chunk, menuOpen, inPrison, time]);
+  };
+  // Save-restore callbacks: GameField owns loading, Home owns this state.
+  const restorePrison = (inPrisonValue: boolean, prisonStateValue: PrisonState | undefined) => {
+    setInPrison(inPrisonValue);
+    if (prisonStateValue) setPrisonState(prisonStateValue);
+  };
+  const restoreJournal = (journalValue: SaveGameData['journal']) => {
+    if (journalValue) setJournal(journalValue);
+  };
+  const restoreReputation = (reputationValue: SaveGameData['reputation']) => {
+    if (reputationValue) setReputation(reputationValue);
+  };
+  const addRumor = (text: string, source: string) => {
+    const heardAt = menuBridgeRef.current?.getTime() ?? '';
+    setJournal((j) => {
+      if (j.rumors.some((r) => r.text === text)) return j;
+      return { ...j, rumors: [...j.rumors, { text, source, heardAt }] };
+    });
+  };
   useEffect(() => {
     if (!saveNotice) return;
     const timeout = window.setTimeout(() => setSaveNotice(null), 2800);
@@ -3269,24 +3290,26 @@ function Home() {
   };
   const escapeViaSewer = () => {
     setPrisonState(s => ({ ...s, escapeRoute: 'sewer' }));
-    setInPrison(false);
     // Reputation consequences
     setReputation((r) => ({
       ...r,
       guards: r.guards - 5, // Escaped prisoner
       wilderness: r.wilderness + (prisonState.helpedPrisoner ? 10 : 0),
     }));
-    setLogs((currentLogs) => [
-      { text: 'You crawl through the sewers and emerge by the river. Free at last.', color: 'green' },
-      { text: prisonState.helpedPrisoner ? 'You promised to help your fellow prisoner. He will remember this.' : 'You left the prisoner behind.', color: 'blue' },
-      ...currentLogs
-    ].slice(0, 5));
+    // GameField consumes this on mount: overworld spawn + escape log entries.
+    setEscapeSpawn({
+      chunk: { x: 3, y: 8 },
+      position: { x: 50, y: 50 },
+      logs: [
+        { text: 'You crawl through the sewers and emerge by the river. Free at last.', color: 'green' },
+        { text: prisonState.helpedPrisoner ? 'You promised to help your fellow prisoner. He will remember this.' : 'You left the prisoner behind.', color: 'blue' },
+      ],
+    });
     setChunk({ x: 3, y: 8 });
-    setPosition({ x: 50, y: 50 });
+    setInPrison(false);
   };
   const escapeViaGate = () => {
     setPrisonState(s => ({ ...s, escapeRoute: 'gate' }));
-    setInPrison(false);
     // Reputation consequences: gate escape is bolder, angers guards more
     setReputation((r) => ({
       ...r,
@@ -3294,13 +3317,16 @@ function Home() {
       mosslight: r.mosslight - 5,
       wilderness: r.wilderness + (prisonState.helpedPrisoner ? 10 : 0),
     }));
-    setLogs((currentLogs) => [
-      { text: 'You make a break for the gate and escape to the town outskirts. The guards will be watching.', color: 'orange' },
-      { text: prisonState.helpedPrisoner ? 'You promised to help your fellow prisoner. He will remember this.' : 'You left the prisoner behind.', color: 'blue' },
-      ...currentLogs
-    ].slice(0, 5));
+    setEscapeSpawn({
+      chunk: { x: 4, y: 7 },
+      position: { x: 50, y: 85 },
+      logs: [
+        { text: 'You make a break for the gate and escape to the town outskirts. The guards will be watching.', color: 'orange' },
+        { text: prisonState.helpedPrisoner ? 'You promised to help your fellow prisoner. He will remember this.' : 'You left the prisoner behind.', color: 'blue' },
+      ],
+    });
     setChunk({ x: 4, y: 7 });
-    setPosition({ x: 50, y: 85 });
+    setInPrison(false);
   };
 
   const assignStatPoint = (stat: StatKey) => {
@@ -3476,7 +3502,7 @@ function Home() {
       ) : (
         <>
           <div className="game-layout">
-            <GameField inventory={inventory} equippedDagger={equippedDagger} playerStats={playerStats} statPoints={statPoints} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} menuBridgeRef={menuBridgeRef} />
+            <GameField inventory={inventory} equippedDagger={equippedDagger} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
