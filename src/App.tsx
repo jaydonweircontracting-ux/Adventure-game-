@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '167';
+const BUILD_NUMBER = '168';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -772,6 +772,10 @@ const playtestInteriorArea: InteriorArea | null = (() => {
   const found = buildingDoorwaysFor({ x: 4, y: 7 }).find((doorway) => doorway.area.id === id);
   return found ? found.area : null;
 })();
+// Playtest tooling (?playtestMount=1): start in the field already mounted on the
+// horse, so mounted-sprite sizing can be checked without walking to the horse.
+// Param-gated; no effect on normal play.
+const playtestMounted: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('playtestMount') === '1';
 
 function fieldDoorPosition(rect: FieldRect): Point {
   // Match .field-house::after: left 43%, width 16%, bottom 0, height 44%.
@@ -2398,7 +2402,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const [moving, setMoving] = useState(false);
   const [facing, setFacing] = useState<Direction>('down');
   const [attackFacing, setAttackFacing] = useState<Direction | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState(playtestMounted);
   const [horse, setHorse] = useState<HorseState>(initialHorseState);
   const [horseFacing, setHorseFacing] = useState<Direction>('down');
   const [logOpen, setLogOpen] = useState(false);
@@ -2437,7 +2441,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const [attacking, setAttacking] = useState(false);
   const [attackSequence, setAttackSequence] = useState(0);
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
-  const [interior, setInterior] = useState<InteriorArea | null>(playtestInteriorArea ?? startingHouse);
+  const [interior, setInterior] = useState<InteriorArea | null>(playtestInteriorArea ?? (playtestMounted ? null : startingHouse));
   // Spawn on clear floor below the furniture: (50, 47) sits inside the
   // inn/building fireplace collision rect and permanently soft-locks movement.
   const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 78 });
