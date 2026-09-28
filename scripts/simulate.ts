@@ -219,8 +219,8 @@ for (const terrain of ['forest', 'tundra', 'desert', 'rock', 'shore', 'ocean']) 
   const stalks = cornStalksForChunk({ x: 5, y: 5 }, terrain, () => false);
   assert(stalks.length === 0, `Corn spawned in ${terrain} terrain (${stalks.length} stalks)`);
 }
-// When corn spawns, it must be clustered (a field), not scattered singles:
-// nearly every stalk has a neighbor within 12 units.
+// When corn spawns, it must be a dense field, not scattered singles:
+// dozens of stalks, nearly every one with a neighbor within 6 units.
 let clusteredOk = 0;
 let clusteredTotal = 0;
 let allClustered = true;
@@ -229,7 +229,7 @@ for (let i = 0; i < 300; i++) {
   const stalks = cornStalksForChunk(chunk, 'meadow', () => false);
   if (stalks.length === 0) continue;
   clusteredTotal++;
-  if (stalks.length < 8) { allClustered = false; continue; }
+  if (stalks.length < 30) { allClustered = false; continue; }
   let lonely = 0;
   for (let a = 0; a < stalks.length; a++) {
     let nearest = Infinity;
@@ -238,12 +238,12 @@ for (let i = 0; i < 300; i++) {
       const d = Math.hypot(stalks[a].position.x - stalks[b].position.x, stalks[a].position.y - stalks[b].position.y);
       if (d < nearest) nearest = d;
     }
-    if (nearest > 12) lonely++;
+    if (nearest > 6) lonely++;
   }
   if (lonely === 0) clusteredOk++; else allClustered = false;
 }
 assert(clusteredTotal > 0, 'No cornfields generated in 300 meadow chunks');
-assert(allClustered && clusteredOk === clusteredTotal, `Corn not clustered: ${clusteredOk}/${clusteredTotal} fields have all stalks grouped`);
+assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: ${clusteredOk}/${clusteredTotal} fields have 30+ stalks all grouped`);
 // Blocked positions are skipped (no stalks inside buildings/water).
 {
   const blocked = (pos: { x: number; y: number }) => pos.x > 40 && pos.x < 60 && pos.y > 40 && pos.y < 60;

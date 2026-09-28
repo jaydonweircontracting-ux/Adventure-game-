@@ -1,7 +1,8 @@
 // Cornfields: deterministic clusters of harvestable corn stalks.
-// Corn no longer spawns as scattered single sprites; it grows in field
-// patches (4-6 cols x 3-4 rows) in meadow-like terrain. Stalks are
-// harvestable via the player's attack and drop corn loot.
+// Corn no longer spawns as scattered single sprites; it grows in dense field
+// patches in meadow-like terrain. Stalks are planted in tight rows (3-unit
+// spacing) so the patch reads as a real cornfield, not isolated dots.
+// Stalks are harvestable via the player's attack and drop corn loot.
 export type Point = { x: number; y: number };
 
 export type CornStalk = { id: number; position: Point; harvested: boolean };
@@ -27,15 +28,16 @@ export function cornStalksForChunk(
   const patchCount = (rng() < 0.45 ? 1 : 0) + (rng() < 0.15 ? 1 : 0);
   for (let p = 0; p < patchCount; p++) {
     // Patch origin kept clear of chunk center (buildings) and edges.
-    const originX = 18 + rng() * 44;
-    const originY = 18 + rng() * 44;
-    const cols = 4 + Math.floor(rng() * 3); // 4-6
-    const rows = 3 + Math.floor(rng() * 2); // 3-4
-    const spacing = 7;
+    // Patch is up to ~33 wide x ~21 tall, so origin stays in 12..55.
+    const originX = 12 + rng() * 43;
+    const originY = 12 + rng() * 43;
+    const cols = 8 + Math.floor(rng() * 3); // 8-10
+    const rows = 5 + Math.floor(rng() * 3); // 5-7
+    const spacing = 3;
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        const x = originX + c * spacing + (rng() - 0.5) * 3;
-        const y = originY + r * spacing + (rng() - 0.5) * 3;
+        const x = originX + c * spacing + (rng() - 0.5) * 1.6;
+        const y = originY + r * spacing + (rng() - 0.5) * 1.6;
         const pos = { x: Math.min(90, Math.max(10, x)), y: Math.min(90, Math.max(10, y)) };
         if (isBlocked(pos)) continue;
         stalks.push({ id: id++, position: pos, harvested: false });
