@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '165';
+const BUILD_NUMBER = '166';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -762,6 +762,16 @@ function doorwayExteriorPosition(rect: FieldRect, doorway: Point): Point {
 
 const STARTING_DOORWAY_ID = 'tutorial-house-door';
 const startingHouse = buildingDoorwaysFor({ x: 4, y: 7 }).find((doorway) => doorway.id === STARTING_DOORWAY_ID)?.area || startingDoorways[0].area;
+// Playtest tooling (?playtestInterior=<area-id>): start inside a named interior
+// (e.g. wayfarer-guild) so visual checks don't require walking there.
+// Param-gated; no effect on normal play.
+const playtestInteriorArea: InteriorArea | null = (() => {
+  if (typeof window === 'undefined') return null;
+  const id = new URLSearchParams(window.location.search).get('playtestInterior');
+  if (!id) return null;
+  const found = buildingDoorwaysFor({ x: 4, y: 7 }).find((doorway) => doorway.area.id === id);
+  return found ? found.area : null;
+})();
 
 function fieldDoorPosition(rect: FieldRect): Point {
   // Match .field-house::after: left 43%, width 16%, bottom 0, height 44%.
@@ -2427,7 +2437,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const [attacking, setAttacking] = useState(false);
   const [attackSequence, setAttackSequence] = useState(0);
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
-  const [interior, setInterior] = useState<InteriorArea | null>(startingHouse);
+  const [interior, setInterior] = useState<InteriorArea | null>(playtestInteriorArea ?? startingHouse);
   // Spawn on clear floor below the furniture: (50, 47) sits inside the
   // inn/building fireplace collision rect and permanently soft-locks movement.
   const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 78 });
