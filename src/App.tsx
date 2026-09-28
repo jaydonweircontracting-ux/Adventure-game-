@@ -145,7 +145,10 @@ type MapTile = {
   regionStyle: RegionStyle;
   waterFeature: 'river' | 'lake' | 'sea' | null;
   waterEdge: 'north' | 'south' | 'east' | 'west' | null;
-  road: 'horizontal' | 'vertical' | 'cross' | 'cross-no-north' | 'corner-down-left' | 'none';
+  // Road piece, named by the compass arms that connect to neighboring road tiles.
+  // 'ew'/'ns' straights, 'nsew' cross, 'sew'/'nsw'/'new'/'nse' T-junctions,
+  // 'ne'/'nw'/'se'/'sw' corners, 'e'/'w'/'n'/'s' dead ends, 'none' no road.
+  road: 'ew' | 'ns' | 'nsew' | 'sew' | 'nsw' | 'new' | 'nse' | 'ne' | 'nw' | 'se' | 'sw' | 'e' | 'w' | 'n' | 's' | 'none';
   bridge: boolean;
   landmark: { name: string; kind: SettlementKind } | null;
 };
@@ -171,6 +174,19 @@ function isTutorialCenter(point: Point) {
   return point.x === 4 && point.y === 7;
 }
 
+function worldRoadAt(x: number, y: number): boolean {
+  const horizontalRoad =
+    (y === 7 && x >= -1 && x <= 9) ||
+    (y === 4 && x >= 2 && x <= 5) ||
+    (y === 3 && x >= 5 && x <= 9) ||
+    (y === 10 && x >= 3 && x <= 10) ||
+    (y === 12 && x >= 3 && x <= 4);
+  const verticalRoad =
+    (x === 4 && y >= 4 && y <= 12) ||
+    (x === 5 && y >= 2 && y <= 4);
+  return horizontalRoad || verticalRoad;
+}
+
 function mapTileFor(point: Point): MapTile {
   const worldTile = generatedWorldTileFor(point);
   const biome = worldTile?.biome || 'ocean';
@@ -180,27 +196,19 @@ function mapTileFor(point: Point): MapTile {
   const waterFeature = isOcean ? 'sea' : null;
   const waterEdge = null;
 
-  // Roads stay continuous: water tiles become causeways, and Mosslight Crossing is a full crossroads.
+  // Roads stay continuous: water tiles become bridges, and Mosslight Crossing is a full crossroads.
   // No redundant forks: the north loop (Emberpeak/Northwatch/Old Mill) and the south road
   // (Bellwater/Seabreak) already reach the main road through Mosslight Crossing, so there are
   // no mid-road T-junctions at (6,7) or (9,7) — the main east-west road runs straight through.
-  const horizontalRoad =
-    (point.y === 7 && point.x >= -1 && point.x <= 9) ||
-    (point.y === 4 && point.x >= 2 && point.x <= 5) ||
-    (point.y === 3 && point.x >= 5 && point.x <= 9) ||
-    (point.y === 10 && point.x >= 3 && point.x <= 10) ||
-    (point.y === 12 && point.x >= 3 && point.x <= 4);
-  const verticalRoad =
-    (point.x === 4 && point.y >= 4 && point.y <= 12) ||
-    (point.x === 5 && point.y >= 2 && point.y <= 4);
-  const road = horizontalRoad && verticalRoad
-    ? 'cross'
-    : horizontalRoad
-      ? 'horizontal'
-      : verticalRoad
-        ? 'vertical'
-        : 'none';
-  const bridge = waterFeature !== null && !isOcean && road !== 'none';
+  // Each road tile renders only the arms that connect to neighboring road tiles, so
+  // T-junctions and corners never draw phantom arms "to nowhere".
+  const piece =
+    (worldRoadAt(point.x, point.y - 1) ? 'n' : '') +
+    (worldRoadAt(point.x, point.y + 1) ? 's' : '') +
+    (worldRoadAt(point.x + 1, point.y) ? 'e' : '') +
+    (worldRoadAt(point.x - 1, point.y) ? 'w' : '');
+  const road = (piece === '' ? 'none' : piece) as MapTile['road'];
+  const bridge = isOcean && road !== 'none';
 
   return {
     ...point,
@@ -264,11 +272,28 @@ function pointInWater(position: Point, tile: MapTile) {
   return false;
 }
 
+function fieldRoadClass(road: MapTile['road']): string {
+  if (road === 'none') return '';
+  if (road === 'ew' || road === 'e' || road === 'w') return 'field-road-horizontal';
+  if (road === 'ns' || road === 'n' || road === 's') return 'field-road-vertical';
+  if (road === 'nsew') return 'field-road-cross';
+  if (road === 'sew') return 'field-road-cross-no-north';
+  if (road === 'sw') return 'field-road-corner-down-left';
+  const hasH = road.includes('e') || road.includes('w');
+  const hasV = road.includes('n') || road.includes('s');
+  return hasH && hasV ? 'field-road-cross' : hasH ? 'field-road-horizontal' : 'field-road-vertical';
+}
+
 function pointOnFieldRoad(point: Point, road: MapTile['road']) {
-  // Keep tree canopies and trunks off the full road corridor, not just its center line.
-  const onHorizontalRoad = point.y >= 44 && point.y <= 59;
-  const onVerticalRoad = point.x >= 44 && point.x <= 59;
-  return road === 'horizontal' ? onHorizontalRoad : road === 'vertical' ? onVerticalRoad : road === 'cross' ? onHorizontalRoad || onVerticalRoad : road === 'corner-down-left' ? (onHorizontalRoad && point.x <= 50) || (onVerticalRoad && point.y >= 50) : false;
+  // Keep tree canopies and trunks off the road arms, not just the center lines.
+  if (road === 'none') return false;
+  const onHorizontalCorridor = point.y >= 44 && point.y <= 59;
+  const onVerticalCorridor = point.x >= 44 && point.x <= 59;
+  const onWestArm = road.includes('w') && point.x < 54 && onHorizontalCorridor;
+  const onEastArm = road.includes('e') && point.x >= 46 && onHorizontalCorridor;
+  const onNorthArm = road.includes('n') && point.y < 54 && onVerticalCorridor;
+  const onSouthArm = road.includes('s') && point.y >= 46 && onVerticalCorridor;
+  return onWestArm || onEastArm || onNorthArm || onSouthArm;
 }
 
 function fieldTreesFor(chunk: Point): FieldTree[] {
@@ -927,7 +952,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v117</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v118</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -955,7 +980,9 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
                 if (touchesWater(tile.world.x + 1, tile.world.y)) rim.push('inset -6px 0 0 0 #d3e04e');
               }
               return <div className={'map-tile world-map-hex world-map-biome-' + tile.world.biome + (tile.world.nearBiomeBorder ? ' is-border' : '') + (tile.current ? ' is-current' : '') + (isSelected ? ' is-selected' : '')} style={{ gridColumn: tile.world.column + 1, gridRow: tile.world.row + 1, '--tile-shade': tileShade, backgroundColor: WORLD_TILE_BG[tile.world.biome] || '#47a13d', backgroundImage: 'url("' + assetUrl('map-tiles-pixel/' + tile.world.biome + '.png') + '")', backgroundSize: '100% 100%', backgroundRepeat: 'no-repeat', imageRendering: 'pixelated', boxShadow: rim.length ? 'inset 0 0 0 1px rgba(20, 20, 90, .28), ' + rim.join(', ') : undefined } as CSSProperties} key={tile.x + '-' + tile.y} title={tileAreaName + ' · chunk ' + tile.x + ', ' + tile.y} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
-                {tile.road !== 'none' && <span className={'world-map-road world-map-road-' + tile.road} aria-hidden="true" />}
+                {tile.bridge
+                  ? <span className="world-map-bridge" aria-hidden="true" />
+                  : tile.road !== 'none' && <span className={'world-map-road world-map-road-' + tile.road} aria-hidden="true" />}
                 {tile.landmark && <span className={'world-map-settlement world-map-settlement-' + tile.landmark.kind} style={{ backgroundImage: 'url("' + assetUrl('map-tiles-pixel/' + tile.landmark.kind + '.png') + '")' } as CSSProperties} aria-hidden="true" />}
                 {tile.landmark && <span className="world-map-landmark">{tile.landmark.name}</span>}
                 {tile.current && <span className="map-tile-player" aria-label="Your current position" />}
@@ -1741,7 +1768,7 @@ if (active) {
                />
              ))}
            </div>
-          {currentWorldTile.road !== 'none' && <div className={'field-road field-road-' + currentWorldTile.road + (currentWorldTile.bridge ? ' field-bridge' : '')} aria-hidden="true" />}
+          {currentWorldTile.road !== 'none' && <div className={'field-road ' + fieldRoadClass(currentWorldTile.road) + (currentWorldTile.bridge ? ' field-bridge' : '')} aria-hidden="true" />}
           {startingCenter && (
             <div className="starting-area-decor" aria-hidden="true">
               <span className="starting-flower flower-northwest" />

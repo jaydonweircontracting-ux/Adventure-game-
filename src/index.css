@@ -2871,6 +2871,73 @@ body {
   background: repeating-linear-gradient(to right, #eed69b 0 5px, rgba(238, 214, 155, 0) 5px 11px), repeating-linear-gradient(to bottom, #eed69b 0 5px, rgba(238, 214, 155, 0) 5px 11px), linear-gradient(to bottom, transparent 0 37%, #8a5f36 37% 42%, #a9743f 42% 58%, #8a5f36 58% 63%, transparent 63% 100%), linear-gradient(to right, transparent 0 37%, #8a5f36 37% 42%, #a9743f 42% 58%, #8a5f36 58% 63%, transparent 63% 100%) !important;
   background-size: 50% 10%, 10% 100%, 50% 100%, 100% 50% !important; background-position: 0 50%, 20% 0, 0 0, 0 100% !important; background-repeat: repeat-x, repeat-y, no-repeat, no-repeat !important;
 }
+/* Precise road pieces: each tile draws arms only toward neighboring road tiles,
+   so T-junctions and corners never sprout phantom arms "to nowhere". */
+.map-overlay .world-map-road-ew {
+  background: linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+}
+.map-overlay .world-map-road-ns {
+  background: linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+}
+.map-overlay .world-map-road-nsew {
+  background: linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%), linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+}
+.map-overlay .world-map-road-sew {
+  background: linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%), linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+  background-size: 100% 100%, 100% 50% !important; background-position: 0 0, 0 100% !important; background-repeat: no-repeat !important;
+}
+.map-overlay .world-map-road-new {
+  background: linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%), linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+  background-size: 100% 100%, 100% 50% !important; background-position: 0 0, 0 0 !important; background-repeat: no-repeat !important;
+}
+.map-overlay .world-map-road-nsw {
+  background: linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%), linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+  background-size: 100% 100%, 50% 100% !important; background-position: 0 0, 0 0 !important; background-repeat: no-repeat !important;
+}
+.map-overlay .world-map-road-nse {
+  background: linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%), linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+  background-size: 100% 100%, 50% 100% !important; background-position: 0 0, 100% 0 !important; background-repeat: no-repeat !important;
+}
+.map-overlay .world-map-road-nw {
+  background: linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%), linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+  background-size: 100% 50%, 50% 100% !important; background-position: 0 0, 0 0 !important; background-repeat: no-repeat !important;
+}
+.map-overlay .world-map-road-ne {
+  background: linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%), linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+  background-size: 100% 50%, 50% 100% !important; background-position: 0 0, 100% 0 !important; background-repeat: no-repeat !important;
+}
+.map-overlay .world-map-road-sw {
+  background: linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%), linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+  background-size: 100% 50%, 50% 100% !important; background-position: 0 100%, 0 0 !important; background-repeat: no-repeat !important;
+}
+.map-overlay .world-map-road-se {
+  background: linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%), linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+  background-size: 100% 50%, 50% 100% !important; background-position: 0 100%, 100% 0 !important; background-repeat: no-repeat !important;
+}
+.map-overlay .world-map-road-e {
+  background: linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+  background-size: 50% 100% !important; background-position: 100% 0 !important; background-repeat: no-repeat !important;
+}
+.map-overlay .world-map-road-w {
+  background: linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+  background-size: 50% 100% !important; background-position: 0 0 !important; background-repeat: no-repeat !important;
+}
+.map-overlay .world-map-road-n {
+  background: linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+  background-size: 100% 50% !important; background-position: 0 0 !important; background-repeat: no-repeat !important;
+}
+.map-overlay .world-map-road-s {
+  background: linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
+  background-size: 100% 50% !important; background-position: 0 100% !important; background-repeat: no-repeat !important;
+}
+/* Wooden bridge deck for road tiles that cross open water. */
+.world-map-bridge {
+  position: absolute; inset: 5%; pointer-events: none; z-index: 1;
+  background-color: #8b603d;
+  background-image: repeating-linear-gradient(90deg, rgba(239, 194, 122, .52) 0 2px, transparent 2px 6px), linear-gradient(180deg, #a87649, #70482f);
+  background-repeat: repeat, no-repeat;
+  box-shadow: inset 0 2px 0 rgba(255, 224, 158, .34), inset 0 -2px 0 rgba(66, 43, 30, .3), 0 0 0 2px rgba(66, 43, 30, .55);
+}
 
 .map-overlay .world-map-hex.is-border { box-shadow: inset 0 0 0 2px rgba(46, 32, 18, .38); }
 .world-map-detail { position: absolute; left: 50%; top: 44%; color: rgba(255, 243, 188, .9); font-size: clamp(10px, 1.7vw, 19px); line-height: 1; transform: translate(-50%, -50%); text-shadow: 1px 1px 0 rgba(31, 63, 45, .55); pointer-events: none; }
