@@ -2,37 +2,38 @@ import { useEffect, useState } from 'react';
 import {
   CharacterChoices,
   DEFAULT_CHARACTER,
+  HAIR_COLORS,
   HAIR_COLOR_OPTIONS,
-  HAIR_STYLE_OPTIONS,
-  HAT_OPTIONS,
+  OUTFITS,
   OUTFIT_OPTIONS,
   SKIN_OPTIONS,
+  SKIN_TONES,
   compositeCharacterSheet,
 } from '../game/characterCreator';
 
-const partUrl = (file: string) => `${import.meta.env.BASE_URL}manaseed/${file}`;
+const PLAYER_SPRITE_URL = `${import.meta.env.BASE_URL}assets/cute-fantasy/player.png`;
 
 interface CharacterCreatorProps {
   onConfirm: (choices: CharacterChoices) => void;
   onCancel: () => void;
 }
 
-function PartThumb({
-  file,
+function Swatch({
   label,
   selected,
   onSelect,
+  style,
 }: {
-  file: string;
   label: string;
   selected: boolean;
   onSelect: () => void;
+  style: React.CSSProperties;
 }) {
   return (
     <button
       type="button"
       className={'creator-thumb' + (selected ? ' is-selected' : '')}
-      style={{ backgroundImage: `url("${partUrl(file)}")` }}
+      style={style}
       onClick={onSelect}
       aria-label={label}
       title={label}
@@ -41,15 +42,13 @@ function PartThumb({
   );
 }
 
-const HAIR_STYLE_LABELS: Record<string, string> = { bob1: 'Bob', dap1: 'Dapper' };
-
 export default function CharacterCreator({ onConfirm, onCancel }: CharacterCreatorProps) {
   const [choices, setChoices] = useState<CharacterChoices>({ ...DEFAULT_CHARACTER });
   const [sheetUrl, setSheetUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    compositeCharacterSheet(choices, partUrl)
+    compositeCharacterSheet(choices, PLAYER_SPRITE_URL)
       .then((url) => {
         if (!cancelled) setSheetUrl(url);
       })
@@ -105,12 +104,12 @@ export default function CharacterCreator({ onConfirm, onCancel }: CharacterCreat
               <span className="creator-group-title">Skin</span>
               <div className="creator-thumb-row">
                 {SKIN_OPTIONS.map((skin) => (
-                  <PartThumb
+                  <Swatch
                     key={skin}
-                    file={`char_a_pONE3_0bas_humn_${skin}.png`}
                     label={`Skin ${skin}`}
                     selected={choices.skin === skin}
                     onSelect={() => set('skin', skin)}
+                    style={{ background: `#${SKIN_TONES[skin][0]}` }}
                   />
                 ))}
               </div>
@@ -120,12 +119,14 @@ export default function CharacterCreator({ onConfirm, onCancel }: CharacterCreat
               <span className="creator-group-title">Outfit</span>
               <div className="creator-thumb-row">
                 {OUTFIT_OPTIONS.map((outfit) => (
-                  <PartThumb
+                  <Swatch
                     key={outfit}
-                    file={`char_a_pONE3_1out_${outfit}.png`}
                     label={`Outfit ${outfit}`}
                     selected={choices.outfit === outfit}
                     onSelect={() => set('outfit', outfit)}
+                    style={{
+                      background: `linear-gradient(to bottom, #${OUTFITS[outfit].shirt[0]} 50%, #${OUTFITS[outfit].pants[0]} 50%)`,
+                    }}
                   />
                 ))}
               </div>
@@ -133,60 +134,14 @@ export default function CharacterCreator({ onConfirm, onCancel }: CharacterCreat
 
             <div className="creator-group">
               <span className="creator-group-title">Hair</span>
-              <div className="creator-chip-row">
-                {HAIR_STYLE_OPTIONS.map((style) => (
-                  <button
-                    key={style}
-                    type="button"
-                    className={'creator-chip' + (choices.hairStyle === style ? ' is-selected' : '')}
-                    onClick={() => set('hairStyle', style)}
-                    aria-pressed={choices.hairStyle === style}
-                  >
-                    {HAIR_STYLE_LABELS[style]}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className={'creator-chip' + (choices.hairStyle === 'none' ? ' is-selected' : '')}
-                  onClick={() => set('hairStyle', 'none')}
-                  aria-pressed={choices.hairStyle === 'none'}
-                >
-                  Bald
-                </button>
-              </div>
-              {choices.hairStyle !== 'none' && (
-                <div className="creator-thumb-row">
-                  {HAIR_COLOR_OPTIONS.map((color) => (
-                    <PartThumb
-                      key={color}
-                      file={`char_a_pONE3_4har_${choices.hairStyle}_${color}.png`}
-                      label={`Hair ${color}`}
-                      selected={choices.hairColor === color}
-                      onSelect={() => set('hairColor', color)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="creator-group">
-              <span className="creator-group-title">Hat</span>
               <div className="creator-thumb-row">
-                <button
-                  type="button"
-                  className={'creator-chip' + (choices.hat === null ? ' is-selected' : '')}
-                  onClick={() => set('hat', null)}
-                  aria-pressed={choices.hat === null}
-                >
-                  None
-                </button>
-                {HAT_OPTIONS.map((hat) => (
-                  <PartThumb
-                    key={hat}
-                    file={`char_a_pONE3_5hat_${hat}.png`}
-                    label={`Hat ${hat}`}
-                    selected={choices.hat === hat}
-                    onSelect={() => set('hat', hat)}
+                {HAIR_COLOR_OPTIONS.map((color) => (
+                  <Swatch
+                    key={color}
+                    label={`Hair ${color}`}
+                    selected={choices.hairColor === color}
+                    onSelect={() => set('hairColor', color)}
+                    style={{ background: `#${HAIR_COLORS[color][0]}` }}
                   />
                 ))}
               </div>

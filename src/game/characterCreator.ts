@@ -1,28 +1,27 @@
 /**
- * Character creation sprite pipeline (build v144).
+ * Character creation sprite pipeline (build v150).
  *
- * Composites Mana Seed "Character Base" paper-doll parts into a sprite sheet
- * that is geometrically identical to the original `assets/cute-fantasy/player.png`:
- * 192x320, 6 columns x 10 rows of 32x32 frames, with the same row semantics
- * (0-2 idle down/side/up, 3-5 walk down/side/up, 6-8 attack = walk copies, 9 spare).
+ * Rebuilt around the ORIGINAL chibi player sprite
+ * (`assets/cute-fantasy/player.png`, 192x320, 6 columns x 10 rows of 32x32
+ * frames). The player's column (0) is recolored from the sprite's own
+ * palette regions (hair / skin / shirt / pants); columns 1-5 are the
+ * original NPC faces, untouched. Output geometry is identical to the
+ * original sheet, so `--player-sprite-url` consumers need no changes.
  *
- * Column 0 is the player's custom character; columns 1-5 are fixed NPC presets
- * so town NPCs / simulated adventurers keep their own faces instead of cloning
- * the player.
+ * Choice keys keep the v144 vocabulary (skin 'v00'-'v07', outfit keys,
+ * hairColor 'v00'-'v13') so existing saves still validate; the old
+ * hairStyle/hat fields are dropped (the chibi sprite has one hairstyle
+ * and no hats).
  */
 
 export interface CharacterChoices {
   name: string;
-  /** base body variant, e.g. 'v00' (8 human skin tones v00-v07) */
+  /** skin tone key, 'v00'-'v07' */
   skin: string;
   /** outfit key, e.g. 'pfpn_v01' */
   outfit: string;
-  /** hair style; 'none' = bald */
-  hairStyle: 'none' | 'bob1' | 'dap1';
-  /** hair palette variant, e.g. 'v02' */
+  /** hair color key, 'v00'-'v13' */
   hairColor: string;
-  /** hat key, e.g. 'pfht_v01', or null */
-  hat: string | null;
 }
 
 export const SKIN_OPTIONS = ['v00', 'v01', 'v02', 'v03', 'v04', 'v05', 'v06', 'v07'];
@@ -32,156 +31,187 @@ export const OUTFIT_OPTIONS = [
   'fstr_v01', 'fstr_v02', 'fstr_v03', 'fstr_v04', 'fstr_v05',
 ];
 
-export const HAIR_STYLE_OPTIONS: Array<'bob1' | 'dap1'> = ['bob1', 'dap1'];
-
 export const HAIR_COLOR_OPTIONS = [
   'v00', 'v01', 'v02', 'v03', 'v04', 'v05', 'v06',
   'v07', 'v08', 'v09', 'v10', 'v11', 'v12', 'v13',
-];
-
-export const HAT_OPTIONS = [
-  'pfht_v01', 'pfht_v02', 'pfht_v03', 'pfht_v04', 'pfht_v05',
-  'pnty_v01', 'pnty_v02', 'pnty_v03', 'pnty_v04',
 ];
 
 export const DEFAULT_CHARACTER: CharacterChoices = {
   name: '',
   skin: 'v00',
   outfit: 'pfpn_v01',
-  hairStyle: 'bob1',
   hairColor: 'v02',
-  hat: null,
 };
 
-/** Fixed NPC faces for sheet columns 1-5 (town NPC roles + adventurers). */
-export const NPC_PRESETS: CharacterChoices[] = [
-  { name: '', skin: 'v01', outfit: 'pfpn_v02', hairStyle: 'dap1', hairColor: 'v03', hat: null },
-  { name: '', skin: 'v02', outfit: 'fstr_v03', hairStyle: 'bob1', hairColor: 'v09', hat: 'pnty_v01' },
-  { name: '', skin: 'v00', outfit: 'pfpn_v04', hairStyle: 'bob1', hairColor: 'v01', hat: 'pfht_v02' },
-  { name: '', skin: 'v03', outfit: 'fstr_v05', hairStyle: 'dap1', hairColor: 'v00', hat: 'pfht_v04' },
-  { name: '', skin: 'v04', outfit: 'pfpn_v01', hairStyle: 'none', hairColor: 'v00', hat: null },
-];
+/** [light, dark] skin tones, light = base. */
+export const SKIN_TONES: Record<string, [string, string]> = {
+  v00: ['f6ca9f', 'd29f70'],
+  v01: ['ffd9b3', 'd9ae86'],
+  v02: ['f2b384', 'c68f61'],
+  v03: ['df9a62', 'b57a4c'],
+  v04: ['c07a45', '9a5f36'],
+  v05: ['9c5f33', '7c4a28'],
+  v06: ['74452a', '5b3520'],
+  v07: ['53301e', '402416'],
+};
 
-const SHEET_W = 192;
-const SHEET_H = 320;
-const FRAME = 32;
-/** Mana Seed source sheet is 512x512 with 64px frames. */
-const SRC_FRAME = 64;
-/**
- * Mana Seed characters are drawn slightly smaller than the original chibi
- * player, so source frames are scaled to 38px and centered in the 32px
- * target frame to match the original sprite's proportions.
- */
-const DRAW_SIZE = 38;
+/** [light, dark] hair colors, light = base. */
+export const HAIR_COLORS: Record<string, [string, string]> = {
+  v00: ['33333d', '232328'],
+  v01: ['5d2c28', '452019'],
+  v02: ['704643', '55332f'],
+  v03: ['8f4d2c', '6c3a20'],
+  v04: ['c46a2d', '945021'],
+  v05: ['e0aa45', 'aa8134'],
+  v06: ['f2d98c', 'b8a468'],
+  v07: ['f5e9c8', 'bab194'],
+  v08: ['a8352a', '7e281f'],
+  v09: ['2f6db3', '235286'],
+  v10: ['2fa08e', '23786a'],
+  v11: ['45a04e', '34783a'],
+  v12: ['7d4da3', '5e3a7b'],
+  v13: ['c9c9d4', '9797a0'],
+};
 
-/** Mana Seed walk rows (0-indexed) -> game sheet rows. */
-const DIRECTIONS = [
-  { srcRow: 4, idleRow: 0, walkRow: 3, attackRow: 6 }, // down
-  { srcRow: 5, idleRow: 1, walkRow: 4, attackRow: 7 }, // left (game mirrors for right)
-  { srcRow: 7, idleRow: 2, walkRow: 5, attackRow: 8 }, // up
-];
-
-function partFiles(choices: CharacterChoices): string[] {
-  const files = [
-    `char_a_pONE3_0bas_humn_${choices.skin}.png`,
-    `char_a_pONE3_1out_${choices.outfit}.png`,
-  ];
-  if (choices.hairStyle !== 'none') {
-    files.push(`char_a_pONE3_4har_${choices.hairStyle}_${choices.hairColor}.png`);
-  }
-  if (choices.hat) {
-    files.push(`char_a_pONE3_5hat_${choices.hat}.png`);
-  }
-  return files;
+export interface OutfitPalette {
+  /** [light, dark] shirt shades */
+  shirt: [string, string];
+  /** [light, mid, dark] pants shades */
+  pants: [string, string, string];
 }
 
-const imageCache = new Map<string, HTMLImageElement>();
+function outfit(shirtBase: string, pantsBase: string): OutfitPalette {
+  return {
+    shirt: [shirtBase, shade(shirtBase, 0.7)],
+    pants: [pantsBase, shade(pantsBase, 0.74), shade(pantsBase, 0.52)],
+  };
+}
 
-function loadImage(url: string): Promise<HTMLImageElement> {
-  const cached = imageCache.get(url);
-  if (cached) return Promise.resolve(cached);
+export const OUTFITS: Record<string, OutfitPalette> = {
+  pfpn_v01: { shirt: ['33984b', '1e6f50'], pants: ['0098dc', '0069aa', '134c4c'] },
+  pfpn_v02: outfit('a8352a', '6b4a2f'),
+  pfpn_v03: outfit('2f6db3', '3a3a44'),
+  pfpn_v04: outfit('7d4da3', '55555f'),
+  pfpn_v05: outfit('d08030', '5d4a2f'),
+  fstr_v01: outfit('2fa08e', 'c9a86a'),
+  fstr_v02: outfit('e0aa45', '2b4a7a'),
+  fstr_v03: outfit('d06a9a', '2e2e36'),
+  fstr_v04: outfit('8a8a95', '3a6b3a'),
+  fstr_v05: outfit('7a5a2f', '5f7030'),
+};
+
+type Role = 'hair' | 'skin' | 'shirt' | 'pants';
+
+/**
+ * Original player-column palette regions, extracted from
+ * `assets/cute-fantasy/player.png` column 0. Outline (#0e071b), eyes/boots
+ * (#000000) and the sword-slash steel blues are deliberately unmapped and
+ * stay exactly as drawn.
+ */
+const ROLE_COLORS: Record<Role, string[]> = {
+  hair: ['704643', '5d2c28'],
+  skin: ['f6ca9f', 'd29f70'],
+  shirt: ['33984b', '1e6f50'],
+  pants: ['0098dc', '0069aa', '134c4c'],
+};
+
+/** hex (no #) -> { role, shadeIndex }, shades ordered light -> dark. */
+const ROLE_LOOKUP = (() => {
+  const map = new Map<string, { role: Role; index: number }>();
+  (Object.keys(ROLE_COLORS) as Role[]).forEach((role) => {
+    const ordered = [...ROLE_COLORS[role]].sort((a, b) => luminance(b) - luminance(a));
+    ordered.forEach((hex, index) => map.set(hex, { role, index }));
+  });
+  return map;
+})();
+
+function hexToRgb(hex: string): [number, number, number] {
+  return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const h = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+  return h(r) + h(g) + h(b);
+}
+
+function shade(hex: string, factor: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  return rgbToHex(r * factor, g * factor, b * factor);
+}
+
+function luminance(hex: string): number {
+  const [r, g, b] = hexToRgb(hex);
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+interface RecolorPalette {
+  hair: [string, string];
+  skin: [string, string];
+  shirt: [string, string];
+  pants: [string, string, string];
+}
+
+function paletteFor(choices: CharacterChoices): RecolorPalette {
+  return {
+    hair: HAIR_COLORS[choices.hairColor] || HAIR_COLORS.v02,
+    skin: SKIN_TONES[choices.skin] || SKIN_TONES.v00,
+    shirt: (OUTFITS[choices.outfit] || OUTFITS.pfpn_v01).shirt,
+    pants: (OUTFITS[choices.outfit] || OUTFITS.pfpn_v01).pants,
+  };
+}
+
+let spriteCache: { url: string; img: HTMLImageElement } | null = null;
+
+function loadSprite(url: string): Promise<HTMLImageElement> {
+  if (spriteCache && spriteCache.url === url) return Promise.resolve(spriteCache.img);
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      imageCache.set(url, img);
+      spriteCache = { url, img };
       resolve(img);
     };
-    img.onerror = () => reject(new Error('sprite part failed to load: ' + url));
+    img.onerror = () => reject(new Error('player sprite failed to load: ' + url));
     img.src = url;
   });
 }
 
-/**
- * Composite one character into a sheet column.
- * Source frames are 64x64; each is drawn at 38x38 centered in the 32x32 cell.
- */
-function paintCharacter(
-  ctx: CanvasRenderingContext2D,
-  parts: HTMLImageElement[],
-  col: number,
-) {
-  const drawOffset = (FRAME - DRAW_SIZE) / 2;
-  for (const { srcRow, idleRow, walkRow, attackRow } of DIRECTIONS) {
-    for (let frame = 0; frame < 6; frame++) {
-      const sx = frame * SRC_FRAME;
-      const sy = srcRow * SRC_FRAME;
-      // Destination rows: idle only uses frame 0; walk/attack use all 6.
-      const targets: number[] = [];
-      if (frame === 0) targets.push(idleRow);
-      targets.push(walkRow, attackRow);
-      for (const row of targets) {
-        const dx = col * FRAME + drawOffset;
-        const dy = row * FRAME + drawOffset;
-        for (const part of parts) {
-          ctx.drawImage(part, sx, sy, SRC_FRAME, SRC_FRAME, dx, dy, DRAW_SIZE, DRAW_SIZE);
-        }
-      }
-    }
-    // Row 9 (spare, 6 frames): idle down copies so nothing is ever blank.
-    if (srcRow === 4) {
-      for (let frame = 0; frame < 6; frame++) {
-        const dx = col * FRAME + drawOffset;
-        const dy = 9 * FRAME + drawOffset;
-        for (const part of parts) {
-          ctx.drawImage(part, 0, 4 * SRC_FRAME, SRC_FRAME, SRC_FRAME, dx, dy, DRAW_SIZE, DRAW_SIZE);
-        }
-      }
-    }
-  }
-}
+const SHEET_W = 192;
+const SHEET_H = 320;
+const PLAYER_COL_W = 32;
 
 /**
- * Build the full 192x320 player sheet: column 0 = player's custom character,
- * columns 1-5 = fixed NPC presets. Returns a PNG data URL suitable for
- * `--player-sprite-url`.
+ * Build the player sheet: the original sprite with column 0 recolored to
+ * the player's choices. Columns 1-5 (original NPC faces) are untouched.
+ * Returns a PNG data URL suitable for `--player-sprite-url`.
  */
 export async function compositeCharacterSheet(
-  player: CharacterChoices,
-  resolveUrl: (file: string) => string,
+  choices: CharacterChoices,
+  playerSpriteUrl: string,
 ): Promise<string> {
-  const columns: CharacterChoices[] = [player, ...NPC_PRESETS];
-  const fileSet = new Map<string, string>();
-  for (const choices of columns) {
-    for (const file of partFiles(choices)) {
-      if (!fileSet.has(file)) fileSet.set(file, resolveUrl(file));
-    }
-  }
-  const loaded = new Map<string, HTMLImageElement>();
-  await Promise.all(
-    [...fileSet.entries()].map(async ([file, url]) => {
-      loaded.set(file, await loadImage(url));
-    }),
-  );
+  const img = await loadSprite(playerSpriteUrl);
   const canvas = document.createElement('canvas');
   canvas.width = SHEET_W;
   canvas.height = SHEET_H;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('2d canvas unavailable');
   ctx.imageSmoothingEnabled = false;
-  columns.forEach((choices, col) => {
-    const parts = partFiles(choices).map((file) => loaded.get(file) as HTMLImageElement);
-    paintCharacter(ctx, parts, col);
-  });
+  ctx.drawImage(img, 0, 0, SHEET_W, SHEET_H);
+  const palette = paletteFor(choices);
+  const data = ctx.getImageData(0, 0, SHEET_W, SHEET_H);
+  const px = data.data;
+  for (let i = 0; i < px.length; i += 4) {
+    if (px[i + 3] === 0) continue;
+    const x = (i / 4) % SHEET_W;
+    if (x >= PLAYER_COL_W) continue; // only recolor the player's column
+    const entry = ROLE_LOOKUP.get(rgbToHex(px[i], px[i + 1], px[i + 2]));
+    if (!entry) continue;
+    const shades = palette[entry.role];
+    const [r, g, b] = hexToRgb(shades[Math.min(entry.index, shades.length - 1)]);
+    px[i] = r;
+    px[i + 1] = g;
+    px[i + 2] = b;
+  }
+  ctx.putImageData(data, 0, 0);
   return canvas.toDataURL('image/png');
 }
 
@@ -191,15 +221,11 @@ export function sanitizeCharacterChoices(value: unknown): CharacterChoices | nul
   const v = value as Partial<CharacterChoices>;
   if (typeof v.skin !== 'string' || !SKIN_OPTIONS.includes(v.skin)) return null;
   if (typeof v.outfit !== 'string' || !OUTFIT_OPTIONS.includes(v.outfit)) return null;
-  const hairStyle = v.hairStyle === 'none' || v.hairStyle === 'bob1' || v.hairStyle === 'dap1' ? v.hairStyle : 'bob1';
-  const hairColor = typeof v.hairColor === 'string' && HAIR_COLOR_OPTIONS.includes(v.hairColor) ? v.hairColor : 'v02';
-  const hat = typeof v.hat === 'string' && HAT_OPTIONS.includes(v.hat) ? v.hat : null;
+  if (typeof v.hairColor !== 'string' || !HAIR_COLOR_OPTIONS.includes(v.hairColor)) return null;
   return {
     name: typeof v.name === 'string' ? v.name.slice(0, 24) : '',
     skin: v.skin,
     outfit: v.outfit,
-    hairStyle,
-    hairColor,
-    hat,
+    hairColor: v.hairColor,
   };
 }

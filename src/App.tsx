@@ -20,7 +20,7 @@ import { getSpriteState } from '@/game/animation';
 import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/persistence';
 import CharacterCreator from '@/components/CharacterCreator';
 import { compositeCharacterSheet, sanitizeCharacterChoices, type CharacterChoices } from '@/game/characterCreator';
-const CHARACTER_PART_URL = (file: string) => `${import.meta.env.BASE_URL}manaseed/${file}`;
+const PLAYER_SPRITE_URL = `${import.meta.env.BASE_URL}assets/cute-fantasy/player.png`;
 
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
@@ -1469,7 +1469,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v148</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v150</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -2896,7 +2896,7 @@ function Home() {
   const confirmCharacter = (choices: CharacterChoices) => {
     setCharacterChoices(choices);
     setCreatingCharacter(false);
-    compositeCharacterSheet(choices, CHARACTER_PART_URL)
+    compositeCharacterSheet(choices, PLAYER_SPRITE_URL)
       .then((url) => setPlayerSpriteUrl(url))
       .catch(() => setPlayerSpriteUrl(null));
     startNewGame();
@@ -2920,7 +2920,7 @@ function Home() {
     const savedCharacter = sanitizeCharacterChoices(parsed.characterChoices);
     setCharacterChoices(savedCharacter);
     if (savedCharacter) {
-      compositeCharacterSheet(savedCharacter, CHARACTER_PART_URL)
+      compositeCharacterSheet(savedCharacter, PLAYER_SPRITE_URL)
         .then((url) => setPlayerSpriteUrl(url))
         .catch(() => setPlayerSpriteUrl(null));
     } else {
