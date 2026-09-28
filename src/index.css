@@ -2855,16 +2855,13 @@ body {
 /* World map tile art is applied inline per tile (see WORLD_TILE_BG in App.tsx). */
 .world-map-road { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
 .map-overlay .world-map-road-horizontal {
-  background: repeating-linear-gradient(to right, #eed69b 0 5px, rgba(238, 214, 155, 0) 5px 11px), linear-gradient(to bottom, transparent 0 37%, #8a5f36 37% 42%, #a9743f 42% 58%, #8a5f36 58% 63%, transparent 63% 100%) !important;
-  background-size: 100% 10%, 100% 100% !important; background-position: 0 50%, 0 0 !important; background-repeat: repeat-x, no-repeat !important;
+  background: linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
 }
 .map-overlay .world-map-road-vertical {
-  background: repeating-linear-gradient(to bottom, #eed69b 0 5px, rgba(238, 214, 155, 0) 5px 11px), linear-gradient(to right, transparent 0 37%, #8a5f36 37% 42%, #a9743f 42% 58%, #8a5f36 58% 63%, transparent 63% 100%) !important;
-  background-size: 10% 100%, 100% 100% !important; background-position: 50% 0, 0 0 !important; background-repeat: repeat-y, no-repeat !important;
+  background: linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
 }
 .map-overlay .world-map-road-cross {
-  background: repeating-linear-gradient(to right, #eed69b 0 5px, rgba(238, 214, 155, 0) 5px 11px), repeating-linear-gradient(to bottom, #eed69b 0 5px, rgba(238, 214, 155, 0) 5px 11px), linear-gradient(to bottom, transparent 0 37%, #8a5f36 37% 42%, #a9743f 42% 58%, #8a5f36 58% 63%, transparent 63% 100%), linear-gradient(to right, transparent 0 37%, #8a5f36 37% 42%, #a9743f 42% 58%, #8a5f36 58% 63%, transparent 63% 100%) !important;
-  background-size: 100% 10%, 10% 100%, 100% 100%, 100% 100% !important; background-position: 0 50%, 50% 0, 0 0, 0 0 !important; background-repeat: repeat-x, repeat-y, no-repeat, no-repeat !important;
+  background: linear-gradient(to bottom, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%), linear-gradient(to right, transparent 0 30%, #5d3f24 30% 35%, #a9743f 35% 42%, #c49a63 42% 58%, #a9743f 58% 65%, #5d3f24 65% 70%, transparent 70% 100%) !important;
 }
 .map-overlay .world-map-road-cross-no-north {
   background: repeating-linear-gradient(to right, #eed69b 0 5px, rgba(238, 214, 155, 0) 5px 11px), repeating-linear-gradient(to bottom, #eed69b 0 5px, rgba(238, 214, 155, 0) 5px 11px), linear-gradient(to bottom, transparent 0 37%, #8a5f36 37% 42%, #a9743f 42% 58%, #8a5f36 58% 63%, transparent 63% 100%), linear-gradient(to right, transparent 0 37%, #8a5f36 37% 42%, #a9743f 42% 58%, #8a5f36 58% 63%, transparent 63% 100%) !important;
