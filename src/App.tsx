@@ -20,6 +20,7 @@ import { getSpriteState } from '@/game/animation';
 import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/persistence';
 import CharacterCreator from '@/components/CharacterCreator';
 import { compositeAttackSprite, compositeCharacterSheet, sanitizeCharacterChoices, type CharacterChoices } from '@/game/characterCreator';
+import { initWorldNoise, shouldPlaceVegetation, vegetationDensity } from '@/game/noise';
 const PLAYER_SPRITE_URL = `${import.meta.env.BASE_URL}assets/cute-fantasy/player.png`;
 const PLAYER_ATTACK_SPRITE_URL = `${import.meta.env.BASE_URL}assets/gameplay/shining-fields/characters/player/attack.png`;
 
@@ -98,6 +99,8 @@ const fieldPalettes: Record<Terrain, { field: string; path: string; glow: string
 const worldMapBounds = EXPANDED_WORLD_BOUNDS;
 const generatedWorldTiles = generateWorldMap(DEFAULT_WORLD_SEED, worldMapBounds);
 const generatedWorldTileByKey = new Map(generatedWorldTiles.map((tile) => [tile.x + ',' + tile.y, tile]));
+// Initialize Minecraft-style Perlin noise for vegetation/terrain placement
+initWorldNoise(DEFAULT_WORLD_SEED);
 
 function generatedWorldTileFor(point: Point) {
   return generatedWorldTileByKey.get(point.x + ',' + point.y) || null;
@@ -451,15 +454,26 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
     attempts += 1;
     const x = 14 + random() * 72;
     const y = 13 + random() * 74;
+    // Minecraft-style: use Perlin noise for natural clustering (trees grow in patches)
+    const worldX = chunk.x * 100 + x;
+    const worldY = chunk.y * 100 + y;
+    if (!shouldPlaceVegetation(worldX, worldY, 0.42)) continue;
     const scale = 0.72 + random() * 0.48;
-    const center = { x: x + 3.2 * scale, y: y + 2.5 * scale };
+    // Vary scale by noise for natural size variation
+    const density = vegetationDensity(worldX, worldY);
+    const naturalScale = scale * (0.8 + density * 0.4);
+    const center = { x: x + 3.2 * naturalScale, y: y + 2.5 * naturalScale };
     const tooCloseToStart = Math.hypot(center.x - 50, center.y - 52) < 12;
     const tooCloseToBuilding = allHouseRects.some((rect) => pointInRect(center, rect, 5));
     const tooCloseToTree = trees.some((tree) => Math.hypot(center.x - (tree.x + 3.2 * tree.scale), center.y - (tree.y + 2.5 * tree.scale)) < 9);
     const tooCloseToRoad = pointOnFieldRoad(center, road);
     if (tooCloseToStart || tooCloseToBuilding || tooCloseToTree || tooCloseToRoad) continue;
     const variant = Math.floor(random() * 4);
-    trees.push({ id: trees.length, x, y, scale, variant, style: treeStyle, sprite: envSpriteForTerrain(mapTileFor(chunk).terrain, variant) });
+    const sprite = envSpriteForTerrain(mapTileFor(chunk).terrain, variant);
+    // Grass tufts use a much smaller scale than trees (they're ground cover, not trees)
+    const isGrass = sprite === 'grass1' || sprite === 'grass2';
+    const finalScale = isGrass ? 0.25 + random() * 0.15 : naturalScale;
+    trees.push({ id: trees.length, x, y, scale: finalScale, variant, style: treeStyle, sprite });
   }
 
   return trees;
@@ -488,6 +502,10 @@ function fieldAccentsFor(chunk: Point): FieldAccent[] {
     attempts += 1;
     const x = 8 + random() * 84;
     const y = 9 + random() * 82;
+    // Minecraft-style: use noise for natural patchy distribution
+    const worldX = chunk.x * 100 + x;
+    const worldY = chunk.y * 100 + y;
+    if (!shouldPlaceVegetation(worldX, worldY, 0.35)) continue;
     const tooCloseToBuilding = houseRects.some((rect) => pointInRect({ x, y }, rect, 4));
     const tooCloseToTownCenter = startingCenter && Math.hypot(x - 50, y - 52) < 15;
     const tooCloseToRoad = pointOnFieldRoad({ x, y }, tile.road);

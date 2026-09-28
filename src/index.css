@@ -3414,10 +3414,10 @@ body {
 }
 
 /* ============ BUILD 145: Cryo Mini GUI refresh + new mobs + new vegetation ============ */
-/* HP/XP bars use Cryo's segmented pixel bars. */
-.bar { height: 10px; }
-.bar-fill.health { background: url("../gui/bar_hp.png") repeat-x left center / auto 100%; image-rendering: pixelated; }
-.bar-fill.xp-fill { background: url("../gui/bar_xp.png") repeat-x left center / auto 100%; image-rendering: pixelated; }
+/* HP/XP bars: clean solid bars. */
+.bar { height: 10px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(0, 0, 0, 0.6); border-radius: 2px; overflow: hidden; }
+.bar-fill.health { background: linear-gradient(to bottom, #ff6b6b 0%, #d32f2f 50%, #b71c1c 100%); }
+.bar-fill.xp-fill { background: linear-gradient(to bottom, #66bb6a 0%, #388e3c 50%, #2e7d32 100%); }
 /* HUD player card: wooden Cryo panel frame. */
 .hud-card[data-testid="hud-player"] {
   border: 8px solid transparent;
