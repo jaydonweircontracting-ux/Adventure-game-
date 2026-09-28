@@ -30,4 +30,4 @@ Priorities re-evaluated after each pass. P0 first.
 - [x] Second continent content: dungeons/POIs — build 169/170 (Sunken Crypt/Ember Ruins/Whispering Stones); build-170 regression fixes (Descend button, map centering); re-verification PASSED
 - [ ] Ocean travel gameplay (the 96-tile gap is currently scenery)
 
-- [ ] P3: map zoom anchors toward top-right instead of viewport center (noted in build-170 QA; pre-existing)
+- [x] P3: map zoom anchors toward top-right instead of viewport center — FIXED build 175 (`changeZoom` now scales pan by zoom ratio; BUG-005)

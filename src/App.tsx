@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '174';
+const BUILD_NUMBER = '175';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -2242,8 +2242,15 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   };
   const changeZoom = (next: number) => {
     const clamped = Math.min(ZOOM_SCALES.length, Math.max(1, next));
+    const oldScale = ZOOM_SCALES[zoom - 1];
+    const newScale = ZOOM_SCALES[clamped - 1];
+    const ratio = newScale / oldScale;
     setZoom(clamped);
-    setPan((p) => clampPan(p.x, p.y, ZOOM_SCALES[clamped - 1]));
+    // Zoom anchors on the viewport center: scale pan by the zoom ratio so the
+    // atlas point under the viewport center stays under it. (Previously pan
+    // was left unchanged, which pivoted zoom around the atlas center and made
+    // content drift toward a corner.)
+    setPan((p) => clampPan(p.x * ratio, p.y * ratio, newScale));
   };
   const nudgePan = (dx: number, dy: number) => setPan((p) => clampPan(p.x + dx, p.y + dy, mapScale));
   // Open centered on the player's current chunk (the starting island area),

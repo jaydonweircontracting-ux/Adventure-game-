@@ -11,7 +11,7 @@
 - **Fix:** Move Stormhaven to (130,-16) (forest, inland, verified with real seed);
   trim the road leg to start at x=129.
 - **Test:** Coordinate validation script vs real seed; sim map-validation tests.
-- **Status:** Fix in progress (build 162).
+- **Status:** **FIXED in build 162, VERIFIED** (Stormhaven renders on forest at (130,-16); road leg trimmed).
 
 ## BUG-002 — Map atlas re-renders on every open
 - **Severity:** P1 (performance)
@@ -22,7 +22,7 @@
   World data is deterministic and static, so the atlas never changes.
 - **Fix:** Module-level lazy `getTerrainAtlas()`; map open becomes one blit.
 - **Test:** `?debug=1` shows atlas build time + cache hits.
-- **Status:** Fix in progress (build 162).
+- **Status:** **FIXED in build 162, VERIFIED** (map open is one cached blit; `?debug=1` confirms cache hits).
 
 ## BUG-003 — Mounted sprites enlarged (build 161)
 - **Severity:** P2 (visual) — **FIXED in build 161, VERIFIED live in build 168**
@@ -45,3 +45,18 @@
 - **Test:** One-off coordinate check vs real seed (all on land); permanent sim
   section 8 asserts every landmark is non-ocean (33,061 passed).
 - **Status:** Closed as not-reproduced 2026-09-28. No fix needed.
+
+## BUG-005 — Map zoom pivots around atlas center instead of viewport center
+- **Severity:** P3 (visual/polish)
+- **Description:** Zooming the world map in/out makes content drift toward a
+  corner instead of zooming into the viewport center. Noted in build-170 QA.
+- **Reproduction:** Open the world map (opens centered on player), press zoom
+  in/out; the player marker slides away from center.
+- **Root cause:** `changeZoom` kept `pan` unchanged across zoom steps. With
+  `transform: translate(pan) scale(s)` and `transform-origin: center`, a fixed
+  pan pivots zoom around the atlas center, not the viewport center.
+- **Fix:** Scale pan by the zoom ratio (`pan * newScale/oldScale`) on every zoom
+  step, so the atlas point under the viewport center stays under it.
+- **Test:** Algebraic verification of the transform math; sim suite unaffected
+  (UI state only).
+- **Status:** **FIXED in build 175.**
