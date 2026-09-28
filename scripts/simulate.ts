@@ -135,7 +135,8 @@ for (let i = 0; i < 10000; i++) {
   const spiderOk = terrain === 'forest' && danger >= 2;
   const snakeOk = (terrain === 'desert' || terrain === 'meadow') && danger >= 1;
   const trollOk = danger >= 3;
-  if (danger === 0 && (goblinOk || banditOk || skeletonOk || spiderOk || snakeOk || trollOk)) {
+  const dragonOk = danger >= 3 && terrain !== 'ocean';
+  if (danger === 0 && (goblinOk || banditOk || skeletonOk || spiderOk || snakeOk || trollOk || dragonOk)) {
     safeZoneViolations++;
     if (safeZoneViolations < 5) failures.push(`Hostile spawn gate open in safe zone at ${chunk.x},${chunk.y}`);
   }

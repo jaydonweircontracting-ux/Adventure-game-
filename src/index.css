@@ -2029,6 +2029,11 @@ body {
 .monster-spider .monster-sprite { background: radial-gradient(circle, #3a2a4a 40%, #2a1a3a 41% 100%); border-radius: 50%; }
 .monster-spider .monster-sprite::before { content: ''; position: absolute; left: -6px; top: 2px; width: 32px; height: 16px; background: linear-gradient(180deg, transparent 44%, #2a1a3a 44% 56%, transparent 56%), linear-gradient(90deg, transparent 44%, #2a1a3a 44% 56%, transparent 56%); }
 .monster-spider .monster-sprite::after { content: ''; position: absolute; left: 6px; top: 6px; width: 8px; height: 6px; background: radial-gradient(circle at 2px 3px, #ff4444 2px, transparent 2px), radial-gradient(circle at 6px 3px, #ff4444 2px, transparent 2px); }
+.monster-dragon { width: 52px; height: 44px; }
+.monster-dragon .monster-sprite { background: linear-gradient(180deg, #a83a3a 0 35%, #7a2a2a 36% 70%, #4a1a1a 71% 100%); border-radius: 35% 35% 30% 30%; }
+.monster-dragon .monster-sprite::before { content: ''; position: absolute; left: -12px; top: 2px; width: 76px; height: 20px; background: linear-gradient(180deg, rgba(168, 58, 58, .85), rgba(122, 42, 42, .6)); clip-path: polygon(0 100%, 20% 0, 35% 100%, 50% 20%, 65% 100%, 80% 0, 100% 100%); animation: dragon-wings 1.2s ease-in-out infinite; }
+.monster-dragon .monster-sprite::after { content: ''; position: absolute; left: 16px; top: 12px; width: 20px; height: 8px; background: radial-gradient(circle at 6px 4px, #ffdd44 3px, transparent 3px), radial-gradient(circle at 14px 4px, #ffdd44 3px, transparent 3px); }
+@keyframes dragon-wings { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.7); } }
 .monster-aggro { position: absolute; left: 50%; top: -14px; transform: translateX(-50%); color: #ff4444; font-weight: bold; font-size: 14px; text-shadow: 1px 1px 0 rgba(0,0,0,.5); animation: aggro-bounce .6s ease-in-out infinite; }
 @keyframes aggro-bounce { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-3px); } }
 .monster.is-moving .monster-sprite { animation: wildlife-bob .4s ease-in-out infinite; }
@@ -2086,6 +2091,22 @@ body {
 .wildlife-bear { width: 28px; height: 22px; margin: -11px 0 0 -14px; background: linear-gradient(180deg, #6a4a32 0 55%, #4a3220 56% 100%); border-radius: 40% 40% 35% 35%; }
 .wildlife-bear::before { content: ''; position: absolute; left: 8px; top: -8px; width: 12px; height: 10px; background: #6a4a32; border-radius: 50%; }
 .wildlife-bear::after { content: ''; position: absolute; left: 4px; top: -10px; width: 6px; height: 6px; background: #6a4a32; border-radius: 50%; box-shadow: 14px 0 0 #6a4a32; }
+/* Ambient water life: fish and frogs. */
+.field-waterlife { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.waterlife { position: absolute; width: 16px; height: 10px; margin: -5px 0 0 -8px; }
+.waterlife-fish { background: linear-gradient(90deg, #5aa8d8 0 65%, #3a88b8 66% 100%); border-radius: 50% 20% 20% 50%; animation: fish-swim 1.6s ease-in-out infinite; }
+.waterlife-fish::before { content: ''; position: absolute; right: -5px; top: 1px; width: 7px; height: 8px; background: #5aa8d8; clip-path: polygon(0 50%, 100% 0, 100% 100%); }
+.waterlife-fish::after { content: ''; position: absolute; left: 3px; top: 3px; width: 3px; height: 3px; background: #1a3a4a; border-radius: 50%; }
+.waterlife-fish[data-facing='right'] { transform: scaleX(-1); }
+.waterlife-variant-1.waterlife-fish { background: linear-gradient(90deg, #d88a5a 0 65%, #b86a3a 66% 100%); }
+.waterlife-variant-1.waterlife-fish::before { background: #d88a5a; }
+.waterlife-variant-2.waterlife-fish { background: linear-gradient(90deg, #8ad85a 0 65%, #6ab83a 66% 100%); }
+.waterlife-variant-2.waterlife-fish::before { background: #8ad85a; }
+@keyframes fish-swim { 0%, 100% { margin-top: -5px; } 50% { margin-top: -7px; } }
+.waterlife-frog { width: 14px; height: 12px; margin: -6px 0 0 -7px; background: radial-gradient(circle at 50% 40%, #6ab84a 55%, #4a8a32 56% 100%); border-radius: 50%; animation: frog-hop 2.4s ease-in-out infinite; }
+.waterlife-frog::before { content: ''; position: absolute; left: 2px; top: -3px; width: 4px; height: 4px; background: #6ab84a; border-radius: 50%; box-shadow: 6px 0 0 #6ab84a; }
+.waterlife-frog::after { content: ''; position: absolute; left: 3px; top: 3px; width: 2px; height: 2px; background: #1a2a1a; border-radius: 50%; box-shadow: 6px 0 0 #1a2a1a; }
+@keyframes frog-hop { 0%, 88%, 100% { transform: translateY(0); } 92% { transform: translateY(-6px); } 96% { transform: translateY(0); } }
 .wildlife.is-moving { animation: wildlife-bob .5s ease-in-out infinite; }
 @keyframes wildlife-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 .wildlife[data-facing='left'] { transform: scaleX(-1); }

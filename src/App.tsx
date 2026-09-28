@@ -597,7 +597,7 @@ type GoatState = {
   nextWanderTick?: number;
 };
 // Hostile mobs: goblins and bandits. Reuse the goat combat AI shape.
-type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'snake' | 'spider';
+type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'snake' | 'spider' | 'dragon';
 type MonsterState = GoatState & { kind: MonsterKind };
 const GOAT_STEP = 0.5;
 // Ambient birds: lightweight wildlife, deterministic per chunk, not persisted.
@@ -911,6 +911,7 @@ function monsterLootForKind(kind: MonsterKind): GoatLoot {
     case 'troll': return { pelt: 1, coins: 2 + Math.floor(Math.random() * 4) };
     case 'snake': return { fang: 1, coins: Math.random() < 0.3 ? 1 : 0 };
     case 'spider': return { fang: 1 + Math.floor(Math.random() * 2) };
+    case 'dragon': return { pelt: 2, fang: 2, coins: 10 + Math.floor(Math.random() * 10) };
   }
 }
 function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  const terrain = mapTileFor(chunk).terrain;
@@ -974,6 +975,10 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
   if (danger >= 3 && (terrain === 'forest' || terrain === 'rock' || terrain === 'tundra')) {
     spawn('troll', 0, 10000, 2.5);
   }
+  // Dragons: extremely remote territories (danger 3), rare. Endgame.
+  if (danger >= 3 && terrain !== 'ocean' && Math.abs(chunk.x * 29 + chunk.y * 31) % 4 === 0) {
+    spawn('dragon', 0, 11000, 5);
+  }
   return monsters;
 }
 function birdsForChunk(chunk: Point): BirdState[] {
@@ -1006,6 +1011,70 @@ function dangerForChunk(chunk: Point): number {
   if (dist <= 3) return 1; // outskirts
   if (dist <= 6) return 2; // deep wilderness
   return 3; // remote / dangerous
+}
+// Ambient water life: fish and frogs. Lightweight, deterministic, not persisted.
+type WaterLifeKind = 'fish' | 'frog';
+type WaterLifeState = {
+  id: number;
+  kind: WaterLifeKind;
+  position: Point;
+  homePosition: Point;
+  facing: Direction;
+  swimTimer: number;
+  target: Point;
+  variant: number;
+};
+function waterLifeForChunk(chunk: Point): WaterLifeState[] {
+  const terrain = mapTileFor(chunk).terrain;
+  const life: WaterLifeState[] = [];
+  let id = 0;
+  const spawn = (kind: WaterLifeKind, index: number, salt: number) => {
+    const seed = Math.abs(chunk.x * 191 + chunk.y * 241 + index * 97 + salt);
+    const position = { x: 12 + ((seed * 47) % 76), y: 14 + ((seed * 67) % 72) };
+    life.push({
+      id: id++,
+      kind,
+      position: { ...position },
+      homePosition: { ...position },
+      facing: seed % 2 === 0 ? 'left' : 'right',
+      swimTimer: 1 + (seed % 3),
+      target: { ...position },
+      variant: seed % 3,
+    });
+  };
+  // Fish: ocean and shore waters.
+  if (terrain === 'ocean' || terrain === 'shore') {
+    const count = terrain === 'ocean' ? 4 : 2;
+    for (let i = 0; i < count; i++) spawn('fish', i, 12000);
+  }
+  // Frogs: shorelines.
+  if (terrain === 'shore') {
+    for (let i = 0; i < 2; i++) spawn('frog', i, 13000);
+  }
+  return life;
+}
+function updateWaterLife(animal: WaterLifeState, deltaMs: number): WaterLifeState {
+  const next = { ...animal, position: { ...animal.position }, target: { ...animal.target } };
+  next.swimTimer -= deltaMs / 1000;
+  const dx = next.target.x - next.position.x;
+  const dy = next.target.y - next.position.y;
+  const dist = Math.hypot(dx, dy);
+  const speed = next.kind === 'fish' ? 3 : 1.5;
+  if (dist > 1) {
+    const step = Math.min(speed * (deltaMs / 1000), dist);
+    next.position.x += (dx / dist) * step;
+    next.position.y += (dy / dist) * step;
+    next.facing = dx >= 0 ? 'right' : 'left';
+  } else if (next.swimTimer <= 0) {
+    // Pick a new nearby target within home range.
+    const range = 12;
+    next.target = {
+      x: Math.min(96, Math.max(4, next.homePosition.x + ((Math.random() * 2 - 1) * range))),
+      y: Math.min(96, Math.max(4, next.homePosition.y + ((Math.random() * 2 - 1) * range))),
+    };
+    next.swimTimer = 2 + Math.random() * 3;
+  }
+  return next;
 }
 function wildlifeForChunk(chunk: Point): WildlifeState[] {
   const terrain = mapTileFor(chunk).terrain;
@@ -1290,7 +1359,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v126</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v127</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -1483,7 +1552,10 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [birds, setBirds] = useState<BirdState[]>(() => birdsForChunk({ x: 4, y: 7 }));
   const birdsRef = useRef<BirdState[]>(birds);
   const [wildlife, setWildlife] = useState<WildlifeState[]>(() => wildlifeForChunk({ x: 4, y: 7 }));
+  const [waterLife, setWaterLife] = useState<WaterLifeState[]>(() => waterLifeForChunk({ x: 4, y: 7 }));
+  const waterLifeRef = useRef<WaterLifeState[]>(waterLife);
   const wildlifeRef = useRef<WildlifeState[]>(wildlife);
+  useEffect(() => { waterLifeRef.current = waterLife; }, [waterLife]);
   const [targetGoatId, setTargetGoatId] = useState<number | null>(null);
   const [droppedLoot, setDroppedLoot] = useState<DroppedLoot[]>([]);
   const [attacking, setAttacking] = useState(false);
@@ -1738,6 +1810,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     const nextWildlife = wildlifeForChunk(chunk);
     wildlifeRef.current = nextWildlife;
     setWildlife(nextWildlife);
+    const nextWaterLife = waterLifeForChunk(chunk);
+    waterLifeRef.current = nextWaterLife;
+    setWaterLife(nextWaterLife);
     goatWorldStepRef.current = 0;
     targetGoatIdRef.current = null;
     setTargetGoatId(null);
@@ -1934,6 +2009,11 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
         const tick = Math.floor(performance.now() / 500);
         const nextWildlife = wildlifeRef.current.map((animal) => updateWildlife(animal, tick, chunkRef.current));
         wildlifeRef.current = nextWildlife; setWildlife(nextWildlife);
+      }
+      // Water life: fish and frogs swim/hop near home.
+      if (!interiorRef.current && waterLifeRef.current.length > 0) {
+        const nextWaterLife = waterLifeRef.current.map((animal) => updateWaterLife(animal, elapsed * 1000));
+        waterLifeRef.current = nextWaterLife; setWaterLife(nextWaterLife);
       }
       const currentInterior = interiorRef.current;
        if (active && currentInterior) {
@@ -2286,6 +2366,16 @@ if (active) {
               <span
                 key={'wildlife-' + animal.species + '-' + animal.id}
                 className={'wildlife wildlife-' + animal.species + (animal.moving ? ' is-moving' : '')}
+                data-facing={animal.facing}
+                style={{ left: animal.position.x + '%', top: animal.position.y + '%' }}
+              />
+            ))}
+          </div>
+          <div className="field-waterlife" aria-hidden="true">
+            {waterLife.map((animal) => (
+              <span
+                key={'waterlife-' + animal.kind + '-' + animal.id}
+                className={'waterlife waterlife-' + animal.kind + ' waterlife-variant-' + animal.variant}
                 data-facing={animal.facing}
                 style={{ left: animal.position.x + '%', top: animal.position.y + '%' }}
               />
