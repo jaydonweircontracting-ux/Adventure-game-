@@ -927,7 +927,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v114</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v115</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -956,6 +956,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
               }
               return <div className={'map-tile world-map-hex world-map-biome-' + tile.world.biome + (tile.world.nearBiomeBorder ? ' is-border' : '') + (tile.current ? ' is-current' : '') + (isSelected ? ' is-selected' : '')} style={{ gridColumn: tile.world.column + 1, gridRow: tile.world.row + 1, '--tile-shade': tileShade, backgroundColor: WORLD_TILE_BG[tile.world.biome] || '#47a13d', backgroundImage: 'url("' + assetUrl('map-tiles-pixel/' + tile.world.biome + '.png') + '")', backgroundSize: '100% 100%', backgroundRepeat: 'no-repeat', imageRendering: 'pixelated', boxShadow: rim.length ? 'inset 0 0 0 1px rgba(20, 20, 90, .28), ' + rim.join(', ') : undefined } as CSSProperties} key={tile.x + '-' + tile.y} title={tileAreaName + ' · chunk ' + tile.x + ', ' + tile.y} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
                 {tile.road !== 'none' && <span className={'world-map-road world-map-road-' + tile.road} aria-hidden="true" />}
+                {tile.landmark && <span className={'world-map-settlement world-map-settlement-' + tile.landmark.kind} style={{ backgroundImage: 'url("' + assetUrl('map-tiles-pixel/' + tile.landmark.kind + '.png') + '")' } as CSSProperties} aria-hidden="true" />}
                 {tile.landmark && <span className="world-map-landmark">{tile.landmark.name}</span>}
                 {tile.current && <span className="map-tile-player" aria-label="Your current position" />}
                 {tile.current && <span className="map-tile-label">{tile.x}, {tile.y}</span>}
