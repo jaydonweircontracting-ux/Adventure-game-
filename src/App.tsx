@@ -1140,11 +1140,11 @@ function wildlifeForChunk(chunk: Point): WildlifeState[] {
       target: null,
     });
   };
-  // Rabbits: meadows and forests, everywhere safe.
-  if (terrain === 'meadow' || terrain === 'forest') {
-    const count = terrain === 'meadow' ? 3 : 2;
-    for (let i = 0; i < count; i++) spawn('rabbit', i, 1000);
-  }
+  // Rabbits temporarily removed (sprites glitched) — uncomment to re-enable.
+  // if (terrain === 'meadow' || terrain === 'forest') {
+  //   const count = terrain === 'meadow' ? 3 : 2;
+  //   for (let i = 0; i < count; i++) spawn('rabbit', i, 1000);
+  // }
   // Deer: forests and meadows.
   if (terrain === 'forest' || terrain === 'meadow') {
     for (let i = 0; i < 2; i++) spawn('deer', i, 2000);
@@ -1439,7 +1439,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v147</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v148</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
