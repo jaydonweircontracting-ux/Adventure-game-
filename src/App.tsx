@@ -179,7 +179,7 @@ function worldRoadAt(x: number, y: number): boolean {
     (y === 7 && x >= -1 && x <= 9) ||
     (y === 4 && x >= 2 && x <= 5) ||
     (y === 3 && x >= 5 && x <= 9) ||
-    (y === 10 && x >= 3 && x <= 10) ||
+    (y === 10 && x >= 4 && x <= 10) ||
     (y === 12 && x >= 3 && x <= 4);
   const verticalRoad =
     (x === 4 && y >= 4 && y <= 12) ||
@@ -956,7 +956,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v119</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v120</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
