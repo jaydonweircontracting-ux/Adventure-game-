@@ -1,6 +1,6 @@
 // Simulation play-test: 10,000 iterations across world gen, AI, and spawn rules.
 // Run with: npx tsx scripts/simulate.ts
-import { generateWorldMap, WORLD_MAP_BOUNDS, elevationLevelFor } from '../src/game/worldMap';
+import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLevelFor } from '../src/game/worldMap';
 import { updateGoat, type GoatAIEntity } from '../src/game/ai';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers } from '../src/game/simulatedAdventurers';
 
@@ -163,6 +163,45 @@ for (let tick = 0; tick < 60; tick++) {
     }
   }
 }
+
+// ---- 8. Map data validation: every settlement landmark must sit on land
+// under the REAL default seed (regression test for BUG-001: Stormhaven was
+// validated against seed 1 and actually spawned in the ocean). ----
+console.log('Testing map landmark placement...');
+const REAL_SEED = 847291583;
+const mapTiles = generateWorldMap(REAL_SEED, EXPANDED_WORLD_BOUNDS);
+const tileByKey = new Map(mapTiles.map((t) => [t.x + ',' + t.y, t]));
+const expectedLandmarks: Array<[string, string]> = [
+  ['4,7', 'Mosslight Crossing'], ['0,7', 'Fenmere Hamlet'], ['8,7', 'Ironwood Southhold'],
+  ['5,2', 'Northwatch Beacon'], ['2,4', 'Old Mill'], ['9,3', 'Emberpeak Shrine'],
+  ['3,12', 'Sunwash Port'], ['6,10', 'Bellwater'], ['10,10', 'Seabreak'],
+  ['1,3', 'Blackroot Camp'], ['5,-5', 'Frosthold'], ['4,19', 'Dunewatch'],
+  ['17,7', 'Eastmarch'], ['-7,7', 'Westhold'],
+  ['130,-16', 'Stormhaven'], ['140,-20', 'Frostwatch'], ['155,0', 'Oakfield'],
+  ['174,-8', 'Stonebridge'], ['165,25', 'Saltmarsh'], ['184,15', 'Emberhold'],
+  ['144,35', 'Dunmere'],
+];
+for (const [key, name] of expectedLandmarks) {
+  const tile = tileByKey.get(key);
+  assert(tile !== undefined, `Landmark ${name} (${key}) has no world tile`);
+  // Ocean is the failure mode (impassable water); shore is walkable coastline.
+  const notOcean = tile !== undefined && tile.biome !== 'ocean';
+  assert(notOcean, `Landmark ${name} (${key}) is on ${tile?.biome ?? 'nothing'}, not land`);
+}
+// The ocean gap between the home region and the second continent must be water.
+for (const [gx, gy] of [[60, 7], [90, -10], [110, 30], [40, 0]] as Array<[number, number]>) {
+  const tile = tileByKey.get(gx + ',' + gy);
+  assert(tile?.biome === 'ocean', `Ocean gap tile (${gx},${gy}) is ${tile?.biome}, expected ocean`);
+}
+// The second continent must be a real landmass, far larger than the home region.
+let continentLand = 0;
+let homeLand = 0;
+for (const t of mapTiles) {
+  const isLand = t.biome !== 'ocean' && t.biome !== 'shore';
+  if (t.x >= 117 && t.x <= 196 && t.y >= -28 && t.y <= 51 && isLand) continentLand++;
+  if (t.x >= -10 && t.x <= 20 && t.y >= -8 && t.y <= 22 && isLand) homeLand++;
+}
+assert(continentLand > homeLand * 3, `Second continent too small: ${continentLand} land tiles vs home ${homeLand}`);
 
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);

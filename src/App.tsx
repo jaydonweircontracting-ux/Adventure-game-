@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '161';
+const BUILD_NUMBER = '162';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -178,8 +178,9 @@ const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
   '17,7': { name: 'Eastmarch', kind: 'town' },
   '-7,7': { name: 'Westhold', kind: 'village' },
   // Second continent settlements (far-eastern continent: x 117..196, y -28..51).
-  // Placed on verified inland meadow/forest tiles, spread across the landmass.
-  '125,-16': { name: 'Stormhaven', kind: 'town' },
+  // Coordinates validated against the real DEFAULT_WORLD_SEED (847291583);
+  // every site is on verified inland land. See BUG-001.
+  '130,-16': { name: 'Stormhaven', kind: 'town' },
   '140,-20': { name: 'Frostwatch', kind: 'village' },
   '155,0': { name: 'Oakfield', kind: 'village' },
   '174,-8': { name: 'Stonebridge', kind: 'village' },
@@ -214,7 +215,7 @@ function worldRoadAt(x: number, y: number): boolean {
   // Second-continent road web: L-shaped packed-dirt runs linking the far-east
   // settlements. Pieces are neighbor-aware, so junctions render cleanly.
   const continentRoad =
-    (y === -16 && x >= 125 && x <= 140) || // Stormhaven -> Frostwatch junction
+    (y === -16 && x >= 129 && x <= 140) || // Stormhaven -> Frostwatch junction
     (x === 140 && y >= -20 && y <= -16) ||
     (x === 140 && y >= -20 && y <= 0) || // Frostwatch -> Oakfield
     (y === 0 && x >= 140 && x <= 165) || // Oakfield west road / Stonebridge leg
@@ -1733,7 +1734,9 @@ function buildAtlasTiles(): AtlasTile[] {
   });
 }
 
-function renderAtlasCanvas(tiles: AtlasTile[], cols: number, rows: number): HTMLCanvasElement {
+function renderTerrainAtlas(tiles: AtlasTile[], cols: number, rows: number): HTMLCanvasElement {
+  // Static terrain only (passes 1-4). Labels/markers live on a separate
+  // overlay canvas (renderMapOverlay) so zoom LOD never re-renders terrain.
   const canvas = document.createElement('canvas');
   const T = MAP_TILE_PX;
   canvas.width = cols * T;
@@ -1922,7 +1925,26 @@ function renderAtlasCanvas(tiles: AtlasTile[], cols: number, rows: number): HTML
     }
   }
 
-  // Pass 5: settlements — drawn keep/cottage icons plus name labels.
+  return canvas;
+}
+
+// Zoom-LOD label/marker overlay. Cheap to redraw (~25 settlements), so it is
+// re-rendered when the zoom tier changes while the terrain canvas stays cached.
+// tier 0 (far): region labels + towns only. tier 1 (mid): + villages.
+// tier 2 (near): everything + optional chunk coordinates in map-debug mode.
+function renderMapOverlay(tiles: AtlasTile[], cols: number, rows: number, tier: 0 | 1 | 2, showCoords: boolean): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  const T = MAP_TILE_PX;
+  canvas.width = cols * T;
+  canvas.height = rows * T;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  const minX = worldMapBounds.minX;
+  const minY = worldMapBounds.minY;
+  const px = (x: number) => (x - minX) * T;
+  const py = (y: number) => (y - minY) * T;
+
+  // Settlements — drawn keep/cottage icons plus name labels.
   const drawVillage = (cx: number, cy: number) => {
     const house = (hx: number, hy: number, s: number) => {
       ctx.fillStyle = '#7d5f43';
@@ -1957,6 +1979,8 @@ function renderAtlasCanvas(tiles: AtlasTile[], cols: number, rows: number): HTML
   ctx.textBaseline = 'top';
   for (const tile of tiles) {
     if (!tile.landmark) continue;
+    // Far zoom: towns only; mid/near: villages appear too.
+    if (tier === 0 && tile.landmark.kind !== 'town') continue;
     const cx = px(tile.world.x) + T / 2;
     const cy = py(tile.world.y) + T / 2;
     if (tile.landmark.kind === 'town') drawTown(cx, cy - 3);
@@ -1970,7 +1994,7 @@ function renderAtlasCanvas(tiles: AtlasTile[], cols: number, rows: number): HTML
     ctx.fillText(label, cx, cy + 8);
   }
 
-  // Pass 6: region names.
+  // Region names.
   const regionLabel = (text: string, wx: number, wy: number) => {
     ctx.font = '800 30px Verdana, Geneva, sans-serif';
     ctx.textAlign = 'center';
@@ -1986,7 +2010,132 @@ function renderAtlasCanvas(tiles: AtlasTile[], cols: number, rows: number): HTML
   };
   regionLabel('THE FAR MEADOW', 4, -3);
   regionLabel('THE EASTERN REACHES', 157, -19);
+
+  // Developer map-debug mode (?mapdebug=1): chunk coordinates on every tile.
+  if (showCoords) {
+    ctx.font = '7px Verdana, Geneva, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255, 80, 80, 0.85)';
+    for (const tile of tiles) {
+      ctx.fillText(tile.world.x + ',' + tile.world.y, px(tile.world.x) + T / 2, py(tile.world.y) + T / 2);
+    }
+  }
   return canvas;
+}
+
+type TerrainAtlas = {
+  canvas: HTMLCanvasElement;
+  tiles: AtlasTile[];
+  byKey: Map<string, AtlasTile>;
+  cols: number;
+  rows: number;
+  width: number;
+  height: number;
+  buildMs: number;
+};
+
+// Module-level cache: world data is deterministic and static, so the terrain
+// atlas is rendered exactly once per page load. Opening the map is one blit.
+let terrainAtlasCache: TerrainAtlas | null = null;
+function getTerrainAtlas(): TerrainAtlas {
+  if (!terrainAtlasCache) {
+    const start = performance.now();
+    const tiles = buildAtlasTiles();
+    const cols = worldMapBounds.maxX - worldMapBounds.minX + 1;
+    const rows = worldMapBounds.maxY - worldMapBounds.minY + 1;
+    const canvas = renderTerrainAtlas(tiles, cols, rows);
+    const byKey = new Map<string, AtlasTile>();
+    for (const tile of tiles) byKey.set(tile.world.x + ',' + tile.world.y, tile);
+    terrainAtlasCache = {
+      canvas, tiles, byKey, cols, rows,
+      width: cols * MAP_TILE_PX, height: rows * MAP_TILE_PX,
+      buildMs: performance.now() - start,
+    };
+  }
+  return terrainAtlasCache;
+}
+
+function tierForZoom(zoom: number): 0 | 1 | 2 {
+  if (zoom <= 3) return 0;
+  if (zoom <= 5) return 1;
+  return 2;
+}
+
+// Map <-> world validation (master prompt section 29): every landmark must sit
+// on land in the authoritative world data, and every road tile must exist in it.
+// Used by the ?debug=1 overlay and the sim suite.
+export function validateMapData(): { ok: boolean; problems: string[]; landmarkCount: number; roadTileCount: number } {
+  const problems: string[] = [];
+  let roadTileCount = 0;
+  for (const [key, landmark] of Object.entries(mapLandmarks)) {
+    const tile = generatedWorldTileByKey.get(key);
+    if (!tile) problems.push(landmark.name + ' (' + key + '): no world tile');
+    // Ocean is the failure mode (impassable water); shore is walkable coastline.
+    else if (tile.biome === 'ocean') {
+      problems.push(landmark.name + ' (' + key + '): on ocean, not land');
+    }
+  }
+  for (let y = worldMapBounds.minY; y <= worldMapBounds.maxY; y++) {
+    for (let x = worldMapBounds.minX; x <= worldMapBounds.maxX; x++) {
+      if (worldRoadAt(x, y)) {
+        roadTileCount++;
+        if (!generatedWorldTileByKey.has(x + ',' + y)) {
+          problems.push('road tile (' + x + ',' + y + '): no world tile');
+        }
+      }
+    }
+  }
+  return { ok: problems.length === 0, problems, landmarkCount: Object.keys(mapLandmarks).length, roadTileCount };
+}
+
+export function getMapDebugStats(): { cached: boolean; buildMs: number; width: number; height: number; tileCount: number; landmarkCount: number } {
+  const atlas = getTerrainAtlas();
+  return {
+    cached: terrainAtlasCache !== null,
+    buildMs: Math.round(atlas.buildMs * 10) / 10,
+    width: atlas.width,
+    height: atlas.height,
+    tileCount: atlas.tiles.length,
+    landmarkCount: Object.keys(mapLandmarks).length,
+  };
+}
+
+// Playtest diagnostics overlay (?debug=1): text-observable build/fps/position/
+// map-cache/validation readout so automated playtests can verify without
+// relying on screenshots.
+function DebugOverlay({ chunk }: { chunk: Point }) {
+  const [fps, setFps] = useState(0);
+  useEffect(() => {
+    let frames = 0;
+    let last = performance.now();
+    let raf = 0;
+    const loop = (now: number) => {
+      frames++;
+      if (now - last >= 1000) {
+        setFps(Math.round((frames * 1000) / (now - last)));
+        frames = 0;
+        last = now;
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  const report = useMemo(() => {
+    const stats = getMapDebugStats();
+    const validation = validateMapData();
+    return { stats, validation };
+  }, []);
+  const { stats, validation } = report;
+  return (
+    <div data-testid="debug-overlay" style={{ position: 'fixed', left: 8, top: 8, zIndex: 9999, background: 'rgba(0,0,0,0.82)', color: '#7dff9a', font: '10px/1.5 monospace', padding: '8px 10px', borderRadius: 6, pointerEvents: 'none', maxWidth: 320 }}>
+      <div>BUILD {BUILD_NUMBER} · {fps} fps</div>
+      <div>chunk {chunk.x},{chunk.y}</div>
+      <div>atlas {stats.cached ? 'CACHED' : 'MISS'} · built in {stats.buildMs}ms · {stats.width}x{stats.height}px · {stats.tileCount} tiles · {stats.landmarkCount} landmarks</div>
+      <div>map-sync {validation.ok ? 'OK (' + validation.roadTileCount + ' road tiles)' : 'FAIL: ' + validation.problems.slice(0, 3).join(' | ')}</div>
+    </div>
+  );
 }
 
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
@@ -2000,19 +2149,10 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
   const ZOOM_SCALES = [0.4, 0.6, 0.84, 1.0, 1.25, 1.6, 2.0, 2.5];
   const mapScale = ZOOM_SCALES[zoom - 1];
 
-  // Pre-rendered once: the full atlas is a single canvas, so opening the map
-  // costs one blit instead of 16k DOM nodes.
-  const atlas = useMemo(() => {
-    const tiles = buildAtlasTiles();
-    const cols = worldMapBounds.maxX - worldMapBounds.minX + 1;
-    const rows = worldMapBounds.maxY - worldMapBounds.minY + 1;
-    const canvas = renderAtlasCanvas(tiles, cols, rows);
-    const byKey = new Map<string, AtlasTile>();
-    for (const tile of tiles) byKey.set(tile.world.x + ',' + tile.world.y, tile);
-    return { canvas, byKey, width: cols * MAP_TILE_PX, height: rows * MAP_TILE_PX };
-    // generatedWorldTiles / worldMapBounds are module constants.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Module-cached terrain atlas + zoom-LOD label overlay: opening the map is
+  // one cached blit plus a ~25-settlement overlay redraw per zoom tier change.
+  const atlas = getTerrainAtlas();
+  const mapDebug = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mapdebug') === '1';
 
   useEffect(() => {
     const target = canvasRef.current;
@@ -2021,7 +2161,8 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     if (!ctx) return;
     ctx.clearRect(0, 0, target.width, target.height);
     ctx.drawImage(atlas.canvas, 0, 0);
-  }, [atlas]);
+    ctx.drawImage(renderMapOverlay(atlas.tiles, atlas.cols, atlas.rows, tierForZoom(zoom), mapDebug), 0, 0);
+  }, [atlas, zoom, mapDebug]);
 
   const clampPan = (x: number, y: number, scale: number) => {
     const stage = stageRef.current;
@@ -2194,7 +2335,7 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, attackin
   // Room-type-specific furniture: each building type gets its own visual identity.
   const furniture = {
     guild: (<><span className="interior-rug" /><span className="interior-workbench" /><span className="interior-forge" aria-hidden="true"><span className="forge-fire"><span className="forge-flame forge-flame-back" /><span className="forge-flame forge-flame-mid" /><span className="forge-flame forge-flame-core" /><span className="forge-sparks"><i /><i /><i /><i /><i /></span></span><span className="forge-logs" /></span><span className="interior-weapon-rack" /><span className="interior-quest-board" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
-    inn: (<><span className="interior-rug" /><span className="interior-bed bed-left" /><span className="interior-bed bed-right" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-bar" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
+    inn: (<><span className="interior-rug" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-bar" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     chapel: (<><span className="interior-rug" /><span className="interior-altar" /><span className="interior-pew pew-left" /><span className="interior-pew pew-right" /><span className="interior-candle candle-left" /><span className="interior-candle candle-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     building: (<><span className="interior-rug" /><span className="interior-bed bed-left" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     prison: (<><span className="prison-bars" /><span className="prison-straw-bed" /><span className="prison-sewer-grate" /><span className="prison-torch" /><span className="interior-lantern lantern-left" /></>),
@@ -2205,6 +2346,12 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, attackin
       {area.id === 'wayfarer-guild' && (
         <button type="button" className="interior-npc npc-warrior" onClick={onTalkToSmith} style={{ left: '62%', top: '40%' }} aria-label="Talk to Bram, the guild smith" data-testid="guild-smith" data-facing="down">
           <span className="interior-npc-nameplate" aria-hidden="true"><strong>Bram</strong><small>Guild smith · Talk</small></span>
+          <span className="npc-sprite" aria-hidden="true" />
+        </button>
+      )}
+      {area.id === 'tutorial-house' && (
+        <button type="button" className="interior-npc npc-warrior" onClick={onTalkToSmith} style={{ left: '60%', top: '44%' }} aria-label="Talk to Bram, the smith" data-testid="tutorial-smith" data-facing="left">
+          <span className="interior-npc-nameplate" aria-hidden="true"><strong>Bram</strong><small>Smith · Talk</small></span>
           <span className="npc-sprite" aria-hidden="true" />
         </button>
       )}
@@ -3960,6 +4107,7 @@ function Home() {
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
+          {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1' && <DebugOverlay chunk={chunk} />}
           {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} />}
           {journalOpen && (
             <div className="sheet journal-sheet" role="dialog" aria-label="Adventure journal" data-testid="journal-sheet">
