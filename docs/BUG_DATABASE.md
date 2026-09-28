@@ -28,3 +28,18 @@
 - **Severity:** P2 (visual) — **FIXED in build 161**
 - **Root cause:** `.horse { transform: ... scale(1.35) }` scaled rider + cow.
 - **Status:** Fixed in source; awaiting live visual confirmation.
+
+## BUG-004 — Playtester could not find Saltmarsh / Emberhold / Dunmere (build 161)
+- **Severity:** P2 (report) — **NOT REPRODUCED, no code change**
+- **Description:** Build-161 live playtest found 4/7 second-continent settlements
+  (Stormhaven, Frostwatch, Oakfield, Stonebridge) but not Saltmarsh (165,25),
+  Emberhold (184,15), Dunmere (144,35).
+- **Reproduction:** N/A — data verified present.
+- **Root cause:** Playtest coverage gap, not a data bug. All 7 sites exist in
+  `mapLandmarks` and sit on verified land under the real seed 847291583
+  (Saltmarsh meadow, Emberhold rock/ridge, Dunmere desert). The three missed
+  sites are the far south/east corner of the 80x80-tile continent (y 15..35,
+  x up to 184); the tester did not pan that far.
+- **Test:** One-off coordinate check vs real seed (all on land); permanent sim
+  section 8 asserts every landmark is non-ocean (33,061 passed).
+- **Status:** Closed as not-reproduced 2026-09-28. No fix needed.

@@ -58,7 +58,7 @@ ocean fix, tutorial-house beds removed + smith NPC, debug/playtest tooling.
 3. Continue priority loop: perf -> world consistency -> gameplay -> visuals.
 
 ## Last Verified Build
-BUILD 163 (pushed cc31fc8, 2026-09-28) — LIVE (deploy completed, bundle index-DJ3IO9uR.js serves "163"). Build 164 (map legend expansion: town/village/road/mountain swatches matching atlas render colors) implemented locally; push held until the 163 visual verification lands so the live site does not change under it. Two build-160 P2 nits closed as not-reproduced (button segments fine in two playtests; door prompt always had the space).
+BUILD 163 (pushed cc31fc8, 2026-09-28) — LIVE (deploy completed, bundle index-DJ3IO9uR.js serves "163"). Build 164 (map legend expansion: town/village/road/mountain swatches matching atlas render colors) implemented locally; Build 165 committed locally (674c706, cartographic vignette); push pending until the 163-fix visual verification reports, so the kicker does not change under the check again. Continuous 8-hour run active. Two build-160 P2 nits closed as not-reproduced (button segments fine in two playtests; door prompt always had the space).
 
 ## Build 162 changelog (2026-09-28)
 - Map audit: world gen runs once at module load (never on map open). Remaining

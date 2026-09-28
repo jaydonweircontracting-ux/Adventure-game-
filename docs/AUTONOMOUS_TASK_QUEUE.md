@@ -22,7 +22,7 @@ Priorities re-evaluated after each pass. P0 first.
 - [ ] Tree overlapping bottom-right house door (build-160 playtest)
 
 ## P3 — Polish
-- [ ] Cartographic polish pass on atlas (parchment frame, vignette)
+- [x] Cartographic polish pass on atlas — DONE build 165 (parchment frame already existed; added aged-atlas vignette ::after on .world-map-stage, pointer-events none, local commit 674c706, push pending visual-verification landing)
 - [ ] Discovery-aware map markers (dim undiscovered) — decision needed
 - [x] Map legend expansion (roads, towns, villages, mountains) — build 164 (swatches match actual atlas render colors)
 
