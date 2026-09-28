@@ -1,7 +1,11 @@
 export type WorldMapBiome = 'ocean' | 'shore' | 'meadow' | 'forest' | 'desert' | 'tundra' | 'rock';
 export type WorldMapDetail = 'waves' | 'pebbles' | 'bush' | 'trees' | 'cactus' | 'munchleaf' | 'ridge' | null;
 export type WorldMapBounds = { minX: number; maxX: number; minY: number; maxY: number };
-export const WORLD_MAP_BOUNDS: WorldMapBounds = { minX: 0, maxX: 10, minY: 2, maxY: 12 };
+// Expanded world: 31x31 chunks. The original 11x11 region (CORE_BOUNDS) is
+// generated bit-identical to before and sits at the center; the outer ring
+// is generated deterministically around it.
+export const WORLD_MAP_BOUNDS: WorldMapBounds = { minX: -10, maxX: 20, minY: -8, maxY: 22 };
+export const CORE_WORLD_BOUNDS: WorldMapBounds = { minX: 0, maxX: 10, minY: 2, maxY: 12 };
 export const WORLD_MAP_RESERVED_MEADOW_COORDINATES = [
   '3,6', '4,6', '5,6', '3,7', '4,7', '5,7', '3,8', '4,8', '5,8',
 ] as const;
@@ -9,7 +13,7 @@ export const WORLD_MAP_LAND_COORDINATES = [
   '0,7', '8,7', '5,2', '2,4', '9,3', '3,12', '6,10', '10,10', '1,3',
 ] as const;
 export type WorldMapClimate = { elevation: number; temperature: number; moisture: number };
-export type GeneratedWorldTile = { x: number; y: number; row: number; column: number; biome: WorldMapBiome; detail: WorldMapDetail; nearBiomeBorder: boolean; climate: WorldMapClimate };
+export type GeneratedWorldTile = { x: number; y: number; row: number; column: number; biome: WorldMapBiome; detail: WorldMapDetail; nearBiomeBorder: boolean; climate: WorldMapClimate; elevationLevel: number };
 
 const BIOMES: WorldMapBiome[] = ['ocean', 'shore', 'meadow', 'forest', 'desert', 'tundra', 'rock'];
 const LAND_BIOMES: WorldMapBiome[] = ['shore', 'meadow', 'forest', 'desert', 'tundra', 'rock'];
@@ -169,7 +173,11 @@ function detailFor(biome: WorldMapBiome, nearWater: boolean, nearBiomeBorder: bo
   return null;
 }
 
-export function generateWorldMap(seed: number, bounds: WorldMapBounds = WORLD_MAP_BOUNDS): GeneratedWorldTile[] {
+// Legacy WFC generator: produces the original 11x11 core region bit-identical
+// to before. The core is the authoritative existing world; expansion tiles
+// are generated around it by generateOuterTiles below.
+function generateCoreWorldMap(seed: number): GeneratedWorldTile[] {
+  const bounds = CORE_WORLD_BOUNDS;
   const rng = new MapRng(seed);
   const elevationNoise = makeSeededNoise((seed ^ 0x9e3779b9) >>> 0);
   const temperatureNoise = makeSeededNoise((seed ^ 0x85ebca6b) >>> 0);
@@ -285,10 +293,125 @@ export function generateWorldMap(seed: number, bounds: WorldMapBounds = WORLD_MA
       const adjacentBiomes = neighbors(x, y, bounds).map((point) => smoothed.get(cellKey(point.x, point.y))!);
       const nearBiomeBorder = adjacentBiomes.some((neighbor) => neighbor !== biome);
       const nearWater = biome === 'ocean' || biome === 'shore' || adjacentBiomes.some((neighbor) => neighbor === 'ocean' || neighbor === 'shore');
-      tiles.push({ x, y, row: y - bounds.minY, column: x - bounds.minX, biome, nearBiomeBorder, detail: detailFor(biome, nearWater, nearBiomeBorder, seed, x, y), climate: climates.get(cellKey(x, y))! });
+      const tileClimate = climates.get(cellKey(x, y))!;
+      tiles.push({ x, y, row: y - bounds.minY, column: x - bounds.minX, biome, nearBiomeBorder, detail: detailFor(biome, nearWater, nearBiomeBorder, seed, x, y), climate: tileClimate, elevationLevel: elevationLevelFor(tileClimate, biome) });
     }
   }
   return tiles;
+}
+
+// Elevation layer (0-5) derived from the climate elevation field:
+// 0 = water, 1 = lowland, 2 = rolling, 3 = hills, 4 = highlands, 5 = peaks.
+// This is the data foundation for terrain depth; visuals and traversal
+// rules build on top of it without changing the coordinate system.
+export function elevationLevelFor(climate: WorldMapClimate, biome: WorldMapBiome): number {
+  if (biome === 'ocean') return 0;
+  const e = climate.elevation;
+  if (e < 0.45) return 1;
+  if (e < 0.55) return 2;
+  if (e < 0.65) return 3;
+  if (e < 0.75) return 4;
+  return 5;
+}
+
+// Deterministic outer-ring generation. The core region is frozen (generated
+// by generateCoreWorldMap); tiles outside it are derived from the climate
+// fields (pure functions of x/y/seed) blended with already-generated
+// neighbors, so the boundary stays continuous and the result is fully
+// deterministic regardless of generation order within the ring.
+function generateOuterTiles(
+  seed: number,
+  bounds: WorldMapBounds,
+  coreTiles: Map<string, GeneratedWorldTile>,
+): GeneratedWorldTile[] {
+  const elevationNoise = makeSeededNoise((seed ^ 0x9e3779b9) >>> 0);
+  const temperatureNoise = makeSeededNoise((seed ^ 0x85ebca6b) >>> 0);
+  const moistureNoise = makeSeededNoise((seed ^ 0xc2b2ae35) >>> 0);
+  const isCore = (x: number, y: number) =>
+    x >= CORE_WORLD_BOUNDS.minX && x <= CORE_WORLD_BOUNDS.maxX &&
+    y >= CORE_WORLD_BOUNDS.minY && y <= CORE_WORLD_BOUNDS.maxY;
+  const tiles: GeneratedWorldTile[] = [];
+  const generated = new Map<string, WorldMapBiome>();
+  // Seed the map with core biomes so the ring blends with the frozen edge.
+  for (const [key, tile] of coreTiles) generated.set(key, tile.biome);
+  // Process outward from the core in row-major order for determinism.
+  const outerCoords: Array<{ x: number; y: number }> = [];
+  for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+    for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+      if (!isCore(x, y)) outerCoords.push({ x, y });
+    }
+  }
+  for (const { x, y } of outerCoords) {
+    const edge = x === bounds.minX || x === bounds.maxX || y === bounds.minY || y === bounds.maxY;
+    const climate = climateFor(x, y, bounds, elevationNoise, temperatureNoise, moistureNoise);
+    let biome: WorldMapBiome;
+    if (edge) {
+      biome = 'ocean';
+    } else if (climate.elevation < SEA_LEVEL - 0.07) {
+      biome = 'ocean';
+    } else if (climate.elevation < SEA_LEVEL + 0.03) {
+      biome = 'ocean';
+    } else {
+      // Weighted pick from climate, boosted toward already-generated neighbors
+      // (which include the frozen core edge) for continuous regions.
+      const weights = climateBiomeWeights(climate);
+      const neighborBiomes: WorldMapBiome[] = [];
+      for (const [dx, dy] of GRID_DIRECTIONS) {
+        const nb = generated.get(cellKey(x + dx, y + dy));
+        if (nb && nb !== 'ocean' && nb !== 'shore') neighborBiomes.push(nb);
+      }
+      const scored = INLAND_BIOMES.map((candidate) => {
+        let score = weights[candidate];
+        for (const nb of neighborBiomes) if (nb === candidate) score += 2.0;
+        return { candidate, score };
+      });
+      // Position-hash rng: deterministic per tile, independent of order.
+      const rng = new MapRng((seed ^ Math.imul(x + 101, 2654435761) ^ Math.imul(y + 37, 40503)) >>> 0);
+      const total = scored.reduce((sum, entry) => sum + entry.score, 0);
+      let roll = rng.next() * total;
+      biome = scored[scored.length - 1].candidate;
+      for (const entry of scored) {
+        if ((roll -= entry.score) <= 0) { biome = entry.candidate; break; }
+      }
+      // Respect adjacency rules with the frozen core edge.
+      const coreNeighbor = GRID_DIRECTIONS
+        .map(([dx, dy]) => coreTiles.get(cellKey(x + dx, y + dy))?.biome)
+        .find((b): b is WorldMapBiome => Boolean(b));
+      if (coreNeighbor && !canTouch(coreNeighbor, biome)) biome = 'meadow';
+    }
+    // Shore band: land tiles touching ocean become shore.
+    if (biome !== 'ocean') {
+      const touchesOcean = GRID_DIRECTIONS.some(([dx, dy]) => {
+        const nb = generated.get(cellKey(x + dx, y + dy));
+        return nb === 'ocean';
+      });
+      if (touchesOcean) biome = 'shore';
+    }
+    generated.set(cellKey(x, y), biome);
+    const adjacentBiomes = GRID_DIRECTIONS.map(([dx, dy]) => generated.get(cellKey(x + dx, y + dy))).filter((b): b is WorldMapBiome => Boolean(b));
+    const nearBiomeBorder = adjacentBiomes.some((neighbor) => neighbor !== biome);
+    const nearWater = biome === 'ocean' || biome === 'shore' || adjacentBiomes.some((neighbor) => neighbor === 'ocean' || neighbor === 'shore');
+    tiles.push({
+      x, y, row: y - bounds.minY, column: x - bounds.minX, biome, nearBiomeBorder,
+      detail: detailFor(biome, nearWater, nearBiomeBorder, seed, x, y),
+      climate, elevationLevel: elevationLevelFor(climate, biome),
+    });
+  }
+  return tiles;
+}
+
+export function generateWorldMap(seed: number, bounds: WorldMapBounds = WORLD_MAP_BOUNDS): GeneratedWorldTile[] {
+  const coreTiles = generateCoreWorldMap(seed);
+  // Row/column are relative to the full bounds for the atlas grid.
+  const coreByKey = new Map(coreTiles.map((tile) => [cellKey(tile.x, tile.y), tile]));
+  const outerTiles = generateOuterTiles(seed, bounds, coreByKey);
+  const all = [...coreTiles.map((tile) => ({
+    ...tile,
+    row: tile.y - bounds.minY,
+    column: tile.x - bounds.minX,
+  })), ...outerTiles];
+  all.sort((a, b) => a.y - b.y || a.x - b.x);
+  return all;
 }
 
 export function worldMapBiomeLabel(biome: WorldMapBiome) {

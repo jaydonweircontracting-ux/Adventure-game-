@@ -151,6 +151,7 @@ type MapTile = {
   road: 'ew' | 'ns' | 'nsew' | 'sew' | 'nsw' | 'new' | 'nse' | 'ne' | 'nw' | 'se' | 'sw' | 'e' | 'w' | 'n' | 's' | 'none';
   bridge: boolean;
   landmark: { name: string; kind: SettlementKind } | null;
+  elevationLevel: number;
 };
 
 const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
@@ -164,6 +165,11 @@ const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
   '6,10': { name: 'Bellwater', kind: 'village' },
   '10,10': { name: 'Seabreak', kind: 'town' },
   '1,3': { name: 'Blackroot Camp', kind: 'village' },
+  // Outer-region settlements (expanded world)
+  '5,-5': { name: 'Frosthold', kind: 'village' },
+  '4,19': { name: 'Dunewatch', kind: 'village' },
+  '17,7': { name: 'Eastmarch', kind: 'town' },
+  '-7,7': { name: 'Westhold', kind: 'village' },
 };
 
 function isStartingArea(point: Point) {
@@ -183,8 +189,13 @@ function worldRoadAt(x: number, y: number): boolean {
     (y === 12 && x >= 3 && x <= 4);
   const verticalRoad =
     (x === 4 && y >= 4 && y <= 12) ||
-    (x === 5 && y >= 2 && y <= 4);
-  return horizontalRoad || verticalRoad;
+    (x === 5 && y >= 2 && y <= 4) ||
+    (x === 5 && y >= -5 && y <= 2) ||
+    (x === 4 && y >= 12 && y <= 19);
+  const outerHorizontalRoad =
+    (y === 7 && x >= 9 && x <= 17) ||
+    (y === 7 && x >= -7 && x <= 0);
+  return horizontalRoad || verticalRoad || outerHorizontalRoad;
 }
 
 function mapTileFor(point: Point): MapTile {
@@ -224,6 +235,7 @@ function mapTileFor(point: Point): MapTile {
     road,
     bridge,
     landmark: mapLandmarks[point.x + ',' + point.y] || null,
+    elevationLevel: worldTile?.elevationLevel ?? 1,
   };
 }
 
@@ -546,6 +558,7 @@ type GoatState = {
   id: number;
   position: Point;
   spawnPosition: Point;
+  roamRadius: number;
   facing: Direction;
   level: number;
   hp: number;
@@ -564,6 +577,20 @@ type GoatState = {
   nextWanderTick?: number;
 };
 const GOAT_STEP = 0.5;
+// Ambient birds: lightweight wildlife, deterministic per chunk, not persisted.
+type BirdStateName = 'idle' | 'hop' | 'peck' | 'fly';
+type BirdState = {
+  id: number;
+  position: Point;
+  homePosition: Point;
+  state: BirdStateName;
+  stateTimer: number;
+  target: Point;
+  variant: number;
+  facing: Direction;
+};
+const BIRD_STEP = 1.2;
+const BIRD_FLY_STEP = 3.5;
 const GOAT_TICK_MS = 500;
 const GOAT_WANDER_MIN_TICKS = 10;
 const GOAT_WANDER_MAX_TICKS = 20;
@@ -816,6 +843,7 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
       id: index,
       position,
       spawnPosition: { ...position },
+      roamRadius: 16 + (wanderSeed % 9),
       facing: (['up', 'right', 'down', 'left'] as Direction[])[wanderSeed % 4],
       level: monsterLevelForChunk(chunk, index, playerLevel),
       hp: goatMaxHpForLevel(monsterLevelForChunk(chunk, index, playerLevel)),
@@ -834,6 +862,90 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
       nextWanderTick: GOAT_WANDER_MIN_TICKS + (wanderSeed % (GOAT_WANDER_MAX_TICKS - GOAT_WANDER_MIN_TICKS + 1)),
     };
   });
+}
+function birdsForChunk(chunk: Point): BirdState[] {
+  const terrain = mapTileFor(chunk).terrain;
+  if (terrain === 'ocean') return [];
+  // Bird density by biome: forests and meadows get more.
+  const count = terrain === 'forest' ? 4 : terrain === 'meadow' ? 3 : 2;
+  const birds: BirdState[] = [];
+  for (let index = 0; index < count; index++) {
+    const seed = Math.abs(chunk.x * 131 + chunk.y * 197 + index * 61 + 7);
+    const position = { x: 14 + ((seed * 37) % 72), y: 15 + ((seed * 53) % 70) };
+    if (isFieldPositionBlocked(position, chunk)) continue;
+    birds.push({
+      id: index,
+      position,
+      homePosition: { ...position },
+      state: 'idle',
+      stateTimer: 2 + (seed % 5),
+      target: { ...position },
+      variant: seed % 3,
+      facing: (['left', 'right'] as Direction[])[seed % 2],
+    });
+  }
+  return birds;
+}
+function updateBird(bird: BirdState, tick: number): BirdState {
+  const next = { ...bird, stateTimer: bird.stateTimer - 1 };
+  if (next.stateTimer > 0) {
+    // Continue current state movement.
+    if (next.state === 'hop' || next.state === 'fly') {
+      const dx = next.target.x - next.position.x;
+      const dy = next.target.y - next.position.y;
+      const dist = Math.hypot(dx, dy);
+      const step = next.state === 'fly' ? BIRD_FLY_STEP : BIRD_STEP;
+      if (dist > 0.5) {
+        next.position = {
+          x: next.position.x + (dx / dist) * Math.min(step, dist),
+          y: next.position.y + (dy / dist) * Math.min(step, dist),
+        };
+        next.facing = dx >= 0 ? 'right' : 'left';
+      } else {
+        next.stateTimer = 0;
+      }
+    }
+    return next;
+  }
+  // Pick a new behavior.
+  const seed = Math.abs(tick * 31 + bird.id * 101 + Math.floor(bird.homePosition.x));
+  const roll = seed % 100;
+  const homeDx = bird.homePosition.x - bird.position.x;
+  const homeDy = bird.homePosition.y - bird.position.y;
+  const distHome = Math.hypot(homeDx, homeDy);
+  if (distHome > 25) {
+    // Too far: fly back toward home.
+    next.state = 'fly';
+    next.target = { x: bird.homePosition.x + ((seed * 7) % 10) - 5, y: bird.homePosition.y + ((seed * 13) % 10) - 5 };
+    next.stateTimer = 8;
+  } else if (roll < 30) {
+    next.state = 'idle';
+    next.stateTimer = 3 + (seed % 6);
+  } else if (roll < 55) {
+    next.state = 'peck';
+    next.stateTimer = 2 + (seed % 3);
+  } else if (roll < 80) {
+    // Hop to a nearby spot.
+    const angle = (seed % 360) * (Math.PI / 180);
+    const hopDist = 3 + (seed % 6);
+    next.state = 'hop';
+    next.target = {
+      x: Math.min(90, Math.max(10, bird.position.x + Math.cos(angle) * hopDist)),
+      y: Math.min(90, Math.max(10, bird.position.y + Math.sin(angle) * hopDist)),
+    };
+    next.stateTimer = 6;
+  } else {
+    // Fly a short distance.
+    const angle = ((seed * 3) % 360) * (Math.PI / 180);
+    const flyDist = 10 + (seed % 15);
+    next.state = 'fly';
+    next.target = {
+      x: Math.min(90, Math.max(10, bird.position.x + Math.cos(angle) * flyDist)),
+      y: Math.min(90, Math.max(10, bird.position.y + Math.sin(angle) * flyDist)),
+    };
+    next.stateTimer = 10;
+  }
+  return next;
 }
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
 function goatIsInAttackArc(goat: GoatState, position: Point, facing: Direction) {
@@ -874,11 +986,20 @@ function moveGoatIndependently(goat: GoatState, worldStep: number, playerPositio
   if (isWandering && worldStep < scheduledTick) return { ...goat, moving: false, attacking: false, nextWanderTick: scheduledTick };
   const wanderSeed = nextGoatWanderSeed(goat, worldStep);
   const distance = goatDistance(goat, playerPosition);
+  // Home/range: goats wander freely near home, drift back when far.
+  const roamRadius = goat.roamRadius ?? 18;
+  const distFromHome = Math.hypot(goat.position.x - goat.spawnPosition.x, goat.position.y - goat.spawnPosition.y);
+  const homeBias = distFromHome > roamRadius ? 1 : distFromHome > roamRadius * 0.8 ? 0.65 : 0;
   let direction: Direction;
   if (goat.disposition === 'aggressive' && distance > GOAT_ATTACK_RANGE) {
     const horizontal = playerPosition.x - goat.position.x;
     const vertical = playerPosition.y - goat.position.y;
     direction = Math.abs(horizontal) >= Math.abs(vertical) ? (horizontal >= 0 ? 'right' : 'left') : (vertical >= 0 ? 'down' : 'up');
+  } else if (homeBias > 0 && wanderSeed % 100 < homeBias * 100) {
+    // Head home: pick the axis with the larger offset.
+    const hx = goat.spawnPosition.x - goat.position.x;
+    const hy = goat.spawnPosition.y - goat.position.y;
+    direction = Math.abs(hx) >= Math.abs(hy) ? (hx >= 0 ? 'right' : 'left') : (hy >= 0 ? 'down' : 'up');
   } else {
     const wanderDirections: Direction[] = ['up', 'right', 'down', 'left'];
     direction = wanderDirections[wanderSeed % wanderDirections.length];
@@ -949,6 +1070,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     const point = { x: world.x, y: world.y };
     return { ...mapTileFor(point), world, current: point.x === chunk.x && point.y === chunk.y };
   });
+  const elevationByKey = new Map(tiles.map((tile) => [tile.x + ',' + tile.y, tile.elevationLevel]));
   const currentTile = tiles.find((tile) => tile.current) || tiles[0];
   const selectedAreaName = selectedTile ? (selectedTile.landmark?.name || worldMapBiomeLabel(selectedTile.world.biome)) : null;
   const currentAreaName = currentTile.landmark?.name || worldMapBiomeLabel(currentTile.world.biome);
@@ -956,7 +1078,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v120</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v121</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -974,6 +1096,16 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
               const isSelected = selectedTile?.x === tile.x && selectedTile?.y === tile.y;
               const tileAreaName = tile.landmark?.name || worldMapBiomeLabel(tile.world.biome);
               const tileShade = Math.min(1.07, Math.max(0.9, 0.93 + tile.world.climate.elevation * 0.12)).toFixed(3);
+              // Elevation readability: higher tiles get a lifted highlight;
+              // where elevation drops 2+ levels to a neighbor, draw a cliff-face shadow.
+              const elevShadows: string[] = [];
+              const elevAt = (x: number, y: number) => elevationByKey.get(x + ',' + y) ?? tile.elevationLevel;
+              if (tile.world.biome !== 'ocean' && tile.elevationLevel >= 2) {
+                if (elevAt(tile.x, tile.y - 1) <= tile.elevationLevel - 2) elevShadows.push('inset 0 7px 0 0 rgba(40, 26, 16, .42)');
+                if (elevAt(tile.x, tile.y + 1) <= tile.elevationLevel - 2) elevShadows.push('inset 0 -7px 0 0 rgba(40, 26, 16, .42)');
+                if (elevAt(tile.x - 1, tile.y) <= tile.elevationLevel - 2) elevShadows.push('inset 7px 0 0 0 rgba(40, 26, 16, .42)');
+                if (elevAt(tile.x + 1, tile.y) <= tile.elevationLevel - 2) elevShadows.push('inset -7px 0 0 0 rgba(40, 26, 16, .42)');
+              }
               // Yellow shoreline rim on the land side of every water edge, like a beach outline.
               const rim: string[] = [];
               if (tile.world.biome !== 'ocean') {
@@ -983,7 +1115,9 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
                 if (touchesWater(tile.world.x - 1, tile.world.y)) rim.push('inset 6px 0 0 0 #d3e04e');
                 if (touchesWater(tile.world.x + 1, tile.world.y)) rim.push('inset -6px 0 0 0 #d3e04e');
               }
-              return <div className={'map-tile world-map-hex world-map-biome-' + tile.world.biome + (tile.world.nearBiomeBorder ? ' is-border' : '') + (tile.current ? ' is-current' : '') + (isSelected ? ' is-selected' : '')} style={{ gridColumn: tile.world.column + 1, gridRow: tile.world.row + 1, '--tile-shade': tileShade, backgroundColor: WORLD_TILE_BG[tile.world.biome] || '#47a13d', backgroundImage: 'url("' + assetUrl('map-tiles-pixel/' + tile.world.biome + '.png') + '")', backgroundSize: '100% 100%', backgroundRepeat: 'no-repeat', imageRendering: 'pixelated', boxShadow: rim.length ? 'inset 0 0 0 1px rgba(20, 20, 90, .28), ' + rim.join(', ') : undefined } as CSSProperties} key={tile.x + '-' + tile.y} title={tileAreaName + ' · chunk ' + tile.x + ', ' + tile.y} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
+              const boxShadows = [...elevShadows];
+              if (rim.length) boxShadows.push('inset 0 0 0 1px rgba(20, 20, 90, .28)', ...rim);
+              return <div className={'map-tile world-map-hex world-map-biome-' + tile.world.biome + ' elev-' + tile.elevationLevel + (tile.world.nearBiomeBorder ? ' is-border' : '') + (tile.current ? ' is-current' : '') + (isSelected ? ' is-selected' : '')} style={{ gridColumn: tile.world.column + 1, gridRow: tile.world.row + 1, '--tile-shade': tileShade, backgroundColor: WORLD_TILE_BG[tile.world.biome] || '#47a13d', backgroundImage: 'url("' + assetUrl('map-tiles-pixel/' + tile.world.biome + '.png') + '")', backgroundSize: '100% 100%', backgroundRepeat: 'no-repeat', imageRendering: 'pixelated', boxShadow: boxShadows.length ? boxShadows.join(', ') : undefined } as CSSProperties} key={tile.x + '-' + tile.y} title={tileAreaName + ' · chunk ' + tile.x + ', ' + tile.y} role="button" tabIndex={0} aria-label={tileAreaName} data-testid={'map-tile-' + tile.x + '-' + tile.y} onClick={() => setSelectedTile(tile)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedTile(tile); } }}>
                 {tile.bridge
                   ? <span className="world-map-bridge" aria-hidden="true" />
                   : tile.road !== 'none' && <span className={'world-map-road world-map-road-' + tile.road} aria-hidden="true" />}
@@ -1122,6 +1256,8 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
   const [simulatedAdventurers, setSimulatedAdventurers] = useState(initialSimulatedAdventurers);
   const [selectedAdventurerId, setSelectedAdventurerId] = useState<string | null>(null);
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }, 1));
+  const [birds, setBirds] = useState<BirdState[]>(() => birdsForChunk({ x: 4, y: 7 }));
+  const birdsRef = useRef<BirdState[]>(birds);
   const [targetGoatId, setTargetGoatId] = useState<number | null>(null);
   const [droppedLoot, setDroppedLoot] = useState<DroppedLoot[]>([]);
   const [attacking, setAttacking] = useState(false);
@@ -1367,6 +1503,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
     const nextGoats = goatsForChunk(chunk, playerLevelRef.current);
     goatsRef.current = nextGoats;
     setGoats(nextGoats);
+    const nextBirds = birdsForChunk(chunk);
+    birdsRef.current = nextBirds;
+    setBirds(nextBirds);
     goatWorldStepRef.current = 0;
     targetGoatIdRef.current = null;
     setTargetGoatId(null);
@@ -1500,6 +1639,12 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, onPlaye
           setLogs((currentLogs) => [{ text: 'A hostile goat rams you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
         }
         goatsRef.current = nextGoats; setGoats(nextGoats);
+      }
+      // Ambient birds: lightweight, tick alongside goats.
+      if (!interiorRef.current && birdsRef.current.length > 0) {
+        const tick = Math.floor(performance.now() / 700);
+        const nextBirds = birdsRef.current.map((bird) => updateBird(bird, tick));
+        birdsRef.current = nextBirds; setBirds(nextBirds);
       }
       const currentInterior = interiorRef.current;
        if (active && currentInterior) {
@@ -1811,6 +1956,16 @@ if (active) {
                 {goat.disposition === 'aggressive' && <span className="goat-aggro">!</span>}
                 <span className="goat-sprite" />
               </button>
+            ))}
+          </div>
+          <div className="field-birds" aria-hidden="true">
+            {birds.map((bird) => (
+              <span
+                key={'bird-' + bird.id}
+                className={'bird bird-variant-' + bird.variant + ' bird-' + bird.state}
+                data-facing={bird.facing}
+                style={{ left: bird.position.x + '%', top: bird.position.y + '%' }}
+              />
             ))}
           </div>
           <div className="combat-text-layer" aria-live="polite">
