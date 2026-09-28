@@ -165,6 +165,30 @@ for (let tick = 0; tick < 60; tick++) {
   }
 }
 
+// ---- 7b. BUG-006 regression: background simulation never mutates loaded goats ----
+// Simulated adventurers tick every 1.9s with the player's loaded goats as
+// positional targets. They must NEVER change goat HP or disposition — the
+// user saw goats "randomly taking damage" across the map. Only the player's
+// own attacks may do that (App.tsx no longer applies background damage).
+console.log('Testing background adventurers never damage goats...');
+{
+  const goatTargets = [
+    { id: 'g1', position: { x: 20, y: 20 } },
+    { id: 'g2', position: { x: 80, y: 80 } },
+    { id: 'g3', position: { x: 50, y: 50 } },
+  ];
+  const snapshot = JSON.stringify(goatTargets);
+  let advs = initialSimulatedAdventurers.map((a) => ({ ...a }));
+  for (let tick = 0; tick < 2000; tick++) {
+    advs = advanceSimulatedAdventurers(advs, tick, goatTargets);
+  }
+  assert(JSON.stringify(goatTargets) === snapshot, 'advanceSimulatedAdventurers mutated its goat target inputs');
+  // Note: adventurers may still show a cosmetic "fighting a goat" activity
+  // label as ambient flavor, but the function has no HP/damage channel —
+  // goat HP can only change via the player's own attacks (the App-level
+  // background damage block was removed).
+}
+
 // ---- 8. Map data validation: every settlement landmark must sit on land
 // under the REAL default seed (regression test for BUG-001: Stormhaven was
 // validated against seed 1 and actually spawned in the ocean). ----

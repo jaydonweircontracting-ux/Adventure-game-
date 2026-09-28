@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '178';
+const BUILD_NUMBER = '179';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -2750,32 +2750,11 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
       simulatedTickRef.current = nextTick;
       const liveGoats = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goat.hp > 0);
       const next = advanceSimulatedAdventurers(simulatedAdventurersRef.current, nextTick, liveGoats.map((goat) => ({ id: goat.id, position: goat.position })));
-      const fieldAdventurers = next.filter((adventurer) => (adventurer.location || 'field') === 'field');
-      // Background adventurers only scuffle with goats far from the player
-      // (off-screen): goats near the player never take "random" damage.
-      const playerPos = positionRef.current;
-      const attacker = fieldAdventurers
-        .map((adventurer) => ({ adventurer, goat: goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goat.hp > 0).sort((left, right) => Math.hypot(left.position.x - adventurer.position.x, left.position.y - adventurer.position.y) - Math.hypot(right.position.x - adventurer.position.x, right.position.y - adventurer.position.y))[0] }))
-        .filter((entry) => entry.goat && Math.hypot(entry.goat.position.x - entry.adventurer.position.x, entry.goat.position.y - entry.adventurer.position.y) <= 5 && Math.hypot(entry.goat.position.x - playerPos.x, entry.goat.position.y - playerPos.y) > 30)
-        .sort((left, right) => Math.hypot(left.goat.position.x - left.adventurer.position.x, left.goat.position.y - left.adventurer.position.y) - Math.hypot(right.goat.position.x - right.adventurer.position.x, right.goat.position.y - right.adventurer.position.y))[0];
-      let nextAdventurers = next;
-      if (attacker?.goat) {
-        const target = attacker.goat;
-        const nextHp = Math.max(0, target.hp - 7);
-        const defeated = nextHp <= 0;
-        // Background scuffle: the goat takes damage, but it must NOT turn
-        // aggressive toward the player — the player didn't hit it. Preserve
-        // whatever disposition it already had (a goat the player provoked
-        // stays aggressive; a calm goat stays calm).
-        const updatedGoats = goatsRef.current.map((goat) => goat.id === target.id ? { ...goat, hp: nextHp, disposition: defeated ? 'defeated' as GoatDisposition : goat.disposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 350, attacking: false, moving: false, hitFlash: true, respawnTicks: 0 } : goat);
-        goatsRef.current = updatedGoats;
-        setGoats(updatedGoats);
-        window.setTimeout(() => setGoats((current) => current.map((goat) => goat.id === target.id ? { ...goat, hitFlash: false } : goat)), 100);
-        nextAdventurers = next.map((adventurer) => adventurer.id === attacker.adventurer.id ? { ...adventurer, activity: defeated ? 'exploring after defeating a goat' : 'fighting a goat' } : adventurer);
-        if (defeated) setLogs((currentLogs) => [{ text: attacker.adventurer.name + ' defeated a goat out in the wilds.', color: 'blue' }, ...currentLogs].slice(0, 3));
-      }
-      simulatedAdventurersRef.current = nextAdventurers;
-      setSimulatedAdventurers(nextAdventurers);
+      // BUG-006 fix: background adventurers never touch the player's loaded
+      // goats. Goat HP/disposition only change from the player's own attacks —
+      // no more "random" damage on goats across the map.
+      simulatedAdventurersRef.current = next;
+      setSimulatedAdventurers(next);
     }, 1900);
     return () => window.clearInterval(timer);
   }, []);
