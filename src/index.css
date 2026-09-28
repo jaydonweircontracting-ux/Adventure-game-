@@ -3290,3 +3290,118 @@ body {
   .creator-preview-pane { flex-direction: row; justify-content: center; flex-wrap: wrap; }
   .creator-portrait { width: 96px; height: 96px; }
 }
+
+/* ============ BUILD 145: Cryo Mini GUI refresh + new mobs + new vegetation ============ */
+/* HP/XP bars use Cryo's segmented pixel bars. */
+.bar { height: 10px; }
+.bar-fill.health { background: url("gui/bar_hp.png") repeat-x left center / auto 100%; image-rendering: pixelated; }
+.bar-fill.xp-fill { background: url("gui/bar_xp.png") repeat-x left center / auto 100%; image-rendering: pixelated; }
+/* HUD player card: wooden Cryo panel frame. */
+.hud-card[data-testid="hud-player"] {
+  border: 8px solid transparent;
+  border-image: url("gui/panel_wood.png") 8 fill / 8px;
+  background: none;
+  background-color: transparent;
+  padding: 3px 7px 8px;
+  backdrop-filter: none;
+}
+.hud-clock {
+  display: block;
+  margin-top: 3px;
+  color: rgba(255, 244, 211, .78);
+  font-family: var(--app-font-mono);
+  font-size: 8px;
+  letter-spacing: .08em;
+}
+/* Main-menu buttons: Cryo 3-part pixel buttons. */
+.main-menu-button {
+  position: relative;
+  border: 0;
+  background: url("gui/btn_mid.png") repeat-x left center / auto 100%;
+  image-rendering: pixelated;
+  color: #3d2b18;
+  padding: 11px 24px;
+}
+.main-menu-button::before,
+.main-menu-button::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+.main-menu-button::before { left: 0; background-image: url("gui/btn_left.png"); }
+.main-menu-button::after { right: 0; background-image: url("gui/btn_right.png"); }
+.main-menu-button.primary {
+  border: 0;
+  background: url("gui/btn_mid.png") repeat-x left center / auto 100%;
+  color: #3d2b18;
+  font-weight: 700;
+}
+.main-menu-button.primary:hover { filter: brightness(1.08); }
+.main-menu-button:disabled { opacity: .55; cursor: default; }
+/* Inventory item icons (Raven Fantasy Icons strip). */
+.inventory-item-mark {
+  background-image: var(--inventory-icons-url);
+  background-size: 512px 64px;
+  background-repeat: no-repeat;
+  background-color: #2a3f35;
+  image-rendering: pixelated;
+  font-size: 0;
+}
+.coin-mark { background-position: 0 0; background-color: #4a3a22; }
+.horn-mark { background-position: -64px 0; }
+.fabric-mark { background-position: -128px 0; background-color: #5a3a3a; }
+.dagger-mark { background-position: -192px 0; }
+.cloths-mark { background-position: -256px 0; }
+.bone-mark { background-position: -320px 0; }
+.pelt-mark { background-position: -384px 0; }
+.fang-mark { background-position: -448px 0; }
+/* Orc mob: Tiny RPG orc, 6-frame idle / 8-frame walk, 56x46. Faces right natively. */
+.monster-orc .monster-sprite {
+  left: 50%; top: 50%;
+  width: 56px; height: 46px;
+  margin: -23px 0 0 -28px;
+  background-image: var(--orc-idle-url);
+  background-size: 336px 46px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  border-radius: 0;
+}
+.monster-orc.is-moving .monster-sprite {
+  background-image: var(--orc-walk-url);
+  background-size: 448px 46px;
+  animation: orc-walk .7s steps(8, end) infinite;
+}
+@keyframes orc-walk { from { background-position-x: 0; } to { background-position-x: -448px; } }
+.monster-orc[data-facing="left"] .monster-sprite { transform: scaleX(-1); }
+/* Soldier mob: Tiny RPG soldier, 6-frame idle / 8-frame walk, 46x56. Faces right natively. */
+.monster-soldier .monster-sprite {
+  left: 50%; top: 50%;
+  width: 46px; height: 56px;
+  margin: -28px 0 0 -23px;
+  background-image: var(--soldier-idle-url);
+  background-size: 276px 56px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  border-radius: 0;
+}
+.monster-soldier.is-moving .monster-sprite {
+  background-image: var(--soldier-walk-url);
+  background-size: 368px 56px;
+  animation: soldier-walk .7s steps(8, end) infinite;
+}
+@keyframes soldier-walk { from { background-position-x: 0; } to { background-position-x: -368px; } }
+.monster-soldier[data-facing="left"] .monster-sprite { transform: scaleX(-1); }
+/* New vegetation: corals for shores, fruit/berry accents for land. */
+.env-coral1 { width: 65px; height: 36px; background-position: -135px -199px; }
+.env-coral2 { width: 56px; height: 24px; background-position: -197px -211px; }
+.env-coral3 { width: 62px; height: 19px; background-position: -250px -216px; }
+.env-apple { width: 19px; height: 25px; background-position: -421px -68px; }
+.env-berries { width: 14px; height: 18px; background-position: -457px -72px; }
+.env-tomato { width: 17px; height: 19px; background-position: -423px -104px; }
+.env-corn { width: 12px; height: 22px; background-position: -458px -101px; }

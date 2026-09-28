@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Download, Map as MapIcon, Menu, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
+import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Map as MapIcon, Menu, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
 import { type ChangeEvent, type PointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -246,7 +246,7 @@ type FieldTree = { id: number; x: number; y: number; scale: number; variant: num
 
 // Biome vegetation from the FreeEnvironment pack (public/environment/FreePack.png,
 // 512x384). Boxes are the trimmed alpha bounds of each sprite: { x, y, w, h }.
-type EnvSpriteKey = 'bigpine' | 'pine2' | 'pine3' | 'snowpine' | 'deadtree' | 'saguaro1' | 'saguaro2' | 'pear' | 'grass1' | 'grass2' | 'rock' | 'icerock';
+type EnvSpriteKey = 'bigpine' | 'pine2' | 'pine3' | 'snowpine' | 'deadtree' | 'saguaro1' | 'saguaro2' | 'pear' | 'grass1' | 'grass2' | 'rock' | 'icerock' | 'coral1' | 'coral2' | 'coral3' | 'apple' | 'berries' | 'tomato' | 'corn';
 const ENV_SPRITE_BOXES: Record<EnvSpriteKey, { x: number; y: number; w: number; h: number }> = {
   bigpine: { x: 10, y: 120, w: 85, h: 136 },
   pine2: { x: 130, y: 275, w: 22, h: 100 },
@@ -260,18 +260,25 @@ const ENV_SPRITE_BOXES: Record<EnvSpriteKey, { x: number; y: number; w: number; 
   grass2: { x: 190, y: 52, w: 85, h: 76 },
   rock: { x: 400, y: 171, w: 100, h: 69 },
   icerock: { x: 390, y: 271, w: 110, h: 102 },
+  coral1: { x: 135, y: 199, w: 65, h: 36 },
+  coral2: { x: 197, y: 211, w: 56, h: 24 },
+  coral3: { x: 250, y: 216, w: 62, h: 19 },
+  apple: { x: 421, y: 68, w: 19, h: 25 },
+  berries: { x: 457, y: 72, w: 14, h: 18 },
+  tomato: { x: 423, y: 104, w: 17, h: 19 },
+  corn: { x: 458, y: 101, w: 12, h: 22 },
 };
 
 function envSpriteForTerrain(terrain: Terrain, variant: number): EnvSpriteKey {
-  // variant is 0-2 from the chunk's deterministic seed; each terrain maps it
+  // variant is 0-3 from the chunk's deterministic seed; each terrain maps it
   // to a fixed sprite so placement stays deterministic and order-independent.
   switch (terrain) {
-    case 'forest': return (['bigpine', 'pine2', 'pine3'] as EnvSpriteKey[])[variant] || 'bigpine';
-    case 'tundra': return (['snowpine', 'icerock', 'deadtree'] as EnvSpriteKey[])[variant] || 'snowpine';
-    case 'rock': return (['rock', 'deadtree', 'icerock'] as EnvSpriteKey[])[variant] || 'rock';
-    case 'desert': return (['saguaro1', 'saguaro2', 'pear'] as EnvSpriteKey[])[variant] || 'saguaro1';
-    case 'shore': return (['grass1', 'grass2', 'pine3'] as EnvSpriteKey[])[variant] || 'grass1';
-    default: return (['grass1', 'grass2', 'pine2'] as EnvSpriteKey[])[variant] || 'grass1';
+    case 'forest': return (['bigpine', 'pine2', 'pine3', 'apple'] as EnvSpriteKey[])[variant] || 'bigpine';
+    case 'tundra': return (['snowpine', 'icerock', 'deadtree', 'berries'] as EnvSpriteKey[])[variant] || 'snowpine';
+    case 'rock': return (['rock', 'deadtree', 'rock', 'icerock'] as EnvSpriteKey[])[variant] || 'rock';
+    case 'desert': return (['saguaro1', 'saguaro2', 'pear', 'tomato'] as EnvSpriteKey[])[variant] || 'saguaro1';
+    case 'shore': return (['grass1', 'coral1', 'coral2', 'coral3'] as EnvSpriteKey[])[variant] || 'grass1';
+    default: return (['grass1', 'grass2', 'pine2', 'corn'] as EnvSpriteKey[])[variant] || 'grass1';
   }
 }
 type FieldRect = { left: number; top: number; right: number; bottom: number };
@@ -371,7 +378,7 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
     const tooCloseToTree = trees.some((tree) => Math.hypot(center.x - (tree.x + 3.2 * tree.scale), center.y - (tree.y + 2.5 * tree.scale)) < 9);
     const tooCloseToRoad = pointOnFieldRoad(center, road);
     if (tooCloseToStart || tooCloseToBuilding || tooCloseToTree || tooCloseToRoad) continue;
-    const variant = Math.floor(random() * 3);
+    const variant = Math.floor(random() * 4);
     trees.push({ id: trees.length, x, y, scale, variant, style: treeStyle, sprite: envSpriteForTerrain(mapTileFor(chunk).terrain, variant) });
   }
 
@@ -620,7 +627,7 @@ type GoatState = {
   nextWanderTick?: number;
 };
 // Hostile mobs: goblins and bandits. Reuse the goat combat AI shape.
-type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'snake' | 'spider' | 'dragon';
+type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'snake' | 'spider' | 'dragon' | 'orc' | 'soldier';
 type MonsterState = GoatState & { kind: MonsterKind };
 const GOAT_STEP = 0.5;
 // Ambient birds: lightweight wildlife, deterministic per chunk, not persisted.
@@ -936,6 +943,8 @@ function monsterLootForKind(kind: MonsterKind): GoatLoot {
     case 'snake': return { fang: 1, coins: Math.random() < 0.3 ? 1 : 0 };
     case 'spider': return { fang: 1 + Math.floor(Math.random() * 2) };
     case 'dragon': return { pelt: 2, fang: 2, coins: 10 + Math.floor(Math.random() * 10) };
+    case 'orc': return { pelt: 1, coins: 2 + Math.floor(Math.random() * 4) };
+    case 'soldier': return { coins: 3 + Math.floor(Math.random() * 4), fabric: Math.random() < 0.5 ? 1 : 0 };
   }
 }
 function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  const terrain = mapTileFor(chunk).terrain;
@@ -1002,6 +1011,15 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
   // Dragons: extremely remote territories (danger 3), rare. Endgame.
   if (danger >= 3 && terrain !== 'ocean' && Math.abs(chunk.x * 29 + chunk.y * 31) % 4 === 0) {
     spawn('dragon', 0, 11000, 5);
+  }
+  // Orcs: brutes roaming the deep wilderness (danger 2+).
+  if (danger >= 2 && (terrain === 'forest' || terrain === 'rock' || terrain === 'tundra' || terrain === 'meadow')) {
+    const count = 1 + (Math.abs(chunk.x * 17 + chunk.y * 23) % 2);
+    for (let i = 0; i < count; i++) spawn('orc', i, 12000, 1.5);
+  }
+  // Soldiers: rogue sellswords ambushing roads in the outskirts (danger 1+), rarer than bandits.
+  if (danger >= 1 && mapTileFor(chunk).road !== 'none' && Math.abs(chunk.x * 5 + chunk.y * 11) % 2 === 0) {
+    spawn('soldier', 0, 13000, 1.1);
   }
   return monsters;
 }
@@ -1421,7 +1439,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v144</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v145</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -1532,10 +1550,10 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, playerStats
             <>
               <div className="inventory-count">{itemCount > 0 ? itemCount + ' items carried' : 'Menu is empty'} · {inventory.coins} gold</div>
               <div className="inventory-grid">
-                <div className="inventory-item" data-testid="inventory-coins"><span className="inventory-item-mark coin-mark"><Coins size={16} /></span><span><strong>Coins</strong><small>Spendable gold</small></span><b>{inventory.coins}</b></div>
+                <div className="inventory-item" data-testid="inventory-coins"><span className="inventory-item-mark coin-mark" aria-hidden="true" /><span><strong>Coins</strong><small>Spendable gold</small></span><b>{inventory.coins}</b></div>
                 {visibleItems.map((item) => {
                   const count = inventory[item.key as keyof GameInventory] as number;
-                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className}>{item.mark}</span><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div>;
+                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className} aria-hidden="true" /><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div>;
                 })}
               </div>
               {itemCount === 0 && <div className="inventory-empty"><Backpack size={30} strokeWidth={1.5} /><strong>Menu is empty</strong></div>}
@@ -2708,6 +2726,7 @@ if (active) {
             <div className="hud-label"><span>Player</span><span data-testid="text-level">LV {playerLevel}</span></div>
             <div className="bar" aria-label={'Health ' + playerHp + ' of ' + playerMaxHp} ><div className="bar-fill health" style={{ width: (playerHp / playerMaxHp) * 100 + '%' }} /></div><span className="hud-health-value">{playerHp} / {playerMaxHp} HP</span>
             <div className="bar xp-bar" aria-label={'Experience ' + (playerXp % 100) + ' of 100 to next level'}><div className="bar-fill xp-fill" style={{ width: (playerXp % 100) + '%' }} /></div><span className="hud-xp-value">{playerXp % 100} / 100 XP</span>
+            <span className="hud-clock" data-testid="text-hud-time">{time}</span>
             <div className="hud-quick-actions">
               <button className="hud-quick-button" onClick={onOpenMap} aria-label="Open world map" title="World map" data-testid="button-open-map"><MapIcon size={15} /></button>
               <button className="hud-quick-button" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={15} /></button>
@@ -2939,6 +2958,13 @@ function Home() {
         // Bandits stay pinned to the original player sprite sheet even when the
         // player creates a custom character.
         '--bandit-sprite-url': `url("${assetUrl('assets/cute-fantasy/player.png')}")`,
+        // New mob sprites (Tiny RPG pack): orc brute and rogue soldier.
+        '--orc-idle-url': `url("${assetUrl('mobs/orc_idle.png')}")`,
+        '--orc-walk-url': `url("${assetUrl('mobs/orc_walk.png')}")`,
+        '--soldier-idle-url': `url("${assetUrl('mobs/soldier_idle.png')}")`,
+        '--soldier-walk-url': `url("${assetUrl('mobs/soldier_walk.png')}")`,
+        // Inventory item icons (Raven Fantasy Icons).
+        '--inventory-icons-url': `url("${assetUrl('icons/inventory.png')}")`,
         '--player-attack-sprite-url': `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")`,
         '--horse-sprite-url': `url("${assetUrl('assets/farm-male-cow-brown.png')}")`,
          '--goat-sprite-url': `url("${assetUrl('assets/gameplay/characters/goat/goat.png')}")`,
