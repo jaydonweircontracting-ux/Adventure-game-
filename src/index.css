@@ -2088,8 +2088,9 @@ body {
 .wildlife-deer::after { content: ''; position: absolute; left: 3px; top: -14px; width: 14px; height: 6px; background: repeating-linear-gradient(90deg, #7a5a3a 0 2px, transparent 2px 5px); }
 .wildlife-wolf { background: linear-gradient(180deg, #6a6a72 0 60%, #4a4a52 61% 100%); border-radius: 35% 35% 30% 30%; }
 .wildlife-wolf::before { content: ''; position: absolute; left: 5px; top: -6px; width: 10px; height: 8px; background: #6a6a72; clip-path: polygon(0 100%, 20% 0, 40% 100%, 60% 100%, 80% 0, 100% 100%); }
-.wildlife-boar { background: radial-gradient(ellipse at 50% 55%, #7a5a48 0 60%, #5a4234 61% 100%); border-radius: 45% 45% 40% 40%; }
-.wildlife-boar::before { content: ''; position: absolute; right: -3px; top: 2px; width: 6px; height: 6px; background: #e8e0d0; clip-path: polygon(0 50%, 100% 0, 100% 100%); }
+.wildlife-boar { background: radial-gradient(ellipse at 42% 42%, #8a6a4e 0 55%, #5f4632 56% 100%); border-radius: 48% 52% 46% 44%; }
+.wildlife-boar::before { content: ''; position: absolute; right: -4px; top: 2px; width: 10px; height: 12px; border-radius: 50%; background: radial-gradient(circle at 3px 9px, #f2ede2 1.3px, transparent 1.4px), radial-gradient(circle at 7px 9px, #f2ede2 1.3px, transparent 1.4px), radial-gradient(circle at 5px 6px, #c89878 2.2px, transparent 2.3px), #6a4a34; }
+.wildlife-boar::after { content: ''; position: absolute; left: 3px; right: 3px; bottom: -4px; height: 5px; background: linear-gradient(90deg, #3a2a1e 0 20%, transparent 20% 40%, #3a2a1e 40% 60%, transparent 60% 80%, #3a2a1e 80% 100%); border-radius: 0 0 2px 2px; }
 .wildlife-bear { width: 28px; height: 22px; margin: -11px 0 0 -14px; background: linear-gradient(180deg, #6a4a32 0 55%, #4a3220 56% 100%); border-radius: 40% 40% 35% 35%; }
 .wildlife-bear::before { content: ''; position: absolute; left: 8px; top: -8px; width: 12px; height: 10px; background: #6a4a32; border-radius: 50%; }
 .wildlife-bear::after { content: ''; position: absolute; left: 4px; top: -10px; width: 6px; height: 6px; background: #6a4a32; border-radius: 50%; box-shadow: 14px 0 0 #6a4a32; }
@@ -2364,7 +2365,8 @@ body {
 .loot-bone::before, .loot-bone::after { content: ''; position: absolute; width: 7px; height: 7px; background: #f0ece0; border-radius: 50%; }
 .loot-bone::before { left: -3px; top: -3px; box-shadow: 12px 0 0 #f0ece0; }
 .loot-bone::after { left: -3px; bottom: -3px; box-shadow: 12px 0 0 #f0ece0; }
-.loot-pelt { background: linear-gradient(135deg, #8a6a4a 0 50%, #6a4a32 51% 100%); border-radius: 40% 55% 45% 50%; box-shadow: 2px 3px 0 rgba(43, 61, 41, .25), inset 2px 2px 4px rgba(255, 255, 255, .15); }
+.loot-pelt { background: linear-gradient(135deg, #9a7a52 0 55%, #7a5a3a 56% 100%); clip-path: polygon(10% 20%, 25% 5%, 48% 0%, 70% 6%, 90% 16%, 98% 40%, 92% 66%, 74% 86%, 50% 95%, 26% 88%, 8% 70%, 0% 45%); box-shadow: 2px 3px 0 rgba(43, 61, 41, .25); }
+.loot-pelt::before { content: ''; position: absolute; inset: 4px; background: radial-gradient(circle at 30% 30%, rgba(255, 235, 200, .28) 0 25%, transparent 26%), radial-gradient(circle at 70% 65%, rgba(60, 40, 25, .3) 0 28%, transparent 29%); }
 .loot-fang { background: linear-gradient(180deg, #ffffff 0 60%, #d8d4c8 61% 100%); clip-path: polygon(35% 0%, 65% 0%, 55% 100%, 45% 100%); filter: drop-shadow(2px 2px 0 rgba(43, 61, 41, .25)); }
 .loot-coins::before { content: ''; position: absolute; left: -4px; top: 4px; width: 14px; height: 14px; background: radial-gradient(circle at 30% 30%, #ffd955 0%, #e8a93d 60%, #b87a25 100%); border-radius: 50%; box-shadow: 1px 2px 0 rgba(43, 61, 41, .2); }
 .pickup-button { position: absolute; z-index: 2; left: 50%; top: 29px; padding: 4px 7px; color: #fff2cf; border: 1px solid #52372c; background: rgba(47, 73, 53, .94); box-shadow: 2px 2px 0 rgba(43, 61, 41, .25); font: 8px var(--app-font-mono); text-transform: uppercase; transform: translateX(-50%); white-space: nowrap; pointer-events: auto; }
