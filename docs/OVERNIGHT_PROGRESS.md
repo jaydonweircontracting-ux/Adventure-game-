@@ -58,7 +58,7 @@ ocean fix, tutorial-house beds removed + smith NPC, debug/playtest tooling.
 3. Continue priority loop: perf -> world consistency -> gameplay -> visuals.
 
 ## Last Verified Build
-BUILD 162 (pushed 6605daf, 2026-09-28). Awaiting live playtest.
+BUILD 163 (pushed cc31fc8, 2026-09-28) — LIVE (deploy completed, bundle index-DJ3IO9uR.js serves "163"). Targeted visual verification of the two 163 fixes in flight.
 
 ## Build 162 changelog (2026-09-28)
 - Map audit: world gen runs once at module load (never on map open). Remaining
