@@ -1,16 +1,29 @@
 # Overnight Progress Log
 
 Autonomous development session. Updated after every major completed task.
-Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 183** (live).
+Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 186** (live).
 
 ## Current Phase
 User-directed fixes (camera removal, NPC size, beds) + continuous autonomous work.
 
 ## Current Task
-BUILD 183 live-verified. Continuing autonomous work queue.
+BUILD 186 live-verified. Continuing autonomous work queue.
 ocean fix, tutorial-house beds removed + smith NPC, debug/playtest tooling.
 
 ## Completed Tasks
+- 2026-09-28: BUILD 186 pushed live (def2f06). Fixed building/doorway alignment
+  for 140-unit fields: visual houses now render from the same fieldHouseRects the
+  doorway logic uses (inline styles via fieldPct), not hardcoded CSS % written for
+  100-unit fields. Updated stale hardcoded startingDoorways fallback positions to
+  match actual rects. Fixes: exit spawning at wrong spot, can't re-enter buildings.
+  Build + sim (33,277 passed) green; live bundle verified (tutorial-house-door at
+  17.69,21.14 / exterior 17.69,28.5).
+- 2026-09-28: BUILD 185 pushed live (19f1d77). Corn harvest reach: stalks within
+  4.5 units harvest regardless of facing arc. Sim 33,277 passed.
+- 2026-09-28: BUILD 184 pushed live (7b8b0e9). Goat wander targets 96 -> FIELD_SIZE-4.
+- 2026-09-28: BUILD 183 pushed live (0a732ec). Removed gameplay camera/panning
+  entirely per user request; kept larger 140-unit chunks; removed giant beds from
+  building interiors; Bram the smith already beside Tutorial House fireplace.
 - 2026-09-28: BUILD 161 pushed live (c348c9d). Mount 1.35x scale removed; world map
   rewritten from ~16.5k DOM nodes to one pre-rendered canvas; second continent moved
   to x 117..196 (96-tile ocean gap); 7 new continent settlements + road web.
