@@ -3452,10 +3452,9 @@ function Home() {
          '--goat-sprite-url': `url("${assetUrl('assets/gameplay/characters/goat/goat.png')}")`,
       } as CSSProperties}
     >
-      {menuOpen ? (
-        creatingCharacter ? (
-          <CharacterCreator onConfirm={confirmCharacter} onCancel={() => setCreatingCharacter(false)} />
-        ) : inPrison ? (
+      {creatingCharacter ? (
+        <CharacterCreator onConfirm={confirmCharacter} onCancel={() => setCreatingCharacter(false)} />
+      ) : inPrison ? (
           <section className="prison-scene" aria-label="Prison cell" data-testid="prison-scene">
             <div className="prison-cell">
               <h2>You wake in a cold stone cell...</h2>
@@ -3483,7 +3482,7 @@ function Home() {
               </div>
             </div>
           </section>
-        ) : (
+      ) : menuOpen ? (
         <section className="main-menu" aria-label="Main menu" data-testid="main-menu">
           <div className="main-menu-card">
             <span className="main-menu-kicker">THE FAR MEADOW · BUILD {BUILD_NUMBER}</span>
@@ -3498,7 +3497,6 @@ function Home() {
             {saveNotice && <div className="save-notice" role="status">{saveNotice}</div>}
           </div>
         </section>
-        )
       ) : (
         <>
           <div className="game-layout">
