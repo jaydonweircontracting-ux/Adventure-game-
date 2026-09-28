@@ -1393,7 +1393,7 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title" data-testid="overlay-world-map">
       <div className="map-sheet">
         <div className="map-sheet-heading">
-          <div><span className="atlas-eyebrow">Pixel tile atlas · build v129</span><h2 id="map-title">The Far Meadow</h2></div>
+          <div><span className="atlas-eyebrow">Pixel tile atlas · build v130</span><h2 id="map-title">The Far Meadow</h2></div>
           <button className="map-close" onClick={onClose} aria-label="Close world map" data-testid="button-close-map"><X size={19} /></button>
         </div>
         <div className="map-toolbar">
@@ -2283,8 +2283,12 @@ if (active) {
     const closingNameplate = selectedAdventurerId === adventurer.id;
     setSelectedAdventurerId((current) => current === adventurer.id ? null : adventurer.id);
     if (closingNameplate) return;
-    setLogs((currentLogs) => [{ text: `${adventurer.name}, level ${adventurer.level} ${adventurer.className}, is ${adventurer.activity}. Goal: ${adventurer.goal}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
-    setAttackFlash(`${adventurer.name}: ${adventurer.goal}`);
+    // Adventurers still in the starting house haven't gathered anything to sell yet.
+    const displayGoal = (adventurer.location || 'field') === 'starting-house'
+      ? 'setting out to begin their adventure'
+      : adventurer.goal;
+    setLogs((currentLogs) => [{ text: `${adventurer.name}, level ${adventurer.level} ${adventurer.className}, is ${adventurer.activity}. Goal: ${displayGoal}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+    setAttackFlash(`${adventurer.name}: ${displayGoal}`);
     window.setTimeout(() => setAttackFlash(null), 1600);
   };
   const chooseClass = (nextClass: Exclude<PlayerClass, 'Beginner'>) => {
