@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '173';
+const BUILD_NUMBER = '174';
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
@@ -535,9 +535,9 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
     if (tooCloseToStart || tooCloseToBuilding || tooCloseToTree || tooCloseToRoad) continue;
     const variant = Math.floor(random() * 4);
     const sprite = envSpriteForTerrain(mapTileFor(chunk).terrain, variant);
-    // Grass tufts use a much smaller scale than trees (they're ground cover, not trees)
-    const isGrass = sprite === 'grass1' || sprite === 'grass2';
-    const finalScale = isGrass ? 0.25 + random() * 0.15 : naturalScale;
+    // Grass tufts removed (dense blades render as solid green bars) — uncomment to re-enable.
+    if (sprite === 'grass1' || sprite === 'grass2') continue;
+    const finalScale = naturalScale;
     trees.push({ id: trees.length, x, y, scale: finalScale, variant, style: treeStyle, sprite });
   }
 
