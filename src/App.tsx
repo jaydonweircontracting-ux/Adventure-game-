@@ -696,9 +696,9 @@ type EscapeSpawn = {
 };
 type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number };
 const startingDoorways: Doorway[] = [
-  { id: 'tutorial-house-door', buildingIndex: 0, position: { x: 30, y: 36 }, area: { id: 'tutorial-house', name: 'Tutorial House', description: 'A small safe house on the tutorial island.', roomType: 'inn', exteriorPosition: { x: 30, y: 48 } } },
-  { id: 'crafting-guild-door', buildingIndex: 1, position: { x: 70, y: 36 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'A workbench, maps, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 70, y: 48 } } },
-  { id: 'chapel-door', buildingIndex: 2, position: { x: 30, y: 72 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 30, y: 60 } } },
+  { id: 'tutorial-house-door', buildingIndex: 0, position: { x: 17.69, y: 21.14 }, area: { id: 'tutorial-house', name: 'Tutorial House', description: 'A small safe house on the tutorial island.', roomType: 'inn', exteriorPosition: { x: 17.69, y: 28.5 } } },
+  { id: 'crafting-guild-door', buildingIndex: 1, position: { x: 82.69, y: 22.14 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'A workbench, maps, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 82.69, y: 29.5 } } },
+  { id: 'chapel-door', buildingIndex: 2, position: { x: 17.69, y: 85.14 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 17.69, y: 92.5 } } },
 ];
 // Bram the smith works the Wayfarer Guild in the starting area. Talking to
 // him opens the crafting / sell / rumours flow.
@@ -3582,21 +3582,31 @@ if (active) {
               <span className="ruin-label" aria-hidden="true">{currentWorldTile.landmark.name}</span>
             </div>
           )}
-          {currentWorldTile.landmark && currentWorldTile.landmark.kind !== 'dungeon' && currentWorldTile.landmark.kind !== 'ruin' && (
+          {currentWorldTile.landmark && currentWorldTile.landmark.kind !== 'dungeon' && currentWorldTile.landmark.kind !== 'ruin' && (() => {
+            const houseRects = fieldHouseRects(currentWorldTile.landmark.kind, isStartingArea(chunkRef.current), chunkRef.current.x * 31 + chunkRef.current.y * 17);
+            return (
             <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle + ' town-variant-' + (Math.abs(currentWorldTile.landmark.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={currentWorldTile.landmark.name}>
               <span className="field-village-square" />
-              <span className="field-house house-1" /><span className="field-house house-2" /><span className="field-house house-3" />
-              <span className="field-house house-4" />
-              {!startingArea && <>
-                <span className="field-house house-5" /><span className="field-house house-6" />
-              </>}
+              {houseRects.map((rect, i) => (
+                <span
+                  key={i}
+                  className="field-house"
+                  style={{
+                    left: fieldPct(rect.left),
+                    top: fieldPct(rect.top),
+                    width: fieldPct(rect.right - rect.left),
+                    height: fieldPct(rect.bottom - rect.top),
+                  }}
+                />
+              ))}
               {currentWorldTile.landmark?.name === 'Mosslight Crossing' ? (
                 <span className="field-village-fountain" aria-label="Greenvale fountain"><span className="fountain-spray" /></span>
               ) : (
                 <span className="field-village-well" />
               )}
             </div>
-          )}
+            );
+          })()}
           {/* Farms/homesteads in non-settlement chunks (only on farmable terrain) */}
           {!currentWorldTile.landmark && ['meadow', 'grassland', 'greenvale'].includes(mapTileFor(chunk).terrain) && (() => {
             const farmData = fieldFarmRects(chunk.x, chunk.y);
