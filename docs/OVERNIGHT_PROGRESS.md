@@ -1,7 +1,7 @@
 # Overnight Progress Log
 
 Autonomous development session. Updated after every major completed task.
-Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 186** (live).
+Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 187** (live).
 
 ## Current Phase
 User-directed fixes (camera removal, NPC size, beds) + continuous autonomous work.
@@ -11,6 +11,11 @@ BUILD 186 live-verified. Continuing autonomous work queue.
 ocean fix, tutorial-house beds removed + smith NPC, debug/playtest tooling.
 
 ## Completed Tasks
+- 2026-09-28: BUILD 187 pushed live (8f4a5a2). Map touch-pan fix for mobile
+  Safari: body scroll locked while WorldMap is open (restored on close) so
+  swipe-up pans the map instead of scrolling the page behind it; added
+  overscroll-behavior: contain on .map-overlay to stop scroll chaining.
+  Build + sim (33,277 passed) green; live CSS verified.
 - 2026-09-28: BUILD 186 pushed live (def2f06). Fixed building/doorway alignment
   for 140-unit fields: visual houses now render from the same fieldHouseRects the
   doorway logic uses (inline styles via fieldPct), not hardcoded CSS % written for
