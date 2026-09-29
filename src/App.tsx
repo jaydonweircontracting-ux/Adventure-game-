@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '214';
+const BUILD_NUMBER = '215';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -771,10 +771,15 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
         : isStartingArea(chunk) && index === 1 ? 'Wayfarer Guild'
         : isStartingArea(chunk) && index === 2 ? 'Rootbound Chapel'
         : landmark.name + ' House ' + (index + 1);
+      // Apply mover offset (?moveHouses=1) so collision/triggers follow the visual.
+      const moverKey = Math.round(chunk.x) + ',' + Math.round(chunk.y) + ':' + stableId;
+      const moverOff = moverOffsets[moverKey];
+      const useRect = moverOff ? { left: rect.left + moverOff.x, top: rect.top + moverOff.y, right: rect.right + moverOff.x, bottom: rect.bottom + moverOff.y } : rect;
+      const usePosition = moverOff ? fieldDoorPosition(useRect) : position;
       return {
         id: stableId,
-        position,
-        rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+        position: usePosition,
+        rect: { left: useRect.left, top: useRect.top, right: useRect.right, bottom: useRect.bottom },
         area: {
           id: stableAreaId,
           name: stableName,
@@ -783,7 +788,7 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
             : isStartingArea(chunk) && index === 2 ? 'Lanterns glow beneath old roots in the quiet town chapel.'
             : 'A simple brown room waiting to be furnished.',
           roomType: (isStartingArea(chunk) && index === 0 ? 'inn' : isStartingArea(chunk) && index === 1 ? 'guild' : isStartingArea(chunk) && index === 2 ? 'chapel' : 'building') as const,
-          exteriorPosition: doorwayExteriorPosition(rect, position),
+          exteriorPosition: doorwayExteriorPosition(useRect, usePosition),
         },
       };
     });
@@ -848,8 +853,10 @@ const playtestChunk: Point | null = (() => {
 // interaction, GREEN=exit spawn over the field so door/logic alignment is visible.
 const debugDoors: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debugDoors') === '1';
 // Visual house mover (?moveHouses=1): drag house sprites to show where they
-// should go. Visual-only; user screenshots the result. No logic changes.
+// should go. Offsets apply to visuals, collision, and triggers so what you
+// see is what you get. In-memory only; user screenshots the result.
 const moveHouses: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('moveHouses') === '1';
+const moverOffsets: Record<string, Point> = {};
 
 function fieldDoorPosition(rect: FieldRect): Point {
   // Match .field-house::after: left 43%, width 16%, bottom 0, height 44%.
@@ -2526,9 +2533,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   // Debug tap marks (?debugDoors=1): user taps to mark where they think the
   // invisible exit/entrance is; rendered as lime green dots with coordinates.
   const [debugMarks, setDebugMarks] = useState<Point[]>([]);
-  // Visual house mover: doorwayId -> {x, y} offset in field units. Visual only.
-  const [houseOffsets, setHouseOffsets] = useState<Record<string, Point>>({});
-  const dragStateRef = useRef<{ doorwayId: string; startClientX: number; startClientY: number; origX: number; origY: number; containerW: number; containerH: number } | null>(null);
+  // Visual house mover: tick forces re-render when houses are dragged.
+  const [moverTick, setMoverTick] = useState(0);
+  const dragStateRef = useRef<{ doorwayId: string; moverKey: string; startClientX: number; startClientY: number; origX: number; origY: number; containerW: number; containerH: number } | null>(null);
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
   const [moving, setMoving] = useState(false);
@@ -3515,7 +3522,10 @@ if (active) {
               <div style={{ marginBottom: '8px' }}>🏠 <b>Drag the houses</b> to where they should go, then screenshot and send it.</div>
               <button
                 type="button"
-                onClick={() => setHouseOffsets({})}
+                onClick={() => {
+                  for (const k in moverOffsets) delete moverOffsets[k];
+                  setMoverTick((t) => t + 1);
+                }}
                 style={{ padding: '6px 10px', fontSize: '12px', background: '#666', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
               >
                 Reset positions
@@ -3726,14 +3736,13 @@ if (active) {
               <span className="field-village-square" />
               {doorways.map((doorway) => {
                 const rect = doorway.rect;
-                const off = houseOffsets[doorway.id] || { x: 0, y: 0 };
                 return (
                 <span
                   key={doorway.id}
                   className="field-house"
                   style={{
-                    left: fieldPct(rect.left + off.x),
-                    top: fieldPct(rect.top + off.y),
+                    left: fieldPct(rect.left),
+                    top: fieldPct(rect.top),
                     width: fieldPct(rect.right - rect.left),
                     height: fieldPct(rect.bottom - rect.top),
                     cursor: moveHouses ? 'grab' : undefined,
@@ -3741,12 +3750,15 @@ if (active) {
                   }}
                   onPointerDown={moveHouses ? (e) => {
                     const container = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
+                    const moverKey = Math.round(chunk.x) + ',' + Math.round(chunk.y) + ':' + doorway.id;
+                    const cur = moverOffsets[moverKey] || { x: 0, y: 0 };
                     dragStateRef.current = {
                       doorwayId: doorway.id,
+                      moverKey,
                       startClientX: e.clientX,
                       startClientY: e.clientY,
-                      origX: off.x,
-                      origY: off.y,
+                      origX: cur.x,
+                      origY: cur.y,
                       containerW: container.width,
                       containerH: container.height,
                     };
@@ -3761,7 +3773,9 @@ if (active) {
                     const dyPx = e.clientY - ds.startClientY;
                     const dxField = (dxPx / ds.containerW) * FIELD_SIZE;
                     const dyField = (dyPx / ds.containerH) * FIELD_SIZE;
-                    setHouseOffsets((prev) => ({ ...prev, [ds.doorwayId]: { x: ds.origX + dxField, y: ds.origY + dyField } }));
+                    moverOffsets[ds.moverKey] = { x: ds.origX + dxField, y: ds.origY + dyField };
+                    // Force re-render so visual/collision/triggers all update.
+                    setMoverTick((t) => t + 1);
                   } : undefined}
                   onPointerUp={moveHouses ? () => { dragStateRef.current = null; } : undefined}
                   onPointerCancel={moveHouses ? () => { dragStateRef.current = null; } : undefined}
