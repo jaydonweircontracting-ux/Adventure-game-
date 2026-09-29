@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '239';
+const BUILD_NUMBER = '240';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -861,9 +861,9 @@ const playtestChunk: Point | null = (() => {
 // Debug visualization (?debugDoors=1): draw RED=building collision, BLUE=door
 // interaction, GREEN=exit spawn over the field so door/logic alignment is visible.
 const debugDoors: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debugDoors') === '1';
-// Visual house mover (?moveHouses=1): drag house sprites to show where they
-// should go. Visual-only; user screenshots the result. No logic changes.
-const moveHouses: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('moveHouses') === '1';
+// Visual house mover: can be enabled via ?moveHouses=1 URL or the Debug menu.
+// Module-level so collision functions (outside the component) can read it.
+let moveHouses: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('moveHouses') === '1';
 
 function fieldDoorPosition(rect: FieldRect): Point {
   // Match .field-house::after: left 43%, width 16%, bottom 0, height 44%.
@@ -2581,6 +2581,17 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const [selectedHouse, setSelectedHouse] = useState<string | null>(null);
   // Mover zoom level.
   const [moverZoom, setMoverZoom] = useState(1);
+  // Debug mover mode (toggleable from options menu). Syncs with module-level moveHouses.
+  const [moverMode, setMoverMode] = useState(moveHouses);
+  const toggleMoverMode = () => {
+    const next = !moverMode;
+    moveHouses = next;
+    setMoverMode(next);
+    if (!next) {
+      setSelectedHouse(null);
+      setMoverZoom(1);
+    }
+  };
   const dragStateRef = useRef<{ doorwayId: string; startClientX: number; startClientY: number; origX: number; origY: number; containerW: number; containerH: number } | null>(null);
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -3563,7 +3574,7 @@ if (active) {
               Clear marks ({debugMarks.length})
             </button>
           )}
-          {moveHouses && (
+          {moverMode && (
             <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 60, background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '10px', borderRadius: '6px', fontSize: '13px', maxWidth: '240px' }}>
               <div style={{ marginBottom: '8px' }}>🏠 <b>Tap a house</b> to pick it up (yellow), then <b>tap where</b> to place it. Tap again to cancel.</div>
               <div style={{ marginBottom: '8px', fontSize: '11px', fontFamily: 'monospace', background: 'rgba(255,255,255,0.1)', padding: '6px', borderRadius: '4px', maxHeight: '120px', overflow: 'auto' }}>
@@ -3596,7 +3607,7 @@ if (active) {
               </button>
             </div>
           )}
-          {moveHouses && (
+          {moverMode && (
             <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', zIndex: 60, display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
                 type="button"
@@ -3617,7 +3628,7 @@ if (active) {
               </button>
             </div>
           )}
-          <div className="field-world-layer" style={moveHouses && moverZoom !== 1 ? (() => {
+          <div className="field-world-layer" style={moverMode && moverZoom !== 1 ? (() => {
             const ox = (position.x / FIELD_SIZE) * 100;
             const oy = (position.y / FIELD_SIZE) * 100;
             return { transform: `scale(${moverZoom})`, transformOrigin: `${ox}% ${oy}%` };
@@ -3822,8 +3833,8 @@ if (active) {
             const doorways = buildingDoorwaysFor(chunk);
             return (
             <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle + ' town-variant-' + (Math.abs(currentWorldTile.landmark.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={currentWorldTile.landmark.name}
-              style={moveHouses ? { touchAction: 'none' } : undefined}
-              onPointerUp={moveHouses && selectedHouse ? (e) => {
+              style={moverMode ? { touchAction: 'none' } : undefined}
+              onPointerUp={moverMode && selectedHouse ? (e) => {
                 // Tap-to-place: if a house is selected and the tap was on the
                 // field (not on a house), move the selected house there.
                 const target = e.target as HTMLElement;
@@ -3861,12 +3872,12 @@ if (active) {
                     top: fieldPct(rect.top + off.y),
                     width: fieldPct(rect.right - rect.left),
                     height: fieldPct(rect.bottom - rect.top),
-                    cursor: moveHouses ? 'pointer' : undefined,
-                    touchAction: moveHouses ? 'none' : undefined,
+                    cursor: moverMode ? 'pointer' : undefined,
+                    touchAction: moverMode ? 'none' : undefined,
                     outline: isSelected ? '3px solid #ff0' : undefined,
                     zIndex: isSelected ? 10 : undefined,
                   }}
-                  onPointerUp={moveHouses ? (e) => {
+                  onPointerUp={moverMode ? (e) => {
                     // Tap a house to select/deselect it.
                     e.stopPropagation();
                     if (selectedHouse === doorway.id) {
@@ -3982,8 +3993,8 @@ if (active) {
           {currentWorldTile.landmark?.name === 'Mosslight Crossing' && npcStates.map((npc) => (
             <button
               className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '')}
-              onClick={moveHouses ? undefined : () => talkToNpc(npc)}
-              style={{ left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: moveHouses ? 'none' : undefined }}
+              onClick={moverMode ? undefined : () => talkToNpc(npc)}
+              style={{ left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: moverMode ? 'none' : undefined }}
               data-role={npc.role}
               data-facing={npc.facing}
               aria-label={npc.name + ', ' + npc.title}
@@ -4002,8 +4013,8 @@ if (active) {
               type="button"
               key={adventurer.id}
               className={'simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (adventurer.moving ? ' is-moving' : '') + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '')}
-              onClick={moveHouses ? undefined : () => inspectAdventurer(adventurer)}
-              style={{ left: fieldPct(adventurer.position.x), top: fieldPct(adventurer.position.y), pointerEvents: moveHouses ? 'none' : undefined }}
+              onClick={moverMode ? undefined : () => inspectAdventurer(adventurer)}
+              style={{ left: fieldPct(adventurer.position.x), top: fieldPct(adventurer.position.y), pointerEvents: moverMode ? 'none' : undefined }}
               data-facing={adventurer.facing}
               aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className}
               title={adventurer.name + ' — ' + adventurer.goal}
@@ -4038,7 +4049,7 @@ if (active) {
           })()}
           </div>
           {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
-             data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: fieldPct(position.x), top: fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, ...(moveHouses && moverZoom !== 1 ? { transform: `translate(-50%, -50%) scale(${moverZoom})` } : {}) } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
+             data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: fieldPct(position.x), top: fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, ...(moverMode && moverZoom !== 1 ? { transform: `translate(-50%, -50%) scale(${moverZoom})` } : {}) } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
             {equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}
@@ -4086,6 +4097,10 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); onOpenLoad(); }} data-testid="button-import-save">
                   <span className="options-action-icon"><Upload size={17} /></span>
                   <span><strong>Load Save File</strong><small>Import a downloaded JSON save</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMoverMode(); }} data-testid="button-debug-mover">
+                  <span className="options-action-icon"><Settings size={17} /></span>
+                  <span><strong>Debug: {moverMode ? 'Exit' : 'Move'} Houses</strong><small>{moverMode ? 'Return to normal play' : 'Tap houses to reposition them'}</small></span>
                 </button>
               </div>
               <button className="options-menu-button" onClick={() => { setOptionsOpen(false); onOpenMenu(); }} data-testid="button-options-main-menu">Main Menu</button>
