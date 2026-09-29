@@ -324,13 +324,17 @@ function envSpriteForTerrain(terrain: Terrain, variant: number): EnvSpriteKey {
 type FieldRect = { left: number; top: number; right: number; bottom: number };
 
 function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed = 0): FieldRect[] {
+  // Rect specs below are authored in 0..100 space; scale to field units so
+  // houses keep their relative size and spread on larger fields.
+  const k = FIELD_SIZE / 100;
+  const toField = (r: FieldRect): FieldRect => ({ left: r.left * k, top: r.top * k, right: r.right * k, bottom: r.bottom * k });
   // Points of interest don't get houses: a dungeon gets one crypt mound, a ruin
   // gets scattered broken walls. Collision + doorway logic reuse these rects.
-  if (kind === 'dungeon') return [{ left: 38, top: 34, right: 62, bottom: 54 }];
+  if (kind === 'dungeon') return [toField({ left: 38, top: 34, right: 62, bottom: 54 })];
   if (kind === 'ruin') return [
-    { left: 28, top: 28, right: 43, bottom: 37 },
-    { left: 57, top: 42, right: 70, bottom: 51 },
-    { left: 39, top: 62, right: 58, bottom: 70 },
+    toField({ left: 28, top: 28, right: 43, bottom: 37 }),
+    toField({ left: 57, top: 42, right: 70, bottom: 51 }),
+    toField({ left: 39, top: 62, right: 58, bottom: 70 }),
   ];
   const parent = kind === 'town'
     ? { left: 19, top: 21, width: 62, height: 58 }
@@ -386,12 +390,12 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
     const height = spec.height * spec.scale;
     const left = spec.left + (spec.width - width) / 2;
     const top = spec.top + (spec.height - height) / 2;
-    return {
+    return toField({
       left: parent.left + (left / 100) * parent.width,
       top: parent.top + (top / 100) * parent.height,
       right: parent.left + ((left + width) / 100) * parent.width,
       bottom: parent.top + ((top + height) / 100) * parent.height,
-    };
+    });
   });
 }
 
@@ -432,7 +436,9 @@ function fieldFarmRects(chunkX: number, chunkY: number): { houses: FieldRect[]; 
       bottom: by + 25,
     });
   }
-  return { houses, fields };
+  const k = FIELD_SIZE / 100;
+  const toField = (r: FieldRect): FieldRect => ({ left: r.left * k, top: r.top * k, right: r.right * k, bottom: r.bottom * k });
+  return { houses: houses.map(toField), fields: fields.map(toField) };
 }
 
 // Points of Interest: ruins, caves, camps, shrines scattered in the wilderness.
@@ -696,9 +702,9 @@ type EscapeSpawn = {
 };
 type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number };
 const startingDoorways: Doorway[] = [
-  { id: 'tutorial-house-door', buildingIndex: 0, position: { x: 17.69, y: 21.14 }, area: { id: 'tutorial-house', name: 'Tutorial House', description: 'A small safe house on the tutorial island.', roomType: 'inn', exteriorPosition: { x: 17.69, y: 28.5 } } },
-  { id: 'crafting-guild-door', buildingIndex: 1, position: { x: 82.69, y: 22.14 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'A workbench, maps, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 82.69, y: 29.5 } } },
-  { id: 'chapel-door', buildingIndex: 2, position: { x: 17.69, y: 85.14 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 17.69, y: 92.5 } } },
+  { id: 'tutorial-house-door', buildingIndex: 0, position: { x: 24.77, y: 29.6 }, area: { id: 'tutorial-house', name: 'Tutorial House', description: 'A small safe house on the tutorial island.', roomType: 'inn', exteriorPosition: { x: 24.77, y: 39.9 } } },
+  { id: 'crafting-guild-door', buildingIndex: 1, position: { x: 115.77, y: 31.0 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'A workbench, maps, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 115.77, y: 41.3 } } },
+  { id: 'chapel-door', buildingIndex: 2, position: { x: 24.77, y: 119.2 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 24.77, y: 129.5 } } },
 ];
 // Bram the smith works the Wayfarer Guild in the starting area. Talking to
 // him opens the crafting / sell / rumours flow.
