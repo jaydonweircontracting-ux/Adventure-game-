@@ -155,7 +155,7 @@ export default function CharacterCreator({ onConfirm, onCancel }: CharacterCreat
           </button>
           <button
             type="button"
-            className="main-menu-button primary"
+            className="main-menu-button"
             onClick={() => onConfirm(choices)}
             data-testid="button-confirm-character"
           >
