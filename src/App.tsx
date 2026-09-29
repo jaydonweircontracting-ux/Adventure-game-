@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '202';
+const BUILD_NUMBER = '203';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -2588,6 +2588,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const interiorRef = useRef(interior);
   const interiorPositionRef = useRef(interiorPosition);
   const interiorDoorwayIdRef = useRef<string | null>(STARTING_DOORWAY_ID);
+  // The chunk the player was in when they entered the current interior, so
+  // exit can resolve the same doorway from the same chunk (not hardcoded 4,7).
+  const interiorEntryChunkRef = useRef<Point>({ x: 4, y: 7 });
   const goatWorldStepRef = useRef(0);
   const simulatedTickRef = useRef(0);
   const simulatedAdventurersRef = useRef(initialSimulatedAdventurers);
@@ -2673,6 +2676,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
     simulatedAdventurersRef.current = restoredAdventurers;
     setSimulatedAdventurers(restoredAdventurers);
     interiorDoorwayIdRef.current = restoredDoorway?.id || null;
+    interiorEntryChunkRef.current = { x: loadState.chunk.x, y: loadState.chunk.y };
     interiorRef.current = restoredDoorway?.area || null; setInterior(restoredDoorway?.area || null);
     interiorPositionRef.current = loadState.interiorPosition; setInteriorPosition(loadState.interiorPosition);
     onRestorePrison(loadState.inPrison || false, loadState.prisonState);
@@ -3133,11 +3137,12 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
          const atDoorway = Math.abs(next.x - 50) <= doorwayHalfWidth;
          if (next.y > 91 && atDoorway) {
            // Compute exit position fresh from the doorway (not stored data) to ensure
-           // the player appears directly outside the visible door.
+           // the player appears directly outside the visible door. Use the actual
+           // entry chunk, not a hardcoded one, so the doorway resolves correctly.
            let exitPosition = currentInterior.exteriorPosition;
            const doorwayId = interiorDoorwayIdRef.current;
            if (doorwayId) {
-             const freshDoorway = buildingDoorwaysFor({ x: 4, y: 7 }).find((d) => d.id === doorwayId);
+             const freshDoorway = buildingDoorwaysFor(interiorEntryChunkRef.current).find((d) => d.id === doorwayId);
              if (freshDoorway) {
                exitPosition = { x: freshDoorway.position.x, y: freshDoorway.position.y + 8 };
              }
@@ -3172,7 +3177,7 @@ if (active) {
         const attempted = { x: current.x + movement.x, y: current.y + movement.y };
         const nearbyDoor = doorwayNear(attempted, currentChunk);
         if (nearbyDoor && canEnterDoorway(current, attempted, nearbyDoor, direction)) {
-          enterDoorway(nearbyDoor);
+          enterDoorway(nearbyDoor, currentChunk);
           animationFrame = window.requestAnimationFrame(animate); return;
         }
         const resolved = resolveFieldMovement(current, movement, currentChunk, goatsRef.current);
@@ -3428,8 +3433,9 @@ if (active) {
     onAddRumor(rumor, 'Bram');
     setLogs((currentLogs) => [{ text: `Bram shares a rumor: "${rumor}"`, color: 'purple' }, ...currentLogs].slice(0, 5));
   };
-  const enterDoorway = (doorway: Doorway) => {
+  const enterDoorway = (doorway: Doorway, entryChunk: Point) => {
     interiorDoorwayIdRef.current = doorway.id;
+    interiorEntryChunkRef.current = { x: entryChunk.x, y: entryChunk.y };
     interiorRef.current = doorway.area; setInterior(doorway.area);
     interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
     setMoving(false);
@@ -3992,7 +3998,7 @@ if (active) {
           </div>
         )}
         {attackFlash && <div className="combat-flash" aria-live="polite">{attackFlash}</div>}
-        {!interior && (() => { const promptDoor = doorwayNear(position, chunk); return promptDoor && <button type="button" className="door-prompt" aria-live="polite" onClick={() => enterDoorway(promptDoor)}>Enter {promptDoor.area.name}</button>; })()}
+        {!interior && (() => { const promptDoor = doorwayNear(position, chunk); return promptDoor && <button type="button" className="door-prompt" aria-live="polite" onClick={() => enterDoorway(promptDoor, chunk)}>Enter {promptDoor.area.name}</button>; })()}
         {areaFlash && (
           <div className="area-flash" key={areaFlash.id} aria-live="polite" data-testid="area-entry-flash">
             <span className="area-flash-kicker">Entering</span>
