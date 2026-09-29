@@ -3144,11 +3144,7 @@ if (active) {
         const attempted = { x: current.x + movement.x, y: current.y + movement.y };
         const nearbyDoor = doorwayNear(attempted, currentChunk);
         if (nearbyDoor && canEnterDoorway(current, attempted, nearbyDoor, direction)) {
-          interiorDoorwayIdRef.current = nearbyDoor.id;
-          interiorRef.current = nearbyDoor.area; setInterior(nearbyDoor.area);
-          interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
-          setMoving(false);
-          setLogs((currentLogs) => [{ text: 'You enter the ' + nearbyDoor.area.name + '.', color: 'blue' }, ...currentLogs].slice(0, 3));
+          enterDoorway(nearbyDoor);
           animationFrame = window.requestAnimationFrame(animate); return;
         }
         const resolved = resolveFieldMovement(current, movement, currentChunk, goatsRef.current);
@@ -3403,6 +3399,13 @@ if (active) {
     setSmithRumor(rumor);
     onAddRumor(rumor, 'Bram');
     setLogs((currentLogs) => [{ text: `Bram shares a rumor: "${rumor}"`, color: 'purple' }, ...currentLogs].slice(0, 5));
+  };
+  const enterDoorway = (doorway: Doorway) => {
+    interiorDoorwayIdRef.current = doorway.id;
+    interiorRef.current = doorway.area; setInterior(doorway.area);
+    interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
+    setMoving(false);
+    setLogs((currentLogs) => [{ text: 'You enter the ' + doorway.area.name + '.', color: 'blue' }, ...currentLogs].slice(0, 3));
   };
 
   return (
@@ -3869,7 +3872,7 @@ if (active) {
           </div>
         )}
         {attackFlash && <div className="combat-flash" aria-live="polite">{attackFlash}</div>}
-        {!interior && doorwayNear(position, chunk) && <div className="door-prompt" aria-live="polite">Enter {doorwayNear(position, chunk)?.area.name}</div>}
+        {!interior && (() => { const promptDoor = doorwayNear(position, chunk); return promptDoor && <button type="button" className="door-prompt" aria-live="polite" onClick={() => enterDoorway(promptDoor)}>Enter {promptDoor.area.name}</button>; })()}
         {areaFlash && (
           <div className="area-flash" key={areaFlash.id} aria-live="polite" data-testid="area-entry-flash">
             <span className="area-flash-kicker">Entering</span>
