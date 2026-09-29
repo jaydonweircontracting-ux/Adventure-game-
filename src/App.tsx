@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '219';
+const BUILD_NUMBER = '220';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -2533,6 +2533,8 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const [houseOffsets, setHouseOffsets] = useState<Record<string, Point>>({});
   // Tap-to-move: selected house ID. Tap a house to pick it up, tap the field to place it.
   const [selectedHouse, setSelectedHouse] = useState<string | null>(null);
+  // Mover zoom level.
+  const [moverZoom, setMoverZoom] = useState(1);
   const dragStateRef = useRef<{ doorwayId: string; startClientX: number; startClientY: number; origX: number; origY: number; containerW: number; containerH: number } | null>(null);
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -3535,13 +3537,41 @@ if (active) {
                   setHouseOffsets({});
                   setSelectedHouse(null);
                 }}
-                style={{ padding: '6px 10px', fontSize: '12px', background: '#666', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                style={{ padding: '6px 10px', fontSize: '12px', background: '#666', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '6px' }}
               >
                 Reset positions
               </button>
+              <button
+                type="button"
+                onClick={() => setMoverZoom(1)}
+                style={{ padding: '6px 10px', fontSize: '12px', background: '#666', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+              >
+                Reset zoom
+              </button>
             </div>
           )}
-          <div className="field-world-layer">
+          {moveHouses && (
+            <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', zIndex: 60, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setMoverZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
+                style={{ width: '44px', height: '44px', fontSize: '20px', background: 'rgba(0,0,0,0.75)', color: '#fff', border: '1px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
+              >
+                +
+              </button>
+              <div style={{ textAlign: 'center', fontSize: '11px', color: '#fff', background: 'rgba(0,0,0,0.75)', borderRadius: '4px', padding: '2px 4px' }}>
+                {Math.round(moverZoom * 100)}%
+              </div>
+              <button
+                type="button"
+                onClick={() => setMoverZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}
+                style={{ width: '44px', height: '44px', fontSize: '20px', background: 'rgba(0,0,0,0.75)', color: '#fff', border: '1px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
+              >
+                −
+              </button>
+            </div>
+          )}
+          <div className="field-world-layer" style={moveHouses && moverZoom !== 1 ? { transform: `scale(${moverZoom})`, transformOrigin: 'center center' } : undefined}>
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
            <div className="field-accents" aria-hidden="true">
              {fieldAccents.map((accent) => (
