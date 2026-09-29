@@ -1,7 +1,7 @@
 # Overnight Progress Log
 
 Autonomous development session. Updated after every major completed task.
-Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 188** (live).
+Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 189** (live).
 
 ## Current Phase
 User-directed fixes (camera removal, NPC size, beds) + continuous autonomous work.
@@ -11,6 +11,9 @@ BUILD 186 live-verified. Continuing autonomous work queue.
 ocean fix, tutorial-house beds removed + smith NPC, debug/playtest tooling.
 
 ## Completed Tasks
+- 2026-09-28: BUILD 189 pushed live (a38aeb9). Buildings 30% larger per user
+  request: BUILDING_SIZE_MULT=1.3 grows house/farmhouse rects around centers;
+  collision, doorways, visuals stay aligned. Build + sim (33,277) green.
 - 2026-09-28: BUILD 188 pushed live (3505297). Fixed tiny-building regression:
   house/farm rects were authored in 0..100 space but never scaled when fields
   went 100->140, so BUILD 186's fieldPct rendering shrank houses to ~5.7%.
