@@ -535,7 +535,7 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
     const value = Math.sin(seed++) * 10000;
     return value - Math.floor(value);
   };
-  const houseRects = landmark ? fieldHouseRects(landmark.kind, false, chunk.x * 31 + chunk.y * 17) : [];
+  const houseRects = landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17) : [];
   // Farms/homesteads in non-settlement chunks (only on farmable terrain)
   const farmable = ['meadow', 'grassland', 'greenvale'].includes(mapTileFor(chunk).terrain);
   const farmData = (!landmark && farmable) ? fieldFarmRects(chunk.x, chunk.y) : { houses: [], fields: [] };
@@ -582,7 +582,7 @@ function fieldAccentsFor(chunk: Point): FieldAccent[] {
 
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   const startingCenter = isTutorialCenter(chunk);
-  const houseRects = landmark ? fieldHouseRects(landmark.kind, startingCenter, chunk.x * 31 + chunk.y * 17) : [];
+  const houseRects = landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17) : [];
   let seed = Math.abs((chunk.x * 19349663) ^ (chunk.y * 83492791)) + 17;
   const random = () => {
     const value = Math.sin(seed++) * 10000;
