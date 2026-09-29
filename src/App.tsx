@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '212';
+const BUILD_NUMBER = '213';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -771,15 +771,10 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
         : isStartingArea(chunk) && index === 1 ? 'Wayfarer Guild'
         : isStartingArea(chunk) && index === 2 ? 'Rootbound Chapel'
         : landmark.name + ' House ' + (index + 1);
-      // Apply user-placed override if the user dragged this house in ?moveHouses=1.
-      const overrideKey = Math.round(chunk.x) + ',' + Math.round(chunk.y) + ':' + stableId;
-      const overrideRect = houseOverrides[overrideKey];
-      const finalRect = overrideRect || rect;
-      const finalPosition = overrideRect ? fieldDoorPosition(finalRect) : position;
       return {
         id: stableId,
-        position: finalPosition,
-        rect: { left: finalRect.left, top: finalRect.top, right: finalRect.right, bottom: finalRect.bottom },
+        position,
+        rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
         area: {
           id: stableAreaId,
           name: stableName,
@@ -788,7 +783,7 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
             : isStartingArea(chunk) && index === 2 ? 'Lanterns glow beneath old roots in the quiet town chapel.'
             : 'A simple brown room waiting to be furnished.',
           roomType: (isStartingArea(chunk) && index === 0 ? 'inn' : isStartingArea(chunk) && index === 1 ? 'guild' : isStartingArea(chunk) && index === 2 ? 'chapel' : 'building') as const,
-          exteriorPosition: doorwayExteriorPosition(finalRect, finalPosition),
+          exteriorPosition: doorwayExteriorPosition(rect, position),
         },
       };
     });
@@ -852,19 +847,6 @@ const playtestChunk: Point | null = (() => {
 // Debug visualization (?debugDoors=1): draw RED=building collision, BLUE=door
 // interaction, GREEN=exit spawn over the field so door/logic alignment is visible.
 const debugDoors: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debugDoors') === '1';
-// House mover (?moveHouses=1): tap and drag houses to reposition them. Positions
-// save to localStorage so the user can place houses in the correct spots.
-const moveHouses: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('moveHouses') === '1';
-// User-placed house overrides: key is "chunkX,chunkY:doorwayId", value is the rect.
-let houseOverrides: Record<string, { left: number; top: number; right: number; bottom: number }> = {};
-if (typeof window !== 'undefined') {
-  try {
-    houseOverrides = JSON.parse(localStorage.getItem('housePositionOverrides') || '{}');
-  } catch { houseOverrides = {}; }
-}
-function saveHouseOverrides() {
-  try { localStorage.setItem('housePositionOverrides', JSON.stringify(houseOverrides)); } catch {}
-}
 
 function fieldDoorPosition(rect: FieldRect): Point {
   // Match .field-house::after: left 43%, width 16%, bottom 0, height 44%.
@@ -2541,8 +2523,6 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   // Debug tap marks (?debugDoors=1): user taps to mark where they think the
   // invisible exit/entrance is; rendered as lime green dots with coordinates.
   const [debugMarks, setDebugMarks] = useState<Point[]>([]);
-  // House mover (?moveHouses=1): track which house is being dragged.
-  const [dragHouse, setDragHouse] = useState<{ doorwayId: string; chunkX: number; chunkY: number; offsetX: number; offsetY: number } | null>(null);
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
   const [moving, setMoving] = useState(false);
@@ -3524,24 +3504,6 @@ if (active) {
               Clear marks ({debugMarks.length})
             </button>
           )}
-          {moveHouses && (
-            <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 50, background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '8px', borderRadius: '4px', fontSize: '12px', maxWidth: '200px' }}>
-              <div style={{ marginBottom: '6px' }}>🏠 Drag houses to move them. Positions save automatically.</div>
-              <button
-                type="button"
-                onClick={() => {
-                  houseOverrides = {};
-                  saveHouseOverrides();
-                  setDragHouse(null);
-                  // Force re-render
-                  setDebugMarks([...debugMarks]);
-                }}
-                style={{ padding: '4px 8px', fontSize: '12px', background: '#f00', color: '#fff', border: 'none', borderRadius: '3px', cursor: 'pointer' }}
-              >
-                Reset Houses
-              </button>
-            </div>
-          )}
           <div className="field-world-layer">
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
            <div className="field-accents" aria-hidden="true">
@@ -3741,70 +3703,26 @@ if (active) {
             // Single source of truth: visuals use the exact same doorway data as
             // triggers/collision, so houses can never drift from their doors.
             const doorways = buildingDoorwaysFor(chunk);
+            const houseRects = doorways.map((d) => d.rect);
             return (
-            <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle + ' town-variant-' + (Math.abs(currentWorldTile.landmark.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={currentWorldTile.landmark.name}
-              onPointerMove={moveHouses && dragHouse ? (e) => {
-                // Drag the house: convert pointer position to field units.
-                const container = e.currentTarget as HTMLElement;
-                const containerRect = container.getBoundingClientRect();
-                // Pointer position relative to container, minus the grab offset.
-                const px = e.clientX - containerRect.left - dragHouse.offsetX;
-                const py = e.clientY - containerRect.top - dragHouse.offsetY;
-                // Convert pixels to field units (field is FIELD_SIZE units wide).
-                const fieldX = (px / containerRect.width) * FIELD_SIZE;
-                const fieldY = (py / containerRect.height) * FIELD_SIZE;
-                // Get the current rect to preserve size.
-                const key = dragHouse.chunkX + ',' + dragHouse.chunkY + ':' + dragHouse.doorwayId;
-                const current = houseOverrides[key] || buildingDoorwaysFor({ x: dragHouse.chunkX, y: dragHouse.chunkY }).find((d) => d.id === dragHouse.doorwayId)?.rect;
-                if (!current) return;
-                const w = current.right - current.left;
-                const h = current.bottom - current.top;
-                houseOverrides[key] = { left: fieldX, top: fieldY, right: fieldX + w, bottom: fieldY + h };
-                // Force re-render by updating a dummy state (use dragHouse).
-                setDragHouse({ ...dragHouse });
-              } : undefined}
-              onPointerUp={moveHouses && dragHouse ? () => {
-                // Save the new position.
-                saveHouseOverrides();
-                setDragHouse(null);
-              } : undefined}
-            >
+            <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle + ' town-variant-' + (Math.abs(currentWorldTile.landmark.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={currentWorldTile.landmark.name}>
               <span className="field-village-square" />
-              {doorways.map((doorway) => {
-                const rect = doorway.rect;
-                return (
+              {houseRects.map((rect, i) => (
                 <span
-                  key={doorway.id}
-                  className={'field-house' + (moveHouses ? ' movable' : '')}
+                  key={i}
+                  className="field-house"
                   style={{
                     left: fieldPct(rect.left),
                     top: fieldPct(rect.top),
                     width: fieldPct(rect.right - rect.left),
                     height: fieldPct(rect.bottom - rect.top),
-                    cursor: moveHouses ? 'grab' : undefined,
-                    outline: moveHouses && dragHouse?.doorwayId === doorway.id ? '3px solid #ff0' : undefined,
                   }}
-                  onPointerDown={moveHouses ? (e) => {
-                    // Start dragging this house. Record the offset from the
-                    // pointer to the house's top-left so it doesn't jump.
-                    const target = e.currentTarget as HTMLElement;
-                    const container = target.parentElement as HTMLElement;
-                    const containerRect = container.getBoundingClientRect();
-                    const houseRect = target.getBoundingClientRect();
-                    const offsetX = e.clientX - houseRect.left;
-                    const offsetY = e.clientY - houseRect.top;
-                    setDragHouse({ doorwayId: doorway.id, chunkX: Math.round(chunk.x), chunkY: Math.round(chunk.y), offsetX, offsetY });
-                    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-                    e.stopPropagation();
-                  } : undefined}
                 />
-                );
-              })}
-              {(debugDoors || moveHouses) && doorways.map((doorway) => {
-                const rect = doorway.rect;
+              ))}
+              {debugDoors && houseRects.map((rect, i) => {
                 const door = fieldDoorPosition(rect);
                 const exit = doorwayExteriorPosition(rect, door);
-                // RED = collision rect (0.35 padding), BLUE = door interaction, GREEN = exit spawn
+                // RED = collision rect (0.35 padding), BLUE = door interaction (6.0 radius), GREEN = exit spawn
                 return (
                   <span key={'dbg-' + i}>
                     <span aria-hidden="true" style={{
