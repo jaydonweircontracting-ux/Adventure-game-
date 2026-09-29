@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '237';
+const BUILD_NUMBER = '238';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -883,15 +883,41 @@ function newHouseDoorPosition(rect: FieldRect): Point {
   };
 }
 
-function doorwayNear(position: Point, chunk: Point) {
+function doorwayNear(position: Point, chunk: Point, offsets?: Record<string, Point>) {
   // Only trigger when the player is south of the door (where entry is possible),
   // not on the sides or north of the house. This prevents the prompt from
   // appearing at the same relative spots on either side of each house.
-  return buildingDoorwaysFor(chunk).find((doorway) =>
-    position.y > doorway.position.y
-    && position.y - doorway.position.y <= 4.0
-    && Math.abs(position.x - doorway.position.x) <= 3.0
-  ) || null;
+  // If house offsets are provided (mover mode), the trigger follows the visual —
+  // the entry point is attached to the house, not a stagnant separate position.
+  const found = buildingDoorwaysFor(chunk).find((doorway) => {
+    const off = offsets?.[doorway.id] || { x: 0, y: 0 };
+    const dx = doorway.position.x + off.x;
+    const dy = doorway.position.y + off.y;
+    return position.y > dy
+      && position.y - dy <= 4.0
+      && Math.abs(position.x - dx) <= 3.0;
+  });
+  if (!found) return null;
+  // Return a copy with the offset applied so entry/exit use the moved position.
+  const off = offsets?.[found.id] || { x: 0, y: 0 };
+  if (off.x === 0 && off.y === 0) return found;
+  return {
+    ...found,
+    position: { x: found.position.x + off.x, y: found.position.y + off.y },
+    rect: {
+      left: found.rect.left + off.x,
+      top: found.rect.top + off.y,
+      right: found.rect.right + off.x,
+      bottom: found.rect.bottom + off.y,
+    },
+    area: {
+      ...found.area,
+      exteriorPosition: {
+        x: found.area.exteriorPosition.x + off.x,
+        y: found.area.exteriorPosition.y + off.y,
+      },
+    },
+  };
 }
 
 function canEnterDoorway(currentPosition: Point, nextPosition: Point, doorway: Doorway, direction: Direction) {
@@ -4148,7 +4174,7 @@ if (active) {
           </div>
         )}
         {attackFlash && <div className="combat-flash" aria-live="polite">{attackFlash}</div>}
-        {!interior && (() => { const promptDoor = doorwayNear(position, chunk); return promptDoor && <button type="button" className="door-prompt" aria-live="polite" onClick={() => enterDoorway(promptDoor, chunk)}>Enter {promptDoor.area.name}</button>; })()}
+        {!interior && (() => { const promptDoor = doorwayNear(position, chunk, houseOffsets); return promptDoor && <button type="button" className="door-prompt" aria-live="polite" onClick={() => enterDoorway(promptDoor, chunk)}>Enter {promptDoor.area.name}</button>; })()}
         {areaFlash && (
           <div className="area-flash" key={areaFlash.id} aria-live="polite" data-testid="area-entry-flash">
             <span className="area-flash-kicker">Entering</span>
