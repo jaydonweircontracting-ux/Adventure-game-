@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '241';
+const BUILD_NUMBER = '242';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -387,10 +387,10 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
     // Size: 8.7 x 6.1 field units. Converted to spec space.
     // BUILD 240: All four are the new stone cottage style with prominent entrances.
     specs = [
-      { left: 20.0, top: 33.2, width: 11.5, height: 8.4, scale: 1 },
-      { left: 68.4, top: 34.1, width: 11.5, height: 8.4, scale: 1 },
-      { left: 20.1, top: 65.8, width: 11.5, height: 8.4, scale: 1 },
-      { left: 70.8, top: 65.3, width: 11.5, height: 8.4, scale: 1 },
+      { left: 20.0, top: 33.2, width: 11.5, height: 8.4, scale: 1.5 },
+      { left: 68.4, top: 34.1, width: 11.5, height: 8.4, scale: 1.5 },
+      { left: 20.1, top: 65.8, width: 11.5, height: 8.4, scale: 1.5 },
+      { left: 70.8, top: 65.3, width: 11.5, height: 8.4, scale: 1.5 },
     ];
   }
 
