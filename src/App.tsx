@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '240';
+const BUILD_NUMBER = '241';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -382,16 +382,15 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
     ];
   } else {
     // Four corners (starting area default). Positions from user screenshot
-    // 2026-09-29 (BUILD 218 mover): exact field-unit coordinates.
-    // Field units = spec * 1.4. User positions:
-    // tutorial: 45.7,55.4 | crafting: 82.2,55.4 | chapel: 45.7,79.7 | 4th: 82.2,79.7
-    // Size: 12.2 x 8.9 field units.
-    // BUILD 239: All four are the new stone cottage style with prominent entrances.
+    // 2026-09-29 (BUILD 240 mover): exact field-unit coordinates.
+    // User placed: tutorial 47.3,57.8 | crafting 83.9,58.4 | chapel 47.4,81.5 | fourth 85.7,81.1
+    // Size: 8.7 x 6.1 field units. Converted to spec space.
+    // BUILD 240: All four are the new stone cottage style with prominent entrances.
     specs = [
-      { left: 32.6, top: 39.6, width: 10, height: 7.5, scale: 1 },
-      { left: 58.7, top: 39.6, width: 10, height: 7.5, scale: 1 },
-      { left: 32.6, top: 56.9, width: 10, height: 7.5, scale: 1 },
-      { left: 58.7, top: 56.9, width: 10, height: 7.5, scale: 1 },
+      { left: 20.0, top: 33.2, width: 11.5, height: 8.4, scale: 1 },
+      { left: 68.4, top: 34.1, width: 11.5, height: 8.4, scale: 1 },
+      { left: 20.1, top: 65.8, width: 11.5, height: 8.4, scale: 1 },
+      { left: 70.8, top: 65.3, width: 11.5, height: 8.4, scale: 1 },
     ];
   }
 
