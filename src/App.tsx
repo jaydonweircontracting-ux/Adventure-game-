@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '194';
+const BUILD_NUMBER = '195';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -648,10 +648,11 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
   const treeBlocked = fieldTreesFor(chunk).some((tree) => pointInRect(position, fieldTreeBaseRect(tree), 0.45));
   if (treeBlocked) return true;
 
-  const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
+  const landmarkKey = Math.round(chunk.x) + ',' + Math.round(chunk.y);
+  const landmark = mapLandmarks[landmarkKey];
   // Keep the visible building/base solid, but do not extend its collision far
   // into the surrounding grass where it reads as a random invisible wall.
-  if (landmark && fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17).some((rect) => pointInRect(position, rect, 0.35))) return true;
+  if (landmark && fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17).some((rect) => pointInRect(position, rect, 0.35))) return true;
 
   // Farmhouses are solid enterable buildings too.
   if (!landmark && ['meadow', 'grassland', 'greenvale'].includes(tile.terrain)) {
@@ -752,11 +753,12 @@ const WORLD_RUMORS = [
 ];
 
 function buildingDoorwaysFor(chunk: Point): Doorway[] {
-  const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
+  const landmarkKey = Math.round(chunk.x) + ',' + Math.round(chunk.y);
+  const landmark = mapLandmarks[landmarkKey];
   // Points of interest have no house doors (the dungeon gets its own entrance).
   if (landmark && (landmark.kind === 'dungeon' || landmark.kind === 'ruin')) return [];
   if (landmark) {
-    return fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17).map((rect, index) => {
+    return fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17).map((rect, index) => {
       const namedDoorway = isStartingArea(chunk) ? startingDoorways.find((doorway) => doorway.buildingIndex === index) : null;
       const position = fieldDoorPosition(rect);
       if (namedDoorway) {
