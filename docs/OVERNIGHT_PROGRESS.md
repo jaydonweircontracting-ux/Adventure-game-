@@ -1,7 +1,7 @@
 # Overnight Progress Log
 
 Autonomous development session. Updated after every major completed task.
-Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 187** (live).
+Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 188** (live).
 
 ## Current Phase
 User-directed fixes (camera removal, NPC size, beds) + continuous autonomous work.
@@ -11,6 +11,12 @@ BUILD 186 live-verified. Continuing autonomous work queue.
 ocean fix, tutorial-house beds removed + smith NPC, debug/playtest tooling.
 
 ## Completed Tasks
+- 2026-09-28: BUILD 188 pushed live (3505297). Fixed tiny-building regression:
+  house/farm rects were authored in 0..100 space but never scaled when fields
+  went 100->140, so BUILD 186's fieldPct rendering shrank houses to ~5.7%.
+  fieldHouseRects + fieldFarmRects now scale rects by FIELD_SIZE/100; collision,
+  doorways, and visuals all consume the same scaled rects. startingDoorways
+  fallbacks updated. Build + sim (33,277 passed) green; live bundle verified.
 - 2026-09-28: BUILD 187 pushed live (8f4a5a2). Map touch-pan fix for mobile
   Safari: body scroll locked while WorldMap is open (restored on close) so
   swipe-up pans the map instead of scrolling the page behind it; added
