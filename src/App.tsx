@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '217';
+const BUILD_NUMBER = '218';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3514,8 +3514,19 @@ if (active) {
             </button>
           )}
           {moveHouses && (
-            <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 60, background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '10px', borderRadius: '6px', fontSize: '13px', maxWidth: '220px' }}>
-              <div style={{ marginBottom: '8px' }}>🏠 <b>Drag the houses</b> to where they should go, then screenshot and send it.</div>
+            <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 60, background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '10px', borderRadius: '6px', fontSize: '13px', maxWidth: '240px' }}>
+              <div style={{ marginBottom: '8px' }}>🏠 <b>Drag the houses</b> to where they should go, then screenshot the numbers below and send it.</div>
+              <div style={{ marginBottom: '8px', fontSize: '11px', fontFamily: 'monospace', background: 'rgba(255,255,255,0.1)', padding: '6px', borderRadius: '4px', maxHeight: '120px', overflow: 'auto' }}>
+                {buildingDoorwaysFor(chunk).map((d) => {
+                  const r = d.rect;
+                  const off = houseOffsets[d.id] || { x: 0, y: 0 };
+                  const l = (r.left + off.x).toFixed(1);
+                  const t = (r.top + off.y).toFixed(1);
+                  const w = (r.right - r.left).toFixed(1);
+                  const h = (r.bottom - r.top).toFixed(1);
+                  return <div key={d.id}>{d.id.split('-')[0]}: {l},{t} {w}x{h}</div>;
+                })}
+              </div>
               <button
                 type="button"
                 onClick={() => setHouseOffsets({})}
