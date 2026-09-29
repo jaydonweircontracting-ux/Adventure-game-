@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '201';
+const BUILD_NUMBER = '202';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -2510,6 +2510,9 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, attackin
 
 function GameField({ inventory, equippedDagger, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null }) {
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
+  // Debug tap marks (?debugDoors=1): user taps to mark where they think the
+  // invisible exit/entrance is; rendered as lime green dots with coordinates.
+  const [debugMarks, setDebugMarks] = useState<Point[]>([]);
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
   const [moving, setMoving] = useState(false);
@@ -3441,8 +3444,48 @@ if (active) {
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
           '--field-glow': fieldPalette.glow,
-        } as CSSProperties}>
+        } as CSSProperties}
+        onClick={debugDoors ? (e) => {
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          const x = ((e.clientX - rect.left) / rect.width) * FIELD_SIZE;
+          const y = ((e.clientY - rect.top) / rect.height) * FIELD_SIZE;
+          setDebugMarks((marks) => [...marks, { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 }]);
+        } : undefined}
+        >
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
+          {debugDoors && debugMarks.map((mark, i) => (
+            <span key={'mark-' + i} aria-hidden="true" style={{
+              position: 'absolute',
+              left: fieldPct(mark.x - 1.5),
+              top: fieldPct(mark.y - 1.5),
+              width: fieldPct(3),
+              height: fieldPct(3),
+              background: 'lime',
+              border: '2px solid darkgreen',
+              borderRadius: '50%',
+              pointerEvents: 'none',
+              zIndex: 55,
+            }} title={'(' + mark.x + ', ' + mark.y + ')'} />
+          ))}
+          {debugDoors && debugMarks.length > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setDebugMarks([]); }}
+              style={{
+                position: 'absolute',
+                top: '8px',
+                right: '8px',
+                zIndex: 70,
+                background: 'black',
+                color: 'lime',
+                border: '1px solid lime',
+                borderRadius: '4px',
+                padding: '4px 8px',
+                fontSize: '12px',
+              }}
+            >
+              Clear marks ({debugMarks.length})
+            </button>
+          )}
           <div className="field-world-layer">
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
            <div className="field-accents" aria-hidden="true">
