@@ -851,6 +851,9 @@
   color: #fff3d4;
   background: rgba(29, 67, 49, .9);
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
   touch-action: none;
   transition: transform .12s ease, background-color .12s ease;
 }

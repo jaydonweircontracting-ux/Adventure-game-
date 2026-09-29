@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '220';
+const BUILD_NUMBER = '221';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -381,13 +381,16 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
       { left: 68, top: 70, width: 19, height: 13, scale: 0.8 },
     ];
   } else {
-    // Four corners (starting area default). Positions set from user screenshot
-    // 2026-09-29: houses arranged around the central plaza/fountain.
+    // Four corners (starting area default). Positions from user screenshot
+    // 2026-09-29 (BUILD 218 mover): exact field-unit coordinates.
+    // Field units = spec * 1.4. User positions:
+    // tutorial: 45.7,55.4 | crafting: 82.2,55.4 | chapel: 45.7,79.7 | 4th: 82.2,79.7
+    // Size: 12.2 x 8.9 field units.
     specs = [
-      { left: 22, top: 32, width: 14, height: 11, scale: 1 },
-      { left: 64, top: 32, width: 14, height: 11, scale: 1 },
-      { left: 22, top: 62, width: 14, height: 11, scale: 1 },
-      { left: 64, top: 62, width: 14, height: 11, scale: 1 },
+      { left: 32.6, top: 39.6, width: 8.7, height: 6.4, scale: 1 },
+      { left: 58.7, top: 39.6, width: 8.7, height: 6.4, scale: 1 },
+      { left: 32.6, top: 56.9, width: 8.7, height: 6.4, scale: 1 },
+      { left: 58.7, top: 56.9, width: 8.7, height: 6.4, scale: 1 },
     ];
   }
 
