@@ -1,7 +1,7 @@
 # Overnight Progress Log
 
 Autonomous development session. Updated after every major completed task.
-Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 195** (pushing live).
+Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 196** (pushing live).
 
 ## Current Phase
 User-directed fixes (camera removal, NPC size, beds) + continuous autonomous work.
@@ -11,6 +11,7 @@ BUILD 186 live-verified. Continuing autonomous work queue.
 ocean fix, tutorial-house beds removed + smith NPC, debug/playtest tooling.
 
 ## Completed Tasks
+- 2026-09-29: BUILD 196 pushed live (4b31286). Reverted BUILDING_SIZE_MULT 1.3->1.0 to fix visual/collision/doorway mismatch (user: scale change moved visuals but not logic). Build + sim green.
 - 2026-09-29: BUILD 195 pushed live (346f919). Round chunk coordinates for landmark lookup (float precision safety). Build + sim green.
 - 2026-09-29: BUILD 194 pushed live (9fe9695). Exit position now computed fresh from doorway on exit (not stored data) - player appears directly outside the visible door. Build + sim green.
 - 2026-09-29: BUILD 193 pushed live (363ef5d). More forgiving door entry:
