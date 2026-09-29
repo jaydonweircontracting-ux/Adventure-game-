@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '238';
+const BUILD_NUMBER = '239';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -386,13 +386,12 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
     // Field units = spec * 1.4. User positions:
     // tutorial: 45.7,55.4 | crafting: 82.2,55.4 | chapel: 45.7,79.7 | 4th: 82.2,79.7
     // Size: 12.2 x 8.9 field units.
-    // Plus a 5th new stone house (BUILD 236) with prominent entrance.
+    // BUILD 239: All four are the new stone cottage style with prominent entrances.
     specs = [
-      { left: 32.6, top: 39.6, width: 8.7, height: 6.4, scale: 1 },
-      { left: 58.7, top: 39.6, width: 8.7, height: 6.4, scale: 1 },
-      { left: 32.6, top: 56.9, width: 8.7, height: 6.4, scale: 1 },
-      { left: 58.7, top: 56.9, width: 8.7, height: 6.4, scale: 1 },
-      { left: 45.6, top: 22, width: 10, height: 7.5, scale: 1 },
+      { left: 32.6, top: 39.6, width: 10, height: 7.5, scale: 1 },
+      { left: 58.7, top: 39.6, width: 10, height: 7.5, scale: 1 },
+      { left: 32.6, top: 56.9, width: 10, height: 7.5, scale: 1 },
+      { left: 58.7, top: 56.9, width: 10, height: 7.5, scale: 1 },
     ];
   }
 
@@ -764,26 +763,26 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
     // All doorway positions are computed fresh from the building rects every
     // call — no hardcoded positions, so triggers can never drift from visuals.
     return fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17).map((rect, index) => {
-      // New stone house (index 4 in starting area) uses its own door position
-      // matching the prominent entrance visual.
-      const isNewHouse = isStartingArea(chunk) && index === 4;
-      const position = isNewHouse ? newHouseDoorPosition(rect) : fieldDoorPosition(rect);
+      // BUILD 239: All starting-area houses are the new stone style with
+      // prominent entrances. Door position matches the new visual.
+      const isNewStyleHouse = isStartingArea(chunk) && index < 4;
+      const position = isNewStyleHouse ? newHouseDoorPosition(rect) : fieldDoorPosition(rect);
       // Stable IDs for the starting-area buildings so save games and the
       // starting interior keep working; positions are always computed.
       const stableId = isStartingArea(chunk) && index === 0 ? 'tutorial-house-door'
         : isStartingArea(chunk) && index === 1 ? 'crafting-guild-door'
         : isStartingArea(chunk) && index === 2 ? 'chapel-door'
-        : isStartingArea(chunk) && index === 4 ? 'new-stone-house-door'
+        : isStartingArea(chunk) && index === 3 ? 'fourth-house-door'
         : chunk.x + ',' + chunk.y + '-building-' + index;
       const stableAreaId = isStartingArea(chunk) && index === 0 ? 'tutorial-house'
         : isStartingArea(chunk) && index === 1 ? 'wayfarer-guild'
         : isStartingArea(chunk) && index === 2 ? 'rootbound-chapel'
-        : isStartingArea(chunk) && index === 4 ? 'new-stone-house'
+        : isStartingArea(chunk) && index === 3 ? 'fourth-house'
         : chunk.x + '-' + chunk.y + '-building-' + index;
       const stableName = isStartingArea(chunk) && index === 0 ? 'Tutorial House'
         : isStartingArea(chunk) && index === 1 ? 'Wayfarer Guild'
         : isStartingArea(chunk) && index === 2 ? 'Rootbound Chapel'
-        : isStartingArea(chunk) && index === 4 ? 'Stone Cottage'
+        : isStartingArea(chunk) && index === 3 ? 'Stone House'
         : landmark.name + ' House ' + (index + 1);
       return {
         id: stableId,
@@ -795,7 +794,7 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
           description: isStartingArea(chunk) && index === 0 ? 'A small safe house on the tutorial island.'
             : isStartingArea(chunk) && index === 1 ? 'A workbench, maps, and road-worn notices fill the guild hall.'
             : isStartingArea(chunk) && index === 2 ? 'Lanterns glow beneath old roots in the quiet town chapel.'
-            : isStartingArea(chunk) && index === 4 ? 'A sturdy stone cottage with a prominent wooden door.'
+            : isStartingArea(chunk) && index === 3 ? 'A sturdy stone house with a prominent wooden door.'
             : 'A simple brown room waiting to be furnished.',
           roomType: (isStartingArea(chunk) && index === 0 ? 'inn' : isStartingArea(chunk) && index === 1 ? 'guild' : isStartingArea(chunk) && index === 2 ? 'chapel' : 'building') as const,
           exteriorPosition: doorwayExteriorPosition(rect, position),
@@ -3856,7 +3855,7 @@ if (active) {
                 return (
                 <span
                   key={doorway.id}
-                  className={'field-house' + (doorway.id === 'new-stone-house-door' ? ' new-house' : '')}
+                  className={'field-house' + (isStartingArea(chunk) ? ' new-house' : '')}
                   style={{
                     left: fieldPct(rect.left + off.x),
                     top: fieldPct(rect.top + off.y),
