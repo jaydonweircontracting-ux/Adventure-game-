@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '209';
+const BUILD_NUMBER = '210';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -807,8 +807,10 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
 }
 
 function doorwayExteriorPosition(rect: FieldRect, doorway: Point): Point {
-  // Spawn beyond the house's collision padding so the first frame outside is safe.
-  return { x: doorway.x, y: Math.min(FIELD_SIZE - 6, Math.max(doorway.y + 4, rect.bottom + 4.5)) };
+  // Spawn at the door position (not south in the grass) so the player appears
+  // at the visible doorway. The door is at the bottom of the house; the
+  // collision padding is handled by the movement system.
+  return { x: doorway.x, y: Math.min(FIELD_SIZE - 6, doorway.y + 1.5) };
 }
 
 const STARTING_DOORWAY_ID = 'tutorial-house-door';
@@ -3145,7 +3147,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
            if (doorwayId) {
              const freshDoorway = buildingDoorwaysFor(interiorEntryChunkRef.current).find((d) => d.id === doorwayId);
              if (freshDoorway) {
-               exitPosition = { x: freshDoorway.position.x, y: freshDoorway.position.y + 8 };
+               // Use the doorway's computed exterior position (just outside the
+               // door, south of the building rect), not an arbitrary offset.
+               exitPosition = { x: freshDoorway.area.exteriorPosition.x, y: freshDoorway.area.exteriorPosition.y };
              }
            }
            interiorDoorwayIdRef.current = null;
