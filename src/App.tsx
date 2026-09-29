@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '198';
+const BUILD_NUMBER = '199';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -718,11 +718,6 @@ type EscapeSpawn = {
   logs: Array<{ text: string; color: string }>;
 };
 type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number };
-const startingDoorways: Doorway[] = [
-  { id: 'tutorial-house-door', buildingIndex: 0, position: { x: 42.0, y: 47.45 }, area: { id: 'tutorial-house', name: 'Tutorial House', description: 'A small safe house on the tutorial island.', roomType: 'inn', exteriorPosition: { x: 42.0, y: 54.97 } } },
-  { id: 'crafting-guild-door', buildingIndex: 1, position: { x: 98.42, y: 48.26 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'A workbench, maps, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 98.42, y: 55.78 } } },
-  { id: 'chapel-door', buildingIndex: 2, position: { x: 42.0, y: 99.42 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 42.0, y: 106.94 } } },
-];
 // Bram the smith works the Wayfarer Guild in the starting area. Talking to
 // him opens the crafting / sell / rumours flow.
 const GUILD_SMITH: TownNpc = {
@@ -758,28 +753,36 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
   // Points of interest have no house doors (the dungeon gets its own entrance).
   if (landmark && (landmark.kind === 'dungeon' || landmark.kind === 'ruin')) return [];
   if (landmark) {
+    // All doorway positions are computed fresh from the building rects every
+    // call — no hardcoded positions, so triggers can never drift from visuals.
     return fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17).map((rect, index) => {
-      const namedDoorway = isStartingArea(chunk) ? startingDoorways.find((doorway) => doorway.buildingIndex === index) : null;
       const position = fieldDoorPosition(rect);
-      if (namedDoorway) {
-        return {
-          ...namedDoorway,
-          position,
-          area: {
-            ...namedDoorway.area,
-            exteriorPosition: doorwayExteriorPosition(rect, position),
-          },
-        };
-      }
+      // Stable IDs for the starting-area buildings so save games and the
+      // starting interior keep working; positions are always computed.
+      const stableId = isStartingArea(chunk) && index === 0 ? 'tutorial-house-door'
+        : isStartingArea(chunk) && index === 1 ? 'crafting-guild-door'
+        : isStartingArea(chunk) && index === 2 ? 'chapel-door'
+        : chunk.x + ',' + chunk.y + '-building-' + index;
+      const stableAreaId = isStartingArea(chunk) && index === 0 ? 'tutorial-house'
+        : isStartingArea(chunk) && index === 1 ? 'wayfarer-guild'
+        : isStartingArea(chunk) && index === 2 ? 'rootbound-chapel'
+        : chunk.x + '-' + chunk.y + '-building-' + index;
+      const stableName = isStartingArea(chunk) && index === 0 ? 'Tutorial House'
+        : isStartingArea(chunk) && index === 1 ? 'Wayfarer Guild'
+        : isStartingArea(chunk) && index === 2 ? 'Rootbound Chapel'
+        : landmark.name + ' House ' + (index + 1);
       return {
-        id: chunk.x + ',' + chunk.y + '-building-' + index,
+        id: stableId,
         position,
         area: {
-          id: chunk.x + '-' + chunk.y + '-building-' + index,
-          name: landmark.name + ' House ' + (index + 1),
-          description: 'A simple brown room waiting to be furnished.',
-          roomType: 'building' as const,
-          exteriorPosition: { x: position.x, y: Math.min(FIELD_SIZE - 6, position.y + 4) },
+          id: stableAreaId,
+          name: stableName,
+          description: isStartingArea(chunk) && index === 0 ? 'A small safe house on the tutorial island.'
+            : isStartingArea(chunk) && index === 1 ? 'A workbench, maps, and road-worn notices fill the guild hall.'
+            : isStartingArea(chunk) && index === 2 ? 'Lanterns glow beneath old roots in the quiet town chapel.'
+            : 'A simple brown room waiting to be furnished.',
+          roomType: (isStartingArea(chunk) && index === 0 ? 'inn' : isStartingArea(chunk) && index === 1 ? 'guild' : isStartingArea(chunk) && index === 2 ? 'chapel' : 'building') as const,
+          exteriorPosition: doorwayExteriorPosition(rect, position),
         },
       };
     });
@@ -808,7 +811,13 @@ function doorwayExteriorPosition(rect: FieldRect, doorway: Point): Point {
 }
 
 const STARTING_DOORWAY_ID = 'tutorial-house-door';
-const startingHouse = buildingDoorwaysFor({ x: 4, y: 7 }).find((doorway) => doorway.id === STARTING_DOORWAY_ID)?.area || startingDoorways[0].area;
+const startingHouse = buildingDoorwaysFor({ x: 4, y: 7 }).find((doorway) => doorway.id === STARTING_DOORWAY_ID)?.area || {
+  id: 'tutorial-house',
+  name: 'Tutorial House',
+  description: 'A small safe house on the tutorial island.',
+  roomType: 'inn' as const,
+  exteriorPosition: { x: 41.96, y: 54.57 },
+};
 // Playtest tooling (?playtestInterior=<area-id>): start inside a named interior
 // (e.g. wayfarer-guild) so visual checks don't require walking there.
 // Param-gated; no effect on normal play.
