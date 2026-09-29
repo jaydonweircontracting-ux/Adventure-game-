@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '205';
+const BUILD_NUMBER = '206';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3688,7 +3688,7 @@ if (active) {
             </div>
           )}
           {currentWorldTile.landmark && currentWorldTile.landmark.kind !== 'dungeon' && currentWorldTile.landmark.kind !== 'ruin' && (() => {
-            const houseRects = fieldHouseRects(currentWorldTile.landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17);
+            const houseRects = fieldHouseRects(mapTileFor(chunkRef.current).landmark?.kind || 'town', isStartingArea(chunkRef.current), Math.round(chunkRef.current.x) * 31 + Math.round(chunkRef.current.y) * 17);
             return (
             <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle + ' town-variant-' + (Math.abs(currentWorldTile.landmark.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={currentWorldTile.landmark.name}>
               <span className="field-village-square" />
