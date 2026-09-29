@@ -1,7 +1,7 @@
 # Overnight Progress Log
 
 Autonomous development session. Updated after every major completed task.
-Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 198** (pushing live).
+Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 199** (pushing live).
 
 ## Current Phase
 User-directed fixes (camera removal, NPC size, beds) + continuous autonomous work.
@@ -11,6 +11,7 @@ BUILD 186 live-verified. Continuing autonomous work queue.
 ocean fix, tutorial-house beds removed + smith NPC, debug/playtest tooling.
 
 ## Completed Tasks
+- 2026-09-29: BUILD 199 pushed live (e42ae99). Deleted hardcoded startingDoorways array entirely - all door positions now 100% computed from building rects, no static spots. Build + sim green.
 - 2026-09-29: BUILD 198 pushed live (9e84dbe). Doorway/collision now use mapTileFor(chunk).landmark (same as visual) instead of mapLandmarks[] - fixes trigger/visual alignment. Build + sim green.
 - 2026-09-29: BUILD 197 pushed live (6b616d5). Visual building rects now use same chunk state as doorway/collision (was using chunkRef, caused trigger/visual mismatch). Build + sim green.
 - 2026-09-29: BUILD 196 pushed live (4b31286). Reverted BUILDING_SIZE_MULT 1.3->1.0 to fix visual/collision/doorway mismatch (user: scale change moved visuals but not logic). Build + sim green.
