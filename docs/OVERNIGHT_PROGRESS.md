@@ -1,7 +1,7 @@
 # Overnight Progress Log
 
 Autonomous development session. Updated after every major completed task.
-Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 190** (live).
+Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 191** (pushing live).
 
 ## Current Phase
 User-directed fixes (camera removal, NPC size, beds) + continuous autonomous work.
@@ -11,6 +11,11 @@ BUILD 186 live-verified. Continuing autonomous work queue.
 ocean fix, tutorial-house beds removed + smith NPC, debug/playtest tooling.
 
 ## Completed Tasks
+- 2026-09-29: BUILD 191 pushed live (5f80f86). Scoped the 30% building growth
+  to the starting area only per user request ("Wthe ones in the starting
+  area") — dungeons/ruins/other settlements keep authored sizes. Build number
+  now visible on title screen (was '185', now '191') so cached-vs-fresh builds
+  are identifiable. Build + sim (33,277) green.
 - 2026-09-28: BUILD 190 pushed live (4371618). Playtest of starting area:
   buildings normal size, entering works. Fixed the 'Enter <building>' prompt
   being a non-clickable div (pointer-events:none) — now a real button that
