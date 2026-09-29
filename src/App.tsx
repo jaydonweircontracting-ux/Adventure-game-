@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '197';
+const BUILD_NUMBER = '198';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -648,8 +648,7 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
   const treeBlocked = fieldTreesFor(chunk).some((tree) => pointInRect(position, fieldTreeBaseRect(tree), 0.45));
   if (treeBlocked) return true;
 
-  const landmarkKey = Math.round(chunk.x) + ',' + Math.round(chunk.y);
-  const landmark = mapLandmarks[landmarkKey];
+  const landmark = tile.landmark;
   // Keep the visible building/base solid, but do not extend its collision far
   // into the surrounding grass where it reads as a random invisible wall.
   if (landmark && fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17).some((rect) => pointInRect(position, rect, 0.35))) return true;
@@ -753,8 +752,9 @@ const WORLD_RUMORS = [
 ];
 
 function buildingDoorwaysFor(chunk: Point): Doorway[] {
-  const landmarkKey = Math.round(chunk.x) + ',' + Math.round(chunk.y);
-  const landmark = mapLandmarks[landmarkKey];
+  // Use the same landmark source as the visual renderer (mapTileFor) so door
+  // triggers always align with the visible buildings.
+  const landmark = mapTileFor(chunk).landmark;
   // Points of interest have no house doors (the dungeon gets its own entrance).
   if (landmark && (landmark.kind === 'dungeon' || landmark.kind === 'ruin')) return [];
   if (landmark) {
