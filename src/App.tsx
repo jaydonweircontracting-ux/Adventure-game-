@@ -2214,6 +2214,13 @@ function DebugOverlay({ chunk }: { chunk: Point }) {
 }
 
 function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
+  // Lock body scroll while the map is open so touch swipes pan the map
+  // instead of scrolling the page behind it (iOS Safari).
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
   const [zoom, setZoom] = useState(5);
   const [selected, setSelected] = useState<AtlasTile | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
