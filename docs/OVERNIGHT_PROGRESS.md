@@ -1,7 +1,7 @@
 # Overnight Progress Log
 
 Autonomous development session. Updated after every major completed task.
-Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 193** (pushing live).
+Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 194** (pushing live).
 
 ## Current Phase
 User-directed fixes (camera removal, NPC size, beds) + continuous autonomous work.
@@ -11,6 +11,7 @@ BUILD 186 live-verified. Continuing autonomous work queue.
 ocean fix, tutorial-house beds removed + smith NPC, debug/playtest tooling.
 
 ## Completed Tasks
+- 2026-09-29: BUILD 194 pushed live (9fe9695). Exit position now computed fresh from doorway on exit (not stored data) - player appears directly outside the visible door. Build + sim green.
 - 2026-09-29: BUILD 193 pushed live (363ef5d). More forgiving door entry:
   prompt radius and walk-in tolerance increased from 4.2 to 6.0 units so doors
   are easier to trigger. Build + sim (33,277) green.
