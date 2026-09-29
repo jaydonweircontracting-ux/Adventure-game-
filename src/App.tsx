@@ -29,12 +29,12 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '195';
+const BUILD_NUMBER = '196';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
 // Buildings render larger than their authored 0..100 specs.
-const BUILDING_SIZE_MULT = 1.3;
+const BUILDING_SIZE_MULT = 1.0;
 // Convert field units (0..FIELD_SIZE) to CSS percentage for positioning.
 function fieldPct(v: number): string { return (v / FIELD_SIZE * 100) + '%'; }
 type Direction = 'up' | 'down' | 'left' | 'right';
