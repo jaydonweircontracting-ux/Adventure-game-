@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '199';
+const BUILD_NUMBER = '200';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -841,6 +841,9 @@ const playtestChunk: Point | null = (() => {
   const [x, y] = raw.split(',').map(Number);
   return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
 })();
+// Debug visualization (?debugDoors=1): draw RED=building collision, BLUE=door
+// interaction, GREEN=exit spawn over the field so door/logic alignment is visible.
+const debugDoors: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debugDoors') === '1';
 
 function fieldDoorPosition(rect: FieldRect): Point {
   // Match .field-house::after: left 43%, width 16%, bottom 0, height 44%.
@@ -3652,6 +3655,47 @@ if (active) {
                   }}
                 />
               ))}
+              {debugDoors && houseRects.map((rect, i) => {
+                const door = fieldDoorPosition(rect);
+                const exit = doorwayExteriorPosition(rect, door);
+                // RED = collision rect (0.35 padding), BLUE = door interaction (6.0 radius), GREEN = exit spawn
+                return (
+                  <span key={'dbg-' + i}>
+                    <span aria-hidden="true" style={{
+                      position: 'absolute',
+                      left: fieldPct(rect.left - 0.35),
+                      top: fieldPct(rect.top - 0.35),
+                      width: fieldPct((rect.right - rect.left) + 0.7),
+                      height: fieldPct((rect.bottom - rect.top) + 0.7),
+                      border: '2px solid red',
+                      pointerEvents: 'none',
+                      zIndex: 50,
+                    }} />
+                    <span aria-hidden="true" style={{
+                      position: 'absolute',
+                      left: fieldPct(door.x - 6.0),
+                      top: fieldPct(door.y - 6.0),
+                      width: fieldPct(12.0),
+                      height: fieldPct(12.0),
+                      border: '2px solid blue',
+                      borderRadius: '50%',
+                      pointerEvents: 'none',
+                      zIndex: 50,
+                    }} />
+                    <span aria-hidden="true" style={{
+                      position: 'absolute',
+                      left: fieldPct(exit.x - 1),
+                      top: fieldPct(exit.y - 1),
+                      width: fieldPct(2),
+                      height: fieldPct(2),
+                      background: 'green',
+                      borderRadius: '50%',
+                      pointerEvents: 'none',
+                      zIndex: 50,
+                    }} />
+                  </span>
+                );
+              })}
               {currentWorldTile.landmark?.name === 'Mosslight Crossing' ? (
                 <span className="field-village-fountain" aria-label="Greenvale fountain"><span className="fountain-spray" /></span>
               ) : (
