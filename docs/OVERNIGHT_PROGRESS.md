@@ -1,7 +1,7 @@
 # Overnight Progress Log
 
 Autonomous development session. Updated after every major completed task.
-Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 189** (live).
+Session started: 2026-09-28 ~01:30 PDT. Current build: **BUILD 190** (live).
 
 ## Current Phase
 User-directed fixes (camera removal, NPC size, beds) + continuous autonomous work.
@@ -11,6 +11,11 @@ BUILD 186 live-verified. Continuing autonomous work queue.
 ocean fix, tutorial-house beds removed + smith NPC, debug/playtest tooling.
 
 ## Completed Tasks
+- 2026-09-28: BUILD 190 pushed live (4371618). Playtest of starting area:
+  buildings normal size, entering works. Fixed the 'Enter <building>' prompt
+  being a non-clickable div (pointer-events:none) — now a real button that
+  enters the building on tap, sharing enterDoorway() with the walk-in path.
+  Build + sim (33,277) green; typecheck shows only the pre-existing goat error.
 - 2026-09-28: BUILD 189 pushed live (a38aeb9). Buildings 30% larger per user
   request: BUILDING_SIZE_MULT=1.3 grows house/farmhouse rects around centers;
   collision, doorways, visuals stay aligned. Build + sim (33,277) green.
