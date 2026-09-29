@@ -33,6 +33,8 @@ const BUILD_NUMBER = '185';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
+// Buildings render larger than their authored 0..100 specs.
+const BUILDING_SIZE_MULT = 1.3;
 // Convert field units (0..FIELD_SIZE) to CSS percentage for positioning.
 function fieldPct(v: number): string { return (v / FIELD_SIZE * 100) + '%'; }
 type Direction = 'up' | 'down' | 'left' | 'right';
@@ -328,13 +330,21 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
   // houses keep their relative size and spread on larger fields.
   const k = FIELD_SIZE / 100;
   const toField = (r: FieldRect): FieldRect => ({ left: r.left * k, top: r.top * k, right: r.right * k, bottom: r.bottom * k });
+  // Buildings render larger than their authored specs: grow each rect around
+  // its center so doors/collision/visuals stay aligned.
+  const grow = (r: FieldRect): FieldRect => {
+    const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+    const hw = ((r.right - r.left) / 2) * BUILDING_SIZE_MULT, hh = ((r.bottom - r.top) / 2) * BUILDING_SIZE_MULT;
+    return { left: cx - hw, top: cy - hh, right: cx + hw, bottom: cy + hh };
+  };
+  const toBuilding = (r: FieldRect): FieldRect => grow(toField(r));
   // Points of interest don't get houses: a dungeon gets one crypt mound, a ruin
   // gets scattered broken walls. Collision + doorway logic reuse these rects.
-  if (kind === 'dungeon') return [toField({ left: 38, top: 34, right: 62, bottom: 54 })];
+  if (kind === 'dungeon') return [toBuilding({ left: 38, top: 34, right: 62, bottom: 54 })];
   if (kind === 'ruin') return [
-    toField({ left: 28, top: 28, right: 43, bottom: 37 }),
-    toField({ left: 57, top: 42, right: 70, bottom: 51 }),
-    toField({ left: 39, top: 62, right: 58, bottom: 70 }),
+    toBuilding({ left: 28, top: 28, right: 43, bottom: 37 }),
+    toBuilding({ left: 57, top: 42, right: 70, bottom: 51 }),
+    toBuilding({ left: 39, top: 62, right: 58, bottom: 70 }),
   ];
   const parent = kind === 'town'
     ? { left: 19, top: 21, width: 62, height: 58 }
@@ -390,7 +400,7 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
     const height = spec.height * spec.scale;
     const left = spec.left + (spec.width - width) / 2;
     const top = spec.top + (spec.height - height) / 2;
-    return toField({
+    return toBuilding({
       left: parent.left + (left / 100) * parent.width,
       top: parent.top + (top / 100) * parent.height,
       right: parent.left + ((left + width) / 100) * parent.width,
@@ -438,7 +448,12 @@ function fieldFarmRects(chunkX: number, chunkY: number): { houses: FieldRect[]; 
   }
   const k = FIELD_SIZE / 100;
   const toField = (r: FieldRect): FieldRect => ({ left: r.left * k, top: r.top * k, right: r.right * k, bottom: r.bottom * k });
-  return { houses: houses.map(toField), fields: fields.map(toField) };
+  const grow = (r: FieldRect): FieldRect => {
+    const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+    const hw = ((r.right - r.left) / 2) * BUILDING_SIZE_MULT, hh = ((r.bottom - r.top) / 2) * BUILDING_SIZE_MULT;
+    return { left: cx - hw, top: cy - hh, right: cx + hw, bottom: cy + hh };
+  };
+  return { houses: houses.map((r) => grow(toField(r))), fields: fields.map(toField) };
 }
 
 // Points of Interest: ruins, caves, camps, shrines scattered in the wilderness.
@@ -702,9 +717,9 @@ type EscapeSpawn = {
 };
 type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number };
 const startingDoorways: Doorway[] = [
-  { id: 'tutorial-house-door', buildingIndex: 0, position: { x: 24.77, y: 29.6 }, area: { id: 'tutorial-house', name: 'Tutorial House', description: 'A small safe house on the tutorial island.', roomType: 'inn', exteriorPosition: { x: 24.77, y: 39.9 } } },
-  { id: 'crafting-guild-door', buildingIndex: 1, position: { x: 115.77, y: 31.0 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'A workbench, maps, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 115.77, y: 41.3 } } },
-  { id: 'chapel-door', buildingIndex: 2, position: { x: 24.77, y: 119.2 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 24.77, y: 129.5 } } },
+  { id: 'tutorial-house-door', buildingIndex: 0, position: { x: 42.0, y: 47.45 }, area: { id: 'tutorial-house', name: 'Tutorial House', description: 'A small safe house on the tutorial island.', roomType: 'inn', exteriorPosition: { x: 42.0, y: 54.97 } } },
+  { id: 'crafting-guild-door', buildingIndex: 1, position: { x: 98.42, y: 48.26 }, area: { id: 'wayfarer-guild', name: 'Wayfarer Guild', description: 'A workbench, maps, and road-worn notices fill the guild hall.', roomType: 'guild', exteriorPosition: { x: 98.42, y: 55.78 } } },
+  { id: 'chapel-door', buildingIndex: 2, position: { x: 42.0, y: 99.42 }, area: { id: 'rootbound-chapel', name: 'Rootbound Chapel', description: 'Lanterns glow beneath old roots in the quiet town chapel.', roomType: 'chapel', exteriorPosition: { x: 42.0, y: 106.94 } } },
 ];
 // Bram the smith works the Wayfarer Guild in the starting area. Talking to
 // him opens the crafting / sell / rumours flow.
