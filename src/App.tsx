@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '213';
+const BUILD_NUMBER = '214';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -847,6 +847,9 @@ const playtestChunk: Point | null = (() => {
 // Debug visualization (?debugDoors=1): draw RED=building collision, BLUE=door
 // interaction, GREEN=exit spawn over the field so door/logic alignment is visible.
 const debugDoors: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debugDoors') === '1';
+// Visual house mover (?moveHouses=1): drag house sprites to show where they
+// should go. Visual-only; user screenshots the result. No logic changes.
+const moveHouses: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('moveHouses') === '1';
 
 function fieldDoorPosition(rect: FieldRect): Point {
   // Match .field-house::after: left 43%, width 16%, bottom 0, height 44%.
@@ -2523,6 +2526,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   // Debug tap marks (?debugDoors=1): user taps to mark where they think the
   // invisible exit/entrance is; rendered as lime green dots with coordinates.
   const [debugMarks, setDebugMarks] = useState<Point[]>([]);
+  // Visual house mover: doorwayId -> {x, y} offset in field units. Visual only.
+  const [houseOffsets, setHouseOffsets] = useState<Record<string, Point>>({});
+  const dragStateRef = useRef<{ doorwayId: string; startClientX: number; startClientY: number; origX: number; origY: number; containerW: number; containerH: number } | null>(null);
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
   const [moving, setMoving] = useState(false);
@@ -3504,6 +3510,18 @@ if (active) {
               Clear marks ({debugMarks.length})
             </button>
           )}
+          {moveHouses && (
+            <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 60, background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '10px', borderRadius: '6px', fontSize: '13px', maxWidth: '220px' }}>
+              <div style={{ marginBottom: '8px' }}>🏠 <b>Drag the houses</b> to where they should go, then screenshot and send it.</div>
+              <button
+                type="button"
+                onClick={() => setHouseOffsets({})}
+                style={{ padding: '6px 10px', fontSize: '12px', background: '#666', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+              >
+                Reset positions
+              </button>
+            </div>
+          )}
           <div className="field-world-layer">
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
            <div className="field-accents" aria-hidden="true">
@@ -3703,28 +3721,60 @@ if (active) {
             // Single source of truth: visuals use the exact same doorway data as
             // triggers/collision, so houses can never drift from their doors.
             const doorways = buildingDoorwaysFor(chunk);
-            const houseRects = doorways.map((d) => d.rect);
             return (
             <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle + ' town-variant-' + (Math.abs(currentWorldTile.landmark.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={currentWorldTile.landmark.name}>
               <span className="field-village-square" />
-              {houseRects.map((rect, i) => (
+              {doorways.map((doorway) => {
+                const rect = doorway.rect;
+                const off = houseOffsets[doorway.id] || { x: 0, y: 0 };
+                return (
                 <span
-                  key={i}
+                  key={doorway.id}
                   className="field-house"
                   style={{
-                    left: fieldPct(rect.left),
-                    top: fieldPct(rect.top),
+                    left: fieldPct(rect.left + off.x),
+                    top: fieldPct(rect.top + off.y),
                     width: fieldPct(rect.right - rect.left),
                     height: fieldPct(rect.bottom - rect.top),
+                    cursor: moveHouses ? 'grab' : undefined,
+                    touchAction: moveHouses ? 'none' : undefined,
                   }}
+                  onPointerDown={moveHouses ? (e) => {
+                    const container = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
+                    dragStateRef.current = {
+                      doorwayId: doorway.id,
+                      startClientX: e.clientX,
+                      startClientY: e.clientY,
+                      origX: off.x,
+                      origY: off.y,
+                      containerW: container.width,
+                      containerH: container.height,
+                    };
+                    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                    e.preventDefault();
+                    e.stopPropagation();
+                  } : undefined}
+                  onPointerMove={moveHouses ? (e) => {
+                    const ds = dragStateRef.current;
+                    if (!ds || ds.doorwayId !== doorway.id) return;
+                    const dxPx = e.clientX - ds.startClientX;
+                    const dyPx = e.clientY - ds.startClientY;
+                    const dxField = (dxPx / ds.containerW) * FIELD_SIZE;
+                    const dyField = (dyPx / ds.containerH) * FIELD_SIZE;
+                    setHouseOffsets((prev) => ({ ...prev, [ds.doorwayId]: { x: ds.origX + dxField, y: ds.origY + dyField } }));
+                  } : undefined}
+                  onPointerUp={moveHouses ? () => { dragStateRef.current = null; } : undefined}
+                  onPointerCancel={moveHouses ? () => { dragStateRef.current = null; } : undefined}
                 />
-              ))}
-              {debugDoors && houseRects.map((rect, i) => {
+                );
+              })}
+              {debugDoors && doorways.map((doorway) => {
+                const rect = doorway.rect;
                 const door = fieldDoorPosition(rect);
                 const exit = doorwayExteriorPosition(rect, door);
                 // RED = collision rect (0.35 padding), BLUE = door interaction (6.0 radius), GREEN = exit spawn
                 return (
-                  <span key={'dbg-' + i}>
+                  <span key={'dbg-' + doorway.id}>
                     <span aria-hidden="true" style={{
                       position: 'absolute',
                       left: fieldPct(rect.left - 0.35),
