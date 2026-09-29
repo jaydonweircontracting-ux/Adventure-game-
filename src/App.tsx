@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '222';
+const BUILD_NUMBER = '223';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3935,8 +3935,8 @@ if (active) {
           {currentWorldTile.landmark?.name === 'Mosslight Crossing' && npcStates.map((npc) => (
             <button
               className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '')}
-              onClick={() => talkToNpc(npc)}
-              style={{ left: fieldPct(npc.position.x), top: fieldPct(npc.position.y) }}
+              onClick={moveHouses ? undefined : () => talkToNpc(npc)}
+              style={{ left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: moveHouses ? 'none' : undefined }}
               data-role={npc.role}
               data-facing={npc.facing}
               aria-label={npc.name + ', ' + npc.title}
@@ -3955,8 +3955,8 @@ if (active) {
               type="button"
               key={adventurer.id}
               className={'simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (adventurer.moving ? ' is-moving' : '') + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '')}
-              onClick={() => inspectAdventurer(adventurer)}
-              style={{ left: fieldPct(adventurer.position.x), top: fieldPct(adventurer.position.y) }}
+              onClick={moveHouses ? undefined : () => inspectAdventurer(adventurer)}
+              style={{ left: fieldPct(adventurer.position.x), top: fieldPct(adventurer.position.y), pointerEvents: moveHouses ? 'none' : undefined }}
               data-facing={adventurer.facing}
               aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className}
               title={adventurer.name + ' — ' + adventurer.goal}
