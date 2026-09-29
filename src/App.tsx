@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '185';
+const BUILD_NUMBER = '191';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -330,9 +330,11 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
   // houses keep their relative size and spread on larger fields.
   const k = FIELD_SIZE / 100;
   const toField = (r: FieldRect): FieldRect => ({ left: r.left * k, top: r.top * k, right: r.right * k, bottom: r.bottom * k });
-  // Buildings render larger than their authored specs: grow each rect around
-  // its center so doors/collision/visuals stay aligned.
+  // Starting-area buildings render larger than their authored specs: grow each
+  // rect around its center so doors/collision/visuals stay aligned. Other
+  // areas keep authored sizes.
   const grow = (r: FieldRect): FieldRect => {
+    if (!startingArea) return r;
     const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
     const hw = ((r.right - r.left) / 2) * BUILDING_SIZE_MULT, hh = ((r.bottom - r.top) / 2) * BUILDING_SIZE_MULT;
     return { left: cx - hw, top: cy - hh, right: cx + hw, bottom: cy + hh };
