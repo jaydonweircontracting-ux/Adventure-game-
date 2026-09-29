@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '224';
+const BUILD_NUMBER = '225';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3971,7 +3971,6 @@ if (active) {
           ))}
           {showHorse && (
             <>
-          {!moveHouses && <>
               <div className={'horse ' + (mounted ? 'is-mounted ' : '') + (mounted && moving ? 'is-moving' : '')} style={{ left: fieldPct(horseDisplayPosition.x), top: fieldPct(horseDisplayPosition.y) }} data-facing={mounted ? facing : horseFacing} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">
                 {mounted && <>
                   <span className="rider-sprite" aria-hidden="true" />
@@ -3980,7 +3979,6 @@ if (active) {
                 <span className="horse-sprite" />
               </div>
               {canMount && <button className="horse-mount-button" style={{ left: fieldPct(horseDisplayPosition.x), top: fieldPct(Math.min(FIELD_SIZE - 12, Math.max(12, horseDisplayPosition.y + 10))) }} onClick={toggleMount} aria-label="Mount horse" data-testid="button-toggle-mount">Mount</button>}
-            </>}
             </>
           )}
           {(() => {
@@ -3992,7 +3990,7 @@ if (active) {
             return <button className="dungeon-descend-button" style={{ left: fieldPct((entrance.x + 16)), top: fieldPct(entrance.y) }} onClick={onEnterDungeon} aria-label={'Descend into ' + dungeon.name} data-testid="button-enter-field-dungeon">Descend</button>;
           })()}
           </div>
-          {!mounted && !moveHouses && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
+          {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
              data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: fieldPct(position.x), top: fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px` } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
