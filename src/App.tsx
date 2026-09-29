@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '221';
+const BUILD_NUMBER = '222';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3574,7 +3574,7 @@ if (active) {
               </button>
             </div>
           )}
-          <div className="field-world-layer" style={moveHouses && moverZoom !== 1 ? { transform: `scale(${moverZoom})`, transformOrigin: 'center center' } : undefined}>
+          <div className="field-world-layer" style={moveHouses && moverZoom !== 1 ? { transform: `scale(${moverZoom})`, transformOrigin: 'top left' } : undefined}>
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
            <div className="field-accents" aria-hidden="true">
              {fieldAccents.map((accent) => (
