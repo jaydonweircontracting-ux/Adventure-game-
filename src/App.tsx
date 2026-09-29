@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '193';
+const BUILD_NUMBER = '194';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3115,7 +3115,16 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
          const doorwayHalfWidth = (((INTERIOR_DOORWAY_WIDTH_PX + INTERIOR_PLAYER_WIDTH_PX) / 2 + INTERIOR_DOORWAY_PADDING_PX) / Math.max(1, frameWidth)) * 100;
          const atDoorway = Math.abs(next.x - 50) <= doorwayHalfWidth;
          if (next.y > 91 && atDoorway) {
-           const exitPosition = currentInterior.exteriorPosition;
+           // Compute exit position fresh from the doorway (not stored data) to ensure
+           // the player appears directly outside the visible door.
+           let exitPosition = currentInterior.exteriorPosition;
+           const doorwayId = interiorDoorwayIdRef.current;
+           if (doorwayId) {
+             const freshDoorway = buildingDoorwaysFor({ x: 4, y: 7 }).find((d) => d.id === doorwayId);
+             if (freshDoorway) {
+               exitPosition = { x: freshDoorway.position.x, y: freshDoorway.position.y + 8 };
+             }
+           }
            interiorDoorwayIdRef.current = null;
            interiorRef.current = null; setInterior(null);
            interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
