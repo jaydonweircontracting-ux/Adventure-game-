@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '218';
+const BUILD_NUMBER = '219';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -2531,6 +2531,8 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const [debugMarks, setDebugMarks] = useState<Point[]>([]);
   // Visual house mover: doorwayId -> {x, y} offset in field units. Visual only.
   const [houseOffsets, setHouseOffsets] = useState<Record<string, Point>>({});
+  // Tap-to-move: selected house ID. Tap a house to pick it up, tap the field to place it.
+  const [selectedHouse, setSelectedHouse] = useState<string | null>(null);
   const dragStateRef = useRef<{ doorwayId: string; startClientX: number; startClientY: number; origX: number; origY: number; containerW: number; containerH: number } | null>(null);
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -3515,7 +3517,7 @@ if (active) {
           )}
           {moveHouses && (
             <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 60, background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '10px', borderRadius: '6px', fontSize: '13px', maxWidth: '240px' }}>
-              <div style={{ marginBottom: '8px' }}>🏠 <b>Drag the houses</b> to where they should go, then screenshot the numbers below and send it.</div>
+              <div style={{ marginBottom: '8px' }}>🏠 <b>Tap a house</b> to pick it up (yellow), then <b>tap where</b> to place it. Tap again to cancel.</div>
               <div style={{ marginBottom: '8px', fontSize: '11px', fontFamily: 'monospace', background: 'rgba(255,255,255,0.1)', padding: '6px', borderRadius: '4px', maxHeight: '120px', overflow: 'auto' }}>
                 {buildingDoorwaysFor(chunk).map((d) => {
                   const r = d.rect;
@@ -3529,7 +3531,10 @@ if (active) {
               </div>
               <button
                 type="button"
-                onClick={() => setHouseOffsets({})}
+                onClick={() => {
+                  setHouseOffsets({});
+                  setSelectedHouse(null);
+                }}
                 style={{ padding: '6px 10px', fontSize: '12px', background: '#666', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
               >
                 Reset positions
@@ -3736,11 +3741,37 @@ if (active) {
             // triggers/collision, so houses can never drift from their doors.
             const doorways = buildingDoorwaysFor(chunk);
             return (
-            <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle + ' town-variant-' + (Math.abs(currentWorldTile.landmark.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={currentWorldTile.landmark.name}>
+            <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle + ' town-variant-' + (Math.abs(currentWorldTile.landmark.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={currentWorldTile.landmark.name}
+              style={moveHouses ? { touchAction: 'none' } : undefined}
+              onPointerUp={moveHouses && selectedHouse ? (e) => {
+                // Tap-to-place: if a house is selected and the tap was on the
+                // field (not on a house), move the selected house there.
+                const target = e.target as HTMLElement;
+                if (target.closest && target.closest('.field-house')) return;
+                const container = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                const tapX = e.clientX - container.left;
+                const tapY = e.clientY - container.top;
+                const fieldX = (tapX / container.width) * FIELD_SIZE;
+                const fieldY = (tapY / container.height) * FIELD_SIZE;
+                // Find the selected doorway to get its size.
+                const dw = doorways.find((d) => d.id === selectedHouse);
+                if (!dw) return;
+                const w = dw.rect.right - dw.rect.left;
+                const h = dw.rect.bottom - dw.rect.top;
+                // Place so the house center is at the tap point.
+                const newLeft = fieldX - w / 2;
+                const newTop = fieldY - h / 2;
+                const offX = newLeft - dw.rect.left;
+                const offY = newTop - dw.rect.top;
+                setHouseOffsets((prev) => ({ ...prev, [selectedHouse]: { x: offX, y: offY } }));
+                setSelectedHouse(null);
+              } : undefined}
+            >
               <span className="field-village-square" />
               {doorways.map((doorway) => {
                 const rect = doorway.rect;
                 const off = houseOffsets[doorway.id] || { x: 0, y: 0 };
+                const isSelected = selectedHouse === doorway.id;
                 return (
                 <span
                   key={doorway.id}
@@ -3750,35 +3781,20 @@ if (active) {
                     top: fieldPct(rect.top + off.y),
                     width: fieldPct(rect.right - rect.left),
                     height: fieldPct(rect.bottom - rect.top),
-                    cursor: moveHouses ? 'grab' : undefined,
+                    cursor: moveHouses ? 'pointer' : undefined,
                     touchAction: moveHouses ? 'none' : undefined,
+                    outline: isSelected ? '3px solid #ff0' : undefined,
+                    zIndex: isSelected ? 10 : undefined,
                   }}
-                  onPointerDown={moveHouses ? (e) => {
-                    const container = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
-                    dragStateRef.current = {
-                      doorwayId: doorway.id,
-                      startClientX: e.clientX,
-                      startClientY: e.clientY,
-                      origX: off.x,
-                      origY: off.y,
-                      containerW: container.width,
-                      containerH: container.height,
-                    };
-                    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                    e.preventDefault();
+                  onPointerUp={moveHouses ? (e) => {
+                    // Tap a house to select/deselect it.
                     e.stopPropagation();
+                    if (selectedHouse === doorway.id) {
+                      setSelectedHouse(null);
+                    } else {
+                      setSelectedHouse(doorway.id);
+                    }
                   } : undefined}
-                  onPointerMove={moveHouses ? (e) => {
-                    const ds = dragStateRef.current;
-                    if (!ds || ds.doorwayId !== doorway.id) return;
-                    const dxPx = e.clientX - ds.startClientX;
-                    const dyPx = e.clientY - ds.startClientY;
-                    const dxField = (dxPx / ds.containerW) * FIELD_SIZE;
-                    const dyField = (dyPx / ds.containerH) * FIELD_SIZE;
-                    setHouseOffsets((prev) => ({ ...prev, [ds.doorwayId]: { x: ds.origX + dxField, y: ds.origY + dyField } }));
-                  } : undefined}
-                  onPointerUp={moveHouses ? () => { dragStateRef.current = null; } : undefined}
-                  onPointerCancel={moveHouses ? () => { dragStateRef.current = null; } : undefined}
                 />
                 );
               })}
