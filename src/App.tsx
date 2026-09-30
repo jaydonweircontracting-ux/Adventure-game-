@@ -20,10 +20,12 @@ import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type T
 import { LANDMARKS } from '@/game/landmarks';
 import {
   advanceCivilization,
+  castleBySettlementId,
   createCivilization,
   deserializeCivilization,
   kingdomLabelPoints,
   rulerById,
+  rulerTarget,
   serializeCivilization,
   settlementById,
   settlementsByChunk,
@@ -4936,6 +4938,20 @@ if (active) {
                         </div>
                       );
                     })}
+                    <div className="inspector-heading">Rulers &amp; castles ({civ.rulers.length})</div>
+                    {(() => {
+                      const clock = brainRef.current?.worldCore.getClock();
+                      return civ.rulers.map((r) => {
+                        const home = settlementById(civ, r.settlementId);
+                        const castle = castleBySettlementId(civ, r.settlementId);
+                        const target = clock ? rulerTarget(r, clock) : null;
+                        return (
+                          <div key={r.id} className="inspector-row">
+                            <span>{target?.indoors === false ? '🌳' : '🏠'} <strong>{r.title} {r.name}</strong> · age {r.age} · {home?.name ?? '—'}{castle ? ` · ${castle.name} (garrison ${castle.garrison})` : ''}{target ? ` · ${target.activity}` : ''}</span>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 );
               })()}

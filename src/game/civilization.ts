@@ -1319,6 +1319,11 @@ export function rulerById(civ: CivilizationState, id: string): Ruler | undefined
   return civ.rulers.find((r) => r.id === id);
 }
 
+/** Castle guarding a settlement, if one stands there. */
+export function castleBySettlementId(civ: CivilizationState, settlementId: string): Castle | undefined {
+  return civ.castles.find((c) => c.settlementId === settlementId);
+}
+
 // ---------------------------------------------------------------------------
 // Daily simulation advance (NOT per frame)
 // ---------------------------------------------------------------------------
