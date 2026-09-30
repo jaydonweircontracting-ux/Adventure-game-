@@ -38,7 +38,25 @@ export type NavPath = {
   destination: NavPoint;
   /** If set, the path goes through this doorway (enter or exit). */
   viaDoor?: DoorwayLink;
+  // --- Stuck detection / recovery (BUILD 318). Managed by the sim via trackStep. ---
+  /** Consecutive ticks with negligible movement toward the destination. */
+  stuckTicks?: number;
+  /** Times this destination has been replanned after getting stuck. */
+  replans?: number;
+  /** True when the NPC gave up on this destination and waits for a new one. */
+  gaveUp?: boolean;
+  /** Ticks remaining before the destination may be replanned again (anti-oscillation). */
+  replanCooldown?: number;
 };
+
+/** After this many ticks without progress, the NPC is considered stuck. */
+export const STUCK_TICK_LIMIT = 60;
+/** How many times a stuck destination is replanned before the NPC waits. */
+export const MAX_REPLANS = 1;
+/** Ticks after a (re)plan during which a nearby destination change is ignored. */
+export const REPLAN_COOLDOWN_TICKS = 10;
+/** Destination changes within this distance don't trigger a replan during cooldown. */
+export const REPLAN_HYSTERESIS = 3;
 
 /** Minimal location state any NPC family can embed in its sim type. */
 export type NPCLocationState = {
@@ -271,6 +289,105 @@ export function stepAlongPath(path: NavPath, position: NavPoint, step: number): 
   };
 }
 
+export type TrackStepResult = {
+  position: NavPoint;
+  path: NavPath | undefined;
+  moving: boolean;
+  facing: 'up' | 'down' | 'left' | 'right';
+  /** True when the NPC gave up on this destination and is waiting for a new one. */
+  waiting: boolean;
+};
+
+/**
+ * Stuck detection + recovery wrapper around a stepAlongPath result.
+ * Call only when `res.arrived` is false (arrival is handled by the caller).
+ * Pure: returns the fields the caller merges into the NPC.
+ *
+ * - Tracks consecutive ticks with negligible movement.
+ * - Past STUCK_TICK_LIMIT: replans once from the current position, then
+ *   gives up — the NPC waits (moving=false, path.gaveUp) instead of pacing
+ *   forever. A new schedule destination clears the wait.
+ * - Decrements the anti-oscillation replan cooldown each tick.
+ */
+export function trackStep(
+  path: NavPath,
+  prevPosition: NavPoint,
+  res: StepResult,
+  replan: (from: NavPoint) => NavPath | null,
+): TrackStepResult {
+  const moved = Math.hypot(res.position.x - prevPosition.x, res.position.y - prevPosition.y);
+  const stuckTicks = moved < 0.05 ? (path.stuckTicks ?? 0) + 1 : 0;
+  const ticked: NavPath = {
+    ...res.path,
+    stuckTicks,
+    replanCooldown: Math.max(0, (res.path.replanCooldown ?? 0) - 1),
+  };
+  if (stuckTicks <= STUCK_TICK_LIMIT) {
+    return { position: res.position, path: ticked, moving: true, facing: res.facing, waiting: false };
+  }
+  const replans = path.replans ?? 0;
+  if (replans < MAX_REPLANS) {
+    const fresh = replan(res.position);
+    if (fresh) {
+      return {
+        position: res.position,
+        path: { ...fresh, stuckTicks: 0, replans: replans + 1 },
+        moving: true,
+        facing: res.facing,
+        waiting: false,
+      };
+    }
+  }
+  return {
+    position: res.position,
+    path: { ...ticked, gaveUp: true },
+    moving: false,
+    facing: res.facing,
+    waiting: true,
+  };
+}
+
+/**
+ * Validate a destination before pathing: clamp to field bounds and nudge
+ * points that land inside a building rect to the nearest outside edge.
+ * Destinations are never left inside walls — the old straight-line fallback
+ * walked NPCs through buildings.
+ */
+export function validateDestination(
+  p: NavPoint,
+  obstacles: ObstacleRect[],
+): { point: NavPoint; corrected: boolean } {
+  let x = Math.max(2, Math.min(138, p.x));
+  let y = Math.max(2, Math.min(138, p.y));
+  let corrected = x !== p.x || y !== p.y;
+  // Nudge margin: larger than the A* cell (4 units) so the corrected point's
+  // cell never still overlaps the rect. Repeat until stable (a nudge out of
+  // one rect can land inside another).
+  const MARGIN = 5;
+  for (let pass = 0; pass < 4; pass++) {
+    let moved = false;
+    for (const o of obstacles) {
+      if (x > o.left && x < o.right && y > o.top && y < o.bottom) {
+        const dl = x - o.left;
+        const dr = o.right - x;
+        const dt = y - o.top;
+        const db = o.bottom - y;
+        const m = Math.min(dl, dr, dt, db);
+        if (m === dl) x = o.left - MARGIN;
+        else if (m === dr) x = o.right + MARGIN;
+        else if (m === dt) y = o.top - MARGIN;
+        else y = o.bottom + MARGIN;
+        moved = true;
+        corrected = true;
+      }
+    }
+    if (!moved) break;
+  }
+  x = Math.max(2, Math.min(138, x));
+  y = Math.max(2, Math.min(138, y));
+  return { point: { x, y }, corrected };
+}
+
 /**
  * Build a path to a doorway's exterior point (for entering), or from a
  * doorway's interior point (for exiting). Returns null if unreachable.
@@ -280,17 +397,29 @@ export function pathToDoor(
   door: DoorwayLink,
   obstacles: ObstacleRect[],
 ): NavPath | null {
-  const waypoints = findPath(from, door.exterior, obstacles, door);
+  const target = validateDestination(door.exterior, obstacles).point;
+  const waypoints = findPath(from, target, obstacles, door);
   if (!waypoints) return null;
   // Waypoints end at the door exterior. The caller transitions ENTERING ->
   // INTERIOR on arrival and then walks the interior leg (through the doorway
   // to the bed) as a separate physical path — no position snaps.
-  return { waypoints, index: 0, destination: { ...door.exterior }, viaDoor: door };
+  return { waypoints, index: 0, destination: { ...door.exterior }, viaDoor: door, replanCooldown: REPLAN_COOLDOWN_TICKS };
 }
 
-/** Build a plain outdoor path (no doors). */
+/** Build a plain outdoor path (no doors). The destination is validated first. */
 export function pathTo(from: NavPoint, to: NavPoint, obstacles: ObstacleRect[]): NavPath | null {
-  const waypoints = findPath(from, to, obstacles);
+  const target = validateDestination(to, obstacles).point;
+  const waypoints = findPath(from, target, obstacles);
   if (!waypoints) return null;
-  return { waypoints, index: 0, destination: { ...to } };
+  return { waypoints, index: 0, destination: { ...to }, replanCooldown: REPLAN_COOLDOWN_TICKS };
+}
+
+/**
+ * A validated straight-line fallback for when A* finds no route: walks
+ * directly at the (validated) target instead of into a wall. Last resort —
+ * callers should prefer waiting over this when the target is far.
+ */
+export function straightFallbackPath(to: NavPoint, obstacles: ObstacleRect[]): NavPath {
+  const target = validateDestination(to, obstacles).point;
+  return { waypoints: [target], index: 0, destination: { ...to }, replanCooldown: REPLAN_COOLDOWN_TICKS };
 }

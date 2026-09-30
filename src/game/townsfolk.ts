@@ -16,7 +16,7 @@
 //   beds. The schedule says WHAT; the navigation layer says HOW.
 import type { WorldClockState } from './worldCore';
 import type { NPCWorldLocation, NavPath, NavPoint, DoorwayLink, ObstacleRect } from './npcNavigation';
-import { pathTo, pathToDoor, stepAlongPath, findPath } from './npcNavigation';
+import { pathTo, pathToDoor, stepAlongPath, findPath, trackStep, straightFallbackPath, REPLAN_HYSTERESIS, REPLAN_COOLDOWN_TICKS } from './npcNavigation';
 import type { HousingRegistry } from './housing';
 import { bedFor, buildHousingRegistry, assignBeds } from './housing';
 
@@ -304,7 +304,7 @@ function advanceOne(
     const waypoints = findPath(npc.position, door.interior, []);
     const path: NavPath = waypoints
       ? { waypoints, index: 0, destination: { ...door.interior } }
-      : { waypoints: [{ ...door.interior }], index: 0, destination: { ...door.interior } };
+      : straightFallbackPath(door.interior, []);
     return { ...npc, location: 'INTERIOR', path, moving: true, activity: 'Waking up', indoors: true, buildingId: bed.home.id };
   }
 
@@ -314,30 +314,40 @@ function advanceOne(
     const door = homeDoorFor(npc, nav);
     if (wantsSleep && bed) {
       // Walk to the assigned bed.
-      if (!npc.path || npc.path.destination.x !== bed.bed.position.x || npc.path.destination.y !== bed.bed.position.y) {
+      if (shouldReplanPath(npc.path, bed.bed.position)) {
         const waypoints = findPath(npc.position, bed.bed.position, []);
         const path: NavPath = waypoints
           ? { waypoints, index: 0, destination: { ...bed.bed.position } }
-          : { waypoints: [{ ...bed.bed.position }], index: 0, destination: { ...bed.bed.position } };
+          : straightFallbackPath(bed.bed.position, []);
         return { ...npc, path, moving: true, activity: want.activity, indoors: true };
       }
-      const res = stepAlongPath(npc.path, npc.position, step);
+      if (npc.path!.gaveUp) {
+        // Destination unreachable: wait for the schedule to pick a new one.
+        return { ...npc, moving: false, activity: want.activity, indoors: true };
+      }
+      const res = stepAlongPath(npc.path!, npc.position, step);
       if (res.arrived) {
         return { ...npc, position: res.position, path: undefined, moving: false, location: 'SLEEPING', activity: 'Sleeping', indoors: true, facing: res.facing, bedId: bed.bed.id };
       }
-      return { ...npc, position: res.position, path: res.path, moving: true, facing: res.facing, activity: want.activity, indoors: true };
+      const tracked = trackStep(npc.path!, npc.position, res, (from) => {
+        const wps = findPath(from, bed.bed.position, []);
+        return wps ? { waypoints: wps, index: 0, destination: { ...bed.bed.position } } : null;
+      });
+      return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, activity: want.activity, indoors: true };
     }
     // Wants to go outside: walk to the interior door, then step out.
     if (!door) return { ...npc, location: 'OUTDOOR' as NPCWorldLocation, indoors: false, activity: want.activity };
-    if (!npc.path || npc.location !== 'INTERIOR' || pathDestIs(npc.path, want.target)) {
+    if (npc.path?.gaveUp) {
+      // Destination unreachable: wait for the schedule to pick a new one.
+      return { ...npc, moving: false, activity: want.activity, indoors: true };
+    }
+    if (!npc.path) {
       // (Re)build path to the interior door if we don't have one.
-      if (!npc.path) {
-        const waypoints = findPath(npc.position, door.interior, []);
-        const path: NavPath = waypoints
-          ? { waypoints, index: 0, destination: { ...door.interior } }
-          : { waypoints: [{ ...door.interior }], index: 0, destination: { ...door.interior } };
-        return { ...npc, path, moving: true, activity: want.activity, indoors: true };
-      }
+      const waypoints = findPath(npc.position, door.interior, []);
+      const path: NavPath = waypoints
+        ? { waypoints, index: 0, destination: { ...door.interior } }
+        : straightFallbackPath(door.interior, []);
+      return { ...npc, path, moving: true, activity: want.activity, indoors: true };
     }
     const res = stepAlongPath(npc.path!, npc.position, step);
     if (res.arrived) {
@@ -345,24 +355,32 @@ function advanceOne(
       // walks from the interior door through the doorway to the exterior as
       // the first leg of the outdoor path.
       const outPath = pathTo(door.exterior, want.target, nav.obstacles);
-      const fullWps = [{ ...door.exterior }, ...(outPath?.waypoints ?? [{ ...want.target }])];
+      const fullWps = [{ ...door.exterior }, ...(outPath?.waypoints ?? [straightFallbackPath(want.target, nav.obstacles).waypoints[0]])];
       return {
         ...npc,
         location: 'OUTDOOR',
         indoors: false,
         buildingId: undefined,
-        path: { waypoints: fullWps, index: 0, destination: { ...want.target } },
+        path: { waypoints: fullWps, index: 0, destination: { ...want.target }, replanCooldown: REPLAN_COOLDOWN_TICKS },
         moving: true,
         facing: res.facing,
         activity: want.activity,
       };
     }
-    return { ...npc, position: res.position, path: res.path, moving: true, facing: res.facing, activity: want.activity, indoors: true };
+    const tracked = trackStep(npc.path!, npc.position, res, (from) => {
+      const wps = findPath(from, door.interior, []);
+      return wps ? { waypoints: wps, index: 0, destination: { ...door.interior } } : null;
+    });
+    return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, activity: want.activity, indoors: true };
   }
 
   // --- ENTERING: walking the outdoor path to the home door exterior. ---
   if (npc.location === 'ENTERING' && npc.path) {
     const door = npc.path.viaDoor;
+    if (npc.path.gaveUp) {
+      // Destination unreachable: wait for the schedule to pick a new one.
+      return { ...npc, moving: false, activity: want.activity, indoors: false };
+    }
     const res = stepAlongPath(npc.path, npc.position, step);
     if (res.arrived && door) {
       // At the door exterior. Step through: now inside. Position is NOT
@@ -372,10 +390,10 @@ function advanceOne(
       let inPath: NavPath | undefined;
       if (wantsSleep && bed) {
         const wps = findPath(door.interior, bed.bed.position, []);
-        const fullWps = [{ ...door.interior }, ...(wps ?? [{ ...bed.bed.position }])];
-        inPath = { waypoints: fullWps, index: 0, destination: { ...bed.bed.position } };
+        const fullWps = [{ ...door.interior }, ...(wps ?? [straightFallbackPath(bed.bed.position, []).waypoints[0]])];
+        inPath = { waypoints: fullWps, index: 0, destination: { ...bed.bed.position }, replanCooldown: REPLAN_COOLDOWN_TICKS };
       } else {
-        inPath = { waypoints: [{ ...door.interior }], index: 0, destination: { ...door.interior } };
+        inPath = { waypoints: [{ ...door.interior }], index: 0, destination: { ...door.interior }, replanCooldown: REPLAN_COOLDOWN_TICKS };
       }
       return {
         ...npc,
@@ -392,7 +410,10 @@ function advanceOne(
       // No door reference (shouldn't happen) — treat as inside.
       return { ...npc, position: res.position, path: undefined, moving: false, location: 'INTERIOR', indoors: true, facing: res.facing, activity: want.activity };
     }
-    return { ...npc, position: res.position, path: res.path, moving: true, facing: res.facing, activity: want.activity, indoors: false };
+    const tracked = trackStep(npc.path, npc.position, res, (from) =>
+      door ? pathToDoor(from, door, nav.obstacles) : null,
+    );
+    return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, activity: want.activity, indoors: false };
   }
 
   // --- OUTDOOR: the normal case. ---
@@ -404,7 +425,7 @@ function advanceOne(
       return npc.activity === want.activity && !npc.moving ? npc : { ...npc, moving: false, activity: want.activity };
     }
     const needNewPath =
-      !npc.path || npc.location !== 'ENTERING' || npc.path.destination.x !== door.interior.x || npc.path.destination.y !== door.interior.y;
+      npc.location !== 'ENTERING' || shouldReplanPath(npc.path, door.exterior);
     if (needNewPath) {
       const path = pathToDoor(npc.position, door, nav.obstacles);
       if (!path) {
@@ -426,8 +447,13 @@ function advanceOne(
       ? npc
       : { ...npc, moving: false, activity: want.activity, indoors: false, location: 'OUTDOOR', path: undefined };
   }
-  const needNewPath =
-    !npc.path || npc.path.destination.x !== want.target.x || npc.path.destination.y !== want.target.y;
+  if (npc.path?.gaveUp && pathDestIs(npc.path, want.target)) {
+    // Destination unreachable: wait for the schedule to pick a new one.
+    return npc.activity === want.activity && !npc.moving
+      ? npc
+      : { ...npc, moving: false, activity: want.activity, indoors: false, location: 'OUTDOOR' };
+  }
+  const needNewPath = shouldReplanPath(npc.path, want.target);
   let path = npc.path;
   if (needNewPath) {
     const newPath = pathTo(npc.position, want.target, nav.obstacles);
@@ -440,13 +466,33 @@ function advanceOne(
   if (res.arrived) {
     return { ...npc, position: res.position, path: undefined, moving: false, activity: want.activity, indoors: false, location: 'OUTDOOR', facing: res.facing };
   }
-  return { ...npc, position: res.position, path: res.path, moving: true, facing: res.facing, activity: want.activity, indoors: false, location: 'OUTDOOR' };
+  const tracked = trackStep(path!, npc.position, res, (from) => pathTo(from, want.target, nav.obstacles));
+  return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, activity: want.activity, indoors: false, location: 'OUTDOOR' };
 }
 
 // --- small helpers ---
 
 function pathDestIs(path: NavPath, p: NavPoint): boolean {
   return Math.abs(path.destination.x - p.x) < 0.01 && Math.abs(path.destination.y - p.y) < 0.01;
+}
+
+/**
+ * Should the NPC (re)plan a path to `target`?
+ * - No path: yes. Gave up waiting: only a NEW destination replans.
+ * - Same destination: no.
+ * - Nearby destination during the anti-oscillation cooldown: no (prevents
+ *   pacing when the schedule target jitters between close points).
+ */
+/** Should the NPC (re)plan a path to `target`? (Exported for sim tests.) */
+export function shouldReplanPath(path: NavPath | undefined, target: NavPoint): boolean {
+  if (!path) return true;
+  if (path.gaveUp) return !pathDestIs(path, target);
+  if (pathDestIs(path, target)) return false;
+  if ((path.replanCooldown ?? 0) > 0) {
+    const shift = Math.hypot(path.destination.x - target.x, path.destination.y - target.y);
+    if (shift < REPLAN_HYSTERESIS) return false;
+  }
+  return true;
 }
 
 /**

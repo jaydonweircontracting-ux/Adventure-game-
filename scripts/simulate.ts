@@ -6,7 +6,8 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, buildMosslightHousing, cottageDoorways, mosslightObstacles, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, buildMosslightHousing, cottageDoorways, mosslightObstacles, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
+import { validateDestination, trackStep, pathTo, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
@@ -975,6 +976,107 @@ for (const kind of EXPECTED_KINDS) {
   clearMonsterSpriteCaches();
 }
 
+
+
+// ---- BUILD 318: stuck detection/recovery + destination validation ----
+{
+  // 1. validateDestination: clamps bounds, nudges out of buildings.
+  const building = { left: 10, top: 10, right: 20, bottom: 20 };
+  const clamped = validateDestination({ x: -5, y: 200 }, []);
+  assert(clamped.point.x === 2 && clamped.point.y === 138 && clamped.corrected, 'validateDestination should clamp to field bounds');
+  const inside = validateDestination({ x: 15, y: 15 }, [building]);
+  assert(inside.corrected, 'point inside a building must be corrected');
+  const ip = inside.point;
+  assert(!(ip.x > 10 && ip.x < 20 && ip.y > 10 && ip.y < 20), 'corrected point must be outside the building rect');
+  const clean = validateDestination({ x: 50, y: 50 }, [building]);
+  assert(!clean.corrected && clean.point.x === 50 && clean.point.y === 50, 'clean destination must be untouched');
+  // pathTo validates before A*: waypoints head to the validated point.
+  const p = pathTo({ x: 50, y: 50 }, { x: 15, y: 15 }, [building]);
+  assert(p !== null, 'pathTo should still route to a corrected destination');
+  const last = p!.waypoints[p!.waypoints.length - 1];
+  assert(!(last.x > 10 && last.x < 20 && last.y > 10 && last.y < 20), 'pathTo waypoints must not end inside a building');
+
+  // 2. trackStep: progress resets the stuck counter.
+  const mkPath = (): NavPath => ({ waypoints: [{ x: 90, y: 70 }], index: 0, destination: { x: 90, y: 70 } });
+  const mkRes = (pos: { x: number; y: number }, path: NavPath) => ({
+    position: pos, path, arrived: false as const, facing: 'right' as const, moving: true,
+  });
+  let path = mkPath();
+  let tr = trackStep(path, { x: 70, y: 70 }, mkRes({ x: 70.22, y: 70 }, path), () => null);
+  assert(!tr.waiting && tr.moving && (tr.path!.stuckTicks ?? -1) === 0, 'moving NPC should not accumulate stuck ticks');
+
+  // 3. trackStep: STUCK_TICK_LIMIT ticks without progress -> one replan, then give up.
+  path = mkPath();
+  let res: ReturnType<typeof trackStep> | undefined;
+  for (let i = 0; i <= STUCK_TICK_LIMIT; i++) {
+    res = trackStep(path, { x: 70, y: 70 }, mkRes({ x: 70, y: 70 }, path), () => null);
+    path = res.path!;
+  }
+  assert(res!.waiting && !res!.moving && res!.path!.gaveUp === true, 'stuck NPC with no replan route must give up and wait');
+
+  // 4. trackStep: a successful replan resets the counter and counts the replan.
+  path = mkPath();
+  const fresh: NavPath = { waypoints: [{ x: 90, y: 70 }], index: 0, destination: { x: 90, y: 70 } };
+  for (let i = 0; i <= STUCK_TICK_LIMIT; i++) {
+    res = trackStep(path, { x: 70, y: 70 }, mkRes({ x: 70, y: 70 }, path), () => ({ ...fresh }));
+    path = res.path!;
+  }
+  assert(!res!.waiting && res!.moving, 'stuck NPC should keep walking after a successful replan');
+  assert(res!.path!.replans === 1 && (res!.path!.stuckTicks ?? -1) === 0, 'replan should reset stuckTicks and count replans');
+  // ...but a second stall exhausts MAX_REPLANS and the NPC waits.
+  for (let i = 0; i <= STUCK_TICK_LIMIT; i++) {
+    res = trackStep(path, { x: 70, y: 70 }, mkRes({ x: 70, y: 70 }, path), () => ({ ...fresh }));
+    path = res.path!;
+  }
+  assert(res!.waiting && res!.path!.gaveUp === true, 'NPC must give up after MAX_REPLANS stalls');
+
+  // 5. shouldReplanPath hysteresis.
+  const cooled: NavPath = { waypoints: [{ x: 70, y: 82 }], index: 0, destination: { x: 70, y: 82 }, replanCooldown: 10 };
+  assert(!shouldReplanPath(cooled, { x: 71, y: 82 }), 'tiny destination jitter during cooldown should not replan');
+  assert(shouldReplanPath(cooled, { x: 90, y: 82 }), 'a real destination change must replan even during cooldown');
+  assert(shouldReplanPath({ ...cooled, replanCooldown: 0 }, { x: 71, y: 82 }), 'after cooldown, even a small shift replans');
+  assert(shouldReplanPath(undefined, { x: 70, y: 82 }), 'no path must replan');
+  assert(!shouldReplanPath({ ...cooled, gaveUp: true }, { x: 70, y: 82 }), 'gave-up NPC waits while the destination is unchanged');
+  assert(shouldReplanPath({ ...cooled, gaveUp: true }, { x: 30, y: 108 }), 'gave-up NPC replans when the destination changes');
+
+  // 6. Integration: a gave-up NPC waits, then walks again on a new destination.
+  const anchors: TownsfolkAnchors = {
+    points: {
+      guild: { x: 90, y: 60 }, chapel: { x: 40, y: 90 }, tavern: { x: 90, y: 90 },
+      farm0: { x: 30, y: 119 }, farm1: { x: 110, y: 119 },
+    },
+    plaza: { x: 70, y: 82 },
+    stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
+    gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
+    patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
+  };
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+  const folk = createTownsfolk(anchors, 847291583);
+  const navCtx: TownsfolkNavContext = {
+    housing: buildMosslightHousing(folk.map((n) => n.id)),
+    doors: cottageDoorways(),
+    obstacles: mosslightObstacles(),
+  };
+  const farmer = folk.find((n) => n.archetype === 'farmer')!;
+  const gardenTarget = townsfolkTarget(farmer, anchors, clockAt(10, 0)).target;
+  const stuckNpc = {
+    ...farmer,
+    position: { x: 60, y: 100 },
+    location: 'OUTDOOR' as const,
+    moving: true,
+    path: { waypoints: [{ ...gardenTarget }], index: 0, destination: { ...gardenTarget }, gaveUp: true } as NavPath,
+  };
+  const waited = advanceTownsfolk([stuckNpc], anchors, clockAt(10, 0), navCtx)[0];
+  assert(!waited.moving && waited.path!.gaveUp === true, 'gave-up NPC must wait while the destination is unchanged');
+  assert(waited.position.x === 60 && waited.position.y === 100, 'waiting NPC must not move');
+  // New destination (gardens moved) -> the NPC walks again.
+  const movedAnchors: TownsfolkAnchors = { ...anchors, gardens: [{ x: 50, y: 50 }, { x: 51, y: 51 }] };
+  const resumed = advanceTownsfolk([stuckNpc], movedAnchors, clockAt(10, 0), navCtx)[0];
+  assert(resumed.moving && !resumed.path!.gaveUp, 'NPC must resume walking when the destination changes');
+}
 
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
