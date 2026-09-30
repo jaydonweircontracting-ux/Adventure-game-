@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '246';
+const BUILD_NUMBER = '247';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -860,9 +860,11 @@ const playtestChunk: Point | null = (() => {
   const [x, y] = raw.split(',').map(Number);
   return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
 })();
-// Debug visualization (?debugDoors=1): draw RED=building collision, BLUE=door
-// interaction, GREEN=exit spawn over the field so door/logic alignment is visible.
-const debugDoors: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debugDoors') === '1';
+// Debug visualization: draw RED=building collision, BLUE=door interaction,
+// GREEN=exit spawn over the field so door/logic alignment is visible.
+// Can be enabled via ?debugDoors=1 URL or the Debug menu. Module-level so the
+// tap-mark overlay (outside the component) can read it.
+let debugDoors: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debugDoors') === '1';
 // Visual house mover: can be enabled via ?moveHouses=1 URL or the Debug menu.
 // Module-level so collision functions (outside the component) can read it.
 let moveHouses: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('moveHouses') === '1';
@@ -2614,6 +2616,14 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
       setMoverZoom(1);
     }
   };
+  // Debug markers (green dots): toggleable from options menu. Syncs with module-level debugDoors.
+  const [markerMode, setMarkerMode] = useState(debugDoors);
+  const toggleMarkerMode = () => {
+    const next = !markerMode;
+    debugDoors = next;
+    setMarkerMode(next);
+    if (!next) setDebugMarks([]);
+  };
   const dragStateRef = useRef<{ doorwayId: string; startClientX: number; startClientY: number; origX: number; origY: number; containerW: number; containerH: number } | null>(null);
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -3555,7 +3565,7 @@ if (active) {
           '--path-color': fieldPalette.path,
           '--field-glow': fieldPalette.glow,
         } as CSSProperties}
-        onClick={debugDoors ? (e) => {
+        onClick={markerMode ? (e) => {
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
           const x = ((e.clientX - rect.left) / rect.width) * FIELD_SIZE;
           const y = ((e.clientY - rect.top) / rect.height) * FIELD_SIZE;
@@ -3563,7 +3573,7 @@ if (active) {
         } : undefined}
         >
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
-          {debugDoors && debugMarks.map((mark, i) => (
+          {markerMode && debugMarks.map((mark, i) => (
             <span key={'mark-' + i} aria-hidden="true" style={{
               position: 'absolute',
               left: fieldPct(mark.x - 1.5),
@@ -3577,7 +3587,7 @@ if (active) {
               zIndex: 55,
             }} title={'(' + mark.x + ', ' + mark.y + ')'} />
           ))}
-          {debugDoors && debugMarks.length > 0 && (
+          {markerMode && debugMarks.length > 0 && (
             <button
               onClick={(e) => { e.stopPropagation(); setDebugMarks([]); }}
               style={{
@@ -3911,31 +3921,38 @@ if (active) {
                 />
                 );
               })}
-              {debugDoors && doorways.map((doorway) => {
+              {markerMode && doorways.map((doorway) => {
                 const rect = doorway.rect;
-                const door = fieldDoorPosition(rect);
-                const exit = doorwayExteriorPosition(rect, door);
-                // RED = collision rect (0.35 padding), BLUE = door interaction (6.0 radius), GREEN = exit spawn
+                const off = houseOffsets[doorway.id] || { x: 0, y: 0 };
+                const movedRect = {
+                  left: rect.left + off.x,
+                  right: rect.right + off.x,
+                  top: rect.top + off.y,
+                  bottom: rect.bottom + off.y,
+                };
+                const door = { x: doorway.position.x + off.x, y: doorway.position.y + off.y };
+                const exit = { x: door.x, y: movedRect.bottom + 1.2 };
+                const { xTol } = doorwayTriggerDims(movedRect);
+                // RED = collision rect, BLUE = hard-locked trigger zone, GREEN = exit spawn
                 return (
                   <span key={'dbg-' + doorway.id}>
                     <span aria-hidden="true" style={{
                       position: 'absolute',
-                      left: fieldPct(rect.left - 0.35),
-                      top: fieldPct(rect.top - 0.35),
-                      width: fieldPct((rect.right - rect.left) + 0.7),
-                      height: fieldPct((rect.bottom - rect.top) + 0.7),
+                      left: fieldPct(movedRect.left - 0.35),
+                      top: fieldPct(movedRect.top - 0.35),
+                      width: fieldPct((movedRect.right - movedRect.left) + 0.7),
+                      height: fieldPct((movedRect.bottom - movedRect.top) + 0.7),
                       border: '2px solid red',
                       pointerEvents: 'none',
                       zIndex: 50,
                     }} />
                     <span aria-hidden="true" style={{
                       position: 'absolute',
-                      left: fieldPct(door.x - 6.0),
-                      top: fieldPct(door.y - 6.0),
-                      width: fieldPct(12.0),
-                      height: fieldPct(12.0),
+                      left: fieldPct(door.x - xTol),
+                      top: fieldPct(door.y),
+                      width: fieldPct(xTol * 2),
+                      height: fieldPct(2.5),
                       border: '2px solid blue',
-                      borderRadius: '50%',
                       pointerEvents: 'none',
                       zIndex: 50,
                     }} />
@@ -4075,7 +4092,7 @@ if (active) {
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
             {equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}
-            {debugDoors && <span aria-hidden="true" style={{
+            {markerMode && <span aria-hidden="true" style={{
               position: 'absolute',
               left: '-6px',
               top: '-6px',
@@ -4123,6 +4140,10 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMoverMode(); }} data-testid="button-debug-mover">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: {moverMode ? 'Exit' : 'Move'} Houses</strong><small>{moverMode ? 'Return to normal play' : 'Tap houses to reposition them'}</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMarkerMode(); }} data-testid="button-debug-markers">
+                  <span className="options-action-icon"><Settings size={17} /></span>
+                  <span><strong>Debug: {markerMode ? 'Hide' : 'Show'} Markers</strong><small>{markerMode ? 'Hide green dots' : 'Tap field to place green dots'}</small></span>
                 </button>
               </div>
               <button className="options-menu-button" onClick={() => { setOptionsOpen(false); onOpenMenu(); }} data-testid="button-options-main-menu">Main Menu</button>
