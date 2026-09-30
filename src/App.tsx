@@ -48,7 +48,7 @@ import {
   type Stable,
 } from '@/game/horses';
 import { generateSettlementPopulation, type CharacterProfile } from '@/game/characterGen';
-import { poisForChunk as modulePoisForChunk, type PointOfInterest } from '@/game/pointsOfInterest';
+import { poisForChunk as modulePoisForChunk, treasureForPoi, monstersForPoiKind, type PointOfInterest, type PoiKind } from '@/game/pointsOfInterest';
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor } from '@/game/monsterSprites';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
@@ -1171,6 +1171,7 @@ type SaveGameData = {
   escortHired?: boolean;
   questLog?: string;
   openedChests?: string;
+  lootedPois?: string;
   civ?: string;
   horses?: unknown;
   logs: Array<{ text: string; color: string }>;
@@ -1504,6 +1505,54 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
   if (danger >= 2 && (terrain === 'forest' || terrain === 'rock' || terrain === 'tundra' || terrain === 'meadow')) {
     const count = 1 + (Math.abs(chunk.x * 17 + chunk.y * 23) % 2);
     for (let i = 0; i < count; i++) spawn('orc', i, 12000, 1.5);
+  }
+  // Civ phase 15: monster ecology — POI dens. A POI's haunting monsters
+  // (caves: goblins/bats/spiders; crypts/cemeteries: skeletons; bandit camps:
+  // bandits) spawn clustered near the POI with a small den roam radius.
+  const spawnDen = (kind: MonsterKind, at: Point, seed: number, hpMult: number) => {
+    const denPos = {
+      x: Math.min(FIELD_SIZE - 8, Math.max(8, at.x + (seed % 21) - 10)),
+      y: Math.min(FIELD_SIZE - 8, Math.max(8, at.y + ((seed >> 5) % 21) - 10)),
+    };
+    if (isFieldPositionBlocked(denPos, chunk)) return;
+    const level = monsterLevelForChunk(chunk, seed % 7, playerLevel);
+    const maxHp = Math.round(goatMaxHpForLevel(level) * hpMult);
+    const ranged = (kind === 'bandit' && seed % 3 === 0) || (kind === 'goblin' && seed % 4 === 0);
+    monsters.push({
+      id: id++,
+      kind,
+      variant: 'default',
+      position: denPos,
+      spawnPosition: { ...denPos },
+      roamRadius: 12,
+      facing: (['up', 'right', 'down', 'left'] as Direction[])[seed % 4],
+      level,
+      hp: maxHp,
+      maxHp,
+      disposition: 'aggressive',
+      attackCooldown: 0,
+      respawnTicks: 0,
+      wanderSeed: seed,
+      moving: false,
+      attacking: false,
+      state: 'idle',
+      hurtTimer: 0,
+      attackTimer: 0,
+      attackHitApplied: false,
+      hitFlash: false,
+      ranged,
+      gear: gearForMonster(kind, 'default', ranged),
+    });
+  };
+  for (const poi of modulePoisForChunk(chunk, DEFAULT_WORLD_SEED, {})) {
+    const kinds = monstersForPoiKind(poi.kind as PoiKind).filter((k) => (['goblin','bandit','skeleton','spider','wolf','slime','bat','rat'] as string[]).includes(k));
+    if (kinds.length === 0) continue;
+    const denSeed = Math.abs(chunk.x * 311 + chunk.y * 347 + poi.id.length * 53);
+    const denSize = 1 + (denSeed % 2);
+    for (let i = 0; i < denSize; i++) {
+      const kind = kinds[(denSeed + i) % kinds.length] as MonsterKind;
+      spawnDen(kind, poi.position, denSeed + i * 101, kind === 'skeleton' ? 1.0 : 0.8);
+    }
   }
   // Soldiers: rogue sellswords ambushing roads in the outskirts (danger 1+), rarer than bandits.
   if (danger >= 1 && mapTileFor(chunk).road !== 'none' && Math.abs(chunk.x * 5 + chunk.y * 11) % 2 === 0) {
@@ -3149,6 +3198,9 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   // Lockpicking: opened locked-chest ids (pure logic in src/game/lockpicking.ts).
   const [openedChests, setOpenedChests] = useState<string[]>([]);
   const openedChestsRef = useRef<string[]>([]);
+  // Civ phase 14: POI treasure looted once per POI id, persisted in the save.
+  const [lootedPois, setLootedPois] = useState<string[]>([]);
+  const lootedPoisRef = useRef<string[]>([]);
   // Civilization (phase 3+): settlement hierarchy, kingdoms, rulers, trade.
   // Created lazily on first clock tick; advanced once per in-game day.
   const civRef = useRef<CivilizationState | null>(null);
@@ -3358,6 +3410,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     escortHired: escortHiredRef.current,
     questLog: serializeQuestStates(questStatesRef.current),
     openedChests: serializeOpenedChests(openedChestsRef.current),
+    lootedPois: serializeOpenedChests(lootedPoisRef.current),
     civ: civRef.current ? serializeCivilization(civRef.current) : undefined,
     horses: horsesRef.current ? serializeHorses(horsesRef.current.horses, horsesRef.current.stables) : undefined,
     brainState: brainRef.current?.getGameState() || null,
@@ -3414,6 +3467,8 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     questStatesRef.current = restoredQuests; setQuestStates(restoredQuests);
     const restoredChests = parseOpenedChests(loadState.openedChests);
     openedChestsRef.current = restoredChests; setOpenedChests(restoredChests);
+    const restoredLooted = parseOpenedChests(loadState.lootedPois);
+    lootedPoisRef.current = restoredLooted; setLootedPois(restoredLooted);
     // Civilization: restore the simulated hierarchy, or rebuild it lazily.
     if (loadState.civ) {
       try {
@@ -5890,10 +5945,21 @@ if (active) {
           {/* Points of Interest: ruins, caves, camps, shrines */}
           {!currentWorldTile.landmark && (() => {
             const pois = modulePoisForChunk(chunk, DEFAULT_WORLD_SEED, {});
-            const tappable = (kind: string) => kind === 'cemetery' || kind === 'ruin' || kind === 'crypt' || kind === 'forgotten_grave' || kind === 'cave' || kind === 'mine';
+            const tappable = (kind: string) => kind === 'cemetery' || kind === 'ruin' || kind === 'crypt' || kind === 'forgotten_grave' || kind === 'cave' || kind === 'mine' || kind === 'buried_treasure' || kind === 'bandit_camp' || kind === 'battlefield' || kind === 'watchtower';
             const inspectPoi = (poi: PointOfInterest) => {
               const dangerWord = ['safe', 'mild', 'dangerous', 'deadly'][poi.danger] ?? 'unknown';
               setLogs((currentLogs) => [{ text: `${poi.name} (${dangerWord}): ${poi.description}`, color: 'blue' }, ...currentLogs].slice(0, 3));
+            };
+            // Civ phase 14: treasure-bearing POIs can be looted once each.
+            const lootable = (kind: string) => kind === 'buried_treasure' || kind === 'bandit_camp' || kind === 'battlefield' || kind === 'ruin' || kind === 'mine' || kind === 'watchtower' || kind === 'crypt';
+            const lootPoi = (poi: PointOfInterest) => {
+              if (lootedPoisRef.current.includes(poi.id)) { inspectPoi(poi); return; }
+              const [treasure] = treasureForPoi(poi, DEFAULT_WORLD_SEED);
+              if (!treasure) { inspectPoi(poi); return; }
+              const next = [...lootedPoisRef.current, poi.id];
+              lootedPoisRef.current = next; setLootedPois(next);
+              onLoot({ coins: treasure.goldAmount });
+              setLogs((currentLogs) => [{ text: `Looted ${poi.name}: +${treasure.goldAmount} coins — ${treasure.items.join(', ')}.`, color: 'gold' }, ...currentLogs].slice(0, 3));
             };
             return (
               <>
@@ -5901,11 +5967,11 @@ if (active) {
                   <button
                     key={'poi-' + i}
                     type="button"
-                    className={'poi poi-' + poi.kind}
+                    className={'poi poi-' + poi.kind + (lootedPois.includes(poi.id) ? ' is-looted' : '')}
                     style={{ left: fieldPct(poi.position.x), top: fieldPct(poi.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : 'auto', cursor: 'pointer' }}
-                    onClick={() => inspectPoi(poi)}
-                    aria-label={poi.name}
-                    title={poi.name}
+                    onClick={() => (lootable(poi.kind) ? lootPoi(poi) : inspectPoi(poi))}
+                    aria-label={poi.name + (lootedPois.includes(poi.id) ? ' (looted)' : '')}
+                    title={poi.name + (lootable(poi.kind) && !lootedPois.includes(poi.id) ? ' — tap to loot' : '')}
                   />
                 ) : (
                   <span

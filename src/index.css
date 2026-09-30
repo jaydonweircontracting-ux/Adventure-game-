@@ -4079,6 +4079,11 @@ body {
   height: 36px;
   opacity: 0.85;
 }
+/* Civ phase 14: looted treasure POIs render dimmed/dug-up. */
+.poi.is-looted {
+  opacity: 0.35;
+  filter: grayscale(0.7);
+}
 
 /* Journal sheet */
 .journal-sheet {
@@ -4707,6 +4712,8 @@ body {
 /* BUILD 296 (civ phase 11): horses & mounting — integrated src/game/horses.ts + characterGen.ts: world horses (NPC-owned + 6 wild) created per world seed from civilization settlements, analytic horseTarget vs world clock, rendered on the player's chunk with nameplates (tap for a status line), saved/loaded with corruption fallback; Horses section in the NPC Inspector. */
 /* BUILD 297 (civ phase 12): cemeteries & ruins — integrated src/game/pointsOfInterest.ts, removed the duplicate local POI system in App; module POIs (cemetery, crypt, forgotten graves, ruins, etc.) render on wilderness chunks, cemeteries/ruins/crypts tappable for their generated descriptions; CSS for all module POI kinds. */
 /* BUILD 298 (civ phase 13): caves — cave descriptions now report size, chamber count and contents; caves and mines tappable in the field, inspect log shows the danger rating. */
+/* BUILD 299 (civ phase 14): treasure & loot — treasure-bearing POIs (buried treasure, bandit camps, battlefields, ruins, mines, watchtowers, crypts) lootable once each via treasureForPoi; looted POI ids persist in the save, looted POIs render dimmed. */
+/* BUILD 300 (civ phase 15): monster ecology — POI dens: each POI's haunting monsters (from monstersForPoiKind) spawn clustered near the POI with a small den roam radius. */
 .locked-chest {
   position: absolute;
   z-index: 5;
