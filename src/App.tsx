@@ -85,7 +85,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '353';
+const BUILD_NUMBER = '354';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -520,13 +520,15 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
 
   if (startingCenter) {
     // Keep trees fully inside the field so sprites aren't clipped at edges.
-    // Anchors sit clear of the four corner houses (x 24-36 / 64-76,
-    // y 27-36 / 64-72) and clear of the road corridors (x/y 44-59).
+    // BUILD 354: coordinates are true field units (0..280), matching the
+    // renderer (fieldPct) and collision (fieldTreeBaseRect). Values below are
+    // the long-standing visual positions (old 0..100 values × 2.8), so the
+    // on-screen layout does not move — only the logical positions now agree.
     const perimeterTrees = [
-      { x: 20, y: 22, scale: 0.56, variant: 1 },
-      { x: 70, y: 22, scale: 0.56, variant: 2 },
-      { x: 18, y: 68, scale: 0.56, variant: 2 },
-      { x: 86, y: 64, scale: 0.56, variant: 1 },
+      { x: 56, y: 61.6, scale: 0.56, variant: 1 },
+      { x: 196, y: 61.6, scale: 0.56, variant: 2 },
+      { x: 50.4, y: 190.4, scale: 0.56, variant: 2 },
+      { x: 240.8, y: 179.2, scale: 0.56, variant: 1 },
     ];
     return perimeterTrees.map((tree, id) => ({ ...tree, id, style: treeStyle, sprite: (tree.variant === 1 ? 'bigpine' : 'pine2') as EnvSpriteKey }));
   }
@@ -6741,8 +6743,8 @@ if (active) {
                     className="field-tree tree-stump"
                     key={'stump-' + tree.id}
                     style={{
-                      left: 'calc(' + (tree.x + 3.2 * tree.scale) + '% - 13px)',
-                      top: 'calc(' + (tree.y + 4 * tree.scale) + '% - 14px)',
+                      left: 'calc(' + fieldPct(tree.x + 3.2 * tree.scale) + ' - 13px)',
+                      top: 'calc(' + fieldPct(tree.y + 4 * tree.scale) + ' - 14px)',
                     }}
                     aria-hidden="true"
                   />
@@ -6758,8 +6760,8 @@ if (active) {
                   className={'field-tree env-' + tree.sprite}
                   key={tree.id}
                   style={{
-                    left: 'calc(' + anchorX + '% - ' + (box.w / 2) * tree.scale + 'px)',
-                    top: 'calc(' + anchorY + '% - ' + box.h * tree.scale + 'px)',
+                    left: 'calc(' + fieldPct(anchorX) + ' - ' + (box.w / 2) * tree.scale + 'px)',
+                    top: 'calc(' + fieldPct(anchorY) + ' - ' + box.h * tree.scale + 'px)',
                     width: box.w,
                     height: box.h,
                     transform: 'scale(' + tree.scale + ')',
