@@ -5890,9 +5890,10 @@ if (active) {
           {/* Points of Interest: ruins, caves, camps, shrines */}
           {!currentWorldTile.landmark && (() => {
             const pois = modulePoisForChunk(chunk, DEFAULT_WORLD_SEED, {});
-            const tappable = (kind: string) => kind === 'cemetery' || kind === 'ruin' || kind === 'crypt' || kind === 'forgotten_grave';
+            const tappable = (kind: string) => kind === 'cemetery' || kind === 'ruin' || kind === 'crypt' || kind === 'forgotten_grave' || kind === 'cave' || kind === 'mine';
             const inspectPoi = (poi: PointOfInterest) => {
-              setLogs((currentLogs) => [{ text: `${poi.name}: ${poi.description}`, color: 'blue' }, ...currentLogs].slice(0, 3));
+              const dangerWord = ['safe', 'mild', 'dangerous', 'deadly'][poi.danger] ?? 'unknown';
+              setLogs((currentLogs) => [{ text: `${poi.name} (${dangerWord}): ${poi.description}`, color: 'blue' }, ...currentLogs].slice(0, 3));
             };
             return (
               <>

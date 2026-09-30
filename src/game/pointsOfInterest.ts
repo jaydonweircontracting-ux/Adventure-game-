@@ -321,8 +321,12 @@ function descriptionFor(poi: PointOfInterest): string {
       return `Broken walls and a collapsed roof, reclaimed by moss and ivy.${historyLine} ${h ? `Those who shelter here now: ${h.inhabitants.toLowerCase()}.` : ''}`.trim();
     case 'cemetery':
       return `Rows of weathered tombstones lean in the long grass. Some names are still legible — people who lived and died here long before you arrived.`;
-    case 'cave':
-      return `A dark mouth in the rock exhales cold air. Deeper in, water drips somewhere unseen.`;
+    case 'cave': {
+      const cave = poi as CavePoi;
+      const sizeLine = cave.size ? ` This is a ${cave.size} cave${cave.chambers ? ` with ${cave.chambers} chamber${cave.chambers === 1 ? '' : 's'}` : ''}.` : '';
+      const contentsLine = cave.contents && cave.contents.length > 0 ? ` Signs of: ${cave.contents.join(', ').toLowerCase()}.` : '';
+      return `A dark mouth in the rock exhales cold air. Deeper in, water drips somewhere unseen.${sizeLine}${contentsLine}`.trim();
+    }
     case 'shrine':
       return `A small altar, half-swallowed by roots. Someone still leaves offerings here.`;
     case 'bandit_camp':

@@ -4706,6 +4706,7 @@ body {
 /* BUILD 295 (civ phase 10): expanded male/female generation — townsfolk roster and road travelers now carry gender (mixed 6/6 roster, gender-split name pools, every archetype/kind open to both); ♂/♀ markers in the NPC Inspector, data-gender on field NPCs. */
 /* BUILD 296 (civ phase 11): horses & mounting — integrated src/game/horses.ts + characterGen.ts: world horses (NPC-owned + 6 wild) created per world seed from civilization settlements, analytic horseTarget vs world clock, rendered on the player's chunk with nameplates (tap for a status line), saved/loaded with corruption fallback; Horses section in the NPC Inspector. */
 /* BUILD 297 (civ phase 12): cemeteries & ruins — integrated src/game/pointsOfInterest.ts, removed the duplicate local POI system in App; module POIs (cemetery, crypt, forgotten graves, ruins, etc.) render on wilderness chunks, cemeteries/ruins/crypts tappable for their generated descriptions; CSS for all module POI kinds. */
+/* BUILD 298 (civ phase 13): caves — cave descriptions now report size, chamber count and contents; caves and mines tappable in the field, inspect log shows the danger rating. */
 .locked-chest {
   position: absolute;
   z-index: 5;
