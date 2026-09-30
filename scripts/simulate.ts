@@ -5,6 +5,7 @@ import { updateGoat, type GoatAIEntity } from '../src/game/ai';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, type TownsfolkAnchors } from '../src/game/townsfolk';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize } from '../src/game/worldEditor';
 
 let passed = 0;
@@ -369,7 +370,72 @@ console.log('Testing world clock display + wait math...');
 }
 
 
-console.log(`SIMULATION COMPLETE: ${passed} passed, ${failed} failed`);
+// ---- 13. Townsfolk living-town simulation (BUILD 276) ----
+console.log('Testing townsfolk living-town simulation...');
+{
+  const anchors: TownsfolkAnchors = {
+    points: {
+      guild: { x: 90, y: 60 }, chapel: { x: 40, y: 90 }, tavern: { x: 90, y: 90 },
+      farm0: { x: 30, y: 119 }, farm1: { x: 110, y: 119 },
+    },
+    plaza: { x: 70, y: 82 },
+    stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
+    gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
+    patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
+  };
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+  const folk = createTownsfolk(anchors, 847291583);
+  assert(folk.length === 12, `Expected 12 townsfolk, got ${folk.length}`);
+  assert(new Set(folk.map((n) => n.id)).size === 12, 'Townsfolk ids not unique');
+  assert(new Set(folk.map((n) => n.name)).size === 12, 'Townsfolk names not unique');
+  const archetypes = new Set(folk.map((n) => n.archetype));
+  for (const a of ['farmer', 'merchant', 'guard', 'priest', 'smith', 'commoner', 'child']) {
+    assert(archetypes.has(a as never), `Missing archetype ${a}`);
+  }
+  // Determinism: same npc + clock -> same schedule target.
+  const farmer = folk.find((n) => n.archetype === 'farmer')!;
+  const noon = clockAt(12, 0);
+  const t1 = townsfolkTarget(farmer, anchors, noon);
+  const t2 = townsfolkTarget(farmer, anchors, noon);
+  assert(t1.activity === t2.activity && t1.target.x === t2.target.x && t1.target.y === t2.target.y, 'Schedule not deterministic');
+  // Night: everyone indoors.
+  const night = clockAt(2, 0);
+  assert(folk.every((n) => townsfolkTarget(n, anchors, night).indoors), 'Not all townsfolk indoors at 2 AM');
+  // Noon: farmer tends a garden; merchant minds a stall.
+  const farmerNoon = townsfolkTarget(farmer, anchors, clockAt(10, 0));
+  assert(!farmerNoon.indoors && farmerNoon.activity === 'Tending crops', `Farmer at 10 AM: ${farmerNoon.activity}`);
+  assert(anchors.gardens.some((g) => g.x === farmerNoon.target.x && g.y === farmerNoon.target.y), 'Farmer not at a garden');
+  const merchant = folk.find((n) => n.archetype === 'merchant')!;
+  const merchantNoon = townsfolkTarget(merchant, anchors, clockAt(10, 0));
+  assert(merchantNoon.activity === 'Minding the stall', `Merchant at 10 AM: ${merchantNoon.activity}`);
+  // Guards: at least one patrolling mid-morning, none patrolling at 3 AM.
+  const guards = folk.filter((n) => n.archetype === 'guard');
+  assert(guards.some((g) => townsfolkTarget(g, anchors, clockAt(10, 0)).activity === 'Patrolling'), 'No guard patrolling at 10 AM');
+  assert(guards.every((g) => townsfolkTarget(g, anchors, clockAt(3, 0)).indoors), 'Guard outdoors at 3 AM');
+  // Hash sanity.
+  assert(townsfolkHash(1, 2) === townsfolkHash(1, 2), 'townsfolkHash not deterministic');
+  assert(townsfolkHash(5, 9) >= 0 && townsfolkHash(5, 9) < 1, 'townsfolkHash out of range');
+  // Movement: advances toward target, stops on arrival.
+  const snapped = snapTownsfolk(folk, anchors, clockAt(10, 0));
+  const walker = { ...snapped.find((n) => n.archetype === 'farmer')!, position: { x: 0, y: 0 }, moving: false };
+  const before = Math.hypot(walker.position.x - 30, walker.position.y - 108);
+  const moved = advanceTownsfolk([walker], anchors, clockAt(10, 0))[0];
+  const farmerTarget = townsfolkTarget(walker, anchors, clockAt(10, 0)).target;
+  const distAfter = Math.hypot(moved.position.x - farmerTarget.x, moved.position.y - farmerTarget.y);
+  assert(moved.moving && distAfter < before, 'Townsfolk did not move toward target');
+  const arrived = advanceTownsfolk([{ ...moved, position: { ...townsfolkTarget(walker, anchors, clockAt(10, 0)).target } }], anchors, clockAt(10, 0))[0];
+  assert(!arrived.moving, 'Townsfolk still moving after arrival');
+  // Re-anchor: moved house -> updated home.
+  const movedAnchors: TownsfolkAnchors = { ...anchors, points: { ...anchors.points, guild: { x: 1, y: 2 } } };
+  const reanchored = reanchorTownsfolk(folk, movedAnchors);
+  const guildNpc = reanchored.find((n) => n.homeKey === 'guild')!;
+  assert(guildNpc.home.x === 1 && guildNpc.home.y === 2, 'Re-anchor did not update guild home');
+  const unchanged = reanchorTownsfolk(folk, anchors);
+  assert(unchanged.every((n, i) => n === folk[i]), 'Re-anchor changed refs without anchor changes');
+}
 
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
@@ -379,3 +445,5 @@ if (failures.length > 0) {
   failures.forEach((f) => console.log('  - ' + f));
   process.exit(1);
 }
+
+console.log(`SIMULATION COMPLETE: ${passed} passed, ${failed} failed`);

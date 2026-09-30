@@ -15,6 +15,7 @@ export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEdi
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList } from './game/worldEditor';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint } from '@/game/townsfolk';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc } from '@/game/combat';
 import { updateGoat, type GoatAIState } from '@/game/ai';
@@ -32,7 +33,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '275';
+const BUILD_NUMBER = '276';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -1883,6 +1884,36 @@ function npcScheduleTarget(npc: TownNpc, hour: number): Point {
   return npc.leisure || npc.position; // Evening/morning: leisure
 }
 
+// Living-town anchors for Mosslight Crossing (chunk 4,7). Home doorsteps are
+// derived from the live doorway rects + world-editor offsets, so townsfolk
+// homes follow houses the player moves.
+const TOWNSFOLK_CHUNK: Point = { x: 4, y: 7 };
+function townsfolkAnchors(offsets: Record<string, Point>): TownsfolkAnchors {
+  const doorways = buildingDoorwaysFor(TOWNSFOLK_CHUNK);
+  const points: Record<string, TownsfolkPoint> = {};
+  const doorstep = (id: string): TownsfolkPoint => {
+    const doorway = doorways.find((d) => d.id === id);
+    if (!doorway) return { x: 70, y: 70 };
+    const off = offsets[id] || { x: 0, y: 0 };
+    return {
+      x: (doorway.rect.left + doorway.rect.right) / 2 + off.x,
+      y: doorway.rect.bottom + 1.5 + off.y,
+    };
+  };
+  points.guild = doorstep('crafting-guild-door');
+  points.chapel = doorstep('chapel-door');
+  points.tavern = doorstep('fourth-house-door');
+  points.farm0 = { x: 30, y: 119 };
+  points.farm1 = { x: 110, y: 119 };
+  return {
+    points,
+    plaza: { x: 70, y: 82 },
+    stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
+    gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
+    patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Canvas world-map atlas (build 161).
 // The atlas is pre-rendered once to an offscreen canvas at a fixed 26px per
@@ -2805,6 +2836,41 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const [nameplateNpc, setNameplateNpc] = useState<string | null>(null);
   const nameplateTimerRef = useRef<number | null>(null);
   const [npcStates, setNpcStates] = useState(startingTownNpcs);
+  // Living-town roster: persistent seeded townsfolk, simulated only while the
+  // player is in Mosslight Crossing (simulation LOD).
+  const [townsfolk, setTownsfolk] = useState<Townsperson[]>([]);
+  const townsfolkRef = useRef<Townsperson[]>([]);
+  const townsfolkAnchorsRef = useRef<TownsfolkAnchors | null>(null);
+  useEffect(() => { townsfolkRef.current = townsfolk; }, [townsfolk]);
+  // Living-town roster management: resolve the roster when the player enters
+  // Mosslight Crossing (snapped to the current world-clock schedule, so the
+  // town is already "alive" on arrival), clear it when they leave (abstract
+  // LOD), and re-anchor homes when houses are moved in the world editor.
+  useEffect(() => {
+    const inTown = chunk.x === TOWNSFOLK_CHUNK.x && chunk.y === TOWNSFOLK_CHUNK.y;
+    const anchors = townsfolkAnchors(houseOffsets);
+    townsfolkAnchorsRef.current = anchors;
+    if (!inTown) {
+      if (townsfolkRef.current.length > 0) {
+        townsfolkRef.current = [];
+        setTownsfolk([]);
+      }
+      return;
+    }
+    const clock = brainRef.current?.worldCore.getClock();
+    if (!clock) return;
+    if (townsfolkRef.current.length === 0) {
+      const folk = snapTownsfolk(createTownsfolk(anchors, DEFAULT_WORLD_SEED), anchors, clock);
+      townsfolkRef.current = folk;
+      setTownsfolk(folk);
+      return;
+    }
+    const reanchored = reanchorTownsfolk(townsfolkRef.current, anchors);
+    if (reanchored.some((npc, index) => npc !== townsfolkRef.current[index])) {
+      townsfolkRef.current = reanchored;
+      setTownsfolk(reanchored);
+    }
+  }, [chunk.x, chunk.y, houseOffsets]);
   const [simulatedAdventurers, setSimulatedAdventurers] = useState(initialSimulatedAdventurers);
   const [selectedAdventurerId, setSelectedAdventurerId] = useState<string | null>(null);
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }, 1));
@@ -3072,6 +3138,17 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
           moving: true,
         };
       }));
+      // Living-town roster: step townsfolk toward their schedule targets on
+      // the same lightweight interval (only exists in the player's chunk).
+      const folkAnchors = townsfolkAnchorsRef.current;
+      const folkClock = brainRef.current?.worldCore.getClock();
+      if (folkAnchors && folkClock && townsfolkRef.current.length > 0) {
+        const next = advanceTownsfolk(townsfolkRef.current, folkAnchors, folkClock);
+        if (next.some((npc, index) => npc !== townsfolkRef.current[index])) {
+          townsfolkRef.current = next;
+          setTownsfolk(next);
+        }
+      }
     }, 120);
     return () => window.clearInterval(timer);
   }, []);
@@ -3706,6 +3783,15 @@ if (active) {
   useEffect(() => () => {
     if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
   }, []);
+  const talkToTownsfolk = (npc: Townsperson) => {
+    setNameplateNpc(npc.name);
+    if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
+    nameplateTimerRef.current = window.setTimeout(() => {
+      setNameplateNpc(null);
+      nameplateTimerRef.current = null;
+    }, 4000);
+    setLogs((currentLogs) => [{ text: `${npc.name} the ${npc.archetype} is ${npc.activity.toLowerCase()}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
   const inspectAdventurer = (adventurer: SimulatedAdventurer) => {
     const closingNameplate = selectedAdventurerId === adventurer.id;
     setSelectedAdventurerId((current) => current === adventurer.id ? null : adventurer.id);
@@ -4599,6 +4685,35 @@ if (active) {
                 <span className="npc-role-mark" aria-hidden="true" />
                 <strong>{npc.name}</strong>
                 <small>{npc.title}</small>
+              </span>
+              <span className="npc-sprite" aria-hidden="true" />
+            </button>
+          ))}
+          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && !moverMode && !markerMode && (
+            <>
+              {/* Townsfolk workplaces: garden plots + market stalls (decorative, like the fountain) */}
+              <span className="farm-field town-garden" style={{ left: fieldPct(18), top: fieldPct(100), width: fieldPct(24), height: fieldPct(16) }} aria-label="Town garden" />
+              <span className="farm-field town-garden" style={{ left: fieldPct(98), top: fieldPct(100), width: fieldPct(24), height: fieldPct(16) }} aria-label="Town garden" />
+              <span className="market-stall" style={{ left: fieldPct(58), top: fieldPct(64) }} aria-label="Market stall" />
+              <span className="market-stall" style={{ left: fieldPct(82), top: fieldPct(64) }} aria-label="Market stall" />
+            </>
+          )}
+          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && townsfolk.filter((npc) => !npc.indoors).map((npc) => (
+            <button
+              key={npc.id}
+              className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '')}
+              onClick={(moverMode || markerMode) ? undefined : () => talkToTownsfolk(npc)}
+              style={{ left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined }}
+              data-role={npc.role}
+              data-facing={npc.facing}
+              aria-label={npc.name + ', ' + npc.archetype + ', ' + npc.activity}
+              title={npc.name + ' — ' + npc.activity}
+              data-testid={'townsfolk-' + npc.id}
+            >
+              <span className="npc-nameplate">
+                <span className="npc-role-mark" aria-hidden="true" />
+                <strong>{npc.name}</strong>
+                <small>{npc.activity}</small>
               </span>
               <span className="npc-sprite" aria-hidden="true" />
             </button>

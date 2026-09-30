@@ -4319,3 +4319,29 @@ body {
   margin-top: 10px;
 }
 .wait-bar-fill { height: 100%; background: #b07f2e; transition: width .1s linear; }
+
+/* ---- Living town: market stalls + town gardens (BUILD 276) ---- */
+.market-stall {
+  position: absolute;
+  z-index: 3;
+  width: 34px;
+  height: 26px;
+  transform: translate(-50%, -70%);
+  background:
+    repeating-linear-gradient(90deg, #b03a2e 0 8px, #f3e6c8 8px 16px);
+  border: 2px solid #6b4a2f;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, .18);
+}
+.market-stall::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: -9px;
+  height: 9px;
+  background: #8b6f47;
+  border: 1px solid #6b4a2f;
+}
+.town-garden { z-index: 2; }
