@@ -22,6 +22,8 @@ export type TownsfolkPoint = { x: number; y: number };
 export type Townsperson = {
   id: string;
   name: string;
+  /** 'male' | 'female' — every archetype is open to both; this only drives names/appearance. */
+  gender: 'male' | 'female';
   archetype: TownsfolkArchetype;
   role: TownsfolkRole;
   /** persistentSeed: deterministic personality/schedule. Never Math.random. */
@@ -144,31 +146,32 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
   }
 }
 
-type TownsfolkDef = [name: string, archetype: TownsfolkArchetype, role: TownsfolkRole, homeKey: string];
+type TownsfolkDef = [name: string, gender: 'male' | 'female', archetype: TownsfolkArchetype, role: TownsfolkRole, homeKey: string];
 
 const ROSTER: TownsfolkDef[] = [
-  ['Aldric', 'farmer', 'guide', 'farm0'],
-  ['Brenna', 'farmer', 'guide', 'farm1'],
-  ['Cedric', 'merchant', 'mage', 'tavern'],
-  ['Father Aldous', 'priest', 'mage', 'chapel'],
-  ['Rowan', 'guard', 'warrior', 'guild'],
-  ['Kess', 'guard', 'warrior', 'guild'],
-  ['Tom', 'smith', 'warrior', 'guild'],
-  ['Mabel', 'commoner', 'mage', 'chapel'],
-  ['Dunstan', 'commoner', 'guide', 'tavern'],
-  ['Elsa', 'commoner', 'mage', 'guild'],
-  ['Wren', 'child', 'guide', 'chapel'],
-  ['Pip', 'child', 'rogue', 'tavern'],
+  ['Aldric', 'male', 'farmer', 'guide', 'farm0'],
+  ['Brenna', 'female', 'farmer', 'guide', 'farm1'],
+  ['Cedric', 'male', 'merchant', 'mage', 'tavern'],
+  ['Father Aldous', 'male', 'priest', 'mage', 'chapel'],
+  ['Rowan', 'female', 'guard', 'warrior', 'guild'],
+  ['Kess', 'female', 'guard', 'warrior', 'guild'],
+  ['Tom', 'male', 'smith', 'warrior', 'guild'],
+  ['Mabel', 'female', 'commoner', 'mage', 'chapel'],
+  ['Dunstan', 'male', 'commoner', 'guide', 'tavern'],
+  ['Elsa', 'female', 'commoner', 'mage', 'guild'],
+  ['Wren', 'female', 'child', 'guide', 'chapel'],
+  ['Pip', 'male', 'child', 'rogue', 'tavern'],
 ];
 
 /** Build the persistent roster. Homes resolve through anchor keys. */
 export function createTownsfolk(anchors: TownsfolkAnchors, worldSeed: number): Townsperson[] {
-  return ROSTER.map(([name, archetype, role, homeKey], index) => {
+  return ROSTER.map(([name, gender, archetype, role, homeKey], index) => {
     const seed = (worldSeed ^ Math.imul(index + 1, 2654435761)) >>> 0;
     const home = anchors.points[homeKey] ?? anchors.plaza;
     return {
       id: 'townsfolk-' + index,
       name,
+      gender,
       archetype,
       role,
       seed,

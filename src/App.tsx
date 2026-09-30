@@ -5105,7 +5105,7 @@ if (active) {
                   <div className="inspector-heading">Mosslight townsfolk ({townsfolk.length})</div>
                   {townsfolk.map((npc) => (
                     <div key={npc.id} className="inspector-row">
-                      <span>{npc.indoors ? '🏠' : '🌳'} <strong>{npc.name}</strong> · {npc.archetype} · {npc.activity}</span>
+                      <span>{npc.indoors ? '🏠' : '🌳'} <strong>{npc.gender === 'female' ? '♀' : '♂'} {npc.name}</strong> · {npc.archetype} · {npc.activity}</span>
                       {!npc.indoors && (
                         <button
                           type="button"
@@ -5127,7 +5127,7 @@ if (active) {
                   <div className="inspector-heading">Road travelers ({travelers.length})</div>
                   {travelers.map((traveler) => (
                     <div key={traveler.id} className="inspector-row">
-                      <span>🚶 <strong>{traveler.name}</strong> · {traveler.kind} → {traveler.destination}</span>
+                      <span>🚶 <strong>{traveler.gender === 'female' ? '♀' : '♂'} {traveler.name}</strong> · {traveler.kind} → {traveler.destination}</span>
                       <button
                         type="button"
                         className="editor-btn"
@@ -5866,6 +5866,7 @@ if (active) {
               style={{ left: fieldPct(traveler.position.x), top: fieldPct(traveler.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined }}
               data-role={traveler.role}
               data-facing={traveler.facing}
+              data-gender={traveler.gender}
               aria-label={traveler.name + ', ' + traveler.kind + ', bound for ' + traveler.destination}
               title={traveler.name + ' — bound for ' + traveler.destination}
               data-testid={traveler.id}
@@ -5935,6 +5936,7 @@ if (active) {
               style={{ left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined }}
               data-role={npc.role}
               data-facing={npc.facing}
+              data-gender={npc.gender}
               aria-label={npc.name + ', ' + npc.archetype + ', ' + npc.activity}
               title={npc.name + ' — ' + npc.activity}
               data-testid={'townsfolk-' + npc.id}

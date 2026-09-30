@@ -19,6 +19,8 @@ export type RoadArms = { n: boolean; s: boolean; e: boolean; w: boolean };
 export type Traveler = {
   id: string;
   name: string;
+  /** 'male' | 'female' — every kind is open to both; drives name/appearance only. */
+  gender: 'male' | 'female';
   kind: TravelerKind;
   /** Reuses the existing .town-npc.npc-<role> sprite classes. */
   role: 'mage' | 'warrior' | 'guide' | 'rogue';
@@ -36,7 +38,8 @@ export type RoadLink = {
   path: { x: number; y: number }[];
 };
 
-const TRAVELER_NAMES = ['Rhea', 'Odo', 'Fen', 'Asha', 'Corb', 'Linnet', 'Pell', 'Sorrel', 'Bramm', 'Tilda', 'Ost', 'Wrenna'];
+const TRAVELER_NAMES_MALE = ['Odo', 'Fen', 'Corb', 'Pell', 'Bramm', 'Ost'];
+const TRAVELER_NAMES_FEMALE = ['Rhea', 'Asha', 'Linnet', 'Sorrel', 'Tilda', 'Wrenna'];
 const TRAVELER_KINDS: TravelerKind[] = ['merchant', 'traveler', 'traveler', 'courier'];
 const TRAVELER_ROLES: Record<TravelerKind, Traveler['role']> = { merchant: 'mage', traveler: 'guide', courier: 'rogue' };
 
@@ -177,9 +180,12 @@ export function travelersForChunk(
       const facing: TravelerFacing =
         Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'down' : 'up');
       const kind = TRAVELER_KINDS[Math.floor(townsfolkHash(linkSeed, 44 + d) * TRAVELER_KINDS.length) % TRAVELER_KINDS.length];
+      const gender: 'male' | 'female' = townsfolkHash(linkSeed, 60 + d) < 0.5 ? 'male' : 'female';
+      const pool = gender === 'male' ? TRAVELER_NAMES_MALE : TRAVELER_NAMES_FEMALE;
       travelers.push({
         id: `traveler-link-${link.id}-${d}`,
-        name: TRAVELER_NAMES[Math.floor(townsfolkHash(linkSeed, 55 + d) * TRAVELER_NAMES.length) % TRAVELER_NAMES.length],
+        name: pool[Math.floor(townsfolkHash(linkSeed, 55 + d) * pool.length) % pool.length],
+        gender,
         kind,
         role: TRAVELER_ROLES[kind],
         position,
