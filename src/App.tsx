@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '257';
+const BUILD_NUMBER = '258';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3748,9 +3748,8 @@ if (active) {
             return { transform: `scale(${gameZoom})`, transformOrigin: `${ox}% ${oy}%` };
           })() : undefined}>
           {/* Marker dots: inside the world layer so they stay locked to field positions when walking/zooming. */}
-          {markerMode && debugMarks.map((mark, i) => (
-            <span key={'markfrag-' + i} style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }}>
-            <span aria-hidden="true" style={{
+          {markerMode && debugMarks.map((mark, i) => [
+            <span key={'mark-' + i} aria-hidden="true" style={{
               position: 'absolute',
               left: fieldPct(mark.x - 1.5),
               top: fieldPct(mark.y - 1.5),
@@ -3761,8 +3760,8 @@ if (active) {
               borderRadius: '50%',
               pointerEvents: 'none',
               zIndex: 55,
-            }} title={'(' + mark.x + ', ' + mark.y + ')'} />
-            <span aria-hidden="true" style={{
+            }} title={'(' + mark.x + ', ' + mark.y + ')'} />,
+            <span key={'mark-label-' + i} aria-hidden="true" style={{
               position: 'absolute',
               left: fieldPct(mark.x - 4),
               top: fieldPct(mark.y + 2),
@@ -3775,11 +3774,9 @@ if (active) {
               zIndex: 56,
               whiteSpace: 'nowrap',
             }}>{mark.x},{mark.y}</span>
-            </span>
-          ))}
-          {markerMode && redMarks.map((mark, i) => (
-            <span key={'redmarkfrag-' + i} style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }}>
-            <span aria-hidden="true" style={{
+          ])}
+          {markerMode && redMarks.map((mark, i) => [
+            <span key={'redmark-' + i} aria-hidden="true" style={{
               position: 'absolute',
               left: fieldPct(mark.x - 1.5),
               top: fieldPct(mark.y - 1.5),
@@ -3790,8 +3787,8 @@ if (active) {
               borderRadius: '50%',
               pointerEvents: 'none',
               zIndex: 55,
-            }} title={'(' + mark.x + ', ' + mark.y + ')'} />
-            <span aria-hidden="true" style={{
+            }} title={'(' + mark.x + ', ' + mark.y + ')'} />,
+            <span key={'redmark-label-' + i} aria-hidden="true" style={{
               position: 'absolute',
               left: fieldPct(mark.x - 4),
               top: fieldPct(mark.y + 2),
@@ -3804,8 +3801,7 @@ if (active) {
               zIndex: 56,
               whiteSpace: 'nowrap',
             }}>{mark.x},{mark.y}</span>
-            </span>
-          ))}
+          ])}
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
            <div className="field-accents" aria-hidden="true">
              {fieldAccents.map((accent) => (
