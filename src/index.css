@@ -4714,6 +4714,7 @@ body {
 /* BUILD 298 (civ phase 13): caves — cave descriptions now report size, chamber count and contents; caves and mines tappable in the field, inspect log shows the danger rating. */
 /* BUILD 299 (civ phase 14): treasure & loot — treasure-bearing POIs (buried treasure, bandit camps, battlefields, ruins, mines, watchtowers, crypts) lootable once each via treasureForPoi; looted POI ids persist in the save, looted POIs render dimmed. */
 /* BUILD 300 (civ phase 15): monster ecology — POI dens: each POI's haunting monsters (from monstersForPoiKind) spawn clustered near the POI with a small den roam radius. */
+/* BUILD 301 (civ phase 16): world events — the civilization's deterministic daily events are announced in the game log as days advance and listed in the NPC Inspector's World events section. */
 .locked-chest {
   position: absolute;
   z-index: 5;

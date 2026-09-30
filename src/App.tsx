@@ -37,6 +37,7 @@ import {
   topProducedResources,
   tradeRoutePolylines,
   type CivilizationState,
+  type WorldEvent,
 } from '@/game/civilization';
 import {
   createHorses,
@@ -3232,9 +3233,20 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     }
     return horsesRef.current;
   };
+  // Civ phase 16: announce world events as the simulation advances them.
+  const lastEventCountRef = useRef(-1);
   const advanceCivForClock = (clock: WorldClockState | null | undefined) => {
     if (!clock) return;
-    advanceCivilization(ensureCiv(), clock);
+    const civ = ensureCiv();
+    advanceCivilization(civ, clock);
+    const count = civ.events.length;
+    if (lastEventCountRef.current >= 0 && count > lastEventCountRef.current) {
+      const fresh = civ.events.slice(lastEventCountRef.current);
+      for (const event of fresh) {
+        setLogs((currentLogs) => [{ text: `📰 Day ${event.day}: ${event.description}`, color: 'purple' }, ...currentLogs].slice(0, 5));
+      }
+    }
+    lastEventCountRef.current = count;
   };
   const questRumoredRef = useRef<Set<string>>(new Set());
   const [questDialog, setQuestDialog] = useState<{ giverName: string; questId: string } | null>(null);
@@ -5200,6 +5212,16 @@ if (active) {
                           </div>
                         );
                       });
+                    })()}
+                    <div className="inspector-heading">World events</div>
+                    {(() => {
+                      const events = ensureCiv().events.slice(-8).reverse();
+                      if (events.length === 0) return <div className="inspector-row"><span>No recent events.</span></div>;
+                      return events.map((e: WorldEvent) => (
+                        <div key={e.id} className="inspector-row">
+                          <span>📰 <strong>Day {e.day}</strong> · {e.description}</span>
+                        </div>
+                      ));
                     })()}
                     <div className="inspector-heading">Horses ({ensureHorses().horses.length})</div>
                     {(() => {
