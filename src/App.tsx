@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '258';
+const BUILD_NUMBER = '259';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -681,9 +681,10 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
   }
 
   // Mosslight Crossing fountain: solid stone circle at the plaza center.
+  // Tightened to match the visual (was 5x3, felt like an invisible wall).
   if (landmark?.name === 'Mosslight Crossing') {
-    const fountainRect = { left: 47.5, top: 48.5, right: 52.5, bottom: 51.5 };
-    if (pointInRect(position, fountainRect, 0.3)) return true;
+    const fountainRect = { left: 48.5, top: 48.5, right: 51.5, bottom: 51.5 };
+    if (pointInRect(position, fountainRect, 0.2)) return true;
   }
 
   return false;
