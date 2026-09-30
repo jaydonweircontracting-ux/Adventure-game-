@@ -485,6 +485,8 @@ export type TownsfolkNavContext = {
   obstacles: ObstacleRect[];
   /** Chunk road piece for A* road preference (e.g. 'nesw', 'none'). */
   roadPiece?: string;
+  /** Chunk coords for A* water/bridge costs (Phase 2c). Omit indoors. */
+  chunk?: { x: number; y: number };
 };
 
 function homeDoorFor(npc: Townsperson, nav: TownsfolkNavContext): DoorwayLink | undefined {
@@ -709,7 +711,7 @@ function advanceOne(
       return { ...npc, position: res.position, path: undefined, moving: false, location: 'INTERIOR', indoors: true, facing: res.facing, activity: want.activity };
     }
     const tracked = trackStep(npc.path, npc.position, res, (from) =>
-      door ? pathToDoor(from, door, nav.obstacles, nav.roadPiece) : null,
+      door ? pathToDoor(from, door, nav.obstacles, nav.roadPiece, nav.chunk) : null,
     );
     return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, activity: want.activity, indoors: false };
   }
@@ -725,7 +727,7 @@ function advanceOne(
     const needNewPath =
       npc.location !== 'ENTERING' || shouldReplanPath(npc.path, door.exterior);
     if (needNewPath) {
-      const path = pathToDoor(npc.position, door, nav.obstacles, nav.roadPiece);
+      const path = pathToDoor(npc.position, door, nav.obstacles, nav.roadPiece, nav.chunk);
       if (!path) {
         // Door unreachable: wait (don't teleport, don't wander).
         return npc.activity === want.activity && !npc.moving ? npc : { ...npc, moving: false, activity: want.activity, path: undefined };
@@ -754,7 +756,7 @@ function advanceOne(
   const needNewPath = shouldReplanPath(npc.path, want.target);
   let path = npc.path;
   if (needNewPath) {
-    const newPath = pathTo(npc.position, want.target, nav.obstacles, nav.roadPiece);
+    const newPath = pathTo(npc.position, want.target, nav.obstacles, nav.roadPiece, nav.chunk);
     if (!newPath) {
       return npc.activity === want.activity && !npc.moving ? npc : { ...npc, moving: false, activity: want.activity, path: undefined };
     }
@@ -764,7 +766,7 @@ function advanceOne(
   if (res.arrived) {
     return { ...npc, position: res.position, path: undefined, moving: false, activity: want.activity, indoors: false, location: 'OUTDOOR', facing: res.facing };
   }
-  const tracked = trackStep(path!, npc.position, res, (from) => pathTo(from, want.target, nav.obstacles, nav.roadPiece));
+  const tracked = trackStep(path!, npc.position, res, (from) => pathTo(from, want.target, nav.obstacles, nav.roadPiece, nav.chunk));
   return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, activity: want.activity, indoors: false, location: 'OUTDOOR' };
 }
 

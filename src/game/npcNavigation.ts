@@ -10,6 +10,14 @@
 // - Buildings are obstacles. Doors are the only way in/out.
 // - Chunk boundaries are crossed by walking, not by respawning.
 
+import {
+  waterAt,
+  bridgeAt,
+  roadCorridorsFor,
+  LANDSCAPE_FIELD_SIZE,
+  type CorridorRect,
+} from './landscape';
+
 export type NPCWorldLocation =
   | 'OUTDOOR'
   | 'ENTERING'
@@ -77,6 +85,92 @@ const CELL = 4; // field units per cell; 280/4 = 70x70 grid (BUILD 367: was
 // 35x35, covering only a quarter of the 280-unit field — destinations in
 // the lower/right half collapsed to the grid edge)
 const GRID = 70;
+
+// ---------------------------------------------------------------------------
+// Water costs (Phase 2c): coarse per-chunk water grid so A* avoids deep water
+// and prefers bridges. Built once per findPath call (35x35 = 1225 samples),
+// then O(1) lookup per expanded cell.
+// ---------------------------------------------------------------------------
+
+const WATER_CELLS = 35; // 8 field units per coarse cell
+const WATER_CELL_SIZE = LANDSCAPE_FIELD_SIZE / WATER_CELLS;
+
+interface WaterGrid {
+  depths: Float32Array; // WATER_CELLS^2, 0..1
+  bridges: Uint8Array; // WATER_CELLS^2, 1 = bridge (walkable)
+}
+
+function buildWaterGrid(
+  chunkX: number,
+  chunkY: number,
+  roadPiece?: string,
+): WaterGrid {
+  const depths = new Float32Array(WATER_CELLS * WATER_CELLS);
+  const bridges = new Uint8Array(WATER_CELLS * WATER_CELLS);
+  const corridors: CorridorRect[] = roadCorridorsFor(roadPiece ?? 'none');
+  for (let gy = 0; gy < WATER_CELLS; gy++) {
+    for (let gx = 0; gx < WATER_CELLS; gx++) {
+      const idx = gy * WATER_CELLS + gx;
+      // Max-subsample: narrow channels must not slip between coarse cells.
+      // Take the worst depth of 4 sub-samples so the cost barrier matches
+      // the real water — otherwise detours clip the channel.
+      let maxDepth = 0;
+      for (let sy = 0; sy < 2; sy++) {
+        for (let sx = 0; sx < 2; sx++) {
+          const lx = (gx + 0.25 + sx * 0.5) * WATER_CELL_SIZE;
+          const ly = (gy + 0.25 + sy * 0.5) * WATER_CELL_SIZE;
+          const wx = chunkX * LANDSCAPE_FIELD_SIZE + lx;
+          const wy = chunkY * LANDSCAPE_FIELD_SIZE + ly;
+          maxDepth = Math.max(maxDepth, waterAt(wx, wy).depth);
+        }
+      }
+      depths[idx] = maxDepth;
+      if (maxDepth > 0.25) {
+        const lx = (gx + 0.5) * WATER_CELL_SIZE;
+        const ly = (gy + 0.5) * WATER_CELL_SIZE;
+        const wx = chunkX * LANDSCAPE_FIELD_SIZE + lx;
+        const wy = chunkY * LANDSCAPE_FIELD_SIZE + ly;
+        if (bridgeAt(wx, wy, corridors)) bridges[idx] = 1;
+      }
+    }
+  }
+  return { depths, bridges };
+}
+
+/** Movement cost multiplier for a chunk-local point. Pure. */
+function waterFactorAt(grid: WaterGrid | null, lx: number, ly: number): number {
+  if (!grid) return 1;
+  const gx = Math.min(WATER_CELLS - 1, Math.max(0, Math.floor(lx / WATER_CELL_SIZE)));
+  const gy = Math.min(WATER_CELLS - 1, Math.max(0, Math.floor(ly / WATER_CELL_SIZE)));
+  const idx = gy * WATER_CELLS + gx;
+  if (grid.bridges[idx] === 1) return 0.85; // prefer bridges slightly
+  const d = grid.depths[idx];
+  if (d > 0.5) return 30; // deep water: near-blocked
+  if (d > 0.25) return 6; // shallows: wade reluctantly
+  return 1;
+}
+
+/** True when the segment crosses deep, non-bridge water. Pure. */
+function segmentCrossesWater(
+  grid: WaterGrid | null,
+  a: NavPoint,
+  b: NavPoint,
+): boolean {
+  if (!grid) return false;
+  const dist = Math.hypot(b.x - a.x, b.y - a.y);
+  const steps = Math.max(1, Math.ceil(dist / 4));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = a.x + (b.x - a.x) * t;
+    const y = a.y + (b.y - a.y) * t;
+    const gx = Math.min(WATER_CELLS - 1, Math.max(0, Math.floor(x / WATER_CELL_SIZE)));
+    const gy = Math.min(WATER_CELLS - 1, Math.max(0, Math.floor(y / WATER_CELL_SIZE)));
+    const idx = gy * WATER_CELLS + gx;
+    if (grid.bridges[idx] === 1) continue;
+    if (grid.depths[idx] > 0.5) return true;
+  }
+  return false;
+}
 
 type GridCell = { x: number; y: number };
 
@@ -168,10 +262,16 @@ export function findPath(
   viaDoor?: DoorwayLink,
   /** Chunk road piece — when set, A* prefers road cells over open ground. */
   roadPiece?: string,
+  /** Chunk coords — when set, A* avoids deep water and prefers bridges. */
+  waterChunk?: { x: number; y: number },
 ): NavPoint[] | null {
   const start = toCell(from);
   const goal = toCell(to);
   if (start.x === goal.x && start.y === goal.y) return [to];
+
+  const waterGrid = waterChunk
+    ? buildWaterGrid(waterChunk.x, waterChunk.y, roadPiece)
+    : null;
 
   const key = (c: GridCell) => c.y * GRID + c.x;
   const open: GridCell[] = [start];
@@ -225,7 +325,8 @@ export function findPath(
       // take absurd detours (the 2.0x factor bounds the tradeoff).
       const cc = cellCenter(nb);
       const roadFactor = !roadPiece || isOnFieldRoad(cc.x, cc.y, roadPiece) ? 1 : OFFROAD_COST;
-      const tentative = (gScore.get(ck) ?? Infinity) + stepBase * roadFactor;
+      const waterFactor = waterFactorAt(waterGrid, cc.x, cc.y);
+      const tentative = (gScore.get(ck) ?? Infinity) + stepBase * roadFactor * waterFactor;
       if (tentative < (gScore.get(nk) ?? Infinity)) {
         cameFrom.set(nk, ck);
         gScore.set(nk, tentative);
@@ -252,7 +353,7 @@ export function findPath(
   const raw = cells.map(toPoint);
   raw[0] = { ...from };
   raw[raw.length - 1] = { ...to };
-  return smoothPath(raw, obstacles, roadPiece);
+  return smoothPath(raw, obstacles, roadPiece, waterGrid);
 }
 
 function lineClear(a: NavPoint, b: NavPoint, obstacles: ObstacleRect[]): boolean {
@@ -270,12 +371,19 @@ function lineClear(a: NavPoint, b: NavPoint, obstacles: ObstacleRect[]): boolean
   return true;
 }
 
-function smoothPath(points: NavPoint[], obstacles: ObstacleRect[], roadPiece?: string): NavPoint[] {
+function smoothPath(
+  points: NavPoint[],
+  obstacles: ObstacleRect[],
+  roadPiece?: string,
+  waterGrid?: WaterGrid | null,
+): NavPoint[] {
   if (points.length <= 2) return points;
   const out: NavPoint[] = [points[0]];
   let anchor = 0;
   for (let i = 2; i < points.length; i++) {
-    const shortcutClear = lineClear(points[anchor], points[i], obstacles);
+    const shortcutClear =
+      lineClear(points[anchor], points[i], obstacles) &&
+      !segmentCrossesWater(waterGrid ?? null, points[anchor], points[i]);
     let keep = !shortcutClear;
     // Road preference: don't smooth away a deliberate road detour. If the raw
     // stretch from the anchor to i hugs the road much more than the straight
@@ -484,9 +592,10 @@ export function pathToDoor(
   door: DoorwayLink,
   obstacles: ObstacleRect[],
   roadPiece?: string,
+  waterChunk?: { x: number; y: number },
 ): NavPath | null {
   const target = validateDestination(door.exterior, obstacles).point;
-  const waypoints = findPath(from, target, obstacles, door, roadPiece);
+  const waypoints = findPath(from, target, obstacles, door, roadPiece, waterChunk);
   if (!waypoints) return null;
   // Waypoints end at the door exterior. The caller transitions ENTERING ->
   // INTERIOR on arrival and then walks the interior leg (through the doorway
@@ -495,9 +604,15 @@ export function pathToDoor(
 }
 
 /** Build a plain outdoor path (no doors). The destination is validated first. */
-export function pathTo(from: NavPoint, to: NavPoint, obstacles: ObstacleRect[], roadPiece?: string): NavPath | null {
+export function pathTo(
+  from: NavPoint,
+  to: NavPoint,
+  obstacles: ObstacleRect[],
+  roadPiece?: string,
+  waterChunk?: { x: number; y: number },
+): NavPath | null {
   const target = validateDestination(to, obstacles).point;
-  const waypoints = findPath(from, target, obstacles, undefined, roadPiece);
+  const waypoints = findPath(from, target, obstacles, undefined, roadPiece, waterChunk);
   if (!waypoints) return null;
   return { waypoints, index: 0, destination: { ...to }, replanCooldown: REPLAN_COOLDOWN_TICKS };
 }

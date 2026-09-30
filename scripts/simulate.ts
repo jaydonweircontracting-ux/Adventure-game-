@@ -2242,6 +2242,79 @@ console.log('Testing water systems...');
   }
 }
 
+// ---- BUILD 367 Phase 2c: water/bridge costs in NPC A* ----
+console.log('Testing NPC water/bridge pathfinding...');
+{
+  // Chunk (3,6) has a river meandering through it (probed 2026-09-30): a
+  // north-south 'ns' road crosses it on bridges.
+  const CH = { x: 3, y: 6 };
+  const wAt = (x: number, y: number) => waterAt(CH.x * 280 + x, CH.y * 280 + y).depth;
+  // Dense deep-water exposure along a polyline (no bridges in these corridors).
+  const deepExposure = (pts: { x: number; y: number }[], corridors: { x: number; y: number; w: number; h: number }[]) => {
+    let bad = 0;
+    let total = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 2));
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const x = a.x + (b.x - a.x) * t;
+        const y = a.y + (b.y - a.y) * t;
+        total++;
+        const wx = CH.x * 280 + x;
+        const wy = CH.y * 280 + y;
+        if (waterAt(wx, wy).depth > 0.5 && !bridgeAt(wx, wy, corridors)) bad++;
+      }
+    }
+    return { bad, total };
+  };
+  // 1. Avoidance: E-W trip over dry endpoints. The unaware path plows through
+  // the water band; the water-aware path avoids deep water entirely.
+  const ewNoWater = findPath({ x: 10, y: 20 }, { x: 270, y: 20 }, [], undefined, undefined);
+  const ewWater = findPath({ x: 10, y: 20 }, { x: 270, y: 20 }, [], undefined, undefined, CH);
+  assert(ewNoWater !== null && ewWater !== null, 'E-W test paths should exist');
+  const ewBadNoWater = deepExposure(ewNoWater!, []).bad;
+  const ewBadWater = deepExposure(ewWater!, []).bad;
+  assert(ewBadNoWater > 0, `unaware path should cross deep water (got ${ewBadNoWater})`);
+  assert(ewBadWater === 0, `water-aware path should avoid deep water (got ${ewBadWater})`);
+  // 2. Bridges: N-S trip down the ns road must cross the river, but only on
+  // bridge cells.
+  const nsCorr = roadCorridorsFor('ns');
+  const bridgePath = findPath({ x: 144, y: 10 }, { x: 144, y: 270 }, [], undefined, 'ns', CH);
+  assert(bridgePath !== null, 'bridge path down the ns road should exist');
+  const bridgeExp = deepExposure(bridgePath!, nsCorr);
+  assert(bridgeExp.bad === 0, `bridge path should only cross deep water on bridges (got ${bridgeExp.bad} bad)`);
+  // It does cross water (the river intersects the road) — sample densely.
+  let denseMax = 0;
+  for (let i = 1; i < bridgePath!.length; i++) {
+    const a = bridgePath![i - 1];
+    const b = bridgePath![i];
+    const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 2));
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      denseMax = Math.max(denseMax, wAt(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
+    }
+  }
+  assert(denseMax > 0.5, 'bridge path should actually cross river water');
+  // 3. No bridge, no crossing: same N-S trip with roadPiece 'none' (no
+  // corridors, so no bridges) must detour around — longer and dry.
+  const detour = findPath({ x: 144, y: 10 }, { x: 144, y: 270 }, [], undefined, 'none', CH);
+  assert(detour !== null, 'detour around the river should exist');
+  const detourExp = deepExposure(detour!, []);
+  assert(detourExp.bad === 0, `detour should avoid deep water (got ${detourExp.bad})`);
+  const pathLen = (p: { x: number; y: number }[]) =>
+    p.reduce((acc, q, i) => (i ? acc + Math.hypot(q.x - p[i - 1].x, q.y - p[i - 1].y) : 0), 0);
+  assert(pathLen(detour!) > pathLen(bridgePath!) * 1.2,
+    'detour without a bridge should be longer than the bridge crossing');
+  // 4. Determinism: same water-aware call twice -> identical path.
+  const ewAgain = findPath({ x: 10, y: 20 }, { x: 270, y: 20 }, [], undefined, undefined, CH);
+  assert(JSON.stringify(ewAgain) === JSON.stringify(ewWater), 'water-aware paths should be deterministic');
+  // 5. Backward compatibility: omitting the chunk keeps old behavior.
+  const legacy = findPath({ x: 10, y: 20 }, { x: 270, y: 20 }, [], undefined, undefined);
+  assert(JSON.stringify(legacy) === JSON.stringify(ewNoWater), 'omitted chunk should match legacy path');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

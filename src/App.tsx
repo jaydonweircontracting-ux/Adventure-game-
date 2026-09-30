@@ -3861,6 +3861,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
       doors: cottageDoorways(),
       obstacles: mosslightObstacles(),
       roadPiece: mapTileFor(TOWNSFOLK_CHUNK).road,
+      chunk: { x: TOWNSFOLK_CHUNK.x, y: TOWNSFOLK_CHUNK.y },
     };
   }
   useEffect(() => { townsfolkRef.current = townsfolk; }, [townsfolk]);
