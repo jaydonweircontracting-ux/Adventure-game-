@@ -14,6 +14,7 @@ import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem } from './
 export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from './game/worldEditor';
 import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, type MapPaints, type MapPaintTile } from './game/mapBuilder';
+import { organicTownSpecs } from './game/organicTowns';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 import { findTalkTarget } from './game/talkTarget';
 import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cellarRats';
@@ -84,7 +85,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '341';
+const BUILD_NUMBER = '342';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -358,7 +359,20 @@ function envSpriteForTerrain(terrain: Terrain, variant: number): EnvSpriteKey {
 }
 type FieldRect = { left: number; top: number; right: number; bottom: number };
 
-function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed = 0): FieldRect[] {
+// BUILD 342: organic screenshot-style town generator. Houses cluster along
+// the world road arms with varied setbacks and sizes, like a hand-built
+// tilemap town. The pure placement logic lives in game/organicTowns.ts;
+// this wrapper scales rects to field units.
+function organicTownRects(
+  variantSeed: number,
+  variant: number,
+  road: string,
+  toBuilding: (r: FieldRect) => FieldRect,
+): FieldRect[] {
+  return organicTownSpecs(variantSeed, variant, road).map((r) => toBuilding(r));
+}
+
+function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed = 0, road = 'nesw'): FieldRect[] {
   // Rect specs below are authored in 0..100 space; scale to field units so
   // houses keep their relative size and spread on larger fields.
   const k = FIELD_SIZE / 100;
@@ -381,78 +395,33 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
     toBuilding({ left: 57, top: 42, right: 70, bottom: 51 }),
     toBuilding({ left: 39, top: 62, right: 58, bottom: 70 }),
   ];
-  const parent = kind === 'town'
-    ? { left: 19, top: 21, width: 62, height: 58 }
-    : { left: 23, top: 24, width: 54, height: 52 };
-  // Unique layouts per town: variant cycles 0-3 based on location seed.
-  // 0 = four corners (Mosslight Crossing), 1 = main street row,
-  // 2 = courtyard cluster, 3 = scattered hamlet.
+  // Unique layouts per town: variant cycles 1-3 based on location seed.
+  // BUILD 342: organic screenshot-style towns — houses cluster along the
+  // world road arms with varied setbacks and sizes, like a hand-built
+  // tilemap town. Variant 1 = town (10-13 houses), 2 = village (8-11),
+  // 3 = hamlet (6-9, wider spacing). Houses never sit on the road.
   const variant = startingArea ? 0 : (Math.abs(variantSeed) % 3) + 1;
-  let specs: { left: number; top: number; width: number; height: number; scale: number }[];
-  if (variant === 1) {
-    // Main street: houses line the road.
-    specs = [
-      { left: 8, top: 30, width: 19, height: 13, scale: 1 },
-      { left: 8, top: 55, width: 19, height: 13, scale: 0.9 },
-      { left: 73, top: 30, width: 19, height: 13, scale: 0.9 },
-      { left: 73, top: 55, width: 19, height: 13, scale: 1 },
-    ];
-  } else if (variant === 2) {
-    // Courtyard cluster: houses around a central green.
-    specs = [
-      { left: 30, top: 8, width: 19, height: 13, scale: 1 },
-      { left: 55, top: 15, width: 19, height: 13, scale: 0.85 },
-      { left: 25, top: 70, width: 19, height: 13, scale: 0.85 },
-      { left: 55, top: 68, width: 19, height: 13, scale: 1 },
-    ];
-  } else if (variant === 3) {
-    // Scattered hamlet: irregular placement.
-    specs = [
-      { left: 12, top: 20, width: 19, height: 13, scale: 0.9 },
-      { left: 65, top: 12, width: 19, height: 13, scale: 1 },
-      { left: 20, top: 65, width: 19, height: 13, scale: 1 },
-      { left: 68, top: 70, width: 19, height: 13, scale: 0.8 },
-    ];
-  } else {
-    // Four corners (starting area default). All four stone cottages.
-    // Positions hardcoded from the user's 2026-09-30 mover screenshot
-    // ("Move them here"): tutorial 41.2,53.2 / crafting 94.3,54.3 /
-    // chapel 40.3,85.1 / fourth 88.1,85.5 — true field coordinates.
-    // Each house is 7 x 4.8 field units.
-    return [
-      { left: 41.2, top: 53.2, right: 48.2, bottom: 58.0 },   // tutorial house
-      { left: 94.3, top: 54.3, right: 101.3, bottom: 59.1 },  // wayfarer guild
-      { left: 40.3, top: 85.1, right: 47.3, bottom: 89.9 },   // rootbound chapel
-      { left: 88.1, top: 85.5, right: 95.1, bottom: 90.3 },   // stone house
-      // BUILD 311: residential cottages (housing registry) — 2 beds each.
-      { left: 14, top: 62, right: 20, bottom: 66.5 },   // cottage 1 (west)
-      { left: 14, top: 74, right: 20, bottom: 78.5 },   // cottage 2 (west)
-      { left: 14, top: 86, right: 20, bottom: 90.5 },   // cottage 3 (west)
-      { left: 62, top: 22, right: 68, bottom: 26.5 },   // cottage 4 (north)
-      { left: 76, top: 22, right: 82, bottom: 26.5 },   // cottage 5 (north)
-      { left: 90, top: 22, right: 96, bottom: 26.5 },   // cottage 6 (north)
-    ];
+  if (variant >= 1) {
+    return organicTownRects(variantSeed, variant, road, toBuilding);
   }
-
-  if (!startingArea) {
-    specs.push(
-      { left: 39, top: 7, width: 19, height: 13, scale: 0.8 },
-      { left: 39, top: 80, width: 19, height: 13, scale: 0.8 },
-    );
-  }
-
-  return specs.map((spec) => {
-    const width = spec.width * spec.scale;
-    const height = spec.height * spec.scale;
-    const left = spec.left + (spec.width - width) / 2;
-    const top = spec.top + (spec.height - height) / 2;
-    return toBuilding({
-      left: parent.left + (left / 100) * parent.width,
-      top: parent.top + (top / 100) * parent.height,
-      right: parent.left + ((left + width) / 100) * parent.width,
-      bottom: parent.top + ((top + height) / 100) * parent.height,
-    });
-  });
+  // Four corners (starting area default). All four stone cottages.
+  // Positions hardcoded from the user's 2026-09-30 mover screenshot
+  // ("Move them here"): tutorial 41.2,53.2 / crafting 94.3,54.3 /
+  // chapel 40.3,85.1 / fourth 88.1,85.5 — true field coordinates.
+  // Each house is 7 x 4.8 field units.
+  return [
+    { left: 41.2, top: 53.2, right: 48.2, bottom: 58.0 },   // tutorial house
+    { left: 94.3, top: 54.3, right: 101.3, bottom: 59.1 },  // wayfarer guild
+    { left: 40.3, top: 85.1, right: 47.3, bottom: 89.9 },   // rootbound chapel
+    { left: 88.1, top: 85.5, right: 95.1, bottom: 90.3 },   // stone house
+    // BUILD 311: residential cottages (housing registry) — 2 beds each.
+    { left: 14, top: 62, right: 20, bottom: 66.5 },   // cottage 1 (west)
+    { left: 14, top: 74, right: 20, bottom: 78.5 },   // cottage 2 (west)
+    { left: 14, top: 86, right: 20, bottom: 90.5 },   // cottage 3 (west)
+    { left: 62, top: 22, right: 68, bottom: 26.5 },   // cottage 4 (north)
+    { left: 76, top: 22, right: 82, bottom: 26.5 },   // cottage 5 (north)
+    { left: 90, top: 22, right: 96, bottom: 26.5 },   // cottage 6 (north)
+  ];
 }
 
 function pointInRect(point: Point, rect: FieldRect, padding = 0) {
@@ -548,7 +517,7 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
     const value = Math.sin(seed++) * 10000;
     return value - Math.floor(value);
   };
-  const houseRects = landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17) : [];
+  const houseRects = landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17, road) : [];
   // Farms/homesteads in non-settlement chunks (only on farmable terrain)
   const farmable = ['meadow', 'grassland', 'greenvale'].includes(mapTileFor(chunk).terrain);
   const farmData = (!landmark && farmable) ? fieldFarmRects(chunk.x, chunk.y) : { houses: [], fields: [] };
@@ -583,6 +552,38 @@ function fieldTreesFor(chunk: Point): FieldTree[] {
     trees.push({ id: trees.length, x, y, scale: finalScale, variant, style: treeStyle, sprite });
   }
 
+  // BUILD 342: dense forest clusters ring non-starting towns, like the
+  // hand-built reference — 3 clusters of 4-6 trees near the chunk edges,
+  // clear of houses, roads, and each other.
+  if (landmark && (landmark.kind === 'town' || landmark.kind === 'village') && !startingCenter) {
+    let cseed = Math.abs((chunk.x * 15485863) ^ (chunk.y * 32452843)) + 7;
+    const crandom = () => {
+      const value = Math.sin(cseed++) * 10000;
+      return value - Math.floor(value);
+    };
+    for (let c = 0; c < 3; c++) {
+      const edge = Math.floor(crandom() * 4); // 0=N, 1=S, 2=W, 3=E
+      const ccx = edge === 2 ? 16 + crandom() * 10 : edge === 3 ? FIELD_SIZE - 26 + crandom() * 10 : 20 + crandom() * (FIELD_SIZE - 40);
+      const ccy = edge === 0 ? 14 + crandom() * 10 : edge === 1 ? FIELD_SIZE - 24 + crandom() * 10 : 20 + crandom() * (FIELD_SIZE - 40);
+      const clusterCount = 4 + Math.floor(crandom() * 3);
+      for (let i = 0; i < clusterCount; i++) {
+        const x = ccx + (crandom() - 0.5) * 22;
+        const y = ccy + (crandom() - 0.5) * 22;
+        if (x < 8 || y < 8 || x > FIELD_SIZE - 8 || y > FIELD_SIZE - 8) continue;
+        const scale = 0.72 + crandom() * 0.48;
+        const center = { x: x + 3.2 * scale, y: y + 2.5 * scale };
+        const tooCloseToBuilding = allHouseRects.some((rect) => pointInRect(center, rect, 5));
+        const tooCloseToTree = trees.some((tree) => Math.hypot(center.x - (tree.x + 3.2 * tree.scale), center.y - (tree.y + 2.5 * tree.scale)) < 9);
+        const tooCloseToRoad = pointOnFieldRoad(center, road);
+        if (tooCloseToBuilding || tooCloseToTree || tooCloseToRoad) continue;
+        const variant = Math.floor(crandom() * 4);
+        const sprite = envSpriteForTerrain(mapTileFor(chunk).terrain, variant);
+        if (sprite === 'grass1' || sprite === 'grass2') continue;
+        trees.push({ id: trees.length, x, y, scale, variant, style: treeStyle, sprite });
+      }
+    }
+  }
+
   return trees;
 }
 
@@ -595,7 +596,7 @@ function fieldAccentsFor(chunk: Point): FieldAccent[] {
 
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   const startingCenter = isTutorialCenter(chunk);
-  const houseRects = landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17) : [];
+  const houseRects = landmark ? fieldHouseRects(landmark.kind, isStartingArea(chunk), chunk.x * 31 + chunk.y * 17, tile.road) : [];
   let seed = Math.abs((chunk.x * 19349663) ^ (chunk.y * 83492791)) + 17;
   const random = () => {
     const value = Math.sin(seed++) * 10000;
@@ -695,7 +696,7 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
   // If house offsets are provided (mover mode), collision follows the visual —
   // the solid area is attached to the house, not a stagnant separate position.
   if (!moveHouses && landmark) {
-    const rects = fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17);
+    const rects = fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17, mapTileFor(chunk).road);
     const doorways = buildingDoorwaysFor(chunk);
     const blocked = rects.some((rect, index) => {
       const doorway = doorways[index];
@@ -810,7 +811,7 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
   if (landmark) {
     // All doorway positions are computed fresh from the building rects every
     // call — no hardcoded positions, so triggers can never drift from visuals.
-    return fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17).map((rect, index) => {
+    return fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17, mapTileFor(chunk).road).map((rect, index) => {
       // BUILD 239: All starting-area houses are the new stone style with
       // prominent entrances. Door position matches the new visual.
       const isNewStyleHouse = isStartingArea(chunk) && index < 4;

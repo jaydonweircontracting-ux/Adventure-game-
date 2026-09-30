@@ -10,6 +10,7 @@ import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, to
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
 import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE } from '../src/game/mapBuilder';
+import { organicTownSpecs } from '../src/game/organicTowns';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds } from '../src/game/touchInput';
@@ -419,6 +420,51 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
   assert(solids.length === 2, 'mapBuilderSolidsFor should return 2 solids, got ' + solids.length);
   assert(solids[0].chunk === '4,7' && solids[0].x === 5 && solids[0].y === 5 && solids[0].w === 10, 'mapBuilderSolidsFor water solid wrong: ' + JSON.stringify(solids[0]));
   assert(mapBuilderSolidsFor(paints, '9,9').length === 0, 'mapBuilderSolidsFor leaked across chunks');
+}
+
+// ---- BUILD 342: organic town generator ----
+{
+  // Deterministic: same seed -> same layout.
+  const a = organicTownSpecs(12345, 1, 'nesw');
+  const b = organicTownSpecs(12345, 1, 'nesw');
+  assert(JSON.stringify(a) === JSON.stringify(b), 'organicTownSpecs not deterministic');
+  // Different seeds -> different layouts (almost surely).
+  const c = organicTownSpecs(99999, 1, 'nesw');
+  assert(JSON.stringify(a) !== JSON.stringify(c), 'organicTownSpecs seed had no effect');
+  for (const road of ['ns', 'ew', 'nesw', 'ne', 'sw', 'none']) {
+    for (const variant of [1, 2, 3]) {
+      for (const seed of [7, 12345, 987654]) {
+        const specs = organicTownSpecs(seed, variant, road);
+        // House counts: variant base (v1 10-13, v2 8-11, v3 6-9), scaled down
+        // for smaller road networks (fewer arms = less frontage), min 6.
+        const arms = road.split('').filter((c) => 'nsew'.includes(c)).length;
+        const baseMin = variant === 1 ? 10 : variant === 2 ? 8 : 6;
+        const min = arms === 0 ? baseMin : arms >= 4 ? baseMin : 6;
+        const max = arms === 0 ? baseMin + 3 : arms === 1 ? 8 : arms === 2 ? 10 : arms === 3 ? 12 : 13;
+        assert(specs.length >= min - 2 && specs.length <= max, `organicTownSpecs count ${specs.length} out of range for variant ${variant} road ${road} (expected ${min}-${max})`);
+        for (const r of specs) {
+          // In bounds with margin.
+          assert(r.left >= 6 && r.top >= 6 && r.right <= 94 && r.bottom <= 94, `organicTownSpecs out of bounds: ${JSON.stringify(r)} road ${road}`);
+          // Never on a road arm corridor (arm-aware: n/s arms are vertical,
+          // e/w arms are horizontal, only where the arm exists).
+          const hitArm = (l: number, t: number, ri: number, b: number): boolean =>
+            r.left < ri && r.right > l && r.top < b && r.bottom > t;
+          if (road.includes('n')) assert(!hitArm(41, 0, 59, 59), `organicTownSpecs house on N road: ${JSON.stringify(r)}`);
+          if (road.includes('s')) assert(!hitArm(41, 41, 59, 100), `organicTownSpecs house on S road: ${JSON.stringify(r)}`);
+          if (road.includes('e')) assert(!hitArm(41, 41, 100, 59), `organicTownSpecs house on E road: ${JSON.stringify(r)}`);
+          if (road.includes('w')) assert(!hitArm(0, 41, 59, 59), `organicTownSpecs house on W road: ${JSON.stringify(r)}`);
+        }
+        // No overlapping houses.
+        for (let i = 0; i < specs.length; i++) {
+          for (let j = i + 1; j < specs.length; j++) {
+            const r1 = specs[i], r2 = specs[j];
+            const overlap = r1.left < r2.right && r1.right > r2.left && r1.top < r2.bottom && r1.bottom > r2.top;
+            assert(!overlap, `organicTownSpecs overlapping houses: ${JSON.stringify(r1)} vs ${JSON.stringify(r2)} road ${road}`);
+          }
+        }
+      }
+    }
+  }
 }
 
 // ---- BUILD 306: NPC entrance helpers ----
