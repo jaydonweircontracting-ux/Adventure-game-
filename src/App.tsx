@@ -85,7 +85,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '346';
+const BUILD_NUMBER = '347';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -3056,17 +3056,17 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
         <>
           <button type="button" className="interior-npc npc-guide quest-giver" onClick={() => onTalkToQuestGiver('Elsa')} style={{ ...npcAppearanceStyle('guild-quest-elsa', 'guide'), left: '20%', top: '52%' }} aria-label="Talk to Elsa, the seamstress" data-testid="guild-quest-elsa" data-facing="down">
             {giverBadge('Elsa')}
-            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Elsa</strong><small>Seamstress · Talk</small></span>
+            {/* BUILD 347: no nameplate window — the yellow badge alone shows the quest. */}
             <span className="npc-sprite" aria-hidden="true" />
           </button>
           <button type="button" className="interior-npc npc-warrior quest-giver" onClick={() => onTalkToQuestGiver('Rowan')} style={{ ...npcAppearanceStyle('guild-quest-rowan', 'warrior'), left: '36%', top: '58%' }} aria-label="Talk to Rowan, guard captain" data-testid="guild-quest-rowan" data-facing="down">
             {giverBadge('Rowan')}
-            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Rowan</strong><small>Guard captain · Talk</small></span>
+            {/* BUILD 347: no nameplate window — the yellow badge alone shows the quest. */}
             <span className="npc-sprite" aria-hidden="true" />
           </button>
           <button type="button" className="interior-npc npc-mage quest-giver" onClick={() => onTalkToQuestGiver('Steward Anselm')} style={{ ...npcAppearanceStyle('guild-quest-anselm', 'mage'), left: '80%', top: '30%' }} aria-label="Talk to Steward Anselm" data-testid="guild-quest-anselm" data-facing="down">
             {giverBadge('Steward Anselm')}
-            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Steward Anselm</strong><small>King's steward · Talk</small></span>
+            {/* BUILD 347: no nameplate window — the yellow badge alone shows the quest. */}
             <span className="npc-sprite" aria-hidden="true" />
           </button>
         </>
@@ -3075,12 +3075,12 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
         <>
           <button type="button" className="interior-npc npc-guide quest-giver" onClick={() => onTalkToQuestGiver('Mabel')} style={{ ...npcAppearanceStyle('chapel-quest-mabel', 'guide'), left: '28%', top: '62%' }} aria-label="Talk to Mabel" data-testid="chapel-quest-mabel" data-facing="down">
             {giverBadge('Mabel')}
-            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Mabel</strong><small>Chapel-goer · Talk</small></span>
+            {/* BUILD 347: no nameplate window — the yellow badge alone shows the quest. */}
             <span className="npc-sprite" aria-hidden="true" />
           </button>
           <button type="button" className="interior-npc npc-mage quest-giver" onClick={() => onTalkToQuestGiver('Father Aldous')} style={{ ...npcAppearanceStyle('chapel-quest-aldous', 'mage'), left: '68%', top: '55%' }} aria-label="Talk to Father Aldous" data-testid="chapel-quest-aldous" data-facing="down">
             {giverBadge('Father Aldous')}
-            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Father Aldous</strong><small>Priest · Talk</small></span>
+            {/* BUILD 347: no nameplate window — the yellow badge alone shows the quest. */}
             <span className="npc-sprite" aria-hidden="true" />
           </button>
         </>
@@ -6428,7 +6428,7 @@ if (active) {
                   if (marker === 'turnin') return <span className="quest-giver-badge is-turnin" aria-hidden="true">?</span>;
                   return null;
                 })()}
-                <span className="interior-npc-nameplate" aria-hidden="true"><strong>{giver.displayName}</strong><small>{giver.title} · Talk</small></span>
+                {/* BUILD 347: no nameplate window — the yellow badge alone shows the quest. */}
                 <span className="npc-sprite" aria-hidden="true" />
               </button>
             ))}
