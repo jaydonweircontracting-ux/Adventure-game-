@@ -21,7 +21,7 @@ import { spriteDefFor, animForMonsterState, monsterAnimFrameFor } from '@/game/m
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc } from '@/game/combat';
-import { updateGoat, type GoatAIState } from '@/game/ai';
+import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS } from '@/game/ai';
 import { playCombatSound } from '@/game/effects';
 import { cornStalksForChunk, type CornStalk } from '@/game/cornfield';
 import { getSpriteState } from '@/game/animation';
@@ -36,7 +36,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '279';
+const BUILD_NUMBER = '280';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -653,7 +653,7 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
   const tile = mapTileFor(chunk);
   if (pointInWater(position, tile)) return true;
 
-  const treeBlocked = fieldTreesFor(chunk).some((tree) => pointInRect(position, fieldTreeBaseRect(tree), 0.45));
+  const treeBlocked = fieldTreesFor(chunk).some((tree) => !felledTreeKeys.has(fieldTreeKey(chunk, tree.id)) && pointInRect(position, fieldTreeBaseRect(tree), 0.45));
   if (treeBlocked) return true;
 
   // Debug world editor (BUILD 274): user-placed houses/trees/rocks are solid
@@ -1047,9 +1047,21 @@ const statDetails: Record<StatKey, { label: string; description: string }> = {
   luk: { label: 'Luck', description: 'Improves critical hits and loot rolls.' },
 };
 const initialPlayerStats: PlayerStats = { str: 4, dex: 4, int: 4, luk: 4 };
-type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number };
+type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number; wood: number; silk: number; bow: number };
 type GoatLoot = Partial<GameInventory>;
 type DroppedLoot = { id: number; chunk: Point; position: Point; loot: GoatLoot };
+// Ranged combat: arrows fired by the player's bow and by bandit archers.
+type ArrowState = { id: number; chunk: Point; position: Point; dx: number; dy: number; traveled: number; damage: number; critical: boolean; hostile: boolean };
+const ARROW_SPEED = 55; // field units per second
+const ARROW_RANGE = 34;
+const BOW_ARROW_DAMAGE_MULT = 0.9;
+// Woodcutting: trees take a few axe swings, become stumps, then regrow.
+// Woodcutting: felled trees become walkable stumps until they regrow.
+// Session-local; GameField syncs this set whenever a tree falls or regrows.
+const TREE_HITS_TO_FELL = 3;
+const TREE_REGROW_MS = 5 * 60 * 1000;
+const fieldTreeKey = (chunk: Point, treeId: number) => chunk.x + ',' + chunk.y + ':' + treeId;
+const felledTreeKeys = new Set<string>();
 type GoatState = {
   id: number;
   position: Point;
@@ -1074,7 +1086,7 @@ type GoatState = {
 };
 // Hostile mobs: goblins and bandits. Reuse the goat combat AI shape.
 type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'snake' | 'spider' | 'dragon' | 'orc' | 'soldier' | 'wolf' | 'slime' | 'bat' | 'rat';
-type MonsterState = GoatState & { kind: MonsterKind; variant?: string };
+type MonsterState = GoatState & { kind: MonsterKind; variant?: string; ranged?: boolean };
 const GOAT_STEP = 0.5;
 // Ambient birds: lightweight wildlife, deterministic per chunk, not persisted.
 type BirdStateName = 'idle' | 'hop' | 'peck' | 'fly';
@@ -1124,7 +1136,7 @@ const PLAYER_MAX_HP = 88;
 const PLAYER_BASE_ATTACK_DAMAGE = 5;
 const PLAYER_STAT_POINTS_PER_LEVEL = 5;
 const GOAT_LOOT_TYPES: Array<keyof GameInventory> = ['goatHorns', 'fabric', 'coins'];
-const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0 };
+const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0, wood: 0, silk: 0, bow: 0 };
 
 function playerMaxHpForStats(stats: PlayerStats) {
   return PLAYER_MAX_HP + stats.int * 3;
@@ -1148,6 +1160,7 @@ type SaveGameData = {
   horse: HorseState;
   inventory: GameInventory;
   equippedDagger?: boolean;
+  equippedBow?: boolean;
   droppedLoot?: DroppedLoot[];
   playerHp: number;
   playerXp: number;
@@ -1201,7 +1214,10 @@ function isGameInventory(value: unknown): value is GameInventory {
     && (value.bone == null || isFiniteNumber(value.bone))
     && (value.pelt == null || isFiniteNumber(value.pelt))
     && (value.fang == null || isFiniteNumber(value.fang))
-    && (value.corn == null || isFiniteNumber(value.corn));
+    && (value.corn == null || isFiniteNumber(value.corn))
+    && (value.wood == null || isFiniteNumber(value.wood))
+    && (value.silk == null || isFiniteNumber(value.silk))
+    && (value.bow == null || isFiniteNumber(value.bow));
 }
 
 function isPlayerStats(value: unknown): value is PlayerStats {
@@ -1263,7 +1279,7 @@ function isDroppedLootSave(value: unknown): value is DroppedLoot {
     && isSavePoint(value.chunk)
     && isSavePoint(value.position)
     && isRecord(value.loot)
-    && Object.entries(value.loot).every(([key, amount]) => ['coins', 'goatHorns', 'fabric', 'daggers', 'cloths'].includes(key) && isFiniteNumber(amount) && amount >= 0);
+    && Object.entries(value.loot).every(([key, amount]) => ['coins', 'goatHorns', 'fabric', 'daggers', 'cloths', 'wood', 'silk', 'bow'].includes(key) && isFiniteNumber(amount) && amount >= 0);
 }
 
 function isBrainStateSave(value: unknown): value is RpgGameState {
@@ -1293,6 +1309,7 @@ function isSaveGameData(value: unknown): value is SaveGameData {
     && isSavePoint(value.horse.position)
     && isGameInventory(value.inventory)
     && (value.equippedDagger === undefined || typeof value.equippedDagger === 'boolean')
+    && (value.equippedBow === undefined || typeof value.equippedBow === 'boolean')
     && (value.droppedLoot === undefined || (Array.isArray(value.droppedLoot) && value.droppedLoot.every(isDroppedLootSave)))
     && isFiniteNumber(value.playerHp)
     && isFiniteNumber(value.playerXp)
@@ -1352,10 +1369,11 @@ const classDescriptions: Record<Exclude<PlayerClass, 'Beginner'>, string> = {
   Mage: 'A spell-focused path for curious explorers.',
   Rogue: 'A fast, precise path for clever adventurers.',
 };
-type CraftItem = 'dagger' | 'cloths';
+type CraftItem = 'dagger' | 'cloths' | 'bow';
 const craftRecipes: Record<CraftItem, { name: string; description: string; cost: GoatLoot; reward: GoatLoot }> = {
   dagger: { name: 'Goat-horn dagger', description: 'A sharp beginner weapon.', cost: { goatHorns: 2 }, reward: { daggers: 1 } },
   cloths: { name: 'Field cloths', description: 'Simple protective travel clothes.', cost: { fabric: 2 }, reward: { cloths: 1 } },
+  bow: { name: 'Hunting bow', description: 'A ranged weapon. Chop trees for wood, gather silk from spiders.', cost: { wood: 5, silk: 3 }, reward: { bow: 1 } },
 };
 const startingGoatPositions: Point[] = [
   { x: 13, y: 18 }, { x: 29, y: 14 }, { x: 72, y: 14 }, { x: 87, y: 19 },
@@ -1399,11 +1417,11 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
 function monsterLootForKind(kind: MonsterKind): GoatLoot {
   switch (kind) {
     case 'goblin': return { coins: 1 + Math.floor(Math.random() * 3), fabric: Math.random() < 0.3 ? 1 : 0 };
-    case 'bandit': return { coins: 3 + Math.floor(Math.random() * 5), fabric: Math.random() < 0.5 ? 1 : 0 };
+    case 'bandit': return { coins: 3 + Math.floor(Math.random() * 5), fabric: Math.random() < 0.5 ? 1 : 0, bone: 1, bow: Math.random() < 0.15 ? 1 : 0 };
     case 'skeleton': return { bone: 1 + Math.floor(Math.random() * 2), coins: Math.random() < 0.5 ? 1 : 0 };
     case 'troll': return { pelt: 1, coins: 2 + Math.floor(Math.random() * 4) };
     case 'snake': return { fang: 1, coins: Math.random() < 0.3 ? 1 : 0 };
-    case 'spider': return { fang: 1 + Math.floor(Math.random() * 2) };
+    case 'spider': return { silk: 2 + Math.floor(Math.random() * 2), fang: Math.random() < 0.5 ? 1 : 0 };
     case 'dragon': return { pelt: 2, fang: 2, coins: 10 + Math.floor(Math.random() * 10) };
     case 'orc': return { pelt: 1, coins: 2 + Math.floor(Math.random() * 4) };
     case 'soldier': return { coins: 3 + Math.floor(Math.random() * 4), fabric: Math.random() < 0.5 ? 1 : 0 };
@@ -1446,6 +1464,8 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
       attackTimer: 0,
       attackHitApplied: false,
       hitFlash: false,
+      // About a third of bandits fight with bows at range.
+      ranged: kind === 'bandit' && seed % 3 === 0,
     });
   };
   // Goblins: forest packs in deep wilderness (danger 2+).
@@ -2591,9 +2611,9 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     </div>
   );
 }
-function InventorySheet({ inventory, equippedDagger, onToggleDagger, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose }: { inventory: GameInventory; equippedDagger: boolean; onToggleDagger: () => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void }) {
+function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow, onToggleBow, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose }: { inventory: GameInventory; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats'>('inventory');
-  const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn;
+  const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn + inventory.wood + inventory.silk + inventory.bow;
   const visibleItems = [
     { key: 'goatHorns', label: 'Goat horns', detail: 'Crafting material', mark: '✦', className: 'horn-mark' },
     { key: 'fabric', label: 'Fabric', detail: 'Useful cloth', mark: '▤', className: 'fabric-mark' },
@@ -2603,6 +2623,9 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, playerStats
     { key: 'pelt', label: 'Pelt', detail: 'Thick animal hide', mark: '❖', className: 'pelt-mark' },
     { key: 'fang', label: 'Fang', detail: 'Sharp monster fang', mark: '⸙', className: 'fang-mark' },
     { key: 'corn', label: 'Corn', detail: 'Harvested crop', mark: '🌽', className: 'corn-mark' },
+    { key: 'wood', label: 'Wood', detail: 'Chopped from trees', mark: '🪵', className: 'wood-mark' },
+    { key: 'silk', label: 'Silk', detail: 'Spider silk for bowstrings', mark: '🕸', className: 'silk-mark' },
+    { key: 'bow', label: 'Hunting bow', detail: 'Ranged weapon', mark: '🏹', className: 'bow-mark' },
   ].filter((item) => inventory[item.key as keyof GameInventory] > 0);
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="inventory-title" data-testid="overlay-inventory">
@@ -2631,13 +2654,13 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, playerStats
                 <div className="inventory-item" data-testid="inventory-coins"><span className="inventory-item-mark coin-mark" aria-hidden="true" /><span><strong>Coins</strong><small>Spendable gold</small></span><b>{inventory.coins}</b></div>
                 {visibleItems.map((item) => {
                   const count = inventory[item.key as keyof GameInventory] as number;
-                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className} aria-hidden="true" /><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div>;
+                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className} aria-hidden="true" /><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}{item.key === 'bow' && <button className={'item-action ' + (equippedBow ? 'is-equipped' : '')} onClick={onToggleBow} data-testid="button-toggle-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}</div>;
                 })}
               </div>
               {itemCount === 0 && <div className="inventory-empty"><Backpack size={30} strokeWidth={1.5} /><strong>Menu is empty</strong></div>}
             </>
           ) : activeTab === 'equipment' ? (
-            <div className="equipment-panel" role="tabpanel" aria-label="Equipment"><div className="inventory-count">Equipped gear changes your character</div><div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot"><span className="equipment-slot-mark dagger-mark">†</span><span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>{(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div><p className="equipment-hint">{equippedDagger ? 'The dagger is visible in your hand.' : 'Craft a dagger, then equip it from this tab.'}</p></div>
+            <div className="equipment-panel" role="tabpanel" aria-label="Equipment"><div className="inventory-count">Equipped gear changes your character</div><div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot"><span className="equipment-slot-mark dagger-mark">†</span><span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>{(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedBow ? 'is-equipped' : '')} data-testid="equipment-ranged-slot"><span className="equipment-slot-mark bow-mark">🏹</span><span><small>Ranged slot</small><strong>{equippedBow ? 'Hunting bow' : 'Empty'}</strong></span>{(inventory.bow > 0 || equippedBow) && <button className="item-action" onClick={onToggleBow} data-testid="button-equipment-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}</div><p className="equipment-hint">{equippedBow ? 'The bow is on your back — attacks fire arrows, even while mounted.' : equippedDagger ? 'The dagger is visible in your hand.' : 'Craft a dagger, then equip it from this tab.'}</p></div>
           ) : <StatsPanel playerStats={playerStats} statPoints={statPoints} onAssign={onAssignStat} />}
         </div>
       </div>
@@ -2649,7 +2672,7 @@ function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: Player
   return <section className="satchel-stats-panel" role="tabpanel" aria-label="Adventurer Stats"><div className="satchel-stats-heading"><span className="atlas-eyebrow">Character growth</span><h3>Adventurer Stats</h3></div><div className="satchel-stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div><div className="satchel-stats-list">{STAT_KEYS.map((stat) => <div className="satchel-stat-row" key={stat} data-testid={'stat-row-' + stat}><span className="satchel-stat-key">{stat.toUpperCase()}</span><span className="satchel-stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span><b className="satchel-stat-value">{playerStats[stat]}</b><button className="satchel-stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button></div>)}</div><div className="satchel-stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div></section>;
 }
 
-function InteriorRoom({ area, position, facing, moving, equippedDagger, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onEnterDungeon }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onEnterDungeon: () => void }) {
+function InteriorRoom({ area, position, facing, moving, equippedDagger, equippedBow, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onEnterDungeon }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; equippedBow: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onEnterDungeon: () => void }) {
   // Tavern patron nameplates auto-hide (bartender Mira's stays); tapping a patron pops theirs for 4s.
   const [shownPatron, setShownPatron] = useState<string | null>(null);
   const patronTimerRef = useRef<number | null>(null);
@@ -2723,13 +2746,13 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, attackin
           <span className="dungeon-stairs-label">Ember Vault</span>
         </button>
       )}
-      <div className={'interior-player ' + (moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} data-facing={facing} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-attackDirectionRow[facing] * 48}px` } as CSSProperties}><span className="player-sprite" />{attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[facing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}{equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}</div>
+      <div className={'interior-player ' + (moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} data-facing={facing} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-attackDirectionRow[facing] * 48}px` } as CSSProperties}><span className="player-sprite" />{attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[facing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}{equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}{equippedBow && <span className="player-bow" aria-label="Equipped bow" />}</div>
       <div className="interior-exit-hint">Walk to the door to leave</div>
     </div>
   );
 }
 
-function GameField({ inventory, equippedDagger, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn }: { inventory: GameInventory; equippedDagger: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null }) {
+function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn }: { inventory: GameInventory; equippedDagger: boolean; equippedBow: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null }) {
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
   // Debug tap marks (?debugDoors=1): user taps to mark where they think the
   // invisible exit/entrance is; rendered as lime green dots with coordinates.
@@ -2968,7 +2991,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const [waitSheetOpen, setWaitSheetOpen] = useState(false);
   const [waitProgress, setWaitProgress] = useState<{ done: number; total: number } | null>(null);
   const playerAttackCooldownRef = useRef(0);
-  const playerAttackStateRef = useRef<{ active: boolean; direction: Direction; targetId: number | null; elapsed: number; hitApplied: boolean }>({ active: false, direction: 'down', targetId: null, elapsed: 0, hitApplied: false });
+  const playerAttackStateRef = useRef<{ active: boolean; direction: Direction; targetId: number | null; elapsed: number; hitApplied: boolean; ranged: boolean }>({ active: false, direction: 'down', targetId: null, elapsed: 0, hitApplied: false, ranged: false });
   const [attackCooldownMs, setAttackCooldownMs] = useState(0);
   const [damageTexts, setDamageTexts] = useState<Array<{ id: number; text: string; position: Point; kind: 'damage' | 'reward' | 'critical' }>>([]);
   const combatTextIdRef = useRef(0);
@@ -2991,6 +3014,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
     horse,
     inventory,
     equippedDagger,
+    equippedBow,
     droppedLoot,
     playerHp,
     playerXp,
@@ -3327,6 +3351,123 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
     return () => window.clearTimeout(timer);
   }, [areaFlash]);
 
+  // ---- Ranged combat + woodcutting state ----
+  const [arrows, setArrows] = useState<ArrowState[]>([]);
+  const arrowsRef = useRef<ArrowState[]>([]);
+  const arrowIdRef = useRef(1);
+  const equippedBowRef = useRef(false);
+  useEffect(() => { equippedBowRef.current = equippedBow; }, [equippedBow]);
+  const [felledTrees, setFelledTrees] = useState<Record<string, number>>({});
+  const felledTreesRef = useRef<Record<string, number>>({});
+  const treeHitsRef = useRef<Record<string, number>>({});
+  const purgeRegrownTrees = () => {
+    const now = Date.now();
+    let changed = false;
+    for (const key of Object.keys(felledTreesRef.current)) {
+      if (felledTreesRef.current[key] <= now) {
+        delete felledTreesRef.current[key];
+        felledTreeKeys.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) setFelledTrees({ ...felledTreesRef.current });
+    return changed;
+  };
+  const isTreeFelled = (key: string) => {
+    const until = felledTreesRef.current[key];
+    if (until == null) return false;
+    if (until <= Date.now()) {
+      delete felledTreesRef.current[key];
+      felledTreeKeys.delete(key);
+      return false;
+    }
+    return true;
+  };
+  // Regrow stumps back into trees after a few minutes.
+  useEffect(() => {
+    const timer = window.setInterval(purgeRegrownTrees, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // Shared player-damage application: melee swings and arrows both land here,
+  // so defeat, loot, XP and level-ups behave identically at any range.
+  const applyPlayerHitToCreature = (attackTarget: { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, damage: number, critical: boolean) => {
+    const nextHp = Math.max(0, attackTarget.hp - damage);
+    const defeated = nextHp <= 0;
+    const hitPosition = { ...attackTarget.position };
+    const targetLabel = attackTarget.entityKind === 'monster' ? ((attackTarget as MonsterState).kind || 'creature') : 'goat';
+    if (attackTarget.entityKind === 'monster') {
+      const monsterTarget = attackTarget as MonsterState;
+      const updatedMonsters = monstersRef.current.map((monster) => monster.id === monsterTarget.id ? { ...monster, hp: nextHp, position: monster.position, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true } : monster);
+      monstersRef.current = updatedMonsters; setMonsters(updatedMonsters);
+      spawnCombatText((critical ? 'CRIT ' : '') + '-' + damage, hitPosition, critical ? 'critical' : 'damage');
+      playCombatSound('shing', muted);
+      window.setTimeout(() => setMonsters((current) => current.map((monster) => monster.id === monsterTarget.id ? { ...monster, hitFlash: false } : monster)), 100);
+      setLogs((currentLogs) => [{ text: defeated ? targetLabel + ' defeated.' : 'You hit the ' + targetLabel + ' for ' + damage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
+      if (defeated) {
+        const loot: GoatLoot = monsterLootForKind(monsterTarget.kind);
+        const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot };
+        droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
+        const xpReward = goatExperienceReward(monsterTarget, playerLevelRef.current, playerStatsRef.current);
+        const nextXp = playerXpRef.current + xpReward; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
+        playerXpRef.current = nextXp; setPlayerXp(nextXp);
+        spawnCombatText('+' + xpReward + ' XP', hitPosition, 'reward');
+        if (nextLevel > previousLevel) {
+          const awardedStatPoints = (nextLevel - previousLevel) * PLAYER_STAT_POINTS_PER_LEVEL;
+          playerLevelRef.current = nextLevel; setPlayerLevel(nextLevel); onStatPointsChange((current) => current + awardedStatPoints);
+          spawnCombatText('LEVEL UP! Lv. ' + nextLevel, hitPosition, 'reward');
+          setLogs((currentLogs) => [{ text: 'Level up! You reached level ' + nextLevel + ' (+' + awardedStatPoints + ' stat points).', color: 'blue' }, ...currentLogs].slice(0, 3));
+        }
+      }
+    } else {
+      let updatedGoats = goatsRef.current.map((goat) => goat.id === attackTarget.id ? { ...goat, hp: nextHp, position: goat.position, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, respawnTicks: defeated ? 0 : goat.respawnTicks } : goat);
+      goatsRef.current = updatedGoats; setGoats(updatedGoats);
+      spawnCombatText((critical ? 'CRIT ' : '') + '-' + damage, hitPosition, critical ? 'critical' : 'damage');
+      playCombatSound('baa', muted);
+      window.setTimeout(() => setGoats((current) => current.map((goat) => goat.id === attackTarget.id ? { ...goat, hitFlash: false } : goat)), 100);
+      setLogs((currentLogs) => [{ text: defeated ? 'Goat defeated. It drops experience and gold.' : 'You hit the goat for ' + damage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
+      if (defeated) {
+        const lootType = GOAT_LOOT_TYPES[Math.floor(Math.random() * GOAT_LOOT_TYPES.length)];
+        const lootAmount = Math.floor(Math.random() * (2 + Math.floor(playerStatsRef.current.luk / 10))) + 1;
+        const loot: GoatLoot = { [lootType]: lootAmount };
+        const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot };
+        droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
+        const xpReward = goatExperienceReward(attackTarget, playerLevelRef.current, playerStatsRef.current);
+        const nextXp = playerXpRef.current + xpReward; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
+        playerXpRef.current = nextXp; setPlayerXp(nextXp);
+        spawnCombatText('+' + xpReward + ' XP  +' + (loot.coins || 0) + ' gold', hitPosition, 'reward');
+        if (nextLevel > previousLevel) {
+          const awardedStatPoints = (nextLevel - previousLevel) * PLAYER_STAT_POINTS_PER_LEVEL;
+          playerLevelRef.current = nextLevel; setPlayerLevel(nextLevel); onStatPointsChange((current) => current + awardedStatPoints);
+          updatedGoats = scaleGoatsToPlayerLevel(updatedGoats, nextLevel); goatsRef.current = updatedGoats; setGoats(updatedGoats);
+          spawnCombatText('LEVEL UP! Lv. ' + nextLevel, hitPosition, 'reward');
+          setLogs((currentLogs) => [{ text: 'Level up! You reached level ' + nextLevel + ' (+' + awardedStatPoints + ' stat points).', color: 'blue' }, ...currentLogs].slice(0, 3));
+        }
+        targetGoatIdRef.current = null; setTargetGoatId(null);
+      }
+    }
+  };
+
+  // Fire a player arrow toward a facing (or straight at the selected target).
+  const firePlayerArrow = (direction: Direction, targetId: number | null) => {
+    const origin = { ...positionRef.current };
+    const stats = playerStatsRef.current;
+    const critical = Math.random() < playerCriticalChanceForStats(stats);
+    const damage = Math.round(playerDamageForStats(stats) * (critical ? 2 : 1) * BOW_ARROW_DAMAGE_MULT);
+    let dx = 0; let dy = 0;
+    const target = targetId == null ? null : [...goatsRef.current, ...monstersRef.current].find((c) => c.id === targetId && c.disposition !== 'defeated');
+    if (target && Math.hypot(target.position.x - origin.x, target.position.y - origin.y) <= ARROW_RANGE) {
+      const dist = Math.hypot(target.position.x - origin.x, target.position.y - origin.y) || 1;
+      dx = (target.position.x - origin.x) / dist; dy = (target.position.y - origin.y) / dist;
+    } else {
+      dx = direction === 'right' ? 1 : direction === 'left' ? -1 : 0;
+      dy = direction === 'down' ? 1 : direction === 'up' ? -1 : 0;
+    }
+    const arrow: ArrowState = { id: arrowIdRef.current++, chunk: { ...chunkRef.current }, position: origin, dx, dy, traveled: 0, damage, critical, hostile: false };
+    arrowsRef.current = [...arrowsRef.current, arrow]; setArrows(arrowsRef.current);
+    playCombatSound('shing', muted);
+  };
+
   useEffect(() => {
     const clearInput = () => {
       keysRef.current = {};
@@ -3375,6 +3516,11 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
         playerAttack.elapsed += elapsed * 1000;
         if (!playerAttack.hitApplied && playerAttack.elapsed >= 100) {
           playerAttack.hitApplied = true;
+          if (playerAttack.ranged) {
+            // Bow equipped: loose an arrow toward the facing (or the selected
+            // target). Works on foot and on horseback.
+            firePlayerArrow(playerAttack.direction, playerAttack.targetId);
+          } else {
           const goatCandidates = (goatsRef.current as (GoatState & { entityKind?: string })[])
             .filter((goat) => goat.disposition !== 'defeated' && goatIsInAttackArc(goat, positionRef.current, playerAttack.direction))
             .map((goat) => ({ ...goat, entityKind: 'goat' as const }));
@@ -3416,64 +3562,40 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
             const stats = playerStatsRef.current;
             const critical = Math.random() < playerCriticalChanceForStats(stats);
             const damage = playerDamageForStats(stats) * (critical ? 2 : 1);
-            const nextHp = Math.max(0, attackTarget.hp - damage);
-            const defeated = nextHp <= 0;
-            const hitPosition = { ...attackTarget.position };
-            const targetLabel = attackTarget.entityKind === 'monster' ? (attackTarget as MonsterState).kind : 'goat';
-            if (attackTarget.entityKind === 'monster') {
-              const monsterTarget = attackTarget as MonsterState;
-              const updatedMonsters = monstersRef.current.map((monster) => monster.id === monsterTarget.id ? { ...monster, hp: nextHp, position: monster.position, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true } : monster);
-              monstersRef.current = updatedMonsters; setMonsters(updatedMonsters);
-              spawnCombatText((critical ? 'CRIT ' : '') + '-' + damage, hitPosition, critical ? 'critical' : 'damage');
-              playCombatSound('shing', muted);
-              window.setTimeout(() => setMonsters((current) => current.map((monster) => monster.id === monsterTarget.id ? { ...monster, hitFlash: false } : monster)), 100);
-              setLogs((currentLogs) => [{ text: defeated ? targetLabel + ' defeated.' : 'You hit the ' + targetLabel + ' for ' + damage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
-              if (defeated) {
-                const loot: GoatLoot = monsterLootForKind(monsterTarget.kind);
-                const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot };
-                droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
-                const xpReward = goatExperienceReward(monsterTarget, playerLevelRef.current, playerStatsRef.current);
-                const nextXp = playerXpRef.current + xpReward; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
-                playerXpRef.current = nextXp; setPlayerXp(nextXp);
-                spawnCombatText('+' + xpReward + ' XP', hitPosition, 'reward');
-                if (nextLevel > previousLevel) {
-                  const awardedStatPoints = (nextLevel - previousLevel) * PLAYER_STAT_POINTS_PER_LEVEL;
-                  playerLevelRef.current = nextLevel; setPlayerLevel(nextLevel); onStatPointsChange((current) => current + awardedStatPoints);
-                  spawnCombatText('LEVEL UP! Lv. ' + nextLevel, hitPosition, 'reward');
-                  setLogs((currentLogs) => [{ text: 'Level up! You reached level ' + nextLevel + ' (+' + awardedStatPoints + ' stat points).', color: 'blue' }, ...currentLogs].slice(0, 3));
-                }
-              }
-            } else {
-            let updatedGoats = goatsRef.current.map((goat) => goat.id === attackTarget.id ? { ...goat, hp: nextHp, position: goat.position, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, respawnTicks: defeated ? 0 : goat.respawnTicks } : goat);
-            goatsRef.current = updatedGoats; setGoats(updatedGoats);
-            spawnCombatText((critical ? 'CRIT ' : '') + '-' + damage, hitPosition, critical ? 'critical' : 'damage');
-            playCombatSound('baa', muted);
-            window.setTimeout(() => setGoats((current) => current.map((goat) => goat.id === attackTarget.id ? { ...goat, hitFlash: false } : goat)), 100);
-            setLogs((currentLogs) => [{ text: defeated ? 'Goat defeated. It drops experience and gold.' : 'You hit the goat for ' + damage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
-            if (defeated) {
-              const lootType = GOAT_LOOT_TYPES[Math.floor(Math.random() * GOAT_LOOT_TYPES.length)];
-              const lootAmount = Math.floor(Math.random() * (2 + Math.floor(playerStatsRef.current.luk / 10))) + 1;
-              const loot: GoatLoot = { [lootType]: lootAmount };
-              const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot };
-              droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
-              const xpReward = goatExperienceReward(attackTarget, playerLevelRef.current, playerStatsRef.current);
-              const nextXp = playerXpRef.current + xpReward; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
-              playerXpRef.current = nextXp; setPlayerXp(nextXp);
-              spawnCombatText('+' + xpReward + ' XP  +' + (loot.coins || 0) + ' gold', hitPosition, 'reward');
-              if (nextLevel > previousLevel) {
-                const awardedStatPoints = (nextLevel - previousLevel) * PLAYER_STAT_POINTS_PER_LEVEL;
-                playerLevelRef.current = nextLevel; setPlayerLevel(nextLevel); onStatPointsChange((current) => current + awardedStatPoints);
-                updatedGoats = scaleGoatsToPlayerLevel(updatedGoats, nextLevel); goatsRef.current = updatedGoats; setGoats(updatedGoats);
-                spawnCombatText('LEVEL UP! Lv. ' + nextLevel, hitPosition, 'reward');
-                setLogs((currentLogs) => [{ text: 'Level up! You reached level ' + nextLevel + ' (+' + awardedStatPoints + ' stat points).', color: 'blue' }, ...currentLogs].slice(0, 3));
-              }
-              targetGoatIdRef.current = null; setTargetGoatId(null);
-            }
-            } // end goat branch
+            applyPlayerHitToCreature(attackTarget as { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, damage, critical);
             } // end harvest else
           } else {
-            // Keep missed swings silent; combat feedback is reserved for actual hits.
+            // Woodcutting: a melee swing that hits no creature may still chop
+            // a tree in the arc. Enough swings fell it into wood pickups and
+            // leave a stump that regrows after a few minutes.
+            const treeTarget = fieldTreesFor(chunkRef.current).find((tree) => {
+              const key = fieldTreeKey(chunkRef.current, tree.id);
+              if (isTreeFelled(key)) return false;
+              return goatIsInAttackArc(tree as unknown as GoatState, positionRef.current, playerAttack.direction);
+            });
+            if (treeTarget) {
+              const key = fieldTreeKey(chunkRef.current, treeTarget.id);
+              const hits = (treeHitsRef.current[key] || 0) + 1;
+              treeHitsRef.current[key] = hits;
+              const hitPosition = { x: treeTarget.x, y: treeTarget.y };
+              if (hits >= TREE_HITS_TO_FELL) {
+                delete treeHitsRef.current[key];
+                felledTreesRef.current[key] = Date.now() + TREE_REGROW_MS;
+                felledTreeKeys.add(key);
+                setFelledTrees({ ...felledTreesRef.current });
+                const woodCount = 2 + Math.floor(Math.random() * 3);
+                const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot: { wood: woodCount } };
+                droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
+                spawnCombatText('+' + woodCount + ' wood', hitPosition, 'reward');
+                playCombatSound('shing', muted);
+                setLogs((currentLogs) => [{ text: 'You chop down a tree. +' + woodCount + ' wood.', color: 'blue' }, ...currentLogs].slice(0, 3));
+              } else {
+                spawnCombatText('chop', hitPosition, 'damage');
+                playCombatSound('shing', muted);
+              }
+            }
           }
+          } // end bow-ranged else
         }
         if (playerAttack.elapsed >= PLAYER_ATTACK_ANIMATION_MS) {
           playerAttack.active = false;
@@ -3521,11 +3643,23 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
             return { ...monster, moving: false, attacking: false };
           }
           const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false }, currentPlayer, facingRef.current, currentMonsters, elapsed * 1000);
-          let next = { ...result.goat, kind: monster.kind, id: monster.id, variant: monster.variant, spawnPosition: monster.spawnPosition, roamRadius: monster.roamRadius, level: monster.level, maxHp: monster.maxHp, wanderSeed: monster.wanderSeed, hitFlash: monster.hitFlash, respawnTicks: monster.respawnTicks } as MonsterState;
+          let next = { ...result.goat, kind: monster.kind, id: monster.id, variant: monster.variant, ranged: monster.ranged, spawnPosition: monster.spawnPosition, roamRadius: monster.roamRadius, level: monster.level, maxHp: monster.maxHp, wanderSeed: monster.wanderSeed, hitFlash: monster.hitFlash, respawnTicks: monster.respawnTicks } as MonsterState;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: monster.position, moving: false };
           if (result.attackHit) {
             const damage = goatAttackDamageForLevel(monster.level); damageTaken += damage;
             spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted);
+          }
+          // Bandit archers loose arrows at range instead of closing to melee.
+          if (next.ranged && next.disposition === 'aggressive' && next.attackCooldown <= 0) {
+            const distToPlayer = Math.hypot(next.position.x - currentPlayer.x, next.position.y - currentPlayer.y);
+            if (distToPlayer > 7 && distToPlayer <= 30) {
+              const dist = distToPlayer || 1;
+              const arrow: ArrowState = { id: arrowIdRef.current++, chunk: { ...currentChunk }, position: { ...next.position }, dx: (currentPlayer.x - next.position.x) / dist, dy: (currentPlayer.y - next.position.y) / dist, traveled: 0, damage: goatAttackDamageForLevel(next.level), critical: false, hostile: true };
+              arrowsRef.current = [...arrowsRef.current, arrow]; setArrows(arrowsRef.current);
+              const archerId = next.id;
+              next = { ...next, attackCooldown: 3200, state: 'attack' as GoatStateName, attackTimer: GOAT_ATTACK_WINDUP_MS, attackHitApplied: true, attacking: true };
+              window.setTimeout(() => setMonsters((current) => current.map((m) => m.id === archerId ? { ...m, attacking: false } : m)), 350);
+            }
           }
           return next;
         });
@@ -3535,6 +3669,43 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
           if (nextHp <= 0 && !gameOverRef.current) { gameOverRef.current = true; setGameOver(true); }
         }
         monstersRef.current = nextMonsters; setMonsters(nextMonsters);
+      }
+      // Arrows in flight: player bow shots and bandit-archer volleys.
+      if (!interiorRef.current && arrowsRef.current.length > 0) {
+        const currentChunk = chunkRef.current;
+        const currentPlayer = positionRef.current;
+        const nextArrows: ArrowState[] = [];
+        let playerDamageTaken = 0;
+        for (const arrow of arrowsRef.current) {
+          if (arrow.chunk.x !== currentChunk.x || arrow.chunk.y !== currentChunk.y) continue;
+          const step = Math.min(ARROW_SPEED * elapsed, ARROW_RANGE - arrow.traveled);
+          const position = { x: arrow.position.x + arrow.dx * step, y: arrow.position.y + arrow.dy * step };
+          const traveled = arrow.traveled + step;
+          if (traveled >= ARROW_RANGE || position.x < 4 || position.x > 136 || position.y < 4 || position.y > 136) continue;
+          if (arrow.hostile) {
+            if (Math.hypot(position.x - currentPlayer.x, position.y - currentPlayer.y) < 3) {
+              playerDamageTaken += arrow.damage;
+              spawnCombatText('-' + arrow.damage, currentPlayer, 'damage');
+              continue;
+            }
+          } else {
+            const hitGoat = goatsRef.current.find((goat) => goat.disposition !== 'defeated' && Math.hypot(position.x - goat.position.x, position.y - goat.position.y) < 3);
+            const hitMonster = hitGoat ? null : monstersRef.current.find((monster) => monster.disposition !== 'defeated' && Math.hypot(position.x - monster.position.x, position.y - monster.position.y) < 3);
+            const hit = hitGoat ? { ...hitGoat, entityKind: 'goat' as const } : hitMonster ? { ...hitMonster, entityKind: 'monster' as const } : null;
+            if (hit) {
+              applyPlayerHitToCreature(hit as { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, arrow.damage, arrow.critical);
+              continue;
+            }
+          }
+          nextArrows.push({ ...arrow, position, traveled });
+        }
+        if (playerDamageTaken > 0) {
+          const nextHp = Math.max(0, playerHpRef.current - playerDamageTaken); playerHpRef.current = nextHp; setPlayerHp(nextHp);
+          setLogs((currentLogs) => [{ text: 'A bandit arrow strikes you for ' + playerDamageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
+          playCombatSound('shing', muted);
+          if (nextHp <= 0 && !gameOverRef.current) { gameOverRef.current = true; setGameOver(true); }
+        }
+        arrowsRef.current = nextArrows; setArrows(nextArrows);
       }
       // Ambient birds: lightweight, tick alongside goats.
       if (!interiorRef.current && birdsRef.current.length > 0) {
@@ -3688,14 +3859,16 @@ if (active) {
   };
 
   const attackGoat = (preferredTargetId?: number) => {
-    if (interiorRef.current || mountedRef.current || playerAttackStateRef.current.active || playerAttackCooldownRef.current > 0) return;
+    const bowEquipped = equippedBowRef.current;
+    // Melee is disabled while mounted; the bow fires from horseback.
+    if (interiorRef.current || (!bowEquipped && mountedRef.current) || playerAttackStateRef.current.active || playerAttackCooldownRef.current > 0) return;
     const currentPlayer = positionRef.current;
     const currentFacing = facingRef.current;
     const targetId = preferredTargetId ?? targetGoatIdRef.current;
     const target = targetId == null
       ? null
       : goatsRef.current.find((goat) => goat.id === targetId && goat.disposition !== 'defeated');
-    playerAttackStateRef.current = { active: true, direction: currentFacing, targetId: target?.id ?? null, elapsed: 0, hitApplied: false };
+    playerAttackStateRef.current = { active: true, direction: currentFacing, targetId: target?.id ?? null, elapsed: 0, hitApplied: false, ranged: bowEquipped };
     playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS;
     setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS);
     playAttackAnimation(currentFacing);
@@ -3871,8 +4044,11 @@ if (active) {
     onLoot({
       goatHorns: -(recipe.cost.goatHorns || 0),
       fabric: -(recipe.cost.fabric || 0),
+      wood: -(recipe.cost.wood || 0),
+      silk: -(recipe.cost.silk || 0),
       daggers: recipe.reward.daggers || 0,
       cloths: recipe.reward.cloths || 0,
+      bow: recipe.reward.bow || 0,
     });
     setAttackFlash(`${recipe.name} crafted.`);
     setLogs((currentLogs) => [{ text: `${recipe.name} added to your satchel.`, color: 'blue' }, ...currentLogs].slice(0, 3));
@@ -3957,7 +4133,7 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onEnterDungeon={onEnterDungeon} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onEnterDungeon={onEnterDungeon} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -4402,6 +4578,8 @@ if (active) {
                 : only('bone') ? 'bone'
                 : only('pelt') ? 'pelt'
                 : only('fang') ? 'fang'
+                : only('wood') ? 'wood'
+                : only('silk') ? 'silk'
                 : only('corn') ? 'corn' : 'bag';
               return <div className="loot-drop" key={drop.id} style={{ left: fieldPct(drop.position.x), top: fieldPct(drop.position.y) }}>
                 <span className={'loot-visual loot-' + lootKind} aria-label={'Dropped ' + lootKind} />
@@ -4409,8 +4587,36 @@ if (active) {
               </div>;
             })}
           </div>
+          {/* Arrows in flight: player bow shots and bandit-archer volleys. */}
+          <div className="field-arrows" aria-hidden="true">
+            {arrows.map((arrow) => {
+              if (arrow.chunk.x !== chunk.x || arrow.chunk.y !== chunk.y) return null;
+              const angle = Math.atan2(arrow.dy, arrow.dx) * 180 / Math.PI;
+              return (
+                <span
+                  key={'arrow-' + arrow.id}
+                  className={'arrow' + (arrow.hostile ? ' arrow-hostile' : '')}
+                  style={{ left: fieldPct(arrow.position.x), top: fieldPct(arrow.position.y), transform: 'translate(-50%, -50%) rotate(' + angle + 'deg)' }}
+                />
+              );
+            })}
+          </div>
           <div className="field-trees" aria-hidden="true" style={{ '--env-sprites': 'url("' + assetUrl('environment/FreePack.png') + '")' } as CSSProperties}>
             {fieldTrees.map((tree) => {
+              // Chopped-down trees render as stumps until they regrow.
+              if (isTreeFelled(fieldTreeKey(chunk, tree.id))) {
+                return (
+                  <span
+                    className="field-tree tree-stump"
+                    key={'stump-' + tree.id}
+                    style={{
+                      left: 'calc(' + (tree.x + 3.2 * tree.scale) + '% - 13px)',
+                      top: 'calc(' + (tree.y + 4 * tree.scale) + '% - 14px)',
+                    }}
+                    aria-hidden="true"
+                  />
+                );
+              }
               // Anchor the sprite's bottom-center on its collision base so the
               // visible trunk sits exactly where movement is blocked.
               const box = ENV_SPRITE_BOXES[tree.sprite];
@@ -4903,6 +5109,7 @@ if (active) {
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
             {equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}
+            {equippedBow && <span className="player-bow" aria-label="Equipped bow" />}
             {markerMode && <span aria-hidden="true" style={{
               position: 'absolute',
               left: '-6px',
@@ -5122,7 +5329,7 @@ if (active) {
            </section>
          )}
          <div className="field-actions">
-           <button className="icon-button field-attack-button" onClick={() => attackGoat()} disabled={attackCooldownMs > 0 || attacking || inputLocked || Boolean(interior) || mounted} aria-label={selectedGoat ? 'Strike selected goat' : 'Strike nearest goat'} title={selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space'} aria-disabled={attackCooldownMs > 0 || attacking} data-testid="button-attack"><Sword size={16} />{attackCooldownMs > 0 && <span className="attack-cooldown-ring" style={{ background: 'conic-gradient(rgba(219, 120, 94, .95) ' + ((attackCooldownMs / PLAYER_ATTACK_COOLDOWN_MS) * 100) + '%, rgba(19, 43, 34, .2) 0)' }} aria-hidden="true" />}</button>
+           <button className="icon-button field-attack-button" onClick={() => attackGoat()} disabled={attackCooldownMs > 0 || attacking || inputLocked || Boolean(interior) || (mounted && !equippedBow)} aria-label={equippedBow ? (selectedGoat ? 'Loose arrow at target' : 'Loose arrow') : (selectedGoat ? 'Strike selected goat' : 'Strike nearest goat')} title={equippedBow ? 'Fire bow · Space' : (selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space')} aria-disabled={attackCooldownMs > 0 || attacking} data-testid="button-attack">{equippedBow ? '🏹' : <Sword size={16} />}{attackCooldownMs > 0 && <span className="attack-cooldown-ring" style={{ background: 'conic-gradient(rgba(219, 120, 94, .95) ' + ((attackCooldownMs / PLAYER_ATTACK_COOLDOWN_MS) * 100) + '%, rgba(19, 43, 34, .2) 0)' }} aria-hidden="true" />}</button>
          </div>
       </div>
       <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? (mounted ? 'Riding through Mosslight Crossing' : 'Moving through Mosslight Crossing') : (mounted ? 'Mounted and ready' : 'Standing still')}</div>
@@ -5155,6 +5362,7 @@ function Home() {
   const [playerStats, setPlayerStats] = useState<PlayerStats>(initialPlayerStats);
   const [statPoints, setStatPoints] = useState(0);
   const [equippedDagger, setEquippedDagger] = useState(false);
+  const [equippedBow, setEquippedBow] = useState(false);
   // Start at the title screen so New Game mounts a fresh full-health session.
   const [menuOpen, setMenuOpen] = useState(true);
   // Character creation: custom player sprite composited from Mana Seed parts.
@@ -5244,6 +5452,9 @@ function Home() {
     pelt: Math.max(0, current.pelt + (loot.pelt || 0)),
     fang: Math.max(0, current.fang + (loot.fang || 0)),
     corn: Math.max(0, current.corn + (loot.corn || 0)),
+    wood: Math.max(0, current.wood + (loot.wood || 0)),
+    silk: Math.max(0, current.silk + (loot.silk || 0)),
+    bow: Math.max(0, current.bow + (loot.bow || 0)),
   }));
 
   const toggleDagger = () => {
@@ -5257,12 +5468,24 @@ function Home() {
     setEquippedDagger(true);
   };
 
+  const toggleBow = () => {
+    if (equippedBow) {
+      setEquippedBow(false);
+      setInventory((current) => ({ ...current, bow: current.bow + 1 }));
+      return;
+    }
+    if (inventory.bow < 1) return;
+    setInventory((current) => ({ ...current, bow: Math.max(0, current.bow - 1) }));
+    setEquippedBow(true);
+  };
+
   const startNewGame = () => {
     setLoadedSave(null);
     setInventory(initialInventory);
     setPlayerStats(initialPlayerStats);
     setStatPoints(0);
     setEquippedDagger(false);
+    setEquippedBow(false);
     // No prison opening for now: new games start directly in the world.
     setInPrison(false);
     setPrisonState({ foundShiv: false, talkedToPrisoner: false, helpedPrisoner: false, escapeRoute: null });
@@ -5346,10 +5569,12 @@ function Home() {
   const applyLoadedSave = (parsed: SaveGameData, notice: string) => {
     setLoadedSave(parsed);
     const savedEquippedDagger = Boolean(parsed.equippedDagger);
-    setInventory({ ...initialInventory, ...parsed.inventory, daggers: Math.max(0, parsed.inventory.daggers - (savedEquippedDagger ? 1 : 0)) });
+    const savedEquippedBow = Boolean(parsed.equippedBow);
+    setInventory({ ...initialInventory, ...parsed.inventory, daggers: Math.max(0, parsed.inventory.daggers - (savedEquippedDagger ? 1 : 0)), bow: Math.max(0, (parsed.inventory.bow || 0) - (savedEquippedBow ? 1 : 0)) });
     setPlayerStats(parsed.playerStats || initialPlayerStats);
     setStatPoints(Math.max(0, Math.floor(parsed.statPoints || 0)));
     setEquippedDagger(savedEquippedDagger);
+    setEquippedBow(savedEquippedBow);
     setChunk(parsed.chunk);
     // Restore the custom character sprite when the save has one.
     const savedCharacter = sanitizeCharacterChoices(parsed.characterChoices);
@@ -5512,12 +5737,12 @@ function Home() {
       ) : (
         <>
           <div className="game-layout">
-            <GameField inventory={inventory} equippedDagger={equippedDagger} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
+            <GameField inventory={inventory} equippedDagger={equippedDagger} equippedBow={equippedBow} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
           {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1' && <DebugOverlay chunk={chunk} />}
-          {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} />}
+          {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} />}
           {journalOpen && (
             <div className="sheet journal-sheet" role="dialog" aria-label="Adventure journal" data-testid="journal-sheet">
               <div className="sheet-header">

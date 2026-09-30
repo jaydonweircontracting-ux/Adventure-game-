@@ -381,6 +381,42 @@
 .player[data-facing='up'] .player-dagger { left: 26px; top: 9px; transform: rotate(4deg); }
 .player[data-facing='left'] .player-dagger { left: 10px; top: 19px; transform: rotate(-34deg); }
 .player[data-facing='right'] .player-dagger { left: 28px; top: 19px; transform: rotate(34deg); }
+/* Hunting bow: worn on the back, drawn in hand while attacking. */
+.player-bow {
+  position: absolute;
+  z-index: 2;
+  left: 12px;
+  top: 12px;
+  width: 14px;
+  height: 26px;
+  border: 3px solid #7a4a2b;
+  border-left: none;
+  border-radius: 0 14px 14px 0;
+  transform: rotate(-14deg);
+  transform-origin: 50% 50%;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+.player-bow::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: -3px;
+  width: 2px;
+  height: 32px;
+  background: #e8dcc0;
+}
+.player[data-facing='up'] .player-bow { left: 14px; top: 6px; transform: rotate(-6deg); }
+.player[data-facing='left'] .player-bow { left: 8px; top: 14px; transform: rotate(-30deg); }
+.player[data-facing='right'] .player-bow { left: 24px; top: 14px; transform: rotate(28deg); }
+.interior-player[data-facing='up'] .player-bow { left: 14px; top: 6px; }
+.interior-player[data-facing='left'] .player-bow { left: 8px; top: 14px; transform: rotate(-30deg); }
+.player.is-attacking .player-bow, .interior-player.is-attacking .player-bow { animation: bow-draw .65s ease-out both; }
+@keyframes bow-draw { 0% { rotate: 0deg; } 35% { rotate: 24deg; } 65% { rotate: -8deg; } 100% { rotate: 0deg; } }
+/* Inventory marks for the new resources. */
+.wood-mark { color: #e8b06a; background: #5a3a22; }
+.silk-mark { color: #f2ede2; background: #8a7f9e; }
+.bow-mark { color: #ffe9b0; background: #4a5a34; }
 .interior-player[data-facing='up'] .player-dagger { left: 26px; top: 9px; }
 .interior-player[data-facing='left'] .player-dagger { left: 10px; top: 19px; transform: rotate(-34deg); }
 .player.is-attacking, .interior-player.is-attacking { z-index: 8; animation: player-lunge .65s ease-out both; }
@@ -2652,6 +2688,17 @@ body {
 .loot-bone::before, .loot-bone::after { content: ''; position: absolute; width: 7px; height: 7px; background: #f0ece0; border-radius: 50%; }
 .loot-bone::before { left: -3px; top: -3px; box-shadow: 12px 0 0 #f0ece0; }
 .loot-bone::after { left: -3px; bottom: -3px; box-shadow: 12px 0 0 #f0ece0; }
+/* Wood drop: a small stack of brown logs. */
+.loot-wood { background: linear-gradient(135deg, #8a5a33 0 55%, #6b4226 56% 100%); border-radius: 9px; box-shadow: 2px 3px 0 rgba(43, 61, 41, .25); }
+.loot-wood::before { content: ''; position: absolute; left: 2px; top: 3px; width: 18px; height: 5px; background: #a5764a; border-radius: 3px; box-shadow: 0 7px 0 #a5764a; }
+/* Silk drop: a pale glistening cocoon. */
+.loot-silk { background: radial-gradient(circle at 35% 30%, #ffffff 0%, #e8e4f5 55%, #c9c2e0 100%); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; box-shadow: 2px 3px 0 rgba(43, 61, 41, .25), inset -2px -3px 0 rgba(160, 150, 190, .35); }
+/* Tree stump left after woodcutting: walkable, regrows after a few minutes. */
+.field-tree.tree-stump { position: absolute; width: 26px; height: 16px; background: radial-gradient(ellipse at 50% 35%, #b08954 0 45%, #7a5a36 46% 100%); border: 2px solid #5b3d2e; border-radius: 50%; box-shadow: 2px 3px 0 rgba(43, 61, 41, .3); }
+/* Arrows in flight: player bow shots and bandit-archer volleys. */
+.field-arrows { position: absolute; z-index: 8; inset: 0; pointer-events: none; }
+.arrow { position: absolute; width: 22px; height: 4px; background: linear-gradient(90deg, #8a5a33 0 70%, #3a2a1a 70% 78%, #c0c0c0 78% 100%); border-radius: 2px; box-shadow: 1px 2px 0 rgba(43, 61, 41, .3); }
+.arrow-hostile { background: linear-gradient(90deg, #6b3a3a 0 70%, #2a1a1a 70% 78%, #a0a0a0 78% 100%); }
 .loot-pelt { background: linear-gradient(135deg, #9a7a52 0 55%, #7a5a3a 56% 100%); clip-path: polygon(10% 20%, 25% 5%, 48% 0%, 70% 6%, 90% 16%, 98% 40%, 92% 66%, 74% 86%, 50% 95%, 26% 88%, 8% 70%, 0% 45%); box-shadow: 2px 3px 0 rgba(43, 61, 41, .25); }
 .loot-pelt::before { content: ''; position: absolute; inset: 4px; background: radial-gradient(circle at 30% 30%, rgba(255, 235, 200, .28) 0 25%, transparent 26%), radial-gradient(circle at 70% 65%, rgba(60, 40, 25, .3) 0 28%, transparent 29%); }
 .loot-fang { background: linear-gradient(180deg, #ffffff 0 60%, #d8d4c8 61% 100%); clip-path: polygon(35% 0%, 65% 0%, 55% 100%, 45% 100%); filter: drop-shadow(2px 2px 0 rgba(43, 61, 41, .25)); }
