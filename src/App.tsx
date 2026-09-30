@@ -62,6 +62,7 @@ import { probeMonsterSheets, isMonsterSheetFailed, onMonsterSheetFailure } from 
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc } from '@/game/combat';
+import { renderGroundDetail, type GroundDetailSpec } from '@/game/groundDetail';
 import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS, gearForMonster, bonesForMonster } from '@/game/ai';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, LOCKPICK_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
@@ -82,7 +83,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '338';
+const BUILD_NUMBER = '339';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -5129,6 +5130,17 @@ if (active) {
   const fieldPalette = fieldPalettes[currentWorldTile.terrain];
   const startingArea = isStartingArea(chunk);
   const startingCenter = isTutorialCenter(chunk);
+  // BUILD 339: LTTP-style procedural ground detail spec (painted once per chunk).
+  const groundSpec: GroundDetailSpec = {
+    terrain: currentWorldTile.terrain,
+    field: fieldPalette.field,
+    path: fieldPalette.path,
+    road: (currentWorldTile.road !== 'none' && !hiddenRoadChunks.includes(chunkKey) && !currentWorldTile.bridge)
+      ? currentWorldTile.road : 'none',
+    roadRect: startingCenter ? { x: 0.45, y: 0.45, w: 0.11, h: 0.11 } : { x: 0.47, y: 0.47, w: 0.09, h: 0.09 },
+    sea: currentWorldTile.waterFeature === 'sea',
+    seed: ((chunk.x * 73856093) ^ (chunk.y * 19349663)) >>> 0,
+  };
   const talkToNpc = (npc: TownNpc) => {
     setNpcDialogue(npc);
     // Pop the nameplate up on tap; auto-hide it after 4 seconds.
@@ -5551,7 +5563,7 @@ if (active) {
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
         {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onEnterCellar={enterCellar} onTavernSleep={tavernSleepUntilMorning} cellarRats={cellarRats} onStrikeCellarRat={strikeCellarRat} questStates={questStates} interiorTownsfolk={interiorTownsfolk} onTalkToTownsfolk={talkToTownsfolk} /> : (
-        <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
+        <div className={'pixel-field world-field has-ground-detail world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
           '--field-glow': fieldPalette.glow,
@@ -5581,6 +5593,7 @@ if (active) {
           }
         } : undefined}
         >
+          <FieldGroundLayer spec={groundSpec} />
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
           {/* Debug world editor (BUILD 274): coordinate grid overlay. */}
           {moverMode && showGrid && (
@@ -7952,6 +7965,23 @@ function Router() {
 function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
+}
+
+// BUILD 339: LTTP-style procedural ground detail. Paints the chunk's ground
+// (dithered grass/sand/rock/tundra/water, tufts, flowers, dirt roads) into a
+// static canvas once per chunk and mounts it as the bottom field layer.
+function FieldGroundLayer({ spec }: { spec: GroundDetailSpec }) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    try {
+      host.replaceChildren(renderGroundDetail(spec));
+    } catch {
+      // Leave the flat CSS ground as the fallback.
+    }
+  }, [spec.terrain, spec.field, spec.path, spec.road, spec.sea, spec.seed]);
+  return <div ref={hostRef} className="field-ground-layer" aria-hidden="true" />;
 }
 
 function App() {

@@ -26,6 +26,7 @@ import {
   GENERIC_HUMANOID_KIND,
 } from '../src/game/monsterSprites/index';
 import { isMonsterSheetFailed, clearSheetProbeState } from '../src/game/monsterSprites/sheetProbe';
+import { mulberry32, shadeColor, mixColor, hexToRgb, GROUND_PX_PER_UNIT } from '../src/game/groundDetail';
 
 let passed = 0;
 let failed = 0;
@@ -1881,6 +1882,27 @@ console.log('Testing barks for static NPCs and travelers...');
   let barked = 0;
   for (let i = 0; i < 100; i++) if (shouldBark(50, seedForName('static-' + i), 3)) barked++;
   assert(barked > 20 && barked < 80, `static bark rate off: ${barked}/100`);
+}
+
+// ---- Ground detail helpers are deterministic (BUILD 339) ----
+console.log('Testing ground detail determinism...');
+{
+  // mulberry32: same seed -> same sequence; different seeds -> different.
+  const a = mulberry32(12345);
+  const b = mulberry32(12345);
+  const c = mulberry32(54321);
+  const seqA = [a(), a(), a()];
+  const seqB = [b(), b(), b()];
+  assert(seqA.every((v, i) => v === seqB[i]), 'mulberry32 same seed should give same sequence');
+  assert(c() !== seqA[0] || c() !== seqA[1], 'mulberry32 different seeds should differ');
+  assert(seqA.every((v) => v >= 0 && v < 1), 'mulberry32 values should be in [0,1)');
+  // Color helpers.
+  assert(shadeColor('#808080', 0.5) === 'rgb(64,64,64)', `shadeColor darken (got ${shadeColor('#808080', 0.5)})`);
+  assert(shadeColor('#808080', 2) === 'rgb(255,255,255)', `shadeColor lighten clamps (got ${shadeColor('#808080', 2)})`);
+  assert(mixColor('#000000', '#ffffff', 0.5) === 'rgb(128,128,128)', `mixColor midpoint (got ${mixColor('#000000', '#ffffff', 0.5)})`);
+  const [r, g, b2] = hexToRgb('#77a45b');
+  assert(r === 0x77 && g === 0xa4 && b2 === 0x5b, 'hexToRgb should parse meadow green');
+  assert(GROUND_PX_PER_UNIT === 8, 'ground canvas should be 8px per field unit');
 }
 
 // ---- Results ----

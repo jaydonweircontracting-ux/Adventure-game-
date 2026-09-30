@@ -5025,3 +5025,23 @@ body {
 }
 .quest-weave-button:disabled { opacity: .45; cursor: default; }
 .quest-card-done { color: #8fd18f; font-weight: 700; font-size: 13px; margin-top: 4px; }
+
+/* BUILD 339: LTTP-style procedural ground detail layer. The canvas paints the
+   chunk's ground (dithered grass/sand/rock/tundra/water, tufts, flowers,
+   dirt roads), so the flat CSS path stripes, CSS road arms and CSS sea
+   waves are hidden wherever the canvas takes over. */
+.field-ground-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.field-ground-layer canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+.pixel-field.has-ground-detail::before { display: none; }
+.pixel-field.has-ground-detail .field-road { display: none; }
+.pixel-field.has-ground-detail .field-water.world-water-sea { display: none; }
