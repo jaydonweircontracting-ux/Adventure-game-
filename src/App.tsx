@@ -82,7 +82,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '336';
+const BUILD_NUMBER = '337';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3548,6 +3548,25 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   // src/game/touchInput.ts) — declared beside keysRef since every input-reset
   // path must clear both.
   const touchHoldsRef = useRef<TouchHoldState>(createTouchHoldState());
+  // BUILD 337: immortal-loop diagnostics. If a frame throws, the message is
+  // recorded here and shown as a small on-screen badge (tap to dismiss) so
+  // the cause is visible instead of the character silently freezing.
+  const loopErrorRef = useRef<{ message: string; count: number } | null>(null);
+  const loopErrorLastRef = useRef(0);
+  const [loopErrorTick, setLoopErrorTick] = useState(0);
+  const recordLoopError = (err: unknown) => {
+    const message = err instanceof Error ? (err.stack || err.message) : String(err);
+    const prev = loopErrorRef.current;
+    loopErrorRef.current = { message: message.slice(0, 300), count: (prev?.count || 0) + 1 };
+    // Throttle the re-render: record every occurrence, but repaint the badge
+    // at most once per second so a throw-every-frame fault can't storm React.
+    const nowMs = typeof performance !== 'undefined' ? performance.now() : 0;
+    if (!prev || prev.message !== loopErrorRef.current.message || nowMs - loopErrorLastRef.current > 1000) {
+      loopErrorLastRef.current = nowMs;
+      setLoopErrorTick((t) => t + 1);
+    }
+  };
+  const dismissLoopError = () => { loopErrorRef.current = null; setLoopErrorTick(0); };
   const positionRef = useRef(position);
   const facingRef = useRef(facing);
   const chunkRef = useRef(chunk);
@@ -4319,6 +4338,19 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     playCombatSound('shing', muted);
   };
 
+  // BUILD 337: surface script errors outside the frame loop too, so a real
+  // root cause is visible on screen instead of failing silently.
+  useEffect(() => {
+    const onError = (event: ErrorEvent) => { recordLoopError(event.error || event.message); };
+    const onRejection = (event: PromiseRejectionEvent) => { recordLoopError(event.reason); };
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
+  }, []);
+
   useEffect(() => {
     const clearInput = () => {
       keysRef.current = {};
@@ -4388,8 +4420,20 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
 
     let animationFrame = 0;
     let lastFrame = performance.now();
+    // BUILD 337: the frame loop is immortal. If a single frame throws (for
+    // example inside attack hit-resolution), the error is recorded and shown
+    // on screen, and the next frame is ALWAYS scheduled — one bad frame can
+    // never permanently freeze the character again.
     const animate = (now: number) => {
-      if (gameOverRef.current) { animationFrame = window.requestAnimationFrame(animate); return; }
+      try {
+        runFrame(now);
+      } catch (err) {
+        recordLoopError(err);
+      }
+      animationFrame = window.requestAnimationFrame(animate);
+    };
+    const runFrame = (now: number) => {
+      if (gameOverRef.current) return;
       const elapsed = Math.min(50, now - lastFrame) / 1000;
       lastFrame = now;
       // BUILD 307: attacks no longer root the player. The swing animation,
@@ -4417,6 +4461,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
         playerAttack.elapsed += elapsed * 1000;
         if (!playerAttack.hitApplied && playerAttack.elapsed >= 100) {
           playerAttack.hitApplied = true;
+          try {
           if (playerAttack.ranged) {
             // Bow equipped: loose an arrow toward the facing (or the selected
             // target). Works on foot and on horseback.
@@ -4517,6 +4562,11 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
             } // end cellar woodcutting guard
           }
           } // end bow-ranged else
+          } catch (hitErr) {
+            // BUILD 337: a failed hit-resolution must never wedge the attack
+            // state (or the frame). Record it and let the swing complete.
+            recordLoopError(hitErr);
+          }
         }
         if (playerAttack.elapsed >= PLAYER_ATTACK_ANIMATION_MS) {
           playerAttack.active = false;
@@ -4710,7 +4760,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
            interiorPositionRef.current = interiorPosition;
            setInteriorPosition(interiorPosition);
          }
-         animationFrame = window.requestAnimationFrame(animate); return;
+         return;
        }
 if (active) {
         const direction = input.x > 0 ? 'right' : input.x < 0 ? 'left' : input.y < 0 ? 'up' : 'down';
@@ -4729,7 +4779,7 @@ if (active) {
         const nearbyDoor = doorwayNear(attempted, currentChunk, houseOffsetsRef.current);
         if (nearbyDoor && canEnterDoorway(current, attempted, nearbyDoor, direction)) {
           enterDoorway(nearbyDoor, currentChunk);
-          animationFrame = window.requestAnimationFrame(animate); return;
+          return;
         }
         const resolved = resolveFieldMovement(current, movement, currentChunk, goatsRef.current, houseOffsetsRef.current);
         if (resolved) {
@@ -4759,7 +4809,6 @@ if (active) {
           }
         }
       }
-      animationFrame = window.requestAnimationFrame(animate);
     };
     animationFrame = window.requestAnimationFrame(animate);
     const clock = window.setInterval(() => {
@@ -7323,6 +7372,13 @@ if (active) {
           );
         })()}
         {attackFlash && <div className="combat-flash" aria-live="polite">{attackFlash}</div>}
+        {/* BUILD 337: frame-error badge. If the game loop ever catches an
+            error, it shows here (tap to dismiss) so the cause is visible. */}
+        {loopErrorTick > 0 && loopErrorRef.current && (
+          <button type="button" className="loop-error-badge" onClick={dismissLoopError} aria-label="Dismiss error">
+            ⚠ frame error ×{loopErrorRef.current.count}: {loopErrorRef.current.message}
+          </button>
+        )}
         {!interior && (() => { const promptDoor = doorwayNear(position, chunk, houseOffsets); return promptDoor && <button type="button" className="door-prompt" aria-live="polite" onClick={() => enterDoorway(promptDoor, chunk)}>Enter {promptDoor.area.name}</button>; })()}
         {areaFlash && (
           <div className="area-flash" key={areaFlash.id} aria-live="polite" data-testid="area-entry-flash">

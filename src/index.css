@@ -2405,6 +2405,8 @@ body {
 .field-attack-button { color: #fff0cf; background: rgba(131, 67, 55, .9); border-color: rgba(238, 185, 133, .72); }
 .field-attack-button:hover, .field-attack-button:focus-visible { background: rgba(172, 78, 60, .98); }
 .combat-flash { position: absolute; z-index: 14; top: max(72px, calc(env(safe-area-inset-top) + 56px)); left: 50%; width: max-content; max-width: calc(100% - 32px); padding: 7px 11px; color: #fff4d5; border: 1px solid rgba(255, 221, 150, .74); background: rgba(101, 52, 42, .9); box-shadow: 3px 3px 0 rgba(48, 42, 32, .25); font-family: var(--app-font-mono); font-size: 9px; transform: translateX(-50%); animation: combat-pop .2s ease both; pointer-events: none; }
+/* BUILD 337: frame-error badge — only rendered when the loop catches an error. */
+.loop-error-badge { position: absolute; z-index: 60; top: 8px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 32px); max-height: 84px; overflow: hidden; padding: 6px 10px; background: rgba(120, 20, 20, .94); color: #ffd9d9; border: 1px solid #ff8080; font-family: var(--app-font-mono); font-size: 9px; line-height: 1.5; text-align: left; white-space: pre-wrap; word-break: break-word; cursor: pointer; }
 @keyframes combat-pop { from { opacity: 0; transform: translate(-50%, -5px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @media (prefers-reduced-motion: reduce) { .goat { transition: none; } .goat.is-moving .goat-sprite, .goat.is-attacking .goat-sprite, .goat.is-targeted .goat-target-ring, .player.is-attacking, .player.is-attacking .player-sprite, .player-attack-sprite, .player.is-attacking .player-dagger, .player.is-attacking::after, .goat.is-attacking::after { animation: none; } }
 
