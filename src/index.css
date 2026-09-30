@@ -632,8 +632,11 @@
   background-size: 192px 320px;
   background-repeat: no-repeat;
   image-rendering: pixelated;
+  /* BUILD 331: per-NPC height/build scale; feet stay planted. */
+  transform: var(--npc-appearance-transform, none);
+  transform-origin: 50% 100%;
 }
-.town-npc[data-facing='left'] .npc-sprite { transform: scaleX(-1); }
+.town-npc[data-facing='left'] .npc-sprite { transform: var(--npc-appearance-transform, none) scaleX(-1); }
 .town-npc.npc-mage .npc-sprite {
   filter: var(--npc-appearance-filter, sepia(.35) saturate(1.5) hue-rotate(-12deg) brightness(.95));
 }
@@ -2433,6 +2436,9 @@ body {
   background-repeat: no-repeat;
   image-rendering: pixelated;
   filter: var(--npc-appearance-filter, none);
+  /* BUILD 331: per-NPC height/build scale; feet stay planted. */
+  transform: var(--npc-appearance-transform, none);
+  transform-origin: 50% 100%;
 }
 .interior-npc-nameplate {
   position: absolute;
@@ -2683,9 +2689,9 @@ body {
   border: 1px solid var(--line);
   background: #d8c699;
 }
-.dialogue-portrait .npc-sprite { position: absolute; left: 16px; top: 29px; width: 32px; height: 32px; background-image: var(--player-sprite-url); background-size: 192px 320px; background-position: 0 0; image-rendering: pixelated; }
+.dialogue-portrait .npc-sprite { position: absolute; left: 16px; top: 29px; width: 32px; height: 32px; background-image: var(--player-sprite-url); background-size: 192px 320px; background-position: 0 0; image-rendering: pixelated; transform: var(--npc-appearance-transform, none); transform-origin: 50% 100%; }
 .dialogue-portrait[data-facing='up'] .npc-sprite { background-position-y: -64px; }
-.dialogue-portrait[data-facing='left'] .npc-sprite { background-position-y: -128px; transform: scaleX(-1); }
+.dialogue-portrait[data-facing='left'] .npc-sprite { background-position-y: -128px; transform: var(--npc-appearance-transform, none) scaleX(-1); }
 .dialogue-portrait[data-facing='right'] .npc-sprite { background-position-y: -128px; }
 /* Portraits show each role's own sheet column, not the player's column. */
 .dialogue-portrait.npc-warrior .npc-sprite { background-position-x: -32px; }
@@ -3225,6 +3231,9 @@ body {
   background-repeat: no-repeat;
   image-rendering: pixelated;
   filter: drop-shadow(0 2px 1px rgba(23, 42, 29, .38));
+  /* BUILD 331: per-NPC height/build scale; feet stay planted. */
+  transform: var(--npc-appearance-transform, none);
+  transform-origin: 50% 100%;
 }
 .simulated-adventurer[data-facing='up'] .simulated-adventurer-sprite,
 .town-npc[data-facing='up'] .npc-sprite { --npc-row: 2; --npc-walk-row: 5; }

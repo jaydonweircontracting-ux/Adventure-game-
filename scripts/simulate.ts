@@ -460,6 +460,49 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
     if (appearanceForNpc('n-' + i, 'commoner', { region: 'frosthold' }).column !== appearanceForNpc('n-' + i, 'commoner', { region: 'mosslight' }).column) { regionDiffers = true; break; }
   }
   assert(regionDiffers, 'region should rotate outfit palettes');
+
+// ---- BUILD 331: body/height/age/wealth diversity (no new art) ----
+{
+  // Determinism extends to the new fields.
+  const b1 = appearanceForNpc('townsfolk-3', 'farmer');
+  const b2 = appearanceForNpc('townsfolk-3', 'farmer');
+  assert(b1.heightScale === b2.heightScale && b1.buildScale === b2.buildScale && b1.ageStage === b2.ageStage && b1.wealth === b2.wealth, 'body appearance must be deterministic');
+  // Children are always short and staged as children.
+  for (let i = 0; i < 60; i++) {
+    const c = appearanceForNpc('kid-' + i, 'child');
+    assert(c.ageStage === 'child', 'child archetype must stage as child');
+    assert(c.heightScale < 0.85 && c.heightScale >= 0.7, 'child height out of range: ' + c.heightScale);
+    assert(c.buildScale < 1.0, 'child build should be slim: ' + c.buildScale);
+  }
+  // Adults vary in height and build within tasteful bounds.
+  let sawTall = false, sawShort = false, sawStocky = false, sawSlim = false, sawElder = false;
+  for (let i = 0; i < 200; i++) {
+    const a = appearanceForNpc('adult-' + i, 'commoner');
+    assert(a.heightScale >= 0.92 && a.heightScale <= 1.08, 'adult height out of range: ' + a.heightScale);
+    assert(a.buildScale >= 0.94 && a.buildScale <= 1.06, 'adult build out of range: ' + a.buildScale);
+    if (a.heightScale > 1.04) sawTall = true;
+    if (a.heightScale < 0.96) sawShort = true;
+    if (a.buildScale > 1.03) sawStocky = true;
+    if (a.buildScale < 0.97) sawSlim = true;
+    if (a.ageStage === 'elder') sawElder = true;
+  }
+  assert(sawTall && sawShort && sawStocky && sawSlim, 'adult bodies should vary (tall/short/stocky/slim)');
+  assert(sawElder, 'some adults should stage as elders');
+  // Wealth: merchants skew rich, rogues skew poor.
+  let merchantWealth = 0, rogueWealth = 0;
+  for (let i = 0; i < 60; i++) {
+    merchantWealth += appearanceForNpc('merch-' + i, 'merchant').wealth;
+    rogueWealth += appearanceForNpc('rog-' + i, 'rogue').wealth;
+  }
+  assert(merchantWealth > rogueWealth, 'merchants should be wealthier than rogues on average');
+  const w = appearanceForNpc('merch-0', 'merchant');
+  assert(w.wealth >= 0 && w.wealth <= 2, 'wealth out of range');
+  // Style helper exposes the transform var for the sprite rules.
+  const style = npcAppearanceStyle('townsfolk-3', 'farmer');
+  assert(typeof style['--npc-appearance-transform'] === 'string' && style['--npc-appearance-transform'].startsWith('scale('), 'style must include the appearance transform var');
+  // BUILD 316 clothing/tint sequence is untouched by the body stream.
+  assert(appearanceForNpc('m-1', 'mage').filter.includes('sepia(.35)'), 'body changes must not disturb the tint sequence');
+}
   // Diversity: 12 townsfolk should not be identical clones.
   const seen = new Set<string>();
   for (let i = 0; i < 12; i++) {

@@ -81,7 +81,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '330';
+const BUILD_NUMBER = '331';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -7202,7 +7202,7 @@ if (active) {
           return (
             <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="townsfolk-dialogue-title" data-testid="townsfolk-dialogue">
               <div className="npc-dialogue-card townsfolk-dialogue">
-                <div className={'dialogue-portrait npc-' + npc.role} data-facing={npc.facing}><span className="npc-sprite" /></div>
+                <div className={'dialogue-portrait npc-' + npc.role} data-facing={npc.facing} style={npcAppearanceStyle(npc.id, npc.archetype) as CSSProperties}><span className="npc-sprite" /></div>
                 <div className="npc-dialogue-copy">
                   <span className="dialogue-kicker">{npc.archetype} · {npc.activity}</span>
                   <h2 id="townsfolk-dialogue-title">{npc.name}</h2>

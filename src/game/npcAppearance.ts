@@ -19,6 +19,14 @@ export interface NpcAppearance {
   column: number;
   /** Full CSS filter for the sprite span (includes drop-shadow for adventurers). */
   filter: string;
+  /** Vertical sprite scale — height variation (<1 shorter, >1 taller). */
+  heightScale: number;
+  /** Horizontal sprite scale — build variation (<1 slimmer, >1 stockier). */
+  buildScale: number;
+  /** Age stage: children are short, elders slightly stooped. */
+  ageStage: 'child' | 'adult' | 'elder';
+  /** 0 (poor) .. 2 (rich) — tints clothing richness. */
+  wealth: number;
 }
 
 export interface NpcAppearanceOptions {
@@ -90,6 +98,14 @@ const BASE_TINTS: Record<NpcAppearanceArchetype, string> = {
 
 const ADVENTURER_SHADOW = 'drop-shadow(0 2px 1px rgba(23, 42, 29, .38))';
 
+/** Wealth baseline by archetype — merchants dress rich, rogues dress poor. */
+const WEALTH_BASE: Record<NpcAppearanceArchetype, number> = {
+  mage: 1.3, warrior: 1.1, guide: 1.0, rogue: 0.7,
+  farmer: 0.9, merchant: 1.7, guard: 1.0, priest: 1.2, smith: 1.1,
+  commoner: 0.8, child: 0.9,
+  beginner: 0.8, ranger: 0.9, traveler: 1.0,
+};
+
 function normalizeArchetype(archetype: string): NpcAppearanceArchetype {
   const key = archetype.toLowerCase() as NpcAppearanceArchetype;
   return key in OUTFIT_PALETTES ? key : 'commoner';
@@ -124,22 +140,44 @@ export function appearanceForNpc(id: string, archetype: string, opts: NpcAppeara
     grayPart +
     (kind === 'adventurer' ? ' ' + ADVENTURER_SHADOW : '');
 
-  return { column, filter };
+  // BUILD 331: body diversity from a separate deterministic stream, so the
+  // clothing/tint sequence above stays byte-identical to BUILD 316.
+  const bodyRand = mulberry32(hashString(id + '|body|' + arch));
+  const ageStage: NpcAppearance['ageStage'] =
+    arch === 'child' ? 'child' : bodyRand() < 0.18 ? 'elder' : 'adult';
+  const heightScale = ageStage === 'child'
+    ? 0.72 + bodyRand() * 0.08
+    : ageStage === 'elder'
+      ? 0.93 + bodyRand() * 0.06
+      : 0.92 + bodyRand() * 0.16;
+  const buildScale = ageStage === 'child'
+    ? 0.88 + bodyRand() * 0.08
+    : 0.94 + bodyRand() * 0.12;
+  // Wealth reads through clothing richness: the rich are vivid, the poor drab.
+  const wealth = Math.min(2, Math.max(0, WEALTH_BASE[arch] + (bodyRand() * 2 - 1) * 0.5));
+  const richness = (wealth - 1) * 0.12;
+  const richFilter = filter +
+    ' saturate(' + (1 + richness).toFixed(2) + ') brightness(' + (1 + richness * 0.25).toFixed(2) + ')';
+
+  return { column, filter: richFilter, heightScale, buildScale, ageStage, wealth };
 }
 
 /**
  * Inline-style CSS variables consumed by the sprite rules:
  * `--npc-appearance-x` overrides the sprite-sheet column,
- * `--npc-appearance-filter` overrides the tint (role default as CSS fallback).
+ * `--npc-appearance-filter` overrides the tint (role default as CSS fallback),
+ * `--npc-appearance-transform` scales the sprite for height/build (feet planted
+ * via transform-origin on the sprite rules; composes with the facing flip).
  */
 export function npcAppearanceStyle(
   id: string,
   archetype: string,
   opts: NpcAppearanceOptions = {},
-): { '--npc-appearance-x': string; '--npc-appearance-filter': string } {
+): { '--npc-appearance-x': string; '--npc-appearance-filter': string; '--npc-appearance-transform': string } {
   const appearance = appearanceForNpc(id, archetype, opts);
   return {
     '--npc-appearance-x': (-appearance.column * 32) + 'px',
     '--npc-appearance-filter': appearance.filter,
+    '--npc-appearance-transform': `scale(${appearance.buildScale.toFixed(3)}, ${appearance.heightScale.toFixed(3)})`,
   };
 }
