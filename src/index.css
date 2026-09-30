@@ -4073,3 +4073,205 @@ body {
   from { box-shadow: 0 0 8px rgba(255, 255, 200, 0.3); }
   to { box-shadow: 0 0 16px rgba(255, 255, 200, 0.6); }
 }
+
+/* BUILD 274: title-screen crossed swords */
+.main-menu-swords {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 6px;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45));
+}
+.menu-sword {
+  color: #e8c25a;
+}
+.menu-sword.sword-left {
+  transform: rotate(-32deg) translateX(7px);
+}
+.menu-sword.sword-right {
+  transform: rotate(32deg) translateX(-7px) scaleX(-1);
+}
+
+/* BUILD 274: debug world editor */
+.editor-panel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  max-width: 264px;
+  max-height: calc(100% - 20px);
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+.editor-panel-title {
+  font-weight: 700;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.editor-panel-chunk {
+  font-weight: 400;
+  font-size: 11px;
+  opacity: 0.75;
+  font-family: monospace;
+}
+.editor-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.editor-tool {
+  padding: 5px 7px;
+  font-size: 12px;
+  background: #3a3a3a;
+  color: #fff;
+  border: 1px solid #666;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.editor-tool.is-active {
+  background: #b8860b;
+  border-color: #ffd75e;
+  color: #111;
+  font-weight: 700;
+}
+.editor-hint {
+  font-size: 12px;
+  opacity: 0.9;
+  margin-bottom: 6px;
+  line-height: 1.35;
+}
+.editor-readout {
+  font-size: 11px;
+  font-family: monospace;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 5px 7px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+.editor-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.editor-list {
+  font-size: 11px;
+  font-family: monospace;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 6px;
+  border-radius: 4px;
+  max-height: 110px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.editor-btn {
+  padding: 6px 9px;
+  font-size: 12px;
+  background: #555;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.editor-btn:active {
+  background: #777;
+}
+
+/* Coordinate labels under houses / placed objects in editor mode */
+.editor-coord {
+  position: absolute;
+  left: 50%;
+  bottom: -16px;
+  transform: translateX(-50%);
+  font-family: monospace;
+  font-size: 10px;
+  line-height: 1;
+  color: #ffe97a;
+  background: rgba(0, 0, 0, 0.72);
+  padding: 2px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Coordinate grid overlay */
+.editor-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+  background-image:
+    linear-gradient(rgba(255, 235, 130, 0.28) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 235, 130, 0.28) 1px, transparent 1px);
+  background-size: calc(100% / 14) calc(100% / 14);
+}
+.editor-grid-label {
+  position: absolute;
+  font-family: monospace;
+  font-size: 10px;
+  color: #ffe97a;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 1px 4px;
+  border-radius: 3px;
+  transform: translate(-50%, -50%);
+}
+.editor-grid-label-x { top: 8px; }
+.editor-grid-label-y { left: 8px; }
+
+/* User-placed objects */
+.editor-placed {
+  position: absolute;
+  z-index: 15;
+}
+.editor-placed.is-selected {
+  outline: 3px solid #ff0;
+  z-index: 16;
+}
+.editor-placed.is-flagged {
+  outline: 3px solid #f33;
+}
+.editor-placed-roadH,
+.editor-placed-roadV {
+  background:
+    repeating-linear-gradient(45deg, rgba(120, 85, 45, 0.9) 0 6px, rgba(150, 110, 60, 0.9) 6px 12px);
+  border: 2px dashed rgba(80, 55, 25, 0.9);
+  border-radius: 4px;
+}
+.editor-flag-badge {
+  position: absolute;
+  left: 50%;
+  top: -14px;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #c00;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  pointer-events: none;
+}
+.editor-flag-badge .editor-coord {
+  bottom: auto;
+  top: 24px;
+}

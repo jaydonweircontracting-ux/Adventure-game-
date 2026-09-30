@@ -10,6 +10,9 @@ import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/rpgBrain';
 import { DEFAULT_WORLD_SEED, type WorldClockState } from '@/game/worldCore';
+import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
+export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
+import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList } from './game/worldEditor';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
@@ -29,7 +32,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '273';
+const BUILD_NUMBER = '274';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -652,6 +655,17 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
   const treeBlocked = fieldTreesFor(chunk).some((tree) => pointInRect(position, fieldTreeBaseRect(tree), 0.45));
   if (treeBlocked) return true;
 
+  // Debug world editor (BUILD 274): user-placed houses/trees/rocks are solid
+  // in normal play. Skipped while the editor is open (moveHouses) so the user
+  // can walk freely while laying out, like generated-house collision.
+  if (!moveHouses && editorSolids.length > 0) {
+    const chunkKey = chunk.x + ',' + chunk.y;
+    const placedBlocked = editorSolids.some((s) => s.chunk === chunkKey && pointInRect(position, {
+      left: s.x - s.w / 2, top: s.y - s.h / 2, right: s.x + s.w / 2, bottom: s.y + s.h / 2,
+    }, 0.35));
+    if (placedBlocked) return true;
+  }
+
   const landmark = tile.landmark;
   // Keep the visible building/base solid, but do not extend its collision far
   // into the surrounding grass where it reads as a random invisible wall.
@@ -882,6 +896,14 @@ let debugDoors: boolean = typeof window !== 'undefined' && new URLSearchParams(w
 // Visual house mover: can be enabled via ?moveHouses=1 URL or the Debug menu.
 // Module-level so collision functions (outside the component) can read it.
 let moveHouses: boolean = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('moveHouses') === '1';
+
+// Debug world editor (BUILD 274): user-placed solid objects (houses, trees,
+// rocks). GameField syncs this from its placed-objects state so the
+// module-level collision check can see them. Roads are walkable (no entry).
+// Solids are skipped while the editor is open (moveHouses) so the user can
+// walk freely while laying out, exactly like generated-house collision.
+// Pure helpers live in ./game/worldEditor.ts (unit-tested in simulate.ts).
+export let editorSolids: EditorSolid[] = [];
 
 function fieldDoorPosition(rect: FieldRect): Point {
   // Match .field-house::after: left 43%, width 16%, bottom 0, height 44%.
@@ -2693,7 +2715,59 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
     setMoverMode(next);
     if (!next) {
       setSelectedHouse(null);
+      setSelectedPlacedId(null);
+      setEditorTool('select');
     }
+  };
+  // Debug world editor (BUILD 274): stamp houses/trees/rocks/roads onto the
+  // field, flag generated objects for removal, teleport the player.
+  type EditorTool = 'select' | 'house' | 'tree' | 'pine' | 'rock' | 'roadH' | 'roadV' | 'flag' | 'erase' | 'player';
+  const [editorTool, setEditorTool] = useState<EditorTool>('select');
+  const [showGrid, setShowGrid] = useState(false);
+  const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
+  const [copiedNotice, setCopiedNotice] = useState(false);
+  const loadPlacedObjects = (): PlacedObject[] => {
+    try {
+      const raw = localStorage.getItem('worldEditorObjects');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((o) => o && typeof o.id === 'string' && typeof o.x === 'number' && typeof o.y === 'number' && typeof o.chunk === 'string') : [];
+    } catch { return []; }
+  };
+  const loadFlaggedItems = (): FlaggedItem[] => {
+    try {
+      const raw = localStorage.getItem('worldEditorFlags');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((f) => f && typeof f.id === 'string') : [];
+    } catch { return []; }
+  };
+  const [placedObjects, setPlacedObjects] = useState<PlacedObject[]>(loadPlacedObjects);
+  const [flaggedItems, setFlaggedItems] = useState<FlaggedItem[]>(loadFlaggedItems);
+  useEffect(() => {
+    try { localStorage.setItem('worldEditorObjects', JSON.stringify(placedObjects)); } catch { /* ignore */ }
+  }, [placedObjects]);
+  useEffect(() => {
+    try { localStorage.setItem('worldEditorFlags', JSON.stringify(flaggedItems)); } catch { /* ignore */ }
+  }, [flaggedItems]);
+  // Sync module-level solids so collision sees user-placed objects.
+  useEffect(() => {
+    editorSolids = editorSolidsFor(placedObjects);
+  }, [placedObjects]);
+  // Convert a pointer event on the field into true field-unit coordinates,
+  // inverting the game-zoom transform (same math as the mover/marker tools).
+  const tapToField = (e: React.PointerEvent<HTMLElement>): Point => {
+    const field = (e.currentTarget as HTMLElement).closest('.pixel-field') as HTMLElement | null;
+    const rect = (field || e.currentTarget as HTMLElement).getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    if (gameZoom !== 1) {
+      const ox = (position.x / FIELD_SIZE) * rect.width;
+      const oy = (position.y / FIELD_SIZE) * rect.height;
+      return {
+        x: ((ox + (px - ox) / gameZoom) / rect.width) * FIELD_SIZE,
+        y: ((oy + (py - oy) / gameZoom) / rect.height) * FIELD_SIZE,
+      };
+    }
+    return { x: (px / rect.width) * FIELD_SIZE, y: (py / rect.height) * FIELD_SIZE };
   };
   // Debug markers (green dots): toggleable from options menu. Syncs with module-level debugDoors.
   const [markerMode, setMarkerMode] = useState(debugDoors);
@@ -2708,6 +2782,10 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   };
   const dragStateRef = useRef<{ doorwayId: string; startClientX: number; startClientY: number; origX: number; origY: number; containerW: number; containerH: number } | null>(null);
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
+  // Debug world editor: objects/flags for the current chunk.
+  const chunkKey = chunk.x + ',' + chunk.y;
+  const placedHere = placedObjects.filter((o) => o.chunk === chunkKey);
+  const flaggedHere = flaggedItems.filter((f) => f.chunk === chunkKey);
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
   const [moving, setMoving] = useState(false);
   const [facing, setFacing] = useState<Direction>('down');
@@ -3661,6 +3739,29 @@ if (active) {
     setLogs((currentLogs) => [{ text: 'You enter the ' + doorway.area.name + '.', color: 'blue' }, ...currentLogs].slice(0, 3));
   };
 
+  // Debug world editor (BUILD 274) toolbar definition.
+  const editorTools: { id: EditorTool; label: string }[] = [
+    { id: 'select', label: '👆 Select' },
+    { id: 'house', label: '🏠 House' },
+    { id: 'tree', label: '🌲 Tree' },
+    { id: 'pine', label: '🌲 Big pine' },
+    { id: 'rock', label: '🪨 Rock' },
+    { id: 'roadH', label: '🛤️ Road ↔' },
+    { id: 'roadV', label: '🛤️ Road ↕' },
+    { id: 'flag', label: '🚩 Flag' },
+    { id: 'erase', label: '🧹 Erase' },
+    { id: 'player', label: '📍 Teleport' },
+  ];
+  const copyRemovalList = () => {
+    const text = editorRemovalList(flaggedItems);
+    const done = () => { setCopiedNotice(true); window.setTimeout(() => setCopiedNotice(false), 1800); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(done);
+    } else {
+      done();
+    }
+  };
+
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
@@ -3697,6 +3798,17 @@ if (active) {
         } : undefined}
         >
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
+          {/* Debug world editor (BUILD 274): coordinate grid overlay. */}
+          {moverMode && showGrid && (
+            <div className="editor-grid" aria-hidden="true">
+              {Array.from({ length: 7 }, (_, i) => (i + 1) * 20).map((v) => (
+                <span key={'gx' + v} className="editor-grid-label editor-grid-label-x" style={{ left: fieldPct(v) }}>{v}</span>
+              ))}
+              {Array.from({ length: 7 }, (_, i) => (i + 1) * 20).map((v) => (
+                <span key={'gy' + v} className="editor-grid-label editor-grid-label-y" style={{ top: fieldPct(v) }}>{v}</span>
+              ))}
+            </div>
+          )}
           {/* Marker dots are rendered inside field-world-layer (below) so they stay locked to world positions when zooming/walking. */}
           {markerMode && (debugMarks.length > 0 || redMarks.length > 0) && (
             <div style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 70, display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -3748,36 +3860,69 @@ if (active) {
             </button>
           )}
           {moverMode && (
-            <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 60, background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '10px', borderRadius: '6px', fontSize: '13px', maxWidth: '240px' }}>
-              <div style={{ marginBottom: '8px' }}>🏠 <b>Tap a house</b> to pick it up (yellow), then <b>tap where</b> to place it. Tap again to cancel.</div>
-              <div style={{ marginBottom: '8px', fontSize: '11px', fontFamily: 'monospace', background: 'rgba(255,255,255,0.1)', padding: '6px', borderRadius: '4px', maxHeight: '120px', overflow: 'auto' }}>
+            <div className="editor-panel">
+              <div className="editor-panel-title">🛠️ World Editor <span className="editor-panel-chunk">chunk {chunkKey}</span></div>
+              <div className="editor-tools">
+                {editorTools.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={'editor-tool' + (editorTool === t.id ? ' is-active' : '')}
+                    onClick={() => { setEditorTool(t.id); setSelectedHouse(null); setSelectedPlacedId(null); }}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <div className="editor-hint">
+                {editorTool === 'select' && <>👆 Tap a house or placed object to pick it up, then tap the field to drop it.</>}
+                {editorTool === 'flag' && <>🚩 Tap any tree, house, or placed object to flag it for removal. Tap again to unflag.</>}
+                {editorTool === 'erase' && <>🧹 Tap a placed object to delete it. (Generated trees/houses: flag them instead.)</>}
+                {editorTool === 'player' && <>📍 Tap the field to teleport the player there.</>}
+                {(editorTool === 'house' || editorTool === 'tree' || editorTool === 'pine' || editorTool === 'rock' || editorTool === 'roadH' || editorTool === 'roadV') && <>Tap the field to stamp a {editorTool === 'roadH' ? 'horizontal road' : editorTool === 'roadV' ? 'vertical road' : editorTool}.</>}
+              </div>
+              <div className="editor-readout">You: ({position.x.toFixed(1)}, {position.y.toFixed(1)}) · Placed here: {placedHere.length} · Flagged: {flaggedItems.length}</div>
+              <label className="editor-toggle">
+                <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} /> Show coordinate grid
+              </label>
+              <div className="editor-list">
                 {buildingDoorwaysFor(chunk).map((d) => {
                   const r = d.rect;
                   const off = houseOffsets[d.id] || { x: 0, y: 0 };
-                  const l = (r.left + off.x).toFixed(1);
-                  const t = (r.top + off.y).toFixed(1);
-                  const w = (r.right - r.left).toFixed(1);
-                  const h = (r.bottom - r.top).toFixed(1);
-                  return <div key={d.id}>{d.id.split('-')[0]}: {l},{t} {w}x{h}</div>;
+                  const flagged = flaggedItems.some((f) => f.id === 'gen-house-' + d.id);
+                  return <div key={d.id}>{flagged ? '🚩 ' : ''}{d.area.name}: {(r.left + off.x).toFixed(1)},{(r.top + off.y).toFixed(1)}</div>;
+                })}
+                {placedHere.map((o) => {
+                  const flagged = flaggedItems.some((f) => f.id === o.id);
+                  return <div key={o.id}>{flagged ? '🚩 ' : ''}▸ {o.kind} {o.x.toFixed(1)},{o.y.toFixed(1)}</div>;
                 })}
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setHouseOffsets({});
-                  setSelectedHouse(null);
-                }}
-                style={{ padding: '6px 10px', fontSize: '12px', background: '#666', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '6px' }}
-              >
-                Reset positions
-              </button>
-              <button
-                type="button"
-                onClick={() => setGameZoom(1)}
-                style={{ padding: '6px 10px', fontSize: '12px', background: '#666', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-              >
-                Reset zoom
-              </button>
+              <div className="editor-actions">
+                <button type="button" className="editor-btn" onClick={copyRemovalList}>
+                  {copiedNotice ? 'Copied!' : '📋 Copy removal list'}
+                </button>
+                <button
+                  type="button"
+                  className="editor-btn"
+                  onClick={() => {
+                    setPlacedObjects((prev) => prev.filter((o) => o.chunk !== chunkKey));
+                    setFlaggedItems((prev) => prev.filter((f) => !(f.chunk === chunkKey && f.kind === 'placed')));
+                    setSelectedPlacedId(null);
+                  }}
+                >
+                  Clear placed (chunk)
+                </button>
+                <button
+                  type="button"
+                  className="editor-btn"
+                  onClick={() => { setHouseOffsets({}); setSelectedHouse(null); }}
+                >
+                  Reset houses
+                </button>
+                <button type="button" className="editor-btn" onClick={() => setGameZoom(1)}>
+                  Reset zoom
+                </button>
+              </div>
             </div>
           )}
           {!interior && (
@@ -4077,40 +4222,87 @@ if (active) {
                 houses inside it shifted every visual away from its door and
                 collision. This layer keeps visuals, doors, and collision unified. */}
             <div className={'field-houses-layer' + (moverMode ? ' mover-active' : '')}
-              onPointerUp={moverMode && selectedHouse ? (e) => {
-                // Tap-to-place: if a house is selected and the tap was on the
-                // field (not on a house), move the selected house there.
+              onPointerUp={moverMode ? (e) => {
+                // Debug world editor: all tap tools route through here. Taps on
+                // houses / placed objects are handled by their own handlers
+                // (stopPropagation) below.
                 const target = e.target as HTMLElement;
-                if (target.closest && target.closest('.field-house')) return;
-                // Measure against the untransformed field frame and invert the
-                // zoom transform (same math as the marker tool) so taps land on
-                // true field coordinates even when zoomed in.
-                const field = (e.currentTarget as HTMLElement).closest('.pixel-field') as HTMLElement | null;
-                const rect = (field || e.currentTarget as HTMLElement).getBoundingClientRect();
-                const px = e.clientX - rect.left;
-                const py = e.clientY - rect.top;
-                let fieldX: number, fieldY: number;
-                if (gameZoom !== 1) {
-                  const ox = (position.x / FIELD_SIZE) * rect.width;
-                  const oy = (position.y / FIELD_SIZE) * rect.height;
-                  fieldX = ((ox + (px - ox) / gameZoom) / rect.width) * FIELD_SIZE;
-                  fieldY = ((oy + (py - oy) / gameZoom) / rect.height) * FIELD_SIZE;
-                } else {
-                  fieldX = (px / rect.width) * FIELD_SIZE;
-                  fieldY = (py / rect.height) * FIELD_SIZE;
+                if (target.closest && (target.closest('.field-house') || target.closest('.editor-placed'))) return;
+                const pt = tapToField(e);
+                const fx = Math.round(pt.x * 10) / 10;
+                const fy = Math.round(pt.y * 10) / 10;
+                // Flag tool: mark the nearest flaggable object for removal.
+                if (editorTool === 'flag') {
+                  const candidates: FlaggedItem[] = [
+                    ...fieldTreesFor(chunk).map((t) => ({
+                      id: 'gen-tree-' + chunkKey + '-' + t.id,
+                      kind: 'tree' as const,
+                      label: 'tree #' + t.id,
+                      x: Math.round(t.x * 10) / 10,
+                      y: Math.round(t.y * 10) / 10,
+                      chunk: chunkKey,
+                    })),
+                    ...buildingDoorwaysFor(chunk).map((d) => {
+                      const r = d.rect;
+                      const off = houseOffsets[d.id] || { x: 0, y: 0 };
+                      return {
+                        id: 'gen-house-' + d.id,
+                        kind: 'house' as const,
+                        label: d.area.name,
+                        x: Math.round(((r.left + r.right) / 2 + off.x) * 10) / 10,
+                        y: Math.round(((r.top + r.bottom) / 2 + off.y) * 10) / 10,
+                        chunk: chunkKey,
+                      };
+                    }),
+                    ...placedHere.map((o) => ({
+                      id: o.id,
+                      kind: 'placed' as const,
+                      label: 'placed ' + o.kind + ' ' + o.id.slice(-6),
+                      x: o.x,
+                      y: o.y,
+                      chunk: chunkKey,
+                    })),
+                  ];
+                  let best: FlaggedItem | null = null;
+                  let bestDist = 8;
+                  for (const c of candidates) {
+                    const dist = Math.hypot(c.x - fx, c.y - fy);
+                    if (dist < bestDist) { bestDist = dist; best = c; }
+                  }
+                  if (best) setFlaggedItems((prev) => editorToggleFlag(prev, best as FlaggedItem));
+                  return;
                 }
-                // Find the selected doorway to get its size.
-                const dw = doorways.find((d) => d.id === selectedHouse);
-                if (!dw) return;
-                const w = dw.rect.right - dw.rect.left;
-                const h = dw.rect.bottom - dw.rect.top;
-                // Place so the house center is at the tap point.
-                const newLeft = fieldX - w / 2;
-                const newTop = fieldY - h / 2;
-                const offX = newLeft - dw.rect.left;
-                const offY = newTop - dw.rect.top;
-                setHouseOffsets((prev) => ({ ...prev, [selectedHouse]: { x: offX, y: offY } }));
-                setSelectedHouse(null);
+                // Teleport tool: walk the player to the tap.
+                if (editorTool === 'player') {
+                  setPosition({ x: fx, y: fy });
+                  return;
+                }
+                // Stamp tools: place a new object at the tap.
+                if (editorTool !== 'select' && editorTool !== 'erase') {
+                  setPlacedObjects((prev) => editorPlaceObject(prev, editorTool, fx, fy, chunkKey));
+                  return;
+                }
+                // Select tool: tap-to-place a picked-up house.
+                if (selectedHouse) {
+                  // Find the selected doorway to get its size.
+                  const dw = doorways.find((d) => d.id === selectedHouse);
+                  if (!dw) return;
+                  const w = dw.rect.right - dw.rect.left;
+                  const h = dw.rect.bottom - dw.rect.top;
+                  // Place so the house center is at the tap point.
+                  const newLeft = fx - w / 2;
+                  const newTop = fy - h / 2;
+                  const offX = newLeft - dw.rect.left;
+                  const offY = newTop - dw.rect.top;
+                  setHouseOffsets((prev) => ({ ...prev, [selectedHouse]: { x: offX, y: offY } }));
+                  setSelectedHouse(null);
+                  return;
+                }
+                // Select tool: tap-to-place a picked-up placed object.
+                if (selectedPlacedId) {
+                  setPlacedObjects((prev) => prev.map((o) => o.id === selectedPlacedId ? { ...o, x: fx, y: fy } : o));
+                  setSelectedPlacedId(null);
+                }
               } : undefined}
             >
               {doorways.map((doorway) => {
@@ -4132,17 +4324,105 @@ if (active) {
                     zIndex: isSelected ? 10 : undefined,
                   }}
                   onPointerUp={moverMode ? (e) => {
-                    // Tap a house to select/deselect it.
                     e.stopPropagation();
+                    // Flag tool: mark this generated house for removal.
+                    if (editorTool === 'flag') {
+                      const r = doorway.rect;
+                      const off = houseOffsets[doorway.id] || { x: 0, y: 0 };
+                      const cx = Math.round(((r.left + r.right) / 2 + off.x) * 10) / 10;
+                      const cy = Math.round(((r.top + r.bottom) / 2 + off.y) * 10) / 10;
+                      setFlaggedItems((prev) => editorToggleFlag(prev, {
+                        id: 'gen-house-' + doorway.id,
+                        kind: 'house',
+                        label: doorway.area.name,
+                        x: cx, y: cy, chunk: chunkKey,
+                      }));
+                      return;
+                    }
+                    // Only the select tool picks houses up.
+                    if (editorTool !== 'select') return;
+                    // Tap a house to select/deselect it.
                     if (selectedHouse === doorway.id) {
                       setSelectedHouse(null);
                     } else {
                       setSelectedHouse(doorway.id);
+                      setSelectedPlacedId(null);
                     }
                   } : undefined}
-                >{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}</span>
+                >{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}{moverMode && (
+                  <span className="editor-coord" aria-hidden="true">
+                    {(rect.left + off.x).toFixed(1)}, {(rect.top + off.y).toFixed(1)}
+                  </span>
+                )}</span>
                 );
               })}
+              {/* Debug world editor (BUILD 274): user-placed objects for this chunk. */}
+              {placedHere.map((o) => {
+                const isSel = selectedPlacedId === o.id;
+                const isFlagged = flaggedItems.some((f) => f.id === o.id);
+                const onPlacedTap = (e: React.PointerEvent<HTMLElement>) => {
+                  if (!moverMode) return;
+                  e.stopPropagation();
+                  if (editorTool === 'flag') {
+                    setFlaggedItems((prev) => editorToggleFlag(prev, {
+                      id: o.id, kind: 'placed', label: 'placed ' + o.kind + ' ' + o.id.slice(-6),
+                      x: o.x, y: o.y, chunk: chunkKey,
+                    }));
+                    return;
+                  }
+                  if (editorTool === 'erase') {
+                    setPlacedObjects((prev) => prev.filter((p) => p.id !== o.id));
+                    setFlaggedItems((prev) => prev.filter((f) => f.id !== o.id));
+                    if (selectedPlacedId === o.id) setSelectedPlacedId(null);
+                    return;
+                  }
+                  if (editorTool !== 'select') return;
+                  setSelectedPlacedId(isSel ? null : o.id);
+                  setSelectedHouse(null);
+                };
+                const shared = {
+                  key: o.id,
+                  className: 'editor-placed editor-placed-' + o.kind + (isSel ? ' is-selected' : '') + (isFlagged ? ' is-flagged' : ''),
+                  onPointerUp: moverMode ? onPlacedTap : undefined,
+                  style: { cursor: moverMode ? 'pointer' : undefined, touchAction: moverMode ? 'none' : undefined } as React.CSSProperties,
+                };
+                const coord = <span className="editor-coord" aria-hidden="true">{o.x.toFixed(1)}, {o.y.toFixed(1)}</span>;
+                const badge = isFlagged ? <span className="editor-flag-badge" aria-hidden="true">✕</span> : null;
+                if (o.kind === 'house') {
+                  return (
+                    <span {...shared} className={shared.className + ' field-house new-house'}
+                      style={{ ...shared.style, left: fieldPct(o.x - 6.5), top: fieldPct(o.y - 4.5), width: fieldPct(13), height: fieldPct(9) }}>
+                      {coord}{badge}
+                    </span>
+                  );
+                }
+                if (o.kind === 'roadH' || o.kind === 'roadV') {
+                  const horiz = o.kind === 'roadH';
+                  return (
+                    <span {...shared}
+                      style={{ ...shared.style, left: fieldPct(o.x), top: fieldPct(o.y), width: fieldPct(horiz ? 16 : 3.2), height: fieldPct(horiz ? 3.2 : 16), transform: 'translate(-50%, -50%)' }}>
+                      {coord}{badge}
+                    </span>
+                  );
+                }
+                // Trees / rocks reuse the environment sprite boxes, anchored
+                // bottom-center on (o.x, o.y) in field-unit space.
+                const box = o.kind === 'pine' ? { w: 96, h: 156 } : o.kind === 'rock' ? { w: 100, h: 69 } : { w: 47, h: 112 };
+                const spriteClass = o.kind === 'pine' ? 'env-bigpine' : o.kind === 'rock' ? 'env-rock' : 'env-pine2';
+                return (
+                  <span {...shared} className={shared.className + ' field-tree ' + spriteClass}
+                    style={{ ...shared.style, left: 'calc(' + fieldPct(o.x) + ' - ' + box.w / 2 + 'px)', top: 'calc(' + fieldPct(o.y) + ' - ' + box.h + 'px)', width: box.w, height: box.h }}>
+                    {coord}{badge}
+                  </span>
+                );
+              })}
+              {/* Flag badges for generated trees/houses marked for removal. */}
+              {moverMode && flaggedHere.filter((f) => f.kind !== 'placed').map((f) => (
+                <span key={'flag-' + f.id} className="editor-flag-badge" aria-hidden="true"
+                  style={{ left: fieldPct(f.x), top: fieldPct(f.y) }}>
+                  ✕<span className="editor-coord">{f.x.toFixed(1)}, {f.y.toFixed(1)}</span>
+                </span>
+              ))}
               {markerMode && doorways.map((doorway) => {
                 const rect = doorway.rect;
                 const off = houseOffsets[doorway.id] || { x: 0, y: 0 };
@@ -4357,7 +4637,7 @@ if (active) {
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMoverMode(); }} data-testid="button-debug-mover">
                   <span className="options-action-icon"><Settings size={17} /></span>
-                  <span><strong>Debug: {moverMode ? 'Exit' : 'Move'} Houses</strong><small>{moverMode ? 'Return to normal play' : 'Tap houses to reposition them'}</small></span>
+                  <span><strong>Debug: World Editor{moverMode ? ' (Exit)' : ''}</strong><small>{moverMode ? 'Return to normal play' : 'Place houses, trees, rocks, roads · flag removals'}</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMarkerMode(); }} data-testid="button-debug-markers">
                   <span className="options-action-icon"><Settings size={17} /></span>
@@ -4866,6 +5146,10 @@ function Home() {
       ) : menuOpen ? (
         <section className="main-menu" aria-label="Main menu" data-testid="main-menu">
           <div className="main-menu-card">
+            <div className="main-menu-swords" aria-hidden="true">
+              <Sword className="menu-sword sword-left" size={44} strokeWidth={1.75} />
+              <Sword className="menu-sword sword-right" size={44} strokeWidth={1.75} />
+            </div>
             <span className="main-menu-kicker">THE FAR MEADOW · BUILD {BUILD_NUMBER}</span>
             <h1>Adventure Game</h1>
             <p>Follow the roads, learn the first hunt, and choose the path that carries you beyond Mosslight Crossing.</p>

@@ -4,6 +4,7 @@ import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLev
 import { updateGoat, type GoatAIEntity } from '../src/game/ai';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
+import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize } from '../src/game/worldEditor';
 
 let passed = 0;
 let failed = 0;
@@ -310,6 +311,31 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
   const stalks = cornStalksForChunk({ x: 4, y: 7 }, 'meadow', blocked);
   const inBlocked = stalks.filter((s) => blocked(s.position));
   assert(inBlocked.length === 0, `${inBlocked.length} corn stalks spawned inside blocked area`);
+}
+
+// ---- BUILD 274: debug world editor helpers ----
+{
+  // Placing stamps objects with rounded coords and unique ids.
+  let objects = editorPlaceObject([], 'house', 41.27, 53.24, '4,7');
+  assert(objects.length === 1, 'editorPlaceObject did not add');
+  assert(objects[0].kind === 'house' && objects[0].x === 41.3 && objects[0].y === 53.2 && objects[0].chunk === '4,7', 'editorPlaceObject coords/kind wrong');
+  objects = editorPlaceObject(objects, 'roadH', 60, 70, '4,7');
+  assert(objects.length === 2 && objects[0].id !== objects[1].id, 'editorPlaceObject ids not unique');
+  // Solids: houses/trees/rocks solid, roads walkable.
+  const solids = editorSolidsFor(objects);
+  assert(solids.length === 1 && solids[0].w === 13 && solids[0].h === 9, 'editorSolidsFor house footprint wrong');
+  assert(editorSolidsFor(editorPlaceObject([], 'roadV', 10, 10, '4,7')).length === 0, 'roads must not be solid');
+  assert(editorSolidSize('tree') !== null && editorSolidSize('roadH') === null, 'editorSolidSize kinds wrong');
+  // Flag toggle adds then removes.
+  const flag = { id: 'gen-tree-4,7-3', kind: 'tree' as const, label: 'tree #3', x: 34.2, y: 51.8, chunk: '4,7' };
+  let flags = editorToggleFlag([], flag);
+  assert(flags.length === 1, 'editorToggleFlag did not add');
+  flags = editorToggleFlag(flags, flag);
+  assert(flags.length === 0, 'editorToggleFlag did not remove');
+  // Removal list format.
+  const list = editorRemovalList([flag]);
+  assert(list.includes('tree "tree #3" at (34.2, 51.8) chunk 4,7'), 'editorRemovalList format wrong: ' + list);
+  assert(editorRemovalList([]).includes('nothing flagged'), 'editorRemovalList empty wrong');
 }
 
 // ---- Results ----
