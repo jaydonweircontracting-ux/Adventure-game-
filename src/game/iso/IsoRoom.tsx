@@ -1,4 +1,4 @@
-// Isometric demo (BUILD 363): data-driven world + in-game map builder (?iso=1).
+// Isometric demo (BUILD 364): data-driven world + in-game map builder (?iso=1).
 // Play mode: explore, move crates, wandering NPCs. Edit mode: full map builder
 // (select/move/delete, paint terrain, place objects, copy/paste regions, resize
 // up to 200x200, undo). World persists in localStorage.
@@ -191,8 +191,10 @@ export default function IsoRoom(): React.JSX.Element {
     const held = new Set<string>();
     const cam = { x: 0, y: 0 };
     let zoom = 1;
-    // Keep the play camera on the map: when the whole map fits in the viewport,
-    // center it; otherwise clamp the edges so empty background doesn't dominate.
+    // Keep the play camera on the map, centered on the player whenever possible.
+    // Per axis: overflow > 0 means the map is bigger than the view (clamp to map
+    // edges); overflow < 0 means slack (follow the player inside the slack so the
+    // character stays centered instead of snapping to the map center).
     const clampCamToMap = (c: { x: number; y: number }, zm: number, wpx: number, hpx: number) => {
       const w = W();
       const m = 48; // world-px margin of background around the map
@@ -200,9 +202,9 @@ export default function IsoRoom(): React.JSX.Element {
       const minY = -m, maxY = (w.w + w.h - 2) * (TILE_H / 2) + m;
       const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
       const hw = wpx / (2 * zm), hh = hpx / (2 * zm);
-      const ex = (maxX - minX) / 2, ey = (maxY - minY) / 2;
-      c.x = ex <= hw ? cx : Math.min(cx + (ex - hw), Math.max(cx - (ex - hw), c.x));
-      c.y = ey <= hh ? cy : Math.min(cy + (ey - hh), Math.max(cy - (ey - hh), c.y));
+      const ox = (maxX - minX) / 2 - hw, oy = (maxY - minY) / 2 - hh;
+      c.x = Math.max(cx - Math.abs(ox), Math.min(cx + Math.abs(ox), c.x));
+      c.y = Math.max(cy - Math.abs(oy), Math.min(cy + Math.abs(oy), c.y));
     };
     // Zoom level that fits the entire map in the viewport (never above 1).
     const fitZoom = () => {
@@ -1304,7 +1306,7 @@ export default function IsoRoom(): React.JSX.Element {
       {mode === 'play' ? (
         <>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 12px', gap: 8 }}>
-            <div style={chip}>⛰️ Isometric demo · build 363 · {worldSize} · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
+            <div style={chip}>⛰️ Isometric demo · build 364 · {worldSize} · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button style={btn} onClick={() => api.enterEdit()}>🔨 Builder</button>
               <button style={btn} onClick={() => setInfoOpen(true)}>ℹ Info</button>
