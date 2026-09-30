@@ -148,7 +148,7 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
       if (atLunch) return { activity: 'Having lunch', target: plazaSpot, indoors: false };
       if (mins < workEnd) return { activity: 'Tending crops', target: garden, indoors: false };
       if (mins < workEnd + 90) return { activity: 'Evening at the Tankard', target: tavernSpot, indoors: false };
-      return { activity: 'At home', target: homeSpot, indoors: false };
+      return { activity: 'At home', target: homeSpot, indoors: true };
     }
     case 'merchant': {
       const open = 480 + jitter(5, 31); // 8:00–8:30
@@ -157,7 +157,7 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
       if (atLunch) return { activity: 'Having lunch', target: plazaSpot, indoors: false };
       if (mins < workEnd) return { activity: 'Minding the stall', target: stall, indoors: false };
       if (mins < workEnd + 90) return { activity: 'Evening at the Tankard', target: tavernSpot, indoors: false };
-      return { activity: 'At home', target: homeSpot, indoors: false };
+      return { activity: 'At home', target: homeSpot, indoors: true };
     }
     case 'priest': {
       if (atNight) return { activity: 'Sleeping', target: home, indoors: true };
@@ -179,7 +179,7 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
     case 'child': {
       if (atNight || mins < wake) return { activity: 'Sleeping', target: home, indoors: true };
       if (mins >= lunchStart && mins < lunchEnd + 30) return { activity: 'Lunch at home', target: homeSpot, indoors: false };
-      if (mins >= 1080) return { activity: 'At home', target: homeSpot, indoors: false };
+      if (mins >= 1080) return { activity: 'At home', target: homeSpot, indoors: true };
       return { activity: 'Playing', target: plazaSpot, indoors: false };
     }
     case 'commoner':
@@ -188,7 +188,7 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
       if (atLunch) return { activity: 'Having lunch', target: plazaSpot, indoors: false };
       const outAndAbout = (mins >= 540 && mins < 720) || (mins >= 840 && mins < workEnd);
       if (outAndAbout) return { activity: 'About town', target: plazaSpot, indoors: false };
-      return { activity: 'At home', target: homeSpot, indoors: false };
+      return { activity: 'At home', target: homeSpot, indoors: true };
     }
   }
 }
@@ -241,6 +241,40 @@ export function mosslightObstacles(): ObstacleRect[] {
   ];
   const cottages = cottageDoorways().map((d) => d.buildingRect!);
   return [...main, ...cottages];
+}
+
+/**
+ * Deterministic indoor rest spot for an awake NPC spending the evening at
+ * home (BUILD 329): just inside their cottage door, offset per-NPC so
+ * cottage-mates don't stack. Field units of the cottage rect — the interior
+ * renderer maps them proportionally into the room.
+ */
+export function indoorRestSpot(npc: Townsperson, door: DoorwayLink): NavPoint {
+  return {
+    x: door.interior.x + (townsfolkHash(npc.seed, 7001) - 0.5) * 2.5,
+    y: door.interior.y - 0.8 - townsfolkHash(npc.seed, 7002) * 0.8,
+  };
+}
+
+/**
+ * Player-facing interior area id for a townsfolk cottage (BUILD 329).
+ * Mirrors buildingDoorwaysFor: cottages are indices 4..9 of fieldHouseRects.
+ */
+export function interiorAreaIdForCottage(cottageId: string, chunk: { x: number; y: number }): string | null {
+  const m = /^cottage-(\d+)$/.exec(cottageId);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  if (n < 1 || n > 6) return null;
+  return `${Math.round(chunk.x)}-${Math.round(chunk.y)}-building-${n + 3}`;
+}
+
+/** Cottage field rect for proportional interior rendering (BUILD 329). */
+export function cottageRectFor(cottageId: string): { left: number; top: number; right: number; bottom: number } | null {
+  const m = /^cottage-(\d+)$/.exec(cottageId);
+  if (!m) return null;
+  const door = cottageDoorways()[parseInt(m[1], 10) - 1];
+  const r = door?.buildingRect;
+  return r ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom } : null;
 }
 
 /**
@@ -450,6 +484,24 @@ function advanceOne(
     // stay inside and wait rather than flipping to OUTDOOR while physically
     // indoors, which would path through the building walls.
     if (!door) return { ...npc, location: 'INTERIOR' as NPCWorldLocation, indoors: true, moving: false, path: undefined, activity: want.activity };
+    if (wantsIndoors) {
+      // Awake but the schedule wants them inside ('At home', BUILD 329):
+      // settle at the indoor rest spot and idle. Never the revolving door
+      // back outside — the leave logic below only runs for outdoor wants.
+      const rest = indoorRestSpot(npc, door);
+      if (npc.path && !npc.path.gaveUp) {
+        const res = stepAlongPath(npc.path, npc.position, step);
+        if (res.arrived) {
+          return { ...npc, position: res.position, path: undefined, moving: false, location: 'INTERIOR' as NPCWorldLocation, indoors: true, facing: res.facing, activity: want.activity, buildingId: npc.buildingId ?? bed?.home.id };
+        }
+        const tracked = trackStep(npc.path, npc.position, res, (from) => {
+          const wps = findPath(from, rest, []);
+          return wps ? { waypoints: wps, index: 0, destination: { ...rest } } : null;
+        });
+        return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, activity: want.activity, indoors: true, location: 'INTERIOR' as NPCWorldLocation };
+      }
+      return { ...npc, moving: false, activity: want.activity, indoors: true, location: 'INTERIOR' as NPCWorldLocation, path: undefined, buildingId: npc.buildingId ?? bed?.home.id };
+    }
     if (npc.path?.gaveUp) {
       // Destination unreachable: wait for the schedule to pick a new one.
       return { ...npc, moving: false, activity: want.activity, indoors: true };
@@ -547,6 +599,12 @@ function advanceOne(
         const wps = findPath(door.interior, bed.bed.position, []);
         const fullWps = [{ ...door.interior }, ...(wps ?? [straightFallbackPath(bed.bed.position, []).waypoints[0]])];
         inPath = { waypoints: fullWps, index: 0, destination: { ...bed.bed.position }, replanCooldown: REPLAN_COOLDOWN_TICKS };
+      } else if (wantsIndoors) {
+        // 'At home' (BUILD 329): walk through the door to the indoor rest
+        // spot, not just the doorway — the NPC settles inside for the evening.
+        const rest = indoorRestSpot(npc, door);
+        const wps = findPath(door.interior, rest, []);
+        inPath = { waypoints: [{ ...door.interior }, ...(wps ?? [rest])], index: 0, destination: { ...rest }, replanCooldown: REPLAN_COOLDOWN_TICKS };
       } else {
         inPath = { waypoints: [{ ...door.interior }], index: 0, destination: { ...door.interior }, replanCooldown: REPLAN_COOLDOWN_TICKS };
       }
@@ -755,7 +813,7 @@ export function snapTownsfolk(
         moving: false,
         activity: resolved.activity,
         path: undefined,
-        buildingId: npc.buildingId,
+        buildingId: bed?.home.id ?? npc.buildingId,
       };
     }
     if (door) {

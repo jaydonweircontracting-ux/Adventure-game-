@@ -20,7 +20,7 @@ import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, cl
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
 import { LANDMARKS } from '@/game/landmarks';
 import {
@@ -80,7 +80,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '328';
+const BUILD_NUMBER = '329';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -2995,7 +2995,7 @@ function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: Player
   return <section className="satchel-stats-panel" role="tabpanel" aria-label="Adventurer Stats"><div className="satchel-stats-heading"><span className="atlas-eyebrow">Character growth</span><h3>Adventurer Stats</h3></div><div className="satchel-stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div><div className="satchel-stats-list">{STAT_KEYS.map((stat) => <div className="satchel-stat-row" key={stat} data-testid={'stat-row-' + stat}><span className="satchel-stat-key">{stat.toUpperCase()}</span><span className="satchel-stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span><b className="satchel-stat-value">{playerStats[stat]}</b><button className="satchel-stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button></div>)}</div><div className="satchel-stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div></section>;
 }
 
-function InteriorRoom({ area, position, facing, moving, equippedDagger, equippedBow, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onTalkToQuestGiver, onEnterDungeon, onEnterCellar, onTavernSleep, cellarRats, onStrikeCellarRat, questStates }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; equippedBow: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onTalkToQuestGiver: (name: string) => void; onEnterDungeon: () => void; onEnterCellar: () => void; onTavernSleep: () => void; cellarRats: CellarRat[]; onStrikeCellarRat: (ratId: number) => void; questStates: QuestState[] }) {
+function InteriorRoom({ area, position, facing, moving, equippedDagger, equippedBow, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onTalkToQuestGiver, onEnterDungeon, onEnterCellar, onTavernSleep, cellarRats, onStrikeCellarRat, questStates, interiorTownsfolk, onTalkToTownsfolk }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; equippedBow: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onTalkToQuestGiver: (name: string) => void; onEnterDungeon: () => void; onEnterCellar: () => void; onTavernSleep: () => void; cellarRats: CellarRat[]; onStrikeCellarRat: (ratId: number) => void; questStates: QuestState[]; interiorTownsfolk: { npc: Townsperson; xPct: number; yPct: number }[]; onTalkToTownsfolk: (npc: Townsperson) => void }) {
   // Tavern patron nameplates auto-hide (bartender Mira's stays); tapping a patron pops theirs for 4s.
   const [shownPatron, setShownPatron] = useState<string | null>(null);
   const patronTimerRef = useRef<number | null>(null);
@@ -3115,6 +3115,22 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
         });
       })()}
       <div className="interior-doorway" aria-label={area.roomType === 'cellar' ? 'Climb back up to the tavern' : 'Exit to Mosslight Crossing'}><span>EXIT</span></div>
+      {/* BUILD 329: townsfolk physically at home — rendered inside their own
+          cottage when the player visits. Tapping talks to them. */}
+      {interiorTownsfolk.map(({ npc, xPct, yPct }) => (
+        <button
+          type="button"
+          key={'interior-townsfolk-' + npc.id}
+          className={'interior-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '')}
+          onClick={() => onTalkToTownsfolk(npc)}
+          style={{ ...npcAppearanceStyle(npc.id, npc.role), left: xPct + '%', top: yPct + '%' }}
+          data-facing={npc.facing}
+          aria-label={'Talk to ' + npc.name}
+          data-testid={'interior-townsfolk-' + npc.id}
+        >
+          <span className="interior-npc-nameplate" aria-hidden="true"><strong>{npc.name}</strong><small>{npc.activity} · Talk</small></span>
+        </button>
+      ))}
       {area.id === 'rootbound-chapel' && (
         <button className="interior-dungeon-staircase" onClick={onEnterDungeon} aria-label="Descend to the Ember Vault dungeon" data-testid="button-enter-dungeon">
           <span className="dungeon-stairs-visual" aria-hidden="true" />
@@ -5011,6 +5027,28 @@ if (active) {
     if (!clock) return [];
     return travelersForChunk(chunk, clock, roadLinks);
   }, [chunk.x, chunk.y, time, roadLinks]);
+  // BUILD 329: townsfolk who are physically inside the cottage the player is
+  // currently visiting (INTERIOR/SLEEPING with a matching buildingId), mapped
+  // from cottage field-unit coords to interior % coords. The field renderer
+  // hides indoors NPCs, so this is the only place they appear — 'At home' is
+  // truthful: Inspector, activity, location, interior rendering, building id.
+  const interiorTownsfolk = useMemo(() => {
+    if (!interior) return [];
+    const out: { npc: Townsperson; xPct: number; yPct: number }[] = [];
+    for (const npc of townsfolk) {
+      if (!npc.indoors || !npc.buildingId) continue;
+      if (npc.location !== 'INTERIOR' && npc.location !== 'SLEEPING') continue;
+      if (interiorAreaIdForCottage(npc.buildingId, chunk) !== interior.id) continue;
+      const rect = cottageRectFor(npc.buildingId);
+      if (!rect) continue;
+      const w = Math.max(0.01, rect.right - rect.left);
+      const h = Math.max(0.01, rect.bottom - rect.top);
+      const xPct = Math.min(90, Math.max(10, ((npc.position.x - rect.left) / w) * 100));
+      const yPct = Math.min(88, Math.max(12, ((npc.position.y - rect.top) / h) * 100));
+      out.push({ npc, xPct, yPct });
+    }
+    return out;
+  }, [interior, townsfolk, chunk.x, chunk.y]);
   // Civ phase 8: merchant caravans traveling through the player's chunk,
   // positioned analytically from the world clock (no stored movement state).
   const visibleCaravans = useMemo(() => {
@@ -5328,7 +5366,7 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onEnterCellar={enterCellar} onTavernSleep={tavernSleepUntilMorning} cellarRats={cellarRats} onStrikeCellarRat={strikeCellarRat} questStates={questStates} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onEnterCellar={enterCellar} onTavernSleep={tavernSleepUntilMorning} cellarRats={cellarRats} onStrikeCellarRat={strikeCellarRat} questStates={questStates} interiorTownsfolk={interiorTownsfolk} onTalkToTownsfolk={talkToTownsfolk} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,

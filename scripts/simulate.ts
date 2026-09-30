@@ -6,7 +6,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorAreaIdForCottage, cottageRectFor, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
@@ -1250,6 +1250,88 @@ for (const kind of EXPECTED_KINDS) {
   assert(dirt && dirt.length <= 3, `no-road smoothing should still collapse (got ${dirt ? dirt.length : 'none'} waypoints)`);
 }
 
+// ---- BUILD 329: truthful 'At home' (indoors, interior rendering, building ids) ----
+{
+  const anchors: TownsfolkAnchors = {
+    points: {
+      guild: { x: 90, y: 60 }, chapel: { x: 40, y: 90 }, tavern: { x: 90, y: 90 },
+      farm0: { x: 30, y: 119 }, farm1: { x: 110, y: 119 },
+    },
+    plaza: { x: 70, y: 82 },
+    stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
+    gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
+    patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
+  };
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+  const folk = createTownsfolk(anchors, 847291583);
+  const navCtx: TownsfolkNavContext = {
+    housing: buildMosslightHousing(folk.map((n) => n.id)),
+    doors: cottageDoorways(),
+    obstacles: mosslightObstacles(),
+  };
+
+  // 1. Evening 'At home' is now an indoors want for all four archetypes.
+  for (const arch of ['farmer', 'merchant', 'child', 'commoner']) {
+    const npc = folk.find((n) => n.archetype === arch)!;
+    const want = townsfolkTarget(npc, anchors, clockAt(20, 0));
+    assert(want.activity === 'At home' && want.indoors === true, `${arch} at 20:00 should want At home indoors (got ${want.activity} indoors=${want.indoors})`);
+  }
+
+  // 2. Snap at 20:00 puts 'At home' NPCs INTERIOR with a real buildingId.
+  const snapped = snapTownsfolk(folk, anchors, clockAt(20, 0), navCtx);
+  const farmer = snapped.find((n) => n.archetype === 'farmer')!;
+  assert(farmer.location === 'INTERIOR' && farmer.indoors, `farmer should snap INTERIOR at 20:00 (got ${farmer.location})`);
+  assert(farmer.buildingId && farmer.buildingId.startsWith('cottage-'), `farmer needs a cottage buildingId (got ${farmer.buildingId})`);
+
+  // 3. No revolving door: 300 ticks at 20:00, the NPC stays inside and idle.
+  let settled = farmer;
+  for (let t = 0; t < 300; t++) settled = advanceTownsfolk([settled], anchors, clockAt(20, 0), navCtx, 0.5)[0];
+  assert(settled.location === 'INTERIOR' && settled.indoors, `revolving door! farmer left: ${settled.location} indoors=${settled.indoors}`);
+  assert(settled.activity === 'At home', `farmer activity drifted: ${settled.activity}`);
+  assert(!settled.moving, 'settled At-home NPC should be idle, not pacing');
+
+  // 4. The full walk: OUTDOOR at the plaza at 20:00 -> walks to the cottage
+  // door -> ENTERING -> INTERIOR, never teleporting.
+  let walker = { ...folk.find((n) => n.archetype === 'merchant')!, position: { x: 70, y: 82 }, location: 'OUTDOOR' as const, indoors: false, path: undefined, moving: false, buildingId: undefined };
+  let sawEntering = false;
+  let steps = 0;
+  for (; steps < 3000 && walker.location !== 'INTERIOR'; steps++) {
+    walker = advanceTownsfolk([walker], anchors, clockAt(20, 0), navCtx, 0.5)[0];
+    if (walker.location === 'ENTERING') sawEntering = true;
+  }
+  assert(walker.location === 'INTERIOR', `merchant never got inside after ${steps} ticks (at ${walker.location})`);
+  assert(sawEntering, 'merchant should pass through ENTERING on the way in');
+  assert(walker.indoors && walker.buildingId?.startsWith('cottage-'), `merchant indoors/buildingId wrong: indoors=${walker.indoors} ${walker.buildingId}`);
+
+  // 5. Visible population drops in the evening: at 20:00 only 4 of 12 are out.
+  const visibleEvening = snapped.filter((n) => !n.indoors).length;
+  const visibleMidday = snapTownsfolk(folk, anchors, clockAt(10, 0), navCtx).filter((n) => !n.indoors).length;
+  assert(visibleEvening < visibleMidday, `evening should show fewer NPCs than midday (${visibleEvening} vs ${visibleMidday})`);
+  assert(visibleEvening <= 6, `too many NPCs visible at 20:00: ${visibleEvening}`);
+
+  // 6. Cottage <-> player interior area id mapping.
+  assert(interiorAreaIdForCottage('cottage-1', { x: 4, y: 7 }) === '4-7-building-4', 'cottage-1 mapping');
+  assert(interiorAreaIdForCottage('cottage-6', { x: 4, y: 7 }) === '4-7-building-9', 'cottage-6 mapping');
+  assert(interiorAreaIdForCottage('tavern', { x: 4, y: 7 }) === null, 'non-cottage id maps to null');
+  assert(interiorAreaIdForCottage('cottage-7', { x: 4, y: 7 }) === null, 'cottage-7 maps to null');
+
+  // 7. Rest spots and rects stay inside their cottage for every cottage.
+  for (let c = 1; c <= 6; c++) {
+    const rect = cottageRectFor('cottage-' + c)!;
+    assert(rect, `cottage-${c} rect`);
+    for (const npc of folk.slice(0, 4)) {
+      const door = cottageDoorways()[c - 1];
+      const rest = indoorRestSpot(npc, door);
+      assert(rest.x > rect.left && rest.x < rect.right && rest.y > rect.top && rest.y < rect.bottom,
+        `rest spot outside cottage-${c} rect for ${npc.id}: (${rest.x.toFixed(2)},${rest.y.toFixed(2)})`);
+    }
+  }
+  assert(cottageRectFor('chapel') === null, 'non-cottage rect is null');
+}
+
 
 // ---- BUILD 322: townsfolk save/load persistence ----
 {
@@ -1378,7 +1460,16 @@ for (const kind of EXPECTED_KINDS) {
   }
   assert(minSettled >= 0.9, `settled crowd piled up (min ${minSettled.toFixed(2)})`);
   for (const w of walkers) {
-    const raw = townsfolkTarget(w, anchors, lunch).target;
+    const want = townsfolkTarget(w, anchors, lunch);
+    if (want.indoors) {
+      // BUILD 329: 'At home' is truthful — the NPC is inside their cottage,
+      // not at the outdoor target point. Verify indoor state instead.
+      assert(w.indoors && (w.location === 'INTERIOR' || w.location === 'SLEEPING' || w.location === 'ENTERING'),
+        `${w.name} wants ${want.activity} indoors but is ${w.location} outdoors`);
+      assert(w.buildingId && w.buildingId.startsWith('cottage-'), `${w.name} indoors without a cottage buildingId`);
+      continue;
+    }
+    const raw = want.target;
     const valid = validateDestination(raw, navCtx.obstacles).point;
     const d = Math.hypot(w.position.x - valid.x, w.position.y - valid.y);
     assert(d < 5, `${w.name} stranded ${d.toFixed(1)} from validated target`);
