@@ -85,7 +85,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '343';
+const BUILD_NUMBER = '344';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -7263,6 +7263,10 @@ if (active) {
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>🗺️ Map Builder{mapBuilderMode ? ' (Exit)' : ''}</strong><small>{mapBuilderMode ? 'Return to normal play' : 'Paint terrain tiles like a tilemap editor'}</small></span>
                 </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); onOpenJournal(); }} data-testid="button-options-journal">
+                  <span className="options-action-icon"><BookOpen size={17} /></span>
+                  <span><strong>📖 Journal</strong><small>Quests, discoveries, and rumors</small></span>
+                </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMarkerMode(); }} data-testid="button-debug-markers">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: {markerMode ? 'Hide' : 'Show'} Markers</strong><small>{markerMode ? 'Hide dots' : 'Green=triggers, Red=remove'}</small></span>
@@ -7536,12 +7540,11 @@ if (active) {
             {Date.now() < beerBuffUntil && (
               <span className="hud-buff-chip" role="status" aria-label="Beer buff: +50% attack" title="Beer: +50% attack" data-testid="hud-beer-buff">🍺</span>
             )}
-            <button className="hud-quick-button" onClick={() => setWaitSheetOpen(true)} aria-label="Wait / pass time" title="Wait" data-testid="button-wait"><Hourglass size={15} /></button>
             <div className="hud-quick-actions">
               <button className="hud-quick-button" onClick={() => setHpBoxHidden(true)} aria-label="Hide HP box" title="Hide HP box" data-testid="button-hide-hp-box"><EyeOff size={15} /></button>
               <button className="hud-quick-button" onClick={onOpenMap} aria-label="Open world map" title="World map" data-testid="button-open-map"><MapIcon size={15} /></button>
               <button className="hud-quick-button" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={15} /></button>
-              <button className="hud-quick-button" onClick={onOpenJournal} aria-label="Open journal" title="Journal" data-testid="button-open-journal"><BookOpen size={15} /></button>
+              <button className="hud-quick-button" onClick={() => setWaitSheetOpen(true)} aria-label="Wait / pass time" title="Wait" data-testid="button-wait"><Hourglass size={15} /></button>
             </div>
             {selectedGoat && (
               <div className="hud-target" data-testid="hud-target">
