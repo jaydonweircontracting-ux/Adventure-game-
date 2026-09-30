@@ -4618,6 +4618,7 @@ body {
 /* BUILD 291 (civ phase 6): economy & resources — kingdom daily output/treasury and per-settlement production + live market prices in the NPC Inspector. */
 /* BUILD 292 (civ phase 7): trade routes — dashed amber route lines on the world map (far zoom), route list with goods + danger in the NPC Inspector; route names reconciled with authoritative settlements. */
 /* BUILD 293 (civ phase 8): merchant caravans — traveling caravans render as merchant NPCs on the player's chunk (analytic caravanPosition vs world clock, tap for a rumor), first 12 listed in the NPC Inspector with origin→destination, live status/progress and guards. */
+/* BUILD 294 (civ phase 9): military & guards — stationed guards render at their home settlement and patrols/messengers at analytic journey positions (militaryPosition vs world clock, tap for a status line), first 12 units listed in the NPC Inspector with composition, home and live activity. */
 .locked-chest {
   position: absolute;
   z-index: 5;

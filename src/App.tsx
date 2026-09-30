@@ -25,6 +25,8 @@ import {
   castleBySettlementId,
   civDayFloat,
   createCivilization,
+  militaryPosition,
+  militaryTarget,
   deserializeCivilization,
   kingdomLabelPoints,
   rulerById,
@@ -4574,6 +4576,28 @@ if (active) {
     }
     return out;
   }, [chunk.x, chunk.y, time]);
+  // Civ phase 9: military units on the player's chunk — stationed guards at
+  // their home settlement, patrols/messengers at analytic journey positions.
+  const visibleUnits = useMemo(() => {
+    const clock = brainRef.current?.worldCore.getClock();
+    if (!clock) return [];
+    const civ = ensureCiv();
+    const out: { id: string; name: string; kind: string; size: number; activity: string; position: Point }[] = [];
+    for (const unit of civ.units) {
+      const pos = militaryPosition(unit, clock, civ);
+      if (pos.chunk.x !== chunk.x || pos.chunk.y !== chunk.y) continue;
+      const target = militaryTarget(unit, clock, civ);
+      out.push({
+        id: unit.id,
+        name: unit.name,
+        kind: unit.kind,
+        size: unit.soldiers + unit.archers + unit.cavalry,
+        activity: target.activity,
+        position: { x: pos.position.x, y: pos.position.y },
+      });
+    }
+    return out;
+  }, [chunk.x, chunk.y, time]);
   const talkToCaravan = (c: { merchant: string; destination: string; goods: string[]; guards: number }) => {
     setNameplateNpc(c.merchant);
     if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
@@ -4582,6 +4606,15 @@ if (active) {
       nameplateTimerRef.current = null;
     }, 4000);
     setLogs((currentLogs) => [{ text: `${c.merchant}'s caravan is bound for ${c.destination} with ${c.goods.join(', ') || 'goods'} (${c.guards} guards).`, color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
+  const talkToUnit = (u: { name: string; kind: string; size: number; activity: string }) => {
+    setNameplateNpc(u.name);
+    if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
+    nameplateTimerRef.current = window.setTimeout(() => {
+      setNameplateNpc(null);
+      nameplateTimerRef.current = null;
+    }, 4000);
+    setLogs((currentLogs) => [{ text: `${u.name} — ${u.kind}, ${u.size} strong: ${u.activity}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
   };
   const talkToTraveler = (traveler: Traveler) => {
     setNameplateNpc(traveler.name);
@@ -5009,6 +5042,7 @@ if (active) {
                         );
                       });
                     })()}
+                    
                     <div className="inspector-heading">Economy &amp; resources</div>
                     {civ.kingdoms.map((k) => (
                       <div key={k.id} className="inspector-row">
@@ -5045,6 +5079,20 @@ if (active) {
                             {pos.status === 'traveling' && pos.chunk.x === chunk.x && pos.chunk.y === chunk.y && (
                               <span> · here</span>
                             )}
+                          </div>
+                        );
+                      });
+                    })()}
+                    <div className="inspector-heading">Military ({civ.units.length})</div>
+                    {(() => {
+                      const clock = brainRef.current?.worldCore.getClock();
+                      if (!clock) return null;
+                      return civ.units.slice(0, 12).map((u) => {
+                        const target = militaryTarget(u, clock, civ);
+                        const home = settlementById(civ, u.homeSettlementId);
+                        return (
+                          <div key={u.id} className="inspector-row">
+                            <span>🛡️ <strong>{u.name}</strong> · {u.kind} · {u.soldiers + u.archers + u.cavalry} strong · {home?.name ?? '—'} · {target.activity}</span>
                           </div>
                         );
                       });
@@ -5846,6 +5894,26 @@ if (active) {
                 <span className="npc-role-mark" aria-hidden="true" />
                 <strong>{c.merchant}</strong>
                 <small>🐪 → {c.destination}</small>
+              </span>
+              <span className="npc-sprite" aria-hidden="true" />
+            </button>
+          ))}
+          {visibleUnits.map((u) => (
+            <button
+              key={u.id}
+              className={'town-npc npc-guard' + (nameplateNpc === u.name ? ' show-nameplate' : '')}
+              onClick={(moverMode || markerMode) ? undefined : () => talkToUnit(u)}
+              style={{ left: fieldPct(u.position.x), top: fieldPct(u.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined }}
+              data-role="guard"
+              data-facing="down"
+              aria-label={u.name + ', ' + u.kind + ', ' + u.activity}
+              title={u.name + ' — ' + u.activity}
+              data-testid={u.id}
+            >
+              <span className="npc-nameplate">
+                <span className="npc-role-mark" aria-hidden="true" />
+                <strong>{u.name}</strong>
+                <small>🛡️ {u.activity}</small>
               </span>
               <span className="npc-sprite" aria-hidden="true" />
             </button>
