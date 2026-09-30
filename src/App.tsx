@@ -94,78 +94,38 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '370';
+// BUILD 375: single source of truth — the build marker injected into
+// index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
+const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { __AG_BUILD?: string }).__AG_BUILD) || '375';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
-// BUILD 343: increased from 140 to 280 for way larger chunks.
-export const FIELD_SIZE = 280;
-// BUILD 327: default gameplay zoom is 225%. When zoomed, the world layer is
-// scaled around the top-left corner and translated so the player's field
-// position lands at the viewport center:
-//   screen = zoom * layer + (0.5 - zoom * playerFrac) * size
-// The player sprite keeps its own scale(gameZoom) so it matches NPC size.
-const DEFAULT_GAME_ZOOM = 2.25;
-function zoomTranslatePct(playerFrac: number, zoom: number): number {
-  return (0.5 - zoom * playerFrac) * 100;
-}
-// BUILD 350: camera fraction clamped so the viewport never shows out-of-bounds
-// void past the chunk edge when zoomed in (>=100%). Below 100% the viewport is
-// wider than the chunk, so no clamp applies — neighbor chunks render there
-// instead (BUILD 346).
-function cameraFrac(playerFrac: number, zoom: number): number {
-  if (zoom < 1) return playerFrac;
-  const halfView = 0.5 / zoom;
-  return Math.min(Math.max(playerFrac, halfView), 1 - halfView);
-}
-// BUILD 350: on-screen position (%) of the player sprite when zoomed. The
-// sprite stays pinned at 50% while the camera centers the player; when the
-// camera clamps at a chunk edge, the sprite slides toward that edge instead,
-// so walking near the edge stays visible.
-function playerScreenPct(fieldFrac: number, zoom: number): number {
-  const cf = cameraFrac(fieldFrac, zoom);
-  return (0.5 + zoom * (fieldFrac - cf)) * 100;
-}
-function screenPxToFieldUnits(screenPx: number, sizePx: number, playerFrac: number, zoom: number): number {
-  const t = (zoomTranslatePct(cameraFrac(playerFrac, zoom), zoom) / 100) * sizePx;
-  return (((screenPx - t) / zoom) / sizePx) * FIELD_SIZE;
-}
+// BUILD 375: camera math extracted to src/game/fieldCamera.ts; re-exported
+// here so existing imports (App internals, iso views) keep working.
+// BUILD 375: camera math extracted to src/game/fieldCamera.ts; imported here
+// for App internals and re-exported so iso views keep working.
+import { FIELD_SIZE, DEFAULT_GAME_ZOOM, zoomTranslatePct, cameraFrac, playerScreenPct, screenPxToFieldUnits, fieldPct } from './game/fieldCamera';
+export { FIELD_SIZE, DEFAULT_GAME_ZOOM, zoomTranslatePct, cameraFrac, playerScreenPct, screenPxToFieldUnits, fieldPct };
 // Buildings render larger than their authored 0..100 specs.
 const BUILDING_SIZE_MULT = 1.0;
-// Convert field units (0..FIELD_SIZE) to CSS percentage for positioning.
-function fieldPct(v: number): string { return (v / FIELD_SIZE * 100) + '%'; }
 type Direction = 'up' | 'down' | 'left' | 'right';
 export type Point = { x: number; y: number };
-const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
-const GOAT_COLLISION_BOX = { halfWidth: 0.5, halfHeight: 0.6 };
-const COLLISION_GAP = 0.35;
+// BUILD 375: collision helpers extracted to src/game/fieldCollision.ts;
+// re-exported here so existing imports keep working.
+// BUILD 375: collision helpers extracted to src/game/fieldCollision.ts;
+// imported for App internals, re-exported so existing imports keep working.
+import {
+  PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP,
+  collisionBoxesOverlap, isPositionOccupiedByGoat, separateGoatFromPlayer,
+} from './game/fieldCollision';
+export {
+  PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP,
+  collisionBoxesOverlap, isPositionOccupiedByGoat, separateGoatFromPlayer,
+};
+export type { CollisionBox, Vec as CollisionVec } from './game/fieldCollision';
 const INTERIOR_DOORWAY_WIDTH_PX = 58;
 const INTERIOR_PLAYER_WIDTH_PX = 46;
 const INTERIOR_DOORWAY_PADDING_PX = 4;
 
-type CollisionBox = { halfWidth: number; halfHeight: number };
-
-function collisionBoxesOverlap(a: Point, aBox: CollisionBox, b: Point, bBox: CollisionBox) {
-  return Math.abs(a.x - b.x) < aBox.halfWidth + bBox.halfWidth + COLLISION_GAP
-    && Math.abs(a.y - b.y) < aBox.halfHeight + bBox.halfHeight + COLLISION_GAP;
-}
-
-function isPositionOccupiedByGoat(position: Point, goats: GoatState[]) {
-  return goats.some((goat) => goat.disposition !== 'defeated' && collisionBoxesOverlap(position, PLAYER_COLLISION_BOX, goat.position, GOAT_COLLISION_BOX));
-}
-
-function separateGoatFromPlayer(goatPosition: Point, playerPosition: Point) {
-  const minimumX = PLAYER_COLLISION_BOX.halfWidth + GOAT_COLLISION_BOX.halfWidth + COLLISION_GAP;
-  const minimumY = PLAYER_COLLISION_BOX.halfHeight + GOAT_COLLISION_BOX.halfHeight + COLLISION_GAP;
-  const dx = goatPosition.x - playerPosition.x;
-  const dy = goatPosition.y - playerPosition.y;
-  const overlapX = minimumX - Math.abs(dx);
-  const overlapY = minimumY - Math.abs(dy);
-  if (overlapX <= 0 || overlapY <= 0) return null;
-  if (overlapX <= overlapY) {
-    return { x: playerPosition.x + (dx >= 0 ? minimumX : -minimumX), y: goatPosition.y };
-  }
-  return { x: goatPosition.x, y: playerPosition.y + (dy >= 0 ? minimumY : -minimumY) };
-}
 type HorseState = { chunk: Point; position: Point };
 
 function formatWorldClock(clock: WorldClockState) {
@@ -229,19 +189,9 @@ const regionPalettes: Record<Exclude<RegionStyle, 'ocean'>, { field: string; pat
   sunwash: { field: '#9a7658', path: '#d7ac6b', glow: 'rgba(255, 198, 123, .2)' },
 };
 
-function isContinentChunk(point: Point) {
-  const tile = generatedWorldTileFor(point);
-  return Boolean(tile && tile.biome !== 'ocean');
-}
-
 function regionStyleFor(point: Point): RegionStyle {
   const tile = generatedWorldTileFor(point);
   return tile ? regionStyleForWorldBiome(tile.biome) : 'ocean';
-}
-
-function chunkTerrain(chunk: Point): Terrain {
-  const tile = generatedWorldTileFor(chunk);
-  return tile ? terrainForWorldBiome(tile.biome) : 'ocean';
 }
 
 type SettlementKind = 'village' | 'town' | 'dungeon' | 'ruin';
@@ -2121,9 +2071,7 @@ function goatWanderDelay(wanderSeed: number) {
   const range = GOAT_WANDER_MAX_TICKS - GOAT_WANDER_MIN_TICKS + 1;
   return GOAT_WANDER_MIN_TICKS + Math.abs(wanderSeed % range);
 }
-function nextGoatWanderSeed(goat: GoatState, worldStep: number) {
-  return Math.abs((goat.wanderSeed * 1664525 + worldStep * 101 + goat.id * 17) % 2147483647);
-}
+// BUILD 375: removed dead nextGoatWanderSeed (only used by removed moveGoatIndependently).
 function resetGoatAfterRespawn(goat: GoatState): GoatState {
   return {
     ...goat,
@@ -2142,60 +2090,8 @@ function resetGoatAfterRespawn(goat: GoatState): GoatState {
     nextWanderTick: goatWanderDelay(goat.wanderSeed),
   };
 }
-function moveGoatIndependently(goat: GoatState, worldStep: number, playerPosition: Point, chunk: Point, goats: GoatState[]) {
-  if (goat.disposition === 'defeated') return { ...goat, moving: false, attacking: false };
-  const isWandering = goat.disposition === 'calm';
-  const scheduledTick = goat.nextWanderTick ?? goatWanderDelay(goat.wanderSeed);
-  if (isWandering && worldStep < scheduledTick) return { ...goat, moving: false, attacking: false, nextWanderTick: scheduledTick };
-  const wanderSeed = nextGoatWanderSeed(goat, worldStep);
-  const distance = goatDistance(goat, playerPosition);
-  // Home/range: goats wander freely near home, drift back when far.
-  const roamRadius = goat.roamRadius ?? 18;
-  const distFromHome = Math.hypot(goat.position.x - goat.spawnPosition.x, goat.position.y - goat.spawnPosition.y);
-  const homeBias = distFromHome > roamRadius ? 1 : distFromHome > roamRadius * 0.8 ? 0.65 : 0;
-  let direction: Direction;
-  if (goat.disposition === 'aggressive' && distance > GOAT_ATTACK_RANGE) {
-    const horizontal = playerPosition.x - goat.position.x;
-    const vertical = playerPosition.y - goat.position.y;
-    direction = Math.abs(horizontal) >= Math.abs(vertical) ? (horizontal >= 0 ? 'right' : 'left') : (vertical >= 0 ? 'down' : 'up');
-  } else if (homeBias > 0 && wanderSeed % 100 < homeBias * 100) {
-    // Head home: pick the axis with the larger offset.
-    const hx = goat.spawnPosition.x - goat.position.x;
-    const hy = goat.spawnPosition.y - goat.position.y;
-    direction = Math.abs(hx) >= Math.abs(hy) ? (hx >= 0 ? 'right' : 'left') : (hy >= 0 ? 'down' : 'up');
-  } else {
-    const wanderDirections: Direction[] = ['up', 'right', 'down', 'left'];
-    direction = wanderDirections[wanderSeed % wanderDirections.length];
-  }
-  const directions: Direction[] = ([direction, 'up', 'right', 'down', 'left'] as Direction[]).filter((candidate, index, all) => all.indexOf(candidate) === index);
-  for (const candidateDirection of directions) {
-    const nextPosition = {
-      x: Math.min(90, Math.max(10, goat.position.x + (candidateDirection === 'right' ? GOAT_STEP : candidateDirection === 'left' ? -GOAT_STEP : 0))),
-      y: Math.min(90, Math.max(10, goat.position.y + (candidateDirection === 'down' ? GOAT_STEP : candidateDirection === 'up' ? -GOAT_STEP : 0))),
-    };
-    const occupied = goats.some((other) => other.id !== goat.id && other.disposition !== 'defeated' && Math.hypot(other.position.x - nextPosition.x, other.position.y - nextPosition.y) < 4.2);
-    if (!occupied && !collisionBoxesOverlap(nextPosition, GOAT_COLLISION_BOX, playerPosition, PLAYER_COLLISION_BOX) && !isFieldPositionBlocked(nextPosition, chunk)) {
-      return { ...goat, position: nextPosition, facing: candidateDirection, moving: true, attacking: false, wanderSeed, nextWanderTick: isWandering ? worldStep + goatWanderDelay(wanderSeed) : goat.nextWanderTick };
-    }
-  }
-  return { ...goat, facing: direction, moving: false, attacking: false, wanderSeed, nextWanderTick: isWandering ? worldStep + goatWanderDelay(wanderSeed) : goat.nextWanderTick };
-}
-
-
-function mapTileClass(tile: MapTile & { current: boolean }) {
-  return [
-    'map-tile',
-    'map-terrain-' + tile.terrain,
-    'map-region-' + tile.regionStyle,
-    tile.waterFeature ? 'is-' + tile.waterFeature : '',
-    tile.waterEdge ? 'water-edge-' + tile.waterEdge : '',
-    tile.road !== 'none' ? 'has-road road-' + tile.road : '',
-    tile.bridge ? 'has-bridge' : '',
-    tile.current ? 'is-current' : '',
-  ].filter(Boolean).join(' ');
-}
-
 function chunkRegion(chunk: Point) {
+// BUILD 375: removed dead mapTileClass (never called).
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   if (landmark) return landmark.name;
   const tile = generatedWorldTileFor(chunk);
@@ -3677,25 +3573,10 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     try { localStorage.setItem('mapBuilderPaints', JSON.stringify(mapPaints)); } catch { /* ignore */ }
   }, [mapPaints]);
   const toggleMapBuilder = () => { setMapBuilderMin(false); setMapBuilderMode((m) => !m); };
-  // Convert a pointer event on the field into true field-unit coordinates,
-  // inverting the game-zoom transform (same math as the mover/marker tools).
-  const tapToField = (e: React.PointerEvent<HTMLElement>): Point => {
-    const field = (e.currentTarget as HTMLElement).closest('.pixel-field') as HTMLElement | null;
-    const rect = (field || e.currentTarget as HTMLElement).getBoundingClientRect();
-    const px = e.clientX - rect.left;
-    const py = e.clientY - rect.top;
-    if (gameZoom !== 1) {
-      // BUILD 327: invert the centered-zoom transform (translate then scale,
-      // origin 0 0) to recover true field-unit coordinates.
-      return {
-        x: screenPxToFieldUnits(px, rect.width, position.x / FIELD_SIZE, gameZoom),
-        y: screenPxToFieldUnits(py, rect.height, position.y / FIELD_SIZE, gameZoom),
-      };
-    }
-    return { x: (px / rect.width) * FIELD_SIZE, y: (py / rect.height) * FIELD_SIZE };
-  };
   // BUILD 374: examine system. Convert any mouse/pointer event on the field
   // into field units (shared by right-click and touch long-press).
+  // BUILD 327: inverts the centered-zoom transform (translate then scale,
+  // origin 0 0) to recover true field-unit coordinates.
   const clientToField = (clientX: number, clientY: number, el: HTMLElement): Point => {
     const field = el.closest('.pixel-field') as HTMLElement | null;
     const rect = (field || el).getBoundingClientRect();
@@ -3709,6 +3590,11 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     }
     return { x: (px / rect.width) * FIELD_SIZE, y: (py / rect.height) * FIELD_SIZE };
   };
+  // Convert a pointer event on the field into true field-unit coordinates,
+  // inverting the game-zoom transform (same math as the mover/marker tools).
+  // BUILD 375: delegates to clientToField (single implementation).
+  const tapToField = (e: React.PointerEvent<HTMLElement>): Point =>
+    clientToField(e.clientX, e.clientY, e.currentTarget as HTMLElement);
   const DROP_EXAMINE_NAMES: Record<string, string> = {
     coins: 'Gold Coins', goatHorns: 'Goat Horns', fabric: 'Fabric', daggers: 'Daggers',
     cloths: 'Cloths', bone: 'Bones', pelt: 'Wolf Pelt', fang: 'Fangs', corn: 'Corn',

@@ -75,7 +75,7 @@ export const EXODUS_DEADLINE_TICKS = 200;
  * the hour — no teleporting, whatever the route length.
  */
 export const EXODUS_DEADLINE_MINUTES = 60;
-export const EXODUS_LIVING_TICKS_PER_HOUR = 9.5;
+// BUILD 375: removed dead EXODUS_LIVING_TICKS_PER_HOUR (never referenced).
 /**
  * Target living-sim ticks for the exodus march — comfortably inside 1
  * game-hour (~9.5 ticks), so physical arrival always beats the deadline

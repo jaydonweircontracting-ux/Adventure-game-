@@ -4,3 +4,6 @@ world_state.json
 .env
 .env.*
 !.env.example
+
+# BUILD 375: incremental tsc cache
+*.tsbuildinfo

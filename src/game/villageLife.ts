@@ -253,16 +253,7 @@ export function npcRelationships(npc: Townsperson, folk: Townsperson[], clock: W
 // Memories (the one piece of genuine mutable state — event-driven, bounded)
 // ---------------------------------------------------------------------------
 
-/** Seed a new NPC's memory with a couple of founding recollections. */
-export function seedMemories(npc: Townsperson): NPCMemory[] {
-  const r1 = townsfolkHash(npc.seed, 9301);
-  const first: NPCMemory = {
-    event: r1 < 0.5 ? 'Settled in Mosslight years ago.' : 'Grew up in Mosslight.',
-    day: 0,
-    importance: 2,
-  };
-  return [first];
-}
+// BUILD 375: removed dead seedMemories (never called).
 
 /**
  * Record a memory. Bounded at 12 entries; when full, the oldest

@@ -631,23 +631,4 @@ export function tryOpenVault(state: GameState) {
 export function getItemAtPlayer(state: GameState) {
   return state.groundItems.find((entry) => entry.x === state.player.x && entry.y === state.player.y);
 }
-
-export function getSpeciesOptions() {
-  return species.map(({ name, hp, mp, strength, intellect, agility }) => ({
-    name,
-    hp,
-    mp,
-    strength,
-    intellect,
-    agility,
-  }));
-}
-
-export function getBackgroundOptions() {
-  return backgrounds.map(({ name, armor, gold, spells: backgroundSpells }) => ({
-    name,
-    armor,
-    gold,
-    spells: backgroundSpells,
-  }));
-}
+// BUILD 375: removed dead getSpeciesOptions/getBackgroundOptions (never called).

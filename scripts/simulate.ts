@@ -31,6 +31,8 @@ import {
 } from '../src/game/monsterSprites/index';
 import { isMonsterSheetFailed, clearSheetProbeState } from '../src/game/monsterSprites/sheetProbe';
 import { mulberry32, shadeColor, mixColor, hexToRgb, GROUND_PX_PER_UNIT } from '../src/game/groundDetail';
+import { FIELD_SIZE, DEFAULT_GAME_ZOOM, zoomTranslatePct, cameraFrac, playerScreenPct, screenPxToFieldUnits, fieldPct } from '../src/game/fieldCamera';
+import { PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP, collisionBoxesOverlap, isPositionOccupiedByGoat, separateGoatFromPlayer } from '../src/game/fieldCollision';
 
 let passed = 0;
 let failed = 0;
@@ -2511,6 +2513,40 @@ console.log('Testing examine system...');
   // 10. Hash stability.
   assert(hashExamineId('abc') === hashExamineId('abc'), 'hash should be stable');
   assert(hashExamineId('abc') !== hashExamineId('abd'), 'hash should differ for different ids');
+}
+
+// ---- 26. Extracted field modules (BUILD 375: fieldCamera + fieldCollision) ----
+// Proves the App.tsx extraction is behavior-identical to the originals.
+{
+  // Camera math.
+  assert(FIELD_SIZE === 280, 'FIELD_SIZE should be 280');
+  assert(DEFAULT_GAME_ZOOM === 2.25, 'DEFAULT_GAME_ZOOM should be 2.25');
+  assert(zoomTranslatePct(0.5, 1) === 0, 'zoomTranslatePct centered at zoom 1');
+  assert(zoomTranslatePct(0.5, 2.25) === (0.5 - 2.25 * 0.5) * 100, 'zoomTranslatePct formula');
+  assert(cameraFrac(0.5, 1) === 0.5, 'cameraFrac no clamp below zoom 1');
+  assert(cameraFrac(0.5, 2.25) === 0.5, 'cameraFrac centered');
+  assert(Math.abs(cameraFrac(0.01, 2.25) - 0.5 / 2.25) < 1e-9, 'cameraFrac clamps at left edge');
+  assert(Math.abs(cameraFrac(0.99, 2.25) - (1 - 0.5 / 2.25)) < 1e-9, 'cameraFrac clamps at right edge');
+  assert(playerScreenPct(0.5, 2.25) === 50, 'playerScreenPct centered = 50%');
+  assert(fieldPct(140) === '50%', 'fieldPct(140) = 50%');
+  assert(fieldPct(0) === '0%', 'fieldPct(0) = 0%');
+  // screenPxToFieldUnits inverts the camera transform: center of a 1000px
+  // viewport at zoom 2.25 with player at field-center maps back to 140.
+  const back = screenPxToFieldUnits(500, 1000, 0.5, 2.25);
+  assert(Math.abs(back - 140) < 1e-6, `screenPxToFieldUnits round-trip, got ${back}`);
+  // Collision helpers.
+  assert(COLLISION_GAP === 0.35, 'COLLISION_GAP should be 0.35');
+  assert(PLAYER_COLLISION_BOX.halfWidth === 3.6 && PLAYER_COLLISION_BOX.halfHeight === 2.7, 'player box dims');
+  assert(GOAT_COLLISION_BOX.halfWidth === 0.5 && GOAT_COLLISION_BOX.halfHeight === 0.6, 'goat box dims');
+  assert(collisionBoxesOverlap({ x: 0, y: 0 }, PLAYER_COLLISION_BOX, { x: 1, y: 1 }, GOAT_COLLISION_BOX), 'overlapping boxes');
+  assert(!collisionBoxesOverlap({ x: 0, y: 0 }, PLAYER_COLLISION_BOX, { x: 50, y: 50 }, GOAT_COLLISION_BOX), 'distant boxes');
+  const goats = [{ position: { x: 0.5, y: 0.5 }, disposition: 'wander' }];
+  assert(isPositionOccupiedByGoat({ x: 0, y: 0 }, goats), 'goat occupies origin');
+  assert(isPositionOccupiedByGoat({ x: 0, y: 0 }, [{ position: { x: 0.5, y: 0.5 }, disposition: 'defeated' }]) === false, 'defeated goat does not block');
+  assert(isPositionOccupiedByGoat({ x: 200, y: 200 }, goats) === false, 'far position not occupied');
+  const sep = separateGoatFromPlayer({ x: 1, y: 1 }, { x: 0, y: 0 });
+  assert(sep !== null && Math.abs(sep.x) + Math.abs(sep.y) > 0, 'separation returns push-apart point');
+  assert(separateGoatFromPlayer({ x: 100, y: 100 }, { x: 0, y: 0 }) === null, 'no separation when clear');
 }
 
 // ---- Results ----

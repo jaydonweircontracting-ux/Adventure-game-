@@ -14,6 +14,9 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
+    // BUILD 375: incremental typechecks — repeat runs only recheck what
+    // changed (17s -> ~4s), speeding up every future update's verify loop.
+    "incremental": true,
     "types": ["node", "vite/client"],
     "paths": {
       "@/*": ["./src/*"]

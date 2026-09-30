@@ -196,8 +196,4 @@ export function travelersForChunk(
   }
   return travelers;
 }
-
-/** Links whose path passes through the given chunk. */
-export function linksForChunk(chunk: { x: number; y: number }, links: RoadLink[]): RoadLink[] {
-  return links.filter((link) => link.path.some((c) => c.x === chunk.x && c.y === chunk.y));
-}
+// BUILD 375: removed dead linksForChunk (never called).
