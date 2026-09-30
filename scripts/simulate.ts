@@ -9,6 +9,7 @@ import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/g
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
+import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE } from '../src/game/mapBuilder';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds } from '../src/game/touchInput';
@@ -379,6 +380,45 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
   const split = editorFlaggedDeletions(flags2, '4,7');
   assert(split.placedIds.length === 1 && split.placedIds[0] === 'placed-a', 'editorFlaggedDeletions placed wrong');
   assert(split.treeIds.length === 1 && split.treeIds[0] === 7, 'editorFlaggedDeletions tree wrong');
+}
+
+// ---- BUILD 341: map-builder tile painting ----
+{
+  assert(MAP_TILE_UNITS === 10 && MAP_TILES_PER_SIDE === 14, 'map builder grid constants wrong');
+  let paints = paintTile({}, '4,7', 3, 5, 'dirt');
+  assert(paints['4,7'].length === 1 && paints['4,7'][0].tile === 'dirt', 'paintTile did not add');
+  // Repaint same tile with same brush is a no-op (same reference).
+  const same = paintTile(paints, '4,7', 3, 5, 'dirt');
+  assert(same === paints, 'paintTile same-tile repaint should be a no-op');
+  // Overwrite with a different tile.
+  paints = paintTile(paints, '4,7', 3, 5, 'water');
+  assert(paints['4,7'].length === 1 && paints['4,7'][0].tile === 'water', 'paintTile did not overwrite');
+  // Out-of-grid paints are ignored.
+  assert(paintTile(paints, '4,7', 14, 0, 'sand') === paints, 'paintTile accepted tx=14');
+  assert(paintTile(paints, '4,7', -1, 0, 'sand') === paints, 'paintTile accepted tx=-1');
+  // Erase removes the tile; erasing an empty tile is a no-op.
+  paints = paintTile(paints, '4,7', 3, 5, null);
+  assert(!('4,7' in paints), 'paintTile erase did not drop empty chunk');
+  assert(paintTile(paints, '4,7', 3, 5, null) === paints, 'paintTile erase of empty tile should be a no-op');
+  // Clear chunk.
+  paints = paintTile(paintTile({}, '4,7', 0, 0, 'grass'), '5,7', 1, 1, 'sand');
+  paints = clearChunkPaints(paints, '4,7');
+  assert(!('4,7' in paints) && '5,7' in paints, 'clearChunkPaints wrong');
+  assert(clearChunkPaints(paints, '9,9') === paints, 'clearChunkPaints changed missing chunk');
+  // Solids: water and forest block, grass/dirt/sand do not.
+  paints = {
+    '4,7': [
+      { tx: 0, ty: 0, tile: 'water' },
+      { tx: 1, ty: 1, tile: 'forest' },
+      { tx: 2, ty: 2, tile: 'dirt' },
+      { tx: 3, ty: 3, tile: 'grass' },
+      { tx: 4, ty: 4, tile: 'sand' },
+    ],
+  };
+  const solids = mapBuilderSolidsFor(paints, '4,7');
+  assert(solids.length === 2, 'mapBuilderSolidsFor should return 2 solids, got ' + solids.length);
+  assert(solids[0].chunk === '4,7' && solids[0].x === 5 && solids[0].y === 5 && solids[0].w === 10, 'mapBuilderSolidsFor water solid wrong: ' + JSON.stringify(solids[0]));
+  assert(mapBuilderSolidsFor(paints, '9,9').length === 0, 'mapBuilderSolidsFor leaked across chunks');
 }
 
 // ---- BUILD 306: NPC entrance helpers ----

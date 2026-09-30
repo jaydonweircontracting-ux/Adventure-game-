@@ -12,6 +12,10 @@ export type GroundTerrain = 'meadow' | 'forest' | 'rock' | 'shore' | 'desert' | 
 
 export interface GroundRoadRect { x: number; y: number; w: number; h: number }
 
+// BUILD 341: map-builder painted tiles (tilemap-style overrides).
+import type { PaintedTile } from './mapBuilder';
+export const MAP_TILE_PX = 80; // 10 field units * 8 px/unit
+
 export interface GroundDetailSpec {
   terrain: GroundTerrain;
   /** Base ground hex (from the chunk's field palette). */
@@ -26,6 +30,8 @@ export interface GroundDetailSpec {
   sea: boolean;
   /** Chunk-derived seed. */
   seed: number;
+  /** BUILD 341: map-builder painted tiles (override base + roads). */
+  paints?: PaintedTile[];
 }
 
 export const GROUND_PX_PER_UNIT = 8;
@@ -323,6 +329,67 @@ export function renderGroundDetail(spec: GroundDetailSpec): HTMLCanvasElement {
       // Pebbles on the road.
       for (let i = 0; i < 14; i++) {
         rect(ax + ri(Math.max(1, aw - 2)), ay + ri(Math.max(1, ah - 2)), 2, 1, pick([dirtDark, dirtLight, edgeDark]));
+      }
+    }
+  }
+
+  // --- BUILD 341: map-builder painted tiles. Painted tiles override the
+  // procedural base AND the roads, so the user's tilemap design wins. ---
+  const paints = spec.paints ?? [];
+  if (paints.length > 0) {
+    const ditherRegion = (x: number, y: number, w: number, h: number, dark: string, light: string) => {
+      const p = dither(dark, light, 2, 0.12);
+      if (p) {
+        ctx.fillStyle = p;
+        ctx.fillRect(x, y, w, h);
+      }
+    };
+    for (const pt of paints) {
+      const x0 = pt.tx * MAP_TILE_PX;
+      const y0 = pt.ty * MAP_TILE_PX;
+      if (pt.tile === 'grass') {
+        rect(x0, y0, MAP_TILE_PX, MAP_TILE_PX, field);
+        ditherRegion(x0, y0, MAP_TILE_PX, MAP_TILE_PX, fieldDark, fieldLight);
+        for (let i = 0; i < 4; i++) {
+          const gx = x0 + ri(MAP_TILE_PX - 2);
+          const gy = y0 + ri(MAP_TILE_PX - 2);
+          rect(gx, gy, 1, 3, fieldDeep);
+          rect(gx + 2, gy + 1, 1, 2, fieldDeep);
+        }
+      } else if (pt.tile === 'dirt') {
+        const dirt = spec.path;
+        rect(x0, y0, MAP_TILE_PX, MAP_TILE_PX, dirt);
+        ditherRegion(x0, y0, MAP_TILE_PX, MAP_TILE_PX, shadeColor(dirt, 0.88), shadeColor(dirt, 1.08));
+        for (let i = 0; i < 8; i++) {
+          rect(x0 + ri(MAP_TILE_PX - 2), y0 + ri(MAP_TILE_PX - 2), 2, 1, pick([shadeColor(dirt, 0.8), shadeColor(dirt, 1.15)]));
+        }
+      } else if (pt.tile === 'sand') {
+        const sand = '#d9c07a';
+        rect(x0, y0, MAP_TILE_PX, MAP_TILE_PX, sand);
+        ditherRegion(x0, y0, MAP_TILE_PX, MAP_TILE_PX, shadeColor(sand, 0.9), shadeColor(sand, 1.07));
+        for (let i = 0; i < 5; i++) rect(x0 + ri(MAP_TILE_PX - 3), y0 + ri(MAP_TILE_PX - 3), 3, 2, shadeColor(sand, 1.15));
+      } else if (pt.tile === 'water') {
+        const water = '#3f7fd1';
+        rect(x0, y0, MAP_TILE_PX, MAP_TILE_PX, water);
+        ditherRegion(x0, y0, MAP_TILE_PX, MAP_TILE_PX, shadeColor(water, 0.85), shadeColor(water, 1.12));
+        for (let i = 0; i < 3; i++) {
+          rect(x0 + 8 + ri(MAP_TILE_PX - 24), y0 + 10 + ri(MAP_TILE_PX - 24), 6 + ri(8), 2, 'rgba(220,240,250,0.85)');
+        }
+      } else if (pt.tile === 'forest') {
+        rect(x0, y0, MAP_TILE_PX, MAP_TILE_PX, field);
+        ditherRegion(x0, y0, MAP_TILE_PX, MAP_TILE_PX, fieldDark, fieldLight);
+        for (let i = 0; i < 7; i++) {
+          const cx = x0 + 12 + ri(MAP_TILE_PX - 24);
+          const cy = y0 + 12 + ri(MAP_TILE_PX - 24);
+          const r = 8 + ri(7);
+          const leaf = pick(['#2f6b2f', '#3a7d3a', '#2a5f2a']);
+          for (let yy = -r; yy <= r; yy += 2) {
+            const hw = Math.floor(Math.sqrt(Math.max(0, r * r - yy * yy)));
+            rect(cx - hw, cy + yy, hw * 2, 2, shadeColor(leaf, 0.95));
+          }
+          rect(cx - 3, cy - r, 6, 3, shadeColor(leaf, 1.25));
+          rect(cx - 1, cy + r - 2, 3, 6, '#5a4028');
+        }
       }
     }
   }

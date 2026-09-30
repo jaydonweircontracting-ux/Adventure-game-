@@ -4304,6 +4304,91 @@ body {
   overflow-y: auto;
   border: 1px solid rgba(255, 255, 255, 0.25);
 }
+/* BUILD 341: map-builder tilemap painter. The overlay sits below the HUD
+   (z-index 7 < 8) so D-pad/zoom stay usable while painting. */
+.map-builder-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  touch-action: none;
+  cursor: crosshair;
+  background: transparent;
+}
+.map-builder-bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 61;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-size: 13px;
+}
+.map-builder-title {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.map-builder-chunk {
+  font-weight: 400;
+  opacity: 0.7;
+  font-size: 12px;
+}
+.map-builder-exit {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.map-builder-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.map-brush {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.map-brush.is-active {
+  background: #2f6b2f;
+  border-color: #7fd17f;
+  font-weight: 700;
+}
+.map-builder-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.map-builder-btn {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.map-builder-hint {
+  font-size: 12px;
+  opacity: 0.75;
+}
 .editor-panel-title {
   font-weight: 700;
   margin-bottom: 8px;

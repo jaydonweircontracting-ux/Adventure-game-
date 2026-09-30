@@ -13,6 +13,7 @@ import { DEFAULT_WORLD_SEED, formatClockDisplay, ticksUntilHour, type WorldClock
 import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from './game/worldEditor';
+import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, type MapPaints, type MapPaintTile } from './game/mapBuilder';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 import { findTalkTarget } from './game/talkTarget';
 import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cellarRats';
@@ -83,7 +84,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '340';
+const BUILD_NUMBER = '341';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3307,6 +3308,25 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   useEffect(() => {
     editorSolids = editorSolidsFor(placedObjects);
   }, [placedObjects]);
+  // BUILD 341: debug map builder (tilemap-style terrain painter).
+  type MapBrush = MapPaintTile | 'house' | 'erase';
+  const [mapBuilderMode, setMapBuilderMode] = useState(false);
+  const [mapBrush, setMapBrush] = useState<MapBrush>('dirt');
+  const loadMapPaints = (): MapPaints => {
+    try {
+      const raw = localStorage.getItem('mapBuilderPaints');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed as MapPaints;
+      }
+    } catch { /* ignore */ }
+    return {};
+  };
+  const [mapPaints, setMapPaints] = useState<MapPaints>(loadMapPaints);
+  useEffect(() => {
+    try { localStorage.setItem('mapBuilderPaints', JSON.stringify(mapPaints)); } catch { /* ignore */ }
+  }, [mapPaints]);
+  const toggleMapBuilder = () => setMapBuilderMode((m) => !m);
   // Convert a pointer event on the field into true field-unit coordinates,
   // inverting the game-zoom transform (same math as the mover/marker tools).
   const tapToField = (e: React.PointerEvent<HTMLElement>): Point => {
@@ -3324,6 +3344,42 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     }
     return { x: (px / rect.width) * FIELD_SIZE, y: (py / rect.height) * FIELD_SIZE };
   };
+  // BUILD 341: map-builder painting — convert a pointer event to a tile and
+  // paint it (or stamp a house). Drag paints a stroke; house stamps once per tap.
+  const paintAtEvent = (e: React.PointerEvent<HTMLElement>, isTap: boolean) => {
+    const field = (e.currentTarget as HTMLElement).closest('.pixel-field') as HTMLElement | null;
+    const rect = (field || (e.currentTarget as HTMLElement)).getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    let fx: number;
+    let fy: number;
+    if (gameZoom !== 1) {
+      fx = screenPxToFieldUnits(px, rect.width, position.x / FIELD_SIZE, gameZoom);
+      fy = screenPxToFieldUnits(py, rect.height, position.y / FIELD_SIZE, gameZoom);
+    } else {
+      fx = (px / rect.width) * FIELD_SIZE;
+      fy = (py / rect.height) * FIELD_SIZE;
+    }
+    if (mapBrush === 'house') {
+      if (!isTap) return;
+      const hx = Math.round(fx * 10) / 10;
+      const hy = Math.round(fy * 10) / 10;
+      setPlacedObjects((obs) => editorPlaceObject(obs, 'house', hx, hy, chunkKey));
+      return;
+    }
+    const tx = Math.floor(fx / MAP_TILE_UNITS);
+    const ty = Math.floor(fy / MAP_TILE_UNITS);
+    setMapPaints((prev) => paintTile(prev, chunkKey, tx, ty, mapBrush === 'erase' ? null : mapBrush));
+  };
+  const mapBrushes: { id: MapBrush; label: string }[] = [
+    { id: 'grass', label: '🌱 Grass' },
+    { id: 'dirt', label: '🟫 Dirt' },
+    { id: 'water', label: '🌊 Water' },
+    { id: 'sand', label: '🏖️ Sand' },
+    { id: 'forest', label: '🌲 Forest' },
+    { id: 'house', label: '🏠 House' },
+    { id: 'erase', label: '🧹 Erase' },
+  ];
   // Debug markers (green dots): toggleable from options menu. Syncs with module-level debugDoors.
   const [markerMode, setMarkerMode] = useState(debugDoors);
   const toggleMarkerMode = () => {
@@ -3339,6 +3395,11 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   // Debug world editor: objects/flags for the current chunk.
   const chunkKey = chunk.x + ',' + chunk.y;
+  // BUILD 341: merge map-builder painted solids (water/forest tiles) into the
+  // module-level collision solids alongside world-editor placed objects.
+  useEffect(() => {
+    editorSolids = [...editorSolidsFor(placedObjects), ...mapBuilderSolidsFor(mapPaints, chunkKey)];
+  }, [placedObjects, mapPaints, chunkKey]);
   // BUILD 306: NPC entrance — track which NPCs have been seen on the current
   // chunk so first sightings slide in from the edge they came from instead of
   // popping into view.
@@ -5140,6 +5201,8 @@ if (active) {
     roadRect: startingCenter ? { x: 0.45, y: 0.45, w: 0.11, h: 0.11 } : { x: 0.47, y: 0.47, w: 0.09, h: 0.09 },
     sea: currentWorldTile.waterFeature === 'sea',
     seed: ((chunk.x * 73856093) ^ (chunk.y * 19349663)) >>> 0,
+    // BUILD 341: map-builder painted tiles for this chunk.
+    paints: mapPaints[chunkKey] ?? [],
   };
   const talkToNpc = (npc: TownNpc) => {
     setNpcDialogue(npc);
@@ -5763,6 +5826,55 @@ if (active) {
                 <button type="button" className="editor-btn" onClick={() => setGameZoom(1)}>
                   Reset zoom
                 </button>
+              </div>
+            </div>
+          )}
+          {/* BUILD 341: map-builder overlay + tile palette. The overlay sits
+              below the HUD (z-index) so movement/zoom controls stay usable
+              while painting. */}
+          {mapBuilderMode && (
+            <div
+              className="map-builder-overlay"
+              onPointerDown={(e) => {
+                try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+                paintAtEvent(e, true);
+              }}
+              onPointerMove={(e) => { if (e.buttons > 0) paintAtEvent(e, false); }}
+              onContextMenu={(e) => e.preventDefault()}
+            />
+          )}
+          {mapBuilderMode && (
+            <div className="map-builder-bar">
+              <div className="map-builder-title">🗺️ Map Builder <span className="map-builder-chunk">chunk {chunkKey}</span>
+                <button type="button" className="map-builder-exit" onClick={toggleMapBuilder} aria-label="Exit map builder">✕</button>
+              </div>
+              <div className="map-builder-palette">
+                {mapBrushes.map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    className={'map-brush' + (mapBrush === b.id ? ' is-active' : '')}
+                    onClick={() => setMapBrush(b.id)}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+              <div className="map-builder-actions">
+                <button
+                  type="button"
+                  className="map-builder-btn"
+                  onClick={() => setMapPaints((p) => clearChunkPaints(p, chunkKey))}
+                >
+                  🧹 Clear painted tiles (chunk)
+                </button>
+              </div>
+              <div className="map-builder-hint">
+                {mapBrush === 'house'
+                  ? '🏠 Tap the field to stamp a house.'
+                  : mapBrush === 'erase'
+                    ? '🧹 Tap or drag to erase painted tiles.'
+                    : 'Tap or drag on the field to paint. Water and forest tiles block movement.'}
               </div>
             </div>
           )}
@@ -7144,6 +7256,10 @@ if (active) {
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: World Editor{moverMode ? ' (Exit)' : ''}</strong><small>{moverMode ? 'Return to normal play' : 'Place houses, trees, rocks, roads · flag removals'}</small></span>
                 </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMapBuilder(); }} data-testid="button-debug-mapbuilder">
+                  <span className="options-action-icon"><Settings size={17} /></span>
+                  <span><strong>🗺️ Map Builder{mapBuilderMode ? ' (Exit)' : ''}</strong><small>{mapBuilderMode ? 'Return to normal play' : 'Paint terrain tiles like a tilemap editor'}</small></span>
+                </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMarkerMode(); }} data-testid="button-debug-markers">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: {markerMode ? 'Hide' : 'Show'} Markers</strong><small>{markerMode ? 'Hide dots' : 'Green=triggers, Red=remove'}</small></span>
@@ -7976,6 +8092,8 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
 // static canvas once per chunk and mounts it as the bottom field layer.
 function FieldGroundLayer({ spec }: { spec: GroundDetailSpec }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  // BUILD 341: repaint when the map-builder paints change.
+  const paintSig = (spec.paints ?? []).map((p) => p.tx + ',' + p.ty + ':' + p.tile).join(';');
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -7984,7 +8102,7 @@ function FieldGroundLayer({ spec }: { spec: GroundDetailSpec }) {
     } catch {
       // Leave the flat CSS ground as the fallback.
     }
-  }, [spec.terrain, spec.field, spec.path, spec.road, spec.sea, spec.seed]);
+  }, [spec.terrain, spec.field, spec.path, spec.road, spec.sea, spec.seed, paintSig]);
   return <div ref={hostRef} className="field-ground-layer" aria-hidden="true" />;
 }
 
