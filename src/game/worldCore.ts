@@ -269,3 +269,27 @@ export class WorldCore {
     this.rng.setState(state.rngState);
   }
 }
+
+/** 12-hour HUD display: "8:37 AM · Day 14 · Y127". */
+export function formatClockDisplay(clock: WorldClockState): string {
+  const hour24 = Math.max(0, Math.min(23, Math.floor(clock.hour)));
+  const suffix = hour24 < 12 ? 'AM' : 'PM';
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  const minute = String(Math.floor(clock.minuteOfDay % MINUTES_PER_HOUR)).padStart(2, '0');
+  return hour12 + ':' + minute + ' ' + suffix + ' · Day ' + Math.max(1, Math.floor(clock.day)) + ' · Y' + Math.max(1, Math.floor(clock.year));
+}
+
+/**
+ * Number of world ticks (MINUTES_PER_TICK each) needed to reach the next
+ * occurrence of `targetHour` (0-23). If the clock is exactly on the hour,
+ * returns a full day (the *next* occurrence), so "wait until morning" at
+ * 6:00 AM waits until tomorrow 6:00 AM.
+ */
+export function ticksUntilHour(clock: WorldClockState, targetHour: number): number {
+  const target = ((Math.floor(targetHour) % HOURS_PER_DAY) + HOURS_PER_DAY) % HOURS_PER_DAY;
+  const currentMinutes = Math.floor(clock.hour) * MINUTES_PER_HOUR + Math.floor(clock.minuteOfDay % MINUTES_PER_HOUR);
+  const targetMinutes = target * MINUTES_PER_HOUR;
+  let delta = targetMinutes - currentMinutes;
+  if (delta <= 0) delta += HOURS_PER_DAY * MINUTES_PER_HOUR;
+  return Math.max(1, Math.ceil(delta / MINUTES_PER_TICK));
+}

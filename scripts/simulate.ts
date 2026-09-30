@@ -4,6 +4,7 @@ import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLev
 import { updateGoat, type GoatAIEntity } from '../src/game/ai';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
+import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize } from '../src/game/worldEditor';
 
 let passed = 0;
@@ -338,9 +339,40 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
   assert(editorRemovalList([]).includes('nothing flagged'), 'editorRemovalList empty wrong');
 }
 
+// ---- 12. World clock display + wait math (BUILD 275) ----
+console.log('Testing world clock display + wait math...');
+{
+  const core = new WorldCore(1234);
+  const c0 = core.getClock();
+  assert(formatClockDisplay(c0) === '6:00 AM · Day 1 · Y1', `Clock display mismatch: ${formatClockDisplay(c0)}`);
+  // 22:00 -> 6:00 next morning = 8h = 48 ticks
+  const night = { ...c0, hour: 22, minuteOfDay: 22 * 60 };
+  assert(ticksUntilHour(night, 6) === 48, `ticksUntilHour(22->6) expected 48, got ${ticksUntilHour(night, 6)}`);
+  // 5:00 -> 6:00 = 1h = 6 ticks
+  const early = { ...c0, hour: 5, minuteOfDay: 5 * 60 };
+  assert(ticksUntilHour(early, 6) === 6, `ticksUntilHour(5->6) expected 6, got ${ticksUntilHour(early, 6)}`);
+  // exactly 6:00 -> next 6:00 = full day = 144 ticks
+  const exact = { ...c0, hour: 6, minuteOfDay: 6 * 60 };
+  assert(ticksUntilHour(exact, 6) === 144, `ticksUntilHour(6->6) expected 144, got ${ticksUntilHour(exact, 6)}`);
+  // 6:30 -> 6:00 next day = 23.5h = 141 ticks
+  const half = { ...c0, hour: 6, minuteOfDay: 6 * 60 + 30 };
+  assert(ticksUntilHour(half, 6) === 141, `ticksUntilHour(6:30->6) expected 141, got ${ticksUntilHour(half, 6)}`);
+  // advancing 48 ticks from 22:00 lands on 6:00
+  const wc = new WorldCore(99);
+  for (let i = 0; i < 48; i++) wc.advance(1);
+  const c1 = wc.getClock();
+  assert(c1.hour === 14 && c1.minuteOfDay % 60 === 0, `48 ticks from 6:00 start expected 14:00, got ${c1.hour}:${c1.minuteOfDay % 60}`);
+  assert(MINUTES_PER_TICK === 10, 'MINUTES_PER_TICK must stay 10');
+  // display for PM hours
+  const pm = { ...c0, hour: 20, minuteOfDay: 20 * 60 + 37, day: 14, year: 127 };
+  assert(formatClockDisplay(pm) === '8:37 PM · Day 14 · Y127', `PM display mismatch: ${formatClockDisplay(pm)}`);
+}
+
+
+console.log(`SIMULATION COMPLETE: ${passed} passed, ${failed} failed`);
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
-console.log(`SIMULATION COMPLETE: ${passed} passed, ${failed} failed`);
 console.log(`${'='.repeat(50)}`);
 if (failures.length > 0) {
   console.log('\nFirst failures:');

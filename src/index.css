@@ -4275,3 +4275,47 @@ body {
   bottom: auto;
   top: 24px;
 }
+
+/* ---- Wait / pass time (living world, BUILD 275) ---- */
+.wait-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(9, 29, 26, .66);
+  backdrop-filter: blur(2px);
+}
+.wait-card {
+  width: min(380px, 100%);
+  padding: clamp(18px, 5vw, 26px);
+  border: 1px solid rgba(235, 206, 139, .62);
+  background: #f3ebd5;
+  color: var(--ink);
+  box-shadow: 7px 7px 0 rgba(7, 22, 22, .34);
+  text-align: center;
+}
+.wait-card h2 { margin: 4px 0 10px; }
+.wait-sub { font-size: 13px; opacity: .78; margin: 0 0 12px; }
+.wait-options { display: grid; gap: 8px; }
+.wait-option {
+  padding: 10px 12px;
+  border: 1px solid rgba(60, 40, 20, .45);
+  background: #fffdf4;
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.wait-option:hover { background: #fdf3d8; }
+.wait-cancel { width: 100%; margin-top: 12px; }
+.wait-bar {
+  height: 10px;
+  border: 1px solid rgba(60, 40, 20, .45);
+  background: #e8dcc0;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 10px;
+}
+.wait-bar-fill { height: 100%; background: #b07f2e; transition: width .1s linear; }

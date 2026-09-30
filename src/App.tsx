@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Map as MapIcon, Menu, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
+import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Hourglass, Map as MapIcon, Menu, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
 import { type ChangeEvent, type PointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -9,7 +9,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/rpgBrain';
-import { DEFAULT_WORLD_SEED, type WorldClockState } from '@/game/worldCore';
+import { DEFAULT_WORLD_SEED, formatClockDisplay, ticksUntilHour, type WorldClockState } from '@/game/worldCore';
 import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList } from './game/worldEditor';
@@ -32,7 +32,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '274';
+const BUILD_NUMBER = '275';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -76,10 +76,7 @@ function separateGoatFromPlayer(goatPosition: Point, playerPosition: Point) {
 type HorseState = { chunk: Point; position: Point };
 
 function formatWorldClock(clock: WorldClockState) {
-  const hour = String(clock.hour).padStart(2, '0');
-  const minute = String(clock.minuteOfDay % 60).padStart(2, '0');
-  const season = clock.season.charAt(0).toUpperCase() + clock.season.slice(1);
-  return hour + ':' + minute + ' · ' + season + ' · Y' + clock.year + ' D' + clock.day;
+  return formatClockDisplay(clock);
 }
 
 const WALK_SPEED = 56; // Deliberately slower exploration pace
@@ -2796,7 +2793,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const [logOpen, setLogOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [logs, setLogs] = useState(initialLogs);
-  const [time, setTime] = useState('06:00 · Spring · Y1 D1');
+  const [time, setTime] = useState('6:00 AM · Day 1 · Y1');
   const [playerHp, setPlayerHp] = useState(playerMaxHpForStats(initialPlayerStats));
   const [gameOver, setGameOver] = useState(false);
   const [playerXp, setPlayerXp] = useState(0);
@@ -2866,6 +2863,12 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const goatWorldStepRef = useRef(0);
   const simulatedTickRef = useRef(0);
   const simulatedAdventurersRef = useRef(initialSimulatedAdventurers);
+  // Wait/pass-time: while true, the wait driver owns the world clock and the
+  // living-sim ticks (ambient intervals skip so nothing double-advances).
+  const waitingRef = useRef(false);
+  const waitTimerRef = useRef<number | null>(null);
+  const [waitSheetOpen, setWaitSheetOpen] = useState(false);
+  const [waitProgress, setWaitProgress] = useState<{ done: number; total: number } | null>(null);
   const playerAttackCooldownRef = useRef(0);
   const playerAttackStateRef = useRef<{ active: boolean; direction: Direction; targetId: number | null; elapsed: number; hitApplied: boolean }>({ active: false, direction: 'down', targetId: null, elapsed: 0, hitApplied: false });
   const [attackCooldownMs, setAttackCooldownMs] = useState(0);
@@ -3073,21 +3076,75 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
     return () => window.clearInterval(timer);
   }, []);
 
+  // One living-simulation tick shared by the ambient interval and the wait
+  // driver. Stored in a ref so both interval callbacks stay stable.
+  const advanceLivingSimTickRef = useRef(() => {});
+  advanceLivingSimTickRef.current = () => {
+    const nextTick = simulatedTickRef.current + 1;
+    simulatedTickRef.current = nextTick;
+    const liveGoats = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goat.hp > 0);
+    // A new "player" logs in every minute, up to 10.
+    const withSpawns = spawnDueAdventurer(simulatedAdventurersRef.current, nextTick);
+    const next = advanceSimulatedAdventurers(withSpawns, nextTick, liveGoats.map((goat) => ({ id: goat.id, position: goat.position })));
+    // BUG-006 fix: background adventurers never touch the player's loaded
+    // goats. Goat HP/disposition only change from the player's own attacks —
+    // no more "random" damage on goats across the map.
+    simulatedAdventurersRef.current = next;
+    setSimulatedAdventurers(next);
+  };
+
   useEffect(() => {
     const timer = window.setInterval(() => {
-      const nextTick = simulatedTickRef.current + 1;
-      simulatedTickRef.current = nextTick;
-      const liveGoats = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goat.hp > 0);
-      // A new "player" logs in every minute, up to 10.
-      const withSpawns = spawnDueAdventurer(simulatedAdventurersRef.current, nextTick);
-      const next = advanceSimulatedAdventurers(withSpawns, nextTick, liveGoats.map((goat) => ({ id: goat.id, position: goat.position })));
-      // BUG-006 fix: background adventurers never touch the player's loaded
-      // goats. Goat HP/disposition only change from the player's own attacks —
-      // no more "random" damage on goats across the map.
-      simulatedAdventurersRef.current = next;
-      setSimulatedAdventurers(next);
+      if (waitingRef.current) return; // the wait driver owns ticks while waiting
+      advanceLivingSimTickRef.current();
     }, 1900);
     return () => window.clearInterval(timer);
+  }, []);
+
+  // ---- Wait / pass time (living-world phase 2) ----
+  const cancelWait = () => {
+    if (waitTimerRef.current !== null) {
+      window.clearInterval(waitTimerRef.current);
+      waitTimerRef.current = null;
+    }
+    waitingRef.current = false;
+    setWaitProgress(null);
+  };
+  const startWait = (ticks: number) => {
+    if (ticks <= 0 || waitingRef.current) return;
+    cancelWait();
+    waitingRef.current = true;
+    setWaitSheetOpen(false);
+    setWaitProgress({ done: 0, total: ticks });
+    keysRef.current = {};
+    setMoving(false);
+    let remaining = ticks;
+    const timer = window.setInterval(() => {
+      if (remaining <= 0) { cancelWait(); return; }
+      const nextClock = brainRef.current?.worldCore.advance(1);
+      if (nextClock) setTime(formatWorldClock(nextClock));
+      // The world does NOT freeze: NPC schedules, travelers and the
+      // simulated adventurers all advance one tick per world tick.
+      advanceLivingSimTickRef.current();
+      remaining -= 1;
+      setWaitProgress({ done: ticks - remaining, total: ticks });
+    }, 110);
+    waitTimerRef.current = timer;
+  };
+  const waitOptionTicks = () => {
+    const clock = brainRef.current?.worldCore.getClock();
+    return [
+      { label: 'Wait 1 hour', ticks: 6 },
+      { label: 'Wait 2 hours', ticks: 12 },
+      { label: 'Wait 4 hours', ticks: 24 },
+      { label: 'Wait 8 hours', ticks: 48 },
+      { label: 'Wait until morning (6 AM)', ticks: clock ? ticksUntilHour(clock, 6) : 48 },
+      { label: 'Wait until evening (6 PM)', ticks: clock ? ticksUntilHour(clock, 18) : 48 },
+    ];
+  };
+  useEffect(() => () => {
+    if (waitTimerRef.current !== null) window.clearInterval(waitTimerRef.current);
+    waitingRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -3167,7 +3224,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
       setMoving(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (inputLocked || optionsOpen) return;
+      if (inputLocked || optionsOpen || waitingRef.current) return;
       if (event.code === 'Space' || event.code === 'KeyF') { event.preventDefault(); attackGoat(); return; }
       const direction = directionKeys[event.code];
       if (!direction) return;
@@ -3194,8 +3251,8 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
       lastFrame = now;
       const movementLocked = playerAttackStateRef.current.active;
       const input = {
-        x: inputLocked || optionsOpen || movementLocked ? 0 : (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
-        y: inputLocked || optionsOpen || movementLocked ? 0 : (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
+        x: inputLocked || optionsOpen || movementLocked || waitingRef.current ? 0 : (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
+        y: inputLocked || optionsOpen || movementLocked || waitingRef.current ? 0 : (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
       };
       const length = Math.hypot(input.x, input.y);
       const active = length > 0;
@@ -3494,6 +3551,7 @@ if (active) {
     };
     animationFrame = window.requestAnimationFrame(animate);
     const clock = window.setInterval(() => {
+      if (waitingRef.current) return; // the wait driver owns the clock while waiting
       const nextClock = brainRef.current?.worldCore.advance(1);
       if (nextClock) setTime(formatWorldClock(nextClock));
     }, 3000);
@@ -3562,7 +3620,7 @@ if (active) {
     setMoving(Object.values(keysRef.current).some(Boolean));
   };
   const beginDirection = (direction: Direction, event: PointerEvent<HTMLButtonElement>) => {
-    if (inputLocked || optionsOpen) return;
+    if (inputLocked || optionsOpen || waitingRef.current) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     pressDirection(direction);
   };
@@ -4048,7 +4106,7 @@ if (active) {
                 aria-pressed={targetGoatId === goat.id}
                 data-testid={'button-target-goat-' + goat.id}
                 onClick={() => {
-                  if (inputLocked || optionsOpen || playerAttackStateRef.current.active) return;
+                  if (inputLocked || optionsOpen || waitingRef.current || playerAttackStateRef.current.active) return;
                   // Tapping the already-targeted goat clears the target.
                   if (targetGoatIdRef.current === goat.id) {
                     targetGoatIdRef.current = null;
@@ -4085,7 +4143,7 @@ if (active) {
                 aria-label={'Hostile ' + monster.kind + ', level ' + monster.level}
                 data-testid={'button-target-monster-' + monster.id}
                 onClick={() => {
-                  if (inputLocked || optionsOpen || playerAttackStateRef.current.active) return;
+                  if (inputLocked || optionsOpen || waitingRef.current || playerAttackStateRef.current.active) return;
                   attackGoat();
                 }}
               >
@@ -4604,6 +4662,35 @@ if (active) {
           </div>}
         </div>
         )}
+        {waitSheetOpen && !waitProgress && (
+          <div className="wait-overlay" role="dialog" aria-modal="true" aria-label="Wait and pass time" data-testid="overlay-wait">
+            <div className="wait-card">
+              <div className="options-heading">
+                <div>
+                  <span className="options-kicker">The world keeps living</span>
+                  <h2>Wait</h2>
+                </div>
+                <button className="map-close" onClick={() => setWaitSheetOpen(false)} aria-label="Close wait menu" data-testid="button-close-wait"><X size={19} /></button>
+              </div>
+              <p className="wait-sub">Time passes and the simulation keeps running — NPCs follow their schedules, travelers move, shops open and close.</p>
+              <div className="wait-options">
+                {waitOptionTicks().map((option) => (
+                  <button key={option.label} className="wait-option" onClick={() => startWait(option.ticks)} data-testid={'button-wait-' + option.ticks}>{option.label}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        {waitProgress && (
+          <div className="wait-overlay" role="dialog" aria-modal="true" aria-label="Waiting" data-testid="overlay-waiting">
+            <div className="wait-card">
+              <span className="options-kicker">Passing time…</span>
+              <h2>{time}</h2>
+              <div className="wait-bar" aria-label="Wait progress"><div className="wait-bar-fill" style={{ width: (waitProgress.done / waitProgress.total * 100) + '%' }} /></div>
+              <button className="wait-option wait-cancel" onClick={cancelWait} data-testid="button-cancel-wait">Stop waiting</button>
+            </div>
+          </div>
+        )}
         {optionsOpen && (
           <div className="options-overlay" role="dialog" aria-modal="true" aria-labelledby="options-title" data-testid="overlay-options">
             <div className="options-card">
@@ -4742,6 +4829,7 @@ if (active) {
             <div className="bar" aria-label={'Health ' + playerHp + ' of ' + playerMaxHp} ><div className="bar-fill health" style={{ width: ((playerHp / playerMaxHp) * 100) + '%' }} /></div><span className="hud-health-value">{playerHp} / {playerMaxHp} HP</span>
             <div className="bar xp-bar" aria-label={'Experience ' + (playerXp % 100) + ' of 100 to next level'}><div className="bar-fill xp-fill" style={{ width: ((playerXp % 100)) + '%' }} /></div><span className="hud-xp-value">{playerXp % 100} / 100 XP</span>
             <span className="hud-clock" data-testid="text-hud-time">{time}</span>
+            <button className="hud-quick-button" onClick={() => setWaitSheetOpen(true)} aria-label="Wait / pass time" title="Wait" data-testid="button-wait"><Hourglass size={15} /></button>
             <div className="hud-quick-actions">
               <button className="hud-quick-button" onClick={onOpenMap} aria-label="Open world map" title="World map" data-testid="button-open-map"><MapIcon size={15} /></button>
               <button className="hud-quick-button" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={15} /></button>
