@@ -85,7 +85,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '350';
+const BUILD_NUMBER = '351';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -107,6 +107,14 @@ function cameraFrac(playerFrac: number, zoom: number): number {
   if (zoom < 1) return playerFrac;
   const halfView = 0.5 / zoom;
   return Math.min(Math.max(playerFrac, halfView), 1 - halfView);
+}
+// BUILD 350: on-screen position (%) of the player sprite when zoomed. The
+// sprite stays pinned at 50% while the camera centers the player; when the
+// camera clamps at a chunk edge, the sprite slides toward that edge instead,
+// so walking near the edge stays visible.
+function playerScreenPct(fieldFrac: number, zoom: number): number {
+  const cf = cameraFrac(fieldFrac, zoom);
+  return (0.5 + zoom * (fieldFrac - cf)) * 100;
 }
 function screenPxToFieldUnits(screenPx: number, sizePx: number, playerFrac: number, zoom: number): number {
   const t = (zoomTranslatePct(cameraFrac(playerFrac, zoom), zoom) / 100) * sizePx;
@@ -7206,7 +7214,7 @@ if (active) {
           })()}
           </div>
           {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
-             data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: gameZoom !== 1 ? '50%' : fieldPct(position.x), top: gameZoom !== 1 ? '50%' : fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, ...(gameZoom !== 1 ? { transform: `translate(-50%, -50%) scale(${gameZoom})` } : {}) } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
+             data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: gameZoom !== 1 ? playerScreenPct(position.x / FIELD_SIZE, gameZoom) + '%' : fieldPct(position.x), top: gameZoom !== 1 ? playerScreenPct(position.y / FIELD_SIZE, gameZoom) + '%' : fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, ...(gameZoom !== 1 ? { transform: `translate(-50%, -50%) scale(${gameZoom})` } : {}) } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
             {equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}
