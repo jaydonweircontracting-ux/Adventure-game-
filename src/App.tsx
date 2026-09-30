@@ -38,6 +38,16 @@ import {
   tradeRoutePolylines,
   type CivilizationState,
 } from '@/game/civilization';
+import {
+  createHorses,
+  deserializeHorses,
+  horseTarget,
+  serializeHorses,
+  type Horse,
+  type HorseSettlement,
+  type Stable,
+} from '@/game/horses';
+import { generateSettlementPopulation, type CharacterProfile } from '@/game/characterGen';
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor } from '@/game/monsterSprites';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
@@ -1192,6 +1202,7 @@ type SaveGameData = {
   questLog?: string;
   openedChests?: string;
   civ?: string;
+  horses?: unknown;
   logs: Array<{ text: string; color: string }>;
   time: string;
   brainState: RpgGameState | null;
@@ -3175,6 +3186,30 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     if (!civRef.current) civRef.current = createCivilization(DEFAULT_WORLD_SEED);
     return civRef.current;
   };
+  // Civ phase 11: world horses (owned by NPCs + wild), created once per world
+  // seed from the civilization settlements. Owner profiles regenerate
+  // deterministically, so they never need to be saved.
+  const horsesRef = useRef<{ horses: Horse[]; stables: Stable[]; owners: Map<string, CharacterProfile> } | null>(null);
+  const ensureHorses = () => {
+    if (!horsesRef.current) {
+      const civ = ensureCiv();
+      const kindMap = (k: string): HorseSettlement['kind'] =>
+        k === 'capital' ? 'capital' : k === 'city' ? 'city' : k === 'town' ? 'town' : k === 'village' ? 'village' : 'hamlet';
+      const settlements: HorseSettlement[] = civ.settlements.map((s) => ({
+        id: s.id, chunk: { ...s.chunk }, kind: kindMap(s.kind),
+      }));
+      const ownersBySettlement: Record<string, CharacterProfile[]> = {};
+      const owners = new Map<string, CharacterProfile>();
+      for (const s of civ.settlements) {
+        const roster = generateSettlementPopulation(DEFAULT_WORLD_SEED, s.id, s.kingdomId, 10, kindMap(s.kind));
+        ownersBySettlement[s.id] = roster;
+        for (const p of roster) owners.set(p.id, p);
+      }
+      const { horses, stables } = createHorses(DEFAULT_WORLD_SEED, settlements, ownersBySettlement);
+      horsesRef.current = { horses, stables, owners };
+    }
+    return horsesRef.current;
+  };
   const advanceCivForClock = (clock: WorldClockState | null | undefined) => {
     if (!clock) return;
     advanceCivilization(ensureCiv(), clock);
@@ -3354,6 +3389,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     questLog: serializeQuestStates(questStatesRef.current),
     openedChests: serializeOpenedChests(openedChestsRef.current),
     civ: civRef.current ? serializeCivilization(civRef.current) : undefined,
+    horses: horsesRef.current ? serializeHorses(horsesRef.current.horses, horsesRef.current.stables) : undefined,
     brainState: brainRef.current?.getGameState() || null,
   });
   saveStateRef.current = createSaveData;
@@ -3417,6 +3453,18 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
       }
     } else {
       civRef.current = null;
+    }
+    // World horses: restore, or rebuild lazily on a corrupt save.
+    if (loadState.horses) {
+      try {
+        const restored = deserializeHorses(loadState.horses);
+        const rebuilt = ensureHorses();
+        horsesRef.current = { horses: restored.horses, stables: restored.stables, owners: rebuilt.owners };
+      } catch {
+        horsesRef.current = null;
+      }
+    } else {
+      horsesRef.current = null;
     }
     setNpcDialogue(null); setAttackFlash(null); setLogOpen(false); setMoving(false);
     if (loadState.brainState) {
@@ -4598,6 +4646,37 @@ if (active) {
     }
     return out;
   }, [chunk.x, chunk.y, time]);
+  // Civ phase 11: world horses on the player's chunk — owned horses follow
+  // their owner's daily routine (horseTarget), wild horses graze.
+  const visibleHorses = useMemo(() => {
+    const clock = brainRef.current?.worldCore.getClock();
+    if (!clock) return [];
+    const { horses, stables, owners } = ensureHorses();
+    const out: { id: string; name: string; color: string; activity: string; owner: string; position: Point }[] = [];
+    for (const h of horses) {
+      const target = horseTarget(h, owners.get(h.owner) ?? null, stables, clock);
+      if (target.chunk.x !== chunk.x || target.chunk.y !== chunk.y) continue;
+      const ownerName = h.owner === 'wild' ? 'wild' : (owners.get(h.owner)?.name ?? 'a traveler');
+      out.push({
+        id: h.id,
+        name: h.name,
+        color: h.color,
+        activity: target.activity,
+        owner: ownerName,
+        position: { x: target.position.x, y: target.position.y },
+      });
+    }
+    return out;
+  }, [chunk.x, chunk.y, time]);
+  const talkToHorse = (h: { name: string; activity: string; owner: string }) => {
+    setNameplateNpc(h.name);
+    if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
+    nameplateTimerRef.current = window.setTimeout(() => {
+      setNameplateNpc(null);
+      nameplateTimerRef.current = null;
+    }, 4000);
+    setLogs((currentLogs) => [{ text: `${h.name} the horse (${h.owner}'s) is ${h.activity.replace(/_/g, ' ')}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
   const talkToCaravan = (c: { merchant: string; destination: string; goods: string[]; guards: number }) => {
     setNameplateNpc(c.merchant);
     if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
@@ -5093,6 +5172,21 @@ if (active) {
                         return (
                           <div key={u.id} className="inspector-row">
                             <span>🛡️ <strong>{u.name}</strong> · {u.kind} · {u.soldiers + u.archers + u.cavalry} strong · {home?.name ?? '—'} · {target.activity}</span>
+                          </div>
+                        );
+                      });
+                    })()}
+                    <div className="inspector-heading">Horses ({ensureHorses().horses.length})</div>
+                    {(() => {
+                      const clock = brainRef.current?.worldCore.getClock();
+                      if (!clock) return null;
+                      const { horses, stables, owners } = ensureHorses();
+                      return horses.slice(0, 10).map((h) => {
+                        const target = horseTarget(h, owners.get(h.owner) ?? null, stables, clock);
+                        const here = target.chunk.x === chunk.x && target.chunk.y === chunk.y;
+                        return (
+                          <div key={h.id} className="inspector-row">
+                            <span>🐴 <strong>{h.name}</strong> · {h.color} · {target.activity.replace(/_/g, ' ')}{here ? ' · here' : ''}</span>
                           </div>
                         );
                       });
@@ -5917,6 +6011,24 @@ if (active) {
                 <small>🛡️ {u.activity}</small>
               </span>
               <span className="npc-sprite" aria-hidden="true" />
+            </button>
+          ))}
+          {visibleHorses.map((h) => (
+            <button
+              key={h.id}
+              className={'horse' + (nameplateNpc === h.name ? ' show-nameplate' : '')}
+              onClick={(moverMode || markerMode) ? undefined : () => talkToHorse(h)}
+              style={{ left: fieldPct(h.position.x), top: fieldPct(h.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : 'auto' }}
+              data-facing="down"
+              aria-label={h.name + ', horse, ' + h.activity.replace(/_/g, ' ')}
+              title={h.name + ' — ' + h.activity.replace(/_/g, ' ')}
+              data-testid={h.id}
+            >
+              <span className="npc-nameplate">
+                <strong>{h.name}</strong>
+                <small>🐴 {h.activity.replace(/_/g, ' ')}</small>
+              </span>
+              <span className="horse-sprite" aria-hidden="true" />
             </button>
           ))}
           {currentWorldTile.landmark?.name === 'Mosslight Crossing' && !moverMode && !markerMode && (
