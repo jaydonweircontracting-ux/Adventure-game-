@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '260';
+const BUILD_NUMBER = '261';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -680,13 +680,8 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
     if (fieldFarmRects(chunk.x, chunk.y).houses.some((rect) => pointInRect(position, rect, 0.35))) return true;
   }
 
-  // Mosslight Crossing fountain: solid stone circle at the plaza center.
-  // Uses box overlap (like goats) so the collision matches the visual size.
-  if (landmark?.name === 'Mosslight Crossing') {
-    const fountainCenter = { x: 50, y: 50 };
-    const FOUNTAIN_BOX = { halfWidth: 1.5, halfHeight: 1.5 };
-    if (collisionBoxesOverlap(position, PLAYER_COLLISION_BOX, fountainCenter, FOUNTAIN_BOX)) return true;
-  }
+  // Mosslight Crossing fountain: decorative only, no collision.
+  // (Collision removed — was causing invisible wall reports.)
 
   return false;
 }
