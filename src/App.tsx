@@ -16,7 +16,7 @@ import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 import { findTalkTarget } from './game/talkTarget';
 import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cellarRats';
-import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, type TouchHoldState } from './game/touchInput';
+import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds, type TouchHoldState, type TouchEventKind } from './game/touchInput';
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, type DialogueTopicId } from './game/dialogue';
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
@@ -82,7 +82,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '335';
+const BUILD_NUMBER = '336';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -4344,6 +4344,28 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', clearInput);
     document.addEventListener('visibilitychange', onVisibilityChange);
+    // BUILD 336 (attack-freeze root cause, for real this time): releasing a
+    // D-pad hold on touchcancel desyncs input permanently when iOS cancels
+    // the in-flight D-pad touch while the thumb is still down (second finger
+    // taps Attack -> cancel -> no further events for that touch, ever).
+    // Instead, holds are reconciled against the live touch list on every
+    // document touch event: cancelled touches are kept (their id is in
+    // changedTouches), genuinely-dead touches are reaped, and a touchend
+    // still releases definitively. Any desync heals on the next tap.
+    const revalidateFromEvent = (kind: TouchEventKind) => (event: globalThis.TouchEvent) => {
+      const touches: number[] = [];
+      for (let index = 0; index < event.touches.length; index += 1) touches.push(event.touches[index].identifier);
+      const changed: number[] = [];
+      for (let index = 0; index < event.changedTouches.length; index += 1) changed.push(event.changedTouches[index].identifier);
+      const released = revalidateTouchHolds(touchHoldsRef.current, kind, touches, changed);
+      if (released.length > 0) setMoving(anyDirectionHeld());
+    };
+    const onDocumentTouchStart = revalidateFromEvent('start');
+    const onDocumentTouchEnd = revalidateFromEvent('end');
+    const onDocumentTouchCancel = revalidateFromEvent('cancel');
+    document.addEventListener('touchstart', onDocumentTouchStart, { passive: true });
+    document.addEventListener('touchend', onDocumentTouchEnd, { passive: true });
+    document.addEventListener('touchcancel', onDocumentTouchCancel, { passive: true });
     // BUILD 325 (attack-freeze root cause): iOS Safari fires its own
     // gesturestart/gesturechange events for multi-touch sequences, independent
     // of the viewport meta. When a second finger taps the Attack button while
@@ -4753,6 +4775,9 @@ if (active) {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', clearInput);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      document.removeEventListener('touchstart', onDocumentTouchStart);
+      document.removeEventListener('touchend', onDocumentTouchEnd);
+      document.removeEventListener('touchcancel', onDocumentTouchCancel);
       if (gameFrame) {
         gameFrame.removeEventListener('gesturestart', blockIOSGesture);
         gameFrame.removeEventListener('gesturechange', blockIOSGesture);
@@ -4955,10 +4980,13 @@ if (active) {
 
   // BUILD 325: D-pad touch holds are tracked by touch.identifier (see
   // src/game/touchInput.ts). Only the touch that pressed a direction can
-  // release it, so a spurious touchend/touchcancel from a *different* touch —
-  // e.g. iOS cancelling the D-pad touch when the Attack button is tapped with
-  // a second finger — can no longer desync the input state and freeze
-  // movement while the thumb is still down. Keyboard/mouse keep the legacy
+  // release it on touchend.
+  // BUILD 336: touchcancel NEVER releases a hold anymore. iOS can cancel the
+  // in-flight D-pad touch when a second finger taps Attack while the thumb
+  // is still down, and a cancelled touch delivers no further events — so
+  // releasing on cancel desynced input permanently (the freeze). Cancelled
+  // holds are reconciled against the live touch list by the document-level
+  // revalidator in the input effect instead. Keyboard/mouse keep the legacy
   // keysRef path (touchId undefined).
   const anyDirectionHeld = () =>
     (['up', 'down', 'left', 'right'] as Direction[]).some(
@@ -7333,10 +7361,10 @@ if (active) {
           <button className="hud-bag-button" onClick={onOpenInventory} aria-label="Open menu" title="Menu" data-testid="button-open-inventory"><Backpack size={17} /></button>
         </div>
         <div className="touch-controls" aria-label="Touch movement controls">
-           <button className="touch-control up" aria-label="Move north" data-testid="button-move-up" onTouchStart={(event) => pressDirection('up', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('up', touchIdentifierOf(event))} onTouchCancel={(event) => releaseDirection('up', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('up', event)} onPointerUp={(event) => mouseReleaseDirection('up', event)} onPointerLeave={(event) => mouseReleaseDirection('up', event)}><ChevronUp size={18} /></button>
-           <button className="touch-control left" aria-label="Move west" data-testid="button-move-left" onTouchStart={(event) => pressDirection('left', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('left', touchIdentifierOf(event))} onTouchCancel={(event) => releaseDirection('left', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('left', event)} onPointerUp={(event) => mouseReleaseDirection('left', event)} onPointerLeave={(event) => mouseReleaseDirection('left', event)}><ChevronLeft size={18} /></button>
-           <button className="touch-control down" aria-label="Move south" data-testid="button-move-down" onTouchStart={(event) => pressDirection('down', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('down', touchIdentifierOf(event))} onTouchCancel={(event) => releaseDirection('down', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('down', event)} onPointerUp={(event) => mouseReleaseDirection('down', event)} onPointerLeave={(event) => mouseReleaseDirection('down', event)}><ChevronDown size={18} /></button>
-           <button className="touch-control right" aria-label="Move east" data-testid="button-move-right" onTouchStart={(event) => pressDirection('right', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('right', touchIdentifierOf(event))} onTouchCancel={(event) => releaseDirection('right', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('right', event)} onPointerUp={(event) => mouseReleaseDirection('right', event)} onPointerLeave={(event) => mouseReleaseDirection('right', event)}><ChevronRight size={18} /></button>
+           <button className="touch-control up" aria-label="Move north" data-testid="button-move-up" onTouchStart={(event) => pressDirection('up', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('up', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('up', event)} onPointerUp={(event) => mouseReleaseDirection('up', event)} onPointerLeave={(event) => mouseReleaseDirection('up', event)}><ChevronUp size={18} /></button>
+           <button className="touch-control left" aria-label="Move west" data-testid="button-move-left" onTouchStart={(event) => pressDirection('left', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('left', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('left', event)} onPointerUp={(event) => mouseReleaseDirection('left', event)} onPointerLeave={(event) => mouseReleaseDirection('left', event)}><ChevronLeft size={18} /></button>
+           <button className="touch-control down" aria-label="Move south" data-testid="button-move-down" onTouchStart={(event) => pressDirection('down', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('down', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('down', event)} onPointerUp={(event) => mouseReleaseDirection('down', event)} onPointerLeave={(event) => mouseReleaseDirection('down', event)}><ChevronDown size={18} /></button>
+           <button className="touch-control right" aria-label="Move east" data-testid="button-move-right" onTouchStart={(event) => pressDirection('right', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('right', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('right', event)} onPointerUp={(event) => mouseReleaseDirection('right', event)} onPointerLeave={(event) => mouseReleaseDirection('right', event)}><ChevronRight size={18} /></button>
         </div>
          {logOpen && (
            <section id="field-log-drawer" className="field-log-drawer" aria-label="Field log" data-testid="panel-field-log">

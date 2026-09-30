@@ -60,6 +60,55 @@ export function isTouchHeld(state: TouchHoldState, direction: TouchDirection): b
   return state.holds[direction] !== undefined;
 }
 
+/** Touch-event kinds the document-level revalidator distinguishes. */
+export type TouchEventKind = 'start' | 'end' | 'cancel';
+
+/**
+ * BUILD 336: reconcile held directions against the live touch list, so every
+ * class of touch desync heals itself instead of freezing or wedging movement.
+ *
+ * The attack-freeze root cause: on iOS Safari, tapping the Attack button with
+ * a second finger while the D-pad is held can make the browser cancel the
+ * in-flight D-pad touch (touchcancel) *while the thumb is still physically
+ * down* — and no further events are ever delivered for a cancelled touch.
+ * Releasing the hold on cancel therefore desynced input permanently: the
+ * game thought the thumb had lifted, while the world kept simulating.
+ *
+ * Rules (id = the touch.identifier that pressed the direction):
+ * - 'end': an id in changedTouches definitely lifted -> release it. An id
+ *   missing from touches is also gone -> release (heals missed releases).
+ * - 'cancel': an id in changedTouches was just cancelled but its finger may
+ *   STILL be down -> KEEP it. This is the freeze fix. Ids in neither list
+ *   are long-dead -> release.
+ * - 'start': ids in neither list are long-dead -> release; live ids stay.
+ *
+ * Returns the directions that were released.
+ */
+export function revalidateTouchHolds(
+  state: TouchHoldState,
+  kind: TouchEventKind,
+  touches: ArrayLike<number>,
+  changedTouches: ArrayLike<number>,
+): TouchDirection[] {
+  const live = new Set<number>();
+  for (let index = 0; index < touches.length; index += 1) live.add(touches[index]);
+  const changed = new Set<number>();
+  for (let index = 0; index < changedTouches.length; index += 1) changed.add(changedTouches[index]);
+  const released: TouchDirection[] = [];
+  (Object.keys(state.holds) as TouchDirection[]).forEach((direction) => {
+    const id = state.holds[direction];
+    if (id === undefined) return;
+    const shouldRelease = kind === 'end'
+      ? changed.has(id) || !live.has(id)
+      : !live.has(id) && !changed.has(id);
+    if (shouldRelease) {
+      delete state.holds[direction];
+      released.push(direction);
+    }
+  });
+  return released;
+}
+
 export function heldTouchDirections(state: TouchHoldState): TouchDirection[] {
   return (Object.keys(state.holds) as TouchDirection[]).filter(
     (direction) => state.holds[direction] !== undefined,

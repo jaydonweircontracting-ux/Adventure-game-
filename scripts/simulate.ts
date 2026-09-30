@@ -11,7 +11,7 @@ import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
-import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection } from '../src/game/touchInput';
+import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds } from '../src/game/touchInput';
 import { markerForGiver, questById, type QuestState } from '../src/game/quests';
 import { initialCellarRats, CELLAR_RAT_ID_BASE, CELLAR_RAT_HP, CELLAR_RAT_COUNT } from '../src/game/cellarRats';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, adjustWanted } from '../src/game/dialogue';
@@ -1699,6 +1699,47 @@ console.log('Testing interior waypoints...');
   assert(heldTouchDirections(holds).length === 0, 'clearTouchHolds left a hold behind');
   // Releasing a direction that was never held is a no-op.
   assert(!releaseTouchHold(holds, 'down', 99), 'release of a never-held direction reported a release');
+}
+
+// ---- BUILD 336: self-healing touch holds (attack-freeze root cause) ----
+console.log('Testing touch-hold revalidation...');
+{
+  // 1. touchcancel KEEPS the hold: the cancelled id is in changedTouches, and
+  //    the finger may still be down (iOS cancels the D-pad touch when a
+  //    second finger taps Attack, then delivers no further events for it).
+  //    Releasing here is what froze the character while the thumb was down.
+  const state = createTouchHoldState();
+  pressTouchHold(state, 'up', 7);
+  assert(revalidateTouchHolds(state, 'cancel', [], [7]).length === 0, 'cancel must not release a possibly-still-down touch');
+  assert(isTouchHeld(state, 'up'), 'hold lost across touchcancel');
+  // 2. The next touch event reaps the truly-dead hold (no stuck-on).
+  const reaped = revalidateTouchHolds(state, 'start', [9], [9]);
+  assert(reaped.length === 1 && reaped[0] === 'up' && !isTouchHeld(state, 'up'), 'dead hold was not reaped on the next touch');
+  // 3. touchend releases definitively.
+  const endState = createTouchHoldState();
+  pressTouchHold(endState, 'left', 3);
+  const ended = revalidateTouchHolds(endState, 'end', [], [3]);
+  assert(ended.length === 1 && ended[0] === 'left' && !isTouchHeld(endState, 'left'), 'touchend did not release the hold');
+  // 4. Live holds survive every event kind.
+  const live = createTouchHoldState();
+  pressTouchHold(live, 'right', 5);
+  assert(revalidateTouchHolds(live, 'start', [5, 6], [6]).length === 0, 'live hold died on unrelated touchstart');
+  assert(revalidateTouchHolds(live, 'end', [5], [6]).length === 0, 'live hold died on unrelated touchend');
+  assert(revalidateTouchHolds(live, 'cancel', [5], [6]).length === 0, 'live hold died on unrelated touchcancel');
+  assert(isTouchHeld(live, 'right'), 'live hold missing after unrelated events');
+  // 5. Two-thumb scenario: 'up' cancelled at the attack tap is kept, 'right'
+  //    stays live, and the dead 'up' hold is reaped by the next tap.
+  const multi = createTouchHoldState();
+  pressTouchHold(multi, 'up', 1);
+  pressTouchHold(multi, 'right', 2);
+  assert(revalidateTouchHolds(multi, 'cancel', [2], [1]).length === 0, 'cancel reaped a live hold');
+  const healed = revalidateTouchHolds(multi, 'start', [2, 8], [8]);
+  assert(healed.length === 1 && healed[0] === 'up', 'dead hold was not reaped');
+  assert(!isTouchHeld(multi, 'up') && isTouchHeld(multi, 'right'), 'wrong holds after heal');
+  // 6. A missed touchend (stale id in neither list) never wedges movement on.
+  const stale = createTouchHoldState();
+  pressTouchHold(stale, 'down', 42);
+  assert(revalidateTouchHolds(stale, 'end', [], []).includes('down'), 'stale hold survived a touchend');
 }
 
 // ---- BUILD 326: Tankard Cellar rats + quest-giver marker states ----
