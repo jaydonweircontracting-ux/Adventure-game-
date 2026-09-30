@@ -1,10 +1,10 @@
-// Isometric demo (BUILD 362): data-driven world + in-game map builder (?iso=1).
+// Isometric demo (BUILD 363): data-driven world + in-game map builder (?iso=1).
 // Play mode: explore, move crates, wandering NPCs. Edit mode: full map builder
 // (select/move/delete, paint terrain, place objects, copy/paste regions, resize
 // up to 200x200, undo). World persists in localStorage.
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  isoToScreen, screenToTileInt, depthKey, findPath, TILE_W, TILE_H,
+  isoToScreen, screenToTile, screenToTileInt, depthKey, findPath, TILE_W, TILE_H,
   type TilePoint,
 } from './projection';
 import {
@@ -253,7 +253,7 @@ export default function IsoRoom(): React.JSX.Element {
         });
       });
       const c = isoToScreen(player.fx, player.fy);
-      cam.x = c.x; cam.y = c.y;
+      cam.x = c.x; cam.y = c.y - 24; // center the character's body, not its feet
       clampCamToMap(cam, zoom, canvas.clientWidth, canvas.clientHeight);
       setCoords(`${player.tx}, ${player.ty}`);
     };
@@ -553,10 +553,9 @@ export default function IsoRoom(): React.JSX.Element {
       ];
       let mnx = Infinity, mxx = -Infinity, mny = Infinity, mxy = -Infinity;
       for (const [wx, wy] of corners) {
-        const tx = (wx / TILE_W + wy / TILE_H) / 2;
-        const ty = (wy / TILE_H - wx / TILE_W) / 2;
-        mnx = Math.min(mnx, tx); mxx = Math.max(mxx, tx);
-        mny = Math.min(mny, ty); mxy = Math.max(mxy, ty);
+        const t = screenToTile(wx, wy);
+        mnx = Math.min(mnx, t.tx); mxx = Math.max(mxx, t.tx);
+        mny = Math.min(mny, t.ty); mxy = Math.max(mxy, t.ty);
       }
       return {
         x0: Math.max(0, Math.floor(mnx) - 2), x1: Math.min(W().w - 1, Math.ceil(mxx) + 2),
@@ -591,17 +590,40 @@ export default function IsoRoom(): React.JSX.Element {
       ctx.translate(-c.x, -c.y);
 
       // floor
-      for (let y = r.y0; y <= r.y1; y++) {
-        for (let x = r.x0; x <= r.x1; x++) {
+      if (zm < 0.3) {
+        // Far LOD: one grass silhouette for the whole map + non-grass tiles only,
+        // so fully zoomed-out stays fast even on huge maps.
+        const c0 = isoToScreen(-1, -1), c1 = isoToScreen(w.w + 1, -1);
+        const c2 = isoToScreen(w.w + 1, w.h + 1), c3 = isoToScreen(-1, w.h + 1);
+        ctx.beginPath();
+        ctx.moveTo(c0.x, c0.y); ctx.lineTo(c1.x, c1.y);
+        ctx.lineTo(c2.x, c2.y); ctx.lineTo(c3.x, c3.y);
+        ctx.closePath();
+        ctx.fillStyle = TERRAIN_COLORS.grass[0];
+        ctx.fill();
+        for (const k of Object.keys(w.terrain)) {
+          const ci = k.indexOf(',');
+          const x = +k.slice(0, ci), y = +k.slice(ci + 1);
           const p = isoToScreen(x, y);
-          const t = terrainAt(w, x, y);
-          const cols = TERRAIN_COLORS[t];
           diamond(ctx, p.x, p.y);
-          ctx.fillStyle = ((x + y) % 2 === 0) ? cols[0] : cols[1];
+          ctx.fillStyle = TERRAIN_COLORS[w.terrain[k]][0];
           ctx.fill();
-          ctx.strokeStyle = 'rgba(0,0,0,0.06)';
-          ctx.lineWidth = 1;
-          ctx.stroke();
+        }
+      } else {
+        for (let y = r.y0; y <= r.y1; y++) {
+          for (let x = r.x0; x <= r.x1; x++) {
+            const p = isoToScreen(x, y);
+            const t = terrainAt(w, x, y);
+            const cols = TERRAIN_COLORS[t];
+            diamond(ctx, p.x, p.y);
+            ctx.fillStyle = ((x + y) % 2 === 0) ? cols[0] : cols[1];
+            ctx.fill();
+            if (zm >= 0.6) {
+              ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+              ctx.lineWidth = 1;
+              ctx.stroke();
+            }
+          }
         }
       }
 
@@ -1189,6 +1211,7 @@ export default function IsoRoom(): React.JSX.Element {
         }
         {
           const c = isoToScreen(player.fx, player.fy);
+          c.y -= 24; // center the character's body on screen, not its feet
           const k = Math.min(1, dt / 90);
           cam.x += (c.x - cam.x) * k;
           cam.y += (c.y - cam.y) * k;
@@ -1275,13 +1298,13 @@ export default function IsoRoom(): React.JSX.Element {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', background: '#9fd9f2', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', background: '#9fd9f2', fontFamily: 'system-ui, sans-serif', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}>
       <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', touchAction: 'none' }} />
 
       {mode === 'play' ? (
         <>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 12px', gap: 8 }}>
-            <div style={chip}>⛰️ Isometric demo · build 362 · {worldSize} · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
+            <div style={chip}>⛰️ Isometric demo · build 363 · {worldSize} · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button style={btn} onClick={() => api.enterEdit()}>🔨 Builder</button>
               <button style={btn} onClick={() => setInfoOpen(true)}>ℹ Info</button>

@@ -91,55 +91,75 @@ export function mergeWallRuns(walls: WallTile[]): WallRun[] {
 
 function wp(x: number, y: number): TilePoint { return { tx: x, ty: y }; }
 
+function hash2(x: number, y: number, s: number): number {
+  let h = (x * 374761393 + y * 668265263 + s * 1442695041) >>> 0;
+  h = (h ^ (h >>> 13)) >>> 0; h = (h * 1274126177) >>> 0; h = (h ^ (h >>> 16)) >>> 0;
+  return h / 4294967296;
+}
+
 export function defaultWorld(): IsoWorld {
-  // 56x56 = 3136 tiles ~ 8x the old 20x20 demo (400 tiles).
-  const w = 56, h = 56;
+  // 200x200 with the town in the middle (center tile 100,100).
+  const w = 200, h = 200;
+  const C = 100; // town center
   const terrain: Record<string, Terrain> = {};
   const T = (x: number, y: number, t: Terrain) => { terrain[terrainKey(x, y)] = t; };
   // sand plaza around the courtyard center
-  for (let x = 24; x <= 31; x++) for (let y = 24; y <= 31; y++) T(x, y, 'sand');
-  // dirt cross roads
-  for (let y = 0; y < h; y++) { T(27, y, 'dirt'); T(28, y, 'dirt'); }
-  for (let x = 0; x < w; x++) { T(x, 27, 'dirt'); T(x, 28, 'dirt'); }
-  // pond
-  for (let x = 47; x <= 51; x++) for (let y = 9; y <= 13; y++) T(x, y, 'water');
+  for (let x = C - 4; x <= C + 3; x++) for (let y = C - 4; y <= C + 3; y++) T(x, y, 'sand');
+  // dirt cross roads (full span)
+  for (let y = 0; y < h; y++) { T(C - 1, y, 'dirt'); T(C, y, 'dirt'); }
+  for (let x = 0; x < w; x++) { T(x, C - 1, 'dirt'); T(x, C, 'dirt'); }
+  // pond (north-east of town)
+  for (let x = C + 19; x <= C + 23; x++) for (let y = C - 19; y <= C - 15; y++) T(x, y, 'water');
 
   const walls: WallTile[] = [];
-  for (let x = 20; x <= 35; x++) {
-    if (x === 27 || x === 28) continue; // door gap
-    walls.push({ x, y: 20, h: true });
+  for (let x = C - 8; x <= C + 7; x++) {
+    if (x === C - 1 || x === C) continue; // door gap
+    walls.push({ x, y: C - 8, h: true });
   }
-  for (let y = 20; y <= 35; y++) walls.push({ x: 20, y, h: false });
+  for (let y = C - 8; y <= C + 7; y++) walls.push({ x: C - 8, y, h: false });
+
+  const trees: TilePoint[] = [
+    wp(76, 76), wp(122, 76), wp(76, 122), wp(122, 122),
+    wp(80, 102), wp(120, 92), wp(102, 78), wp(92, 120),
+    wp(117, 80), wp(84, 116), wp(110, 124), wp(124, 110),
+    wp(118, 80), wp(124, 82),
+  ];
+  const rocks: TilePoint[] = [wp(87, 102), wp(112, 84), wp(97, 117), wp(120, 120), wp(78, 92)];
+  // deterministic wilderness scatter outside the town
+  for (let x = 3; x < w - 3; x++) for (let y = 3; y < h - 3; y++) {
+    const inTown = Math.abs(x - C) <= 24 && Math.abs(y - C) <= 24;
+    const onRoad = x === C - 1 || x === C || y === C - 1 || y === C;
+    const inPond = x >= C + 18 && x <= C + 24 && y >= C - 20 && y <= C - 14;
+    if (inTown || onRoad || inPond) continue;
+    const r = hash2(x, y, 7);
+    if (r < 0.006) trees.push(wp(x, y));
+    else if (r < 0.008) rocks.push(wp(x, y));
+  }
 
   return {
-    v: 3, w, h, terrain, walls,
+    v: 4, w, h, terrain, walls,
     huts: [
-      { x0: 24, y0: 23, x1: 26, y1: 25 },
-      { x0: 30, y0: 30, x1: 32, y1: 32 },
-      { x0: 10, y0: 10, x1: 12, y1: 12 },
-      { x0: 44, y0: 40, x1: 46, y1: 42 },
+      { x0: C - 4, y0: C - 5, x1: C - 2, y1: C - 3 },
+      { x0: C + 2, y0: C + 2, x1: C + 4, y1: C + 4 },
+      { x0: C - 18, y0: C - 18, x1: C - 16, y1: C - 16 },
+      { x0: C + 16, y0: C + 12, x1: C + 18, y1: C + 14 },
     ],
     stalls: [
-      { x0: 22, y0: 24, x1: 23 },
-      { x0: 33, y0: 29, x1: 34 },
-      { x0: 14, y0: 12, x1: 15 },
-      { x0: 40, y0: 44, x1: 41 },
+      { x0: C - 6, y0: C - 4, x1: C - 5 },
+      { x0: C + 5, y0: C + 1, x1: C + 6 },
+      { x0: C - 14, y0: C - 16, x1: C - 13 },
+      { x0: C + 12, y0: C + 16, x1: C + 13 },
     ],
-    trees: [
-      wp(4, 4), wp(50, 4), wp(4, 50), wp(50, 50),
-      wp(8, 30), wp(48, 20), wp(30, 6), wp(20, 48),
-      wp(45, 8), wp(12, 44), wp(38, 52), wp(52, 38),
-      wp(46, 8), wp(52, 10),
-    ],
-    rocks: [wp(15, 30), wp(40, 12), wp(25, 45), wp(48, 48), wp(6, 20)],
-    crates: [wp(26, 26), wp(31, 33), wp(12, 11), wp(43, 41)],
+    trees,
+    rocks,
+    crates: [wp(C - 2, C - 2), wp(C + 3, C + 5), wp(C - 16, C - 17), wp(C + 15, C + 13)],
     npcSpawns: [
-      { name: 'Bram', look: 1, x: 25, y: 22, waypoints: [wp(22, 22), wp(28, 22), wp(25, 26)] },
-      { name: 'Wren', look: 2, x: 33, y: 31, waypoints: [wp(30, 30), wp(35, 32), wp(33, 28)] },
-      { name: 'Odo', look: 3, x: 11, y: 14, waypoints: [wp(9, 13), wp(13, 15), wp(11, 16)] },
-      { name: 'Sella', look: 4, x: 42, y: 42, waypoints: [wp(40, 41), wp(44, 43), wp(42, 45)] },
+      { name: 'Bram', look: 1, x: C - 3, y: C - 6, waypoints: [wp(C - 6, C - 6), wp(C, C - 6), wp(C - 3, C - 2)] },
+      { name: 'Wren', look: 2, x: C + 5, y: C + 3, waypoints: [wp(C + 2, C + 2), wp(C + 7, C + 4), wp(C + 5, C)] },
+      { name: 'Odo', look: 3, x: C - 17, y: C - 14, waypoints: [wp(C - 19, C - 15), wp(C - 15, C - 13), wp(C - 17, C - 12)] },
+      { name: 'Sella', look: 4, x: C + 14, y: C + 14, waypoints: [wp(C + 12, C + 13), wp(C + 16, C + 15), wp(C + 14, C + 17)] },
     ],
-    playerStart: wp(27, 33),
+    playerStart: wp(C - 1, C + 5),
   };
 }
 
@@ -148,7 +168,7 @@ export function loadWorld(): IsoWorld {
     const raw = localStorage.getItem(WORLD_KEY);
     if (raw) {
       const w = JSON.parse(raw) as IsoWorld;
-      if (w && (w.v === 2 || w.v === 3) && w.w >= 10 && w.h >= 10) {
+      if (w && (w.v === 2 || w.v === 3 || w.v === 4) && w.w >= 10 && w.h >= 10) {
         // migrate v2 npc color looks (tunic/hair) to v3 sprite look indices
         if (w.v === 2 && Array.isArray(w.npcSpawns)) {
           w.npcSpawns = w.npcSpawns.map((s: NpcSpawn, i: number) => ({
@@ -156,6 +176,32 @@ export function loadWorld(): IsoWorld {
           }));
           w.v = 3;
           saveWorld(w);
+        }
+        // migrate v3 -> v4: grow to 200x200 and shift the old town to the center
+        if (w.v === 3) {
+          const dx = Math.floor((200 - w.w) / 2), dy = Math.floor((200 - w.h) / 2);
+          const sh = (x: number, y: number) => ({ tx: x + dx, ty: y + dy });
+          const terrain: Record<string, Terrain> = {};
+          for (const [k, t] of Object.entries(w.terrain)) {
+            const [x, y] = k.split(',').map(Number);
+            terrain[terrainKey(x + dx, y + dy)] = t as Terrain;
+          }
+          const moved: IsoWorld = {
+            ...w, v: 4, w: 200, h: 200, terrain,
+            walls: w.walls.map(t => ({ x: t.x + dx, y: t.y + dy, h: t.h })),
+            huts: w.huts.map(hh => ({ x0: hh.x0 + dx, y0: hh.y0 + dy, x1: hh.x1 + dx, y1: hh.y1 + dy })),
+            stalls: w.stalls.map(s => ({ x0: s.x0 + dx, y0: s.y0 + dy, x1: s.x1 + dx })),
+            trees: w.trees.map(t => sh(t.tx, t.ty)),
+            rocks: w.rocks.map(t => sh(t.tx, t.ty)),
+            crates: w.crates.map(t => sh(t.tx, t.ty)),
+            npcSpawns: w.npcSpawns.map(s => ({
+              ...s, x: s.x + dx, y: s.y + dy,
+              waypoints: (s.waypoints || []).map(p => sh(p.tx, p.ty)),
+            })),
+            playerStart: sh(w.playerStart.tx, w.playerStart.ty),
+          };
+          saveWorld(moved);
+          return moved;
         }
         return w;
       }
