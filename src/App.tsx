@@ -19,7 +19,7 @@ import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cell
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, type TouchHoldState } from './game/touchInput';
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, type DialogueTopicId } from './game/dialogue';
-import { shouldBark, barkFor } from './game/npcBarks';
+import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
@@ -82,7 +82,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '333';
+const BUILD_NUMBER = '334';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3447,6 +3447,8 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const [nameplateNpc, setNameplateNpc] = useState<string | null>(null);
   const nameplateTimerRef = useRef<number | null>(null);
   const [npcStates, setNpcStates] = useState(startingTownNpcs);
+  const npcStatesRef = useRef(npcStates);
+  useEffect(() => { npcStatesRef.current = npcStates; }, [npcStates]);
   // Living-town roster: persistent seeded townsfolk, simulated only while the
   // player is in Mosslight Crossing (simulation LOD).
   const [townsfolk, setTownsfolk] = useState<Townsperson[]>([]);
@@ -3868,36 +3870,60 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
           townsfolkRef.current = next;
           setTownsfolk(next);
         }
-        // BUILD 332: ambient barks — nearby outdoor townsfolk greet the
-        // player. Throttled per NPC (~75s), each bark visible ~4s.
-        const now = Date.now();
-        let barksChanged = false;
-        for (const key of Object.keys(barksRef.current)) {
-          if (barksRef.current[key].until <= now) { delete barksRef.current[key]; barksChanged = true; }
-        }
-        if (!interiorRef.current) {
-          const px = positionRef.current.x, py = positionRef.current.y;
-          for (const npc of townsfolkRef.current) {
-            if (npc.indoors || barksRef.current[npc.id]) continue;
-            if (now - (lastBarkRef.current[npc.id] || 0) < 75000) continue;
-            if (Math.hypot(npc.position.x - px, npc.position.y - py) > 14) continue;
-            const disp = dispositionRef.current[npc.id] ?? defaultDisposition();
-            if (!shouldBark(disp, npc.seed, folkClock.day)) continue;
-            barksRef.current[npc.id] = {
-              text: barkFor({ archetype: npc.archetype, activity: npc.activity, disposition: disp, minuteOfDay: folkClock.minuteOfDay, seed: npc.seed, day: folkClock.day }),
-              until: now + 4000,
-            };
-            lastBarkRef.current[npc.id] = now;
-            barksChanged = true;
-          }
-        }
-        if (barksChanged) {
-          const nextBarks: Record<string, string> = {};
-          for (const [id, b] of Object.entries(barksRef.current)) nextBarks[id] = b.text;
-          setBarks(nextBarks);
-        }
       }
     }, 120);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // BUILD 334: ambient barks for everyone — townsfolk, static town NPCs and
+  // road travelers greet the player when nearby. Own 2s interval so the
+  // checks stay cheap; throttled per NPC (~75s), each bubble visible ~4s.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (interiorRef.current) return;
+      const clock = brainRef.current?.worldCore.getClock();
+      if (!clock) return;
+      const now = Date.now();
+      let changed = false;
+      for (const key of Object.keys(barksRef.current)) {
+        if (barksRef.current[key].until <= now) { delete barksRef.current[key]; changed = true; }
+      }
+      const px = positionRef.current.x, py = positionRef.current.y;
+      const consider = (id: string, x: number, y: number, ctx: Omit<BarkContext, 'minuteOfDay' | 'day'>) => {
+        if (barksRef.current[id]) return;
+        if (now - (lastBarkRef.current[id] || 0) < 75000) return;
+        if (Math.hypot(x - px, y - py) > 14) return;
+        if (!shouldBark(ctx.disposition, ctx.seed, clock.day)) return;
+        barksRef.current[id] = {
+          text: barkFor({ ...ctx, minuteOfDay: clock.minuteOfDay, day: clock.day }),
+          until: now + 4000,
+        };
+        lastBarkRef.current[id] = now;
+        changed = true;
+      };
+      for (const npc of townsfolkRef.current) {
+        if (npc.indoors) continue;
+        consider(npc.id, npc.position.x, npc.position.y, {
+          archetype: npc.archetype, activity: npc.activity,
+          disposition: dispositionRef.current[npc.id] ?? defaultDisposition(), seed: npc.seed,
+        });
+      }
+      for (const npc of npcStatesRef.current) {
+        consider('npcstate-' + npc.name, npc.position.x, npc.position.y, {
+          archetype: npc.role, activity: npc.title, disposition: 50, seed: seedForName(npc.name),
+        });
+      }
+      for (const t of travelersRef.current) {
+        consider(t.id, t.position.x, t.position.y, {
+          archetype: 'traveler', activity: '', disposition: 50, seed: seedForName(t.id), destination: t.destination,
+        });
+      }
+      if (changed) {
+        const nextBarks: Record<string, string> = {};
+        for (const [id, b] of Object.entries(barksRef.current)) nextBarks[id] = b.text;
+        setBarks(nextBarks);
+      }
+    }, 2000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -5102,6 +5128,8 @@ if (active) {
     if (!clock) return [];
     return travelersForChunk(chunk, clock, roadLinks);
   }, [chunk.x, chunk.y, time, roadLinks]);
+  const travelersRef = useRef(travelers);
+  useEffect(() => { travelersRef.current = travelers; }, [travelers]);
   // BUILD 329: townsfolk who are physically inside the cottage the player is
   // currently visiting (INTERIOR/SLEEPING with a matching buildingId), mapped
   // from cottage field-unit coords to interior % coords. The field renderer
@@ -6703,6 +6731,7 @@ if (active) {
                 <strong>{npc.name}</strong>
                 <small>{npc.title}</small>
               </span>
+              {barks['npcstate-' + npc.name] && <span className="npc-bark" aria-hidden="true">{barks['npcstate-' + npc.name]}</span>}
               <span className="npc-sprite" aria-hidden="true" />
             </button>
             );
@@ -6727,6 +6756,7 @@ if (active) {
                 <strong>{traveler.name}</strong>
                 <small>→ {traveler.destination}</small>
               </span>
+              {barks[traveler.id] && <span className="npc-bark" aria-hidden="true">{barks[traveler.id]}</span>}
               <span className="npc-sprite" aria-hidden="true" />
             </button>
             );

@@ -12,6 +12,18 @@ export interface BarkContext {
   seed: number;
   /** World day number — barks vary day to day. */
   day: number;
+  /** Road destination — used for traveler-flavored barks. */
+  destination?: string;
+}
+
+/** Deterministic numeric seed for NPCs that only have a name/id string. */
+export function seedForName(name: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < name.length; i++) {
+    h ^= name.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
 }
 
 function hash01(a: number, b: number): number {
@@ -77,6 +89,10 @@ const ARCHETYPE_BARKS: Record<string, Partial<Record<DayPeriod, [string, string]
 /** Pick the bark line for an NPC. Pure and deterministic. */
 export function barkFor(ctx: BarkContext): string {
   const period = periodFor(ctx.minuteOfDay);
+  if (ctx.destination && (ctx.archetype === 'traveler' || ctx.archetype === 'caravan')) {
+    const pool = [`Bound for ${ctx.destination}.`, `The road to ${ctx.destination} is long.`, 'Mind the road, friend.'];
+    return pool[Math.floor(hash01(ctx.seed, 78) * pool.length)];
+  }
   const flavor = ARCHETYPE_BARKS[ctx.archetype]?.[period];
   const pool = flavor ?? PERIOD_GREETINGS[period];
   return pool[Math.floor(hash01(ctx.seed, 77) * pool.length)];

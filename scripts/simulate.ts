@@ -15,7 +15,7 @@ import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, he
 import { markerForGiver, questById, type QuestState } from '../src/game/quests';
 import { initialCellarRats, CELLAR_RAT_ID_BASE, CELLAR_RAT_HP, CELLAR_RAT_COUNT } from '../src/game/cellarRats';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, adjustWanted } from '../src/game/dialogue';
-import { shouldBark, barkFor } from '../src/game/npcBarks';
+import { shouldBark, barkFor, seedForName } from '../src/game/npcBarks';
 import { appearanceForNpc, npcAppearanceStyle } from '../src/game/npcAppearance';
 import {
   resolveMonsterSprite,
@@ -1817,6 +1817,29 @@ console.log('Testing ambient NPC barks...');
     const line = barkFor({ ...ctx, archetype: 'commoner', minuteOfDay: minute });
     assert(line.length > 2, `no bark for minute ${minute}`);
   }
+}
+
+// ---- BUILD 334: barks for static NPCs + road travelers ----
+console.log('Testing barks for static NPCs and travelers...');
+{
+  // 1. Name seeds are deterministic and distinct per name.
+  assert(seedForName('Mira') === seedForName('Mira'), 'name seed must be deterministic');
+  assert(seedForName('Mira') !== seedForName('Bram'), 'different names should seed differently');
+  // 2. Traveler barks mention their destination.
+  const t = { archetype: 'traveler', activity: '', disposition: 50, minuteOfDay: 10 * 60, seed: seedForName('t-1'), day: 3, destination: 'Frosthold' };
+  const line = barkFor(t);
+  assert(barkFor(t) === line, 'traveler bark must be deterministic');
+  assert(line.includes('Frosthold') || line.includes('road'), `traveler bark should be road-flavored (got "${line}")`);
+  // Caravan merchants get the same treatment.
+  const c = barkFor({ ...t, archetype: 'caravan', destination: 'Dunewatch' });
+  assert(c.includes('Dunewatch') || c.includes('road'), `caravan bark should be road-flavored (got "${c}")`);
+  // Traveler without a destination falls back to the period greeting.
+  const g = barkFor({ ...t, destination: undefined });
+  assert(g.length > 2 && !g.includes('undefined'), 'traveler without destination should get a greeting');
+  // 3. shouldBark gates static NPCs the same way (disposition 50 barks ~half).
+  let barked = 0;
+  for (let i = 0; i < 100; i++) if (shouldBark(50, seedForName('static-' + i), 3)) barked++;
+  assert(barked > 20 && barked < 80, `static bark rate off: ${barked}/100`);
 }
 
 // ---- Results ----
