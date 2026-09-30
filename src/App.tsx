@@ -20,7 +20,10 @@ import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type T
 import { LANDMARKS } from '@/game/landmarks';
 import {
   advanceCivilization,
+  caravanPosition,
+  caravanProgress,
   castleBySettlementId,
+  civDayFloat,
   createCivilization,
   deserializeCivilization,
   kingdomLabelPoints,
@@ -4547,6 +4550,39 @@ if (active) {
     if (!clock) return [];
     return travelersForChunk(chunk, clock, roadLinks);
   }, [chunk.x, chunk.y, time, roadLinks]);
+  // Civ phase 8: merchant caravans traveling through the player's chunk,
+  // positioned analytically from the world clock (no stored movement state).
+  const visibleCaravans = useMemo(() => {
+    const clock = brainRef.current?.worldCore.getClock();
+    if (!clock) return [];
+    const civ = ensureCiv();
+    const out: { id: string; merchant: string; destination: string; goods: string[]; guards: number; position: Point }[] = [];
+    for (const caravan of civ.caravans) {
+      const pos = caravanPosition(caravan, clock, civ);
+      if (pos.status !== 'traveling') continue;
+      if (pos.chunk.x !== chunk.x || pos.chunk.y !== chunk.y) continue;
+      const dest = settlementById(civ, caravan.destinationId);
+      const route = civ.routes.find((r) => r.id === caravan.routeId);
+      out.push({
+        id: caravan.id,
+        merchant: caravan.merchant,
+        destination: dest?.name ?? caravan.destinationId,
+        goods: [...(route?.goods ?? [])],
+        guards: caravan.guards,
+        position: { x: pos.position.x, y: pos.position.y },
+      });
+    }
+    return out;
+  }, [chunk.x, chunk.y, time]);
+  const talkToCaravan = (c: { merchant: string; destination: string; goods: string[]; guards: number }) => {
+    setNameplateNpc(c.merchant);
+    if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
+    nameplateTimerRef.current = window.setTimeout(() => {
+      setNameplateNpc(null);
+      nameplateTimerRef.current = null;
+    }, 4000);
+    setLogs((currentLogs) => [{ text: `${c.merchant}'s caravan is bound for ${c.destination} with ${c.goods.join(', ') || 'goods'} (${c.guards} guards).`, color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
   const talkToTraveler = (traveler: Traveler) => {
     setNameplateNpc(traveler.name);
     if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
@@ -4994,6 +5030,25 @@ if (active) {
                         </div>
                       );
                     })}
+                    <div className="inspector-heading">Merchant caravans ({civ.caravans.length})</div>
+                    {(() => {
+                      const clock = brainRef.current?.worldCore.getClock();
+                      if (!clock) return null;
+                      const dayFloat = civDayFloat(clock);
+                      return civ.caravans.slice(0, 12).map((cv) => {
+                        const pos = caravanPosition(cv, clock, civ);
+                        const origin = settlementById(civ, cv.originId);
+                        const dest = settlementById(civ, cv.destinationId);
+                        return (
+                          <div key={cv.id} className="inspector-row">
+                            <span>🐪 <strong>{cv.merchant}</strong> · {origin?.name ?? cv.originId} → {dest?.name ?? cv.destinationId} · {pos.status}{pos.status === 'traveling' ? ` ${Math.round(caravanProgress(cv, dayFloat) * 100)}%` : ''} · {cv.guards} guards</span>
+                            {pos.status === 'traveling' && pos.chunk.x === chunk.x && pos.chunk.y === chunk.y && (
+                              <span> · here</span>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 );
               })()}
@@ -5771,6 +5826,26 @@ if (active) {
                 <span className="npc-role-mark" aria-hidden="true" />
                 <strong>{traveler.name}</strong>
                 <small>→ {traveler.destination}</small>
+              </span>
+              <span className="npc-sprite" aria-hidden="true" />
+            </button>
+          ))}
+          {visibleCaravans.map((c) => (
+            <button
+              key={c.id}
+              className={'town-npc traveler npc-merchant' + (nameplateNpc === c.merchant ? ' show-nameplate' : '')}
+              onClick={(moverMode || markerMode) ? undefined : () => talkToCaravan(c)}
+              style={{ left: fieldPct(c.position.x), top: fieldPct(c.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined }}
+              data-role="merchant"
+              data-facing="down"
+              aria-label={c.merchant + ', caravan merchant, bound for ' + c.destination}
+              title={c.merchant + ' — bound for ' + c.destination}
+              data-testid={c.id}
+            >
+              <span className="npc-nameplate">
+                <span className="npc-role-mark" aria-hidden="true" />
+                <strong>{c.merchant}</strong>
+                <small>🐪 → {c.destination}</small>
               </span>
               <span className="npc-sprite" aria-hidden="true" />
             </button>
