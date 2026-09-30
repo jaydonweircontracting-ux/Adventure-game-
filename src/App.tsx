@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '267';
+const BUILD_NUMBER = '268';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -712,7 +712,7 @@ function resolveFieldMovement(current: Point, movement: Point, chunk: Point, goa
   return null;
 }
 
-type InteriorArea = { id: string; name: string; description: string; roomType: 'guild' | 'inn' | 'chapel' | 'building' | 'prison'; exteriorPosition: Point };
+type InteriorArea = { id: string; name: string; description: string; roomType: 'guild' | 'inn' | 'chapel' | 'building' | 'prison' | 'tavern'; exteriorPosition: Point };
 type PrisonState = {
   foundShiv: boolean;
   talkedToPrisoner: boolean;
@@ -795,7 +795,7 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
       const stableName = isStartingArea(chunk) && index === 0 ? 'Tutorial House'
         : isStartingArea(chunk) && index === 1 ? 'Wayfarer Guild'
         : isStartingArea(chunk) && index === 2 ? 'Rootbound Chapel'
-        : isStartingArea(chunk) && index === 3 ? 'Stone House'
+        : isStartingArea(chunk) && index === 3 ? 'The Rusty Tankard'
         : landmark.name + ' House ' + (index + 1);
       return {
         id: stableId,
@@ -807,9 +807,9 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
           description: isStartingArea(chunk) && index === 0 ? 'A small safe house on the tutorial island.'
             : isStartingArea(chunk) && index === 1 ? 'A workbench, maps, and road-worn notices fill the guild hall.'
             : isStartingArea(chunk) && index === 2 ? 'Lanterns glow beneath old roots in the quiet town chapel.'
-            : isStartingArea(chunk) && index === 3 ? 'A sturdy stone house with a prominent wooden door.'
+            : isStartingArea(chunk) && index === 3 ? 'A cozy tavern with a long oak bar. Mira serves ale and gossip.'
             : 'A simple brown room waiting to be furnished.',
-          roomType: (isStartingArea(chunk) && index === 0 ? 'inn' : isStartingArea(chunk) && index === 1 ? 'guild' : isStartingArea(chunk) && index === 2 ? 'chapel' : 'building') as const,
+          roomType: (isStartingArea(chunk) && index === 0 ? 'inn' : isStartingArea(chunk) && index === 1 ? 'guild' : isStartingArea(chunk) && index === 2 ? 'chapel' : isStartingArea(chunk) && index === 3 ? 'tavern' : 'building') as const,
           exteriorPosition: doorwayExteriorPosition(rect, position),
         },
       };
@@ -989,6 +989,16 @@ const interiorFurnitureCollision: Record<InteriorArea['roomType'], InteriorColli
     { left: 42, top: 28, right: 58, bottom: 52 }, // fireplace
     { left: 17, top: 43, right: 30, bottom: 67 }, // shelf left
     { left: 70, top: 43, right: 83, bottom: 67 }, // shelf right
+  ],
+  tavern: [
+    { left: 11, top: 7, right: 83, bottom: 22 }, // bar counter
+    { left: 21, top: 24, right: 30, bottom: 34 }, // stool 1
+    { left: 43, top: 24, right: 53, bottom: 34 }, // stool 2
+    { left: 66, top: 24, right: 75, bottom: 34 }, // stool 3
+    { left: 13, top: 54, right: 32, bottom: 71 }, // round table 1
+    { left: 63, top: 59, right: 82, bottom: 76 }, // round table 2
+    { left: 84, top: 9, right: 96, bottom: 26 }, // barrel 1
+    { left: 84, top: 26, right: 96, bottom: 43 }, // barrel 2
   ],
   prison: [
     { left: 12, top: 30, right: 32, bottom: 50 }, // straw bed
@@ -2561,13 +2571,14 @@ function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: Player
   return <section className="satchel-stats-panel" role="tabpanel" aria-label="Adventurer Stats"><div className="satchel-stats-heading"><span className="atlas-eyebrow">Character growth</span><h3>Adventurer Stats</h3></div><div className="satchel-stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div><div className="satchel-stats-list">{STAT_KEYS.map((stat) => <div className="satchel-stat-row" key={stat} data-testid={'stat-row-' + stat}><span className="satchel-stat-key">{stat.toUpperCase()}</span><span className="satchel-stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span><b className="satchel-stat-value">{playerStats[stat]}</b><button className="satchel-stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button></div>)}</div><div className="satchel-stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div></section>;
 }
 
-function InteriorRoom({ area, position, facing, moving, equippedDagger, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onEnterDungeon }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onEnterDungeon: () => void }) {
+function InteriorRoom({ area, position, facing, moving, equippedDagger, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onEnterDungeon }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onEnterDungeon: () => void }) {
   // Room-type-specific furniture: each building type gets its own visual identity.
   const furniture = {
     guild: (<><span className="interior-rug" /><span className="interior-workbench" /><span className="interior-forge" aria-hidden="true"><span className="forge-fire"><span className="forge-flame forge-flame-back" /><span className="forge-flame forge-flame-mid" /><span className="forge-flame forge-flame-core" /><span className="forge-sparks"><i /><i /><i /><i /><i /></span></span><span className="forge-logs" /></span><span className="interior-weapon-rack" aria-hidden="true"><span className="rack-weapon" style={{ left: '8%', height: '58%', transform: 'rotate(-6deg)' }} /><span className="rack-weapon" style={{ left: '27%', height: '66%', transform: 'rotate(4deg)' }} /><span className="rack-weapon" style={{ left: '46%', height: '60%', transform: 'rotate(-3deg)' }} /><span className="rack-weapon" style={{ left: '65%', height: '68%', transform: 'rotate(5deg)' }} /><span className="rack-weapon" style={{ left: '82%', height: '56%', transform: 'rotate(-5deg)' }} /></span><span className="interior-quest-board" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     inn: (<><span className="interior-rug" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-bar" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     chapel: (<><span className="interior-rug" /><span className="interior-altar" /><span className="interior-pew pew-left" /><span className="interior-pew pew-right" /><span className="interior-candle candle-left" /><span className="interior-candle candle-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     building: (<><span className="interior-rug" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
+    tavern: (<><span className="interior-rug" /><span className="interior-bar-counter" aria-hidden="true"><span className="bar-mug mug-1" /><span className="bar-mug mug-2" /><span className="bar-mug mug-3" /></span><span className="interior-stool stool-1" aria-hidden="true" /><span className="interior-stool stool-2" aria-hidden="true" /><span className="interior-stool stool-3" aria-hidden="true" /><span className="interior-round-table table-1" aria-hidden="true"><span className="bar-mug table-mug" /><span className="table-candle" /></span><span className="interior-round-table table-2" aria-hidden="true"><span className="bar-mug table-mug" /><span className="table-candle" /></span><span className="interior-barrel barrel-1" aria-hidden="true" /><span className="interior-barrel barrel-2" aria-hidden="true" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     prison: (<><span className="prison-bars" /><span className="prison-straw-bed" /><span className="prison-sewer-grate" /><span className="prison-torch" /><span className="interior-lantern lantern-left" /></>),
   }[area.roomType];
   return (
@@ -2584,6 +2595,22 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, attackin
           <span className="interior-npc-nameplate" aria-hidden="true"><strong>Bram</strong><small>Smith · Talk</small></span>
           <span className="npc-sprite" aria-hidden="true" />
         </button>
+      )}
+      {area.id === 'fourth-house' && (
+        <>
+          <button type="button" className="interior-npc npc-guide" onClick={onTalkToBartender} style={{ left: '50%', top: '24%' }} aria-label="Talk to Mira, the bartender" data-testid="tavern-bartender" data-facing="down">
+            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Mira</strong><small>Bartender · Talk</small></span>
+            <span className="npc-sprite" aria-hidden="true" />
+          </button>
+          <button type="button" className="interior-npc npc-warrior" onClick={() => onTalkToPatron('Old Tam', "Back in my day, the goats were bigger. And meaner. Mostly meaner.")} style={{ left: '13%', top: '63%' }} aria-label="Talk to Old Tam" data-testid="tavern-patron-tam" data-facing="right">
+            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Old Tam</strong><small>Regular · Talk</small></span>
+            <span className="npc-sprite" aria-hidden="true" />
+          </button>
+          <button type="button" className="interior-npc npc-mage" onClick={() => onTalkToPatron('Sella', "They say the Ember Vault under the chapel glows when danger stirs. I don't go down there.")} style={{ left: '81%', top: '66%' }} aria-label="Talk to Sella" data-testid="tavern-patron-sella" data-facing="left">
+            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Sella</strong><small>Traveler · Talk</small></span>
+            <span className="npc-sprite" aria-hidden="true" />
+          </button>
+        </>
       )}
       {area.id === 'tutorial-house' && simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') === 'starting-house').map((adventurer) => {
         const housePosition = adventurer.interiorPosition || { x: 50, y: 47 };
@@ -3590,6 +3617,15 @@ if (active) {
     onAddRumor(rumor, 'Bram');
     setLogs((currentLogs) => [{ text: `Bram shares a rumor: "${rumor}"`, color: 'purple' }, ...currentLogs].slice(0, 5));
   };
+  // Rusty Tankard tavern: the bartender shares rumors, patrons share flavor.
+  const talkToBartender = () => {
+    const rumor = WORLD_RUMORS[Math.floor(Math.random() * WORLD_RUMORS.length)];
+    onAddRumor(rumor, 'Mira');
+    setLogs((currentLogs) => [{ text: `Mira slides a mug down the bar. "On the house, traveler! Hear this one: ${rumor}"`, color: 'purple' }, ...currentLogs].slice(0, 5));
+  };
+  const talkToPatron = (name: string, line: string) => {
+    setLogs((currentLogs) => [{ text: `${name} says: "${line}"`, color: 'blue' }, ...currentLogs].slice(0, 5));
+  };
   const enterDoorway = (doorway: Doorway, entryChunk: Point) => {
     interiorDoorwayIdRef.current = doorway.id;
     interiorEntryChunkRef.current = { x: entryChunk.x, y: entryChunk.y };
@@ -3602,7 +3638,7 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onEnterDungeon={onEnterDungeon} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onEnterDungeon={onEnterDungeon} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -4078,7 +4114,7 @@ if (active) {
                       setSelectedHouse(doorway.id);
                     }
                   } : undefined}
-                />
+                >{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}</span>
                 );
               })}
               {markerMode && doorways.map((doorway) => {

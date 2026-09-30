@@ -2474,6 +2474,33 @@ body {
 .interior-fireplace::after { content: ''; position: absolute; left: 36%; right: 36%; bottom: 8%; height: 32%; background: radial-gradient(ellipse at 50% 90%, #fff6c0 0%, #ffcf3d 60%, rgba(255, 170, 40, 0) 80%); border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%; transform-origin: 50% 100%; animation: flame-dance .58s ease-in-out -.3s infinite; }
 @keyframes fire-flicker { 0%, 100% { transform: scaleY(1); opacity: 1; } 50% { transform: scaleY(.85); opacity: .85; } }
 .interior-bar { position: absolute; left: 20%; top: 62%; width: 60%; height: 9%; border: 2px solid #5c3d32; background: #7d5a3a; box-shadow: inset 0 3px 0 rgba(220, 170, 100, .3), 2px 3px 0 rgba(50, 35, 28, .25); }
+/* Tavern (Rusty Tankard): long bar counter, stools, round tables, barrels */
+.interior-tavern { background: #5d3a28; }
+.interior-tavern::after { background: linear-gradient(135deg, rgba(250, 199, 107, .16), transparent 45%), #8a5f3c; }
+.interior-bar-counter { position: absolute; left: 12%; top: 8%; width: 70%; height: 13%; border: 2px solid #4a3320; background: #7d5a3a; box-shadow: inset 0 4px 0 rgba(232, 176, 93, .35), 3px 4px 0 rgba(50, 35, 28, .25); }
+.interior-bar-counter::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 5px; background: rgba(245, 205, 130, .55); }
+.interior-bar-counter::after { content: ''; position: absolute; left: 5%; right: 5%; bottom: -8px; height: 7px; background: #4a3320; }
+.bar-mug { position: absolute; bottom: 6px; width: 9px; height: 11px; background: linear-gradient(180deg, #e8c876 0%, #c8a05a 100%); border: 1px solid #6a4c30; border-radius: 0 0 3px 3px; }
+.bar-mug::before { content: ''; position: absolute; left: 1px; right: 1px; top: 1px; height: 3px; background: #fff3d0; border-radius: 2px; }
+.bar-mug::after { content: ''; position: absolute; right: -4px; top: 2px; width: 4px; height: 6px; border: 1px solid #6a4c30; border-left: none; border-radius: 0 3px 3px 0; }
+.mug-1 { left: 18%; } .mug-2 { left: 47%; } .mug-3 { left: 74%; }
+.interior-stool { position: absolute; top: 25%; width: 7%; height: 8%; background: #6a4c30; border: 2px solid #4a3320; border-radius: 3px; box-shadow: 2px 2px 0 rgba(50, 35, 28, .25); }
+.interior-stool::after { content: ''; position: absolute; left: 22%; right: 22%; bottom: -9px; height: 9px; border-left: 2px solid #4a3320; border-right: 2px solid #4a3320; }
+.stool-1 { left: 22%; } .stool-2 { left: 44.5%; } .stool-3 { left: 67%; }
+.interior-round-table { position: absolute; width: 17%; height: 15%; border: 2px solid #4a3320; border-radius: 50%; background: radial-gradient(circle at 42% 36%, #9a7046 0%, #6a4c30 78%); box-shadow: 2px 3px 0 rgba(50, 35, 28, .25); }
+.interior-round-table::after { content: ''; position: absolute; left: 45%; right: 45%; bottom: -13px; height: 13px; background: #4a3320; }
+.table-1 { left: 14%; top: 55%; } .table-2 { left: 64%; top: 60%; }
+.table-mug { left: 28%; bottom: 32%; }
+.table-candle { position: absolute; left: 58%; bottom: 34%; width: 6px; height: 12px; background: #e8e0d0; border: 1px solid #b8b0a0; box-shadow: 0 0 8px rgba(255, 220, 130, .8); }
+.table-candle::before { content: ''; position: absolute; left: 1px; top: -6px; width: 4px; height: 6px; background: #ffcc55; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: fire-flicker 1s ease-in-out infinite; }
+.interior-barrel { position: absolute; right: 5%; width: 10%; height: 15%; border: 2px solid #3d2c1c; border-radius: 9px; background: repeating-linear-gradient(0deg, #7d5a3a 0 8px, #5f4229 8px 11px); box-shadow: 2px 3px 0 rgba(50, 35, 28, .25); }
+.interior-barrel::before, .interior-barrel::after { content: ''; position: absolute; left: -2px; right: -2px; height: 3px; background: #2e2013; border-radius: 2px; }
+.interior-barrel::before { top: 24%; } .interior-barrel::after { bottom: 24%; }
+.barrel-1 { top: 10%; } .barrel-2 { top: 27%; }
+/* Hanging tavern sign on the bar's exterior */
+.field-house-sign { position: absolute; left: 37%; top: -16%; width: 26%; height: 20%; background: #6a4c30; border: 2px solid #3d2c1c; border-radius: 2px; box-shadow: 0 2px 0 rgba(0, 0, 0, .25); pointer-events: none; }
+.field-house-sign::before { content: ''; position: absolute; left: 50%; top: -7px; width: 2px; height: 7px; background: #3d2c1c; transform: translateX(-50%); }
+.field-house-sign::after { content: '🍺'; position: absolute; inset: 0; display: grid; place-items: center; font-size: 11px; line-height: 1; }
 /* Chapel: altar, pews, candles */
 .interior-altar { position: absolute; left: 40%; top: 26%; width: 20%; height: 16%; border: 2px solid #6a6a6a; background: linear-gradient(180deg, #9a9a9a 0 20%, #7a7a7a 20% 100%); box-shadow: 2px 4px 0 rgba(60, 60, 60, .3); }
 .interior-altar::before { content: ''; position: absolute; left: 30%; right: 30%; top: -18px; height: 16px; background: #d8d8d8; clip-path: polygon(45% 0, 55% 0, 55% 100%, 45% 100%, 45% 35%, 15% 35%, 15% 45%, 45% 45%, 45% 100%, 55% 100%, 55% 45%, 85% 45%, 85% 35%, 55% 35%); }
