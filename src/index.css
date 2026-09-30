@@ -5130,3 +5130,74 @@ body {
 .pixel-field.has-ground-detail::before { display: none; }
 .pixel-field.has-ground-detail .field-road { display: none; }
 .pixel-field.has-ground-detail .field-water.world-water-sea { display: none; }
+
+/* BUILD 345: crash freeze screen — shown instead of a white screen when the game crashes. */
+.game-crash {
+  position: fixed;
+  inset: 0;
+  z-index: 90000;
+  background: #0d1a16;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.game-crash-panel {
+  max-width: 440px;
+  width: 100%;
+  background: #14261f;
+  border: 1px solid #2c4a3e;
+  border-radius: 12px;
+  padding: 26px 24px;
+  text-align: center;
+  color: #e8f0e9;
+}
+.game-crash-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.game-crash-code {
+  font-family: ui-monospace, monospace;
+  font-size: 24px;
+  color: #ffd75e;
+  margin: 14px 0 6px;
+  letter-spacing: 1px;
+}
+.game-crash-msg {
+  font-size: 13px;
+  color: #b9c9bd;
+  word-break: break-word;
+  max-height: 120px;
+  overflow: auto;
+}
+.game-crash-meta {
+  font-size: 11px;
+  color: #7d8f83;
+  margin-top: 10px;
+}
+.game-crash-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 18px;
+}
+.game-crash-reload {
+  background: #e8a33d;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 22px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #231603;
+  cursor: pointer;
+}
+.game-crash-retry {
+  background: transparent;
+  border: 1px solid #2c4a3e;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 14px;
+  color: #b9c9bd;
+  cursor: pointer;
+}

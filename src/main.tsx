@@ -16,3 +16,9 @@ createRoot(document.getElementById('root')!, {
     <App />
   </ErrorBoundary>,
 );
+
+// BUILD 345: signal the boot watchdog that React rendered (first painted
+// frame), so pre-React crash handling stands down.
+requestAnimationFrame(() => {
+  (window as unknown as { __agBooted?: boolean }).__agBooted = true;
+});

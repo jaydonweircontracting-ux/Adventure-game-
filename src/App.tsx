@@ -3,7 +3,7 @@ import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, 
 import { type CSSProperties } from 'react';
 import { type ChangeEvent, type PointerEvent, type ReactNode, type TouchEvent } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ErrorBoundary } from '@/components/error-boundary';
+import { ErrorBoundary, type ErrorFallbackProps } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
@@ -85,7 +85,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '344';
+const BUILD_NUMBER = '345';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -8015,7 +8015,9 @@ function Home() {
       ) : (
         <>
           <div className="game-layout">
+            <GameCrashBoundary chunk={chunk}>
             <GameField inventory={inventory} equippedDagger={equippedDagger} equippedBow={equippedBow} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
+            </GameCrashBoundary>
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} kingdomLabels={menuBridgeRef.current?.getKingdomLabels() ?? []} tradeRoutes={menuBridgeRef.current?.getTradeRoutes() ?? []} />}
@@ -8091,6 +8093,44 @@ function Router() {
 function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
+}
+
+// BUILD 345: crash freeze screen. When the game itself crashes, React unmounts
+// GameField (which stops the game loop — the game freezes instead of going to
+// a white screen) and shows this panel with an error code the user can report.
+function gameCrashCode(message: string): string {
+  let h = 0;
+  const s = BUILD_NUMBER + '|' + message;
+  for (let i = 0; i < s.length; i++) { h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0; }
+  return 'AG' + BUILD_NUMBER + '-' + (h >>> 0).toString(36).toUpperCase().padStart(6, '0').slice(-5);
+}
+
+function GameCrashScreen({ error, resetError, context }: ErrorFallbackProps & { context: string }) {
+  const code = gameCrashCode(error.message || String(error));
+  const when = new Date().toLocaleString();
+  return (
+    <div className="game-crash" role="alert" data-testid="game-crash-screen">
+      <div className="game-crash-panel">
+        <div className="game-crash-title">⚠ GAME FROZE</div>
+        <div className="game-crash-code" data-testid="game-crash-code">{code}</div>
+        <p className="game-crash-msg">{error.message || String(error)}</p>
+        <div className="game-crash-meta">{when} · {context}</div>
+        <div className="game-crash-actions">
+          <button type="button" className="game-crash-reload" onClick={() => window.location.reload()}>Reload game</button>
+          <button type="button" className="game-crash-retry" onClick={resetError}>Try to continue</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GameCrashBoundary({ children, chunk }: { children: ReactNode; chunk: Point }) {
+  const context = 'build ' + BUILD_NUMBER + ' · chunk ' + chunk.x + ',' + chunk.y;
+  return (
+    <ErrorBoundary FallbackComponent={(props: ErrorFallbackProps) => <GameCrashScreen {...props} context={context} />}>
+      {children}
+    </ErrorBoundary>
+  );
 }
 
 // BUILD 339: LTTP-style procedural ground detail. Paints the chunk's ground
