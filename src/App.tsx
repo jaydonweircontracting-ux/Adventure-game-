@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '244';
+const BUILD_NUMBER = '245';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -2579,6 +2579,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const [debugMarks, setDebugMarks] = useState<Point[]>([]);
   // Visual house mover: doorwayId -> {x, y} offset in field units. Visual only.
   const [houseOffsets, setHouseOffsets] = useState<Record<string, Point>>({});
+  // Ref sync for the animation loop (movement entry must use the same offsets as the prompt).
+  const houseOffsetsRef = useRef(houseOffsets);
+  houseOffsetsRef.current = houseOffsets;
   // Tap-to-move: selected house ID. Tap a house to pick it up, tap the field to place it.
   const [selectedHouse, setSelectedHouse] = useState<string | null>(null);
   // Mover zoom level.
@@ -3259,7 +3262,7 @@ if (active) {
         const current = positionRef.current;
         const currentChunk = chunkRef.current;
         const attempted = { x: current.x + movement.x, y: current.y + movement.y };
-        const nearbyDoor = doorwayNear(attempted, currentChunk);
+        const nearbyDoor = doorwayNear(attempted, currentChunk, houseOffsetsRef.current);
         if (nearbyDoor && canEnterDoorway(current, attempted, nearbyDoor, direction)) {
           enterDoorway(nearbyDoor, currentChunk);
           animationFrame = window.requestAnimationFrame(animate); return;
