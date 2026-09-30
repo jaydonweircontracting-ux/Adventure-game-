@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '268';
+const BUILD_NUMBER = '269';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -2602,12 +2602,16 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, attackin
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Mira</strong><small>Bartender · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className="interior-npc npc-warrior" onClick={() => onTalkToPatron('Old Tam', "Back in my day, the goats were bigger. And meaner. Mostly meaner.")} style={{ left: '13%', top: '63%' }} aria-label="Talk to Old Tam" data-testid="tavern-patron-tam" data-facing="right">
-            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Old Tam</strong><small>Regular · Talk</small></span>
+          <button type="button" className="interior-npc npc-mage" onClick={() => onTalkToPatron('Noah', "Even mages need a night off. This ale has excellent foam structure — it's all about the fundamentals.")} style={{ left: '13%', top: '63%' }} aria-label="Talk to Noah" data-testid="tavern-patron-noah" data-facing="right">
+            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Noah</strong><small>Mage teacher · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className="interior-npc npc-mage" onClick={() => onTalkToPatron('Sella', "They say the Ember Vault under the chapel glows when danger stirs. I don't go down there.")} style={{ left: '81%', top: '66%' }} aria-label="Talk to Sella" data-testid="tavern-patron-sella" data-facing="left">
-            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Sella</strong><small>Traveler · Talk</small></span>
+          <button type="button" className="interior-npc npc-warrior" onClick={() => onTalkToPatron('Damon', "Arm wrestle? You'd lose, but I admire the spirit! Mira, another round!")} style={{ left: '81%', top: '66%' }} aria-label="Talk to Damon" data-testid="tavern-patron-damon" data-facing="left">
+            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Damon</strong><small>Warrior teacher · Talk</small></span>
+            <span className="npc-sprite" aria-hidden="true" />
+          </button>
+          <button type="button" className="interior-npc npc-rogue" onClick={() => onTalkToPatron('Shawn', "You didn't see me. ...Good footwork slipping past the door, though.")} style={{ left: '48%', top: '44%' }} aria-label="Talk to Shawn" data-testid="tavern-patron-shawn" data-facing="up">
+            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Shawn</strong><small>Rogue instructor · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
         </>
