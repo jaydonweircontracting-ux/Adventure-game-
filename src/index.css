@@ -4608,6 +4608,7 @@ body {
 .beer-mark::before { content: '🍺'; font-size: 15px; }
 
 /* Quest system (BUILD 283). */
+/* BUILD 284: NPC combat AI — common-sense aggro (no suicide fights), flee at low HP, NPC archers (goblins/orcs), RuneScape-style full gear + bone drops. */
 .quest-giver {
   position: absolute;
   z-index: 6;

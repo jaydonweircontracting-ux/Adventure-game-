@@ -21,7 +21,7 @@ import { spriteDefFor, animForMonsterState, monsterAnimFrameFor } from '@/game/m
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc } from '@/game/combat';
-import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS } from '@/game/ai';
+import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS, gearForMonster, bonesForMonster } from '@/game/ai';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
 import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, questProgressText, questRumors, serializeQuestStates, parseQuestStates, type QuestState, type QuestEvent, type QuestDef } from '@/game/quests';
@@ -1105,7 +1105,7 @@ type GoatState = {
 };
 // Hostile mobs: goblins and bandits. Reuse the goat combat AI shape.
 type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'snake' | 'spider' | 'dragon' | 'orc' | 'soldier' | 'wolf' | 'slime' | 'bat' | 'rat';
-type MonsterState = GoatState & { kind: MonsterKind; variant?: string; ranged?: boolean };
+type MonsterState = GoatState & { kind: MonsterKind; variant?: string; ranged?: boolean; gear: GoatLoot };
 const GOAT_STEP = 0.5;
 // Ambient birds: lightweight wildlife, deterministic per chunk, not persisted.
 type BirdStateName = 'idle' | 'hop' | 'peck' | 'fly';
@@ -1440,7 +1440,7 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
 function monsterLootForKind(kind: MonsterKind): GoatLoot {
   switch (kind) {
     case 'goblin': return { coins: 1 + Math.floor(Math.random() * 3), fabric: Math.random() < 0.3 ? 1 : 0 };
-    case 'bandit': return { coins: 3 + Math.floor(Math.random() * 5), fabric: Math.random() < 0.5 ? 1 : 0, bone: 1, bow: Math.random() < 0.15 ? 1 : 0 };
+    case 'bandit': return { coins: 3 + Math.floor(Math.random() * 5), fabric: Math.random() < 0.5 ? 1 : 0, bone: 1 };
     case 'skeleton': return { bone: 1 + Math.floor(Math.random() * 2), coins: Math.random() < 0.5 ? 1 : 0 };
     case 'troll': return { pelt: 1, coins: 2 + Math.floor(Math.random() * 4) };
     case 'snake': return { fang: 1, coins: Math.random() < 0.3 ? 1 : 0 };
@@ -1465,10 +1465,13 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
     if (isFieldPositionBlocked(position, chunk)) return;
     const level = monsterLevelForChunk(chunk, index, playerLevel);
     const maxHp = Math.round(goatMaxHpForLevel(level) * hpMult);
+    const variant = variantPool ? variantPool[seed % variantPool.length] : 'default';
+    // Bows aren't just for bandits: some goblins and orcs fight at range too.
+    const ranged = (kind === 'bandit' && seed % 3 === 0) || (kind === 'goblin' && seed % 4 === 0) || (kind === 'orc' && seed % 5 === 0);
     monsters.push({
       id: id++,
       kind,
-      variant: variantPool ? variantPool[seed % variantPool.length] : 'default',
+      variant,
       position,
       spawnPosition: { ...position },
       roamRadius: 20 + (seed % 8),
@@ -1487,8 +1490,9 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
       attackTimer: 0,
       attackHitApplied: false,
       hitFlash: false,
-      // About a third of bandits fight with bows at range.
-      ranged: kind === 'bandit' && seed % 3 === 0,
+      ranged,
+      // Wielded gear: always dropped on death, RuneScape-style.
+      gear: gearForMonster(kind, variant, ranged),
     });
   };
   // Goblins: forest packs in deep wilderness (danger 2+).
@@ -3732,14 +3736,16 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     const targetLabel = attackTarget.entityKind === 'monster' ? ((attackTarget as MonsterState).kind || 'creature') : 'goat';
     if (attackTarget.entityKind === 'monster') {
       const monsterTarget = attackTarget as MonsterState;
-      const updatedMonsters = monstersRef.current.map((monster) => monster.id === monsterTarget.id ? { ...monster, hp: nextHp, position: monster.position, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true } : monster);
+      const updatedMonsters = monstersRef.current.map((monster) => monster.id === monsterTarget.id ? { ...monster, hp: nextHp, position: monster.position, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, provoked: true } : monster);
       monstersRef.current = updatedMonsters; setMonsters(updatedMonsters);
       spawnCombatText((critical ? 'CRIT ' : '') + '-' + damage, hitPosition, critical ? 'critical' : 'damage');
       playCombatSound('shing', muted);
       window.setTimeout(() => setMonsters((current) => current.map((monster) => monster.id === monsterTarget.id ? { ...monster, hitFlash: false } : monster)), 100);
       setLogs((currentLogs) => [{ text: defeated ? targetLabel + ' defeated.' : 'You hit the ' + targetLabel + ' for ' + damage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
       if (defeated) {
-        const loot: GoatLoot = monsterLootForKind(monsterTarget.kind);
+        // RuneScape-style: the kill drops everything the monster was carrying
+        // (wielded gear) plus bones for humanoids, on top of its normal loot.
+        const loot: GoatLoot = { ...monsterLootForKind(monsterTarget.kind), ...monsterTarget.gear, ...bonesForMonster(monsterTarget.kind) };
         const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot };
         droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
         // Quest hook: kills feed kill stages (rats, wolves, bandits, trolls).
@@ -3948,7 +3954,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
             if (respawnTicks >= GOAT_RESPAWN_TICKS) return resetGoatAfterRespawn(goat);
             return { ...goat, moving: false, attacking: false, respawnTicks };
           }
-          const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false }, currentPlayer, facingRef.current, currentGoats, elapsed * 1000);
+          const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, threatLevel: playerLevelRef.current }, currentPlayer, facingRef.current, currentGoats, elapsed * 1000);
           let next = result.goat;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: goat.position, moving: false };
           const separatedPosition = separateGoatFromPlayer(next.position, currentPlayer);
@@ -3978,14 +3984,14 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
           if (monster.disposition === 'defeated') {
             return { ...monster, moving: false, attacking: false };
           }
-          const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false }, currentPlayer, facingRef.current, currentMonsters, elapsed * 1000);
+          const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false, threatLevel: playerLevelRef.current }, currentPlayer, facingRef.current, currentMonsters, elapsed * 1000);
           let next = { ...result.goat, kind: monster.kind, id: monster.id, variant: monster.variant, ranged: monster.ranged, spawnPosition: monster.spawnPosition, roamRadius: monster.roamRadius, level: monster.level, maxHp: monster.maxHp, wanderSeed: monster.wanderSeed, hitFlash: monster.hitFlash, respawnTicks: monster.respawnTicks } as MonsterState;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: monster.position, moving: false };
           if (result.attackHit) {
             const damage = goatAttackDamageForLevel(monster.level); damageTaken += damage;
             spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted);
           }
-          // Bandit archers loose arrows at range instead of closing to melee.
+          // Ranged NPCs (bandit/goblin/orc archers) loose arrows at range instead of closing to melee.
           if (next.ranged && next.disposition === 'aggressive' && next.attackCooldown <= 0) {
             const distToPlayer = Math.hypot(next.position.x - currentPlayer.x, next.position.y - currentPlayer.y);
             if (distToPlayer > 7 && distToPlayer <= 30) {

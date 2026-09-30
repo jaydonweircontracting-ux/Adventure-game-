@@ -1,7 +1,7 @@
 import { getDirection, isAdjacentAndFacing, type CombatDirection, type CombatPoint } from './combat';
 
 export type GoatAIState = 'idle' | 'chase' | 'attack' | 'hurt' | 'die';
-export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean; spawnPosition?: CombatPoint; roamRadius?: number };
+export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean; spawnPosition?: CombatPoint; roamRadius?: number; level?: number; provoked?: boolean; threatLevel?: number };
 export const GOAT_CHASE_RANGE = 24;
 // Keep hostile goats close enough that sprites nearly touch the player:
 // melee happens up close, and the player's 5-unit swing reach connects.
@@ -9,8 +9,42 @@ export const GOAT_MELEE_RANGE = 4;
 export const GOAT_CHASE_SPEED = 4;
 export const GOAT_FLEE_HP_RATIO = 0.3;
 export const GOAT_FLEE_SPEED = 2;
+// Common sense: a creature this many levels below its target won't start a
+// fight unless provoked first. (Provoked creatures fight or flee normally.)
+export const GOAT_OUTMATCHED_LEVEL_GAP = 4;
 export const GOAT_ATTACK_WINDUP_MS = 220;
 export const GOAT_ATTACK_COOLDOWN_MS = 1500;
+
+// RuneScape-style: a monster drops everything it was carrying. Wielded gear is
+// assigned deterministically at spawn (see gearForMonster) and always drops.
+export type GearLoot = Record<string, number>;
+export function gearForMonster(kind: string, variant: string | undefined, ranged: boolean): GearLoot {
+  if (ranged) return { bow: 1 };
+  switch (kind) {
+    case 'bandit':
+    case 'soldier':
+      return { daggers: 1 };
+    case 'goblin':
+    case 'skeleton':
+      return variant === 'warrior' ? { daggers: 1 } : {};
+    default:
+      return {};
+  }
+}
+// Humanoids leave bones, like RuneScape.
+export function bonesForMonster(kind: string): GearLoot {
+  switch (kind) {
+    case 'goblin':
+    case 'bandit':
+    case 'soldier':
+    case 'orc':
+    case 'skeleton':
+    case 'troll':
+      return { bone: 1 };
+    default:
+      return {};
+  }
+}
 
 export function moveTowards(from: CombatPoint, to: CombatPoint, speed: number, deltaMs: number, separation: CombatPoint = { x: 0, y: 0 }): CombatPoint {
   const dx = to.x - from.x + separation.x;
@@ -70,7 +104,7 @@ function keepMeleeDistance(position: CombatPoint, player: CombatPoint, playerFac
   return { x: player.x + dx * scale, y: player.y + dy * scale };
 }
 
-export function updateGoat(goat: GoatAIEntity, player: CombatPoint, playerFacing: CombatDirection, goats: GoatAIEntity[], deltaMs: number): { goat: GoatAIEntity; attackHit: boolean } {
+export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint, playerFacing: CombatDirection, goats: GoatAIEntity[], deltaMs: number): { goat: T; attackHit: boolean } {
   const cooldown = Math.max(0, goat.attackCooldown - deltaMs);
   const hurtTimer = Math.max(0, goat.hurtTimer - deltaMs);
   if (goat.hp <= 0 || goat.disposition === 'defeated') return { goat: { ...goat, disposition: 'defeated', state: 'die', moving: false, attacking: false, attackCooldown: cooldown, hurtTimer, attackTimer: 0, attackHitApplied: false }, attackHit: false };
@@ -78,6 +112,14 @@ export function updateGoat(goat: GoatAIEntity, player: CombatPoint, playerFacing
 
   const distance = Math.hypot(player.x - goat.position.x, player.y - goat.position.y);
   if (goat.disposition !== 'aggressive') {
+    return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false }, attackHit: false };
+  }
+  // Common sense: don't pick fights you can't win. An unprovoked creature
+  // won't start a fight with a foe far above its own level — it holds still
+  // instead of suiciding. Hitting it first (provoked) overrides this.
+  const selfLevel = goat.level ?? 1;
+  const threatLevel = goat.threatLevel;
+  if (!goat.provoked && threatLevel !== undefined && threatLevel > selfLevel + GOAT_OUTMATCHED_LEVEL_GAP) {
     return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false }, attackHit: false };
   }
 
