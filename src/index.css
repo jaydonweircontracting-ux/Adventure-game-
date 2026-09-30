@@ -4613,6 +4613,7 @@ body {
 /* BUILD 286 (civ phase 1): world clock is persistent via brainState save/load; clock restore hardened against corrupt saves. */
 /* BUILD 287 (civ phase 2): NPC travel — analytic settlement-to-settlement road journeys (no wrapping); authoritative landmarks module. */
 /* BUILD 288 (civ phase 3): settlement hierarchy — civilization.ts integrated (create/advance/serialize, daily advance on clock ticks, save/load); NPC Inspector shows settlement info. */
+/* BUILD 289 (civ phase 4): kingdom data — kingdom names on the world map (far zoom, gold), kingdom details (capital, ruler, population, treasury, tax, relations) in the NPC Inspector. */
 .locked-chest {
   position: absolute;
   z-index: 5;

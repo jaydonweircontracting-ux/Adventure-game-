@@ -1299,6 +1299,22 @@ export function settlementsByChunk(civ: CivilizationState, chunk: CivChunk): Set
   return civ.settlements.filter((s) => s.chunk.x === chunk.x && s.chunk.y === chunk.y);
 }
 
+/**
+ * World-map label points for kingdom names: one per kingdom, floating a few
+ * chunks above its capital so the label reads at far zoom without covering
+ * the capital's own town label.
+ */
+export function kingdomLabelPoints(civ: CivilizationState): { text: string; x: number; y: number }[] {
+  return civ.kingdoms.map((k) => {
+    const capital = civ.settlements.find((s) => s.id === k.capital);
+    return {
+      text: k.name.toUpperCase(),
+      x: capital ? capital.chunk.x : 0,
+      y: capital ? capital.chunk.y - 5 : 0,
+    };
+  });
+}
+
 export function rulerById(civ: CivilizationState, id: string): Ruler | undefined {
   return civ.rulers.find((r) => r.id === id);
 }
