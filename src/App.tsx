@@ -30,6 +30,7 @@ import {
   settlementById,
   settlementsByChunk,
   topProducedResources,
+  tradeRoutePolylines,
   type CivilizationState,
 } from '@/game/civilization';
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor } from '@/game/monsterSprites';
@@ -2366,6 +2367,7 @@ function renderMapOverlay(
   tier: 0 | 1 | 2,
   showCoords: boolean,
   kingdomLabels: { text: string; x: number; y: number }[] = [],
+  tradeRoutes: { id: string; name: string; points: { x: number; y: number }[] }[] = [],
 ): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   const T = MAP_TILE_PX;
@@ -2469,7 +2471,25 @@ function renderMapOverlay(
     ctx.fillStyle = 'rgba(38, 50, 60, 0.55)';
     ctx.fillText(text, px(wx), py(wy));
     stylable.letterSpacing = '0px';
-  };
+  }
+
+  // Trade routes (civ phase 7): dashed amber lines at far zoom.
+  if (tier === 0 && tradeRoutes.length > 0) {
+    ctx.strokeStyle = 'rgba(196, 148, 72, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([7, 5]);
+    for (const route of tradeRoutes) {
+      ctx.beginPath();
+      route.points.forEach((p, i) => {
+        const cx = px(p.x) + T / 2;
+        const cy = py(p.y) + T / 2;
+        if (i === 0) ctx.moveTo(cx, cy);
+        else ctx.lineTo(cx, cy);
+      });
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
   regionLabel('THE FAR MEADOW', 4, -3);
   regionLabel('THE EASTERN REACHES', 157, -19);
 
@@ -2617,7 +2637,7 @@ function DebugOverlay({ chunk }: { chunk: Point }) {
   );
 }
 
-function WorldMap({ chunk, onClose, kingdomLabels }: { chunk: Point; onClose: () => void; kingdomLabels: { text: string; x: number; y: number }[] }) {
+function WorldMap({ chunk, onClose, kingdomLabels, tradeRoutes }: { chunk: Point; onClose: () => void; kingdomLabels: { text: string; x: number; y: number }[]; tradeRoutes: { id: string; name: string; points: { x: number; y: number }[] }[] }) {
   // Lock body scroll while the map is open so touch swipes pan the map
   // instead of scrolling the page behind it (iOS Safari).
   useEffect(() => {
@@ -2647,7 +2667,7 @@ function WorldMap({ chunk, onClose, kingdomLabels }: { chunk: Point; onClose: ()
     if (!ctx) return;
     ctx.clearRect(0, 0, target.width, target.height);
     ctx.drawImage(atlas.canvas, 0, 0);
-    ctx.drawImage(renderMapOverlay(atlas.tiles, atlas.cols, atlas.rows, tierForZoom(zoom), mapDebug, kingdomLabels), 0, 0);
+    ctx.drawImage(renderMapOverlay(atlas.tiles, atlas.cols, atlas.rows, tierForZoom(zoom), mapDebug, kingdomLabels, tradeRoutes), 0, 0);
   }, [atlas, zoom, mapDebug]);
 
   const clampPan = (x: number, y: number, scale: number) => {
@@ -3011,7 +3031,7 @@ const QUEST_GIVER_FIELD_NPCS: Array<{ name: string; displayName: string; title: 
   { name: 'Bram', displayName: 'Old Bram', title: 'Fisher', chunk: { x: 4, y: 8 }, position: { x: 60, y: 70 }, sprite: 'npc-rogue' },
 ];
 
-function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equippedDagger: boolean; equippedBow: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[] } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
+function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equippedDagger: boolean; equippedBow: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[] } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
   // Debug tap marks (?debugDoors=1): user taps to mark where they think the
   // invisible exit/entrance is; rendered as lime green dots with coordinates.
@@ -3232,7 +3252,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const waterLifeRef = useRef<WaterLifeState[]>(waterLife);
   // Bridge so the menu sheet (rendered by App) can open GameField's options overlay, read the clock, and drive quests.
   useEffect(() => {
-    menuBridgeRef.current = { openOptions: () => setOptionsOpen(true), getTime: () => time, acceptQuest, emitQuestEvent, getKingdomLabels: () => kingdomLabelPoints(ensureCiv()) };
+    menuBridgeRef.current = { openOptions: () => setOptionsOpen(true), getTime: () => time, acceptQuest, emitQuestEvent, getKingdomLabels: () => kingdomLabelPoints(ensureCiv()), getTradeRoutes: () => tradeRoutePolylines(ensureCiv()) };
   });
   const wildlifeRef = useRef<WildlifeState[]>(wildlife);
   useEffect(() => { waterLifeRef.current = waterLife; }, [waterLife]);
@@ -4964,6 +4984,16 @@ if (active) {
                         <span>🌾 <strong>{s.name}</strong> produces {topProducedResources(s).map((r) => `${r.resource} ${r.amount}/d (${r.price}g)`).join(', ') || 'nothing'}</span>
                       </div>
                     ))}
+                    <div className="inspector-heading">Trade routes ({civ.routes.length})</div>
+                    {civ.routes.map((r) => {
+                      const from = settlementById(civ, r.from);
+                      const to = settlementById(civ, r.to);
+                      return (
+                        <div key={r.id} className="inspector-row">
+                          <span>🛤️ <strong>{r.name}</strong> · {from?.name ?? r.from} → {to?.name ?? r.to} · {r.goods.join(', ')} · danger {Math.round(r.danger * 100)}%</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })()}
@@ -6256,7 +6286,7 @@ function SaveIcon() {
 function Home() {
   const [mapOpen, setMapOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
-  const menuBridgeRef = useRef<{ openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[] } | null>(null);
+  const menuBridgeRef = useRef<{ openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[] } | null>(null);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
   const [inventory, setInventory] = useState<GameInventory>(initialInventory);
@@ -6664,7 +6694,7 @@ function Home() {
             <GameField inventory={inventory} equippedDagger={equippedDagger} equippedBow={equippedBow} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
-          {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} kingdomLabels={menuBridgeRef.current?.getKingdomLabels() ?? []} />}
+          {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} kingdomLabels={menuBridgeRef.current?.getKingdomLabels() ?? []} tradeRoutes={menuBridgeRef.current?.getTradeRoutes() ?? []} />}
           {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1' && <DebugOverlay chunk={chunk} />}
           {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onWeaveBowstring={weaveBowstring} />}
           {journalOpen && (

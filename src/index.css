@@ -4616,6 +4616,7 @@ body {
 /* BUILD 289 (civ phase 4): kingdom data — kingdom names on the world map (far zoom, gold), kingdom details (capital, ruler, population, treasury, tax, relations) in the NPC Inspector. */
 /* BUILD 290 (civ phase 5): rulers & castles — live ruler schedules in the NPC Inspector (rulerTarget vs world clock), castle names + garrison strengths. */
 /* BUILD 291 (civ phase 6): economy & resources — kingdom daily output/treasury and per-settlement production + live market prices in the NPC Inspector. */
+/* BUILD 292 (civ phase 7): trade routes — dashed amber route lines on the world map (far zoom), route list with goods + danger in the NPC Inspector; route names reconciled with authoritative settlements. */
 .locked-chest {
   position: absolute;
   z-index: 5;

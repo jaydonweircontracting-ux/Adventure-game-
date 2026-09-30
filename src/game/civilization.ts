@@ -965,12 +965,12 @@ type RouteDef = {
 
 const ROUTE_DEFS: RouteDef[] = [
   {
-    id: 'route-grain-run', name: 'Greenfield Grain Run', kingdomId: 'aldoria',
+    id: 'route-grain-run', name: 'Fenmere Grain Run', kingdomId: 'aldoria',
     from: 'greenfield-farm-1', to: 'aldor',
     goods: ['grain', 'food', 'wool'], dangerBase: 0.08, junctions: [],
   },
   {
-    id: 'route-provision-line', name: 'Riverbend Provision Line', kingdomId: 'aldoria',
+    id: 'route-provision-line', name: 'Dunewatch Provision Line', kingdomId: 'aldoria',
     from: 'riverbend-farm-1', to: 'aldor',
     goods: ['grain', 'livestock', 'leather'], dangerBase: 0.12,
     junctions: [
@@ -999,7 +999,7 @@ const ROUTE_DEFS: RouteDef[] = [
     ],
   },
   {
-    id: 'route-valdris-grain', name: 'Valdris Grain Way', kingdomId: 'thalara',
+    id: 'route-valdris-grain', name: 'Stormhaven Grain Way', kingdomId: 'thalara',
     from: 'dunmere-farm-1', to: 'valdris',
     goods: ['grain', 'food', 'livestock'], dangerBase: 0.1,
     junctions: [
@@ -1322,6 +1322,23 @@ export function rulerById(civ: CivilizationState, id: string): Ruler | undefined
 /** Castle guarding a settlement, if one stands there. */
 export function castleBySettlementId(civ: CivilizationState, settlementId: string): Castle | undefined {
   return civ.castles.find((c) => c.settlementId === settlementId);
+}
+
+/** Polylines (chunk coords) for drawing trade routes on the world map. */
+export function tradeRoutePolylines(
+  civ: CivilizationState,
+): { id: string; name: string; points: CivChunk[] }[] {
+  return civ.routes
+    .map((r) => {
+      const from = civ.settlements.find((s) => s.id === r.from);
+      const to = civ.settlements.find((s) => s.id === r.to);
+      const points: CivChunk[] = [];
+      if (from) points.push(from.chunk);
+      for (const w of r.waypoints) points.push(w.chunk);
+      if (to) points.push(to.chunk);
+      return { id: r.id, name: r.name, points };
+    })
+    .filter((p) => p.points.length >= 2);
 }
 
 /** Top N produced resources of a settlement, with current market prices. */
