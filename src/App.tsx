@@ -23,8 +23,9 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { isInMeleeArc } from '@/game/combat';
 import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS, gearForMonster, bonesForMonster } from '@/game/ai';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
-import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
+import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, LOCKPICK_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
 import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, questProgressText, questRumors, serializeQuestStates, parseQuestStates, type QuestState, type QuestEvent, type QuestDef } from '@/game/quests';
+import { chestsForChunk, attemptLockpick, serializeOpenedChests, parseOpenedChests, type LockedChest } from '@/game/lockpicking';
 import { sitesForActiveStages, resolveSiteChunk, chunkSatisfiesStage, type ActiveQuestStage } from '@/game/questSites';
 import { playCombatSound } from '@/game/effects';
 import { cornStalksForChunk, type CornStalk } from '@/game/cornfield';
@@ -1066,7 +1067,7 @@ const statDetails: Record<StatKey, { label: string; description: string }> = {
   luk: { label: 'Luck', description: 'Improves critical hits and loot rolls.' },
 };
 const initialPlayerStats: PlayerStats = { str: 4, dex: 4, int: 4, luk: 4 };
-type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number; wood: number; silk: number; bow: number; beer: number };
+type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number; wood: number; silk: number; bow: number; beer: number; lockpicks: number };
 type GoatLoot = Partial<GameInventory>;
 type DroppedLoot = { id: number; chunk: Point; position: Point; loot: GoatLoot };
 // Ranged combat: arrows fired by the player's bow and by bandit archers.
@@ -1155,7 +1156,7 @@ const PLAYER_MAX_HP = 88;
 const PLAYER_BASE_ATTACK_DAMAGE = 5;
 const PLAYER_STAT_POINTS_PER_LEVEL = 5;
 const GOAT_LOOT_TYPES: Array<keyof GameInventory> = ['goatHorns', 'fabric', 'coins'];
-const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0, wood: 0, silk: 0, bow: 0, beer: 0 };
+const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0, wood: 0, silk: 0, bow: 0, beer: 0, lockpicks: 0 };
 
 function playerMaxHpForStats(stats: PlayerStats) {
   return PLAYER_MAX_HP + stats.int * 3;
@@ -1200,6 +1201,7 @@ type SaveGameData = {
   carriage?: { earnings?: Record<string, number> };
   escortHired?: boolean;
   questLog?: string;
+  openedChests?: string;
   logs: Array<{ text: string; color: string }>;
   time: string;
   brainState: RpgGameState | null;
@@ -1440,7 +1442,7 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
 function monsterLootForKind(kind: MonsterKind): GoatLoot {
   switch (kind) {
     case 'goblin': return { coins: 1 + Math.floor(Math.random() * 3), fabric: Math.random() < 0.3 ? 1 : 0 };
-    case 'bandit': return { coins: 3 + Math.floor(Math.random() * 5), fabric: Math.random() < 0.5 ? 1 : 0, bone: 1 };
+    case 'bandit': return { coins: 3 + Math.floor(Math.random() * 5), fabric: Math.random() < 0.5 ? 1 : 0, bone: 1, lockpicks: Math.random() < 0.35 ? 1 : 0 };
     case 'skeleton': return { bone: 1 + Math.floor(Math.random() * 2), coins: Math.random() < 0.5 ? 1 : 0 };
     case 'troll': return { pelt: 1, coins: 2 + Math.floor(Math.random() * 4) };
     case 'snake': return { fang: 1, coins: Math.random() < 0.3 ? 1 : 0 };
@@ -2778,6 +2780,7 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow
     { key: 'silk', label: 'Silk', detail: 'Spider silk for bowstrings', mark: '🕸', className: 'silk-mark' },
     { key: 'bow', label: 'Hunting bow', detail: 'Ranged weapon', mark: '🏹', className: 'bow-mark' },
     { key: 'beer', label: 'Beer', detail: '+50% attack for 1 min', mark: '🍺', className: 'beer-mark' },
+    { key: 'lockpicks', label: 'Lockpicks', detail: 'For locked chests', mark: '🗝', className: 'lockpick-mark' },
   ].filter((item) => inventory[item.key as keyof GameInventory] > 0);
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="inventory-title" data-testid="overlay-inventory">
@@ -3128,6 +3131,9 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   // Quest system: active/completed quest states (pure logic in src/game/quests.ts).
   const [questStates, setQuestStates] = useState<QuestState[]>([]);
   const questStatesRef = useRef<QuestState[]>([]);
+  // Lockpicking: opened locked-chest ids (pure logic in src/game/lockpicking.ts).
+  const [openedChests, setOpenedChests] = useState<string[]>([]);
+  const openedChestsRef = useRef<string[]>([]);
   const questRumoredRef = useRef<Set<string>>(new Set());
   const [questDialog, setQuestDialog] = useState<{ giverName: string; questId: string } | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -3301,6 +3307,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     carriage: serializeCarriage(carriageEarningsRef.current),
     escortHired: escortHiredRef.current,
     questLog: serializeQuestStates(questStatesRef.current),
+    openedChests: serializeOpenedChests(openedChestsRef.current),
     brainState: brainRef.current?.getGameState() || null,
   });
   saveStateRef.current = createSaveData;
@@ -3353,6 +3360,8 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     escortHiredRef.current = !!loadState.escortHired; setEscortHired(!!loadState.escortHired);
     const restoredQuests = loadState.questLog ? parseQuestStates(loadState.questLog) : [];
     questStatesRef.current = restoredQuests; setQuestStates(restoredQuests);
+    const restoredChests = parseOpenedChests(loadState.openedChests);
+    openedChestsRef.current = restoredChests; setOpenedChests(restoredChests);
     setNpcDialogue(null); setAttackFlash(null); setLogOpen(false); setMoving(false);
     if (loadState.brainState) {
       brainRef.current?.loadGameState(loadState.brainState);
@@ -4216,6 +4225,26 @@ if (active) {
     playAttackAnimation(currentFacing);
   };
 
+  // Lockpicking: simple for now — each attempt consumes one lockpick and rolls
+  // a flat success chance (pure logic in src/game/lockpicking.ts).
+  const attemptPickChest = (chest: LockedChest) => {
+    if (Math.hypot(chest.position.x - positionRef.current.x, chest.position.y - positionRef.current.y) > 16) return;
+    if ((inventory.lockpicks || 0) < 1) {
+      setLogs((c) => [{ text: 'You need lockpicks for that. Mira sells them — and bandits carry them.', color: 'red' }, ...c].slice(0, 5));
+      return;
+    }
+    onLoot({ lockpicks: -1 } as GoatLoot);
+    if (attemptLockpick(Math.random())) {
+      const next = [...openedChestsRef.current, chest.id];
+      openedChestsRef.current = next; setOpenedChests(next);
+      const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: { ...chest.position }, loot: chest.loot as GoatLoot };
+      droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
+      setLogs((c) => [{ text: 'Click! The ' + chest.label + ' swings open.', color: 'green' }, ...c].slice(0, 5));
+    } else {
+      setLogs((c) => [{ text: 'The pick snaps inside the lock. The ' + chest.label + ' stays shut.', color: 'red' }, ...c].slice(0, 5));
+    }
+  };
+
   const pickupDrop = (drop: DroppedLoot) => {
     if (drop.chunk.x !== chunkRef.current.x || drop.chunk.y !== chunkRef.current.y || Math.hypot(drop.position.x - positionRef.current.x, drop.position.y - positionRef.current.y) > 16) return;
     onLoot(drop.loot);
@@ -4546,6 +4575,11 @@ if (active) {
     if (inventory.coins < BEER_PRICE) { setLogs((c) => [{ text: "You don't have enough gold for a beer.", color: 'red' }, ...c].slice(0, 5)); return; }
     onLoot({ coins: -BEER_PRICE, beer: 1 } as GoatLoot);
     setLogs((c) => [{ text: 'Mira slides you a foaming mug. "Drink it from your inventory — it\'ll put fire in your arm."', color: 'green' }, ...c].slice(0, 5));
+  };
+  const tavernBuyLockpicks = () => {
+    if (inventory.coins < LOCKPICK_PRICE) { setLogs((c) => [{ text: 'Lockpicks cost ' + LOCKPICK_PRICE + ' gold. Come back when you have the coin.', color: 'red' }, ...c].slice(0, 5)); return; }
+    onLoot({ coins: -LOCKPICK_PRICE, lockpicks: 1 } as GoatLoot);
+    setLogs((c) => [{ text: 'Mira slides a set of picks across the bar. "No questions asked."', color: 'green' }, ...c].slice(0, 5));
   };
   const tavernSleepUntilMorning = () => {
     if (inventory.coins < ROOM_PRICE) { setLogs((c) => [{ text: "Rooms cost 10 gold. Come back when you have the coin.", color: 'red' }, ...c].slice(0, 5)); return; }
@@ -5154,6 +5188,19 @@ if (active) {
                 );
               });
             })()}
+            {/* Locked chests: contextual loot for lockpicking (BUILD 285). */}
+            {chestsForChunk(chunk, { hasRoad: mapTileFor(chunk).road !== 'none', danger: dangerForChunk(chunk), terrain: mapTileFor(chunk).terrain })
+              .filter((chest) => !openedChests.includes(chest.id))
+              .map((chest) => {
+                const nearby = Math.hypot(chest.position.x - position.x, chest.position.y - position.y) <= 16;
+                return (
+                  <div className="locked-chest" key={'locked-chest-' + chest.id} style={{ left: fieldPct(chest.position.x), top: fieldPct(chest.position.y) }}>
+                    <span className="locked-chest-visual" aria-label={chest.label} title={chest.label} />
+                    <span className="locked-chest-label" aria-hidden="true">{chest.label}</span>
+                    {nearby && <button className="pickup-button" onClick={() => attemptPickChest(chest)} data-testid={'button-pick-lock-' + chest.id}>Pick lock</button>}
+                  </div>
+                );
+              })}
           </div>
           {/* Arrows in flight: player bow shots and bandit-archer volleys. */}
           <div className="field-arrows" aria-hidden="true">
@@ -5985,6 +6032,7 @@ if (active) {
                     <button className="tavern-menu-option" onClick={tavernHireEscort} data-testid="button-tavern-escort"><strong>🧭 Hire an escort — 50 gold</strong><small>A seasoned guide's wisdom: bonus XP, one time only.</small></button>
                   )}
                   <button className="tavern-menu-option" onClick={tavernRumor} data-testid="button-tavern-rumor"><strong>👂 Ask for rumors</strong><small>Free, of course.</small></button>
+                  <button className="tavern-menu-option" onClick={tavernBuyLockpicks} data-testid="button-tavern-lockpicks"><strong>🗝 Buy lockpicks — 15 gold</strong><small>For locked chests. No questions asked.</small></button>
                   {questStateFor('rats-in-the-cellar')?.status !== 'completed' && (
                     <button className="tavern-menu-option" onClick={() => { setTavernMenuOpen(false); openQuestDialog('Mira'); }} data-testid="button-tavern-work"><strong>🐀 Ask about work</strong><small>Mira might have a job for you.</small></button>
                   )}
@@ -6235,6 +6283,7 @@ function Home() {
     silk: Math.max(0, current.silk + (loot.silk || 0)),
     bow: Math.max(0, current.bow + (loot.bow || 0)),
     beer: Math.max(0, current.beer + (loot.beer || 0)),
+    lockpicks: Math.max(0, current.lockpicks + (loot.lockpicks || 0)),
   }));
 
   const toggleDagger = () => {

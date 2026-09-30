@@ -4609,6 +4609,51 @@ body {
 
 /* Quest system (BUILD 283). */
 /* BUILD 284: NPC combat AI — common-sense aggro (no suicide fights), flee at low HP, NPC archers (goblins/orcs), RuneScape-style full gear + bone drops. */
+/* BUILD 285: lockpicks + locked chests (bandit stashes, stone coffers). */
+.locked-chest {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.locked-chest-visual {
+  width: 36px;
+  height: 26px;
+  border-radius: 4px;
+  background: linear-gradient(#8a5a2b, #6b421e);
+  border: 2px solid #3d2612;
+  position: relative;
+}
+.locked-chest-visual::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 8px;
+  border-top: 2px solid #3d2612;
+}
+.locked-chest-visual::after {
+  content: '🔒';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 14px;
+}
+.locked-chest-label {
+  margin-top: 2px;
+  font-size: 10px;
+  color: #f8efd8;
+  background: rgba(23, 54, 46, .85);
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.locked-chest .pickup-button { pointer-events: auto; }
+.lockpick-mark::before { content: '🗝'; font-size: 15px; }
 .quest-giver {
   position: absolute;
   z-index: 6;

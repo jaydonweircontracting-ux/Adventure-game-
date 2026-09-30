@@ -16,6 +16,7 @@ export const TAVERN_ANNEX_RECTS: FieldRectLike[] = [
 export const BEER_PRICE = 5;
 export const ROOM_PRICE = 10;
 export const ESCORT_PRICE = 50;
+export const LOCKPICK_PRICE = 15;
 // One-time escort bonus: a full level's worth of XP (levels are 100 XP each).
 export const ESCORT_BONUS_XP = 100;
 export const XP_PER_LEVEL = 100;
