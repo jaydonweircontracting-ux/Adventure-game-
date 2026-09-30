@@ -443,7 +443,7 @@ export function mountedTravelers(
     const speed = 0.8 + townsfolkHash(worldSeed, 2500 + i) * 0.6; // field units per game-minute
     const span = 160;
     const along = ((townsfolkHash(worldSeed, 2600 + i) * span + totalMinutes * speed) % span) - 10;
-    const pos = dirSign > 0 ? along : 140 - along;
+    const pos = dirSign > 0 ? along : 280 - along;
     const lane = (townsfolkHash(worldSeed, 2700 + i) < 0.5 ? -1 : 1) * 4.5;
     const chunkOffset = Math.floor(townsfolkHash(worldSeed, 2800 + i) * 5) - 2; // spread across neighboring chunks
 

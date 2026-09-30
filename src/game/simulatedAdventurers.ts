@@ -44,7 +44,7 @@ export const ADVENTURER_SPAWN_INTERVAL_TICKS = 32;
 export const MAX_ADVENTURERS = 10;
 
 // Field dimensions (must match FIELD_SIZE in App.tsx).
-const FIELD_SIZE = 140;
+const FIELD_SIZE = 280;
 const FIELD_MIN = 4;
 const FIELD_MAX = FIELD_SIZE - 4;
 

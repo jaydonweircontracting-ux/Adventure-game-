@@ -15,8 +15,8 @@ export type MapPaints = Record<string, PaintedTile[]>;
 
 /** Field units per painted tile edge. */
 export const MAP_TILE_UNITS = 10;
-/** Tiles per chunk side (140 field units / 10). */
-export const MAP_TILES_PER_SIDE = 14;
+/** Tiles per chunk side (280 field units / 10). BUILD 343: was 14 for 140-unit chunks. */
+export const MAP_TILES_PER_SIDE = 28;
 
 export function mapChunkKey(x: number, y: number): string {
   return x + ',' + y;

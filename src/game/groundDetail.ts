@@ -1,6 +1,6 @@
 // LTTP-style procedural ground detail for field chunks (BUILD 339).
 //
-// Renders a whole 140x140-unit chunk into a static canvas (8px per unit,
+// Renders a whole 280x280-unit chunk into a static canvas (4px per unit,
 // 1120x1120) with deterministic per-chunk pixel detail: dithered grass,
 // tufts, flowers, dirt patches, scalloped dirt roads with wheel ruts,
 // water waves, sand pebbles, rock cracks, tundra sparkles.
@@ -34,8 +34,8 @@ export interface GroundDetailSpec {
   paints?: PaintedTile[];
 }
 
-export const GROUND_PX_PER_UNIT = 8;
-const SIZE = 140 * GROUND_PX_PER_UNIT;
+export const GROUND_PX_PER_UNIT = 4; // BUILD 343: was 8 for 140-unit chunks
+const SIZE = 280 * GROUND_PX_PER_UNIT; // 1120px
 
 // ---------------------------------------------------------------------------
 // Color + random helpers (pure, DOM-free so they stay unit-testable).

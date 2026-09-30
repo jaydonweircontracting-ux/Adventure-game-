@@ -385,7 +385,7 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
 
 // ---- BUILD 341: map-builder tile painting ----
 {
-  assert(MAP_TILE_UNITS === 10 && MAP_TILES_PER_SIDE === 14, 'map builder grid constants wrong');
+  assert(MAP_TILE_UNITS === 10 && MAP_TILES_PER_SIDE === 28, 'map builder grid constants wrong');
   let paints = paintTile({}, '4,7', 3, 5, 'dirt');
   assert(paints['4,7'].length === 1 && paints['4,7'][0].tile === 'dirt', 'paintTile did not add');
   // Repaint same tile with same brush is a no-op (same reference).
@@ -395,7 +395,7 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
   paints = paintTile(paints, '4,7', 3, 5, 'water');
   assert(paints['4,7'].length === 1 && paints['4,7'][0].tile === 'water', 'paintTile did not overwrite');
   // Out-of-grid paints are ignored.
-  assert(paintTile(paints, '4,7', 14, 0, 'sand') === paints, 'paintTile accepted tx=14');
+  assert(paintTile(paints, '4,7', 28, 0, 'sand') === paints, 'paintTile accepted tx=28');
   assert(paintTile(paints, '4,7', -1, 0, 'sand') === paints, 'paintTile accepted tx=-1');
   // Erase removes the tile; erasing an empty tile is a no-op.
   paints = paintTile(paints, '4,7', 3, 5, null);
@@ -473,11 +473,11 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
   let e = npcEntryPoint({ x: 70, y: 70 }, 'right');
   assert(e.x === -6 && e.y === 70, 'npcEntryPoint right wrong: ' + JSON.stringify(e));
   e = npcEntryPoint({ x: 70, y: 70 }, 'left');
-  assert(e.x === 146 && e.y === 70, 'npcEntryPoint left wrong');
+  assert(e.x === 286 && e.y === 70, 'npcEntryPoint left wrong');
   e = npcEntryPoint({ x: 30, y: 40 }, 'down');
   assert(e.x === 30 && e.y === -6, 'npcEntryPoint down wrong');
   e = npcEntryPoint({ x: 30, y: 40 }, 'up');
-  assert(e.x === 30 && e.y === 146, 'npcEntryPoint up wrong');
+  assert(e.x === 30 && e.y === 286, 'npcEntryPoint up wrong');
   // Facing follows the dominant axis of movement.
   assert(facingForDelta(5, 1) === 'right', 'facingForDelta +x wrong');
   assert(facingForDelta(-5, 1) === 'left', 'facingForDelta -x wrong');
@@ -1988,7 +1988,7 @@ console.log('Testing ground detail determinism...');
   assert(mixColor('#000000', '#ffffff', 0.5) === 'rgb(128,128,128)', `mixColor midpoint (got ${mixColor('#000000', '#ffffff', 0.5)})`);
   const [r, g, b2] = hexToRgb('#77a45b');
   assert(r === 0x77 && g === 0xa4 && b2 === 0x5b, 'hexToRgb should parse meadow green');
-  assert(GROUND_PX_PER_UNIT === 8, 'ground canvas should be 8px per field unit');
+  assert(GROUND_PX_PER_UNIT === 4, 'ground canvas should be 4px per field unit');
 }
 
 // ---- Results ----

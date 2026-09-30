@@ -29,8 +29,8 @@ import type { WorldClockState } from './worldCore';
 import { SeededRng } from './worldCore';
 import { townsfolkHash } from './townsfolk';
 
-/** Field coordinate units per chunk — matches the game's field system (0-140). */
-export const CIV_FIELD_UNITS = 140;
+/** Field coordinate units per chunk — matches the game's field system (0-280). */
+export const CIV_FIELD_UNITS = 280;
 
 export type CivPoint = { x: number; y: number };
 export type CivChunk = { x: number; y: number };

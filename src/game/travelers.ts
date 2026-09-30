@@ -110,11 +110,11 @@ export function buildRoadLinks(
 
 function edgePoint(dir: DirKey | 'center'): TravelerPoint {
   switch (dir) {
-    case 'n': return { x: 70, y: 0 };
-    case 's': return { x: 70, y: 140 };
-    case 'e': return { x: 140, y: 70 };
-    case 'w': return { x: 0, y: 70 };
-    default: return { x: 70, y: 70 };
+    case 'n': return { x: 140, y: 0 };
+    case 's': return { x: 140, y: 280 };
+    case 'e': return { x: 280, y: 140 };
+    case 'w': return { x: 0, y: 140 };
+    default: return { x: 140, y: 140 };
   }
 }
 

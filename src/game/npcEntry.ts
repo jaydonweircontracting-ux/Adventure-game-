@@ -6,7 +6,7 @@ export type NpcFacing = 'up' | 'down' | 'left' | 'right';
 export type NpcPoint = { x: number; y: number };
 
 // Field size in world units (must match FIELD_SIZE in App.tsx).
-const FIELD = 140;
+const FIELD = 280;
 // Start slightly off the field so the NPC walks fully into view.
 const OFF = 6;
 

@@ -85,10 +85,11 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '342';
+const BUILD_NUMBER = '343';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
-const FIELD_SIZE = 140;
+// BUILD 343: increased from 140 to 280 for way larger chunks.
+const FIELD_SIZE = 280;
 // BUILD 327: default gameplay zoom is 225%. When zoomed, the world layer is
 // scaled around the top-left corner and translated so the player's field
 // position lands at the viewport center:
@@ -369,7 +370,7 @@ function organicTownRects(
   road: string,
   toBuilding: (r: FieldRect) => FieldRect,
 ): FieldRect[] {
-  return organicTownSpecs(variantSeed, variant, road).map((r) => toBuilding(r));
+  return organicTownSpecs(variantSeed, variant, road, FIELD_SIZE).map((r) => toBuilding(r));
 }
 
 function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed = 0, road = 'nesw'): FieldRect[] {
@@ -410,17 +411,18 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
   // chapel 40.3,85.1 / fourth 88.1,85.5 — true field coordinates.
   // Each house is 7 x 4.8 field units.
   return [
-    { left: 41.2, top: 53.2, right: 48.2, bottom: 58.0 },   // tutorial house
-    { left: 94.3, top: 54.3, right: 101.3, bottom: 59.1 },  // wayfarer guild
-    { left: 40.3, top: 85.1, right: 47.3, bottom: 89.9 },   // rootbound chapel
-    { left: 88.1, top: 85.5, right: 95.1, bottom: 90.3 },   // stone house
+    { left: 82.4, top: 106.4, right: 96.4, bottom: 116.0 },   // tutorial house
+    { left: 188.6, top: 108.6, right: 202.6, bottom: 118.2 },  // wayfarer guild
+    { left: 80.6, top: 170.2, right: 94.6, bottom: 179.8 },   // rootbound chapel
+    { left: 176.2, top: 171.0, right: 190.2, bottom: 180.6 },   // stone house
     // BUILD 311: residential cottages (housing registry) — 2 beds each.
-    { left: 14, top: 62, right: 20, bottom: 66.5 },   // cottage 1 (west)
-    { left: 14, top: 74, right: 20, bottom: 78.5 },   // cottage 2 (west)
-    { left: 14, top: 86, right: 20, bottom: 90.5 },   // cottage 3 (west)
-    { left: 62, top: 22, right: 68, bottom: 26.5 },   // cottage 4 (north)
-    { left: 76, top: 22, right: 82, bottom: 26.5 },   // cottage 5 (north)
-    { left: 90, top: 22, right: 96, bottom: 26.5 },   // cottage 6 (north)
+    // BUILD 343: scaled 2x for 280-unit chunks (was 0..140).
+    { left: 28, top: 124, right: 40, bottom: 133 },   // cottage 1 (west)
+    { left: 28, top: 148, right: 40, bottom: 157 },   // cottage 2 (west)
+    { left: 28, top: 172, right: 40, bottom: 181 },   // cottage 3 (west)
+    { left: 124, top: 44, right: 136, bottom: 53 },   // cottage 4 (north)
+    { left: 152, top: 44, right: 164, bottom: 53 },   // cottage 5 (north)
+    { left: 180, top: 44, right: 192, bottom: 53 },   // cottage 6 (north)
   ];
 }
 
