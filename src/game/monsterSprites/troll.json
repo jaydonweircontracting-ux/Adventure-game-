@@ -1,0 +1,68 @@
+{
+  "id": "troll",
+  "spriteSheet": "/mobs/troll_sheet.png",
+  "cell": 64,
+  "cols": 8,
+  "rows": 5,
+  "facingRows": {
+    "down": 0,
+    "left": 1,
+    "right": 2,
+    "up": 3
+  },
+  "animations": {
+    "idle": {
+      "row": "facing",
+      "startCol": 0,
+      "frames": 2,
+      "frameMs": 450
+    },
+    "walk": {
+      "row": "facing",
+      "startCol": 2,
+      "frames": 4,
+      "frameMs": 140
+    },
+    "attack": {
+      "row": "facing",
+      "startCol": 6,
+      "frames": 2,
+      "frameMs": 110
+    },
+    "hurt": {
+      "row": 4,
+      "startCol": 0,
+      "frames": 2,
+      "frameMs": 120
+    },
+    "death": {
+      "row": 4,
+      "startCol": 2,
+      "frames": 4,
+      "frameMs": 130
+    }
+  },
+  "displaySize": 78,
+  "anchor": {
+    "x": 0.5,
+    "y": 0.6
+  },
+  "shadow": {
+    "dx": 4,
+    "dy": 6,
+    "alpha": 0.3
+  },
+  "collision": {
+    "w": 1.7,
+    "h": 1.7
+  },
+  "variants": {
+    "default": {}
+  },
+  "biomes": [
+    "forest",
+    "rock",
+    "tundra"
+  ],
+  "minDanger": 3
+}

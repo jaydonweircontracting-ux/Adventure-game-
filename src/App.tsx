@@ -17,6 +17,8 @@ import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type Gener
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint } from '@/game/townsfolk';
 import { travelersForChunk, type RoadArms, type Traveler } from '@/game/travelers';
+import { spriteDefFor, animForMonsterState, monsterAnimFrameFor } from '@/game/monsterSprites';
+import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc } from '@/game/combat';
 import { updateGoat, type GoatAIState } from '@/game/ai';
@@ -34,7 +36,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '278';
+const BUILD_NUMBER = '279';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -1071,8 +1073,8 @@ type GoatState = {
   nextWanderTick?: number;
 };
 // Hostile mobs: goblins and bandits. Reuse the goat combat AI shape.
-type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'snake' | 'spider' | 'dragon' | 'orc' | 'soldier';
-type MonsterState = GoatState & { kind: MonsterKind };
+type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'snake' | 'spider' | 'dragon' | 'orc' | 'soldier' | 'wolf' | 'slime' | 'bat' | 'rat';
+type MonsterState = GoatState & { kind: MonsterKind; variant?: string };
 const GOAT_STEP = 0.5;
 // Ambient birds: lightweight wildlife, deterministic per chunk, not persisted.
 type BirdStateName = 'idle' | 'hop' | 'peck' | 'fly';
@@ -1405,6 +1407,10 @@ function monsterLootForKind(kind: MonsterKind): GoatLoot {
     case 'dragon': return { pelt: 2, fang: 2, coins: 10 + Math.floor(Math.random() * 10) };
     case 'orc': return { pelt: 1, coins: 2 + Math.floor(Math.random() * 4) };
     case 'soldier': return { coins: 3 + Math.floor(Math.random() * 4), fabric: Math.random() < 0.5 ? 1 : 0 };
+    case 'wolf': return { pelt: 1, fang: Math.random() < 0.5 ? 1 : 0 };
+    case 'slime': return { coins: Math.random() < 0.4 ? 1 : 0 };
+    case 'bat': return { fang: 1, coins: Math.random() < 0.2 ? 1 : 0 };
+    case 'rat': return { coins: Math.random() < 0.3 ? 1 : 0 };
   }
 }
 function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  const terrain = mapTileFor(chunk).terrain;
@@ -1412,7 +1418,7 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
   const danger = dangerForChunk(chunk);
   const monsters: MonsterState[] = [];
   let id = 0;
-  const spawn = (kind: MonsterKind, index: number, seedSalt: number, hpMult: number) => {
+  const spawn = (kind: MonsterKind, index: number, seedSalt: number, hpMult: number, variantPool?: string[]) => {
     const seed = Math.abs(chunk.x * 173 + chunk.y * 227 + index * 89 + seedSalt);
     const position = { x: 16 + ((seed * 43) % (FIELD_SIZE - 32)), y: 16 + ((seed * 61) % (FIELD_SIZE - 32)) };
     if (isFieldPositionBlocked(position, chunk)) return;
@@ -1421,6 +1427,7 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
     monsters.push({
       id: id++,
       kind,
+      variant: variantPool ? variantPool[seed % variantPool.length] : 'default',
       position,
       spawnPosition: { ...position },
       roamRadius: 20 + (seed % 8),
@@ -1444,7 +1451,7 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
   // Goblins: forest packs in deep wilderness (danger 2+).
   if (terrain === 'forest' && danger >= 2) {
     const packSize = 2 + (Math.abs(chunk.x * 7 + chunk.y * 13) % 2);
-    for (let i = 0; i < packSize; i++) spawn('goblin', i, 5000, 0.8);
+    for (let i = 0; i < packSize; i++) spawn('goblin', i, 5000, 0.8, ['default', 'default', 'warrior', 'shaman']);
   }
   // Bandits: near roads in outskirts and beyond (danger 1+).
   if (danger >= 1 && mapTileFor(chunk).road !== 'none') {
@@ -1454,7 +1461,7 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
   // Skeletons: undead in rocky ruins and deep wilderness (danger 2+).
   if ((terrain === 'rock' || terrain === 'desert') && danger >= 2) {
     const count = 1 + (Math.abs(chunk.x * 13 + chunk.y * 19) % 2);
-    for (let i = 0; i < count; i++) spawn('skeleton', i, 7000, 1.0);
+    for (let i = 0; i < count; i++) spawn('skeleton', i, 7000, 1.0, ['default', 'warrior', 'mage']);
   }
   // Spiders: dark forests (danger 2+).
   if (terrain === 'forest' && danger >= 2 && Math.abs(chunk.x * 5 + chunk.y * 23) % 2 === 0) {
@@ -1480,6 +1487,18 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
   // Soldiers: rogue sellswords ambushing roads in the outskirts (danger 1+), rarer than bandits.
   if (danger >= 1 && mapTileFor(chunk).road !== 'none' && Math.abs(chunk.x * 5 + chunk.y * 11) % 2 === 0) {
     spawn('soldier', 0, 13000, 1.1);
+  }
+  // Sprite-sheet monsters (wolf/slime/bat/rat): data-driven biome placement.
+  for (const spec of MONSTER_SPAWN_TABLE) {
+    if (danger < spec.minDanger || !spec.biomes.includes(terrain)) continue;
+    const count = spec.packBase + (Math.abs(chunk.x * spec.seedMulX + chunk.y * spec.seedMulY) % spec.packVar);
+    for (let i = 0; i < count; i++) {
+      const vSeed = Math.abs(chunk.x * 173 + chunk.y * 227 + i * 89 + spec.seedSalt);
+      const variant = spec.eliteVariant && danger >= spec.eliteVariant.minDanger && vSeed % 3 === 0
+        ? spec.eliteVariant.variant
+        : spec.variants[vSeed % spec.variants.length];
+      spawn(spec.kind as MonsterKind, i, spec.seedSalt, spec.hpMult, [variant]);
+    }
   }
   return monsters;
 }
@@ -3502,7 +3521,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
             return { ...monster, moving: false, attacking: false };
           }
           const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false }, currentPlayer, facingRef.current, currentMonsters, elapsed * 1000);
-          let next = { ...result.goat, kind: monster.kind, id: monster.id, spawnPosition: monster.spawnPosition, roamRadius: monster.roamRadius, level: monster.level, maxHp: monster.maxHp, wanderSeed: monster.wanderSeed, hitFlash: monster.hitFlash, respawnTicks: monster.respawnTicks } as MonsterState;
+          let next = { ...result.goat, kind: monster.kind, id: monster.id, variant: monster.variant, spawnPosition: monster.spawnPosition, roamRadius: monster.roamRadius, level: monster.level, maxHp: monster.maxHp, wanderSeed: monster.wanderSeed, hitFlash: monster.hitFlash, respawnTicks: monster.respawnTicks } as MonsterState;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: monster.position, moving: false };
           if (result.attackHit) {
             const damage = goatAttackDamageForLevel(monster.level); damageTaken += damage;
@@ -4307,25 +4326,37 @@ if (active) {
             ))}
           </div>
           <div className="field-monsters" aria-label="Hostile monsters">
-            {monsters.filter((monster) => monster.disposition !== 'defeated').map((monster) => (
+            {monsters.map((monster) => {
+              const dead = monster.disposition === 'defeated';
+              const anim = animForMonsterState({ dead, hitFlash: monster.hitFlash, attacking: monster.attacking, moving: monster.moving });
+              const def = spriteDefFor(monster.kind);
+              return (
               <button
                 type="button"
                 key={'monster-' + monster.kind + '-' + monster.id}
-                className={'monster monster-' + monster.kind + ' monster-state-' + getSpriteState(monster.state, monster.facing) + (monster.moving ? ' is-moving' : '') + (monster.attacking ? ' is-attacking' : '') + (monster.hitFlash ? ' is-hit' : '')}
+                className={'monster monster-' + monster.kind + ' monster-state-' + getSpriteState(monster.state, monster.facing) + (monster.moving ? ' is-moving' : '') + (monster.attacking ? ' is-attacking' : '') + (monster.hitFlash ? ' is-hit' : '') + (dead ? ' is-dead' : '')}
                 style={{ left: fieldPct(monster.position.x), top: fieldPct(monster.position.y) }}
                 data-facing={monster.facing}
                 data-state={monster.state}
-                aria-label={'Hostile ' + monster.kind + ', level ' + monster.level}
+                data-variant={monster.variant || 'default'}
+                aria-label={(dead ? 'Defeated ' : 'Hostile ') + monster.kind + ', level ' + monster.level}
+                aria-disabled={dead}
                 data-testid={'button-target-monster-' + monster.id}
-                onClick={() => {
+                onClick={dead ? undefined : () => {
                   if (inputLocked || optionsOpen || waitingRef.current || playerAttackStateRef.current.active) return;
                   attackGoat();
                 }}
               >
-                <span className="monster-aggro">!</span>
+                {!dead && <span className="monster-aggro">!</span>}
                 <span className="monster-sprite" />
+                {markerMode && (
+                  <span className="monster-debug">
+                    {monster.kind}/{monster.variant || 'default'} · {monster.state} · {def ? 'f' + monsterAnimFrameFor(def, anim, Date.now(), monster.id) : anim} · ({monster.position.x.toFixed(0)},{monster.position.y.toFixed(0)}) · c{chunk.x},{chunk.y}
+                  </span>
+                )}
               </button>
-            ))}
+              );
+            })}
           </div>
           <div className="field-birds" aria-hidden="true">
             {birds.map((bird) => (

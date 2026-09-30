@@ -2130,9 +2130,9 @@ body {
 .field-monsters { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 .monster { position: absolute; width: 24px; height: 28px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: crosshair; transform: translate(-50%, -50%); filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .25)); pointer-events: auto; }
 .monster-sprite { position: absolute; inset: 0; }
-.monster-goblin .monster-sprite { background-image: url('/mobs/goblin.png'); background-size: contain; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
-.monster-goblin .monster-sprite::before { content: none; }
-.monster-goblin .monster-sprite::after { content: none; }
+/* Sheet-sprite monsters (goblin/skeleton/troll/spider/wolf/slime/bat/rat/orc):
+   visuals now come from src/monster-sprites.gen.css (generated from
+   src/game/monsterSprites/*.json). */
 /* Bandits use the player/NPC sprite sheet (rogue column, dark-red tint so they read hostile). */
 .monster-bandit .monster-sprite {
   left: 50%; top: 50%;
@@ -2153,21 +2153,12 @@ body {
 .monster-bandit[data-facing='left'] .monster-sprite { --npc-row: 1; --npc-walk-row: 4; transform: scaleX(-1); }
 .monster-bandit[data-facing='right'] .monster-sprite { --npc-row: 1; --npc-walk-row: 4; transform: none; }
 .monster-bandit.is-moving .monster-sprite { animation: npc-step .5s step-end infinite; }
-.monster-skeleton .monster-sprite { background-image: url('/mobs/skeleton.png'); background-size: contain; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
-.monster-skeleton .monster-sprite::before { content: none; }
-.monster-skeleton .monster-sprite::after { content: none; }
-.monster-troll { width: 36px; height: 42px; }
-.monster-troll .monster-sprite { background-image: url('/mobs/troll.png'); background-size: contain; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
-.monster-troll .monster-sprite::before { content: none; }
-.monster-troll .monster-sprite::after { content: none; }
+/* Skeleton/troll sheets: see monster-sprites.gen.css. */
 .monster-snake { width: 22px; height: 14px; }
 .monster-snake .monster-sprite { background-image: url('/mobs/snake.png'); background-size: contain; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
 .monster-snake .monster-sprite::before { content: none; }
 .monster-snake .monster-sprite::after { content: ''; position: absolute; right: -2px; top: 5px; width: 3px; height: 3px; background: #ff4444; border-radius: 50%; box-shadow: 5px 0 0 #ff4444; }
-.monster-spider { width: 20px; height: 20px; }
-.monster-spider .monster-sprite { background-image: url('/mobs/spider.png'); background-size: contain; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
-.monster-spider .monster-sprite::before { content: none; }
-.monster-spider .monster-sprite::after { content: none; }
+/* Spider sheet: see monster-sprites.gen.css. */
 .monster-dragon { width: 52px; height: 44px; }
 .monster-dragon .monster-sprite { background-image: url('/mobs/dragon.png'); background-size: contain; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; animation: dragon-bob 2s ease-in-out infinite; }
 .monster-dragon .monster-sprite::before { content: none; }
@@ -3773,24 +3764,8 @@ body {
 /* Corn has no icon in the 8-slot sheet; render the emoji instead. */
 .corn-mark { background-image: none; font-size: 20px; display: inline-flex; align-items: center; justify-content: center; }
 .corn-mark::before { content: '🌽'; }
-/* Orc mob: Tiny RPG orc, 6-frame idle / 8-frame walk, 56x46. Faces right natively. */
-.monster-orc .monster-sprite {
-  left: 50%; top: 50%;
-  width: 56px; height: 46px;
-  margin: -23px 0 0 -28px;
-  background-image: var(--orc-idle-url);
-  background-size: 336px 46px;
-  background-repeat: no-repeat;
-  image-rendering: pixelated;
-  border-radius: 0;
-}
-.monster-orc.is-moving .monster-sprite {
-  background-image: var(--orc-walk-url);
-  background-size: 448px 46px;
-  animation: orc-walk .7s steps(8, end) infinite;
-}
-@keyframes orc-walk { from { background-position-x: 0; } to { background-position-x: -448px; } }
-.monster-orc[data-facing="left"] .monster-sprite { transform: scaleX(-1); }
+/* Orc mob: generated sprite sheet (idle/walk/attack/hurt/death, 4 facings).
+   See src/monster-sprites.gen.css. */
 /* Soldier mob: Tiny RPG soldier, 6-frame idle / 8-frame walk, 46x56. Faces right natively. */
 .monster-soldier .monster-sprite {
   left: 50%; top: 50%;

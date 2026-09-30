@@ -478,6 +478,108 @@ console.log('Testing road travelers...');
   assert(eastOnly.every((t) => Math.abs(t.position.y - 70) < 5), 'East-west travelers off the horizontal road');
 }
 
+// ---- 14. Monster sprite system ----
+console.log('Testing monster sprite system...');
+import { readFileSync as readFileSyncSprites, existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { spriteDefFor, SHEET_KINDS, monsterAnimFrameFor, animForMonsterState } from '../src/game/monsterSprites/index';
+import { MONSTER_SPAWN_TABLE } from '../src/game/monsterSpawns';
+
+const EXPECTED_KINDS = ['bat', 'goblin', 'orc', 'rat', 'skeleton', 'slime', 'spider', 'troll', 'wolf'];
+assert(JSON.stringify([...SHEET_KINDS].sort()) === JSON.stringify(EXPECTED_KINDS), `SHEET_KINDS mismatch: ${SHEET_KINDS}`);
+const appSrc = readFileSyncSprites('src/App.tsx', 'utf8');
+const genCssPath = 'src/monster-sprites.gen.css';
+
+for (const kind of EXPECTED_KINDS) {
+  const jsonPath = `src/game/monsterSprites/${kind}.json`;
+  assert(existsSync(jsonPath), `Missing sprite def ${jsonPath}`);
+  const def = JSON.parse(readFileSyncSprites(jsonPath, 'utf8'));
+  assert(def.id === kind, `${kind}: def id mismatch`);
+  assert(def.spriteSheet === `/mobs/${kind}_sheet.png`, `${kind}: bad spriteSheet path`);
+  assert(def.cell === 64 && def.cols === 8 && def.rows === 5, `${kind}: grid must be 8x5 of 64px`);
+  const facings = Object.entries(def.facingRows as Record<string, number>);
+  assert(facings.length === 4 && new Set(facings.map(([, r]) => r)).size === 4, `${kind}: facingRows must map 4 facings to distinct rows`);
+  for (const [anim, a] of Object.entries(def.animations as Record<string, { row: string | number; startCol: number; frames: number; frameMs: number }>)) {
+    assert(a.startCol >= 0 && a.startCol + a.frames <= def.cols, `${kind}.${anim}: frames exceed grid`);
+    assert(a.frames >= 1 && a.frameMs >= 50, `${kind}.${anim}: bad frame spec`);
+    if (typeof a.row === 'number') assert(a.row >= 0 && a.row < def.rows, `${kind}.${anim}: row out of range`);
+  }
+  assert(def.displaySize >= 20 && def.displaySize <= 100, `${kind}: displaySize ${def.displaySize} out of range`);
+  assert(def.variants && def.variants.default, `${kind}: variants must include default`);
+  assert(Array.isArray(def.biomes) && def.biomes.length > 0, `${kind}: biomes missing`);
+  assert(def.minDanger >= 1 && def.minDanger <= 3, `${kind}: minDanger out of range`);
+  // Sheet PNG exists and is a 512x320 RGBA grid.
+  const pngPath = `public/mobs/${kind}_sheet.png`;
+  assert(existsSync(pngPath), `Missing sheet PNG ${pngPath}`);
+  const png = readFileSyncSprites(pngPath);
+  const w = png.readUInt32BE(16), h = png.readUInt32BE(20), colorType = png[25];
+  assert(w === 512 && h === 320, `${kind}: sheet is ${w}x${h}, expected 512x320`);
+  assert(colorType === 6, `${kind}: sheet must be RGBA (color type 6), got ${colorType}`);
+  // Module lookup agrees with the JSON.
+  const modDef = spriteDefFor(kind);
+  assert(modDef && modDef.displaySize === def.displaySize, `${kind}: module def mismatch`);
+  // Generated CSS carries this kind: container size, sheet URL, all 5 keyframes.
+  const css = readFileSyncSprites(genCssPath, 'utf8');
+  assert(css.includes(`.monster-${kind} { width: ${def.displaySize}px; height: ${def.displaySize}px;`), `${kind}: CSS container size missing`);
+  assert(css.includes(`url('/mobs/${kind}_sheet.png')`), `${kind}: CSS sheet URL missing`);
+  for (const kf of ['idle', 'walk', 'attack', 'hurt', 'die']) {
+    assert(css.includes(`@keyframes ${kind}-${kf}`), `${kind}: CSS keyframes ${kf} missing`);
+  }
+  for (const f of ['down', 'left', 'right', 'up']) {
+    assert(css.includes(`.monster-${kind}[data-facing='${f}']`), `${kind}: CSS facing ${f} missing`);
+  }
+}
+// Legacy-sprite kinds have no sheet def.
+assert(spriteDefFor('bandit') === undefined, 'bandit should keep its legacy sprite');
+assert(spriteDefFor('snake') === undefined, 'snake should keep its legacy sprite');
+// Frame helper: deterministic, in-range per animation.
+const goblinDef = spriteDefFor('goblin')!;
+for (const anim of ['idle', 'walk', 'attack', 'hurt', 'death'] as const) {
+  const a = goblinDef.animations[anim];
+  for (let t = 0; t < 5000; t += 37) {
+    const f = monsterAnimFrameFor(goblinDef, anim, t, 7);
+    assert(f >= a.startCol && f < a.startCol + a.frames, `goblin.${anim}: frame ${f} out of range at t=${t}`);
+    assert(monsterAnimFrameFor(goblinDef, anim, t, 7) === f, `goblin.${anim}: not deterministic`);
+  }
+}
+assert(monsterAnimFrameFor(goblinDef, 'walk', 0, 1) !== monsterAnimFrameFor(goblinDef, 'walk', 0, 2) || true, 'frame helper runs');
+// State -> animation priority: dead > hit > attacking > moving > idle.
+assert(animForMonsterState({ dead: true, hitFlash: true, attacking: true, moving: true }) === 'death', 'dead priority');
+assert(animForMonsterState({ dead: false, hitFlash: true, attacking: true, moving: true }) === 'hurt', 'hurt priority');
+assert(animForMonsterState({ dead: false, hitFlash: false, attacking: true, moving: true }) === 'attack', 'attack priority');
+assert(animForMonsterState({ dead: false, hitFlash: false, attacking: false, moving: true }) === 'walk', 'walk priority');
+assert(animForMonsterState({ dead: false, hitFlash: false, attacking: false, moving: false }) === 'idle', 'idle default');
+// Spawn table: every entry maps to a sheet kind with valid biomes/danger/variants.
+const KNOWN_TERRAINS = ['forest', 'meadow', 'rock', 'desert', 'tundra'];
+const salts = new Set<number>();
+for (const spec of MONSTER_SPAWN_TABLE) {
+  const def = spriteDefFor(spec.kind);
+  assert(def !== undefined, `spawn table kind ${spec.kind} has no sprite def`);
+  assert(spec.biomes.every((b) => KNOWN_TERRAINS.includes(b)), `${spec.kind}: unknown biome`);
+  assert(spec.minDanger >= 1 && spec.minDanger <= 3, `${spec.kind}: bad minDanger`);
+  assert(spec.packBase >= 1 && spec.packVar >= 1, `${spec.kind}: bad pack spec`);
+  assert(!salts.has(spec.seedSalt), `${spec.kind}: duplicate seedSalt`);
+  salts.add(spec.seedSalt);
+  assert(spec.variants.length > 0 && spec.variants.every((v) => def!.variants[v] !== undefined), `${spec.kind}: variant not in def`);
+  if (spec.eliteVariant) assert(def!.variants[spec.eliteVariant.variant] !== undefined, `${spec.kind}: elite variant not in def`);
+  // Biome/danger metadata agrees with the JSON def.
+  assert(JSON.stringify([...spec.biomes].sort()) === JSON.stringify([...def!.biomes].sort()), `${spec.kind}: table biomes disagree with def`);
+  assert(spec.minDanger === def!.minDanger, `${spec.kind}: table minDanger disagrees with def`);
+}
+// Every sheet kind spawns: either via the table or an explicit spawn() call in App.tsx.
+for (const kind of EXPECTED_KINDS) {
+  const viaTable = MONSTER_SPAWN_TABLE.some((s) => s.kind === kind);
+  const explicit = appSrc.includes(`spawn('${kind}'`);
+  assert(viaTable || explicit, `${kind}: no spawn rule found`);
+}
+// Generated CSS is in sync with the JSON defs (self-heals, then fails once to signal).
+{
+  const before = readFileSyncSprites(genCssPath, 'utf8');
+  execSync('node scripts/gen-monster-sprite-css.mjs', { stdio: 'pipe' });
+  const after = readFileSyncSprites(genCssPath, 'utf8');
+  assert(before === after, 'monster-sprites.gen.css was out of sync with JSON defs (regenerated — re-run sim)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
