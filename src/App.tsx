@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '264';
+const BUILD_NUMBER = '265';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -829,12 +829,13 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
 }
 
 function doorwayExteriorPosition(rect: FieldRect, doorway: Point): Point {
-  // Spawn south of the house's collision rect (not at the door, which is
-  // inside the solid rect) so the player never spawns trapped. Aligned with
-  // the door's x so they appear at the visible doorway.
-  // BUILD 243: was doorway.y + 1.5, which is inside the rect for the new
-  // stone houses (door at 72.5% height, rect extends to 100%).
-  return { x: doorway.x, y: Math.min(FIELD_SIZE - 6, rect.bottom + 1.2) };
+  // Spawn just south of the house's collision rect (the door itself is inside
+  // the solid rect, so spawning exactly at it would trap the player). Aligned
+  // with the door's x and inside the entry trigger zone (2.5 units south of
+  // the door), so leaving a building drops you at its entrance and walking
+  // back north re-enters — never out in the grass.
+  // BUILD 265: was rect.bottom + 1.2, which landed outside the trigger zone.
+  return { x: doorway.x, y: Math.min(FIELD_SIZE - 6, rect.bottom + 0.7) };
 }
 
 const STARTING_DOORWAY_ID = 'tutorial-house-door';
@@ -843,7 +844,7 @@ const startingHouse = buildingDoorwaysFor({ x: 4, y: 7 }).find((doorway) => door
   name: 'Tutorial House',
   description: 'A small safe house on the tutorial island.',
   roomType: 'inn' as const,
-  exteriorPosition: { x: 41.96, y: 54.57 },
+  exteriorPosition: { x: 44.7, y: 58.7 },
 };
 // Playtest tooling (?playtestInterior=<area-id>): start inside a named interior
 // (e.g. wayfarer-guild) so visual checks don't require walking there.
@@ -4085,7 +4086,7 @@ if (active) {
                   bottom: rect.bottom + off.y,
                 };
                 const door = { x: doorway.position.x + off.x, y: doorway.position.y + off.y };
-                const exit = { x: door.x, y: movedRect.bottom + 1.2 };
+                const exit = { x: door.x, y: movedRect.bottom + 0.7 };
                 const { xTol } = doorwayTriggerDims(movedRect);
                 // RED = collision rect, BLUE = hard-locked trigger zone, GREEN = exit spawn
                 return (
