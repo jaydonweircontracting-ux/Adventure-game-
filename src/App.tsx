@@ -1,7 +1,7 @@
 import IsoRoomDemo from './game/iso/IsoRoom';
 import IsoFieldView from './game/iso/IsoFieldView';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
-import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay } from './game/villageLife';
+import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships } from './game/villageLife';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
@@ -93,7 +93,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '367';
+const BUILD_NUMBER = '368';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -3854,6 +3854,8 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   // Physical NPC navigation: housing registry, cottage doors, obstacles.
   // Built once — the 12 townsfolk ids are stable (townsfolk-0..11).
   const townsfolkNavRef = useRef<TownsfolkNavContext | null>(null);
+  // BUILD 368: last world-day rumor propagation ran (daily gossip tick).
+  const lastRumorDayRef = useRef<number>(-1);
   if (!townsfolkNavRef.current) {
     const ids = Array.from({ length: 12 }, (_, i) => 'townsfolk-' + i);
     townsfolkNavRef.current = {
@@ -4338,6 +4340,17 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
         if (next.some((npc, index) => npc !== townsfolkRef.current[index])) {
           townsfolkRef.current = next;
           setTownsfolk(next);
+        }
+        // BUILD 368: once per day, villagers gossip — notable memories travel
+        // along the relationship graph (family/friends with high affinity).
+        const today = Math.floor(folkClock.day);
+        if (lastRumorDayRef.current !== today) {
+          lastRumorDayRef.current = today;
+          const gossiped = propagateRumors(townsfolkRef.current, today, DEFAULT_WORLD_SEED);
+          if (gossiped !== townsfolkRef.current) {
+            townsfolkRef.current = gossiped;
+            setTownsfolk(gossiped);
+          }
         }
       }
     }, 120);
@@ -5627,6 +5640,15 @@ if (active) {
     setTownsfolkDialogue(npc);
     setDialogueTopic(null);
     setDisposition((d) => ({ ...d, [npc.id]: adjustDisposition(d[npc.id] ?? defaultDisposition(), 1) }));
+    // BUILD 368: the greeting remembers you — past conversations change it.
+    const pastTalks = (npc.memories ?? []).filter((m) => m.event.startsWith('Talked with the traveler')).length;
+    const role = npc.archetype === 'commoner' ? 'a resident of Mosslight' : `the town ${npc.archetype}`;
+    const greeting = pastTalks === 0
+      ? `${npc.name} turns to you: ${role}.`
+      : pastTalks < 3
+        ? `${npc.name} nods to you: "Back again, traveler."`
+        : `${npc.name} grins: "My favorite traveler returns! What news?"`;
+    setLogs((currentLogs) => [{ text: greeting, color: 'blue' }, ...currentLogs].slice(0, 3));
     // BUILD 366: the conversation becomes part of the NPC's life — record a
     // memory (once per day max, so repeated chats don't spam the log).
     const clock = brainRef.current?.worldCore.getClock();
@@ -5647,8 +5669,21 @@ if (active) {
       return;
     }
     const disp = disposition[npc.id] ?? defaultDisposition();
+    // BUILD 368: relationships and gossip enter the conversation — 'who'
+    // names kin, 'rumors' can surface real village hearsay.
+    const folkClock = brainRef.current?.worldCore.getClock();
+    const rels = folkClock
+      ? npcRelationships(npc, townsfolkRef.current, folkClock).map((r) => ({
+          targetName: r.targetName,
+          kind: r.kind,
+          affinity: r.affinity,
+        }))
+      : [];
+    const hearsay = (npc.memories ?? [])
+      .filter((m) => m.event.startsWith('Heard from'))
+      .map((m) => m.event);
     const resp = responseFor(
-      { name: npc.name, archetype: npc.archetype, activity: npc.activity, disposition: disp, townReputation: reputation.mosslight, seed: npc.seed },
+      { name: npc.name, archetype: npc.archetype, activity: npc.activity, disposition: disp, townReputation: reputation.mosslight, seed: npc.seed, relationships: rels, hearsay },
       topic,
     );
     if (resp.rumor) onAddRumor(resp.rumor, npc.name);

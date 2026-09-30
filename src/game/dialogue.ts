@@ -83,6 +83,11 @@ export interface DialogueContext {
   townReputation: number;
   /** Deterministic per-NPC seed for rumor selection. */
   seed: number;
+  /** BUILD 368: the speaker's relationships (highest affinity first). When
+   * present, 'who' answers name kin and 'rumors' can surface village gossip. */
+  relationships?: Array<{ targetName: string; kind: string; affinity: number }>;
+  /** BUILD 368: second-hand gossip the speaker has heard ("Heard from X: ..."). */
+  hearsay?: string[];
 }
 
 export interface DialogueResponse {
@@ -148,7 +153,14 @@ export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): Dialo
     case 'who': {
       if (cold) return { text: `${ctx.name}. That's all you need to know.` };
       const role = ctx.archetype === 'commoner' ? 'a resident of Mosslight' : `the town ${ctx.archetype}`;
-      return { text: `I'm ${ctx.name}, ${role}. Right now I'm ${ctx.activity.toLowerCase()}.` };
+      let text = `I'm ${ctx.name}, ${role}. Right now I'm ${ctx.activity.toLowerCase()}.`;
+      // BUILD 368: name kin — the relationship graph becomes conversation.
+      const kin = (ctx.relationships ?? []).find((r) => r.kind === 'family' || r.kind === 'friend');
+      if (kin && !cold) {
+        const bond = kin.kind === 'family' ? 'My kin' : 'My good friend';
+        text += ` ${bond} ${kin.targetName} is around here too — say hello if you see them.`;
+      }
+      return { text };
     }
     case 'work': {
       const lines = WORK_LINES[ctx.archetype] ?? {
@@ -158,6 +170,13 @@ export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): Dialo
       return { text: cold ? lines.cold : lines.warm };
     }
     case 'rumors': {
+      // BUILD 368: real village gossip first — things this NPC actually heard
+      // from someone, via propagateRumors. Falls back to canned rumors.
+      const heard = ctx.hearsay ?? [];
+      if (!cold && heard.length > 0 && hash2(ctx.seed, 9102) < 0.65) {
+        const gossip = heard[Math.floor(hash2(ctx.seed, 9103) * heard.length)];
+        return { text: `${gossip}. At least, that's what I heard.`, rumor: gossip };
+      }
       const pool = tier === 'warm' || tier === 'admiring' ? [...RUMORS, ...WARM_RUMORS] : RUMORS;
       const rumor = pool[Math.floor(hash2(ctx.seed, 9101) * pool.length)];
       const lead = cold

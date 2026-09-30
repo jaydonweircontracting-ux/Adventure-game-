@@ -287,6 +287,64 @@ export function notableMemories(npc: Townsperson): NPCMemory[] {
 }
 
 // ---------------------------------------------------------------------------
+// Rumor propagation (BUILD 368): villagers gossip. Once per day, an NPC may
+// share one notable memory with a single close contact (family/friend with
+// high affinity). The recipient files it second-hand — "Heard from X: ..."
+// — at one lower importance. Pure, deterministic, bounded by the 12-memory
+// cap in addNPCMemory. This is what makes relationships load-bearing: news
+// about the player (or the village) travels along the social graph.
+// ---------------------------------------------------------------------------
+
+/** Memories worth gossiping about: notable, and not stale (>30 days old). */
+function gossipableMemories(npc: Townsperson, day: number): NPCMemory[] {
+  return (npc.memories ?? []).filter(
+    (m) => m.importance >= 2 && day - m.day <= 30 && !m.event.startsWith('Heard from'),
+  );
+}
+
+export function propagateRumors(
+  folk: Townsperson[],
+  day: number,
+  worldSeed: number,
+): Townsperson[] {
+  const byId = new Map(folk.map((f) => [f.id, f]));
+  // Collect (recipientId -> memory) pairs first so one pass can't chain.
+  const deliveries = new Map<string, NPCMemory>();
+  // Minimal clock for relationship derivation (affinity maturity only).
+  const clock = { day } as WorldClockState;
+  for (const npc of folk) {
+    const shareable = gossipableMemories(npc, day);
+    if (shareable.length === 0) continue;
+    // Deterministic coin flip: this NPC gossips today or not.
+    if (townsfolkHash(npc.seed ^ worldSeed, 9401 + day * 7) > 0.45) continue;
+    const rels = npcRelationships(npc, folk, clock).filter(
+      (r) => (r.kind === 'family' || r.kind === 'friend') && r.affinity >= 40,
+    );
+    if (rels.length === 0) continue;
+    // Most notable memory goes to the closest contact.
+    const memory = [...shareable].sort((a, b) => b.importance - a.importance || b.day - a.day)[0];
+    const contact = rels[0];
+    if (deliveries.has(contact.targetId)) continue;
+    const recipient = byId.get(contact.targetId);
+    if (!recipient) continue;
+    const hearsay: NPCMemory = {
+      event: `Heard from ${npc.name}: ${memory.event}`,
+      day,
+      importance: Math.max(1, memory.importance - 1) as 1 | 2 | 3,
+    };
+    // Don't re-deliver something they already know.
+    if ((recipient.memories ?? []).some((m) => m.event === hearsay.event)) continue;
+    deliveries.set(contact.targetId, hearsay);
+  }
+  if (deliveries.size === 0) return folk;
+  return folk.map((f) => {
+    const heard = deliveries.get(f.id);
+    if (!heard) return f;
+    return addNPCMemory(f, heard.event, heard.day, heard.importance);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Personal economy (lightweight, deterministic)
 // ---------------------------------------------------------------------------
 

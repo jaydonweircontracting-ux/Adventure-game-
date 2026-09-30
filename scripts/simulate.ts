@@ -7,7 +7,7 @@ import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
-import { npcPersonality, npcAge, npcAgeYears, npcNeeds, villageTarget, npcRelationships, addNPCMemory, npcWage, npcGold, adjustNPCGold, villageEventsForDay } from '../src/game/villageLife';
+import { npcPersonality, npcAge, npcAgeYears, npcNeeds, villageTarget, npcRelationships, addNPCMemory, npcWage, npcGold, adjustNPCGold, villageEventsForDay, propagateRumors } from '../src/game/villageLife';
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { landscapeSeed, moistureAt, forestDensityAt, rockDensityAt, macroLandformAt, regionForChunk, roadCorridorsFor, pointInCorridors, townInfluenceAt, landUseAt, landscapeSitesFor, checkFieldContinuity, riverChannelAt, riverAt, lakesForChunk, waterAt, bridgeAt } from '../src/game/landscape';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText, EDITOR_LOG_MAX } from '../src/game/worldEditor';
@@ -827,6 +827,102 @@ console.log('Testing village life layer (BUILD 366)...');
   const rt = restored.find((n) => n.id === tipped.id)!;
   assert(rt.goldDelta === 50, 'goldDelta not restored');
   assert((rt.memories ?? []).length === (tipped.memories ?? []).length, 'memories not restored');
+}
+
+// ---- BUILD 368: relationships & memory made real (gossip, kin dialogue) ----
+console.log('Testing rumor propagation and relationship dialogue...');
+{
+  const anchors: TownsfolkAnchors = {
+    points: {
+      guild: { x: 90, y: 60 }, chapel: { x: 40, y: 90 }, tavern: { x: 90, y: 90 },
+      farm0: { x: 30, y: 119 }, farm1: { x: 110, y: 119 },
+    },
+    plaza: { x: 70, y: 82 },
+    stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
+    gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
+    patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
+  };
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+  // Give every NPC a notable memory so gossip has something to spread.
+  const folk = createTownsfolk(anchors, 847291583).map((n, i) =>
+    addNPCMemory(n, `Saw something strange at the ${i % 2 ? 'mill' : 'chapel'}.`, 5, 2),
+  );
+
+  // Determinism: same input -> same gossip output.
+  const g1 = propagateRumors(folk, 6, 847291583);
+  const g2 = propagateRumors(folk, 6, 847291583);
+  assert(JSON.stringify(g1.map((f) => f.memories)) === JSON.stringify(g2.map((f) => f.memories)),
+    'propagateRumors not deterministic');
+
+  // Gossip actually travels: at least one NPC gains a "Heard from" memory.
+  const heardCount = g1.filter((f) => (f.memories ?? []).some((m) => m.event.startsWith('Heard from'))).length;
+  assert(heardCount > 0, 'No gossip propagated between NPCs');
+
+  // Second-hand memories are attributed and decayed in importance.
+  for (const f of g1) {
+    for (const mem of f.memories ?? []) {
+      if (!mem.event.startsWith('Heard from')) continue;
+      assert(mem.importance <= 2, 'Hearsay should lose importance in retelling');
+      assert(mem.day === 6, 'Hearsay should be dated today');
+    }
+  }
+
+  // Bounds hold: gossip never overflows the 12-memory cap.
+  for (const f of g1) assert((f.memories ?? []).length <= 12, 'Gossip overflowed memory bound');
+
+  // No self-gossip, no duplicates.
+  for (const f of g1) {
+    for (const mem of f.memories ?? []) {
+      assert(!mem.event.startsWith(`Heard from ${f.name}:`), 'NPC gossiped to themselves');
+    }
+    const events = (f.memories ?? []).map((m) => m.event);
+    assert(new Set(events).size === events.length, 'Duplicate memories after gossip');
+  }
+
+  // Chains stop at one hop: 'Heard from' memories are never re-gossiped.
+  const g3 = propagateRumors(g1, 7, 847291583);
+  for (const f of g3) {
+    for (const mem of f.memories ?? []) {
+      assert(!mem.event.slice(11).includes('Heard from'), 'Gossip chained more than one hop');
+    }
+  }
+
+  // Dialogue: 'who' names kin when relationships are provided.
+  const speaker = folk[0];
+  const rels = npcRelationships(speaker, folk, clockAt(10, 0));
+  const kin = rels.find((r) => r.kind === 'family' || r.kind === 'friend');
+  const whoResp = responseFor(
+    {
+      name: speaker.name, archetype: speaker.archetype, activity: 'Tending crops',
+      disposition: 60, townReputation: 0, seed: speaker.seed,
+      relationships: rels.map((r) => ({ targetName: r.targetName, kind: r.kind, affinity: r.affinity })),
+    },
+    'who',
+  );
+  if (kin) {
+    assert(whoResp.text.includes(kin.targetName), `'who' should name kin ${kin.targetName}`);
+  }
+  // Without relationships, 'who' still works (backward compatible).
+  const whoBare = responseFor(
+    { name: speaker.name, archetype: speaker.archetype, activity: 'Tending crops', disposition: 60, townReputation: 0, seed: speaker.seed },
+    'who',
+  );
+  assert(whoBare.text.includes(speaker.name), "'who' without relationships broke");
+
+  // Dialogue: 'rumors' with hearsay is deterministic and non-empty.
+  const gossiper = g1.find((f) => (f.memories ?? []).some((m) => m.event.startsWith('Heard from')))!;
+  const hearsay = (gossiper.memories ?? []).filter((m) => m.event.startsWith('Heard from')).map((m) => m.event);
+  const rumorCtx = {
+    name: gossiper.name, archetype: gossiper.archetype, activity: 'Resting',
+    disposition: 60, townReputation: 0, seed: gossiper.seed, hearsay,
+  };
+  const rumorResp = responseFor(rumorCtx, 'rumors');
+  const rumorResp2 = responseFor(rumorCtx, 'rumors');
+  assert(rumorResp.text === rumorResp2.text, "'rumors' with hearsay not deterministic");
+  assert(rumorResp.text.length > 0, "'rumors' returned empty text");
 }
 
 console.log('Testing NPC physical movement scenarios (BUILD 312)...');
