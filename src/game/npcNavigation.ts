@@ -124,11 +124,44 @@ function heuristic(a: GridCell, b: GridCell): number {
  * Returns waypoints in field units, or null if no path exists (caller should
  * use a fallback destination).
  */
+/**
+ * Field road corridors (BUILD 321): the visual road renders at --road-x/--road-y
+ * 47% with 9% width/height on the 140-unit field → 65.8..78.4 units. Slightly
+ * widened so the 4-unit A* cells register as road. Pure.
+ */
+const ROAD_MIN = 64;
+const ROAD_MAX = 80;
+const ROAD_MID = 72;
+/** Cost multiplier for A* steps through non-road cells (road cells cost 1). */
+const OFFROAD_COST = 1.45;
+
+/**
+ * Is a field-unit point on a road arm? `roadPiece` is the chunk's road string
+ * ('n'/'s'/'e'/'w' combos, 'none'). The center intersection belongs to every arm.
+ */
+export function isOnFieldRoad(x: number, y: number, roadPiece?: string): boolean {
+  if (!roadPiece || roadPiece === 'none') return false;
+  const onH = y >= ROAD_MIN && y <= ROAD_MAX;
+  const onV = x >= ROAD_MIN && x <= ROAD_MAX;
+  if (onH && onV) return true;
+  if (onH && roadPiece.includes('e') && x >= ROAD_MID) return true;
+  if (onH && roadPiece.includes('w') && x < ROAD_MID) return true;
+  if (onV && roadPiece.includes('s') && y >= ROAD_MID) return true;
+  if (onV && roadPiece.includes('n') && y < ROAD_MID) return true;
+  return false;
+}
+
+function cellCenter(c: GridCell): NavPoint {
+  return { x: c.x * CELL + CELL / 2, y: c.y * CELL + CELL / 2 };
+}
+
 export function findPath(
   from: NavPoint,
   to: NavPoint,
   obstacles: ObstacleRect[],
   viaDoor?: DoorwayLink,
+  /** Chunk road piece — when set, A* prefers road cells over open ground. */
+  roadPiece?: string,
 ): NavPoint[] | null {
   const start = toCell(from);
   const goal = toCell(to);
@@ -179,7 +212,13 @@ export function findPath(
     for (const nb of neighbors(current)) {
       const nk = key(nb);
       if (closed.has(nk)) continue;
-      const tentative = (gScore.get(ck) ?? Infinity) + (nb.x !== current.x && nb.y !== current.y ? 1.414 : 1);
+      const stepBase = nb.x !== current.x && nb.y !== current.y ? 1.414 : 1;
+      // Road preference: road cells cost 1, open ground costs more, so NPCs
+      // drift toward roads when they're roughly along the way — but won't
+      // take absurd detours (the 1.45x factor bounds the tradeoff).
+      const cc = cellCenter(nb);
+      const roadFactor = !roadPiece || isOnFieldRoad(cc.x, cc.y, roadPiece) ? 1 : OFFROAD_COST;
+      const tentative = (gScore.get(ck) ?? Infinity) + stepBase * roadFactor;
       if (tentative < (gScore.get(nk) ?? Infinity)) {
         cameFrom.set(nk, ck);
         gScore.set(nk, tentative);
@@ -206,7 +245,7 @@ export function findPath(
   const raw = cells.map(toPoint);
   raw[0] = { ...from };
   raw[raw.length - 1] = { ...to };
-  return smoothPath(raw, obstacles);
+  return smoothPath(raw, obstacles, roadPiece);
 }
 
 function lineClear(a: NavPoint, b: NavPoint, obstacles: ObstacleRect[]): boolean {
@@ -224,18 +263,37 @@ function lineClear(a: NavPoint, b: NavPoint, obstacles: ObstacleRect[]): boolean
   return true;
 }
 
-function smoothPath(points: NavPoint[], obstacles: ObstacleRect[]): NavPoint[] {
+function smoothPath(points: NavPoint[], obstacles: ObstacleRect[], roadPiece?: string): NavPoint[] {
   if (points.length <= 2) return points;
   const out: NavPoint[] = [points[0]];
   let anchor = 0;
   for (let i = 2; i < points.length; i++) {
-    if (!lineClear(points[anchor], points[i], obstacles)) {
+    const shortcutClear = lineClear(points[anchor], points[i], obstacles);
+    // Road preference: don't smooth away a road waypoint when the shortcut
+    // would leave the road — the NPC should walk along the road, not cut
+    // across the grass. Without a road piece this is a pure no-op.
+    const abandonsRoad = !!roadPiece &&
+      isOnFieldRoad(points[i - 1].x, points[i - 1].y, roadPiece) &&
+      !segmentOnRoad(points[anchor], points[i], roadPiece);
+    if (!shortcutClear || abandonsRoad) {
       out.push(points[i - 1]);
       anchor = i - 1;
     }
   }
   out.push(points[points.length - 1]);
   return out;
+}
+
+/** True when most of segment a-b lies on a road arm (sampled every ~4u). */
+function segmentOnRoad(a: NavPoint, b: NavPoint, roadPiece: string): boolean {
+  const dist = Math.hypot(b.x - a.x, b.y - a.y);
+  const steps = Math.max(1, Math.ceil(dist / 4));
+  let on = 0;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    if (isOnFieldRoad(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, roadPiece)) on++;
+  }
+  return on / (steps + 1) >= 0.6;
 }
 
 // ---------------------------------------------------------------------------
@@ -396,9 +454,10 @@ export function pathToDoor(
   from: NavPoint,
   door: DoorwayLink,
   obstacles: ObstacleRect[],
+  roadPiece?: string,
 ): NavPath | null {
   const target = validateDestination(door.exterior, obstacles).point;
-  const waypoints = findPath(from, target, obstacles, door);
+  const waypoints = findPath(from, target, obstacles, door, roadPiece);
   if (!waypoints) return null;
   // Waypoints end at the door exterior. The caller transitions ENTERING ->
   // INTERIOR on arrival and then walks the interior leg (through the doorway
@@ -407,9 +466,9 @@ export function pathToDoor(
 }
 
 /** Build a plain outdoor path (no doors). The destination is validated first. */
-export function pathTo(from: NavPoint, to: NavPoint, obstacles: ObstacleRect[]): NavPath | null {
+export function pathTo(from: NavPoint, to: NavPoint, obstacles: ObstacleRect[], roadPiece?: string): NavPath | null {
   const target = validateDestination(to, obstacles).point;
-  const waypoints = findPath(from, target, obstacles);
+  const waypoints = findPath(from, target, obstacles, undefined, roadPiece);
   if (!waypoints) return null;
   return { waypoints, index: 0, destination: { ...to }, replanCooldown: REPLAN_COOLDOWN_TICKS };
 }

@@ -7,7 +7,7 @@ import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
-import { validateDestination, trackStep, pathTo, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
+import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
@@ -1157,6 +1157,59 @@ for (const kind of EXPECTED_KINDS) {
   assert(!pair[0].moving, 'walker should settle near its target');
   assert(arrivedDist < 1.5, `walker should stay near its target, ended ${arrivedDist.toFixed(2)} away`);
   assert(pair[1].position.x === target.x && pair[1].position.y === target.y, 'settled occupant must never be shoved off its spot');
+}
+
+
+// ---- BUILD 321: road preference in NPC pathfinding ----
+{
+  // 1. Road corridor detection (field units; visual road at 47-56% of 140).
+  assert(isOnFieldRoad(72, 72, 'nesw'), 'center should be on road for nesw');
+  assert(isOnFieldRoad(72, 72, 'n'), 'center intersection belongs to every arm');
+  assert(isOnFieldRoad(10, 72, 'ew'), 'west arm should be road for ew');
+  assert(!isOnFieldRoad(10, 72, 'ns'), 'west arm should not be road for ns');
+  assert(isOnFieldRoad(72, 10, 'ns'), 'north arm should be road for ns');
+  assert(!isOnFieldRoad(72, 10, 'ew'), 'north arm should not be road for ew');
+  assert(!isOnFieldRoad(10, 10, 'nesw'), 'corner should not be road');
+  assert(!isOnFieldRoad(72, 72, 'none'), 'none piece should never be road');
+  assert(!isOnFieldRoad(72, 72, undefined), 'missing piece should never be road');
+  // 2. A* prefers roads: a trip parallel to (but just off) a road arm walks
+  // along the road instead of cutting straight across the grass.
+  const from = { x: 10, y: 90 };
+  const to = { x: 130, y: 90 };
+  const roadPath = findPath(from, to, [], undefined, 'nesw');
+  const dirtPath = findPath(from, to, [], undefined, undefined);
+  assert(roadPath && dirtPath, 'both paths should exist on open ground');
+  const roadFraction = (wp: { x: number; y: number }[]) => {
+    let on = 0;
+    let total = 0;
+    for (let i = 0; i < wp.length - 1; i++) {
+      const a = wp[i];
+      const b = wp[i + 1];
+      const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 4));
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        total++;
+        if (isOnFieldRoad(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, 'nesw')) on++;
+      }
+    }
+    return total === 0 ? 0 : on / total;
+  };
+  const roadFrac = roadFraction(roadPath!);
+  const dirtFrac = roadFraction(dirtPath!);
+  assert(roadFrac > dirtFrac + 0.2, `road path should walk more on roads (${roadFrac.toFixed(2)}) than dirt path (${dirtFrac.toFixed(2)})`);
+  // Both still reach the destination.
+  const lastR = roadPath![roadPath!.length - 1];
+  assert(Math.hypot(lastR.x - to.x, lastR.y - to.y) < 6, 'road path should reach the destination');
+  // 3. Deterministic.
+  const again = findPath(from, to, [], undefined, 'nesw');
+  assert(JSON.stringify(again) === JSON.stringify(roadPath), 'road pathfinding must be deterministic');
+  // 4. Road preference never overrides obstacles: a wall across the road
+  // still forces a detour, not a walk through the wall.
+  const wall = [{ left: 60, top: 60, right: 84, bottom: 84 }];
+  const wallPath = findPath({ x: 20, y: 72 }, { x: 120, y: 72 }, wall, undefined, 'ew');
+  assert(wallPath, 'path around the wall should exist');
+  const throughWall = wallPath!.some((p) => p.x > 60 && p.x < 84 && p.y > 60 && p.y < 84);
+  assert(!throughWall, 'road preference must not route through the wall rect');
 }
 
 // ---- Results ----

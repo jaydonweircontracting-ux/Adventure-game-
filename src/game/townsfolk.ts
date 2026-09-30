@@ -268,6 +268,8 @@ export type TownsfolkNavContext = {
   housing: HousingRegistry;
   doors: DoorwayLink[];
   obstacles: ObstacleRect[];
+  /** Chunk road piece for A* road preference (e.g. 'nesw', 'none'). */
+  roadPiece?: string;
 };
 
 function homeDoorFor(npc: Townsperson, nav: TownsfolkNavContext): DoorwayLink | undefined {
@@ -354,7 +356,7 @@ function advanceOne(
       // At the interior door. Walk out: position is NOT snapped — the NPC
       // walks from the interior door through the doorway to the exterior as
       // the first leg of the outdoor path.
-      const outPath = pathTo(door.exterior, want.target, nav.obstacles);
+      const outPath = pathTo(door.exterior, want.target, nav.obstacles, nav.roadPiece);
       const fullWps = [{ ...door.exterior }, ...(outPath?.waypoints ?? [straightFallbackPath(want.target, nav.obstacles).waypoints[0]])];
       return {
         ...npc,
@@ -411,7 +413,7 @@ function advanceOne(
       return { ...npc, position: res.position, path: undefined, moving: false, location: 'INTERIOR', indoors: true, facing: res.facing, activity: want.activity };
     }
     const tracked = trackStep(npc.path, npc.position, res, (from) =>
-      door ? pathToDoor(from, door, nav.obstacles) : null,
+      door ? pathToDoor(from, door, nav.obstacles, nav.roadPiece) : null,
     );
     return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, activity: want.activity, indoors: false };
   }
@@ -427,7 +429,7 @@ function advanceOne(
     const needNewPath =
       npc.location !== 'ENTERING' || shouldReplanPath(npc.path, door.exterior);
     if (needNewPath) {
-      const path = pathToDoor(npc.position, door, nav.obstacles);
+      const path = pathToDoor(npc.position, door, nav.obstacles, nav.roadPiece);
       if (!path) {
         // Door unreachable: wait (don't teleport, don't wander).
         return npc.activity === want.activity && !npc.moving ? npc : { ...npc, moving: false, activity: want.activity, path: undefined };
@@ -456,7 +458,7 @@ function advanceOne(
   const needNewPath = shouldReplanPath(npc.path, want.target);
   let path = npc.path;
   if (needNewPath) {
-    const newPath = pathTo(npc.position, want.target, nav.obstacles);
+    const newPath = pathTo(npc.position, want.target, nav.obstacles, nav.roadPiece);
     if (!newPath) {
       return npc.activity === want.activity && !npc.moving ? npc : { ...npc, moving: false, activity: want.activity, path: undefined };
     }
@@ -466,7 +468,7 @@ function advanceOne(
   if (res.arrived) {
     return { ...npc, position: res.position, path: undefined, moving: false, activity: want.activity, indoors: false, location: 'OUTDOOR', facing: res.facing };
   }
-  const tracked = trackStep(path!, npc.position, res, (from) => pathTo(from, want.target, nav.obstacles));
+  const tracked = trackStep(path!, npc.position, res, (from) => pathTo(from, want.target, nav.obstacles, nav.roadPiece));
   return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, activity: want.activity, indoors: false, location: 'OUTDOOR' };
 }
 
