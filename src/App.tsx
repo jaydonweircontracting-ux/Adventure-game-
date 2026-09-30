@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '250';
+const BUILD_NUMBER = '251';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3591,9 +3591,23 @@ if (active) {
         } as CSSProperties}
         onClick={markerMode ? (e) => {
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          const x = ((e.clientX - rect.left) / rect.width) * FIELD_SIZE;
-          const y = ((e.clientY - rect.top) / rect.height) * FIELD_SIZE;
-          const mark = { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
+          // Account for zoom: the world layer is scaled around the player position.
+          // Invert the transform to get the true field coordinates.
+          const px = e.clientX - rect.left;
+          const py = e.clientY - rect.top;
+          let fx: number, fy: number;
+          if (gameZoom !== 1) {
+            const ox = (position.x / FIELD_SIZE) * rect.width;
+            const oy = (position.y / FIELD_SIZE) * rect.height;
+            const ux = ox + (px - ox) / gameZoom;
+            const uy = oy + (py - oy) / gameZoom;
+            fx = (ux / rect.width) * FIELD_SIZE;
+            fy = (uy / rect.height) * FIELD_SIZE;
+          } else {
+            fx = (px / rect.width) * FIELD_SIZE;
+            fy = (py / rect.height) * FIELD_SIZE;
+          }
+          const mark = { x: Math.round(fx * 10) / 10, y: Math.round(fy * 10) / 10 };
           if (markColor === 'red') {
             setRedMarks((marks) => [...marks, mark]);
           } else {
@@ -3602,34 +3616,7 @@ if (active) {
         } : undefined}
         >
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
-          {markerMode && debugMarks.map((mark, i) => (
-            <span key={'mark-' + i} aria-hidden="true" style={{
-              position: 'absolute',
-              left: fieldPct(mark.x - 1.5),
-              top: fieldPct(mark.y - 1.5),
-              width: fieldPct(3),
-              height: fieldPct(3),
-              background: 'lime',
-              border: '2px solid darkgreen',
-              borderRadius: '50%',
-              pointerEvents: 'none',
-              zIndex: 55,
-            }} title={'(' + mark.x + ', ' + mark.y + ')'} />
-          ))}
-          {markerMode && redMarks.map((mark, i) => (
-            <span key={'redmark-' + i} aria-hidden="true" style={{
-              position: 'absolute',
-              left: fieldPct(mark.x - 1.5),
-              top: fieldPct(mark.y - 1.5),
-              width: fieldPct(3),
-              height: fieldPct(3),
-              background: 'red',
-              border: '2px solid darkred',
-              borderRadius: '50%',
-              pointerEvents: 'none',
-              zIndex: 55,
-            }} title={'(' + mark.x + ', ' + mark.y + ')'} />
-          ))}
+          {/* Marker dots are rendered inside field-world-layer (below) so they stay locked to world positions when zooming/walking. */}
           {markerMode && (debugMarks.length > 0 || redMarks.length > 0) && (
             <div style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 70, display: 'flex', gap: '6px', alignItems: 'center' }}>
               <button
@@ -3740,6 +3727,35 @@ if (active) {
             const oy = (position.y / FIELD_SIZE) * 100;
             return { transform: `scale(${gameZoom})`, transformOrigin: `${ox}% ${oy}%` };
           })() : undefined}>
+          {/* Marker dots: inside the world layer so they stay locked to field positions when walking/zooming. */}
+          {markerMode && debugMarks.map((mark, i) => (
+            <span key={'mark-' + i} aria-hidden="true" style={{
+              position: 'absolute',
+              left: fieldPct(mark.x - 1.5),
+              top: fieldPct(mark.y - 1.5),
+              width: fieldPct(3),
+              height: fieldPct(3),
+              background: 'lime',
+              border: '2px solid darkgreen',
+              borderRadius: '50%',
+              pointerEvents: 'none',
+              zIndex: 55,
+            }} title={'(' + mark.x + ', ' + mark.y + ')'} />
+          ))}
+          {markerMode && redMarks.map((mark, i) => (
+            <span key={'redmark-' + i} aria-hidden="true" style={{
+              position: 'absolute',
+              left: fieldPct(mark.x - 1.5),
+              top: fieldPct(mark.y - 1.5),
+              width: fieldPct(3),
+              height: fieldPct(3),
+              background: 'red',
+              border: '2px solid darkred',
+              borderRadius: '50%',
+              pointerEvents: 'none',
+              zIndex: 55,
+            }} title={'(' + mark.x + ', ' + mark.y + ')'} />
+          ))}
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
            <div className="field-accents" aria-hidden="true">
              {fieldAccents.map((accent) => (
