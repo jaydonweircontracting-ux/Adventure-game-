@@ -75,7 +75,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '306';
+const BUILD_NUMBER = '307';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -4084,10 +4084,12 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
       if (gameOverRef.current) { animationFrame = window.requestAnimationFrame(animate); return; }
       const elapsed = Math.min(50, now - lastFrame) / 1000;
       lastFrame = now;
-      const movementLocked = playerAttackStateRef.current.active;
+      // BUILD 307: attacks no longer root the player. The swing animation,
+      // hit timing and cooldown still pace combat, but movement input stays
+      // live during the swing so fighting never feels like a freeze.
       const input = {
-        x: inputLocked || optionsOpen || movementLocked || waitingRef.current ? 0 : (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
-        y: inputLocked || optionsOpen || movementLocked || waitingRef.current ? 0 : (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
+        x: inputLocked || optionsOpen || waitingRef.current ? 0 : (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
+        y: inputLocked || optionsOpen || waitingRef.current ? 0 : (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
       };
       const length = Math.hypot(input.x, input.y);
       const active = length > 0;
