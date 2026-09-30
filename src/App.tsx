@@ -3364,7 +3364,13 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     openedChestsRef.current = restoredChests; setOpenedChests(restoredChests);
     setNpcDialogue(null); setAttackFlash(null); setLogOpen(false); setMoving(false);
     if (loadState.brainState) {
-      brainRef.current?.loadGameState(loadState.brainState);
+      // Phase 1: persistent world time must survive a corrupt/incompatible
+      // brain save — never let a bad clock break the whole load.
+      try {
+        brainRef.current?.loadGameState(loadState.brainState);
+      } catch {
+        // Keep the fresh world clock.
+      }
       const restoredClock = brainRef.current?.worldCore.getClock();
       if (restoredClock) setTime(formatWorldClock(restoredClock));
     }
