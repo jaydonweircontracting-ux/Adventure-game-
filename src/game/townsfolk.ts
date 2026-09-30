@@ -16,7 +16,7 @@
 //   beds. The schedule says WHAT; the navigation layer says HOW.
 import type { WorldClockState } from './worldCore';
 import type { NPCWorldLocation, NavPath, NavPoint, DoorwayLink, ObstacleRect } from './npcNavigation';
-import { pathTo, pathToDoor, stepAlongPath, findPath, trackStep, straightFallbackPath, REPLAN_HYSTERESIS, REPLAN_COOLDOWN_TICKS } from './npcNavigation';
+import { pathTo, pathToDoor, stepAlongPath, findPath, trackStep, straightFallbackPath, validateDestination, REPLAN_HYSTERESIS, REPLAN_COOLDOWN_TICKS } from './npcNavigation';
 import type { HousingRegistry } from './housing';
 import { bedFor, buildHousingRegistry, assignBeds } from './housing';
 
@@ -80,6 +80,20 @@ function minutesOf(clock: WorldClockState): number {
 }
 
 /**
+ * Deterministic per-NPC personal-space offset (BUILD 323). Stable per NPC per
+ * day (hash of seed + day salt), so schedule targets and snap positions don't
+ * shift between ticks. Used for shared gather-spot targets and for the
+ * chunk-entry snap so cottage-mates don't stack on the exact door point.
+ */
+export function personalOffset(seed: number, day: number, salt: number): { x: number; y: number } {
+  const daySalt = Math.floor(day) * 131;
+  return {
+    x: (townsfolkHash(seed, daySalt + salt) - 0.5) * 7,
+    y: (townsfolkHash(seed, daySalt + salt + 997) - 0.5) * 7,
+  };
+}
+
+/**
  * Pure schedule resolution: (npc, anchors, clock) -> { activity, target }.
  * No per-frame AI, no stored state — the world clock drives everything, so
  * leaving town and returning hours later shows NPCs where they should be.
@@ -90,6 +104,23 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
   const jitter = (salt: number, range: number) => Math.floor(townsfolkHash(npc.seed, daySalt + salt) * range);
   const home = anchors.points[npc.homeKey] ?? npc.home;
 
+  // Personal space at shared gather spots (BUILD 323): NPCs heading for the
+  // same anchor (plaza, tavern, chapel, forge, garden, stall, patrol point, a
+  // shared home point) each get a deterministic per-NPC offset so a crowd
+  // gathers *around* the spot instead of stacking on one pixel. Stable per NPC
+  // per day (hash of seed + day salt), so paths don't replan every tick.
+  const gatherSpot = (base: TownsfolkPoint, salt: number): TownsfolkPoint => {
+    const o = personalOffset(npc.seed, clock.day, salt);
+    return { x: base.x + o.x, y: base.y + o.y };
+  };
+  const plazaSpot = gatherSpot(anchors.plaza, 2001);
+  const tavernSpot = gatherSpot(anchors.points.tavern ?? anchors.plaza, 2002);
+  const chapelSpot = gatherSpot(anchors.points.chapel ?? anchors.plaza, 2003);
+  const forgeSpot = gatherSpot(anchors.points.guild ?? anchors.plaza, 2004);
+  const homeSpot = gatherSpot(home, 2005);
+  const garden = gatherSpot(anchors.gardens[Math.floor(townsfolkHash(npc.seed, 77)) % anchors.gardens.length] ?? anchors.plaza, 2006);
+  const stall = gatherSpot(anchors.stalls[Math.floor(townsfolkHash(npc.seed, 78)) % anchors.stalls.length] ?? anchors.plaza, 2007);
+
   const wake = 330 + jitter(1, 61);       // 5:30–6:30
   const sleep = 1260 + jitter(2, 61);    // 21:00–22:00
   const lunchStart = 720 + jitter(3, 31);// 12:00–12:30
@@ -97,8 +128,6 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
   const workEnd = 1020 + jitter(4, 61);  // 17:00–18:00
   const atNight = mins >= sleep || mins < wake;
   const atLunch = mins >= lunchStart && mins < lunchEnd;
-  const garden = anchors.gardens[Math.floor(townsfolkHash(npc.seed, 77)) % anchors.gardens.length] ?? anchors.plaza;
-  const stall = anchors.stalls[Math.floor(townsfolkHash(npc.seed, 78)) % anchors.stalls.length] ?? anchors.plaza;
 
   switch (npc.archetype) {
     case 'guard': {
@@ -108,58 +137,58 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
       const onShift = mins >= shiftStart && mins < shiftEnd;
       if (!onShift) {
         if (atNight || mins < wake) return { activity: 'Off duty', target: home, indoors: true };
-        return { activity: 'Off duty', target: anchors.plaza, indoors: false };
+        return { activity: 'Off duty', target: plazaSpot, indoors: false };
       }
-      const waypoint = anchors.patrol[Math.floor(mins / 45) % anchors.patrol.length] ?? anchors.plaza;
+      const waypoint = gatherSpot(anchors.patrol[Math.floor(mins / 45) % anchors.patrol.length] ?? anchors.plaza, 2008);
       return { activity: 'Patrolling', target: waypoint, indoors: false };
     }
     case 'farmer': {
       if (atNight) return { activity: 'Sleeping', target: home, indoors: true };
-      if (mins < wake + 30) return { activity: 'Waking up', target: home, indoors: false };
-      if (atLunch) return { activity: 'Having lunch', target: anchors.plaza, indoors: false };
+      if (mins < wake + 30) return { activity: 'Waking up', target: homeSpot, indoors: false };
+      if (atLunch) return { activity: 'Having lunch', target: plazaSpot, indoors: false };
       if (mins < workEnd) return { activity: 'Tending crops', target: garden, indoors: false };
-      if (mins < workEnd + 90) return { activity: 'Evening at the Tankard', target: anchors.points.tavern ?? anchors.plaza, indoors: false };
-      return { activity: 'At home', target: home, indoors: false };
+      if (mins < workEnd + 90) return { activity: 'Evening at the Tankard', target: tavernSpot, indoors: false };
+      return { activity: 'At home', target: homeSpot, indoors: false };
     }
     case 'merchant': {
       const open = 480 + jitter(5, 31); // 8:00–8:30
       if (atNight) return { activity: 'Sleeping', target: home, indoors: true };
-      if (mins < open) return { activity: 'Opening the stall', target: home, indoors: false };
-      if (atLunch) return { activity: 'Having lunch', target: anchors.plaza, indoors: false };
+      if (mins < open) return { activity: 'Opening the stall', target: homeSpot, indoors: false };
+      if (atLunch) return { activity: 'Having lunch', target: plazaSpot, indoors: false };
       if (mins < workEnd) return { activity: 'Minding the stall', target: stall, indoors: false };
-      if (mins < workEnd + 90) return { activity: 'Evening at the Tankard', target: anchors.points.tavern ?? anchors.plaza, indoors: false };
-      return { activity: 'At home', target: home, indoors: false };
+      if (mins < workEnd + 90) return { activity: 'Evening at the Tankard', target: tavernSpot, indoors: false };
+      return { activity: 'At home', target: homeSpot, indoors: false };
     }
     case 'priest': {
       if (atNight) return { activity: 'Sleeping', target: home, indoors: true };
-      if (atLunch) return { activity: 'Having lunch', target: anchors.plaza, indoors: false };
+      if (atLunch) return { activity: 'Having lunch', target: plazaSpot, indoors: false };
       const chapel = anchors.points.chapel ?? anchors.plaza;
       const atChapel = (mins >= 480 && mins < 720) || (mins >= 840 && mins < workEnd);
-      if (atChapel) return { activity: 'Prayers', target: chapel, indoors: false };
-      return { activity: 'Tending the parish', target: anchors.plaza, indoors: false };
+      if (atChapel) return { activity: 'Prayers', target: chapelSpot, indoors: false };
+      return { activity: 'Tending the parish', target: plazaSpot, indoors: false };
     }
     case 'smith': {
       if (atNight) return { activity: 'Sleeping', target: home, indoors: true };
-      if (atLunch) return { activity: 'Having lunch', target: anchors.plaza, indoors: false };
+      if (atLunch) return { activity: 'Having lunch', target: plazaSpot, indoors: false };
       const forge = anchors.points.guild ?? anchors.plaza;
       const atForge = (mins >= 420 && mins < 720) || (mins >= 780 && mins < workEnd);
-      if (atForge) return { activity: 'Working the forge', target: forge, indoors: false };
+      if (atForge) return { activity: 'Working the forge', target: forgeSpot, indoors: false };
       if (mins >= workEnd && mins < workEnd + 90) return { activity: 'Evening at the Tankard', target: anchors.points.tavern ?? anchors.plaza, indoors: false };
-      return { activity: 'At the guild', target: home, indoors: false };
+      return { activity: 'At the guild', target: homeSpot, indoors: false };
     }
     case 'child': {
       if (atNight || mins < wake) return { activity: 'Sleeping', target: home, indoors: true };
-      if (mins >= lunchStart && mins < lunchEnd + 30) return { activity: 'Lunch at home', target: home, indoors: false };
-      if (mins >= 1080) return { activity: 'At home', target: home, indoors: false };
-      return { activity: 'Playing', target: anchors.plaza, indoors: false };
+      if (mins >= lunchStart && mins < lunchEnd + 30) return { activity: 'Lunch at home', target: homeSpot, indoors: false };
+      if (mins >= 1080) return { activity: 'At home', target: homeSpot, indoors: false };
+      return { activity: 'Playing', target: plazaSpot, indoors: false };
     }
     case 'commoner':
     default: {
       if (atNight) return { activity: 'Sleeping', target: home, indoors: true };
-      if (atLunch) return { activity: 'Having lunch', target: anchors.plaza, indoors: false };
+      if (atLunch) return { activity: 'Having lunch', target: plazaSpot, indoors: false };
       const outAndAbout = (mins >= 540 && mins < 720) || (mins >= 840 && mins < workEnd);
-      if (outAndAbout) return { activity: 'About town', target: anchors.plaza, indoors: false };
-      return { activity: 'At home', target: home, indoors: false };
+      if (outAndAbout) return { activity: 'About town', target: plazaSpot, indoors: false };
+      return { activity: 'At home', target: homeSpot, indoors: false };
     }
   }
 }
@@ -417,7 +446,10 @@ function advanceOne(
       return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, activity: want.activity, indoors: true };
     }
     // Wants to go outside: walk to the interior door, then step out.
-    if (!door) return { ...npc, location: 'OUTDOOR' as NPCWorldLocation, indoors: false, activity: want.activity };
+    // No door (unreachable in production — every assigned home has a doorway):
+    // stay inside and wait rather than flipping to OUTDOOR while physically
+    // indoors, which would path through the building walls.
+    if (!door) return { ...npc, location: 'INTERIOR' as NPCWorldLocation, indoors: true, moving: false, path: undefined, activity: want.activity };
     if (npc.path?.gaveUp) {
       // Destination unreachable: wait for the schedule to pick a new one.
       return { ...npc, moving: false, activity: want.activity, indoors: true };
@@ -686,9 +718,17 @@ export function snapTownsfolk(
     }
     if (door) {
       const home = nav.housing.homes.find((h) => h.doorwayId === door.id);
+      // Personal space (BUILD 323): cottage-mates would otherwise stack on the
+      // exact door point. Jitter deterministically, then validate so the spot
+      // stays walkable (never inside the building).
+      const o = personalOffset(npc.seed, clock.day, 2009);
+      const snapped = validateDestination(
+        { x: door.exterior.x + o.x * 0.5, y: door.exterior.y + o.y * 0.5 },
+        nav.obstacles,
+      ).point;
       return {
         ...npc,
-        position: { ...door.exterior },
+        position: snapped,
         location: 'OUTDOOR' as NPCWorldLocation,
         indoors: false,
         moving: false,

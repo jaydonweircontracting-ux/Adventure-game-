@@ -536,7 +536,7 @@ console.log('Testing townsfolk living-town simulation...');
   // Noon: farmer tends a garden; merchant minds a stall.
   const farmerNoon = townsfolkTarget(farmer, anchors, clockAt(10, 0));
   assert(!farmerNoon.indoors && farmerNoon.activity === 'Tending crops', `Farmer at 10 AM: ${farmerNoon.activity}`);
-  assert(anchors.gardens.some((g) => g.x === farmerNoon.target.x && g.y === farmerNoon.target.y), 'Farmer not at a garden');
+  assert(anchors.gardens.some((g) => Math.hypot(g.x - farmerNoon.target.x, g.y - farmerNoon.target.y) < 4), 'Farmer not at a garden');
   const merchant = folk.find((n) => n.archetype === 'merchant')!;
   const merchantNoon = townsfolkTarget(merchant, anchors, clockAt(10, 0));
   assert(merchantNoon.activity === 'Minding the stall', `Merchant at 10 AM: ${merchantNoon.activity}`);
@@ -1276,6 +1276,80 @@ for (const kind of EXPECTED_KINDS) {
   const json = JSON.parse(JSON.stringify({ townsfolk: saved }));
   const r3 = restoreTownsfolk(fresh, json.townsfolk);
   assert(r3[3].position.x === live[3].position.x, 'JSON round trip preserves state');
+}
+
+
+// ---- BUILD 323: gather-spot personal space (no pileups) ----
+{
+  const anchors: TownsfolkAnchors = {
+    points: {
+      guild: { x: 90, y: 60 }, chapel: { x: 40, y: 90 }, tavern: { x: 90, y: 90 },
+      farm0: { x: 30, y: 119 }, farm1: { x: 110, y: 119 },
+    },
+    plaza: { x: 70, y: 82 },
+    stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
+    gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
+    patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
+  };
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+  const folk = createTownsfolk(anchors, 847291583);
+  const navCtx: TownsfolkNavContext = {
+    housing: buildMosslightHousing(folk.map((n) => n.id)),
+    doors: cottageDoorways(),
+    obstacles: mosslightObstacles(),
+  };
+  // 1. No two NPCs share an exact outdoor target (lunch, evening, patrol).
+  for (const clock of [clockAt(12, 15), clockAt(18, 30), clockAt(10, 0)]) {
+    const tgts = folk.map((n) => townsfolkTarget(n, anchors, clock)).filter((x) => !x.indoors);
+    const keys = tgts.map((x) => `${x.target.x.toFixed(2)},${x.target.y.toFixed(2)}`);
+    assert(new Set(keys).size === keys.length, `shared gather target at ${clock.hour}:${String(clock.minuteOfDay % 60).padStart(2, '0')}`);
+  }
+  // 2. Gather targets are deterministic per NPC per day.
+  const g1 = townsfolkTarget(folk[0], anchors, clockAt(12, 15));
+  const g2 = townsfolkTarget(folk[0], anchors, clockAt(12, 15));
+  assert(g1.target.x === g2.target.x && g1.target.y === g2.target.y, 'gather target not deterministic');
+  // 3. Lunch-rush stress: 300 ticks of the real state machine.
+  const lunch = clockAt(12, 15);
+  let walkers = snapTownsfolk(folk, anchors, lunch, navCtx);
+  let snapMin = Infinity;
+  for (let i = 0; i < walkers.length; i++) for (let j = i + 1; j < walkers.length; j++) {
+    snapMin = Math.min(snapMin, Math.hypot(walkers[i].position.x - walkers[j].position.x, walkers[i].position.y - walkers[j].position.y));
+  }
+  assert(snapMin >= 0.5, `snap stacked cottage-mates (min ${snapMin.toFixed(2)})`);
+  let minPair = Infinity, maxStep = 0;
+  for (let tick = 0; tick < 300; tick++) {
+    const prev = walkers.map((w) => ({ ...w.position }));
+    walkers = advanceTownsfolk(walkers, anchors, lunch, navCtx, 0.5);
+    for (let i = 0; i < walkers.length; i++) {
+      maxStep = Math.max(maxStep, Math.hypot(walkers[i].position.x - prev[i].x, walkers[i].position.y - prev[i].y));
+      for (let j = i + 1; j < walkers.length; j++) {
+        minPair = Math.min(minPair, Math.hypot(walkers[i].position.x - walkers[j].position.x, walkers[i].position.y - walkers[j].position.y));
+      }
+    }
+  }
+  assert(minPair >= 0.4, `NPCs stacked during lunch rush (minPair ${minPair.toFixed(2)})`);
+  assert(maxStep <= 1.2, `teleport during lunch rush (maxStep ${maxStep.toFixed(2)})`);
+  assert(walkers.every((w) => !w.moving), 'lunch rush deadlocked: not all NPCs settled');
+  let minSettled = Infinity;
+  const settled = walkers.filter((w) => !w.moving);
+  for (let i = 0; i < settled.length; i++) for (let j = i + 1; j < settled.length; j++) {
+    minSettled = Math.min(minSettled, Math.hypot(settled[i].position.x - settled[j].position.x, settled[i].position.y - settled[j].position.y));
+  }
+  assert(minSettled >= 0.9, `settled crowd piled up (min ${minSettled.toFixed(2)})`);
+  for (const w of walkers) {
+    const raw = townsfolkTarget(w, anchors, lunch).target;
+    const valid = validateDestination(raw, navCtx.obstacles).point;
+    const d = Math.hypot(w.position.x - valid.x, w.position.y - valid.y);
+    assert(d < 5, `${w.name} stranded ${d.toFixed(1)} from validated target`);
+  }
+  // 4. Doorless INTERIOR NPC stays inside (never flips OUTDOOR while indoors).
+  const noDoors: TownsfolkNavContext = { ...navCtx, doors: [] };
+  const inside = { ...folk[0], location: 'INTERIOR' as const, indoors: true, moving: false, path: undefined, position: { x: 17, y: 64 } };
+  const held = advanceTownsfolk([inside], anchors, clockAt(10, 0), noDoors)[0];
+  assert(held.location === 'INTERIOR' && held.indoors, 'doorless NPC flipped OUTDOOR while physically inside');
 }
 
 // ---- Results ----
