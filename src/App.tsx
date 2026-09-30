@@ -82,7 +82,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '334';
+const BUILD_NUMBER = '335';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -5856,18 +5856,20 @@ if (active) {
               })()}
               {townsfolk.length > 0 && (
                 <div className="inspector-section">
-                  <div className="inspector-heading">Mosslight townsfolk ({townsfolk.length})</div>
+                  <div className="inspector-heading">Mosslight townsfolk ({townsfolk.length}) · wanted: {wantedLabel(wantedMosslight)}</div>
                   {townsfolk.map((npc) => {
                     // BUILD 314: debug overlay — location state, position,
                     // home/bed, destination, path waypoint, nav status.
+                    // BUILD 335: also shows the dialogue disposition (330).
                     const npcAny = npc as unknown as Record<string, unknown>;
                     const loc = npcAny.location as string | undefined;
                     const path = npcAny.path as { waypoints?: unknown[]; waypointIndex?: number } | undefined;
                     const homeId = npcAny.homeId as string | undefined;
                     const bedId = npcAny.bedId as string | undefined;
+                    const disp = disposition[npc.id] ?? defaultDisposition();
                     return (
                       <div key={npc.id} className="inspector-row">
-                        <span>{npc.indoors ? '🏠' : '🌳'} <strong>{npc.gender === 'female' ? '♀' : '♂'} {npc.name}</strong> · {npc.archetype} · <em>{loc || (npc.indoors ? 'indoors' : 'outdoor')}</em> @({npc.position.x.toFixed(1)},{npc.position.y.toFixed(1)}) · {npc.activity}
+                        <span>{npc.indoors ? '🏠' : '🌳'} <strong>{npc.gender === 'female' ? '♀' : '♂'} {npc.name}</strong> · {npc.archetype} · <em>{loc || (npc.indoors ? 'indoors' : 'outdoor')}</em> @({npc.position.x.toFixed(1)},{npc.position.y.toFixed(1)}) · {npc.activity} · 💭{dispositionTier(disp)}({disp})
                           {homeId && <> · 🏠{homeId}{bedId ? `/🛏️${bedId}` : ''}</>}
                           {path && path.waypoints && <> · 📍wp{path.waypointIndex ?? 0}/{path.waypoints.length}</>}
                         </span>
