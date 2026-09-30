@@ -6,7 +6,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, type TownsfolkAnchors } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, buildMosslightHousing, cottageDoorways, mosslightObstacles, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 
@@ -461,14 +461,19 @@ console.log('Testing townsfolk living-town simulation...');
   assert(townsfolkHash(1, 2) === townsfolkHash(1, 2), 'townsfolkHash not deterministic');
   assert(townsfolkHash(5, 9) >= 0 && townsfolkHash(5, 9) < 1, 'townsfolkHash out of range');
   // Movement: advances toward target, stops on arrival.
-  const snapped = snapTownsfolk(folk, anchors, clockAt(10, 0));
-  const walker = { ...snapped.find((n) => n.archetype === 'farmer')!, position: { x: 0, y: 0 }, moving: false };
+  const navCtx: TownsfolkNavContext = {
+    housing: buildMosslightHousing(folk.map((n) => n.id)),
+    doors: cottageDoorways(),
+    obstacles: mosslightObstacles(),
+  };
+  const snapped = snapTownsfolk(folk, anchors, clockAt(10, 0), navCtx);
+  const walker = { ...snapped.find((n) => n.archetype === 'farmer')!, position: { x: 0, y: 0 }, moving: false, location: 'OUTDOOR' as const, path: undefined };
   const before = Math.hypot(walker.position.x - 30, walker.position.y - 108);
-  const moved = advanceTownsfolk([walker], anchors, clockAt(10, 0))[0];
+  const moved = advanceTownsfolk([walker], anchors, clockAt(10, 0), navCtx)[0];
   const farmerTarget = townsfolkTarget(walker, anchors, clockAt(10, 0)).target;
   const distAfter = Math.hypot(moved.position.x - farmerTarget.x, moved.position.y - farmerTarget.y);
   assert(moved.moving && distAfter < before, 'Townsfolk did not move toward target');
-  const arrived = advanceTownsfolk([{ ...moved, position: { ...townsfolkTarget(walker, anchors, clockAt(10, 0)).target } }], anchors, clockAt(10, 0))[0];
+  const arrived = advanceTownsfolk([{ ...moved, position: { ...townsfolkTarget(walker, anchors, clockAt(10, 0)).target }, location: 'OUTDOOR' as const, path: undefined }], anchors, clockAt(10, 0), navCtx)[0];
   assert(!arrived.moving, 'Townsfolk still moving after arrival');
   // Re-anchor: moved house -> updated home.
   const movedAnchors: TownsfolkAnchors = { ...anchors, points: { ...anchors.points, guild: { x: 1, y: 2 } } };
@@ -477,6 +482,181 @@ console.log('Testing townsfolk living-town simulation...');
   assert(guildNpc.home.x === 1 && guildNpc.home.y === 2, 'Re-anchor did not update guild home');
   const unchanged = reanchorTownsfolk(folk, anchors);
   assert(unchanged.every((n, i) => n === folk[i]), 'Re-anchor changed refs without anchor changes');
+}
+
+console.log('Testing NPC physical movement scenarios (BUILD 312)...');
+{
+  const anchors: TownsfolkAnchors = {
+    points: {
+      guild: { x: 90, y: 60 }, chapel: { x: 40, y: 90 }, tavern: { x: 90, y: 90 },
+      farm0: { x: 30, y: 119 }, farm1: { x: 110, y: 119 },
+    },
+    plaza: { x: 70, y: 82 },
+    stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
+    gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
+    patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
+  };
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+  const folk = createTownsfolk(anchors, 847291583);
+  const navCtx: TownsfolkNavContext = {
+    housing: buildMosslightHousing(folk.map((n) => n.id)),
+    doors: cottageDoorways(),
+    obstacles: mosslightObstacles(),
+  };
+  // Every NPC must have a bed assigned (no housing shortage for 12).
+  assert(navCtx.housing.warnings.length === 0, `Housing shortage: ${navCtx.housing.warnings.join('; ')}`);
+  assert(Object.keys(navCtx.housing.assignments).length === 12, 'Not all townsfolk assigned beds');
+
+  // TEST 1 — Going home: NPC leaves work, walks home, enters door, walks to
+  // bed, sleeps. No teleporting.
+  {
+    let npc = snapTownsfolk(folk, anchors, clockAt(16, 0), navCtx).find((n) => n.archetype === 'farmer')!;
+    assert(npc.location === 'OUTDOOR', `Farmer not outdoors at 16:00: ${npc.location}`);
+    let steps = 0;
+    let teleported = false;
+    const garden = anchors.gardens[0];
+    npc = { ...npc, position: { ...garden }, location: 'OUTDOOR' as const, path: undefined, indoors: false };
+    let lastPos = { ...npc.position };
+    const clock = clockAt(23, 0);
+    const maxSteps = 4000;
+    while (steps < maxSteps) {
+      const prevLoc = npc.location;
+      const next = advanceTownsfolk([npc], anchors, clock, navCtx, 0.5)[0];
+      const jump = Math.hypot(next.position.x - lastPos.x, next.position.y - lastPos.y);
+      const isDoorCross = (prevLoc === 'ENTERING' && next.location === 'INTERIOR');
+      if (jump > 2.5 && !isDoorCross) {
+        teleported = true;
+        break;
+      }
+      lastPos = { ...next.position };
+      npc = next;
+      steps++;
+      if (npc.location === 'SLEEPING') break;
+    }
+    assert(!teleported, 'Farmer teleported on the way home');
+    assert(npc.location === 'SLEEPING', `Farmer did not reach bed: ${npc.location} after ${steps} steps`);
+    assert(npc.bedId, 'Farmer has no bedId after sleeping');
+  }
+
+  // TEST 2 — Morning: NPC wakes, gets out of bed, walks to door, exits,
+  // continues to work. No teleporting.
+  {
+    let npc = snapTownsfolk(folk, anchors, clockAt(2, 0), navCtx).find((n) => n.archetype === 'farmer')!;
+    assert(npc.location === 'SLEEPING', `Farmer not sleeping at 2:00: ${npc.location}`);
+    const clock = clockAt(7, 0);
+    let steps = 0;
+    let teleported = false;
+    let lastPos = { ...npc.position };
+    let sawExit = false;
+    const maxSteps = 4000;
+    while (steps < maxSteps) {
+      const prevLoc = npc.location;
+      const next = advanceTownsfolk([npc], anchors, clock, navCtx, 0.5)[0];
+      const jump = Math.hypot(next.position.x - lastPos.x, next.position.y - lastPos.y);
+      const isDoorCross = (prevLoc === 'INTERIOR' && next.location === 'OUTDOOR');
+      if (jump > 2.5 && !isDoorCross) {
+        teleported = true;
+        break;
+      }
+      if (isDoorCross) sawExit = true;
+      lastPos = { ...next.position };
+      npc = next;
+      steps++;
+      if (npc.location === 'OUTDOOR' && sawExit && npc.moving) break;
+    }
+    assert(!teleported, 'Farmer teleported on the way to work');
+    assert(sawExit, 'Farmer did not physically exit through the door');
+    assert(npc.location === 'OUTDOOR', `Farmer not outdoors after waking: ${npc.location}`);
+  }
+
+  // TEST 3 — 20 NPCs: no mass teleporting, no trapping.
+  {
+    const many = [...folk];
+    for (let i = 12; i < 20; i++) {
+      const base = folk[i % 12];
+      many.push({ ...base, id: `townsfolk-extra-${i}`, seed: base.seed + i * 7919 });
+    }
+    const bigHousing = buildMosslightHousing(many.map((n) => n.id));
+    const bigNav: TownsfolkNavContext = { housing: bigHousing, doors: cottageDoorways(), obstacles: mosslightObstacles() };
+    assert(bigHousing.warnings.length === 8, `Expected 8 housing warnings, got ${bigHousing.warnings.length}`);
+    let npcs = snapTownsfolk(many, anchors, clockAt(12, 0), bigNav);
+    const clock = clockAt(12, 30);
+    let teleports = 0;
+    const lastPositions = new Map(npcs.map((n) => [n.id, { ...n.position }]));
+    for (let s = 0; s < 200; s++) {
+      npcs = advanceTownsfolk(npcs, anchors, clock, bigNav, 0.5);
+      for (const n of npcs) {
+        const last = lastPositions.get(n.id)!;
+        const jump = Math.hypot(n.position.x - last.x, n.position.y - last.y);
+        if (jump > 2.5) teleports++;
+        lastPositions.set(n.id, { ...n.position });
+      }
+    }
+    assert(teleports === 0, `${teleports} teleports detected among 20 NPCs`);
+  }
+
+  // TEST 4 — Adventurer exodus: all 10 starting adventurers physically leave
+  // the starting area within 1 in-game hour (sim ticks), via varied routes,
+  // with no teleporting.
+  {
+    const { initialSimulatedAdventurers, spawnDueAdventurer, advanceSimulatedAdventurers, MAX_ADVENTURERS, EXODUS_DEADLINE_TICKS } =
+      await import('../src/game/simulatedAdventurers');
+    let advs = initialSimulatedAdventurers.map((a) => ({ ...a }));
+    const lastPos = new Map<string, { x: number; y: number }>();
+    const lastLoc = new Map<string, string>();
+    const leftAt = new Map<string, number>(); // tick when each first left
+    let teleports = 0;
+    // 1 in-game hour in sim ticks: spawn stagger (9*32) + exodus walk (~60) + margin.
+    const HOUR_TICKS = 500;
+    for (let tick = 0; tick <= HOUR_TICKS; tick++) {
+      advs = spawnDueAdventurer(advs, tick);
+      advs = advanceSimulatedAdventurers(advs, tick, []);
+      for (const a of advs) {
+        const prev = lastPos.get(a.id);
+        const prevLoc = lastLoc.get(a.id);
+        if (prev && prevLoc === 'field' && (a.location || 'field') === 'field') {
+          // Both in field: position must be continuous (door exits are the
+          // only allowed transition, and those change location).
+          const jump = Math.hypot(a.position.x - prev.x, a.position.y - prev.y);
+          if (jump > 5) teleports++;
+        }
+        // "Left" = reached traveling (exodus complete) or at a boundary.
+        const p = a.position;
+        const atBoundary = p.x <= 6 || p.x >= 134 || p.y <= 6 || p.y >= 134;
+        if (!leftAt.has(a.id) && ((a.location || 'field') === 'traveling' || atBoundary)) {
+          leftAt.set(a.id, tick);
+        }
+        lastPos.set(a.id, { ...a.position });
+        lastLoc.set(a.id, a.location || 'field');
+      }
+    }
+    assert(advs.length === MAX_ADVENTURERS, `Expected ${MAX_ADVENTURERS} adventurers, got ${advs.length}`);
+    assert(teleports === 0, `${teleports} adventurer teleports detected during exodus`);
+    // Every adventurer must have left within the deadline after spawning.
+    const late: string[] = [];
+    for (const a of advs) {
+      const lt = leftAt.get(a.id);
+      const st = (a as { spawnTick?: number }).spawnTick ?? 0;
+      if (lt === undefined) late.push(`${a.id} never left`);
+      else if (lt - st > EXODUS_DEADLINE_TICKS) late.push(`${a.id} left at tick ${lt} (spawned ${st})`);
+    }
+    assert(late.length === 0, `Adventurers did not leave in time: ${late.join(', ')}`);
+    // Varied routes: not all adventurers exited via the same edge.
+    const edges = new Set(advs.map((a) => {
+      const t = (a as { exodusTarget?: { x: number; y: number } }).exodusTarget;
+      if (!t) return 'none';
+      if (t.x >= 138) return 'east';
+      if (t.x <= 2) return 'west';
+      if (t.y <= 2) return 'north';
+      return 'south';
+    }));
+    assert(edges.size >= 3, `Exodus routes not varied: only ${[...edges].join(', ')}`);
+    // Deterministic motivations assigned.
+    assert(advs.every((a) => (a as { exodusMotive?: string }).exodusMotive), 'Missing exodus motivations');
+  }
 }
 
 // ---- 14. Road travelers (civ phase 2: settlement-to-settlement journeys) ----

@@ -11,7 +11,14 @@
 //   chunks the player isn't in.
 // - All coordinates are true field coordinates in the same system the
 //   player, houses, doorways and collision use.
+// - PHYSICAL MOVEMENT (BUILD 312): NPCs never teleport between schedule
+//   states. They walk along paths, cross doorways, and sleep in assigned
+//   beds. The schedule says WHAT; the navigation layer says HOW.
 import type { WorldClockState } from './worldCore';
+import type { NPCWorldLocation, NavPath, NavPoint, DoorwayLink, ObstacleRect } from './npcNavigation';
+import { pathTo, pathToDoor, stepAlongPath, findPath } from './npcNavigation';
+import type { HousingRegistry } from './housing';
+import { bedFor, buildHousingRegistry, assignBeds } from './housing';
 
 export type TownsfolkFacing = 'up' | 'down' | 'left' | 'right';
 export type TownsfolkArchetype = 'farmer' | 'merchant' | 'guard' | 'priest' | 'smith' | 'commoner' | 'child';
@@ -37,6 +44,17 @@ export type Townsperson = {
   activity: string;
   /** True while asleep/off-screen: not rendered, purely abstract. */
   indoors: boolean;
+  // --- Physical movement (BUILD 312) ---
+  /** Where the NPC actually is right now (sim-owned, renderer displays). */
+  location: NPCWorldLocation;
+  /** Active walking path, if any. */
+  path?: NavPath;
+  /** Assigned cottage id from the housing registry. */
+  homeId?: string;
+  /** Assigned bed id from the housing registry. */
+  bedId?: string;
+  /** Building id when INTERIOR / ENTERING / EXITING / SLEEPING. */
+  buildingId?: string;
 };
 
 /** Named world anchors townsfolk schedules resolve against. */
@@ -163,6 +181,55 @@ const ROSTER: TownsfolkDef[] = [
   ['Pip', 'male', 'child', 'rogue', 'tavern'],
 ];
 
+/** Build DoorwayLinks for the 6 Mosslight cottages (pure, no App dependency). */
+export function cottageDoorways(): DoorwayLink[] {
+  const rects = [
+    { left: 14, top: 62, right: 20, bottom: 66.5 },
+    { left: 14, top: 74, right: 20, bottom: 78.5 },
+    { left: 14, top: 86, right: 20, bottom: 90.5 },
+    { left: 62, top: 22, right: 68, bottom: 26.5 },
+    { left: 76, top: 22, right: 82, bottom: 26.5 },
+    { left: 90, top: 22, right: 96, bottom: 26.5 },
+  ];
+  return rects.map((rect, i) => {
+    const doorX = rect.left + (rect.right - rect.left) * 0.51;
+    return {
+      id: `cottage-${i + 1}-door`,
+      exterior: { x: doorX, y: rect.bottom + 0.7 },
+      interior: { x: doorX, y: (rect.top + rect.bottom) / 2 },
+      buildingRect: rect,
+    };
+  });
+}
+
+/** All building rects that block NPC paths (4 main + 6 cottages). */
+export function mosslightObstacles(): ObstacleRect[] {
+  const main = [
+    { left: 41.2, top: 53.2, right: 48.2, bottom: 58.0 },
+    { left: 94.3, top: 54.3, right: 101.3, bottom: 59.1 },
+    { left: 40.3, top: 85.1, right: 47.3, bottom: 89.9 },
+    { left: 88.1, top: 85.5, right: 95.1, bottom: 90.3 },
+  ];
+  const cottages = cottageDoorways().map((d) => d.buildingRect!);
+  return [...main, ...cottages];
+}
+
+/**
+ * Build the housing registry for Mosslight's 6 cottages and assign beds to
+ * the given NPC ids. Deterministic — same ids always get the same beds.
+ */
+export function buildMosslightHousing(npcIds: string[]): HousingRegistry {
+  const doors = cottageDoorways();
+  const registry = buildHousingRegistry(
+    doors.map((d, i) => ({
+      buildingId: `cottage-${i + 1}`,
+      doorwayId: d.id,
+      rect: d.buildingRect!,
+    })),
+  );
+  return assignBeds(registry, npcIds);
+}
+
 /** Build the persistent roster. Homes resolve through anchor keys. */
 export function createTownsfolk(anchors: TownsfolkAnchors, worldSeed: number): Townsperson[] {
   return ROSTER.map(([name, gender, archetype, role, homeKey], index) => {
@@ -182,6 +249,7 @@ export function createTownsfolk(anchors: TownsfolkAnchors, worldSeed: number): T
       moving: false,
       activity: 'At home',
       indoors: false,
+      location: 'OUTDOOR' as NPCWorldLocation,
     };
   });
 }
@@ -195,52 +263,275 @@ export function reanchorTownsfolk(folk: Townsperson[], anchors: TownsfolkAnchors
   });
 }
 
+/** Navigation context for physical townsfolk movement. */
+export type TownsfolkNavContext = {
+  housing: HousingRegistry;
+  doors: DoorwayLink[];
+  obstacles: ObstacleRect[];
+};
+
+function homeDoorFor(npc: Townsperson, nav: TownsfolkNavContext): DoorwayLink | undefined {
+  const assignment = nav.housing.assignments[npc.id];
+  if (!assignment) return undefined;
+  const home = nav.housing.homes.find((h) => h.id === assignment.homeId);
+  if (!home) return undefined;
+  return nav.doors.find((d) => d.id === home.doorwayId);
+}
+
 /**
- * Step every NPC toward its schedule target. Runs on the lightweight
- * 120ms movement interval — only for the player's chunk (LOD: the roster
- * only exists while the player is in town).
+ * Step one NPC physically. The schedule (townsfolkTarget) decides WHAT the
+ * NPC wants; this decides HOW they get there — always by walking, never by
+ * teleporting. Doorways are crossed on foot; beds are walked to.
+ */
+function advanceOne(
+  npc: Townsperson,
+  anchors: TownsfolkAnchors,
+  clock: WorldClockState,
+  nav: TownsfolkNavContext,
+  step: number,
+): Townsperson {
+  const want = townsfolkTarget(npc, anchors, clock);
+  const wantsSleep = want.indoors && want.activity === 'Sleeping';
+  const wantsIndoors = want.indoors;
+
+  // --- SLEEPING: stay unless the schedule says to wake. ---
+  if (npc.location === 'SLEEPING') {
+    if (wantsSleep) return npc;
+    // Wake up: walk from bed to the interior door, then exit.
+    const bed = bedFor(nav.housing, npc.id);
+    const door = homeDoorFor(npc, nav);
+    if (!bed || !door) return { ...npc, location: 'INTERIOR' as NPCWorldLocation, activity: want.activity };
+    const waypoints = findPath(npc.position, door.interior, []);
+    const path: NavPath = waypoints
+      ? { waypoints, index: 0, destination: { ...door.interior } }
+      : { waypoints: [{ ...door.interior }], index: 0, destination: { ...door.interior } };
+    return { ...npc, location: 'INTERIOR', path, moving: true, activity: 'Waking up', indoors: true, buildingId: bed.home.id };
+  }
+
+  // --- INTERIOR (awake inside): walk to bed to sleep, or to the door to leave. ---
+  if (npc.location === 'INTERIOR') {
+    const bed = bedFor(nav.housing, npc.id);
+    const door = homeDoorFor(npc, nav);
+    if (wantsSleep && bed) {
+      // Walk to the assigned bed.
+      if (!npc.path || npc.path.destination.x !== bed.bed.position.x || npc.path.destination.y !== bed.bed.position.y) {
+        const waypoints = findPath(npc.position, bed.bed.position, []);
+        const path: NavPath = waypoints
+          ? { waypoints, index: 0, destination: { ...bed.bed.position } }
+          : { waypoints: [{ ...bed.bed.position }], index: 0, destination: { ...bed.bed.position } };
+        return { ...npc, path, moving: true, activity: want.activity, indoors: true };
+      }
+      const res = stepAlongPath(npc.path, npc.position, step);
+      if (res.arrived) {
+        return { ...npc, position: res.position, path: undefined, moving: false, location: 'SLEEPING', activity: 'Sleeping', indoors: true, facing: res.facing, bedId: bed.bed.id };
+      }
+      return { ...npc, position: res.position, path: res.path, moving: true, facing: res.facing, activity: want.activity, indoors: true };
+    }
+    // Wants to go outside: walk to the interior door, then step out.
+    if (!door) return { ...npc, location: 'OUTDOOR' as NPCWorldLocation, indoors: false, activity: want.activity };
+    if (!npc.path || npc.location !== 'INTERIOR' || pathDestIs(npc.path, want.target)) {
+      // (Re)build path to the interior door if we don't have one.
+      if (!npc.path) {
+        const waypoints = findPath(npc.position, door.interior, []);
+        const path: NavPath = waypoints
+          ? { waypoints, index: 0, destination: { ...door.interior } }
+          : { waypoints: [{ ...door.interior }], index: 0, destination: { ...door.interior } };
+        return { ...npc, path, moving: true, activity: want.activity, indoors: true };
+      }
+    }
+    const res = stepAlongPath(npc.path!, npc.position, step);
+    if (res.arrived) {
+      // At the interior door. Walk out: position is NOT snapped — the NPC
+      // walks from the interior door through the doorway to the exterior as
+      // the first leg of the outdoor path.
+      const outPath = pathTo(door.exterior, want.target, nav.obstacles);
+      const fullWps = [{ ...door.exterior }, ...(outPath?.waypoints ?? [{ ...want.target }])];
+      return {
+        ...npc,
+        location: 'OUTDOOR',
+        indoors: false,
+        buildingId: undefined,
+        path: { waypoints: fullWps, index: 0, destination: { ...want.target } },
+        moving: true,
+        facing: res.facing,
+        activity: want.activity,
+      };
+    }
+    return { ...npc, position: res.position, path: res.path, moving: true, facing: res.facing, activity: want.activity, indoors: true };
+  }
+
+  // --- ENTERING: walking the outdoor path to the home door exterior. ---
+  if (npc.location === 'ENTERING' && npc.path) {
+    const door = npc.path.viaDoor;
+    const res = stepAlongPath(npc.path, npc.position, step);
+    if (res.arrived && door) {
+      // At the door exterior. Step through: now inside. Position is NOT
+      // snapped — the NPC walks from the exterior through the doorway to the
+      // interior point as the first leg of the interior path.
+      const bed = bedFor(nav.housing, npc.id);
+      let inPath: NavPath | undefined;
+      if (wantsSleep && bed) {
+        const wps = findPath(door.interior, bed.bed.position, []);
+        const fullWps = [{ ...door.interior }, ...(wps ?? [{ ...bed.bed.position }])];
+        inPath = { waypoints: fullWps, index: 0, destination: { ...bed.bed.position } };
+      } else {
+        inPath = { waypoints: [{ ...door.interior }], index: 0, destination: { ...door.interior } };
+      }
+      return {
+        ...npc,
+        location: 'INTERIOR',
+        indoors: true,
+        buildingId: npc.buildingId,
+        path: inPath,
+        moving: true,
+        facing: res.facing,
+        activity: want.activity,
+      };
+    }
+    if (res.arrived) {
+      // No door reference (shouldn't happen) — treat as inside.
+      return { ...npc, position: res.position, path: undefined, moving: false, location: 'INTERIOR', indoors: true, facing: res.facing, activity: want.activity };
+    }
+    return { ...npc, position: res.position, path: res.path, moving: true, facing: res.facing, activity: want.activity, indoors: false };
+  }
+
+  // --- OUTDOOR: the normal case. ---
+  // Wants to go inside (sleep or shelter): walk to the home door.
+  if (wantsIndoors) {
+    const door = homeDoorFor(npc, nav);
+    if (!door) {
+      // No assigned home (housing shortage): stay put, don't teleport.
+      return npc.activity === want.activity && !npc.moving ? npc : { ...npc, moving: false, activity: want.activity };
+    }
+    const needNewPath =
+      !npc.path || npc.location !== 'ENTERING' || npc.path.destination.x !== door.interior.x || npc.path.destination.y !== door.interior.y;
+    if (needNewPath) {
+      const path = pathToDoor(npc.position, door, nav.obstacles);
+      if (!path) {
+        // Door unreachable: wait (don't teleport, don't wander).
+        return npc.activity === want.activity && !npc.moving ? npc : { ...npc, moving: false, activity: want.activity, path: undefined };
+      }
+      const bed = bedFor(nav.housing, npc.id);
+      return { ...npc, location: 'ENTERING', path, moving: true, activity: want.activity, indoors: false, buildingId: bed?.home.id };
+    }
+    // Already ENTERING with a path — handled above; fall through to step it.
+    return advanceOne({ ...npc, location: 'ENTERING' as NPCWorldLocation }, anchors, clock, nav, step);
+  }
+
+  // Wants to be outdoors at `want.target`: walk there.
+  const dx = want.target.x - npc.position.x;
+  const dy = want.target.y - npc.position.y;
+  if (Math.hypot(dx, dy) < 0.7 && !npc.path) {
+    return !npc.moving && npc.activity === want.activity && !npc.indoors && npc.location === 'OUTDOOR'
+      ? npc
+      : { ...npc, moving: false, activity: want.activity, indoors: false, location: 'OUTDOOR', path: undefined };
+  }
+  const needNewPath =
+    !npc.path || npc.path.destination.x !== want.target.x || npc.path.destination.y !== want.target.y;
+  let path = npc.path;
+  if (needNewPath) {
+    const newPath = pathTo(npc.position, want.target, nav.obstacles);
+    if (!newPath) {
+      return npc.activity === want.activity && !npc.moving ? npc : { ...npc, moving: false, activity: want.activity, path: undefined };
+    }
+    path = newPath;
+  }
+  const res = stepAlongPath(path!, npc.position, step);
+  if (res.arrived) {
+    return { ...npc, position: res.position, path: undefined, moving: false, activity: want.activity, indoors: false, location: 'OUTDOOR', facing: res.facing };
+  }
+  return { ...npc, position: res.position, path: res.path, moving: true, facing: res.facing, activity: want.activity, indoors: false, location: 'OUTDOOR' };
+}
+
+// --- small helpers ---
+
+function pathDestIs(path: NavPath, p: NavPoint): boolean {
+  return Math.abs(path.destination.x - p.x) < 0.01 && Math.abs(path.destination.y - p.y) < 0.01;
+}
+
+/**
+ * Step every NPC toward its schedule target — physically. Runs on the
+ * lightweight 120ms movement interval, only for the player's chunk.
  */
 export function advanceTownsfolk(
   folk: Townsperson[],
   anchors: TownsfolkAnchors,
   clock: WorldClockState,
+  nav: TownsfolkNavContext,
   step = 0.22,
+): Townsperson[] {
+  return folk.map((npc) => advanceOne(npc, anchors, clock, nav, step));
+}
+
+/**
+ * Initial placement when the player enters Mosslight (chunk enter / load).
+ * This is world construction, not a schedule transition: each NPC is placed
+ * in the physically-correct location state for the current time (in bed if
+ * asleep, inside if indoors, at their home door if out). All subsequent
+ * movement is physical — no teleporting between schedule states.
+ */
+export function snapTownsfolk(
+  folk: Townsperson[],
+  anchors: TownsfolkAnchors,
+  clock: WorldClockState,
+  nav: TownsfolkNavContext,
 ): Townsperson[] {
   return folk.map((npc) => {
     const resolved = townsfolkTarget(npc, anchors, clock);
-    if (resolved.indoors) {
-      return npc.indoors && npc.activity === resolved.activity && !npc.moving
-        ? npc
-        : { ...npc, indoors: true, moving: false, activity: resolved.activity };
+    const wantsSleep = resolved.indoors && resolved.activity === 'Sleeping';
+    const bed = bedFor(nav.housing, npc.id);
+    const door = homeDoorFor(npc, nav);
+    if (wantsSleep && bed && door) {
+      return {
+        ...npc,
+        position: { ...bed.bed.position },
+        location: 'SLEEPING' as NPCWorldLocation,
+        indoors: true,
+        moving: false,
+        activity: 'Sleeping',
+        path: undefined,
+        homeId: bed.home.id,
+        bedId: bed.bed.id,
+        buildingId: bed.home.id,
+      };
     }
-    const dx = resolved.target.x - npc.position.x;
-    const dy = resolved.target.y - npc.position.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 0.7) {
-      return !npc.moving && npc.activity === resolved.activity && !npc.indoors
-        ? npc
-        : { ...npc, moving: false, activity: resolved.activity, indoors: false };
+    if (resolved.indoors && door) {
+      return {
+        ...npc,
+        position: { ...door.interior },
+        location: 'INTERIOR' as NPCWorldLocation,
+        indoors: true,
+        moving: false,
+        activity: resolved.activity,
+        path: undefined,
+        buildingId: npc.buildingId,
+      };
     }
-    const s = Math.min(step, dist);
-    const facing: TownsfolkFacing = Math.abs(dx) >= Math.abs(dy)
-      ? (dx >= 0 ? 'right' : 'left')
-      : (dy >= 0 ? 'down' : 'up');
+    if (door) {
+      const home = nav.housing.homes.find((h) => h.doorwayId === door.id);
+      return {
+        ...npc,
+        position: { ...door.exterior },
+        location: 'OUTDOOR' as NPCWorldLocation,
+        indoors: false,
+        moving: false,
+        activity: resolved.activity,
+        path: undefined,
+        homeId: home?.id,
+        bedId: bed?.bed.id,
+        buildingId: undefined,
+      };
+    }
+    // No home assigned: place at the schedule target (fallback, no teleport
+    // loop — this only runs once at construction).
     return {
       ...npc,
-      position: { x: npc.position.x + (dx / dist) * s, y: npc.position.y + (dy / dist) * s },
-      facing,
-      moving: true,
-      activity: resolved.activity,
+      position: { ...resolved.target },
+      location: 'OUTDOOR' as NPCWorldLocation,
       indoors: false,
+      moving: false,
+      activity: resolved.activity,
+      path: undefined,
     };
-  });
-}
-
-/** Snap everyone to their current schedule target (chunk enter / load). */
-export function snapTownsfolk(folk: Townsperson[], anchors: TownsfolkAnchors, clock: WorldClockState): Townsperson[] {
-  return folk.map((npc) => {
-    const resolved = townsfolkTarget(npc, anchors, clock);
-    if (resolved.indoors) return { ...npc, indoors: true, moving: false, activity: resolved.activity };
-    return { ...npc, position: { ...resolved.target }, facing: 'down' as TownsfolkFacing, moving: false, activity: resolved.activity, indoors: false };
   });
 }

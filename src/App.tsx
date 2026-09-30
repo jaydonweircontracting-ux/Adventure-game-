@@ -16,7 +16,7 @@ import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, buildMosslightHousing, cottageDoorways, mosslightObstacles, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext } from '@/game/townsfolk';
 import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
 import { LANDMARKS } from '@/game/landmarks';
 import {
@@ -75,7 +75,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '309';
+const BUILD_NUMBER = '314';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -402,6 +402,13 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
       { left: 94.3, top: 54.3, right: 101.3, bottom: 59.1 },  // wayfarer guild
       { left: 40.3, top: 85.1, right: 47.3, bottom: 89.9 },   // rootbound chapel
       { left: 88.1, top: 85.5, right: 95.1, bottom: 90.3 },   // stone house
+      // BUILD 311: residential cottages (housing registry) — 2 beds each.
+      { left: 14, top: 62, right: 20, bottom: 66.5 },   // cottage 1 (west)
+      { left: 14, top: 74, right: 20, bottom: 78.5 },   // cottage 2 (west)
+      { left: 14, top: 86, right: 20, bottom: 90.5 },   // cottage 3 (west)
+      { left: 62, top: 22, right: 68, bottom: 26.5 },   // cottage 4 (north)
+      { left: 76, top: 22, right: 82, bottom: 26.5 },   // cottage 5 (north)
+      { left: 90, top: 22, right: 96, bottom: 26.5 },   // cottage 6 (north)
     ];
   }
 
@@ -3325,6 +3332,17 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const [townsfolk, setTownsfolk] = useState<Townsperson[]>([]);
   const townsfolkRef = useRef<Townsperson[]>([]);
   const townsfolkAnchorsRef = useRef<TownsfolkAnchors | null>(null);
+  // Physical NPC navigation: housing registry, cottage doors, obstacles.
+  // Built once — the 12 townsfolk ids are stable (townsfolk-0..11).
+  const townsfolkNavRef = useRef<TownsfolkNavContext | null>(null);
+  if (!townsfolkNavRef.current) {
+    const ids = Array.from({ length: 12 }, (_, i) => 'townsfolk-' + i);
+    townsfolkNavRef.current = {
+      housing: buildMosslightHousing(ids),
+      doors: cottageDoorways(),
+      obstacles: mosslightObstacles(),
+    };
+  }
   useEffect(() => { townsfolkRef.current = townsfolk; }, [townsfolk]);
   // Carriage fast-travel network: physical stations/stops, driver dialogue,
   // travel state. Stations are deterministic (module cache); the dialogue and
@@ -3355,7 +3373,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     const clock = brainRef.current?.worldCore.getClock();
     if (!clock) return;
     if (townsfolkRef.current.length === 0) {
-      const folk = snapTownsfolk(createTownsfolk(anchors, DEFAULT_WORLD_SEED), anchors, clock);
+      const folk = snapTownsfolk(createTownsfolk(anchors, DEFAULT_WORLD_SEED), anchors, clock, townsfolkNavRef.current!);
       townsfolkRef.current = folk;
       setTownsfolk(folk);
       return;
@@ -3690,7 +3708,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
       const folkAnchors = townsfolkAnchorsRef.current;
       const folkClock = brainRef.current?.worldCore.getClock();
       if (folkAnchors && folkClock && townsfolkRef.current.length > 0) {
-        const next = advanceTownsfolk(townsfolkRef.current, folkAnchors, folkClock);
+        const next = advanceTownsfolk(townsfolkRef.current, folkAnchors, folkClock, townsfolkNavRef.current!);
         if (next.some((npc, index) => npc !== townsfolkRef.current[index])) {
           townsfolkRef.current = next;
           setTownsfolk(next);
@@ -5407,23 +5425,35 @@ if (active) {
               {townsfolk.length > 0 && (
                 <div className="inspector-section">
                   <div className="inspector-heading">Mosslight townsfolk ({townsfolk.length})</div>
-                  {townsfolk.map((npc) => (
-                    <div key={npc.id} className="inspector-row">
-                      <span>{npc.indoors ? '🏠' : '🌳'} <strong>{npc.gender === 'female' ? '♀' : '♂'} {npc.name}</strong> · {npc.archetype} · {npc.activity}</span>
-                      {!npc.indoors && (
-                        <button
-                          type="button"
-                          className="editor-btn"
-                          onClick={() => {
-                            setPosition({ x: Math.min(134, Math.max(4, npc.position.x + 3)), y: Math.min(134, Math.max(4, npc.position.y + 3)) });
-                            setInspectorOpen(false);
-                          }}
-                        >
-                          Go to
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                  {townsfolk.map((npc) => {
+                    // BUILD 314: debug overlay — location state, position,
+                    // home/bed, destination, path waypoint, nav status.
+                    const npcAny = npc as unknown as Record<string, unknown>;
+                    const loc = npcAny.location as string | undefined;
+                    const path = npcAny.path as { waypoints?: unknown[]; waypointIndex?: number } | undefined;
+                    const homeId = npcAny.homeId as string | undefined;
+                    const bedId = npcAny.bedId as string | undefined;
+                    return (
+                      <div key={npc.id} className="inspector-row">
+                        <span>{npc.indoors ? '🏠' : '🌳'} <strong>{npc.gender === 'female' ? '♀' : '♂'} {npc.name}</strong> · {npc.archetype} · <em>{loc || (npc.indoors ? 'indoors' : 'outdoor')}</em> @({npc.position.x.toFixed(1)},{npc.position.y.toFixed(1)}) · {npc.activity}
+                          {homeId && <> · 🏠{homeId}{bedId ? `/🛏️${bedId}` : ''}</>}
+                          {path && path.waypoints && <> · 📍wp{path.waypointIndex ?? 0}/{path.waypoints.length}</>}
+                        </span>
+                        {!npc.indoors && (
+                          <button
+                            type="button"
+                            className="editor-btn"
+                            onClick={() => {
+                              setPosition({ x: Math.min(134, Math.max(4, npc.position.x + 3)), y: Math.min(134, Math.max(4, npc.position.y + 3)) });
+                              setInspectorOpen(false);
+                            }}
+                          >
+                            Go to
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {travelers.length > 0 && (
@@ -5470,11 +5500,27 @@ if (active) {
               </div>
               <div className="inspector-section">
                 <div className="inspector-heading">Adventurers ({simulatedAdventurers.length})</div>
-                {simulatedAdventurers.map((adv) => (
-                  <div key={adv.id} className="inspector-row">
-                    <span>⚔️ <strong>{adv.name}</strong> · Lv{adv.level} {adv.className} · {adv.location} — {adv.activity}</span>
-                  </div>
-                ))}
+                {simulatedAdventurers.map((adv) => {
+                  // BUILD 314: debug overlay — location state, position,
+                  // destination, exodus status, stuck/deadline info.
+                  const advAny = adv as unknown as Record<string, unknown>;
+                  const exodusTarget = advAny.exodusTarget as { x: number; y: number } | undefined;
+                  const exodusMotive = advAny.exodusMotive as string | undefined;
+                  const spawnTick = advAny.spawnTick as number | undefined;
+                  const outingTicks = advAny.outingTicks as number | undefined;
+                  return (
+                    <div key={adv.id} className="inspector-row">
+                      <span>⚔️ <strong>{adv.name}</strong> · Lv{adv.level} {adv.className} · <em>{adv.location}</em>{adv.outing ? `/${adv.outing}` : ''} @({adv.position.x.toFixed(1)},{adv.position.y.toFixed(1)}) — {adv.activity}
+                        {exodusTarget && adv.outing === 'exodus' && (
+                          <> · 🎯 exit ({exodusTarget.x.toFixed(0)},{exodusTarget.y.toFixed(0)}){exodusMotive ? ` — ${exodusMotive}` : ''}{typeof outingTicks === 'number' ? ` · ${outingTicks}t left` : ''}</>
+                        )}
+                        {typeof spawnTick === 'number' && adv.outing === 'exodus' && (
+                          <> · spawned t{spawnTick}</>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
