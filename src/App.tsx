@@ -64,7 +64,10 @@ import { probeMonsterSheets, isMonsterSheetFailed, onMonsterSheetFailure } from 
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc } from '@/game/combat';
-import { renderGroundDetail, type GroundDetailSpec } from '@/game/groundDetail';
+import { renderGroundDetail, type GroundDetailSpec, type GroundHills } from '@/game/groundDetail';
+// BUILD 355: elevation hills/cliffs (CraftPix island kit tiles).
+import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type ElevContext } from '@/game/elevation';
+import { ensureKitTileset, onKitTilesetLoaded } from '@/game/kitAssets';
 import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS, gearForMonster, bonesForMonster } from '@/game/ai';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, LOCKPICK_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
@@ -85,7 +88,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '354';
+const BUILD_NUMBER = '355';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -261,6 +264,75 @@ function isStartingArea(point: Point) {
 
 function isTutorialCenter(point: Point) {
   return point.x === 4 && point.y === 7;
+}
+
+// BUILD 355: road corridor rects in field units (roads are flattened: no
+// hills or cliffs spawn on them, and cliff collision never blocks them).
+function fieldRoadCorridors(chunk: Point): Array<{ x: number; y: number; w: number; h: number }> {
+  const tile = mapTileFor(chunk);
+  if (tile.road === 'none' || tile.bridge) return [];
+  const rc = isTutorialCenter(chunk)
+    ? { x: 0.45, y: 0.45, w: 0.11, h: 0.11 }
+    : { x: 0.47, y: 0.47, w: 0.09, h: 0.09 };
+  const rx = rc.x * 280;
+  const ry = rc.y * 280;
+  const rw = rc.w * 280;
+  const rh = rc.h * 280;
+  const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
+  if (tile.road.includes('n')) rects.push({ x: rx, y: 0, w: rw, h: ry + rh });
+  if (tile.road.includes('s')) rects.push({ x: rx, y: ry, w: rw, h: 280 - ry });
+  if (tile.road.includes('w')) rects.push({ x: 0, y: ry, w: rx + rw, h: rh });
+  if (tile.road.includes('e')) rects.push({ x: rx, y: ry, w: 280 - rx, h: rh });
+  rects.push({ x: rx, y: ry, w: rw, h: rh });
+  const M = 14; // margin so hills don't pinch the road shoulder
+  return rects.map((r) => ({ x: r.x - M, y: r.y - M, w: r.w + 2 * M, h: r.h + 2 * M }));
+}
+
+function isRoadCorridorChunk(chunk: Point, lx: number, ly: number): boolean {
+  const rects = fieldRoadCorridors(chunk);
+  for (const r of rects) {
+    if (lx >= r.x && lx <= r.x + r.w && ly >= r.y && ly <= r.y + r.h) return true;
+  }
+  return false;
+}
+
+// BUILD 355: elevation context for the field (deterministic, world-anchored).
+const elevContext: ElevContext = {
+  baseLevelAt: (cx, cy) => Math.round(mapTileFor({ x: cx, y: cy }).elevationLevel),
+  isFlatChunk: (cx, cy) => {
+    if (isStartingArea({ x: cx, y: cy })) return true;
+    const t = mapTileFor({ x: cx, y: cy });
+    return Boolean(t.landmark) || t.waterFeature === 'sea';
+  },
+  isRoadAt: (cx, cy, lx, ly) => isRoadCorridorChunk({ x: cx, y: cy }, lx, ly),
+};
+
+/** BUILD 355: sub-chunk hills spec for the ground renderer; null when flat. */
+function buildGroundHills(chunk: Point): GroundHills | null {
+  if (elevContext.isFlatChunk(chunk.x, chunk.y)) return null;
+  const tile = mapTileFor(chunk);
+  if (tile.waterFeature === 'sea' || tile.terrain === 'ocean') return null;
+  const n = ELEV_CELLS_PER_CHUNK;
+  const levels: number[] = [];
+  for (let iy = -1; iy <= n; iy++) {
+    for (let ix = -1; ix <= n; ix++) {
+      const wx = chunk.x * 280 + ix * ELEV_CELL + ELEV_CELL / 2;
+      const wy = chunk.y * 280 + iy * ELEV_CELL + ELEV_CELL / 2;
+      levels.push(cellLevelAt(elevContext, wx, wy));
+    }
+  }
+  const first = levels[0];
+  let flat = true;
+  for (const l of levels) {
+    if (l !== first) { flat = false; break; }
+  }
+  if (flat) return null;
+  return {
+    count: n,
+    levels,
+    base: Math.round(tile.elevationLevel),
+    cliffKind: tile.terrain === 'rock' || tile.terrain === 'tundra' ? 'rock' : 'dirt',
+  };
 }
 
 function worldRoadAt(x: number, y: number): boolean {
@@ -764,7 +836,15 @@ function resolveFieldMovement(current: Point, movement: Point, chunk: Point, goa
   ];
   for (const candidate of candidates) {
     const wrapped = wrapFieldPosition(candidate, chunk);
-    if (wrapped && !isFieldPositionBlocked(wrapped.position, wrapped.chunk, houseOffsets) && !isPositionOccupiedByGoat(wrapped.position, goats)) return wrapped;
+    if (wrapped && !isFieldPositionBlocked(wrapped.position, wrapped.chunk, houseOffsets) && !isPositionOccupiedByGoat(wrapped.position, goats)) {
+      // BUILD 355: cliff faces block UPHILL movement (walking down stays free).
+      const wx0 = chunk.x * 280 + current.x;
+      const wy0 = chunk.y * 280 + current.y;
+      const wx1 = wrapped.chunk.x * 280 + wrapped.position.x;
+      const wy1 = wrapped.chunk.y * 280 + wrapped.position.y;
+      if (cliffBlocksMove(elevContext, wx0, wy0, wx1, wy1)) continue;
+      return wrapped;
+    }
   }
   return null;
 }
@@ -1166,7 +1246,7 @@ type BirdState = {
   fleeing: boolean; // true while fleeing the player off screen
 };
 // Living-world wildlife: biome + danger-zone based spawning.
-type WildlifeSpecies = 'rabbit' | 'deer' | 'wolf' | 'boar' | 'bear';
+type WildlifeSpecies = 'rabbit' | 'deer' | 'wolf' | 'boar' | 'bear' | 'fox' | 'crab';
 type WildlifeState = {
   id: number;
   species: WildlifeSpecies;
@@ -1178,6 +1258,88 @@ type WildlifeState = {
   nextWanderTick: number;
   target: Point | null;
 };
+// BUILD 355: kit-sprite wildlife (CraftPix island kit): fox, boar, crab.
+const KIT_WILDLIFE_SHEET: Record<string, string> = {
+  fox: 'kit/wildlife_fox.png',
+  boar: 'kit/wildlife_boar.png',
+  crab: 'kit/wildlife_crab.png',
+};
+// BUILD 355: a wandering hermit mage (kit Character_8, staff + blue robe) who
+// roams the wilds. Talkable: tapping opens the mage-teacher dialogue.
+type WanderMageState = {
+  id: number;
+  name: string;
+  title: string;
+  position: Point;
+  homePosition: Point;
+  facing: Direction;
+  moving: boolean;
+  wanderSeed: number;
+  nextWanderTick: number;
+  target: Point | null;
+};
+const WANDER_MAGE_NAMES = ['Eldrin', 'Mirabel', 'Oswin', 'Sarella', 'Tam'];
+function wanderMageForChunk(chunk: Point): WanderMageState | null {
+  const terrain = mapTileFor(chunk).terrain;
+  if (terrain !== 'forest' && terrain !== 'meadow' && terrain !== 'rock') return null;
+  if (dangerForChunk(chunk) < 1) return null; // never near the starting town
+  if (isStartingArea(chunk)) return null;
+  const seed = Math.abs(chunk.x * 311 + chunk.y * 347 + 777);
+  const position = { x: 20 + ((seed * 53) % 60), y: 22 + ((seed * 71) % 56) };
+  if (isFieldPositionBlocked(position, chunk)) return null;
+  return {
+    id: seed % 100000,
+    name: WANDER_MAGE_NAMES[seed % WANDER_MAGE_NAMES.length],
+    title: 'Hermit of the Wilds',
+    position,
+    homePosition: { ...position },
+    facing: 'down',
+    moving: false,
+    wanderSeed: seed,
+    nextWanderTick: 90,
+    target: null,
+  };
+}
+function updateWanderMage(mage: WanderMageState, tick: number, chunk: Point): WanderMageState {
+  const next = { ...mage, position: { ...mage.position } };
+  const speed = 0.7;
+  const wx0 = chunk.x * 280 + next.position.x;
+  const wy0 = chunk.y * 280 + next.position.y;
+  if (next.target) {
+    const dx = next.target.x - next.position.x;
+    const dy = next.target.y - next.position.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1.5) {
+      next.target = null;
+      next.moving = false;
+      next.nextWanderTick = tick + 60 + (next.wanderSeed % 100);
+    } else {
+      const step = Math.min(speed, dist);
+      const candidate = { x: next.position.x + (dx / dist) * step, y: next.position.y + (dy / dist) * step };
+      const wx1 = chunk.x * 280 + candidate.x;
+      const wy1 = chunk.y * 280 + candidate.y;
+      if (!isFieldPositionBlocked(candidate, chunk) && !cliffBlocksMove(elevContext, wx0, wy0, wx1, wy1)) {
+        next.position = candidate;
+        next.facing = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+        next.moving = true;
+      } else {
+        next.target = null;
+        next.moving = false;
+      }
+    }
+  } else if (tick >= next.nextWanderTick) {
+    const angle = ((next.wanderSeed * 37 + tick * 13) % 360) * (Math.PI / 180);
+    const radius = 4 + ((next.wanderSeed * 53 + tick * 7) % 10);
+    next.target = {
+      x: Math.max(8, Math.min(92, next.homePosition.x + Math.cos(angle) * radius)),
+      y: Math.max(8, Math.min(92, next.homePosition.y + Math.sin(angle) * radius)),
+    };
+    next.nextWanderTick = tick + 60 + (next.wanderSeed % 100);
+  } else {
+    next.moving = false;
+  }
+  return next;
+}
 const BIRD_STEP = 1.2;
 const BIRD_FLY_STEP = 3.5;
 const BIRD_FLEE_RADIUS = 14; // player closeness that startles a bird into flight
@@ -1788,9 +1950,18 @@ function wildlifeForChunk(chunk: Point): WildlifeState[] {
   if (terrain === 'forest' && danger >= 2) {
     for (let i = 0; i < 2; i++) spawn('wolf', i, 3000);
   }
-  // Boars: forests/meadows, danger 1+.
+  // Boars: forests/meadows, danger 1+ (kit sprite).
   if ((terrain === 'forest' || terrain === 'meadow') && danger >= 1) {
     spawn('boar', 0, 4000);
+  }
+  // BUILD 355: foxes — forests and meadows, danger 1+ (kit sprite).
+  if ((terrain === 'forest' || terrain === 'meadow') && danger >= 1) {
+    const count = terrain === 'forest' ? 2 : 1;
+    for (let i = 0; i < count; i++) spawn('fox', i, 6000);
+  }
+  // BUILD 355: crabs — shorelines, any danger (kit sprite).
+  if (terrain === 'shore') {
+    for (let i = 0; i < 3; i++) spawn('crab', i, 7000);
   }
   // Bears: forests and mountains, danger 2+ only. Slow, solitary.
   if ((terrain === 'forest' || terrain === 'rock') && danger >= 2) {
@@ -3734,6 +3905,9 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const [birds, setBirds] = useState<BirdState[]>(() => birdsForChunk({ x: 4, y: 7 }));
   const birdsRef = useRef<BirdState[]>(birds);
   const [wildlife, setWildlife] = useState<WildlifeState[]>(() => wildlifeForChunk({ x: 4, y: 7 }));
+  // BUILD 355: wandering hermit mage (kit Character_8), one per wild chunk.
+  const [wanderMage, setWanderMage] = useState<WanderMageState | null>(() => wanderMageForChunk({ x: 4, y: 7 }));
+  const wanderMageRef = useRef<WanderMageState | null>(wanderMage);
   const [waterLife, setWaterLife] = useState<WaterLifeState[]>(() => waterLifeForChunk({ x: 4, y: 7 }));
   const waterLifeRef = useRef<WaterLifeState[]>(waterLife);
   // Bridge so the menu sheet (rendered by App) can open GameField's options overlay, read the clock, and drive quests.
@@ -4386,6 +4560,10 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     const nextWildlife = wildlifeForChunk(chunk);
     wildlifeRef.current = nextWildlife;
     setWildlife(nextWildlife);
+    // BUILD 355: refresh the wandering hermit mage for the new chunk.
+    const nextMage = wanderMageForChunk(chunk);
+    wanderMageRef.current = nextMage;
+    setWanderMage(nextMage);
     const nextWaterLife = waterLifeForChunk(chunk);
     waterLifeRef.current = nextWaterLife;
     setWaterLife(nextWaterLife);
@@ -4911,6 +5089,12 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
         const nextWildlife = wildlifeRef.current.map((animal) => updateWildlife(animal, tick, chunkRef.current));
         wildlifeRef.current = nextWildlife; setWildlife(nextWildlife);
       }
+      // BUILD 355: the hermit mage wanders too (cliff-aware).
+      if (!interiorRef.current && wanderMageRef.current) {
+        const tick = Math.floor(performance.now() / 500);
+        const nextMage = updateWanderMage(wanderMageRef.current, tick, chunkRef.current);
+        wanderMageRef.current = nextMage; setWanderMage(nextMage);
+      }
       // Water life: fish and frogs swim/hop near home.
       if (!interiorRef.current && waterLifeRef.current.length > 0) {
         const nextWaterLife = waterLifeRef.current.map((animal) => updateWaterLife(animal, elapsed * 1000));
@@ -5358,6 +5542,8 @@ if (active) {
     seed: ((chunk.x * 73856093) ^ (chunk.y * 19349663)) >>> 0,
     // BUILD 341: map-builder painted tiles for this chunk.
     paints: mapPaints[chunkKey] ?? [],
+    // BUILD 355: elevation hills + cliff faces.
+    hills: buildGroundHills(chunk),
   };
   const talkToNpc = (npc: TownNpc) => {
     setNpcDialogue(npc);
@@ -5375,6 +5561,12 @@ if (active) {
       onAddRumor(rumor, npc.name);
       setLogs((currentLogs) => [{ text: `${npc.name} shares a rumor: "${rumor}"`, color: 'purple' }, ...currentLogs].slice(0, 5));
     }
+  };
+  // BUILD 355: the wandering hermit mage (kit Character_8) opens the
+  // mage-teacher dialogue — a class teacher found in the wilds.
+  const talkToWanderMage = (mage: WanderMageState) => {
+    setNpcDialogue({ name: mage.name, title: mage.title, role: 'mage', position: mage.position, facing: mage.facing, moving: false, target: null });
+    setLogs((currentLogs) => [{ text: `${mage.name} leans on ${mage.name === 'Mirabel' || mage.name === 'Sarella' ? 'her' : 'his'} staff. "${mage.title}."`, color: 'blue' }, ...currentLogs].slice(0, 3));
   };
   useEffect(() => () => {
     if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
@@ -5427,9 +5619,13 @@ if (active) {
         candidates.push({ name: npc.name, position: npc.position, talk: () => talkToTownsfolk(npc) });
       }
     }
+    // BUILD 355: the wandering hermit mage is talkable in the wilds.
+    if (wanderMage) {
+      candidates.push({ name: wanderMage.name, position: wanderMage.position, talk: () => talkToWanderMage(wanderMage) });
+    }
     if (candidates.length === 0) return null;
     return findTalkTarget(candidates, position, facing);
-  }, [interior, moverMode, markerMode, inputLocked, currentWorldTile, chunk, npcStates, townsfolk, position, facing]);
+  }, [interior, moverMode, markerMode, inputLocked, currentWorldTile, chunk, npcStates, townsfolk, position, facing, wanderMage]);
   // Road traffic: analytic travelers resolved from the world clock (civ phase 2).
   // Recomputed whenever the clock ticks, so waiting visibly moves traffic.
   // Road links are static for the world seed — built once.
@@ -6626,11 +6822,23 @@ if (active) {
             {wildlife.map((animal) => (
               <span
                 key={'wildlife-' + animal.species + '-' + animal.id}
-                className={'wildlife wildlife-' + animal.species + (animal.moving ? ' is-moving' : '')}
+                className={'wildlife wildlife-' + animal.species + (KIT_WILDLIFE_SHEET[animal.species] ? ' wildlife-kit' : '') + (animal.moving ? ' is-moving' : '')}
                 data-facing={animal.facing}
-                style={{ left: fieldPct(animal.position.x), top: fieldPct(animal.position.y), ...(animal.species === 'wolf' ? { '--wolf-sheet': `url("${assetUrl('wolves/wolf_' + (['gray', 'brown', 'black'] as const)[Math.abs(animal.id) % 3] + '_full.png')}")` } : {}), ...(animal.species === 'rabbit' ? { '--rabbit-sheet': `url("${assetUrl('rabbits/rabbit_white_full.png')}")` } : {}) } as CSSProperties}
+                style={{ left: fieldPct(animal.position.x), top: fieldPct(animal.position.y), ...(animal.species === 'wolf' ? { '--wolf-sheet': `url("${assetUrl('wolves/wolf_' + (['gray', 'brown', 'black'] as const)[Math.abs(animal.id) % 3] + '_full.png')}")` } : {}), ...(animal.species === 'rabbit' ? { '--rabbit-sheet': `url("${assetUrl('rabbits/rabbit_white_full.png')}")` } : {}), ...(KIT_WILDLIFE_SHEET[animal.species] ? { '--kit-sheet': `url("${assetUrl(KIT_WILDLIFE_SHEET[animal.species])}")` } : {}) } as CSSProperties}
               />
             ))}
+          </div>
+          {/* BUILD 355: wandering hermit mage (kit Character_8). */}
+          <div className="field-wildlife" aria-hidden="true">
+            {wanderMage && (
+              <span
+                key={'wander-mage-' + wanderMage.id}
+                className={'wildlife wander-mage' + (wanderMage.moving ? ' is-moving' : '')}
+                data-facing={wanderMage.facing}
+                data-name={wanderMage.name}
+                style={{ left: fieldPct(wanderMage.position.x), top: fieldPct(wanderMage.position.y), '--kit-sheet': `url("${assetUrl('kit/wildlife_mage.png')}")` } as CSSProperties}
+              />
+            )}
           </div>
           <div className="field-waterlife" aria-hidden="true">
             {waterLife.map((animal) => (
@@ -8470,6 +8678,14 @@ function FieldGroundLayer({ spec }: { spec: GroundDetailSpec }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // BUILD 341: repaint when the map-builder paints change.
   const paintSig = (spec.paints ?? []).map((p) => p.tx + ',' + p.ty + ':' + p.tile).join(';');
+  // BUILD 355: repaint when hills change, and once the kit tileset loads
+  // (cliffs swap from the procedural fallback to kit art).
+  const hillsSig = spec.hills ? spec.hills.levels.join(',') : '';
+  const [kitVer, setKitVer] = useState(0);
+  useEffect(() => {
+    ensureKitTileset().then(() => setKitVer((v) => v + 1)).catch(() => {});
+    return onKitTilesetLoaded(() => setKitVer((v) => v + 1));
+  }, []);
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -8478,7 +8694,7 @@ function FieldGroundLayer({ spec }: { spec: GroundDetailSpec }) {
     } catch {
       // Leave the flat CSS ground as the fallback.
     }
-  }, [spec.terrain, spec.field, spec.path, spec.road, spec.sea, spec.seed, paintSig]);
+  }, [spec.terrain, spec.field, spec.path, spec.road, spec.sea, spec.seed, paintSig, hillsSig, kitVer]);
   return <div ref={hostRef} className="field-ground-layer" aria-hidden="true" />;
 }
 
@@ -8514,6 +8730,8 @@ function ChunkSurroundings({ chunk, gameZoom, hiddenRoadChunks, mapPaints }: {
         sea: nTile.waterFeature === 'sea',
         seed: ((nChunk.x * 73856093) ^ (nChunk.y * 19349663)) >>> 0,
         paints: mapPaints[nKey] ?? [],
+        // BUILD 355: keep hills continuous across chunk borders.
+        hills: buildGroundHills(nChunk),
       };
       return { dx, dy, key: nKey, spec };
     });

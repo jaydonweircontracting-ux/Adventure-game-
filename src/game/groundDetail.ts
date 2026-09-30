@@ -14,7 +14,22 @@ export interface GroundRoadRect { x: number; y: number; w: number; h: number }
 
 // BUILD 341: map-builder painted tiles (tilemap-style overrides).
 import type { PaintedTile } from './mapBuilder';
+// BUILD 355: elevation hills + CraftPix kit cliff faces.
+import { getKitTileset, kitCliffSlice, kitCliffLip } from './kitAssets';
+import { isCliffStep } from './elevation';
 export const MAP_TILE_PX = 80; // 10 field units * 8 px/unit
+
+/** BUILD 355: sub-chunk elevation for the ground renderer. */
+export interface GroundHills {
+  /** Cells per chunk side (14). */
+  count: number;
+  /** (count+2)^2 quantized levels with a 1-cell halo, row-major. */
+  levels: number[];
+  /** Chunk base level (plateau tint reference). */
+  base: number;
+  /** 'rock' -> gray cliffs, 'dirt' -> brown dirt cliffs. */
+  cliffKind: 'rock' | 'dirt';
+}
 
 export interface GroundDetailSpec {
   terrain: GroundTerrain;
@@ -32,6 +47,8 @@ export interface GroundDetailSpec {
   seed: number;
   /** BUILD 341: map-builder painted tiles (override base + roads). */
   paints?: PaintedTile[];
+  /** BUILD 355: elevation hills; null/omitted = flat. */
+  hills?: GroundHills | null;
 }
 
 export const GROUND_PX_PER_UNIT = 4; // BUILD 343: was 8 for 140-unit chunks
@@ -269,6 +286,102 @@ export function renderGroundDetail(spec: GroundDetailSpec): HTMLCanvasElement {
   }
 
   // --- Dirt road with ragged grass borders and wheel ruts. ---
+  // --- BUILD 355: elevation hills + cliff faces (CraftPix island kit). ---
+  // Painted after the terrain base so roads (flattened corridors) draw over
+  // any cliff art, and before scatter detail. No randomness here: cliffs are
+  // fully determined by spec.hills, so repaints are stable.
+  const hills = spec.hills;
+  if (hills && !isWater) {
+    const n = hills.count;
+    const stride = n + 2;
+    const cellPx = SIZE / n;
+    const lvl = (ix: number, iy: number): number => hills.levels[(iy + 1) * stride + (ix + 1)];
+    // Plateau top / valley tint relative to the chunk base.
+    for (let iy = 0; iy < n; iy++) {
+      for (let ix = 0; ix < n; ix++) {
+        const l = lvl(ix, iy);
+        if (l === hills.base) continue;
+        const tint = Math.min(0.09, 0.028 * Math.abs(l - hills.base)).toFixed(3);
+        rect(ix * cellPx, iy * cellPx, cellPx, cellPx,
+          l > hills.base ? 'rgba(255,250,228,' + tint + ')' : 'rgba(24,36,54,' + tint + ')');
+      }
+    }
+    const faceH = 26; // px of cliff face along a stepped edge
+    const lipH = 9;   // px of grassy lip at the plateau rim
+    const img = getKitTileset();
+    const slice = kitCliffSlice(hills.cliffKind);
+    const lip = kitCliffLip(hills.cliffKind);
+    const seg = 26; // px of edge per kit-slice tile
+    const drawFaceH = (x0: number, y0: number, w: number, lipFirst: boolean) => {
+      if (img) {
+        for (let x = x0; x < x0 + w; x += seg) {
+          const dw = Math.min(seg, x0 + w - x);
+          const sw = slice.sw * (dw / seg);
+          if (lipFirst) {
+            ctx.drawImage(img, lip.sx, lip.sy, lip.sw * (dw / seg), lip.sh, x, y0, dw, lipH);
+            ctx.drawImage(img, slice.sx, slice.sy, sw, slice.sh, x, y0 + lipH, dw, faceH - lipH);
+          } else {
+            ctx.drawImage(img, slice.sx, slice.sy, sw, slice.sh, x, y0, dw, faceH - lipH);
+            ctx.drawImage(img, lip.sx, lip.sy, lip.sw * (dw / seg), lip.sh, x, y0 + faceH - lipH, dw, lipH);
+          }
+        }
+      } else {
+        // Procedural fallback while the tileset loads: shaded rock band.
+        const g = ctx.createLinearGradient(0, y0, 0, y0 + faceH);
+        const c0 = hills.cliffKind === 'rock' ? '#8d8fa3' : '#8a5a34';
+        const c1 = hills.cliffKind === 'rock' ? '#5b5d70' : '#5e3d22';
+        g.addColorStop(0, c0);
+        g.addColorStop(1, c1);
+        ctx.fillStyle = g;
+        ctx.fillRect(x0, y0, w, faceH);
+      }
+      // Soft contact shadow just past the face foot.
+      ctx.fillStyle = 'rgba(10,14,20,0.16)';
+      ctx.fillRect(x0, y0 + faceH, w, 5);
+    };
+    const drawFaceV = (x0: number, y0: number, h: number, lipFirst: boolean) => {
+      if (img) {
+        for (let y = y0; y < y0 + h; y += seg) {
+          const dh = Math.min(seg, y0 + h - y);
+          const sh = slice.sh * (dh / seg);
+          if (lipFirst) {
+            ctx.drawImage(img, lip.sx, lip.sy, lip.sw, lip.sh * (dh / seg), x0, y, lipH, dh);
+            ctx.drawImage(img, slice.sx, slice.sy, slice.sw, sh, x0 + lipH, y, faceH - lipH, dh);
+          } else {
+            ctx.drawImage(img, slice.sx, slice.sy, slice.sw, sh, x0, y, faceH - lipH, dh);
+            ctx.drawImage(img, lip.sx, lip.sy, lip.sw, lip.sh * (dh / seg), x0 + faceH - lipH, y, lipH, dh);
+          }
+        }
+      } else {
+        const g = ctx.createLinearGradient(x0, 0, x0 + faceH, 0);
+        const c0 = hills.cliffKind === 'rock' ? '#8d8fa3' : '#8a5a34';
+        const c1 = hills.cliffKind === 'rock' ? '#5b5d70' : '#5e3d22';
+        g.addColorStop(0, c0);
+        g.addColorStop(1, c1);
+        ctx.fillStyle = g;
+        ctx.fillRect(x0, y0, faceH, h);
+      }
+      ctx.fillStyle = 'rgba(10,14,20,0.16)';
+      ctx.fillRect(x0 + faceH, y0, 5, h);
+    };
+    for (let iy = 0; iy < n; iy++) {
+      for (let ix = 0; ix < n; ix++) {
+        const l = lvl(ix, iy);
+        const x0 = ix * cellPx;
+        const y0 = iy * cellPx;
+        const ln = lvl(ix, iy - 1);
+        const ls = lvl(ix, iy + 1);
+        const lw = lvl(ix - 1, iy);
+        const le = lvl(ix + 1, iy);
+        // The face is drawn on the LOWER cell, lip at the plateau rim.
+        if (ln > l && isCliffStep(l, ln)) drawFaceH(x0, y0, cellPx, true);
+        if (ls > l && isCliffStep(l, ls)) drawFaceH(x0, y0 + cellPx - faceH, cellPx, false);
+        if (lw > l && isCliffStep(l, lw)) drawFaceV(x0, y0 + faceH, cellPx - 2 * faceH, true);
+        if (le > l && isCliffStep(l, le)) drawFaceV(x0 + cellPx - faceH, y0 + faceH, cellPx - 2 * faceH, false);
+      }
+    }
+  }
+
   if (!isWater && spec.road !== 'none') {
     const rx = spec.roadRect.x * SIZE;
     const ry = spec.roadRect.y * SIZE;
