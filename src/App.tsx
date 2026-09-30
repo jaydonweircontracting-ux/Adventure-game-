@@ -75,7 +75,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '307';
+const BUILD_NUMBER = '308';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -4611,7 +4611,14 @@ if (active) {
     }
   }, [chunk]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // BUILD 308: D-pad input rides on touch events (one identifier per touch)
+  // instead of pointer capture. On iOS, tapping another button (attack) while
+  // holding the D-pad could break pointer capture and silently release the
+  // held direction with the thumb still down, freezing movement until the user
+  // lifted and re-pressed. A second touch can never disturb touch events.
+  // Pointer handlers stay for mouse users only.
   const pressDirection = (direction: Direction) => {
+    if (inputLocked || optionsOpen || waitingRef.current) return;
     keysRef.current[direction] = true;
     setMoving(true);
   };
@@ -4619,16 +4626,11 @@ if (active) {
     keysRef.current[direction] = false;
     setMoving(Object.values(keysRef.current).some(Boolean));
   };
-  const beginDirection = (direction: Direction, event: PointerEvent<HTMLButtonElement>) => {
-    if (inputLocked || optionsOpen || waitingRef.current) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    pressDirection(direction);
+  const mousePressDirection = (direction: Direction, event: PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === 'mouse') pressDirection(direction);
   };
-  const endDirection = (direction: Direction, event: PointerEvent<HTMLButtonElement>) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    releaseDirection(direction);
+  const mouseReleaseDirection = (direction: Direction, event: PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === 'mouse') releaseDirection(direction);
   };
 
   const horseHere = horse.chunk.x === chunk.x && horse.chunk.y === chunk.y;
@@ -6797,10 +6799,10 @@ if (active) {
           <button className="hud-bag-button" onClick={onOpenInventory} aria-label="Open menu" title="Menu" data-testid="button-open-inventory"><Backpack size={17} /></button>
         </div>
         <div className="touch-controls" aria-label="Touch movement controls">
-           <button className="touch-control up" aria-label="Move north" data-testid="button-move-up" onPointerDown={(event) => beginDirection('up', event)} onPointerUp={(event) => endDirection('up', event)} onPointerCancel={(event) => endDirection('up', event)} onLostPointerCapture={() => releaseDirection('up')}><ChevronUp size={18} /></button>
-           <button className="touch-control left" aria-label="Move west" data-testid="button-move-left" onPointerDown={(event) => beginDirection('left', event)} onPointerUp={(event) => endDirection('left', event)} onPointerCancel={(event) => endDirection('left', event)} onLostPointerCapture={() => releaseDirection('left')}><ChevronLeft size={18} /></button>
-           <button className="touch-control down" aria-label="Move south" data-testid="button-move-down" onPointerDown={(event) => beginDirection('down', event)} onPointerUp={(event) => endDirection('down', event)} onPointerCancel={(event) => endDirection('down', event)} onLostPointerCapture={() => releaseDirection('down')}><ChevronDown size={18} /></button>
-           <button className="touch-control right" aria-label="Move east" data-testid="button-move-right" onPointerDown={(event) => beginDirection('right', event)} onPointerUp={(event) => endDirection('right', event)} onPointerCancel={(event) => endDirection('right', event)} onLostPointerCapture={() => releaseDirection('right')}><ChevronRight size={18} /></button>
+           <button className="touch-control up" aria-label="Move north" data-testid="button-move-up" onTouchStart={() => pressDirection('up')} onTouchEnd={() => releaseDirection('up')} onTouchCancel={() => releaseDirection('up')} onPointerDown={(event) => mousePressDirection('up', event)} onPointerUp={(event) => mouseReleaseDirection('up', event)} onPointerLeave={(event) => mouseReleaseDirection('up', event)}><ChevronUp size={18} /></button>
+           <button className="touch-control left" aria-label="Move west" data-testid="button-move-left" onTouchStart={() => pressDirection('left')} onTouchEnd={() => releaseDirection('left')} onTouchCancel={() => releaseDirection('left')} onPointerDown={(event) => mousePressDirection('left', event)} onPointerUp={(event) => mouseReleaseDirection('left', event)} onPointerLeave={(event) => mouseReleaseDirection('left', event)}><ChevronLeft size={18} /></button>
+           <button className="touch-control down" aria-label="Move south" data-testid="button-move-down" onTouchStart={() => pressDirection('down')} onTouchEnd={() => releaseDirection('down')} onTouchCancel={() => releaseDirection('down')} onPointerDown={(event) => mousePressDirection('down', event)} onPointerUp={(event) => mouseReleaseDirection('down', event)} onPointerLeave={(event) => mouseReleaseDirection('down', event)}><ChevronDown size={18} /></button>
+           <button className="touch-control right" aria-label="Move east" data-testid="button-move-right" onTouchStart={() => pressDirection('right')} onTouchEnd={() => releaseDirection('right')} onTouchCancel={() => releaseDirection('right')} onPointerDown={(event) => mousePressDirection('right', event)} onPointerUp={(event) => mouseReleaseDirection('right', event)} onPointerLeave={(event) => mouseReleaseDirection('right', event)}><ChevronRight size={18} /></button>
         </div>
          {logOpen && (
            <section id="field-log-drawer" className="field-log-drawer" aria-label="Field log" data-testid="panel-field-log">
