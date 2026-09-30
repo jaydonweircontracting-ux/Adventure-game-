@@ -83,7 +83,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '339';
+const BUILD_NUMBER = '340';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -5593,7 +5593,6 @@ if (active) {
           }
         } : undefined}
         >
-          <FieldGroundLayer spec={groundSpec} />
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
           {/* Debug world editor (BUILD 274): coordinate grid overlay. */}
           {moverMode && showGrid && (
@@ -6083,6 +6082,11 @@ if (active) {
             const ty = zoomTranslatePct(position.y / FIELD_SIZE, gameZoom);
             return { transform: `translate(${tx}%, ${ty}%) scale(${gameZoom})`, transformOrigin: '0 0' };
           })() : undefined}>
+          {/* BUILD 340: the procedural ground canvas lives INSIDE the world layer so it
+              pans/zooms with the world. As a direct child of .pixel-field it stayed
+              glued to the screen, making the path appear to follow the player and
+              houses appear to sit on pathways when zoomed. */}
+          <FieldGroundLayer spec={groundSpec} />
           {/* Marker dots: inside the world layer so they stay locked to field positions when walking/zooming. */}
           {markerMode && debugMarks.map((mark, i) => [
             <span key={'mark-' + i} aria-hidden="true" style={{
