@@ -263,6 +263,85 @@ export function reanchorTownsfolk(folk: Townsperson[], anchors: TownsfolkAnchors
   });
 }
 
+/**
+ * Serializable townsfolk snapshot (BUILD 322). The active NavPath is
+ * deliberately dropped — the state machine rebuilds paths on demand
+ * (shouldReplanPath treats a missing path as "replan"), so a restored NPC
+ * resumes walking from exactly where it stood instead of replaying a stale
+ * route. Homes are re-anchored by the caller (houses may have moved).
+ */
+export type TownsfolkSave = {
+  id: string;
+  position: TownsfolkPoint;
+  facing: TownsfolkFacing;
+  moving: boolean;
+  activity: string;
+  indoors: boolean;
+  location: NPCWorldLocation;
+  homeId?: string;
+  bedId?: string;
+  buildingId?: string;
+};
+
+const VALID_LOCATIONS: NPCWorldLocation[] = ['OUTDOOR', 'ENTERING', 'INTERIOR', 'EXITING', 'SLEEPING', 'WORKING'];
+
+export function serializeTownsfolk(folk: Townsperson[]): TownsfolkSave[] {
+  return folk.map((npc) => ({
+    id: npc.id,
+    position: { ...npc.position },
+    facing: npc.facing,
+    moving: npc.moving,
+    activity: npc.activity,
+    indoors: npc.indoors,
+    location: npc.location,
+    homeId: npc.homeId,
+    bedId: npc.bedId,
+    buildingId: npc.buildingId,
+  }));
+}
+
+export function isTownsfolkSave(value: unknown): value is TownsfolkSave {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.id !== 'string') return false;
+  const p = v.position as Record<string, unknown> | undefined;
+  if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return false;
+  if (typeof v.activity !== 'string') return false;
+  if (!VALID_LOCATIONS.includes(v.location as NPCWorldLocation)) return false;
+  return true;
+}
+
+/**
+ * Merge a save snapshot onto a freshly created roster. Unknown ids are
+ * ignored; invalid entries fall back to the fresh NPC. Returns new objects
+ * only for restored NPCs (identity-preserving for the rest).
+ */
+export function restoreTownsfolk(folk: Townsperson[], saved: unknown): Townsperson[] {
+  if (!Array.isArray(saved) || saved.length === 0) return folk;
+  const byId = new Map<string, TownsfolkSave>();
+  for (const entry of saved) {
+    if (isTownsfolkSave(entry)) byId.set(entry.id, entry);
+  }
+  if (byId.size === 0) return folk;
+  return folk.map((npc) => {
+    const s = byId.get(npc.id);
+    if (!s) return npc;
+    return {
+      ...npc,
+      position: { x: s.position.x, y: s.position.y },
+      facing: (['up', 'down', 'left', 'right'] as TownsfolkFacing[]).includes(s.facing) ? s.facing : npc.facing,
+      moving: false, // resumes on the next schedule tick; never restore mid-stride
+      activity: s.activity,
+      indoors: s.indoors,
+      location: s.location,
+      path: undefined, // rebuilt on demand — never replay a stale route
+      homeId: s.homeId ?? npc.homeId,
+      bedId: s.bedId ?? npc.bedId,
+      buildingId: s.buildingId,
+    };
+  });
+}
+
 /** Navigation context for physical townsfolk movement. */
 export type TownsfolkNavContext = {
   housing: HousingRegistry;

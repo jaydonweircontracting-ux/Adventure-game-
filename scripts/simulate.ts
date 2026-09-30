@@ -6,7 +6,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
@@ -1210,6 +1210,72 @@ for (const kind of EXPECTED_KINDS) {
   assert(wallPath, 'path around the wall should exist');
   const throughWall = wallPath!.some((p) => p.x > 60 && p.x < 84 && p.y > 60 && p.y < 84);
   assert(!throughWall, 'road preference must not route through the wall rect');
+}
+
+
+// ---- BUILD 322: townsfolk save/load persistence ----
+{
+  const anchors: TownsfolkAnchors = {
+    points: {
+      guild: { x: 90, y: 60 }, chapel: { x: 40, y: 90 }, tavern: { x: 90, y: 90 },
+      farm0: { x: 30, y: 119 }, farm1: { x: 110, y: 119 },
+    },
+    plaza: { x: 70, y: 82 },
+    stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
+    gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
+    patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
+  };
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+  const folk = createTownsfolk(anchors, 847291583);
+  const navCtx: TownsfolkNavContext = {
+    housing: buildMosslightHousing(folk.map((n) => n.id)),
+    doors: cottageDoorways(),
+    obstacles: mosslightObstacles(),
+  };
+  // 1. Round-trip: serialize -> restore preserves identity/state, drops paths.
+  const live = advanceTownsfolk(snapTownsfolk(folk, anchors, clockAt(10, 0), navCtx), anchors, clockAt(10, 0), navCtx);
+  const saved = serializeTownsfolk(live);
+  assert(saved.length === 12, 'should serialize all 12 townsfolk');
+  assert(saved.every((s) => !('path' in s)), 'save must not contain nav paths');
+  const fresh = createTownsfolk(anchors, 847291583);
+  const restored = restoreTownsfolk(fresh, saved);
+  assert(restored.length === 12, 'restore keeps roster size');
+  for (let i = 0; i < 12; i++) {
+    assert(restored[i].id === live[i].id, 'ids preserved');
+    assert(restored[i].position.x === live[i].position.x && restored[i].position.y === live[i].position.y, 'positions preserved');
+    assert(restored[i].location === live[i].location, 'locations preserved');
+    assert(restored[i].path === undefined, 'stale paths are dropped, not replayed');
+    assert(restored[i].moving === false, 'restored NPCs resume on the next tick, not mid-stride');
+  }
+  // 2. Unknown ids / invalid entries are ignored; the roster stays valid.
+  const junkBase = saved.filter((s) => s.id !== folk[0].id && s.id !== folk[1].id);
+  const junk = [
+    ...junkBase,
+    { id: 'ghost', position: { x: 1, y: 1 }, location: 'OUTDOOR', activity: 'x' },
+    { id: folk[0].id, position: { x: NaN, y: 1 }, location: 'OUTDOOR', activity: 'x' },
+    { id: folk[1].id, position: { x: 1, y: 1 }, location: 'MARS', activity: 'x' },
+  ];
+  const r2 = restoreTownsfolk(fresh, junk);
+  assert(r2.length === 12, 'ghost ids do not grow the roster');
+  assert(r2[0].position.x === fresh[0].position.x, 'invalid position entry falls back to fresh');
+  assert(r2[1].location === fresh[1].location, 'invalid location entry falls back to fresh');
+  // 3. Empty/missing save is a no-op.
+  assert(restoreTownsfolk(fresh, []) === fresh, 'empty save is a no-op');
+  assert(restoreTownsfolk(fresh, undefined) === fresh, 'missing save is a no-op');
+  // 4. A restored NPC resumes walking from exactly where it stood (no teleport).
+  const walker = restored.find((n) => n.location === 'OUTDOOR');
+  assert(walker, 'expected an outdoor townsfolk at 10:00');
+  const before = { ...walker!.position };
+  const next = advanceTownsfolk([walker!], anchors, clockAt(10, 0), navCtx)[0];
+  const stepDist = Math.hypot(next.position.x - before.x, next.position.y - before.y);
+  assert(stepDist <= 3.5, `restored NPC resumes without teleporting (moved ${stepDist.toFixed(2)})`);
+  // 5. Survives a real save-file JSON round trip.
+  const json = JSON.parse(JSON.stringify({ townsfolk: saved }));
+  const r3 = restoreTownsfolk(fresh, json.townsfolk);
+  assert(r3[3].position.x === live[3].position.x, 'JSON round trip preserves state');
 }
 
 // ---- Results ----

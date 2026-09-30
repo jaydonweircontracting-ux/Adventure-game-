@@ -18,7 +18,7 @@ import { findTalkTarget } from './game/talkTarget';
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, buildMosslightHousing, cottageDoorways, mosslightObstacles, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
 import { LANDMARKS } from '@/game/landmarks';
 import {
@@ -78,7 +78,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '321';
+const BUILD_NUMBER = '322';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -1175,6 +1175,7 @@ type SaveGameData = {
   characterChoices?: CharacterChoices | null;
   npcStates: TownNpc[];
   simulatedAdventurers: SimulatedAdventurer[];
+  townsfolk: TownsfolkSave[];
   goats: GoatState[];
   interiorId: string | null;
   interiorPosition: Point;
@@ -1335,6 +1336,7 @@ function isSaveGameData(value: unknown): value is SaveGameData {
     && value.npcStates.every(isTownNpcSave)
     && Array.isArray(value.simulatedAdventurers)
     && value.simulatedAdventurers.every(isSimulatedAdventurerSave)
+    && (value.townsfolk === undefined || (Array.isArray(value.townsfolk) && value.townsfolk.every(isTownsfolkSave)))
     && Array.isArray(value.goats)
     && value.goats.every(isGoatSave)
     && (value.interiorId === null || typeof value.interiorId === 'string')
@@ -3494,6 +3496,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     characterChoices,
     npcStates,
     simulatedAdventurers,
+    townsfolk: serializeTownsfolk(townsfolkRef.current),
     goats,
     interiorId: interior?.id || null,
     interiorPosition,
@@ -3551,6 +3554,20 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
       : initialSimulatedAdventurers;
     simulatedAdventurersRef.current = restoredAdventurers;
     setSimulatedAdventurers(restoredAdventurers);
+    // Townsfolk persistence (BUILD 322): a save made on the Mosslight chunk
+    // carries the 12 townsfolk exactly as they were; restore positions and
+    // location state so the town resumes instead of re-snapping. Saves made
+    // elsewhere carry an empty list (townsfolk are abstract while away) and
+    // fall through to the normal schedule snap on chunk entry.
+    if (loadState.chunk.x === TOWNSFOLK_CHUNK.x && loadState.chunk.y === TOWNSFOLK_CHUNK.y
+        && Array.isArray(loadState.townsfolk) && loadState.townsfolk.length > 0
+        && townsfolkNavRef.current) {
+      const anchors = townsfolkAnchors(houseOffsets);
+      const fresh = createTownsfolk(anchors, DEFAULT_WORLD_SEED);
+      const restored = reanchorTownsfolk(restoreTownsfolk(fresh, loadState.townsfolk), anchors);
+      townsfolkRef.current = restored;
+      setTownsfolk(restored);
+    }
     interiorDoorwayIdRef.current = restoredDoorway?.id || null;
     interiorEntryChunkRef.current = { x: loadState.chunk.x, y: loadState.chunk.y };
     interiorRef.current = restoredDoorway?.area || null; setInterior(restoredDoorway?.area || null);

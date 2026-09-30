@@ -22,5 +22,6 @@ export function migrateSave(value: unknown): unknown {
     saveId: legacySaveId(value),
     worldSeed: typeof value.worldSeed === 'number' && Number.isFinite(value.worldSeed) ? value.worldSeed : DEFAULT_WORLD_SEED,
     simulatedAdventurers: Array.isArray(value.simulatedAdventurers) ? value.simulatedAdventurers : [],
+    townsfolk: Array.isArray(value.townsfolk) ? value.townsfolk : [],
   };
 }
