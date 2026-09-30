@@ -82,7 +82,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '337';
+const BUILD_NUMBER = '338';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -4536,7 +4536,11 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
             const treeTarget = fieldTreesFor(chunkRef.current).find((tree) => {
               const key = fieldTreeKey(chunkRef.current, tree.id);
               if (isTreeFelled(key)) return false;
-              return goatIsInAttackArc(tree as unknown as GoatState, positionRef.current, playerAttack.direction);
+              // BUILD 338: trees carry x/y, not a .position — the old
+              // goatIsInAttackArc(tree as GoatState) cast dereferenced
+              // undefined.position and threw on every whiffed swing, which
+              // killed the frame loop before BUILD 337's immortal loop.
+              return isInMeleeArc(positionRef.current, { x: tree.x, y: tree.y }, playerAttack.direction);
             });
             if (treeTarget) {
               const key = fieldTreeKey(chunkRef.current, treeTarget.id);
