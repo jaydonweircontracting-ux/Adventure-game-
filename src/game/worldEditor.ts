@@ -4,9 +4,10 @@
 
 export type EditorPlaceKind = 'house' | 'tree' | 'pine' | 'rock' | 'roadH' | 'roadV';
 export type PlacedObject = { id: string; kind: EditorPlaceKind; x: number; y: number; chunk: string };
-// Items flagged for removal: generated trees/houses the user marked, plus
-// placed objects. The removal list is copied to the clipboard for the dev.
-export type FlaggedItem = { id: string; kind: 'tree' | 'house' | 'placed'; label: string; x: number; y: number; chunk: string };
+// Items flagged for removal: generated trees/houses the user marked, placed
+// objects, and map-builder painted tiles. The removal list is copied to the
+// clipboard for the dev.
+export type FlaggedItem = { id: string; kind: 'tree' | 'house' | 'placed' | 'paint'; label: string; x: number; y: number; chunk: string };
 // Solid footprint for the module-level collision check (roads are walkable).
 export type EditorSolid = { chunk: string; x: number; y: number; w: number; h: number };
 
@@ -56,14 +57,24 @@ export function editorRestoreGenTrees(deleted: DeletedGenTrees, chunkKey: string
 
 // BUILD 305: split flagged items into the concrete deletions the
 // "Delete flagged" button performs (generated houses can't be deleted).
-export function editorFlaggedDeletions(flags: FlaggedItem[], chunkKey: string): { placedIds: string[]; treeIds: number[] } {
+// BUILD 352: painted map-builder tiles are flaggable too.
+export function editorFlaggedDeletions(flags: FlaggedItem[], chunkKey: string): { placedIds: string[]; treeIds: number[]; paintKeys: Array<{ tx: number; ty: number }> } {
   const here = flags.filter((f) => f.chunk === chunkKey);
   const placedIds = here.filter((f) => f.kind === 'placed').map((f) => f.id);
   const treeIds = here
     .filter((f) => f.kind === 'tree')
     .map((f) => parseInt(f.id.split('-').pop() || '', 10))
     .filter((n) => !isNaN(n));
-  return { placedIds, treeIds };
+  const paintKeys = here
+    .filter((f) => f.kind === 'paint')
+    .map((f) => {
+      const parts = f.id.split('-');
+      const ty = parseInt(parts.pop() || '', 10);
+      const tx = parseInt(parts.pop() || '', 10);
+      return { tx, ty };
+    })
+    .filter((k) => !isNaN(k.tx) && !isNaN(k.ty));
+  return { placedIds, treeIds, paintKeys };
 }
 
 export function editorRemovalList(flags: FlaggedItem[]): string {

@@ -4405,6 +4405,37 @@ body {
   font-size: 12px;
   opacity: 0.75;
 }
+.map-builder-min {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.map-builder-exit {
+  margin-left: 0;
+}
+.map-builder-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.map-builder-min-chip {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 61;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
 .editor-panel-title {
   font-weight: 700;
   margin-bottom: 8px;

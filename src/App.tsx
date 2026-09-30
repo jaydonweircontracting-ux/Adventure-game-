@@ -85,7 +85,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '351';
+const BUILD_NUMBER = '352';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -3307,6 +3307,22 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   useEffect(() => {
     try { localStorage.setItem('worldEditorDeletedTrees', JSON.stringify(deletedGenTrees)); } catch { /* ignore */ }
   }, [deletedGenTrees]);
+  // BUILD 352: corn stalks deleted via the Erase tool, per chunk (persisted).
+  const [deletedCorn, setDeletedCorn] = useState<Record<string, number[]>>(() => {
+    try {
+      const raw = localStorage.getItem('worldEditorDeletedCorn');
+      const parsed = raw ? JSON.parse(raw) : {};
+      if (!parsed || typeof parsed !== 'object') return {};
+      const clean: Record<string, number[]> = {};
+      for (const k of Object.keys(parsed)) {
+        if (Array.isArray(parsed[k])) clean[k] = parsed[k].filter((n: unknown) => typeof n === 'number');
+      }
+      return clean;
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('worldEditorDeletedCorn', JSON.stringify(deletedCorn)); } catch { /* ignore */ }
+  }, [deletedCorn]);
   // Sync the module-level key set so collision skips deleted trees.
   useEffect(() => {
     editorDeletedTreeKeys.clear();
@@ -3348,6 +3364,28 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   type MapBrush = MapPaintTile | 'house' | 'erase';
   const [mapBuilderMode, setMapBuilderMode] = useState(false);
   const [mapBrush, setMapBrush] = useState<MapBrush>('dirt');
+  const [mapBuilderMin, setMapBuilderMin] = useState(false);
+  // BUILD 352: undo stack for the map builder. Each entry snapshots the paint
+  // map and placed objects before a stroke/stamp/clear, so ↩️ Undo restores
+  // the exact state before the last action.
+  const [mapUndo, setMapUndo] = useState<Array<{ paints: MapPaints; placed: PlacedObject[] }>>([]);
+  const pushMapUndo = () => {
+    setMapUndo((prev) => {
+      const next = [...prev, { paints: mapPaints, placed: placedObjects }];
+      return next.length > 40 ? next.slice(next.length - 40) : next;
+    });
+  };
+  const undoMapBuilder = () => {
+    const last = mapUndo[mapUndo.length - 1];
+    if (!last) return;
+    setMapPaints(last.paints);
+    setPlacedObjects(last.placed);
+    setMapUndo((prev) => prev.slice(0, -1));
+  };
+  // BUILD 352: explicit stroke tracking so drag-painting works even when
+  // e.buttons is unreliable (some touch browsers) and so the stroke never
+  // leaks into camera pan/scroll handlers.
+  const mapPaintingRef = useRef(false);
   const loadMapPaints = (): MapPaints => {
     try {
       const raw = localStorage.getItem('mapBuilderPaints');
@@ -3362,7 +3400,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   useEffect(() => {
     try { localStorage.setItem('mapBuilderPaints', JSON.stringify(mapPaints)); } catch { /* ignore */ }
   }, [mapPaints]);
-  const toggleMapBuilder = () => setMapBuilderMode((m) => !m);
+  const toggleMapBuilder = () => { setMapBuilderMin(false); setMapBuilderMode((m) => !m); };
   // Convert a pointer event on the field into true field-unit coordinates,
   // inverting the game-zoom transform (same math as the mover/marker tools).
   const tapToField = (e: React.PointerEvent<HTMLElement>): Point => {
@@ -3611,7 +3649,10 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const [monsters, setMonsters] = useState<MonsterState[]>(() => monstersForChunk({ x: 4, y: 7 }, 1));
   const [cornStalks, setCornStalks] = useState<CornStalk[]>(() => {
     const startChunk = { x: 4, y: 7 };
-    return cornStalksForChunk(startChunk, mapTileFor(startChunk).terrain, (pos) => isFieldPositionBlocked(pos, startChunk));
+    const all = cornStalksForChunk(startChunk, mapTileFor(startChunk).terrain, (pos) => isFieldPositionBlocked(pos, startChunk));
+    // BUILD 352: drop stalks the user erased in the World Editor.
+    const del = deletedCorn[startChunk.x + ',' + startChunk.y] ?? [];
+    return all.filter((s) => !del.includes(s.id));
   });
   const monstersRef = useRef<MonsterState[]>(monsters);
   const [birds, setBirds] = useState<BirdState[]>(() => birdsForChunk({ x: 4, y: 7 }));
@@ -4258,7 +4299,9 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     const nextMonsters = monstersForChunk(chunk, playerLevelRef.current);
     monstersRef.current = nextMonsters;
     setMonsters(nextMonsters);
-    const nextCorn = cornStalksForChunk(chunk, mapTileFor(chunk).terrain, (pos) => isFieldPositionBlocked(pos, chunk));
+    const nextCornAll = cornStalksForChunk(chunk, mapTileFor(chunk).terrain, (pos) => isFieldPositionBlocked(pos, chunk));
+    // BUILD 352: drop stalks the user erased in the World Editor.
+    const nextCorn = nextCornAll.filter((s) => !(deletedCorn[chunk.x + ',' + chunk.y] ?? []).includes(s.id));
     cornStalksRef.current = nextCorn;
     setCornStalks(nextCorn);
     const nextBirds = birdsForChunk(chunk);
@@ -5777,9 +5820,9 @@ if (active) {
                 ))}
               </div>
               <div className="editor-hint">
-                {editorTool === 'select' && <>👆 Tap a house or placed object to pick it up, then tap the field to drop it.</>}
-                {editorTool === 'flag' && <>🚩 Tap any tree, house, or placed object to flag it for removal. Tap again to unflag.</>}
-                {editorTool === 'erase' && <>🧹 Tap a generated tree/rock or placed object to delete it for good.</>}
+                {editorTool === 'select' && <>👆 Tap a house, generated tree, or placed object to pick it up, then tap the field to drop it.</>}
+                {editorTool === 'flag' && <>🚩 Tap any tree, house, placed object, or painted tile to flag it for removal. Tap again to unflag.</>}
+                {editorTool === 'erase' && <>🧹 Tap a generated tree, placed object, painted tile, or corn stalk to delete it for good.</>}
                 {editorTool === 'player' && <>📍 Tap the field to teleport the player there.</>}
                 {(editorTool === 'house' || editorTool === 'tree' || editorTool === 'pine' || editorTool === 'rock' || editorTool === 'roadH' || editorTool === 'roadV') && <>Tap the field to stamp a {editorTool === 'roadH' ? 'horizontal road' : editorTool === 'roadV' ? 'vertical road' : editorTool}.</>}
               </div>
@@ -5821,14 +5864,20 @@ if (active) {
                     // BUILD 305: actually delete what was flagged — placed
                     // objects are removed, generated trees/rocks go to the
                     // per-chunk deleted set. Generated houses can't be deleted.
-                    const { placedIds, treeIds } = editorFlaggedDeletions(flaggedItems, chunkKey);
+                    // BUILD 352: flagged painted tiles are erased too.
+                    const { placedIds, treeIds, paintKeys } = editorFlaggedDeletions(flaggedItems, chunkKey);
                     if (placedIds.length > 0) setPlacedObjects((prev) => prev.filter((o) => !placedIds.includes(o.id)));
                     if (treeIds.length > 0) setDeletedGenTrees((prev) => {
                       let next = prev;
                       for (const tid of treeIds) next = editorDeleteGenTree(next, chunkKey, tid);
                       return next;
                     });
-                    setFlaggedItems((prev) => prev.filter((f) => !(f.chunk === chunkKey && (f.kind === 'placed' || f.kind === 'tree'))));
+                    if (paintKeys.length > 0) setMapPaints((prev) => {
+                      let next = prev;
+                      for (const k of paintKeys) next = paintTile(next, chunkKey, k.tx, k.ty, null);
+                      return next;
+                    });
+                    setFlaggedItems((prev) => prev.filter((f) => !(f.chunk === chunkKey && (f.kind === 'placed' || f.kind === 'tree' || f.kind === 'paint'))));
                     setSelectedPlacedId(null);
                   }}
                 >
@@ -5872,16 +5921,33 @@ if (active) {
             <div
               className="map-builder-overlay"
               onPointerDown={(e) => {
-                try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+                e.stopPropagation();
+                try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+                mapPaintingRef.current = true;
+                pushMapUndo();
                 paintAtEvent(e, true);
               }}
-              onPointerMove={(e) => { if (e.buttons > 0) paintAtEvent(e, false); }}
+              onPointerMove={(e) => {
+                if (!mapPaintingRef.current) return;
+                e.stopPropagation();
+                // Re-assert capture: if another element grabbed the pointer,
+                // the stroke would leak into pan/scroll instead of painting.
+                try {
+                  const el = e.currentTarget as HTMLElement;
+                  if (el.hasPointerCapture && !el.hasPointerCapture(e.pointerId)) el.setPointerCapture(e.pointerId);
+                } catch { /* ignore */ }
+                paintAtEvent(e, false);
+              }}
+              onPointerUp={(e) => { e.stopPropagation(); mapPaintingRef.current = false; }}
+              onPointerCancel={() => { mapPaintingRef.current = false; }}
+              onLostPointerCapture={() => { mapPaintingRef.current = false; }}
               onContextMenu={(e) => e.preventDefault()}
             />
           )}
-          {mapBuilderMode && (
+          {mapBuilderMode && !mapBuilderMin && (
             <div className="map-builder-bar">
               <div className="map-builder-title">🗺️ Map Builder <span className="map-builder-chunk">chunk {chunkKey}</span>
+                <button type="button" className="map-builder-min" onClick={() => setMapBuilderMin(true)} aria-label="Minimize map builder">—</button>
                 <button type="button" className="map-builder-exit" onClick={toggleMapBuilder} aria-label="Exit map builder">✕</button>
               </div>
               <div className="map-builder-palette">
@@ -5900,7 +5966,16 @@ if (active) {
                 <button
                   type="button"
                   className="map-builder-btn"
-                  onClick={() => setMapPaints((p) => clearChunkPaints(p, chunkKey))}
+                  onClick={undoMapBuilder}
+                  disabled={mapUndo.length === 0}
+                  title={mapUndo.length === 0 ? 'Nothing to undo' : 'Undo last paint/stamp/clear'}
+                >
+                  ↩️ Undo{mapUndo.length > 0 ? ' (' + mapUndo.length + ')' : ''}
+                </button>
+                <button
+                  type="button"
+                  className="map-builder-btn"
+                  onClick={() => { pushMapUndo(); setMapPaints((p) => clearChunkPaints(p, chunkKey)); }}
                 >
                   🧹 Clear painted tiles (chunk)
                 </button>
@@ -5913,6 +5988,11 @@ if (active) {
                     : 'Tap or drag on the field to paint. Water and forest tiles block movement.'}
               </div>
             </div>
+          )}
+          {mapBuilderMode && mapBuilderMin && (
+            <button type="button" className="map-builder-min-chip" onClick={() => setMapBuilderMin(false)} aria-label="Expand map builder">
+              🗺️ Builder
+            </button>
           )}
           {carriageDebugOpen && (() => {
             const clock = brainRef.current?.worldCore.getClock();
@@ -6649,6 +6729,15 @@ if (active) {
                       y: o.y,
                       chunk: chunkKey,
                     })),
+                    // BUILD 352: map-builder painted tiles are flaggable too.
+                    ...(mapPaints[chunkKey] ?? []).map((p) => ({
+                      id: 'paint-' + chunkKey + '-' + p.tx + '-' + p.ty,
+                      kind: 'paint' as const,
+                      label: 'painted ' + p.tile + ' (' + p.tx + ',' + p.ty + ')',
+                      x: Math.round((p.tx + 0.5) * MAP_TILE_UNITS * 10) / 10,
+                      y: Math.round((p.ty + 0.5) * MAP_TILE_UNITS * 10) / 10,
+                      chunk: chunkKey,
+                    })),
                   ];
                   let best: FlaggedItem | null = null;
                   let bestDist = 8;
@@ -6667,26 +6756,44 @@ if (active) {
                 // Erase tool (BUILD 305): delete the nearest generated tree/rock
                 // or placed object. Generated trees/rocks are remembered per
                 // chunk so they stay gone.
+                // BUILD 352: also erases map-builder painted tiles and corn stalks.
                 if (editorTool === 'erase') {
                   const treeCands = fieldTreesFor(chunk)
                     .filter((t) => !(deletedGenTrees[chunkKey] ?? []).includes(t.id))
-                    .map((t) => ({ id: t.id, x: t.x, y: t.y, gen: true as const }));
-                  const placedCands = placedHere.map((o) => ({ id: o.id, x: o.x, y: o.y, gen: false as const }));
-                  let best: { id: number | string; x: number; y: number; gen: boolean } | null = null;
+                    .map((t) => ({ kind: 'tree' as const, id: t.id, x: t.x, y: t.y }));
+                  const placedCands = placedHere.map((o) => ({ kind: 'placed' as const, id: o.id, x: o.x, y: o.y }));
+                  const paintCands = (mapPaints[chunkKey] ?? []).map((p) => ({
+                    kind: 'paint' as const, id: 'paint-' + p.tx + '-' + p.ty, tx: p.tx, ty: p.ty,
+                    x: (p.tx + 0.5) * MAP_TILE_UNITS, y: (p.ty + 0.5) * MAP_TILE_UNITS,
+                  }));
+                  const cornCands = cornStalks.map((s) => ({
+                    kind: 'corn' as const, id: s.id,
+                    x: (s.position.x / 100) * FIELD_SIZE, y: (s.position.y / 100) * FIELD_SIZE,
+                  }));
+                  let best: { kind: 'tree' | 'placed' | 'paint' | 'corn'; id: number | string; x: number; y: number; tx?: number; ty?: number } | null = null;
                   let bestDist = 8;
-                  for (const c of [...treeCands, ...placedCands]) {
+                  for (const c of [...treeCands, ...placedCands, ...paintCands, ...cornCands]) {
                     const dist = Math.hypot(c.x - fx, c.y - fy);
                     if (dist < bestDist) { bestDist = dist; best = c; }
                   }
                   if (best) {
-                    if (best.gen) {
+                    if (best.kind === 'tree') {
                       const tid = best.id as number;
                       setDeletedGenTrees((prev) => ({ ...prev, [chunkKey]: [...(prev[chunkKey] ?? []), tid] }));
                       setFlaggedItems((prev) => prev.filter((f) => f.id !== 'gen-tree-' + chunkKey + '-' + tid));
-                    } else {
+                    } else if (best.kind === 'placed') {
                       const pid = best.id as string;
                       setPlacedObjects((prev) => prev.filter((o) => o.id !== pid));
                       setFlaggedItems((prev) => prev.filter((f) => f.id !== pid));
+                    } else if (best.kind === 'paint') {
+                      const ptx = best.tx as number;
+                      const pty = best.ty as number;
+                      setMapPaints((prev) => paintTile(prev, chunkKey, ptx, pty, null));
+                      setFlaggedItems((prev) => prev.filter((f) => f.id !== 'paint-' + chunkKey + '-' + ptx + '-' + pty));
+                    } else {
+                      const sid = best.id as number;
+                      setDeletedCorn((prev) => ({ ...prev, [chunkKey]: [...(prev[chunkKey] ?? []), sid] }));
+                      setCornStalks((prev) => prev.filter((s) => s.id !== sid));
                     }
                   }
                   return;
@@ -6695,6 +6802,27 @@ if (active) {
                 if (editorTool !== 'select') {
                   setPlacedObjects((prev) => editorPlaceObject(prev, editorTool, fx, fy, chunkKey));
                   return;
+                }
+                // BUILD 352: Select tool with nothing held — pick up the nearest
+                // generated tree (it becomes a placed tree you can move/erase).
+                if (editorTool === 'select' && !selectedHouse && !selectedPlacedId) {
+                  const live = fieldTreesFor(chunk).filter((t) => !(deletedGenTrees[chunkKey] ?? []).includes(t.id));
+                  let best: FieldTree | null = null;
+                  let bestDist = 8;
+                  for (const t of live) {
+                    const d = Math.hypot(t.x - fx, t.y - fy);
+                    if (d < bestDist) { bestDist = d; best = t; }
+                  }
+                  if (best) {
+                    const tid = best.id;
+                    const kind: EditorPlaceKind = best.sprite === 'bigpine' ? 'pine' : 'tree';
+                    const pid = 'picked-tree-' + chunkKey + '-' + tid + '-' + Date.now().toString(36);
+                    setDeletedGenTrees((prev) => editorDeleteGenTree(prev, chunkKey, tid));
+                    setPlacedObjects((prev) => [...prev, { id: pid, kind, x: Math.round(best!.x * 10) / 10, y: Math.round(best!.y * 10) / 10, chunk: chunkKey }]);
+                    setFlaggedItems((prev) => prev.filter((f) => f.id !== 'gen-tree-' + chunkKey + '-' + tid));
+                    setSelectedPlacedId(pid);
+                    return;
+                  }
                 }
                 // Select tool: tap-to-place a picked-up house.
                 if (selectedHouse) {
@@ -6825,7 +6953,7 @@ if (active) {
                 const spriteClass = o.kind === 'pine' ? 'env-bigpine' : o.kind === 'rock' ? 'env-rock' : 'env-pine2';
                 return (
                   <span {...shared} className={shared.className + ' field-tree ' + spriteClass}
-                    style={{ ...shared.style, left: 'calc(' + fieldPct(o.x) + ' - ' + box.w / 2 + 'px)', top: 'calc(' + fieldPct(o.y) + ' - ' + box.h + 'px)', width: box.w, height: box.h }}>
+                    style={{ ...shared.style, '--env-sprites': 'url("' + assetUrl('environment/FreePack.png') + '")', left: 'calc(' + fieldPct(o.x) + ' - ' + box.w / 2 + 'px)', top: 'calc(' + fieldPct(o.y) + ' - ' + box.h + 'px)', width: box.w, height: box.h } as React.CSSProperties}>
                     {coord}{badge}
                   </span>
                 );

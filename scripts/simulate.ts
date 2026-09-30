@@ -381,6 +381,17 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
   const split = editorFlaggedDeletions(flags2, '4,7');
   assert(split.placedIds.length === 1 && split.placedIds[0] === 'placed-a', 'editorFlaggedDeletions placed wrong');
   assert(split.treeIds.length === 1 && split.treeIds[0] === 7, 'editorFlaggedDeletions tree wrong');
+  // BUILD 352: painted tiles split out of flagged items.
+  const flags3 = [
+    { id: 'paint-4,7-3-5', kind: 'paint' as const, label: 'painted dirt (3,5)', x: 35, y: 55, chunk: '4,7' },
+    { id: 'paint-4,7-0-0', kind: 'paint' as const, label: 'painted water (0,0)', x: 5, y: 5, chunk: '4,7' },
+    { id: 'paint-5,7-1-1', kind: 'paint' as const, label: 'painted dirt (1,1)', x: 15, y: 15, chunk: '5,7' },
+  ];
+  const split3 = editorFlaggedDeletions(flags3, '4,7');
+  assert(split3.paintKeys.length === 2, 'editorFlaggedDeletions paint count wrong');
+  assert(split3.paintKeys[0].tx === 3 && split3.paintKeys[0].ty === 5, 'editorFlaggedDeletions paint coords wrong');
+  assert(split3.paintKeys[1].tx === 0 && split3.paintKeys[1].ty === 0, 'editorFlaggedDeletions paint coords wrong');
+  assert(split3.placedIds.length === 0 && split3.treeIds.length === 0, 'editorFlaggedDeletions paint leaked');
 }
 
 // ---- BUILD 341: map-builder tile painting ----
