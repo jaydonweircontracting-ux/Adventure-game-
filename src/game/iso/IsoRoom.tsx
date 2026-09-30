@@ -1,4 +1,4 @@
-// Isometric demo (BUILD 361): data-driven world + in-game map builder (?iso=1).
+// Isometric demo (BUILD 362): data-driven world + in-game map builder (?iso=1).
 // Play mode: explore, move crates, wandering NPCs. Edit mode: full map builder
 // (select/move/delete, paint terrain, place objects, copy/paste regions, resize
 // up to 200x200, undo). World persists in localStorage.
@@ -203,6 +203,14 @@ export default function IsoRoom(): React.JSX.Element {
       const ex = (maxX - minX) / 2, ey = (maxY - minY) / 2;
       c.x = ex <= hw ? cx : Math.min(cx + (ex - hw), Math.max(cx - (ex - hw), c.x));
       c.y = ey <= hh ? cy : Math.min(cy + (ey - hh), Math.max(cy - (ey - hh), c.y));
+    };
+    // Zoom level that fits the entire map in the viewport (never above 1).
+    const fitZoom = () => {
+      const w = W();
+      const wpx = canvas.clientWidth || 1, hpx = canvas.clientHeight || 1;
+      const mapW = (w.w + w.h) * (TILE_W / 2) + 96;
+      const mapH = (w.w + w.h) * (TILE_H / 2) + 96;
+      return Math.min(1, wpx / mapW, hpx / mapH);
     };
     const savePlay = () => {
       try {
@@ -1056,7 +1064,7 @@ export default function IsoRoom(): React.JSX.Element {
       },
       zoomOut: () => {
         if (modeRef.current === 'edit') ed.zoom = Math.max(0.4, ed.zoom / 1.2);
-        else zoom = Math.max(0.5, zoom / 1.2);
+        else zoom = Math.max(fitZoom(), zoom / 1.2);
       },
       back: () => { window.location.href = window.location.pathname; },
       enterEdit: () => {
@@ -1273,7 +1281,7 @@ export default function IsoRoom(): React.JSX.Element {
       {mode === 'play' ? (
         <>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 12px', gap: 8 }}>
-            <div style={chip}>⛰️ Isometric demo · build 361 · {worldSize} · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
+            <div style={chip}>⛰️ Isometric demo · build 362 · {worldSize} · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button style={btn} onClick={() => api.enterEdit()}>🔨 Builder</button>
               <button style={btn} onClick={() => setInfoOpen(true)}>ℹ Info</button>
