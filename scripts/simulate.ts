@@ -2,7 +2,7 @@
 // Run with: npx tsx scripts/simulate.ts
 import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLevelFor } from '../src/game/worldMap';
 import { updateGoat, type GoatAIEntity } from '../src/game/ai';
-import { advanceSimulatedAdventurers, initialSimulatedAdventurers } from '../src/game/simulatedAdventurers';
+import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
 
 let passed = 0;
@@ -146,13 +146,19 @@ for (let i = 0; i < 10000; i++) {
 assert(safeZoneViolations === 0, `Hostile spawn gates open in safe zone: ${safeZoneViolations} violations`);
 
 // ---- 7. Adventurers leave the starting house (no doorway pile-up) ----
+// They live full little lives now (tavern, guild, travel), so assert nobody is
+// stuck inside and every location is a known one.
 console.log('Testing adventurer house exit...');
-let leavers = initialSimulatedAdventurers.map((a) => ({ ...a }));
-for (let tick = 0; tick < 500; tick++) {
-  leavers = advanceSimulatedAdventurers(leavers, tick);
-}
-for (const a of leavers) {
-  assert(a.location === 'field', `${a.name} never left the starting house (stuck at ${a.interiorPosition?.x},${a.interiorPosition?.y})`);
+{
+  const validLocations = new Set(['starting-house', 'field', 'tavern', 'guild', 'traveling']);
+  let leavers = initialSimulatedAdventurers.map((a) => ({ ...a }));
+  for (let tick = 0; tick < 500; tick++) {
+    leavers = advanceSimulatedAdventurers(leavers, tick);
+  }
+  for (const a of leavers) {
+    assert(a.location !== 'starting-house', `${a.name} never left the starting house (stuck at ${a.interiorPosition?.x},${a.interiorPosition?.y})`);
+    assert(validLocations.has(a.location || 'field'), `${a.name} has invalid location ${a.location}`);
+  }
 }
 // While still inside, nobody should be past the door or outside the room.
 let insideOk = initialSimulatedAdventurers.map((a) => ({ ...a }));
@@ -163,6 +169,36 @@ for (let tick = 0; tick < 60; tick++) {
       assert(a.interiorPosition.y <= 84, `${a.name} escaped interior bounds at y=${a.interiorPosition.y}`);
     }
   }
+}
+
+// ---- 7c. Staggered "player login": one new adventurer per minute, max 10 ----
+console.log('Testing staggered adventurer logins...');
+{
+  assert(spawnDueAdventurer([], 31).length === 0, 'spawned before the minute was up');
+  const one = spawnDueAdventurer([], ADVENTURER_SPAWN_INTERVAL_TICKS);
+  assert(one.length === 1 && one[0].location === 'starting-house', 'first login should spawn at the starting house');
+  const two = spawnDueAdventurer(one, ADVENTURER_SPAWN_INTERVAL_TICKS * 2);
+  assert(two.length === 2 && two[1].id !== two[0].id, 'second login should add a different adventurer');
+  // Fill to the cap: no more than MAX_ADVENTURERS ever.
+  let roster = [];
+  for (let tick = ADVENTURER_SPAWN_INTERVAL_TICKS; tick <= ADVENTURER_SPAWN_INTERVAL_TICKS * 40; tick++) {
+    roster = spawnDueAdventurer(roster, tick);
+  }
+  assert(roster.length === MAX_ADVENTURERS, `expected ${MAX_ADVENTURERS} adventurers, got ${roster.length}`);
+  const ids = new Set(roster.map((a) => a.id));
+  assert(ids.size === MAX_ADVENTURERS, 'roster has duplicate adventurer ids');
+  assert(roster.every((a) => a.className === 'Beginner' && a.level === 1), 'new logins should start as level 1 Beginners');
+}
+
+// ---- 7d. Beginners pick a class at level 10 ----
+console.log('Testing adventurer class choice at level 10...');
+{
+  let student = [{ ...initialSimulatedAdventurers[0], location: 'field' as const, level: 10, xp: 27, outing: 'wander' as const, outingTicks: 50 }];
+  for (let tick = 0; tick < 5; tick++) {
+    student = advanceSimulatedAdventurers(student, tick);
+  }
+  assert(student[0].className !== 'Beginner', 'level 10 Beginner never chose a class');
+  assert(['Mage', 'Warrior', 'Rogue'].includes(student[0].className), `invalid class choice ${student[0].className}`);
 }
 
 // ---- 7b. BUG-006 regression: background simulation never mutates loaded goats ----

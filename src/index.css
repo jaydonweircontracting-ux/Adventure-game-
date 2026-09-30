@@ -3136,6 +3136,7 @@ body {
   --npc-walk-row: 3;
   background-position: var(--npc-x) calc(var(--npc-row) * -32px);
 }
+.adventurer-beginner .simulated-adventurer-sprite { --npc-x: 0px; filter: sepia(.25) saturate(1.2) brightness(1.02) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
 .adventurer-ranger .simulated-adventurer-sprite { --npc-x: -32px; filter: sepia(.4) saturate(1.45) hue-rotate(-22deg) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
 .adventurer-mage .simulated-adventurer-sprite { --npc-x: -64px; filter: sepia(.35) saturate(1.5) hue-rotate(-12deg) brightness(.95) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
 .adventurer-rogue .simulated-adventurer-sprite { --npc-x: -128px; filter: sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }

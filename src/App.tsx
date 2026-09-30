@@ -12,7 +12,7 @@ import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/r
 import { DEFAULT_WORLD_SEED, type WorldClockState } from '@/game/worldCore';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceSimulatedAdventurers, initialSimulatedAdventurers, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
+import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc } from '@/game/combat';
 import { updateGoat, type GoatAIState } from '@/game/ai';
 import { playCombatSound } from '@/game/effects';
@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '272';
+const BUILD_NUMBER = '273';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -1154,7 +1154,7 @@ const saveDirections = ['up', 'down', 'left', 'right'];
 const savePlayerClasses = ['Beginner', 'Warrior', 'Mage', 'Rogue'];
 const saveNpcRoles = ['mage', 'warrior', 'guide', 'rogue'];
 const saveGoatDispositions = ['calm', 'aggressive', 'defeated'];
-const saveAdventurerClasses = ['Ranger', 'Mage', 'Rogue', 'Warrior'];
+const saveAdventurerClasses = ['Beginner', 'Ranger', 'Mage', 'Rogue', 'Warrior'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -2623,13 +2623,18 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, attackin
           </button>
         </>
       )}
-      {area.id === 'tutorial-house' && simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') === 'starting-house').map((adventurer) => {
+      {(() => {
+        // Fake players hang out inside buildings too: starting house, tavern, guild.
+        const interiorLocation = area.id === 'tutorial-house' ? 'starting-house' : area.id === 'fourth-house' ? 'tavern' : area.id === 'wayfarer-guild' ? 'guild' : null;
+        if (!interiorLocation) return null;
+        return simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') === interiorLocation).map((adventurer) => {
         const housePosition = adventurer.interiorPosition || { x: 50, y: 47 };
         return <button type="button" key={adventurer.id} className={'simulated-adventurer interior-simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (adventurer.moving ? ' is-moving' : '') + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '')} onClick={() => onInspect(adventurer)} style={{ left: housePosition.x + '%', top: housePosition.y + '%' }} data-facing={adventurer.facing} aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className} data-testid={'simulated-adventurer-' + adventurer.id}>
           <span className="simulated-adventurer-nameplate"><strong>{adventurer.name}</strong><small>Lv. {adventurer.level} · {adventurer.activity}</small></span>
           <span className="simulated-adventurer-sprite" aria-hidden="true" />
         </button>;
-      })}
+        });
+      })()}
       <div className="interior-doorway" aria-label="Exit to Mosslight Crossing"><span>EXIT</span></div>
       {area.id === 'rootbound-chapel' && (
         <button className="interior-dungeon-staircase" onClick={onEnterDungeon} aria-label="Descend to the Ember Vault dungeon" data-testid="button-enter-dungeon">
@@ -2860,8 +2865,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
     onStatPointsChange(Math.max(0, Math.floor(loadState.statPoints || 0)));
     // Teachers moved to the Rusty Tankard: drop any saved field copies.
     setNpcStates((loadState.npcStates || []).filter((npc) => npc.name !== 'Noah' && npc.name !== 'Damon' && npc.name !== 'Shawn'));
+    const validAdventurerLocations = ['starting-house', 'field', 'tavern', 'guild', 'traveling'];
     const restoredAdventurers = loadState.simulatedAdventurers.length
-      ? loadState.simulatedAdventurers.map((adventurer) => ({ ...adventurer, level: 1, location: adventurer.location ?? 'field', interiorPosition: adventurer.interiorPosition ?? { x: 50, y: 47 } }))
+      ? loadState.simulatedAdventurers.map((adventurer) => ({ ...adventurer, level: adventurer.level || 1, location: validAdventurerLocations.includes(adventurer.location ?? '') ? adventurer.location : 'field', interiorPosition: adventurer.interiorPosition ?? { x: 50, y: 47 } }))
       : initialSimulatedAdventurers;
     simulatedAdventurersRef.current = restoredAdventurers;
     setSimulatedAdventurers(restoredAdventurers);
@@ -2994,7 +3000,9 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
       const nextTick = simulatedTickRef.current + 1;
       simulatedTickRef.current = nextTick;
       const liveGoats = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goat.hp > 0);
-      const next = advanceSimulatedAdventurers(simulatedAdventurersRef.current, nextTick, liveGoats.map((goat) => ({ id: goat.id, position: goat.position })));
+      // A new "player" logs in every minute, up to 10.
+      const withSpawns = spawnDueAdventurer(simulatedAdventurersRef.current, nextTick);
+      const next = advanceSimulatedAdventurers(withSpawns, nextTick, liveGoats.map((goat) => ({ id: goat.id, position: goat.position })));
       // BUG-006 fix: background adventurers never touch the player's loaded
       // goats. Goat HP/disposition only change from the player's own attacks —
       // no more "random" damage on goats across the map.
@@ -4257,7 +4265,7 @@ if (active) {
               <span className="npc-sprite" aria-hidden="true" />
             </button>
           ))}
-          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') !== 'starting-house').map((adventurer) => (
+          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') === 'field').map((adventurer) => (
             <button
               type="button"
               key={adventurer.id}
