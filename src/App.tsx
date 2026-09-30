@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '263';
+const BUILD_NUMBER = '264';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -382,10 +382,11 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
     ];
   } else {
     // Four corners (starting area default). Only the tutorial/starting house
-    // is restored per user request 2026-09-29 ("Place the starting house here"
-    // at 41.7,48.8). Other three houses remain removed.
-    // House is 13 x 9.2 field units, centered at (41.7, 48.8).
-    return [{ left: 35.2, top: 44.2, right: 48.2, bottom: 53.4 }];
+    // is restored. Position from the user's 2026-09-29 "Move it here" screenshot:
+    // the mover showed 16.6,37.6 in the old village-box frame, which is
+    // true-field (41.2, 53.2). House is 7 x 4.8 field units.
+    // Other three houses remain removed.
+    return [{ left: 41.2, top: 53.2, right: 48.2, bottom: 58.0 }];
   }
 
   if (!startingArea) {
@@ -3993,18 +3994,43 @@ if (active) {
             // triggers/collision, so houses can never drift from their doors.
             const doorways = buildingDoorwaysFor(chunk);
             return (
+            <>
             <div className={'field-village ' + currentWorldTile.landmark.kind + ' world-region-' + currentWorldTile.regionStyle + ' town-variant-' + (Math.abs(currentWorldTile.landmark.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={currentWorldTile.landmark.name}
-              style={moverMode ? { touchAction: 'none' } : undefined}
+            >
+              <span className="field-village-square" />
+              {currentWorldTile.landmark?.name === 'Mosslight Crossing' ? (
+                <span className="field-village-fountain" aria-label="Greenvale fountain"><span className="fountain-spray" /></span>
+              ) : (
+                <span className="field-village-well" />
+              )}
+            </div>
+            {/* Houses live in a full-field layer using true field coordinates.
+                The .field-village box is only 54%x52% of the field, so rendering
+                houses inside it shifted every visual away from its door and
+                collision. This layer keeps visuals, doors, and collision unified. */}
+            <div className={'field-houses-layer' + (moverMode ? ' mover-active' : '')}
               onPointerUp={moverMode && selectedHouse ? (e) => {
                 // Tap-to-place: if a house is selected and the tap was on the
                 // field (not on a house), move the selected house there.
                 const target = e.target as HTMLElement;
                 if (target.closest && target.closest('.field-house')) return;
-                const container = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                const tapX = e.clientX - container.left;
-                const tapY = e.clientY - container.top;
-                const fieldX = (tapX / container.width) * FIELD_SIZE;
-                const fieldY = (tapY / container.height) * FIELD_SIZE;
+                // Measure against the untransformed field frame and invert the
+                // zoom transform (same math as the marker tool) so taps land on
+                // true field coordinates even when zoomed in.
+                const field = (e.currentTarget as HTMLElement).closest('.pixel-field') as HTMLElement | null;
+                const rect = (field || e.currentTarget as HTMLElement).getBoundingClientRect();
+                const px = e.clientX - rect.left;
+                const py = e.clientY - rect.top;
+                let fieldX: number, fieldY: number;
+                if (gameZoom !== 1) {
+                  const ox = (position.x / FIELD_SIZE) * rect.width;
+                  const oy = (position.y / FIELD_SIZE) * rect.height;
+                  fieldX = ((ox + (px - ox) / gameZoom) / rect.width) * FIELD_SIZE;
+                  fieldY = ((oy + (py - oy) / gameZoom) / rect.height) * FIELD_SIZE;
+                } else {
+                  fieldX = (px / rect.width) * FIELD_SIZE;
+                  fieldY = (py / rect.height) * FIELD_SIZE;
+                }
                 // Find the selected doorway to get its size.
                 const dw = doorways.find((d) => d.id === selectedHouse);
                 if (!dw) return;
@@ -4019,7 +4045,6 @@ if (active) {
                 setSelectedHouse(null);
               } : undefined}
             >
-              <span className="field-village-square" />
               {doorways.map((doorway) => {
                 const rect = doorway.rect;
                 const off = houseOffsets[doorway.id] || { x: 0, y: 0 };
@@ -4099,12 +4124,8 @@ if (active) {
                   </span>
                 );
               })}
-              {currentWorldTile.landmark?.name === 'Mosslight Crossing' ? (
-                <span className="field-village-fountain" aria-label="Greenvale fountain"><span className="fountain-spray" /></span>
-              ) : (
-                <span className="field-village-well" />
-              )}
             </div>
+            </>
             );
           })()}
           {/* Farms/homesteads in non-settlement chunks (only on farmable terrain) */}

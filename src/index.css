@@ -1405,6 +1405,19 @@
   box-shadow: 0 0 0 5px rgba(76, 91, 49, .12), inset 0 0 0 2px rgba(255, 229, 160, .18);
 }
 .field-village.town { left: 19%; top: 21%; width: 62%; height: 58%; }
+/* Houses render here in TRUE field coordinates (inset 0 = whole field).
+   The .field-village box is only 54%x52% of the field, so house visuals must
+   not live inside it or they drift from their doors/collision. */
+.field-houses-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+.field-houses-layer.mover-active {
+  pointer-events: auto;
+  touch-action: none;
+}
 .field-village-square {
   position: absolute;
   left: 31%;
