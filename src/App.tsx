@@ -16,7 +16,8 @@ import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint } from '@/game/townsfolk';
-import { travelersForChunk, type RoadArms, type Traveler } from '@/game/travelers';
+import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
+import { LANDMARKS } from '@/game/landmarks';
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor } from '@/game/monsterSprites';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
@@ -178,39 +179,7 @@ type MapTile = {
   elevationLevel: number;
 };
 
-const mapLandmarks: Record<string, { name: string; kind: SettlementKind }> = {
-  '4,7': { name: 'Mosslight Crossing', kind: 'town' },
-  '0,7': { name: 'Fenmere Hamlet', kind: 'village' },
-  '8,7': { name: 'Ironwood Southhold', kind: 'town' },
-  '5,2': { name: 'Northwatch Beacon', kind: 'village' },
-  '2,4': { name: 'Old Mill', kind: 'village' },
-  '9,3': { name: 'Emberpeak Shrine', kind: 'village' },
-  '3,12': { name: 'Sunwash Port', kind: 'town' },
-  '6,10': { name: 'Bellwater', kind: 'village' },
-  '10,10': { name: 'Seabreak', kind: 'town' },
-  '1,3': { name: 'Blackroot Camp', kind: 'village' },
-  // Outer-region settlements (expanded world)
-  '5,-5': { name: 'Frosthold', kind: 'village' },
-  '4,19': { name: 'Dunewatch', kind: 'village' },
-  '17,7': { name: 'Eastmarch', kind: 'town' },
-  '-7,7': { name: 'Westhold', kind: 'village' },
-  // Second continent settlements (far-eastern continent: x 117..196, y -28..51).
-  // Coordinates validated against the real DEFAULT_WORLD_SEED (847291583);
-  // every site is on verified inland land. See BUG-001.
-  '130,-16': { name: 'Stormhaven', kind: 'town' },
-  '140,-20': { name: 'Frostwatch', kind: 'village' },
-  '155,0': { name: 'Oakfield', kind: 'village' },
-  '174,-8': { name: 'Stonebridge', kind: 'village' },
-  '165,25': { name: 'Saltmarsh', kind: 'village' },
-  '184,15': { name: 'Emberhold', kind: 'town' },
-  '144,35': { name: 'Dunmere', kind: 'village' },
-  // Second-continent points of interest (enterable dungeon + ruins).
-  // Coordinates validated against the real DEFAULT_WORLD_SEED (847291583);
-  // every site is on verified inland land. See BUG-001.
-  '136,-12': { name: 'Sunken Crypt', kind: 'dungeon' },
-  '188,20': { name: 'Ember Ruins', kind: 'ruin' },
-  '150,6': { name: 'Whispering Stones', kind: 'ruin' },
-};
+const mapLandmarks = LANDMARKS;
 
 function isStartingArea(point: Point) {
   return point.x >= 3 && point.x <= 5 && point.y >= 6 && point.y <= 8;
@@ -4484,13 +4453,15 @@ if (active) {
     }, 4000);
     setLogs((currentLogs) => [{ text: `${npc.name} the ${npc.archetype} is ${npc.activity.toLowerCase()}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
   };
-  // Road traffic: analytic travelers resolved from the world clock (phase 8).
+  // Road traffic: analytic travelers resolved from the world clock (civ phase 2).
   // Recomputed whenever the clock ticks, so waiting visibly moves traffic.
+  // Road links are static for the world seed — built once.
+  const roadLinks = useMemo<RoadLink[]>(() => buildRoadLinks(roadArmsForChunk), []);
   const travelers = useMemo(() => {
     const clock = brainRef.current?.worldCore.getClock();
     if (!clock) return [];
-    return travelersForChunk(chunk, roadArmsForChunk(chunk), clock);
-  }, [chunk.x, chunk.y, time]);
+    return travelersForChunk(chunk, clock, roadLinks);
+  }, [chunk.x, chunk.y, time, roadLinks]);
   const talkToTraveler = (traveler: Traveler) => {
     setNameplateNpc(traveler.name);
     if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);

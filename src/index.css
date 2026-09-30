@@ -4611,6 +4611,7 @@ body {
 /* BUILD 284: NPC combat AI — common-sense aggro (no suicide fights), flee at low HP, NPC archers (goblins/orcs), RuneScape-style full gear + bone drops. */
 /* BUILD 285: lockpicks + locked chests (bandit stashes, stone coffers). */
 /* BUILD 286 (civ phase 1): world clock is persistent via brainState save/load; clock restore hardened against corrupt saves. */
+/* BUILD 287 (civ phase 2): NPC travel — analytic settlement-to-settlement road journeys (no wrapping); authoritative landmarks module. */
 .locked-chest {
   position: absolute;
   z-index: 5;

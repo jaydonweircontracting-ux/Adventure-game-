@@ -5,7 +5,7 @@ import { updateGoat, type GoatAIEntity } from '../src/game/ai';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
-import { chunkSeedFor, travelerCountFor, travelersForChunk } from '../src/game/travelers';
+import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, type TownsfolkAnchors } from '../src/game/townsfolk';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize } from '../src/game/worldEditor';
 
@@ -438,44 +438,58 @@ console.log('Testing townsfolk living-town simulation...');
   assert(unchanged.every((n, i) => n === folk[i]), 'Re-anchor changed refs without anchor changes');
 }
 
-// ---- 14. Road travelers (BUILD 277) ----
+// ---- 14. Road travelers (civ phase 2: settlement-to-settlement journeys) ----
 console.log('Testing road travelers...');
 {
   const clockAt = (hour: number, minute: number, day = 5) => ({
     tick: 0, year: 1, month: 1, week: 1, day, hour,
     minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
   });
-  const crossroads = { n: true, s: true, e: true, w: true };
-  const noRoads = { n: false, s: false, e: false, w: false };
+  // Synthetic road: Westford (0,0) -- (4,0) Eastford, straight east-west.
+  const testLandmarks: PlacedLandmark[] = [
+    { name: 'Westford', kind: 'village', chunk: { x: 0, y: 0 } },
+    { name: 'Eastford', kind: 'village', chunk: { x: 4, y: 0 } },
+  ];
+  const armsFor = (c: { x: number; y: number }) => ({
+    n: false,
+    s: false,
+    e: c.y === 0 && c.x >= 0 && c.x < 4,
+    w: c.y === 0 && c.x > 0 && c.x <= 4,
+  });
+  const links = buildRoadLinks(armsFor, testLandmarks);
+  assert(links.length === 1, `Expected 1 road link, got ${links.length}`);
+  assert(links[0].path.length === 5, `Expected 5-chunk path, got ${links[0].path.length}`);
+  assert(links[0].from.name === 'Westford' && links[0].to.name === 'Eastford', 'Link endpoints wrong');
   // No roads -> no travelers.
-  assert(travelersForChunk({ x: 4, y: 7 }, noRoads, clockAt(12, 0)).length === 0, 'Travelers on roadless chunk');
-  assert(travelerCountFor(chunkSeedFor(4, 7), clockAt(12, 0), 0) === 0, 'travelerCountFor nonzero with 0 arms');
-  // Determinism: same chunk + clock -> identical travelers.
-  const a = travelersForChunk({ x: 4, y: 7 }, crossroads, clockAt(12, 0));
-  const b = travelersForChunk({ x: 4, y: 7 }, crossroads, clockAt(12, 0));
-  assert(a.length > 0 && a.length <= 4, `Expected 1-4 travelers at noon, got ${a.length}`);
+  assert(travelersForChunk({ x: 9, y: 9 }, clockAt(12, 0), links).length === 0, 'Travelers on roadless chunk');
+  // Determinism: same clock -> identical travelers (gathered across the link path).
+  const onPath = (clock: ReturnType<typeof clockAt>) => {
+    const out = [];
+    for (const c of links[0].path) out.push(...travelersForChunk(c, clock, links));
+    return out;
+  };
+  const a = onPath(clockAt(12, 0));
+  const b = onPath(clockAt(12, 0));
+  assert(a.length >= 1 && a.length <= 2, `Expected 1-2 travelers at noon, got ${a.length}`);
   assert(JSON.stringify(a) === JSON.stringify(b), 'Travelers not deterministic');
   // Traffic density: night is quiet, midday is busy.
-  const nightCount = travelerCountFor(chunkSeedFor(4, 7), clockAt(3, 0), 4);
-  const noonCount = travelerCountFor(chunkSeedFor(4, 7), clockAt(12, 0), 4);
-  assert(nightCount <= 1, `Night traffic too high: ${nightCount}`);
-  assert(noonCount >= 1, 'No midday traffic');
-  // Travelers move as the clock advances and stay on road axes.
-  const later = travelersForChunk({ x: 4, y: 7 }, crossroads, clockAt(13, 0));
-  assert(later.length === a.length, 'Traveler count changed within the same hour');
-  const movedAny = a.some((t, i) => Math.abs(t.position.x - later[i].position.x) > 0.01 || Math.abs(t.position.y - later[i].position.y) > 0.01);
+  const nightTravelers = onPath(clockAt(3, 0));
+  assert(nightTravelers.length <= a.length, `Night traffic not quieter: ${nightTravelers.length} vs ${a.length}`);
+  // Travelers move as the clock advances and head for real settlements.
+  const later = onPath(clockAt(13, 0));
+  const movedAny = a.some((t) => {
+    const other = later.find((o) => o.id === t.id);
+    return other && (Math.abs(t.position.x - other.position.x) > 0.01 || Math.abs(t.position.y - other.position.y) > 0.01);
+  });
   assert(movedAny, 'Travelers did not move with the clock');
   for (const t of later) {
-    const onH = Math.abs(t.position.y - 70) < 5;
-    const onV = Math.abs(t.position.x - 70) < 5;
-    assert(onH || onV, `Traveler ${t.name} off road axes at (${t.position.x.toFixed(1)}, ${t.position.y.toFixed(1)})`);
     assert(t.position.x >= -10 && t.position.x <= 150 && t.position.y >= -10 && t.position.y <= 150, 'Traveler out of span');
-    assert(t.destination.length > 0 && t.name.length > 0, 'Traveler missing name/destination');
+    assert(t.destination === 'Westford' || t.destination === 'Eastford', `Bad destination: ${t.destination}`);
+    assert(t.name.length > 0, 'Traveler missing name');
     assert(['up', 'down', 'left', 'right'].includes(t.facing), 'Bad traveler facing');
   }
-  // Single-arm chunk: travelers use that axis.
-  const eastOnly = travelersForChunk({ x: 8, y: 7 }, { n: false, s: false, e: true, w: false }, clockAt(12, 0));
-  assert(eastOnly.every((t) => Math.abs(t.position.y - 70) < 5), 'East-west travelers off the horizontal road');
+  // Rebuild determinism.
+  assert(JSON.stringify(buildRoadLinks(armsFor, testLandmarks)) === JSON.stringify(links), 'Link building not deterministic');
 }
 
 // ---- 14. Monster sprite system ----
