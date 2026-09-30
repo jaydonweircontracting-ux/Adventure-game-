@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '265';
+const BUILD_NUMBER = '266';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -381,12 +381,19 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
       { left: 68, top: 70, width: 19, height: 13, scale: 0.8 },
     ];
   } else {
-    // Four corners (starting area default). Only the tutorial/starting house
-    // is restored. Position from the user's 2026-09-29 "Move it here" screenshot:
-    // the mover showed 16.6,37.6 in the old village-box frame, which is
-    // true-field (41.2, 53.2). House is 7 x 4.8 field units.
-    // Other three houses remain removed.
-    return [{ left: 41.2, top: 53.2, right: 48.2, bottom: 58.0 }];
+    // Four corners (starting area default). All four stone cottages restored
+    // per user request 2026-09-30. Positions in TRUE field coordinates:
+    // - tutorial: from the user's 2026-09-29 "Move it here" screenshot
+    //   (mover showed 16.6,37.6 in the old village-box frame).
+    // - crafting/chapel/fourth: from the user's BUILD 241 mover placements
+    //   (83.9,58.4 / 47.4,81.5 / 85.7,81.1 in the old frame), converted with
+    //   the same village-box math. Each house is 7 x 4.8 field units.
+    return [
+      { left: 41.2, top: 53.2, right: 48.2, bottom: 58.0 },   // tutorial house
+      { left: 77.5, top: 64.0, right: 84.5, bottom: 68.8 },   // wayfarer guild
+      { left: 57.8, top: 76.0, right: 64.8, bottom: 80.8 },   // rootbound chapel
+      { left: 78.5, top: 75.8, right: 85.5, bottom: 80.6 },   // stone house
+    ];
   }
 
   if (!startingArea) {
