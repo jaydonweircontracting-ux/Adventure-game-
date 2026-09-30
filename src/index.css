@@ -2183,6 +2183,18 @@ body {
 .field-monsters { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 .monster { position: absolute; width: 24px; height: 28px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: crosshair; transform: translate(-50%, -50%); filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .25)); pointer-events: auto; }
 .monster-sprite { position: absolute; inset: 0; }
+/* Engine-safe pixel placeholder: used when a monster's sheet PNG fails to
+   load or no valid sprite resolves. Pure CSS — no asset dependency. */
+.monster-placeholder { width: 36px; height: 36px; }
+.monster-placeholder .monster-sprite {
+  width: 36px; height: 36px;
+  background-image: repeating-conic-gradient(#ff4dff 0% 25%, #14141c 0% 50%);
+  background-size: 12px 12px;
+  image-rendering: pixelated;
+  animation: none;
+}
+.monster-placeholder .monster-sprite::before,
+.monster-placeholder .monster-sprite::after { content: none; }
 /* Sheet-sprite monsters (goblin/skeleton/troll/spider/wolf/slime/bat/rat/orc):
    visuals now come from src/monster-sprites.gen.css (generated from
    src/game/monsterSprites/*.json). */

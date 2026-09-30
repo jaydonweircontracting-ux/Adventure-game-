@@ -53,7 +53,8 @@ import {
 } from '@/game/horses';
 import { generateSettlementPopulation, type CharacterProfile } from '@/game/characterGen';
 import { poisForChunk as modulePoisForChunk, treasureForPoi, monstersForPoiKind, type PointOfInterest, type PoiKind } from '@/game/pointsOfInterest';
-import { spriteDefFor, animForMonsterState, monsterAnimFrameFor } from '@/game/monsterSprites';
+import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, resolveMonsterSprite } from '@/game/monsterSprites';
+import { probeMonsterSheets, isMonsterSheetFailed, onMonsterSheetFailure } from './game/monsterSprites/sheetProbe';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc } from '@/game/combat';
@@ -77,7 +78,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '316';
+const BUILD_NUMBER = '317';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3197,6 +3198,13 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   useEffect(() => {
     try { localStorage.setItem('worldEditorFlags', JSON.stringify(flaggedItems)); } catch { /* ignore */ }
   }, [flaggedItems]);
+  // Monster sheet fallback: probe sheet PNGs once per session; a 404'd sheet
+  // swaps its monsters to the engine-safe placeholder sprite.
+  const [, setSheetProbeTick] = useState(0);
+  useEffect(() => {
+    probeMonsterSheets();
+    return onMonsterSheetFailure(() => setSheetProbeTick((tick) => tick + 1));
+  }, []);
   // Sync module-level solids so collision sees user-placed objects.
   useEffect(() => {
     editorSolids = editorSolidsFor(placedObjects);
@@ -5699,12 +5707,15 @@ if (active) {
             {monsters.map((monster) => {
               const dead = monster.disposition === 'defeated';
               const anim = animForMonsterState({ dead, hitFlash: monster.hitFlash, attacking: monster.attacking, moving: monster.moving });
-              const def = spriteDefFor(monster.kind);
+              const sprite = resolveMonsterSprite(monster.kind);
+              const def = sprite.def;
+              // A 404'd sheet PNG falls back to the engine-safe placeholder sprite.
+              const spriteKind = def && isMonsterSheetFailed(def.spriteSheet) ? 'placeholder' : sprite.kind;
               return (
               <button
                 type="button"
                 key={'monster-' + monster.kind + '-' + monster.id}
-                className={'monster monster-' + monster.kind + ' monster-state-' + getSpriteState(monster.state, monster.facing) + (monster.moving ? ' is-moving' : '') + (monster.attacking ? ' is-attacking' : '') + (monster.hitFlash ? ' is-hit' : '') + (dead ? ' is-dead' : '')}
+                className={'monster monster-' + spriteKind + ' monster-state-' + getSpriteState(monster.state, monster.facing) + (monster.moving ? ' is-moving' : '') + (monster.attacking ? ' is-attacking' : '') + (monster.hitFlash ? ' is-hit' : '') + (dead ? ' is-dead' : '')}
                 style={{ left: fieldPct(monster.position.x), top: fieldPct(monster.position.y) }}
                 data-facing={monster.facing}
                 data-state={monster.state}

@@ -11,6 +11,15 @@ import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { appearanceForNpc, npcAppearanceStyle } from '../src/game/npcAppearance';
+import {
+  resolveMonsterSprite,
+  isValidMonsterSpriteDef,
+  clearMonsterSpriteCaches,
+  overrideMonsterSpriteDefForTest,
+  spriteDefFor as spriteDefForResolved,
+  GENERIC_HUMANOID_KIND,
+} from '../src/game/monsterSprites/index';
+import { isMonsterSheetFailed, clearSheetProbeState } from '../src/game/monsterSprites/sheetProbe';
 
 let passed = 0;
 let failed = 0;
@@ -891,6 +900,81 @@ for (const kind of EXPECTED_KINDS) {
   const after = readFileSyncSprites(genCssPath, 'utf8');
   assert(before === after, 'monster-sprites.gen.css was out of sync with JSON defs (regenerated — re-run sim)');
 }
+
+// ---- BUILD 317: monster sprite fallback hierarchy ----
+{
+  clearMonsterSpriteCaches();
+  // 1. Requested asset: known sheet kinds resolve to themselves, level 0.
+  for (const kind of ['wolf', 'goblin', 'skeleton', 'orc', 'troll', 'spider', 'slime', 'bat', 'rat']) {
+    const r = resolveMonsterSprite(kind);
+    assert(r.kind === kind, kind + ' should resolve to itself, got ' + r.kind);
+    assert(r.fallbackLevel === 0, kind + ' should be level 0');
+    assert(r.def && r.def.id === kind, kind + ' should carry its own def');
+    assert(isValidMonsterSpriteDef(r.def), kind + ' def should validate');
+  }
+  // 2. Legacy-sprite kinds are untouched (own CSS, no def).
+  for (const kind of ['bandit', 'snake', 'dragon', 'soldier']) {
+    const r = resolveMonsterSprite(kind);
+    assert(r.kind === kind && r.fallbackLevel === 0 && r.def === undefined, 'legacy kind ' + kind + ' must be preserved');
+  }
+  // 3/4. Unknown kinds fall back to the generic humanoid, never invisible.
+  const unknown = resolveMonsterSprite('mimic');
+  assert(unknown.kind === GENERIC_HUMANOID_KIND, 'unknown kind should map to ' + GENERIC_HUMANOID_KIND + ', got ' + unknown.kind);
+  assert(unknown.fallbackLevel >= 3, 'unknown kind should be deep in the fallback chain');
+  assert(unknown.def && unknown.def.id === GENERIC_HUMANOID_KIND, 'unknown kind should carry the generic def');
+  // Deterministic + cached: identical object across calls (no mid-session swaps).
+  assert(resolveMonsterSprite('mimic') === unknown, 'resolution must be cached per session');
+  assert(resolveMonsterSprite('wolf') === resolveMonsterSprite('wolf'), 'resolution must be cached per session');
+  // spriteDefFor delegates to the hierarchy.
+  assert(spriteDefForResolved('mimic')?.id === GENERIC_HUMANOID_KIND, 'spriteDefFor should resolve unknown kinds');
+  assert(spriteDefForResolved('bandit') === undefined, 'spriteDefFor should stay undefined for legacy kinds');
+
+  // 5. Per-component repair: a broken animation bucket falls back to idle,
+  //    the rest of the def (and NPC) is kept.
+  const wolfDef = resolveMonsterSprite('wolf').def!;
+  const brokenAttack = JSON.parse(JSON.stringify(wolfDef));
+  brokenAttack.animations.attack.frames = 0;
+  overrideMonsterSpriteDefForTest('wolf', brokenAttack);
+  const repaired = resolveMonsterSprite('wolf');
+  assert(repaired.fallbackLevel === 0, 'repaired def should stay level 0');
+  assert(repaired.def!.animations.attack === repaired.def!.animations.idle, 'broken attack bucket should use idle frames');
+  assert(repaired.def!.animations.walk.frames === wolfDef.animations.walk.frames, 'healthy buckets must be untouched');
+  assert((repaired.reason || '').includes('attack'), 'repair reason should name the broken bucket');
+
+  // 6. Invalid def: same-category sibling first...
+  const badDef = { id: 'wolf', spriteSheet: '/mobs/wolf_sheet.png' }; // missing everything else
+  assert(!isValidMonsterSpriteDef(badDef), 'def missing animations must not validate');
+  overrideMonsterSpriteDefForTest('wolf', badDef);
+  const sibling = resolveMonsterSprite('wolf');
+  assert(['bat', 'rat'].includes(sibling.kind), 'invalid wolf def should fall to a beast sibling, got ' + sibling.kind);
+  assert(sibling.fallbackLevel === 2, 'category fallback should be level 2');
+
+  // ...then the generic humanoid, then the engine-safe placeholder.
+  overrideMonsterSpriteDefForTest('goblin', badDef);
+  const placeholder = resolveMonsterSprite('mimic-fallback-test');
+  assert(placeholder.kind === 'placeholder' && placeholder.def === undefined, 'with no valid generic, resolution must be the placeholder');
+  assert(placeholder.fallbackLevel === 4, 'placeholder should be level 4');
+
+  // Restore real defs and confirm recovery.
+  overrideMonsterSpriteDefForTest('wolf', wolfDef);
+  overrideMonsterSpriteDefForTest('goblin', resolveMonsterSprite('goblin').def);
+  clearMonsterSpriteCaches();
+  const recovered = resolveMonsterSprite('wolf');
+  assert(recovered.fallbackLevel === 0 && recovered.def!.id === 'wolf', 'real defs must resolve cleanly after restore');
+
+  // 7. Validation unit checks.
+  assert(!isValidMonsterSpriteDef(null), 'null must not validate');
+  assert(!isValidMonsterSpriteDef({ ...wolfDef, spriteSheet: '' }), 'empty spriteSheet must not validate');
+  assert(!isValidMonsterSpriteDef({ ...wolfDef, facingRows: { down: 0 } }), 'incomplete facings must not validate');
+  const badIdle = JSON.parse(JSON.stringify(wolfDef)); badIdle.animations.idle.frames = 0;
+  assert(!isValidMonsterSpriteDef(badIdle), 'broken idle must invalidate the whole def');
+
+  // 8. Sheet probe state (browser probing is skipped in the sim).
+  clearSheetProbeState();
+  assert(!isMonsterSheetFailed('/mobs/wolf_sheet.png'), 'no sheet should be failed initially');
+  clearMonsterSpriteCaches();
+}
+
 
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
