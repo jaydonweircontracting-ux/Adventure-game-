@@ -5357,3 +5357,39 @@ body {
   width: 100%;
   height: 100%;
 }
+
+/* BUILD 374: RuneScape-style examine system. */
+.examine-menu-backdrop { position: fixed; inset: 0; z-index: 90; background: transparent; }
+.examine-menu {
+  position: fixed; z-index: 91; min-width: 170px; max-width: 240px;
+  background: rgba(24, 20, 14, .96); border: 1px solid #8a6f3c;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, .45); border-radius: 3px;
+  font-family: var(--app-font-mono); overflow: hidden;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+}
+.examine-menu-title {
+  padding: 6px 10px; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  color: #ffd977; background: rgba(138, 111, 60, .25); border-bottom: 1px solid rgba(138, 111, 60, .6);
+}
+.examine-menu-option {
+  display: block; width: 100%; text-align: left; padding: 7px 10px;
+  font-size: 11px; color: #f3e7c8; background: transparent; border: 0; cursor: pointer;
+  font-family: var(--app-font-mono); border-bottom: 1px solid rgba(138, 111, 60, .25);
+}
+.examine-menu-option:last-child { border-bottom: 0; }
+.examine-menu-option:hover, .examine-menu-option:active { background: rgba(255, 217, 119, .18); }
+.examine-menu-option.is-examine { color: #bfe3ff; }
+.examine-menu-option.is-cancel { color: #cf9a9a; }
+.examine-toast {
+  position: fixed; z-index: 92; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 118px);
+  max-width: min(420px, calc(100vw - 32px));
+  background: rgba(24, 20, 14, .94); border: 1px solid #8a6f3c; border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .5); padding: 8px 12px;
+  font-family: var(--app-font-mono); font-size: 12px; line-height: 1.45; color: #f3e7c8;
+  cursor: pointer; -webkit-user-select: none; user-select: none;
+  animation: examine-toast-in .18s ease-out;
+}
+.examine-toast strong { display: block; color: #ffd977; font-size: 12px; margin-bottom: 2px; }
+@keyframes examine-toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }

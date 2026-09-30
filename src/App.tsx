@@ -1,7 +1,8 @@
 import IsoRoomDemo from './game/iso/IsoRoom';
 import IsoFieldView from './game/iso/IsoFieldView';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
-import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships } from './game/villageLife';
+import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality } from './game/villageLife';
+import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
@@ -3693,6 +3694,95 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     }
     return { x: (px / rect.width) * FIELD_SIZE, y: (py / rect.height) * FIELD_SIZE };
   };
+  // BUILD 374: examine system. Convert any mouse/pointer event on the field
+  // into field units (shared by right-click and touch long-press).
+  const clientToField = (clientX: number, clientY: number, el: HTMLElement): Point => {
+    const field = el.closest('.pixel-field') as HTMLElement | null;
+    const rect = (field || el).getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    if (gameZoom !== 1) {
+      return {
+        x: screenPxToFieldUnits(px, rect.width, position.x / FIELD_SIZE, gameZoom),
+        y: screenPxToFieldUnits(py, rect.height, position.y / FIELD_SIZE, gameZoom),
+      };
+    }
+    return { x: (px / rect.width) * FIELD_SIZE, y: (py / rect.height) * FIELD_SIZE };
+  };
+  const DROP_EXAMINE_NAMES: Record<string, string> = {
+    coins: 'Gold Coins', goatHorns: 'Goat Horns', fabric: 'Fabric', daggers: 'Daggers',
+    cloths: 'Cloths', bone: 'Bones', pelt: 'Wolf Pelt', fang: 'Fangs', corn: 'Corn',
+    wood: 'Wood', silk: 'Silk', bow: 'Bow', beer: 'Beer', lockpicks: 'Lockpicks',
+  };
+  const dropExamineName = (loot: GoatLoot): string => {
+    const key = (Object.keys(loot) as Array<keyof GameInventory>).find((k) => (loot[k] || 0) > 0);
+    return key ? (DROP_EXAMINE_NAMES[key] || key) : 'Dropped Items';
+  };
+  // BUILD 374: hit-test the field at a pointer location and open the
+  // RuneScape-style "Choose Option" context menu for the topmost entity.
+  const openExamineMenu = (clientX: number, clientY: number, el: HTMLElement) => {
+    if (interior || moverMode || markerMode || mapBuilderMode || isoFieldBeta) return;
+    const p = clientToField(clientX, clientY, el);
+    // 1. NPCs (smallest, most specific targets).
+    const npc = townsfolk.find((n) => !n.indoors && Math.hypot(n.position.x - p.x, n.position.y - p.y) < 4);
+    if (npc) {
+      const pers = npcPersonality(npc);
+      const persDesc = pers.sociability >= 0.66 ? 'outgoing' : pers.sociability <= 0.33 ? 'reserved' : pers.diligence >= 0.66 ? 'hardworking' : 'easygoing';
+      const ref: ExamineRef = {
+        kind: 'npc', id: 'npc-' + npc.id, name: npc.name,
+        ctx: { role: npc.role, archetype: npc.archetype, activity: npc.activity, personality: persDesc, ageBracket: npc.age },
+      };
+      setContextMenu({ x: clientX, y: clientY, ref, actions: menuActionsFor(ref), target: { kind: 'npc', npc } });
+      return;
+    }
+    // 2. Building doorways.
+    const doorway = buildingDoorwaysFor(chunk).find((d) => p.x >= d.rect.left && p.x <= d.rect.right && p.y >= d.rect.top && p.y <= d.rect.bottom);
+    if (doorway) {
+      const ref: ExamineRef = {
+        kind: 'door', id: 'door-' + doorway.id, name: doorway.area.name,
+        ctx: { buildingType: doorway.area.roomType, townName: currentWorldTile.landmark?.name },
+      };
+      setContextMenu({ x: clientX, y: clientY, ref, actions: menuActionsFor(ref), target: { kind: 'door', doorway } });
+      return;
+    }
+    // 3. Ground drops.
+    const drop = droppedLoot.find((d) => Math.hypot(d.position.x - p.x, d.position.y - p.y) < 3.5);
+    if (drop) {
+      const ref: ExamineRef = { kind: 'item', id: 'drop-' + drop.id, name: dropExamineName(drop.loot), ctx: { itemType: 'loot' } };
+      setContextMenu({ x: clientX, y: clientY, ref, actions: menuActionsFor(ref), target: { kind: 'drop', drop } });
+      return;
+    }
+    // 4. Trees (skip felled stumps).
+    const tree = fieldTrees.find((t) => Math.hypot((t.x + 3.2 * t.scale) - p.x, (t.y + 4 * t.scale) - p.y) < 5);
+    if (tree && !isTreeFelled(fieldTreeKey(chunk, tree.id))) {
+      const age = tree.scale >= 1.15 ? 'old' : tree.scale <= 0.85 ? 'young' : 'mature';
+      const ref: ExamineRef = {
+        kind: 'tree', id: `tree-${chunk.x}-${chunk.y}-${tree.id}`,
+        ctx: { age, biome: currentWorldTile.worldBiome || currentWorldTile.terrain },
+      };
+      setContextMenu({ x: clientX, y: clientY, ref, actions: menuActionsFor(ref), target: { kind: 'tree' } });
+      return;
+    }
+  };
+  // BUILD 374: run a context-menu action, then close the menu.
+  const runContextAction = (actionId: MenuAction['id']) => {
+    const m = contextMenu;
+    setContextMenu(null);
+    if (!m) return;
+    if (actionId === 'examine') {
+      const r = examineEntity(m.ref);
+      const first = markExamined(m.ref);
+      setExamineToast({ name: r.name + (first ? ' ✨' : ''), text: r.text, key: Date.now() });
+      return;
+    }
+    if (actionId === 'talk' && m.target.kind === 'npc') talkToTownsfolk(m.target.npc);
+    else if (actionId === 'enter' && m.target.kind === 'door') enterDoorway(m.target.doorway, chunk);
+    else if (actionId === 'take' && m.target.kind === 'drop') pickupDrop(m.target.drop);
+  };
+  // BUILD 374: touch long-press (550ms) opens the same menu as right-click.
+  const cancelLongPress = () => {
+    if (longPressRef.current) { window.clearTimeout(longPressRef.current.timer); longPressRef.current = null; }
+  };
   // BUILD 341: map-builder painting — convert a pointer event to a tile and
   // paint it (or stamp a house). Drag paints a stroke; house stamps once per tap.
   const paintAtEvent = (e: React.PointerEvent<HTMLElement>, isTap: boolean) => {
@@ -3871,6 +3961,22 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   // tapped, then auto-hide after a few seconds.
   const [nameplateNpc, setNameplateNpc] = useState<string | null>(null);
   const nameplateTimerRef = useRef<number | null>(null);
+  // BUILD 374: RuneScape-style examine system — right-click/long-press context
+  // menu ("Choose Option") plus a subtle examine-result toast.
+  type ExamineMenuTarget =
+    | { kind: 'npc'; npc: Townsperson }
+    | { kind: 'door'; doorway: Doorway }
+    | { kind: 'drop'; drop: DroppedLoot }
+    | { kind: 'tree' };
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ref: ExamineRef; actions: MenuAction[]; target: ExamineMenuTarget } | null>(null);
+  const [examineToast, setExamineToast] = useState<{ name: string; text: string; key: number } | null>(null);
+  const longPressRef = useRef<{ timer: number; x: number; y: number } | null>(null);
+  // Examine toast auto-dismisses after a few seconds.
+  useEffect(() => {
+    if (!examineToast) return;
+    const t = window.setTimeout(() => setExamineToast(null), 6000);
+    return () => window.clearTimeout(t);
+  }, [examineToast]);
   const [npcStates, setNpcStates] = useState(startingTownNpcs);
   const npcStatesRef = useRef(npcStates);
   useEffect(() => { npcStatesRef.current = npcStates; }, [npcStates]);
@@ -6153,6 +6259,25 @@ if (active) {
             setDebugMarks((marks) => [...marks, mark]);
           }
         } : undefined}
+        // BUILD 374: right-click (desktop) or long-press (touch) opens the
+        // RuneScape-style "Choose Option" context menu for examine/actions.
+        onContextMenu={(e) => { e.preventDefault(); openExamineMenu(e.clientX, e.clientY, e.currentTarget as HTMLElement); }}
+        onPointerDown={(e) => {
+          if (e.pointerType !== 'touch' || contextMenu) return;
+          const el = e.currentTarget as HTMLElement;
+          const cx = e.clientX, cy = e.clientY;
+          cancelLongPress();
+          longPressRef.current = {
+            timer: window.setTimeout(() => { longPressRef.current = null; openExamineMenu(cx, cy, el); }, 550),
+            x: cx, y: cy,
+          };
+        }}
+        onPointerMove={(e) => {
+          const lp = longPressRef.current;
+          if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 12) cancelLongPress();
+        }}
+        onPointerUp={cancelLongPress}
+        onPointerCancel={cancelLongPress}
         >
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
           {/* Debug world editor (BUILD 274): coordinate grid overlay. */}
@@ -8258,6 +8383,40 @@ if (active) {
           </button>
         )}
         {!interior && (() => { const promptDoor = doorwayNear(position, chunk, houseOffsets); return promptDoor && <button type="button" className="door-prompt" aria-live="polite" onClick={() => enterDoorway(promptDoor, chunk)}>Enter {promptDoor.area.name}</button>; })()}
+        {/* BUILD 374: examine system — context menu + result toast. */}
+        {contextMenu && (
+          <>
+            <div className="examine-menu-backdrop" onPointerDown={() => setContextMenu(null)} onContextMenu={(e) => e.preventDefault()} />
+            <div
+              className="examine-menu"
+              role="menu"
+              aria-label="Choose Option"
+              style={{
+                left: Math.min(contextMenu.x, window.innerWidth - 190),
+                top: Math.min(contextMenu.y, window.innerHeight - 40 - contextMenu.actions.length * 34),
+              }}
+            >
+              <div className="examine-menu-title">Choose Option</div>
+              {contextMenu.actions.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  className={'examine-menu-option' + (a.id === 'examine' ? ' is-examine' : '')}
+                  onClick={() => runContextAction(a.id)}
+                >
+                  {a.label}
+                </button>
+              ))}
+              <button type="button" className="examine-menu-option is-cancel" onClick={() => setContextMenu(null)}>Cancel</button>
+            </div>
+          </>
+        )}
+        {examineToast && (
+          <div className="examine-toast" key={examineToast.key} role="status" aria-live="polite" onClick={() => setExamineToast(null)}>
+            <strong>{examineToast.name}</strong>
+            <span>{examineToast.text}</span>
+          </div>
+        )}
         {areaFlash && (
           <div className="area-flash" key={areaFlash.id} aria-live="polite" data-testid="area-entry-flash">
             <span className="area-flash-kicker">Entering</span>

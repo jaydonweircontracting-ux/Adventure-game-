@@ -2437,6 +2437,82 @@ console.log('Testing NPC water/bridge pathfinding...');
   assert(JSON.stringify(legacy) === JSON.stringify(ewNoWater), 'omitted chunk should match legacy path');
 }
 
+import { examineEntity, menuActionsFor, markExamined, hasExamined, hashExamineId, type ExamineRef, type ExamineKind } from '../src/game/examine';
+
+// ---- 25. Examine system (BUILD 374) ----
+console.log('Testing examine system...');
+{
+  const kinds: ExamineKind[] = ['tree', 'rock', 'building', 'door', 'npc', 'item', 'monster', 'furniture', 'scenery', 'road', 'water', 'plant', 'player', 'stall', 'sign'];
+  // 1. Every kind yields a non-empty name and text — never undefined/null/empty.
+  for (const kind of kinds) {
+    const ref: ExamineRef = { kind, id: `test-${kind}-1` };
+    const r = examineEntity(ref);
+    assert(typeof r.name === 'string' && r.name.length > 0, `examine name empty for kind ${kind}`);
+    assert(typeof r.text === 'string' && r.text.length > 0, `examine text empty for kind ${kind}`);
+    assert(!/undefined|null/.test(r.name + '|' + r.text), `examine leaks undefined/null for kind ${kind}`);
+  }
+  // 2. Determinism: same entity id -> identical result.
+  for (let i = 0; i < 50; i++) {
+    const ref: ExamineRef = { kind: 'tree', id: `tree-4-7-${i}`, ctx: { age: 'old', nearRoad: i % 2 === 0 } };
+    const a = examineEntity(ref);
+    const b = examineEntity(ref);
+    assert(a.name === b.name && a.text === b.text, `examine not deterministic for ${ref.id}`);
+  }
+  // 3. Explicit authored text always wins.
+  const explicit = examineEntity({ kind: 'tree', id: 'x1', name: 'The Old Oak', text: 'Authored text.' });
+  assert(explicit.text === 'Authored text.' && explicit.name === 'The Old Oak', 'explicit examine text should win');
+  // 4. Context awareness changes descriptions.
+  const dead = examineEntity({ kind: 'tree', id: 't-dead', ctx: { age: 'dead' } });
+  const young = examineEntity({ kind: 'tree', id: 't-young', ctx: { age: 'young' } });
+  assert(dead.text !== young.text, 'dead vs young tree should differ');
+  assert(/dead/i.test(dead.text), 'dead tree text should mention dead');
+  const roadTree = examineEntity({ kind: 'tree', id: 't-road', ctx: { nearRoad: true } });
+  assert(/road/.test(roadTree.text), 'nearRoad tree should mention road');
+  // 5. NPC examine draws on role + activity.
+  const farmer = examineEntity({ kind: 'npc', id: 'npc-martha', name: 'Martha', ctx: { role: 'farmer', activity: 'working the fields' } });
+  assert(/farm/i.test(farmer.text) || /soil|field/.test(farmer.text), 'farmer examine should reflect role');
+  const tavernFarmer = examineEntity({ kind: 'npc', id: 'npc-martha2', name: 'Martha', ctx: { role: 'farmer', activity: 'drinking at the tavern' } });
+  assert(tavernFarmer.text !== farmer.text, 'NPC examine should change with activity');
+  // 6. Menu ordering: primary action first, Examine near the bottom.
+  const npcMenu = menuActionsFor({ kind: 'npc', id: 'n1', name: 'Bob' });
+  assert(npcMenu[0].id === 'talk', 'NPC menu should lead with Talk-to');
+  assert(npcMenu[npcMenu.length - 1].id === 'examine', 'NPC menu should end with Examine');
+  assert(npcMenu[0].label.includes('Bob'), 'menu labels should include the entity name');
+  const treeMenu = menuActionsFor({ kind: 'tree', id: 't1' });
+  assert(treeMenu.length === 1 && treeMenu[0].id === 'examine', 'tree menu should be Examine-only');
+  const doorMenu = menuActionsFor({ kind: 'door', id: 'd1', name: 'Door' });
+  assert(doorMenu[0].id === 'enter', 'door menu should lead with Enter');
+  // 7. Discovery: must never throw and must return booleans, whether or not
+  // the underlying store persists in this environment.
+  let threw = false;
+  try {
+    const dref: ExamineRef = { kind: 'tree', id: 'disc-1' };
+    const results = [markExamined(dref), markExamined(dref), markExamined(dref)];
+    assert(results.every((r) => typeof r === 'boolean'), 'markExamined must return booleans');
+    assert(typeof hasExamined(dref) === 'boolean', 'hasExamined must return a boolean');
+  } catch { threw = true; }
+  assert(!threw, 'markExamined must never throw');
+  // 8. Unknown kind falls back safely.
+  const weird = examineEntity({ kind: 'scenery', id: 'w1', ctx: { biome: 'Temperate forest' } });
+  assert(weird.text.length > 5, 'biome fallback should produce text');
+  // 9. Stress: 300 generated refs across chunks, all valid and deterministic.
+  for (let i = 0; i < 300; i++) {
+    const kind = kinds[i % kinds.length];
+    const ref: ExamineRef = {
+      kind,
+      id: `${kind}-${i % 9}-${(i * 7) % 9}-${i}`,
+      ctx: { age: (['young', 'mature', 'old', 'ancient'] as const)[i % 4], nearRoad: i % 3 === 0, nearVillage: i % 5 === 0, biome: i % 2 ? 'Temperate forest' : 'Plains' },
+    };
+    const r1 = examineEntity(ref);
+    const r2 = examineEntity(ref);
+    assert(r1.name.length > 0 && r1.text.length > 0, `stress ref ${ref.id} empty`);
+    assert(r1.text === r2.text, `stress ref ${ref.id} not deterministic`);
+  }
+  // 10. Hash stability.
+  assert(hashExamineId('abc') === hashExamineId('abc'), 'hash should be stable');
+  assert(hashExamineId('abc') !== hashExamineId('abd'), 'hash should differ for different ids');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
