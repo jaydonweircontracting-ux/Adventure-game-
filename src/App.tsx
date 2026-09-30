@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '248';
+const BUILD_NUMBER = '249';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -2613,6 +2613,10 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   // Debug tap marks (?debugDoors=1): user taps to mark where they think the
   // invisible exit/entrance is; rendered as lime green dots with coordinates.
   const [debugMarks, setDebugMarks] = useState<Point[]>([]);
+  // Red markers: user taps to mark where collision should be removed or details they don't like.
+  const [redMarks, setRedMarks] = useState<Point[]>([]);
+  // Which color dot to place when tapping: 'green' (trigger positions) or 'red' (remove collision/details).
+  const [markColor, setMarkColor] = useState<'green' | 'red'>('green');
   // Visual house mover: doorwayId -> {x, y} offset in field units. Visual only.
   const [houseOffsets, setHouseOffsets] = useState<Record<string, Point>>({});
   // Ref sync for the animation loop (movement entry must use the same offsets as the prompt).
@@ -2639,7 +2643,10 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
     const next = !markerMode;
     debugDoors = next;
     setMarkerMode(next);
-    if (!next) setDebugMarks([]);
+    if (!next) {
+      setDebugMarks([]);
+      setRedMarks([]);
+    }
   };
   const dragStateRef = useRef<{ doorwayId: string; startClientX: number; startClientY: number; origX: number; origY: number; containerW: number; containerH: number } | null>(null);
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
@@ -3586,7 +3593,12 @@ if (active) {
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
           const x = ((e.clientX - rect.left) / rect.width) * FIELD_SIZE;
           const y = ((e.clientY - rect.top) / rect.height) * FIELD_SIZE;
-          setDebugMarks((marks) => [...marks, { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 }]);
+          const mark = { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
+          if (markColor === 'red') {
+            setRedMarks((marks) => [...marks, mark]);
+          } else {
+            setDebugMarks((marks) => [...marks, mark]);
+          }
         } : undefined}
         >
           <span className="field-edge top" /><span className="field-edge bottom" /><span className="field-edge left" /><span className="field-edge right" />
@@ -3604,23 +3616,67 @@ if (active) {
               zIndex: 55,
             }} title={'(' + mark.x + ', ' + mark.y + ')'} />
           ))}
-          {markerMode && debugMarks.length > 0 && (
+          {markerMode && redMarks.map((mark, i) => (
+            <span key={'redmark-' + i} aria-hidden="true" style={{
+              position: 'absolute',
+              left: fieldPct(mark.x - 1.5),
+              top: fieldPct(mark.y - 1.5),
+              width: fieldPct(3),
+              height: fieldPct(3),
+              background: 'red',
+              border: '2px solid darkred',
+              borderRadius: '50%',
+              pointerEvents: 'none',
+              zIndex: 55,
+            }} title={'(' + mark.x + ', ' + mark.y + ')'} />
+          ))}
+          {markerMode && (debugMarks.length > 0 || redMarks.length > 0) && (
+            <div style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 70, display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <button
+                onClick={(e) => { e.stopPropagation(); setMarkColor(markColor === 'green' ? 'red' : 'green'); }}
+                style={{
+                  background: markColor === 'red' ? 'red' : 'black',
+                  color: markColor === 'red' ? '#fff' : 'lime',
+                  border: '1px solid ' + (markColor === 'red' ? 'darkred' : 'lime'),
+                  borderRadius: '4px',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                }}
+              >
+                {markColor === 'red' ? '🔴 Red' : '🟢 Green'}
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setDebugMarks([]); setRedMarks([]); }}
+                style={{
+                  background: 'black',
+                  color: '#fff',
+                  border: '1px solid #fff',
+                  borderRadius: '4px',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                }}
+              >
+                Clear ({debugMarks.length + redMarks.length})
+              </button>
+            </div>
+          )}
+          {markerMode && debugMarks.length === 0 && redMarks.length === 0 && (
             <button
-              onClick={(e) => { e.stopPropagation(); setDebugMarks([]); }}
+              onClick={(e) => { e.stopPropagation(); setMarkColor(markColor === 'green' ? 'red' : 'green'); }}
               style={{
                 position: 'absolute',
                 top: '8px',
                 right: '8px',
                 zIndex: 70,
-                background: 'black',
-                color: 'lime',
-                border: '1px solid lime',
+                background: markColor === 'red' ? 'red' : 'black',
+                color: markColor === 'red' ? '#fff' : 'lime',
+                border: '1px solid ' + (markColor === 'red' ? 'darkred' : 'lime'),
                 borderRadius: '4px',
                 padding: '4px 8px',
                 fontSize: '12px',
               }}
             >
-              Clear marks ({debugMarks.length})
+              {markColor === 'red' ? '🔴 Red' : '🟢 Green'}
             </button>
           )}
           {moverMode && (
@@ -4160,7 +4216,7 @@ if (active) {
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMarkerMode(); }} data-testid="button-debug-markers">
                   <span className="options-action-icon"><Settings size={17} /></span>
-                  <span><strong>Debug: {markerMode ? 'Hide' : 'Show'} Markers</strong><small>{markerMode ? 'Hide green dots' : 'Tap field to place green dots'}</small></span>
+                  <span><strong>Debug: {markerMode ? 'Hide' : 'Show'} Markers</strong><small>{markerMode ? 'Hide dots' : 'Green=triggers, Red=remove'}</small></span>
                 </button>
               </div>
               <button className="options-menu-button" onClick={() => { setOptionsOpen(false); onOpenMenu(); }} data-testid="button-options-main-menu">Main Menu</button>
