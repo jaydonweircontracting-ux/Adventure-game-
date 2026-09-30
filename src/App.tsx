@@ -16,6 +16,7 @@ import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint } from '@/game/townsfolk';
+import { travelersForChunk, type RoadArms, type Traveler } from '@/game/travelers';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc } from '@/game/combat';
 import { updateGoat, type GoatAIState } from '@/game/ai';
@@ -33,7 +34,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '276';
+const BUILD_NUMBER = '277';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -1882,6 +1883,17 @@ function npcScheduleTarget(npc: TownNpc, hour: number): Point {
   if (hour >= 22 || hour < 6) return npc.home || npc.position; // Night: home
   if (hour >= 9 && hour < 17) return npc.work || npc.position; // Day: work
   return npc.leisure || npc.position; // Evening/morning: leisure
+}
+
+// Road arms for a chunk: which neighboring chunks continue the road network.
+// Drives the analytic road-traffic simulation (living-world phase 8).
+function roadArmsForChunk(chunk: Point): RoadArms {
+  return {
+    n: worldRoadAt(chunk.x, chunk.y - 1),
+    s: worldRoadAt(chunk.x, chunk.y + 1),
+    e: worldRoadAt(chunk.x + 1, chunk.y),
+    w: worldRoadAt(chunk.x - 1, chunk.y),
+  };
 }
 
 // Living-town anchors for Mosslight Crossing (chunk 4,7). Home doorsteps are
@@ -3792,6 +3804,22 @@ if (active) {
     }, 4000);
     setLogs((currentLogs) => [{ text: `${npc.name} the ${npc.archetype} is ${npc.activity.toLowerCase()}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
   };
+  // Road traffic: analytic travelers resolved from the world clock (phase 8).
+  // Recomputed whenever the clock ticks, so waiting visibly moves traffic.
+  const travelers = useMemo(() => {
+    const clock = brainRef.current?.worldCore.getClock();
+    if (!clock) return [];
+    return travelersForChunk(chunk, roadArmsForChunk(chunk), clock);
+  }, [chunk.x, chunk.y, time]);
+  const talkToTraveler = (traveler: Traveler) => {
+    setNameplateNpc(traveler.name);
+    if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
+    nameplateTimerRef.current = window.setTimeout(() => {
+      setNameplateNpc(null);
+      nameplateTimerRef.current = null;
+    }, 4000);
+    setLogs((currentLogs) => [{ text: `${traveler.name} the ${traveler.kind} is bound for ${traveler.destination}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
   const inspectAdventurer = (adventurer: SimulatedAdventurer) => {
     const closingNameplate = selectedAdventurerId === adventurer.id;
     setSelectedAdventurerId((current) => current === adventurer.id ? null : adventurer.id);
@@ -4685,6 +4713,26 @@ if (active) {
                 <span className="npc-role-mark" aria-hidden="true" />
                 <strong>{npc.name}</strong>
                 <small>{npc.title}</small>
+              </span>
+              <span className="npc-sprite" aria-hidden="true" />
+            </button>
+          ))}
+          {travelers.map((traveler) => (
+            <button
+              key={traveler.id}
+              className={'town-npc traveler npc-' + traveler.role + (nameplateNpc === traveler.name ? ' show-nameplate' : '')}
+              onClick={(moverMode || markerMode) ? undefined : () => talkToTraveler(traveler)}
+              style={{ left: fieldPct(traveler.position.x), top: fieldPct(traveler.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined }}
+              data-role={traveler.role}
+              data-facing={traveler.facing}
+              aria-label={traveler.name + ', ' + traveler.kind + ', bound for ' + traveler.destination}
+              title={traveler.name + ' — bound for ' + traveler.destination}
+              data-testid={traveler.id}
+            >
+              <span className="npc-nameplate">
+                <span className="npc-role-mark" aria-hidden="true" />
+                <strong>{traveler.name}</strong>
+                <small>→ {traveler.destination}</small>
               </span>
               <span className="npc-sprite" aria-hidden="true" />
             </button>

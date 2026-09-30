@@ -4345,3 +4345,6 @@ body {
   border: 1px solid #6b4a2f;
 }
 .town-garden { z-index: 2; }
+
+/* ---- Road travelers (BUILD 277): glide along roads between clock ticks ---- */
+.town-npc.traveler { transition: left 2.8s linear, top 2.8s linear; }

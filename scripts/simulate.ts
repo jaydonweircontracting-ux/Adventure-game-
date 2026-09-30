@@ -5,6 +5,7 @@ import { updateGoat, type GoatAIEntity } from '../src/game/ai';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
+import { chunkSeedFor, travelerCountFor, travelersForChunk } from '../src/game/travelers';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, type TownsfolkAnchors } from '../src/game/townsfolk';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize } from '../src/game/worldEditor';
 
@@ -435,6 +436,46 @@ console.log('Testing townsfolk living-town simulation...');
   assert(guildNpc.home.x === 1 && guildNpc.home.y === 2, 'Re-anchor did not update guild home');
   const unchanged = reanchorTownsfolk(folk, anchors);
   assert(unchanged.every((n, i) => n === folk[i]), 'Re-anchor changed refs without anchor changes');
+}
+
+// ---- 14. Road travelers (BUILD 277) ----
+console.log('Testing road travelers...');
+{
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+  const crossroads = { n: true, s: true, e: true, w: true };
+  const noRoads = { n: false, s: false, e: false, w: false };
+  // No roads -> no travelers.
+  assert(travelersForChunk({ x: 4, y: 7 }, noRoads, clockAt(12, 0)).length === 0, 'Travelers on roadless chunk');
+  assert(travelerCountFor(chunkSeedFor(4, 7), clockAt(12, 0), 0) === 0, 'travelerCountFor nonzero with 0 arms');
+  // Determinism: same chunk + clock -> identical travelers.
+  const a = travelersForChunk({ x: 4, y: 7 }, crossroads, clockAt(12, 0));
+  const b = travelersForChunk({ x: 4, y: 7 }, crossroads, clockAt(12, 0));
+  assert(a.length > 0 && a.length <= 4, `Expected 1-4 travelers at noon, got ${a.length}`);
+  assert(JSON.stringify(a) === JSON.stringify(b), 'Travelers not deterministic');
+  // Traffic density: night is quiet, midday is busy.
+  const nightCount = travelerCountFor(chunkSeedFor(4, 7), clockAt(3, 0), 4);
+  const noonCount = travelerCountFor(chunkSeedFor(4, 7), clockAt(12, 0), 4);
+  assert(nightCount <= 1, `Night traffic too high: ${nightCount}`);
+  assert(noonCount >= 1, 'No midday traffic');
+  // Travelers move as the clock advances and stay on road axes.
+  const later = travelersForChunk({ x: 4, y: 7 }, crossroads, clockAt(13, 0));
+  assert(later.length === a.length, 'Traveler count changed within the same hour');
+  const movedAny = a.some((t, i) => Math.abs(t.position.x - later[i].position.x) > 0.01 || Math.abs(t.position.y - later[i].position.y) > 0.01);
+  assert(movedAny, 'Travelers did not move with the clock');
+  for (const t of later) {
+    const onH = Math.abs(t.position.y - 70) < 5;
+    const onV = Math.abs(t.position.x - 70) < 5;
+    assert(onH || onV, `Traveler ${t.name} off road axes at (${t.position.x.toFixed(1)}, ${t.position.y.toFixed(1)})`);
+    assert(t.position.x >= -10 && t.position.x <= 150 && t.position.y >= -10 && t.position.y <= 150, 'Traveler out of span');
+    assert(t.destination.length > 0 && t.name.length > 0, 'Traveler missing name/destination');
+    assert(['up', 'down', 'left', 'right'].includes(t.facing), 'Bad traveler facing');
+  }
+  // Single-arm chunk: travelers use that axis.
+  const eastOnly = travelersForChunk({ x: 8, y: 7 }, { n: false, s: false, e: true, w: false }, clockAt(12, 0));
+  assert(eastOnly.every((t) => Math.abs(t.position.y - 70) < 5), 'East-west travelers off the horizontal road');
 }
 
 // ---- Results ----
