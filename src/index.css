@@ -4747,6 +4747,20 @@ body {
 /* BUILD 303 (civ phase 18): persistence — carriage rides in progress now save and resume after load (extracted runCarriageTravel driver, validated resume on restore). */
 /* BUILD 304 (civ phase 19): debug tools — NPC Inspector gains a Points of interest section (kind, danger, Go to) and Go to buttons on the Horses rows. */
 /* BUILD 305: world editor QoL — minimize the editor panel (floating chip to reopen), Erase tool deletes generated trees/rocks for good (per-chunk, persisted), 🗑️ Delete flagged button, restore deleted trees, hide/show generated road visuals per chunk. */
+/* BUILD 306: NPC entrance — first sighting on a chunk slides the NPC in from
+   the edge it came from (left/top animate from the --npc-enter-* vars to the
+   element's own position), instead of popping into view. */
+@keyframes npc-enter {
+  from {
+    left: var(--npc-enter-x);
+    top: var(--npc-enter-y);
+    opacity: 0;
+  }
+}
+.npc-entering {
+  animation: npc-enter 1.15s ease-out;
+  z-index: 7;
+}
 .locked-chest {
   position: absolute;
   z-index: 5;

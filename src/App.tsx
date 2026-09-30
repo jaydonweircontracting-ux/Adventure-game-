@@ -13,6 +13,7 @@ import { DEFAULT_WORLD_SEED, formatClockDisplay, ticksUntilHour, type WorldClock
 import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from './game/worldEditor';
+import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint } from '@/game/townsfolk';
@@ -74,7 +75,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '305';
+const BUILD_NUMBER = '306';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3223,6 +3224,20 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   // Debug world editor: objects/flags for the current chunk.
   const chunkKey = chunk.x + ',' + chunk.y;
+  // BUILD 306: NPC entrance — track which NPCs have been seen on the current
+  // chunk so first sightings slide in from the edge they came from instead of
+  // popping into view.
+  const npcEntryRef = useRef<{ chunk: string; seen: Set<string> }>({ chunk: '', seen: new Set() });
+  const npcEnterProps = (id: string, position: Point, facing: NpcFacing): { className: string; style: CSSProperties } | null => {
+    if (npcEntryRef.current.chunk !== chunkKey) npcEntryRef.current = { chunk: chunkKey, seen: new Set() };
+    if (npcEntryRef.current.seen.has(id)) return null;
+    npcEntryRef.current.seen.add(id);
+    const e = npcEntryPoint(position, facing);
+    return {
+      className: ' npc-entering',
+      style: { '--npc-enter-x': fieldPct(e.x), '--npc-enter-y': fieldPct(e.y) } as CSSProperties,
+    };
+  };
   const placedHere = placedObjects.filter((o) => o.chunk === chunkKey);
   const flaggedHere = flaggedItems.filter((f) => f.chunk === chunkKey);
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
@@ -4714,13 +4729,18 @@ if (active) {
     const clock = brainRef.current?.worldCore.getClock();
     if (!clock) return [];
     const civ = ensureCiv();
-    const out: { id: string; merchant: string; destination: string; goods: string[]; guards: number; position: Point }[] = [];
+    const out: { id: string; merchant: string; destination: string; goods: string[]; guards: number; position: Point; facing: NpcFacing }[] = [];
     for (const caravan of civ.caravans) {
       const pos = caravanPosition(caravan, clock, civ);
       if (pos.status !== 'traveling') continue;
       if (pos.chunk.x !== chunk.x || pos.chunk.y !== chunk.y) continue;
       const dest = settlementById(civ, caravan.destinationId);
+      const origin = settlementById(civ, caravan.originId);
       const route = civ.routes.find((r) => r.id === caravan.routeId);
+      // BUILD 306: facing from the route direction, for the walk-in entrance.
+      const facing: NpcFacing = (origin && dest)
+        ? facingForDelta(dest.chunk.x - origin.chunk.x, dest.chunk.y - origin.chunk.y)
+        : 'down';
       out.push({
         id: caravan.id,
         merchant: caravan.merchant,
@@ -4728,6 +4748,7 @@ if (active) {
         goods: [...(route?.goods ?? [])],
         guards: caravan.guards,
         position: { x: pos.position.x, y: pos.position.y },
+        facing,
       });
     }
     return out;
@@ -4738,11 +4759,20 @@ if (active) {
     const clock = brainRef.current?.worldCore.getClock();
     if (!clock) return [];
     const civ = ensureCiv();
-    const out: { id: string; name: string; kind: string; size: number; activity: string; position: Point }[] = [];
+    const out: { id: string; name: string; kind: string; size: number; activity: string; position: Point; facing: NpcFacing }[] = [];
     for (const unit of civ.units) {
       const pos = militaryPosition(unit, clock, civ);
       if (pos.chunk.x !== chunk.x || pos.chunk.y !== chunk.y) continue;
       const target = militaryTarget(unit, clock, civ);
+      // BUILD 306: facing from the journey direction, for the walk-in entrance.
+      let facing: NpcFacing = 'down';
+      const journey = unit.journey;
+      if (journey && journey.stops.length > 1) {
+        const a = journey.stops[0].chunk;
+        const b = journey.stops[journey.stops.length - 1].chunk;
+        facing = facingForDelta(b.x - a.x, b.y - a.y);
+        if (journey.reversed) facing = facing === 'up' ? 'down' : facing === 'down' ? 'up' : facing === 'left' ? 'right' : 'left';
+      }
       out.push({
         id: unit.id,
         name: unit.name,
@@ -4750,6 +4780,7 @@ if (active) {
         size: unit.soldiers + unit.archers + unit.cavalry,
         activity: target.activity,
         position: { x: pos.position.x, y: pos.position.y },
+        facing,
       });
     }
     return out;
@@ -6184,11 +6215,13 @@ if (active) {
               </>
             );
           })()}
-          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && npcStates.map((npc) => (
+          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && npcStates.map((npc) => {
+            const enter = npcEnterProps('npcstate-' + npc.name, npc.position, npc.facing as NpcFacing);
+            return (
             <button
-              className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '')}
+              className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => talkToNpc(npc)}
-              style={{ left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined }}
+              style={{ left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role={npc.role}
               data-facing={npc.facing}
               aria-label={npc.name + ', ' + npc.title}
@@ -6201,13 +6234,16 @@ if (active) {
               </span>
               <span className="npc-sprite" aria-hidden="true" />
             </button>
-          ))}
-          {travelers.map((traveler) => (
+            );
+          })}
+          {travelers.map((traveler) => {
+            const enter = npcEnterProps(traveler.id, traveler.position, traveler.facing);
+            return (
             <button
               key={traveler.id}
-              className={'town-npc traveler npc-' + traveler.role + (nameplateNpc === traveler.name ? ' show-nameplate' : '')}
+              className={'town-npc traveler npc-' + traveler.role + (nameplateNpc === traveler.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => talkToTraveler(traveler)}
-              style={{ left: fieldPct(traveler.position.x), top: fieldPct(traveler.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined }}
+              style={{ left: fieldPct(traveler.position.x), top: fieldPct(traveler.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role={traveler.role}
               data-facing={traveler.facing}
               data-gender={traveler.gender}
@@ -6222,15 +6258,18 @@ if (active) {
               </span>
               <span className="npc-sprite" aria-hidden="true" />
             </button>
-          ))}
-          {visibleCaravans.map((c) => (
+            );
+          })}
+          {visibleCaravans.map((c) => {
+            const enter = npcEnterProps(c.id, c.position, c.facing);
+            return (
             <button
               key={c.id}
-              className={'town-npc traveler npc-merchant' + (nameplateNpc === c.merchant ? ' show-nameplate' : '')}
+              className={'town-npc traveler npc-merchant' + (nameplateNpc === c.merchant ? ' show-nameplate' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => talkToCaravan(c)}
-              style={{ left: fieldPct(c.position.x), top: fieldPct(c.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined }}
+              style={{ left: fieldPct(c.position.x), top: fieldPct(c.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role="merchant"
-              data-facing="down"
+              data-facing={c.facing}
               aria-label={c.merchant + ', caravan merchant, bound for ' + c.destination}
               title={c.merchant + ' — bound for ' + c.destination}
               data-testid={c.id}
@@ -6242,15 +6281,18 @@ if (active) {
               </span>
               <span className="npc-sprite" aria-hidden="true" />
             </button>
-          ))}
-          {visibleUnits.map((u) => (
+            );
+          })}
+          {visibleUnits.map((u) => {
+            const enter = npcEnterProps(u.id, u.position, u.facing);
+            return (
             <button
               key={u.id}
-              className={'town-npc npc-guard' + (nameplateNpc === u.name ? ' show-nameplate' : '')}
+              className={'town-npc npc-guard' + (nameplateNpc === u.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => talkToUnit(u)}
-              style={{ left: fieldPct(u.position.x), top: fieldPct(u.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined }}
+              style={{ left: fieldPct(u.position.x), top: fieldPct(u.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role="guard"
-              data-facing="down"
+              data-facing={u.facing}
               aria-label={u.name + ', ' + u.kind + ', ' + u.activity}
               title={u.name + ' — ' + u.activity}
               data-testid={u.id}
@@ -6262,7 +6304,8 @@ if (active) {
               </span>
               <span className="npc-sprite" aria-hidden="true" />
             </button>
-          ))}
+            );
+          })}
           {visibleHorses.map((h) => (
             <button
               key={h.id}
@@ -6290,12 +6333,14 @@ if (active) {
               <span className="market-stall" style={{ left: fieldPct(82), top: fieldPct(64) }} aria-label="Market stall" />
             </>
           )}
-          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && townsfolk.filter((npc) => !npc.indoors).map((npc) => (
+          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && townsfolk.filter((npc) => !npc.indoors).map((npc) => {
+            const enter = npcEnterProps(npc.id, npc.position, npc.facing);
+            return (
             <button
               key={npc.id}
-              className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '')}
+              className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => talkToTownsfolk(npc)}
-              style={{ left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined }}
+              style={{ left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role={npc.role}
               data-facing={npc.facing}
               data-gender={npc.gender}
@@ -6310,14 +6355,17 @@ if (active) {
               </span>
               <span className="npc-sprite" aria-hidden="true" />
             </button>
-          ))}
-          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') === 'field').map((adventurer) => (
+            );
+          })}
+          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') === 'field').map((adventurer) => {
+            const enter = npcEnterProps(adventurer.id, adventurer.position, adventurer.facing);
+            return (
             <button
               type="button"
               key={adventurer.id}
-              className={'simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (adventurer.moving ? ' is-moving' : '') + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '')}
+              className={'simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (adventurer.moving ? ' is-moving' : '') + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => inspectAdventurer(adventurer)}
-              style={{ left: fieldPct(adventurer.position.x), top: fieldPct(adventurer.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined }}
+              style={{ left: fieldPct(adventurer.position.x), top: fieldPct(adventurer.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-facing={adventurer.facing}
               aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className}
               title={adventurer.name + ' — ' + adventurer.goal}
@@ -6329,7 +6377,8 @@ if (active) {
               </span>
               <span className="simulated-adventurer-sprite" aria-hidden="true" />
             </button>
-          ))}
+            );
+          })}
           {showHorse && (
             <>
               <div className={'horse ' + (mounted ? 'is-mounted ' : '') + (mounted && moving ? 'is-moving' : '')} style={{ left: fieldPct(horseDisplayPosition.x), top: fieldPct(horseDisplayPosition.y) }} data-facing={mounted ? facing : horseFacing} aria-label={mounted ? 'Mounted horse' : 'Your horse'} data-testid="horse-character">

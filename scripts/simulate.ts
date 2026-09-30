@@ -8,6 +8,7 @@ import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from 
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, type TownsfolkAnchors } from '../src/game/townsfolk';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
+import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 
 let passed = 0;
 let failed = 0;
@@ -360,6 +361,25 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
   const split = editorFlaggedDeletions(flags2, '4,7');
   assert(split.placedIds.length === 1 && split.placedIds[0] === 'placed-a', 'editorFlaggedDeletions placed wrong');
   assert(split.treeIds.length === 1 && split.treeIds[0] === 7, 'editorFlaggedDeletions tree wrong');
+}
+
+// ---- BUILD 306: NPC entrance helpers ----
+{
+  // Entry point is just off the edge the NPC came from.
+  let e = npcEntryPoint({ x: 70, y: 70 }, 'right');
+  assert(e.x === -6 && e.y === 70, 'npcEntryPoint right wrong: ' + JSON.stringify(e));
+  e = npcEntryPoint({ x: 70, y: 70 }, 'left');
+  assert(e.x === 146 && e.y === 70, 'npcEntryPoint left wrong');
+  e = npcEntryPoint({ x: 30, y: 40 }, 'down');
+  assert(e.x === 30 && e.y === -6, 'npcEntryPoint down wrong');
+  e = npcEntryPoint({ x: 30, y: 40 }, 'up');
+  assert(e.x === 30 && e.y === 146, 'npcEntryPoint up wrong');
+  // Facing follows the dominant axis of movement.
+  assert(facingForDelta(5, 1) === 'right', 'facingForDelta +x wrong');
+  assert(facingForDelta(-5, 1) === 'left', 'facingForDelta -x wrong');
+  assert(facingForDelta(1, 5) === 'down', 'facingForDelta +y wrong');
+  assert(facingForDelta(1, -5) === 'up', 'facingForDelta -y wrong');
+  assert(facingForDelta(0, 0) === 'right', 'facingForDelta zero wrong');
 }
 
 // ---- 12. World clock display + wait math (BUILD 275) ----
