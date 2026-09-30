@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '253';
+const BUILD_NUMBER = '254';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -381,18 +381,16 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
       { left: 68, top: 70, width: 19, height: 13, scale: 0.8 },
     ];
   } else {
-    // Four corners (starting area default). Positions from user screenshot
-    // 2026-09-29 (mover): exact field-unit coordinates.
-    // User placed: tutorial 24.0,44.3 | crafting 97.0,45.4 | chapel 28.1,92.9 | fourth 100.4,93.9
-    // Size: 15.0 x 10.2 field units. Converted to spec space (values outside
-    // 0-100 are fine; the parent is just an offset/scale).
-    // BUILD 243: All four are the new stone cottage style with prominent entrances.
-    specs = [
-      { left: -8.0, top: 16.8, width: 11.5, height: 8.4, scale: 1.5 },
-      { left: 88.6, top: 18.3, width: 11.5, height: 8.4, scale: 1.5 },
-      { left: -2.5, top: 83.6, width: 11.5, height: 8.4, scale: 1.5 },
-      { left: 93.1, top: 84.9, width: 11.5, height: 8.4, scale: 1.5 },
-    ];
+    // Four corners (starting area default). REMOVED per user request 2026-09-29
+    // ("Remove the houses for now"). Previous positions from user screenshot:
+    // tutorial 24.0,44.3 | crafting 97.0,45.4 | chapel 28.1,92.9 | fourth 100.4,93.9
+    // Kept here for restore: specs were [
+    //   { left: -8.0, top: 16.8, width: 11.5, height: 8.4, scale: 1.5 },
+    //   { left: 88.6, top: 18.3, width: 11.5, height: 8.4, scale: 1.5 },
+    //   { left: -2.5, top: 83.6, width: 11.5, height: 8.4, scale: 1.5 },
+    //   { left: 93.1, top: 84.9, width: 11.5, height: 8.4, scale: 1.5 },
+    // ]
+    specs = [];
   }
 
   if (!startingArea) {
