@@ -4716,6 +4716,7 @@ body {
 /* BUILD 300 (civ phase 15): monster ecology — POI dens: each POI's haunting monsters (from monstersForPoiKind) spawn clustered near the POI with a small den roam radius. */
 /* BUILD 301 (civ phase 16): world events — the civilization's deterministic daily events are announced in the game log as days advance and listed in the NPC Inspector's World events section. */
 /* BUILD 302 (civ phase 17): simulation LOD — documented tier policy; fake-player adventurers tick at 1/8 rate when the player is away from Mosslight (logins still spawn on cadence); townsfolk clear when leaving town; travelers/caravans/military/horses/events stay analytic. */
+/* BUILD 303 (civ phase 18): persistence — carriage rides in progress now save and resume after load (extracted runCarriageTravel driver, validated resume on restore). */
 .locked-chest {
   position: absolute;
   z-index: 5;

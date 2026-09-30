@@ -1169,6 +1169,7 @@ type SaveGameData = {
   journal?: JournalState;
   reputation?: ReputationState;
   carriage?: { earnings?: Record<string, number> };
+  carriageTravel?: { destName: string; destChunk: Point; arrival: Point; totalTicks: number; doneTicks: number };
   escortHired?: boolean;
   questLog?: string;
   openedChests?: string;
@@ -3419,6 +3420,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     logs,
     time,
     carriage: serializeCarriage(carriageEarningsRef.current),
+    carriageTravel: carriageTravelRef.current ?? undefined,
     escortHired: escortHiredRef.current,
     questLog: serializeQuestStates(questStatesRef.current),
     openedChests: serializeOpenedChests(openedChestsRef.current),
@@ -3474,6 +3476,13 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     if (loadState.reputation) onRestoreReputation(loadState.reputation);
     setLogs(loadState.logs); setTime(loadState.time);
     carriageEarningsRef.current = deserializeCarriage(loadState.carriage);
+    // Civ phase 18: resume a carriage ride that was saved mid-travel.
+    const savedRide = loadState.carriageTravel;
+    if (savedRide && typeof savedRide.destName === 'string' && savedRide.destChunk && savedRide.arrival
+        && savedRide.totalTicks > 0 && savedRide.doneTicks < savedRide.totalTicks) {
+      runCarriageTravel(savedRide.destName, savedRide.destChunk, savedRide.arrival, savedRide.totalTicks, savedRide.doneTicks);
+      setLogs((currentLogs) => [{ text: `Your carriage journey to ${savedRide.destName} resumes.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+    }
     escortHiredRef.current = !!loadState.escortHired; setEscortHired(!!loadState.escortHired);
     const restoredQuests = loadState.questLog ? parseQuestStates(loadState.questLog) : [];
     questStatesRef.current = restoredQuests; setQuestStates(restoredQuests);
@@ -3756,12 +3765,20 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     const arrival = arrivalStation ? arrivalStation.layout.arrival : arrivalStop ? arrivalStop.arrival : { x: 70, y: 70 };
     const totalTicks = carriageTravelTicks(dest.distance);
     setCarriageDialog(null);
-    setCarriageTravel({ destName: dest.name, destChunk: dest.chunk, arrival, totalTicks, doneTicks: 0 });
     setMounted(false);
+    runCarriageTravel(dest.name, dest.chunk, arrival, totalTicks, 0);
+  };
+  // Civ phase 18: the travel driver, shared by fresh departures and save/load
+  // resume. The whole state is serializable, so a mid-ride save restores it.
+  const carriageTravelRef = useRef<{ destName: string; destChunk: Point; arrival: Point; totalTicks: number; doneTicks: number } | null>(null);
+  useEffect(() => { carriageTravelRef.current = carriageTravel; }, [carriageTravel]);
+  const runCarriageTravel = (destName: string, destChunk: Point, arrival: Point, totalTicks: number, startDone: number) => {
+    if (carriageTravelTimerRef.current !== null) window.clearInterval(carriageTravelTimerRef.current);
     waitingRef.current = true; // locks input like the wait driver
     keysRef.current = {};
     setMoving(false);
-    let done = 0;
+    setCarriageTravel({ destName, destChunk, arrival, totalTicks, doneTicks: startDone });
+    let done = startDone;
     const timer = window.setInterval(() => {
       const nextClock = brainRef.current?.worldCore.advance(1);
       if (nextClock) setTime(formatWorldClock(nextClock));
@@ -3774,10 +3791,10 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
         setCarriageTravel(null);
         waitingRef.current = false;
         // Arrive: the destination station/stop already exists in its chunk.
-        completeCarriageArrival(dest.name, dest.chunk, arrival);
+        completeCarriageArrival(destName, destChunk, arrival);
         return;
       }
-      setCarriageTravel({ destName: dest.name, destChunk: dest.chunk, arrival, totalTicks, doneTicks: done });
+      setCarriageTravel({ destName, destChunk, arrival, totalTicks, doneTicks: done });
     }, 110);
     carriageTravelTimerRef.current = timer;
   };
