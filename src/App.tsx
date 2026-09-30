@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '249';
+const BUILD_NUMBER = '250';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -2625,7 +2625,8 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   // Tap-to-move: selected house ID. Tap a house to pick it up, tap the field to place it.
   const [selectedHouse, setSelectedHouse] = useState<string | null>(null);
   // Mover zoom level.
-  const [moverZoom, setMoverZoom] = useState(1);
+  // Game zoom (base game feature): +/− buttons on the right side. Min 100%.
+  const [gameZoom, setGameZoom] = useState(1);
   // Debug mover mode (toggleable from options menu). Syncs with module-level moveHouses.
   const [moverMode, setMoverMode] = useState(moveHouses);
   const toggleMoverMode = () => {
@@ -2634,7 +2635,6 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
     setMoverMode(next);
     if (!next) {
       setSelectedHouse(null);
-      setMoverZoom(1);
     }
   };
   // Debug markers (green dots): toggleable from options menu. Syncs with module-level debugDoors.
@@ -3705,38 +3705,40 @@ if (active) {
               </button>
               <button
                 type="button"
-                onClick={() => setMoverZoom(1)}
+                onClick={() => setGameZoom(1)}
                 style={{ padding: '6px 10px', fontSize: '12px', background: '#666', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
               >
                 Reset zoom
               </button>
             </div>
           )}
-          {moverMode && (
+          {!interior && (
             <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', zIndex: 60, display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
                 type="button"
-                onClick={() => setMoverZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
+                onClick={() => setGameZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
                 style={{ width: '44px', height: '44px', fontSize: '20px', background: 'rgba(0,0,0,0.75)', color: '#fff', border: '1px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
+                aria-label="Zoom in"
               >
                 +
               </button>
               <div style={{ textAlign: 'center', fontSize: '11px', color: '#fff', background: 'rgba(0,0,0,0.75)', borderRadius: '4px', padding: '2px 4px' }}>
-                {Math.round(moverZoom * 100)}%
+                {Math.round(gameZoom * 100)}%
               </div>
               <button
                 type="button"
-                onClick={() => setMoverZoom((z) => Math.max(1, Math.round((z - 0.25) * 100) / 100))}
+                onClick={() => setGameZoom((z) => Math.max(1, Math.round((z - 0.25) * 100) / 100))}
                 style={{ width: '44px', height: '44px', fontSize: '20px', background: 'rgba(0,0,0,0.75)', color: '#fff', border: '1px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
+                aria-label="Zoom out"
               >
                 −
               </button>
             </div>
           )}
-          <div className="field-world-layer" style={moverMode && moverZoom !== 1 ? (() => {
+          <div className="field-world-layer" style={gameZoom !== 1 ? (() => {
             const ox = (position.x / FIELD_SIZE) * 100;
             const oy = (position.y / FIELD_SIZE) * 100;
-            return { transform: `scale(${moverZoom})`, transformOrigin: `${ox}% ${oy}%` };
+            return { transform: `scale(${gameZoom})`, transformOrigin: `${ox}% ${oy}%` };
           })() : undefined}>
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
            <div className="field-accents" aria-hidden="true">
@@ -4161,7 +4163,7 @@ if (active) {
           })()}
           </div>
           {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
-             data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: fieldPct(position.x), top: fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, ...(moverMode && moverZoom !== 1 ? { transform: `translate(-50%, -50%) scale(${moverZoom})` } : {}) } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
+             data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: fieldPct(position.x), top: fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, ...(gameZoom !== 1 ? { transform: `translate(-50%, -50%) scale(${gameZoom})` } : {}) } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
             {equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}
