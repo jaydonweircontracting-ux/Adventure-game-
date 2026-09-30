@@ -4377,3 +4377,52 @@ body {
 .inspector-heading { font-weight: 700; margin-bottom: 4px; font-size: 12px; color: #ffd97a; }
 .inspector-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 3px 0; font-size: 12px; line-height: 1.3; }
 .inspector-row .editor-btn { flex-shrink: 0; padding: 2px 8px; font-size: 11px; }
+
+/* ---- Carriage fast-travel network (physical stations/stops) ---- */
+.carriage-site { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.carriage-house, .carriage-stable, .carriage-cart, .carriage-sign, .hitching-post, .carriage-lantern, .station-path { position: absolute; transform: translate(-50%, -50%); }
+/* Small wooden station house: timber walls + shingled gable roof. */
+.carriage-house { background: linear-gradient(#8a6238, #6f4c28); border: 2px solid #4a3018; border-radius: 2px; box-shadow: inset 0 -8px 0 rgba(0,0,0,0.15); }
+.carriage-house::before { content: ''; position: absolute; left: -6%; right: -6%; top: -52%; height: 54%; background: linear-gradient(#5d3f22, #46301a); clip-path: polygon(0 100%, 50% 0, 100% 100%); }
+.carriage-house::after { content: ''; position: absolute; left: 38%; top: 38%; width: 24%; height: 62%; background: #2e1d0e; border: 2px solid #4a3018; border-bottom: 0; }
+/* Open stable: posts + slanted roof. */
+.carriage-stable { background: transparent; border: 3px solid #5d3f22; border-bottom: 0; }
+.carriage-stable::before { content: ''; position: absolute; left: -8%; right: -8%; top: -38%; height: 40%; background: linear-gradient(#6b4a2a, #54381e); transform: skewX(-8deg); }
+.carriage-stable::after { content: ''; position: absolute; left: 50%; top: -38%; bottom: 0; width: 3px; background: #5d3f22; }
+/* The carriage itself: wooden box + spoked wheels. */
+.carriage-cart { width: 44px; height: 30px; background: linear-gradient(#7a5426, #5f3f1c); border: 2px solid #3a2712; border-radius: 6px; }
+.carriage-cart::before, .carriage-cart::after { content: ''; position: absolute; bottom: -11px; width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle, #2e1d0e 28%, #6b4a2a 30%, #6b4a2a 62%, #2e1d0e 64%); border: 2px solid #241608; }
+.carriage-cart::before { left: 2px; }
+.carriage-cart::after { right: 2px; }
+/* Team horse reuses the game horse sprite; decorative (not mountable). */
+.carriage-team-horse { pointer-events: none; }
+.hitching-post { width: 8px; height: 26px; background: linear-gradient(#6b4a2a, #4a3018); border-radius: 3px; }
+.hitching-post::before { content: ''; position: absolute; top: 3px; left: -7px; right: -7px; height: 4px; background: #4a3018; border-radius: 2px; }
+/* Warm lantern glow on posts. */
+.carriage-lantern { width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle, #ffe9a8 30%, #f5b942 55%, rgba(245,185,66,0) 72%); box-shadow: 0 0 10px 4px rgba(245,185,66,0.55); }
+/* Dirt path connecting the station to the road. */
+.station-path { background: repeating-linear-gradient(90deg, rgba(160,124,72,0.85) 0 10px, rgba(140,106,60,0.85) 10px 20px); border-radius: 6px; }
+/* Readable wooden sign. */
+.carriage-sign { width: 10px; height: 44px; background: linear-gradient(#6b4a2a, #4a3018); border-radius: 3px; }
+.carriage-sign-board { position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%); white-space: nowrap; background: linear-gradient(#8a6238, #75522c); border: 2px solid #4a3018; border-radius: 3px; color: #ffe9c4; font-size: 10px; font-weight: 700; letter-spacing: 1px; padding: 3px 8px; text-align: center; line-height: 1.3; text-shadow: 0 1px 0 #2e1d0e; }
+.carriage-sign-board small { display: block; font-size: 9px; font-weight: 400; letter-spacing: 0.5px; color: #ffd97a; }
+/* The driver: an NPC button with an always-visible name tag (service NPC). */
+.carriage-driver { pointer-events: auto; }
+.carriage-driver .npc-nameplate { opacity: 1; }
+.carriage-closed-note { position: absolute; transform: translate(-50%, -50%); font-size: 10px; color: #ffd97a; background: rgba(20,12,6,0.75); border: 1px solid #6b4a2a; border-radius: 4px; padding: 2px 6px; white-space: nowrap; }
+/* Carriage dialogue. */
+.carriage-dialogue-card { max-width: 420px; }
+.carriage-driver-sub { font-size: 12px; color: #b9a27e; margin: -6px 0 8px; }
+.carriage-destinations { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; max-height: 240px; overflow-y: auto; }
+.carriage-destination { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); border-radius: 6px; padding: 6px 8px; }
+.carriage-destination.is-locked { opacity: 0.55; }
+.carriage-dest-name { font-weight: 700; flex: 1; }
+.carriage-dest-meta { font-size: 12px; color: #ffd97a; }
+.carriage-ride-button { background: #7a5426; color: #ffe9c4; border: 1px solid #a8843c; border-radius: 5px; padding: 5px 10px; font-weight: 700; cursor: pointer; }
+.carriage-ride-button:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Travel sequence: fade + progress. */
+.carriage-travel-overlay { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; background: rgba(8,6,4,0.72); animation: carriage-fade-in 0.6s ease; pointer-events: none; }
+.carriage-travel-card { text-align: center; color: #ffe9c4; font-size: 18px; font-weight: 700; text-shadow: 0 2px 4px #000; }
+.carriage-travel-progress { width: 220px; height: 10px; margin: 12px auto 0; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; overflow: hidden; }
+.carriage-travel-progress span { display: block; height: 100%; background: linear-gradient(90deg, #a8843c, #ffd97a); transition: width 0.12s linear; }
+@keyframes carriage-fade-in { from { opacity: 0; } to { opacity: 1; } }

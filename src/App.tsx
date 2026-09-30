@@ -22,6 +22,7 @@ import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc } from '@/game/combat';
 import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS } from '@/game/ai';
+import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { playCombatSound } from '@/game/effects';
 import { cornStalksForChunk, type CornStalk } from '@/game/cornfield';
 import { getSpriteState } from '@/game/animation';
@@ -36,7 +37,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '280';
+const BUILD_NUMBER = '281';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -656,6 +657,16 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
   const treeBlocked = fieldTreesFor(chunk).some((tree) => !felledTreeKeys.has(fieldTreeKey(chunk, tree.id)) && pointInRect(position, fieldTreeBaseRect(tree), 0.45));
   if (treeBlocked) return true;
 
+  // Carriage stations/stops: house, stable and the carriage itself are solid.
+  const station = getCarriageStation(chunk);
+  if (station) {
+    const l = station.layout;
+    if (pointInRect(position, carriageHouseRect(l.house), 0.45) || pointInRect(position, carriageStableRect(l.stable), 0.45) || pointInRect(position, carriageCartRect(l.carriage), 0.45)) return true;
+  } else {
+    const stop = getCarriageStop(chunk);
+    if (stop && pointInRect(position, carriageCartRect(stop.carriage), 0.45)) return true;
+  }
+
   // Debug world editor (BUILD 274): user-placed houses/trees/rocks are solid
   // in normal play. Skipped while the editor is open (moveHouses) so the user
   // can walk freely while laying out, like generated-house collision.
@@ -1178,6 +1189,7 @@ type SaveGameData = {
   prisonState?: { foundShiv: boolean; talkedToPrisoner: boolean; helpedPrisoner: boolean; escapeRoute: 'sewer' | 'gate' | null };
   journal?: JournalState;
   reputation?: ReputationState;
+  carriage?: { earnings?: Record<string, number> };
   logs: Array<{ text: string; color: string }>;
   time: string;
   brainState: RpgGameState | null;
@@ -1963,6 +1975,130 @@ function townsfolkAnchors(offsets: Record<string, Point>): TownsfolkAnchors {
     gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
     patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Carriage fast-travel network (physical, world-integrated).
+// Four full stations sit one chunk outside Mosslight Crossing (N/S/E/W), each
+// with a house, stable, horse, carriage, driver NPC, sign, lanterns and
+// hitching post. Every other town/village settlement gets a small carriage
+// stop (sign + carriage + driver) at a deterministic roadside spot, so fast
+// travel always connects real world locations. Positions derive from the chunk
+// coordinate system and nudge deterministically clear of trees/water; driver
+// schedules are a pure function of the world clock; destination availability
+// comes from the journal's discovered locations. Persistent by construction.
+// ---------------------------------------------------------------------------
+const CARRIAGE_STATION_CHUNKS: Record<'north' | 'south' | 'east' | 'west', Point> = {
+  north: { x: 4, y: 6 },
+  south: { x: 4, y: 8 },
+  east: { x: 5, y: 7 },
+  west: { x: 3, y: 7 },
+};
+
+// Base layouts in field units (road centerline = 70). The whole layout shifts
+// deterministically if a solid would overlap a generated tree or water.
+const CARRIAGE_BASE_LAYOUTS: Record<'north' | 'south' | 'east' | 'west', StationLayout> = {
+  north: { house: { x: 98, y: 52 }, stable: { x: 98, y: 88 }, carriage: { x: 82, y: 70 }, horse: { x: 82, y: 60 }, driverPost: { x: 76, y: 70 }, sign: { x: 73, y: 62 }, hitching: { x: 89, y: 66 }, lanterns: [{ x: 91, y: 52 }, { x: 91, y: 88 }], arrival: { x: 70, y: 86 } },
+  south: { house: { x: 42, y: 52 }, stable: { x: 42, y: 88 }, carriage: { x: 58, y: 70 }, horse: { x: 58, y: 60 }, driverPost: { x: 64, y: 70 }, sign: { x: 67, y: 62 }, hitching: { x: 51, y: 66 }, lanterns: [{ x: 49, y: 52 }, { x: 49, y: 88 }], arrival: { x: 70, y: 86 } },
+  east: { house: { x: 52, y: 98 }, stable: { x: 88, y: 98 }, carriage: { x: 70, y: 82 }, horse: { x: 60, y: 82 }, driverPost: { x: 70, y: 76 }, sign: { x: 61, y: 78 }, hitching: { x: 66, y: 89 }, lanterns: [{ x: 52, y: 92 }, { x: 88, y: 92 }], arrival: { x: 86, y: 70 } },
+  west: { house: { x: 52, y: 42 }, stable: { x: 88, y: 42 }, carriage: { x: 70, y: 58 }, horse: { x: 60, y: 58 }, driverPost: { x: 70, y: 64 }, sign: { x: 79, y: 62 }, hitching: { x: 66, y: 51 }, lanterns: [{ x: 52, y: 48 }, { x: 88, y: 48 }], arrival: { x: 54, y: 70 } },
+};
+
+const carriageHouseRect = (p: Point): FieldRect => ({ left: p.x - 8, top: p.y - 5.5, right: p.x + 8, bottom: p.y + 5.5 });
+const carriageStableRect = (p: Point): FieldRect => ({ left: p.x - 6.5, top: p.y - 4.5, right: p.x + 6.5, bottom: p.y + 4.5 });
+const carriageCartRect = (p: Point): FieldRect => ({ left: p.x - 4.5, top: p.y - 3, right: p.x + 4.5, bottom: p.y + 3 });
+
+function shiftStationLayout(layout: StationLayout, dx: number, dy: number): StationLayout {
+  const shift = (p: Point): Point => ({ x: p.x + dx, y: p.y + dy });
+  return { house: shift(layout.house), stable: shift(layout.stable), carriage: shift(layout.carriage), horse: shift(layout.horse), driverPost: shift(layout.driverPost), sign: shift(layout.sign), hitching: shift(layout.hitching), lanterns: layout.lanterns.map(shift), arrival: shift(layout.arrival) };
+}
+
+const carriageStationCache = new Map<string, CarriageStation | null>();
+const carriageStopCache = new Map<string, CarriageStop | null>();
+
+function getCarriageStation(chunk: Point): CarriageStation | null {
+  const key = chunk.x + ',' + chunk.y;
+  const cached = carriageStationCache.get(key);
+  if (cached !== undefined) return cached;
+  const dir = (Object.keys(CARRIAGE_STATION_CHUNKS) as Array<'north' | 'south' | 'east' | 'west'>)
+    .find((d) => CARRIAGE_STATION_CHUNKS[d].x === chunk.x && CARRIAGE_STATION_CHUNKS[d].y === chunk.y);
+  if (!dir) { carriageStationCache.set(key, null); return null; }
+  const tile = mapTileFor(chunk);
+  const trees = fieldTreesFor(chunk);
+  const base = CARRIAGE_BASE_LAYOUTS[dir];
+  const solidsOf = (l: StationLayout): FieldRect[] => [carriageHouseRect(l.house), carriageStableRect(l.stable), carriageCartRect(l.carriage)];
+  let layout = base;
+  const shifts: Array<[number, number]> = [[0, 0], [14, 0], [-14, 0], [0, 14], [0, -14], [14, 14], [-14, -14]];
+  for (const [dx, dy] of shifts) {
+    const candidate = shiftStationLayout(base, dx, dy);
+    const solids = solidsOf(candidate);
+    const clear = solids.every((r) =>
+      !trees.some((t) => rectsOverlapCenter(r, fieldTreeBaseRect(t))) &&
+      !pointInWater({ x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 }, tile));
+    if (clear) { layout = candidate; break; }
+  }
+  const station: CarriageStation = {
+    id: 'carriage-station-' + dir,
+    name: dir === 'north' ? 'North Road Carriage Station' : dir === 'south' ? 'South Road Carriage Station' : dir === 'east' ? 'East Road Carriage Station' : 'West Road Carriage Station',
+    chunk, dir, driver: STATION_DRIVERS[dir], layout,
+  };
+  carriageStationCache.set(key, station);
+  return station;
+}
+
+/** Small carriage stop at a town/village settlement (not Mosslight). */
+function getCarriageStop(chunk: Point): CarriageStop | null {
+  const key = chunk.x + ',' + chunk.y;
+  const cached = carriageStopCache.get(key);
+  if (cached !== undefined) return cached;
+  const tile = mapTileFor(chunk);
+  const landmark = tile?.landmark;
+  if (!landmark || (landmark.kind !== 'town' && landmark.kind !== 'village') || (chunk.x === 4 && chunk.y === 7)) {
+    carriageStopCache.set(key, null); return null;
+  }
+  const road = tile.road;
+  const base: Point = (road.includes('n') || road.includes('s')) ? { x: 94, y: 70 }
+    : (road.includes('e') || road.includes('w')) ? { x: 70, y: 94 } : { x: 94, y: 94 };
+  const trees = fieldTreesFor(chunk);
+  let sign = base;
+  const shifts: Array<[number, number]> = [[0, 0], [12, 0], [-12, 0], [0, 12], [0, -12], [12, 12], [-12, -12]];
+  for (const [dx, dy] of shifts) {
+    const candidate = { x: base.x + dx, y: base.y + dy };
+    const cart = carriageCartRect({ x: candidate.x + 10, y: candidate.y + 4 });
+    const blocked = trees.some((t) => rectsOverlapCenter(cart, fieldTreeBaseRect(t))) || pointInWater(candidate, tile);
+    if (!blocked) { sign = candidate; break; }
+  }
+  const stop: CarriageStop = {
+    id: 'carriage-stop-' + key,
+    settlementName: landmark.name, settlementKind: landmark.kind, chunk,
+    driver: stopDriverFor(landmark.name, chunk),
+    sign,
+    carriage: { x: sign.x + 10, y: sign.y + 4 },
+    horse: { x: sign.x + 10, y: sign.y - 3 },
+    driverPost: { x: sign.x + 4, y: sign.y + 4 },
+    arrival: { x: sign.x - 8, y: sign.y + 10 },
+  };
+  carriageStopCache.set(key, stop);
+  return stop;
+}
+
+function rectsOverlapCenter(a: FieldRect, b: FieldRect): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+/** Destinations reachable from a chunk: discovered settlements, priced by real chunk distance. */
+function carriageDestinations(fromChunk: Point, discoveredNames: string[]): CarriageDestination[] {
+  const out: CarriageDestination[] = [];
+  for (const key of Object.keys(mapLandmarks)) {
+    const lm = mapLandmarks[key];
+    if (lm.kind !== 'town' && lm.kind !== 'village') continue;
+    const [cx, cy] = key.split(',').map(Number);
+    if (cx === fromChunk.x && cy === fromChunk.y) continue;
+    const discovered = lm.name === 'Mosslight Crossing' || discoveredNames.includes(lm.name);
+    const distance = chunkDistance(fromChunk, { x: cx, y: cy });
+    out.push({ name: lm.name, kind: lm.kind, chunk: { x: cx, y: cy }, distance, price: carriagePrice(distance, lm.kind), travelHours: carriageTravelHours(distance), discovered });
+  }
+  return out.sort((a, b) => a.distance - b.distance);
 }
 
 // ---------------------------------------------------------------------------
@@ -2897,6 +3033,17 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const townsfolkRef = useRef<Townsperson[]>([]);
   const townsfolkAnchorsRef = useRef<TownsfolkAnchors | null>(null);
   useEffect(() => { townsfolkRef.current = townsfolk; }, [townsfolk]);
+  // Carriage fast-travel network: physical stations/stops, driver dialogue,
+  // travel state. Stations are deterministic (module cache); the dialogue and
+  // in-progress travel live here.
+  type CarriageDialogState = { kind: 'station'; station: CarriageStation } | { kind: 'stop'; stop: CarriageStop };
+  const [carriageDialog, setCarriageDialog] = useState<CarriageDialogState | null>(null);
+  const [carriageTravel, setCarriageTravel] = useState<{ destName: string; destChunk: Point; arrival: Point; totalTicks: number; doneTicks: number } | null>(null);
+  const [carriageDebugOpen, setCarriageDebugOpen] = useState(false);
+  const carriageTravelTimerRef = useRef<number | null>(null);
+  const carriageEarningsRef = useRef<Record<string, number>>({});
+  const carriageStation = useMemo(() => getCarriageStation(chunk), [chunk.x, chunk.y]);
+  const carriageStop = useMemo(() => (carriageStation ? null : getCarriageStop(chunk)), [chunk.x, chunk.y, carriageStation]);
   // Living-town roster management: resolve the roster when the player enters
   // Mosslight Crossing (snapped to the current world-clock schedule, so the
   // town is already "alive" on arrival), clear it when they leave (abstract
@@ -3034,6 +3181,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     reputation,
     logs,
     time,
+    carriage: serializeCarriage(carriageEarningsRef.current),
     brainState: brainRef.current?.getGameState() || null,
   });
   saveStateRef.current = createSaveData;
@@ -3082,6 +3230,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     if (loadState.journal) onRestoreJournal(loadState.journal);
     if (loadState.reputation) onRestoreReputation(loadState.reputation);
     setLogs(loadState.logs); setTime(loadState.time);
+    carriageEarningsRef.current = deserializeCarriage(loadState.carriage);
     setNpcDialogue(null); setAttackFlash(null); setLogOpen(false); setMoving(false);
     if (loadState.brainState) {
       brainRef.current?.loadGameState(loadState.brainState);
@@ -3275,6 +3424,73 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
       { label: 'Wait until evening (6 PM)', ticks: clock ? ticksUntilHour(clock, 18) : 48 },
     ];
   };
+  // Shared arrival: places the player at the destination's real station/stop.
+  const completeCarriageArrival = (destName: string, destChunk: Point, arrival: Point) => {
+    positionRef.current = arrival;
+    setPosition(arrival);
+    const horseArrival = { x: Math.min(132, arrival.x + 6), y: Math.min(132, arrival.y + 6) };
+    horseRef.current = { chunk: destChunk, position: horseArrival };
+    setHorse(horseRef.current);
+    brainRef.current?.visitChunk(destChunk, chunkRegion(destChunk), 'by carriage');
+    chunkRef.current = destChunk;
+    setChunk(destChunk);
+    onChunkChange(destChunk);
+    const discoveredTile = mapTileFor(destChunk);
+    const discoveredLandmark = discoveredTile?.landmark;
+    if (discoveredLandmark) {
+      onDiscoverLocation(discoveredLandmark.name, discoveredLandmark.kind, destChunk);
+      setLogs((currentLogs) => [{ text: 'Discovered: ' + discoveredLandmark.name, color: 'green' }, ...currentLogs].slice(0, 5));
+    }
+    setLogs((currentLogs) => [{ text: `You arrive at ${destName} by carriage. Your horse was tied behind.`, color: 'green' }, ...currentLogs].slice(0, 5));
+  };
+  const cancelCarriageTravel = () => {
+    if (carriageTravelTimerRef.current !== null) {
+      window.clearInterval(carriageTravelTimerRef.current);
+      carriageTravelTimerRef.current = null;
+    }
+    waitingRef.current = false;
+    setCarriageTravel(null);
+  };
+  const startCarriageTravel = (dest: CarriageDestination, driverName: string) => {
+    if (carriageTravel || waitingRef.current) return;
+    if (inventory.coins < dest.price) {
+      setLogs((currentLogs) => [{ text: "You don't have enough gold.", color: 'red' }, ...currentLogs].slice(0, 5));
+      return;
+    }
+    onLoot({ coins: -dest.price } as GoatLoot);
+    carriageEarningsRef.current[driverName] = (carriageEarningsRef.current[driverName] || 0) + dest.price;
+    const arrivalStation = getCarriageStation(dest.chunk);
+    const arrivalStop = arrivalStation ? null : getCarriageStop(dest.chunk);
+    const arrival = arrivalStation ? arrivalStation.layout.arrival : arrivalStop ? arrivalStop.arrival : { x: 70, y: 70 };
+    const totalTicks = carriageTravelTicks(dest.distance);
+    setCarriageDialog(null);
+    setCarriageTravel({ destName: dest.name, destChunk: dest.chunk, arrival, totalTicks, doneTicks: 0 });
+    setMounted(false);
+    waitingRef.current = true; // locks input like the wait driver
+    keysRef.current = {};
+    setMoving(false);
+    let done = 0;
+    const timer = window.setInterval(() => {
+      const nextClock = brainRef.current?.worldCore.advance(1);
+      if (nextClock) setTime(formatWorldClock(nextClock));
+      advanceLivingSimTickRef.current();
+      done += 1;
+      if (done >= totalTicks) {
+        if (carriageTravelTimerRef.current !== null) window.clearInterval(carriageTravelTimerRef.current);
+        carriageTravelTimerRef.current = null;
+        setCarriageTravel(null);
+        waitingRef.current = false;
+        // Arrive: the destination station/stop already exists in its chunk.
+        completeCarriageArrival(dest.name, dest.chunk, arrival);
+        return;
+      }
+      setCarriageTravel({ destName: dest.name, destChunk: dest.chunk, arrival, totalTicks, doneTicks: done });
+    }, 110);
+    carriageTravelTimerRef.current = timer;
+  };
+  useEffect(() => () => {
+    if (carriageTravelTimerRef.current !== null) window.clearInterval(carriageTravelTimerRef.current);
+  }, []);
   useEffect(() => () => {
     if (waitTimerRef.current !== null) window.clearInterval(waitTimerRef.current);
     waitingRef.current = false;
@@ -4293,6 +4509,45 @@ if (active) {
               </div>
             </div>
           )}
+          {carriageDebugOpen && (() => {
+            const clock = brainRef.current?.worldCore.getClock();
+            const discoveredNames = journal.discoveredLocations.map((l) => l.name);
+            const dests = carriageDestinations(chunk, discoveredNames);
+            const dirs: Array<'north' | 'south' | 'east' | 'west'> = ['north', 'south', 'east', 'west'];
+            return (
+              <div className="editor-panel inspector-panel">
+                <div className="editor-panel-title">🐎 Carriage Network <span className="editor-panel-chunk">{time}</span></div>
+                <div className="editor-actions">
+                  <button type="button" className="editor-btn" onClick={() => setCarriageDebugOpen(false)}>Close</button>
+                </div>
+                <div className="inspector-section">
+                  <div className="inspector-heading">Stations (1 chunk outside Mosslight)</div>
+                  {dirs.map((dir) => {
+                    const st = getCarriageStation(CARRIAGE_STATION_CHUNKS[dir]);
+                    if (!st) return null;
+                    const onDuty = clock ? driverOnDuty(st.driver, clock) : true;
+                    return (
+                      <div key={dir} className="inspector-row">
+                        <span><strong>{st.name}</strong><br /><small>chunk {st.chunk.x},{st.chunk.y} · {st.driver.name} · {onDuty ? `on duty (${st.driver.openHour}:00–${st.driver.closeHour}:00)` : 'closed'} · earned {carriageEarningsRef.current[st.driver.name] || 0}g</small></span>
+                        <button type="button" className="editor-btn" onClick={() => { completeCarriageArrival(st.name, st.chunk, st.layout.arrival); setCarriageDebugOpen(false); }}>Go</button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="inspector-section">
+                  <div className="inspector-heading">Destinations from chunk {chunk.x},{chunk.y}</div>
+                  {dests.map((d) => (
+                    <div key={d.name} className="inspector-row">
+                      <span>{d.discovered ? '✅' : '🔒'} <strong>{d.discovered ? d.name : '???'}</strong><br /><small>{d.discovered ? `${d.price}g · ${d.travelHours}h · ${d.distance} chunks · ${d.kind}` : 'undiscovered'}</small></span>
+                      {d.discovered && (
+                        <button type="button" className="editor-btn" onClick={() => { const a = getCarriageStation(d.chunk); const s = a ? null : getCarriageStop(d.chunk); completeCarriageArrival(d.name, d.chunk, a ? a.layout.arrival : s ? s.arrival : { x: 70, y: 70 }); setCarriageDebugOpen(false); }}>Ride</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           {inspectorOpen && (
             <div className="editor-panel inspector-panel">
               <div className="editor-panel-title">🔍 NPC Inspector <span className="editor-panel-chunk">{time}</span></div>
@@ -5096,6 +5351,56 @@ if (active) {
             </>
           )}
           {(() => {
+            // Carriage network: physical stations/stops render as part of the chunk.
+            const clock = brainRef.current?.worldCore.getClock();
+            const station = carriageStation;
+            const stop = carriageStop;
+            if (!station && !stop) return null;
+            const driver = station ? station.driver : stop!.driver;
+            const onDuty = clock ? driverOnDuty(driver, clock) : true;
+            const s = station ? station.layout : null;
+            const sign = station ? s!.sign : stop!.sign;
+            const cart = station ? s!.carriage : stop!.carriage;
+            const horsePos = station ? s!.horse : stop!.horse;
+            const driverPos = station ? s!.driverPost : stop!.driverPost;
+            const openDialog = () => setCarriageDialog(station ? { kind: 'station', station } : { kind: 'stop', stop: stop! });
+            return (
+              <div className="carriage-site" aria-label={station ? station.name : stop!.settlementName + ' carriage stop'}>
+                {station && (
+                  <>
+                    <div className="carriage-house" style={{ left: fieldPct(s!.house.x), top: fieldPct(s!.house.y), width: fieldPct(16), height: fieldPct(11) }} aria-label="Station house" />
+                    <div className="carriage-stable" style={{ left: fieldPct(s!.stable.x), top: fieldPct(s!.stable.y), width: fieldPct(13), height: fieldPct(9) }} aria-label="Stable" />
+                    <div className="station-path" style={station.dir === 'north' || station.dir === 'south'
+                      ? { left: fieldPct(Math.min(70, s!.carriage.x)), top: fieldPct(s!.carriage.y), width: fieldPct(Math.abs(s!.carriage.x - 70)), height: fieldPct(4) }
+                      : { left: fieldPct(s!.carriage.x), top: fieldPct(Math.min(70, s!.carriage.y)), width: fieldPct(4), height: fieldPct(Math.abs(s!.carriage.y - 70)) }} aria-hidden="true" />
+                    <div className="hitching-post" style={{ left: fieldPct(s!.hitching.x), top: fieldPct(s!.hitching.y) }} aria-label="Hitching post" />
+                    {s!.lanterns.map((p, i) => <span key={i} className="carriage-lantern" style={{ left: fieldPct(p.x), top: fieldPct(p.y) }} aria-hidden="true" />)}
+                  </>
+                )}
+                <div className="carriage-cart" style={{ left: fieldPct(cart.x), top: fieldPct(cart.y) }} aria-label="Carriage" />
+                <div className="horse carriage-team-horse" style={{ left: fieldPct(horsePos.x), top: fieldPct(horsePos.y) }} data-facing="down" aria-label="Carriage horse"><span className="horse-sprite" /></div>
+                <div className="carriage-sign" style={{ left: fieldPct(sign.x), top: fieldPct(sign.y) }} aria-label={station ? station.name : stop!.settlementName + ' carriage stop'}>
+                  <span className="carriage-sign-board">{station ? 'CARRIAGE' : 'CARRIAGE STOP'}<small>{station ? station.name.replace(' Carriage Station', '') + ' Road' : stop!.settlementName}</small></span>
+                </div>
+                {onDuty ? (
+                  <button
+                    className="town-npc npc-guide carriage-driver show-nameplate"
+                    style={{ left: fieldPct(driverPos.x), top: fieldPct(driverPos.y) }}
+                    onClick={(moverMode || markerMode) ? undefined : openDialog}
+                    aria-label={driver.name + ', carriage driver'}
+                    title={driver.name + ' — ' + driver.greeting}
+                    data-testid={'carriage-driver-' + (station ? station.id : stop!.id)}
+                  >
+                    <span className="npc-nameplate"><strong>{driver.name}</strong><small>Carriage driver</small></span>
+                    <span className="npc-sprite" aria-hidden="true" />
+                  </button>
+                ) : (
+                  <span className="carriage-closed-note" style={{ left: fieldPct(sign.x), top: fieldPct(sign.y + 8) }} aria-hidden="true">Closed · opens {driver.openHour}:00</span>
+                )}
+              </div>
+            );
+          })()}
+          {(() => {
             // Dungeon POI entrance: offer Descend when the player is near the crypt stairs.
             const dungeon = currentWorldTile.landmark && currentWorldTile.landmark.kind === 'dungeon' ? currentWorldTile.landmark : null;
             if (!dungeon) return null;
@@ -5196,6 +5501,10 @@ if (active) {
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: NPC Inspector</strong><small>Townsfolk, travelers, adventurers · go-to</small></span>
                 </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); setCarriageDebugOpen(true); }} data-testid="button-debug-carriage">
+                  <span className="options-action-icon"><Settings size={17} /></span>
+                  <span><strong>Debug: Carriage Network</strong><small>Stations, routes, prices, times · go-to</small></span>
+                </button>
               </div>
               <button className="options-menu-button" onClick={() => { setOptionsOpen(false); onOpenMenu(); }} data-testid="button-options-main-menu">Main Menu</button>
             </div>
@@ -5277,6 +5586,65 @@ if (active) {
                 </button>
                   </>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+        {carriageDialog && (() => {
+          const driver = carriageDialog.kind === 'station' ? carriageDialog.station.driver : carriageDialog.stop.driver;
+          const clock = brainRef.current?.worldCore.getClock();
+          const onDuty = clock ? driverOnDuty(driver, clock) : true;
+          const discoveredNames = journal.discoveredLocations.map((l) => l.name);
+          const dests = carriageDestinations(chunk, discoveredNames);
+          const available = dests.filter((d) => d.discovered);
+          return (
+            <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="carriage-dialogue-title">
+              <div className="npc-dialogue-card carriage-dialogue-card">
+                <div className={'dialogue-portrait npc-guide'} data-facing="down"><span className="npc-sprite" /></div>
+                <div className="npc-dialogue-copy">
+                  <span className="dialogue-kicker">Carriage Service</span>
+                  <h2 id="carriage-dialogue-title">{driver.name}</h2>
+                  <p className="carriage-driver-sub">{driver.age} · {driver.occupation} · {driver.personality}</p>
+                  {!onDuty ? (
+                    <p>"Come back in the morning."</p>
+                  ) : available.length === 0 ? (
+                    <p>"There's nowhere I can take you yet. Visit some settlements first."</p>
+                  ) : (
+                    <>
+                      <p>"{driver.greeting}" Then: "Where would you like to go?"</p>
+                      <div className="carriage-destinations" role="list" aria-label="Carriage destinations">
+                        {dests.map((d) => (
+                          <div key={d.name} className={'carriage-destination' + (d.discovered ? '' : ' is-locked')} role="listitem">
+                            <span className="carriage-dest-name">{d.discovered ? d.name : '???'}</span>
+                            <span className="carriage-dest-meta">{d.discovered ? `${d.price} gold · ${d.travelHours}h` : 'Undiscovered'}</span>
+                            {d.discovered && (
+                              <button
+                                className="carriage-ride-button"
+                                disabled={inventory.coins < d.price}
+                                onClick={() => startCarriageTravel(d, driver.name)}
+                                data-testid={'button-carriage-ride-' + d.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}
+                                title={inventory.coins < d.price ? "You don't have enough gold." : `Ride to ${d.name} for ${d.price} gold`}
+                              >
+                                {inventory.coins < d.price ? 'Need ' + d.price + 'g' : 'Ride · ' + d.price + 'g'}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  <button className="dialogue-close" onClick={() => setCarriageDialog(null)} data-testid="button-close-carriage">Leave</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+        {carriageTravel && (
+          <div className="carriage-travel-overlay" role="status" aria-live="polite" data-testid="overlay-carriage-travel">
+            <div className="carriage-travel-card">
+              <p>Traveling to {carriageTravel.destName}…</p>
+              <div className="carriage-travel-progress" aria-hidden="true">
+                <span style={{ width: Math.round((carriageTravel.doneTicks / Math.max(1, carriageTravel.totalTicks)) * 100) + '%' }} />
               </div>
             </div>
           </div>
