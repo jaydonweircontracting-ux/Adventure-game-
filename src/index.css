@@ -255,6 +255,11 @@
   from { transform: scale(.6); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
+/* BUILD 325: tap-only buttons must never let the browser claim the touch for
+   a pan/zoom gesture. A second-finger tap on Attack while the D-pad is held
+   would otherwise let iOS start gesture recognition and cancel the in-flight
+   D-pad touch, freezing movement. Tap -> click synthesis still works. */
+.field-attack-button, .field-talk-button { touch-action: none; }
 
 .game-layout {
   width: 100%;

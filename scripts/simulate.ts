@@ -11,6 +11,7 @@ import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
+import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection } from '../src/game/touchInput';
 import { appearanceForNpc, npcAppearanceStyle } from '../src/game/npcAppearance';
 import {
   resolveMonsterSprite,
@@ -1419,6 +1420,40 @@ for (const kind of EXPECTED_KINDS) {
   let resumed = restored;
   for (let i = 0; i < 60 && resumed.location !== 'OUTDOOR'; i++) resumed = advanceTownsfolk([resumed], anchors, clock, navCtx, 0.5)[0];
   assert(resumed.location === 'OUTDOOR' && !resumed.indoors, 'restored EXITING NPC never emerged');
+}
+
+// ---- BUILD 325: D-pad touch-hold tracking (attack-freeze root cause) ----
+{
+  // Exact reported scenario: thumb holds 'up' (touch 7); the Attack tap lands
+  // as a second touch (touch 8) and iOS fires a spurious touchend/touchcancel
+  // for it on the D-pad button. The stray end must NOT release the hold.
+  const holds = createTouchHoldState();
+  pressTouchHold(holds, 'up', 7);
+  assert(isTouchHeld(holds, 'up'), 'touch press did not register a hold');
+  const strayReleased = releaseTouchHold(holds, 'up', 8);
+  assert(!strayReleased && isTouchHeld(holds, 'up'), 'stray touchend from the attack tap cleared the D-pad hold (attack freeze)');
+  // The real thumb lifting releases normally.
+  assert(releaseTouchHold(holds, 'up', 7) && !isTouchHeld(holds, 'up'), 'matching touchend did not release the hold');
+  // A second touch on the same direction takes over: the first touch's end is
+  // then stray and must be ignored, the second touch's end releases.
+  pressTouchHold(holds, 'left', 11);
+  pressTouchHold(holds, 'left', 12);
+  assert(!releaseTouchHold(holds, 'left', 11) && isTouchHeld(holds, 'left'), 'first touch end stole the hold from the still-down second touch');
+  assert(releaseTouchHold(holds, 'left', 12) && !isTouchHeld(holds, 'left'), 'second touch end did not release the hold');
+  // Directions are independent.
+  pressTouchHold(holds, 'up', 21);
+  pressTouchHold(holds, 'right', 22);
+  assert(isTouchHeld(holds, 'up') && isTouchHeld(holds, 'right'), 'independent direction holds failed');
+  assert(!releaseTouchHold(holds, 'up', 22), 'release matched the wrong direction');
+  const listed = heldTouchDirections(holds).sort().join(',');
+  assert(listed === 'right,up', `heldTouchDirections wrong: ${listed}`);
+  // Clearing.
+  clearTouchHoldDirection(holds, 'up');
+  assert(!isTouchHeld(holds, 'up') && isTouchHeld(holds, 'right'), 'clearTouchHoldDirection cleared the wrong hold');
+  clearTouchHolds(holds);
+  assert(heldTouchDirections(holds).length === 0, 'clearTouchHolds left a hold behind');
+  // Releasing a direction that was never held is a no-op.
+  assert(!releaseTouchHold(holds, 'down', 99), 'release of a never-held direction reported a release');
 }
 
 // ---- Results ----

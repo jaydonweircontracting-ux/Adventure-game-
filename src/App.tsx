@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
-import { type ChangeEvent, type PointerEvent, type ReactNode } from 'react';
+import { type ChangeEvent, type PointerEvent, type ReactNode, type TouchEvent } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -15,6 +15,7 @@ export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEdi
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from './game/worldEditor';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 import { findTalkTarget } from './game/talkTarget';
+import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, type TouchHoldState } from './game/touchInput';
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
@@ -78,7 +79,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '324';
+const BUILD_NUMBER = '325';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3427,6 +3428,10 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   // inn/building fireplace collision rect and permanently soft-locks movement.
   const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 78 });
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
+  // BUILD 325: D-pad touch holds tracked by touch.identifier (see
+  // src/game/touchInput.ts) — declared beside keysRef since every input-reset
+  // path must clear both.
+  const touchHoldsRef = useRef<TouchHoldState>(createTouchHoldState());
   const positionRef = useRef(position);
   const facingRef = useRef(facing);
   const chunkRef = useRef(chunk);
@@ -3530,6 +3535,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
       ? buildingDoorwaysFor(loadState.chunk).find((doorway) => doorway.area.id === loadState.interiorId) || null
       : null;
     keysRef.current = {};
+    clearTouchHolds(touchHoldsRef.current);
     positionRef.current = loadState.position; setPosition(loadState.position);
     chunkRef.current = loadState.chunk; setChunk(loadState.chunk); onChunkChange(loadState.chunk);
     mountedRef.current = loadState.mounted; setMounted(loadState.mounted);
@@ -3675,6 +3681,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   useEffect(() => {
     if (inputLocked || optionsOpen) {
       keysRef.current = {};
+      clearTouchHolds(touchHoldsRef.current);
       setMoving(false);
     }
   }, [inputLocked, optionsOpen]);
@@ -3803,6 +3810,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     setWaitSheetOpen(false);
     setWaitProgress({ done: 0, total: ticks });
     keysRef.current = {};
+    clearTouchHolds(touchHoldsRef.current);
     setMoving(false);
     let remaining = ticks;
     const timer = window.setInterval(() => {
@@ -3880,6 +3888,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     if (carriageTravelTimerRef.current !== null) window.clearInterval(carriageTravelTimerRef.current);
     waitingRef.current = true; // locks input like the wait driver
     keysRef.current = {};
+    clearTouchHolds(touchHoldsRef.current);
     setMoving(false);
     setCarriageTravel({ destName, destChunk, arrival, totalTicks, doneTicks: startDone });
     let done = startDone;
@@ -4105,6 +4114,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   useEffect(() => {
     const clearInput = () => {
       keysRef.current = {};
+      clearTouchHolds(touchHoldsRef.current);
       setMoving(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -4126,6 +4136,25 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', clearInput);
     document.addEventListener('visibilitychange', onVisibilityChange);
+    // BUILD 325 (attack-freeze root cause): iOS Safari fires its own
+    // gesturestart/gesturechange events for multi-touch sequences, independent
+    // of the viewport meta. When a second finger taps the Attack button while
+    // the D-pad is held, WebKit's gesture recognizer can claim the sequence
+    // and cancel the in-flight D-pad touch (touchcancel) — freezing movement
+    // until the thumb lifts and re-presses, while the world keeps simulating.
+    // Blocking the gesture events on the game frame stops the recognizer from
+    // ever taking the touch sequence. Single-finger taps still synthesize
+    // click normally, so Attack/Talk buttons keep working, and the world-map
+    // modal (rendered outside the game frame) is unaffected. React synthetic
+    // touch handlers are passive and cannot preventDefault, so these must be
+    // native non-passive listeners.
+    const gameFrame = gameFrameRef.current;
+    const blockIOSGesture = (event: Event) => { event.preventDefault(); };
+    if (gameFrame) {
+      gameFrame.addEventListener('gesturestart', blockIOSGesture, { passive: false });
+      gameFrame.addEventListener('gesturechange', blockIOSGesture, { passive: false });
+      gameFrame.addEventListener('gestureend', blockIOSGesture, { passive: false });
+    }
 
     let animationFrame = 0;
     let lastFrame = performance.now();
@@ -4136,9 +4165,15 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
       // BUILD 307: attacks no longer root the player. The swing animation,
       // hit timing and cooldown still pace combat, but movement input stays
       // live during the swing so fighting never feels like a freeze.
+      // BUILD 325: merge keyboard state (keysRef) with D-pad touch holds so a
+      // touch-tracked press drives movement even if keysRef was never set.
+      const heldRight = keysRef.current.right === true || isTouchHeld(touchHoldsRef.current, 'right');
+      const heldLeft = keysRef.current.left === true || isTouchHeld(touchHoldsRef.current, 'left');
+      const heldDown = keysRef.current.down === true || isTouchHeld(touchHoldsRef.current, 'down');
+      const heldUp = keysRef.current.up === true || isTouchHeld(touchHoldsRef.current, 'up');
       const input = {
-        x: inputLocked || optionsOpen || waitingRef.current ? 0 : (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0),
-        y: inputLocked || optionsOpen || waitingRef.current ? 0 : (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0),
+        x: inputLocked || optionsOpen || waitingRef.current ? 0 : (heldRight ? 1 : 0) - (heldLeft ? 1 : 0),
+        y: inputLocked || optionsOpen || waitingRef.current ? 0 : (heldDown ? 1 : 0) - (heldUp ? 1 : 0),
       };
       const length = Math.hypot(input.x, input.y);
       const active = length > 0;
@@ -4479,6 +4514,11 @@ if (active) {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', clearInput);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (gameFrame) {
+        gameFrame.removeEventListener('gesturestart', blockIOSGesture);
+        gameFrame.removeEventListener('gesturechange', blockIOSGesture);
+        gameFrame.removeEventListener('gestureend', blockIOSGesture);
+      }
     };
   }, [onChunkChange, interior, inputLocked, optionsOpen]);
 
@@ -4666,14 +4706,37 @@ if (active) {
   // held direction with the thumb still down, freezing movement until the user
   // lifted and re-pressed. A second touch can never disturb touch events.
   // Pointer handlers stay for mouse users only.
-  const pressDirection = (direction: Direction) => {
+  // BUILD 325: D-pad touch holds are tracked by touch.identifier (see
+  // src/game/touchInput.ts). Only the touch that pressed a direction can
+  // release it, so a spurious touchend/touchcancel from a *different* touch —
+  // e.g. iOS cancelling the D-pad touch when the Attack button is tapped with
+  // a second finger — can no longer desync the input state and freeze
+  // movement while the thumb is still down. Keyboard/mouse keep the legacy
+  // keysRef path (touchId undefined).
+  const anyDirectionHeld = () =>
+    (['up', 'down', 'left', 'right'] as Direction[]).some(
+      (held) => keysRef.current[held] === true || isTouchHeld(touchHoldsRef.current, held),
+    );
+  // Extracted so press/release stay consistent: both ride on the same
+  // changedTouches[0].identifier, falling back to the legacy keysRef path.
+  const touchIdentifierOf = (event: TouchEvent<HTMLButtonElement>): number | undefined =>
+    event.changedTouches.length > 0 ? event.changedTouches[0].identifier : undefined;
+  const pressDirection = (direction: Direction, touchId?: number) => {
     if (inputLocked || optionsOpen || waitingRef.current) return;
-    keysRef.current[direction] = true;
+    if (touchId === undefined) keysRef.current[direction] = true;
+    else pressTouchHold(touchHoldsRef.current, direction, touchId);
     setMoving(true);
   };
-  const releaseDirection = (direction: Direction) => {
-    keysRef.current[direction] = false;
-    setMoving(Object.values(keysRef.current).some(Boolean));
+  const releaseDirection = (direction: Direction, touchId?: number) => {
+    if (touchId === undefined) {
+      keysRef.current[direction] = false;
+      // Defensive: an identifier-less release clears any touch hold too, so a
+      // missing identifier can never wedge movement on.
+      clearTouchHoldDirection(touchHoldsRef.current, direction);
+    } else {
+      releaseTouchHold(touchHoldsRef.current, direction, touchId);
+    }
+    setMoving(anyDirectionHeld());
   };
   const mousePressDirection = (direction: Direction, event: PointerEvent<HTMLButtonElement>) => {
     if (event.pointerType === 'mouse') pressDirection(direction);
@@ -6900,10 +6963,10 @@ if (active) {
           <button className="hud-bag-button" onClick={onOpenInventory} aria-label="Open menu" title="Menu" data-testid="button-open-inventory"><Backpack size={17} /></button>
         </div>
         <div className="touch-controls" aria-label="Touch movement controls">
-           <button className="touch-control up" aria-label="Move north" data-testid="button-move-up" onTouchStart={() => pressDirection('up')} onTouchEnd={() => releaseDirection('up')} onTouchCancel={() => releaseDirection('up')} onPointerDown={(event) => mousePressDirection('up', event)} onPointerUp={(event) => mouseReleaseDirection('up', event)} onPointerLeave={(event) => mouseReleaseDirection('up', event)}><ChevronUp size={18} /></button>
-           <button className="touch-control left" aria-label="Move west" data-testid="button-move-left" onTouchStart={() => pressDirection('left')} onTouchEnd={() => releaseDirection('left')} onTouchCancel={() => releaseDirection('left')} onPointerDown={(event) => mousePressDirection('left', event)} onPointerUp={(event) => mouseReleaseDirection('left', event)} onPointerLeave={(event) => mouseReleaseDirection('left', event)}><ChevronLeft size={18} /></button>
-           <button className="touch-control down" aria-label="Move south" data-testid="button-move-down" onTouchStart={() => pressDirection('down')} onTouchEnd={() => releaseDirection('down')} onTouchCancel={() => releaseDirection('down')} onPointerDown={(event) => mousePressDirection('down', event)} onPointerUp={(event) => mouseReleaseDirection('down', event)} onPointerLeave={(event) => mouseReleaseDirection('down', event)}><ChevronDown size={18} /></button>
-           <button className="touch-control right" aria-label="Move east" data-testid="button-move-right" onTouchStart={() => pressDirection('right')} onTouchEnd={() => releaseDirection('right')} onTouchCancel={() => releaseDirection('right')} onPointerDown={(event) => mousePressDirection('right', event)} onPointerUp={(event) => mouseReleaseDirection('right', event)} onPointerLeave={(event) => mouseReleaseDirection('right', event)}><ChevronRight size={18} /></button>
+           <button className="touch-control up" aria-label="Move north" data-testid="button-move-up" onTouchStart={(event) => pressDirection('up', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('up', touchIdentifierOf(event))} onTouchCancel={(event) => releaseDirection('up', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('up', event)} onPointerUp={(event) => mouseReleaseDirection('up', event)} onPointerLeave={(event) => mouseReleaseDirection('up', event)}><ChevronUp size={18} /></button>
+           <button className="touch-control left" aria-label="Move west" data-testid="button-move-left" onTouchStart={(event) => pressDirection('left', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('left', touchIdentifierOf(event))} onTouchCancel={(event) => releaseDirection('left', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('left', event)} onPointerUp={(event) => mouseReleaseDirection('left', event)} onPointerLeave={(event) => mouseReleaseDirection('left', event)}><ChevronLeft size={18} /></button>
+           <button className="touch-control down" aria-label="Move south" data-testid="button-move-down" onTouchStart={(event) => pressDirection('down', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('down', touchIdentifierOf(event))} onTouchCancel={(event) => releaseDirection('down', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('down', event)} onPointerUp={(event) => mouseReleaseDirection('down', event)} onPointerLeave={(event) => mouseReleaseDirection('down', event)}><ChevronDown size={18} /></button>
+           <button className="touch-control right" aria-label="Move east" data-testid="button-move-right" onTouchStart={(event) => pressDirection('right', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('right', touchIdentifierOf(event))} onTouchCancel={(event) => releaseDirection('right', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('right', event)} onPointerUp={(event) => mouseReleaseDirection('right', event)} onPointerLeave={(event) => mouseReleaseDirection('right', event)}><ChevronRight size={18} /></button>
         </div>
          {logOpen && (
            <section id="field-log-drawer" className="field-log-drawer" aria-label="Field log" data-testid="panel-field-log">
