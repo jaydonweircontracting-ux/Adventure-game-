@@ -26,6 +26,8 @@ interface IsoFieldViewProps {
   onExit: () => void; // back to the 2D field
   onTapMove?: (point: Point) => void; // BUILD 366: tap-to-move target
   onTalkTo?: (npc: Townsperson) => void; // BUILD 366: tap an NPC to talk
+  zoom: number; // BUILD 372: zoom is owned by App so the main zoom buttons drive it
+  onZoomChange: (z: number) => void;
 }
 
 interface Drawable { depth: number; draw: (g: CanvasRenderingContext2D, now: number) => void }
@@ -40,7 +42,7 @@ function faceForDelta(dx: number, dy: number): Face4 {
   return sy > 0 ? 'down' : 'up';
 }
 
-export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTapMove, onTalkTo }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTapMove, onTalkTo, zoom, onZoomChange }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk });
@@ -59,8 +61,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
     return { buildings, trees, tile, water };
   }, [chunk.x, chunk.y]);
 
-  const zoomRef = useRef(1);
-  const [, setZoomTick] = React.useState(0);
+  // BUILD 372: zoom lives in App (the main black zoom buttons drive it);
+  // mirror to a ref for the rAF loop and canvas listeners.
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
 
   useEffect(() => {
     preloadMsSprites();
@@ -422,13 +426,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
   return (
     <div ref={wrapRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#bfe3ef' }}>
       <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }} />
-      {/* zoom controls (bottom-right) */}
-      <div style={{ position: 'absolute', right: 12, bottom: 12, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 5 }}>
-        <button aria-label="Zoom in" style={btn}
-          onPointerDown={(e) => { e.preventDefault(); zoomRef.current = Math.min(2.5, zoomRef.current * 1.2); setZoomTick(t => t + 1); }}>+</button>
-        <button aria-label="Zoom out" style={btn}
-          onPointerDown={(e) => { e.preventDefault(); zoomRef.current = Math.max(0.15, zoomRef.current / 1.2); setZoomTick(t => t + 1); }}>−</button>
-      </div>
+      {/* BUILD 372: zoom is driven by the main black zoom buttons (App), so the
+          duplicate in-canvas zoom controls were removed. */}
       {/* beta badge + exit */}
       <div style={{
         position: 'absolute', left: 12, top: 12, zIndex: 5, display: 'flex', gap: 8, alignItems: 'center',

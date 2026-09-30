@@ -3742,6 +3742,9 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     setIsoFieldBeta(next);
     try { localStorage.setItem('ag-iso-field-beta', next ? '1' : '0'); } catch { /* ignore */ }
   };
+  // BUILD 372: the main black zoom buttons drive the iso camera when the 2.5D
+  // field beta is on (previously they only scaled the hidden 2D player).
+  const [isoZoom, setIsoZoom] = useState(1);
   const toggleMarkerMode = () => {
     const next = !markerMode;
     debugDoors = next;
@@ -6756,18 +6759,18 @@ if (active) {
             <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', zIndex: 60, display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
                 type="button"
-                onClick={() => setGameZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
+                onClick={() => isoFieldBeta ? setIsoZoom((z) => Math.min(2.5, Math.round(z * 1.2 * 100) / 100)) : setGameZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
                 style={{ width: '44px', height: '44px', fontSize: '20px', background: 'rgba(0,0,0,0.75)', color: '#fff', border: '1px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
                 aria-label="Zoom in"
               >
                 +
               </button>
               <div style={{ textAlign: 'center', fontSize: '11px', color: '#fff', background: 'rgba(0,0,0,0.75)', borderRadius: '4px', padding: '2px 4px' }}>
-                {Math.round(gameZoom * 100)}%
+                {Math.round((isoFieldBeta ? isoZoom : gameZoom) * 100)}%
               </div>
               <button
                 type="button"
-                onClick={() => setGameZoom((z) => Math.max(1, Math.round((z - 0.25) * 100) / 100))}
+                onClick={() => isoFieldBeta ? setIsoZoom((z) => Math.max(0.15, Math.round(z / 1.2 * 100) / 100)) : setGameZoom((z) => Math.max(1, Math.round((z - 0.25) * 100) / 100))}
                 style={{ width: '44px', height: '44px', fontSize: '20px', background: 'rgba(0,0,0,0.75)', color: '#fff', border: '1px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
                 aria-label="Zoom out"
               >
@@ -6780,6 +6783,7 @@ if (active) {
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
             <IsoFieldView chunk={chunk} position={position} townsfolk={townsfolk} onExit={toggleIsoFieldBeta}
+              zoom={isoZoom} onZoomChange={setIsoZoom}
               onTapMove={(point) => { tapMoveTargetRef.current = point; }}
               onTalkTo={(npc) => talkToTownsfolk(npc)} />
           )}
