@@ -1,4 +1,5 @@
 import IsoRoomDemo from './game/iso/IsoRoom';
+import IsoFieldView from './game/iso/IsoFieldView';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
@@ -93,7 +94,7 @@ const BUILD_NUMBER = '358';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
-const FIELD_SIZE = 280;
+export const FIELD_SIZE = 280;
 // BUILD 327: default gameplay zoom is 225%. When zoomed, the world layer is
 // scaled around the top-left corner and translated so the player's field
 // position lands at the viewport center:
@@ -129,7 +130,7 @@ const BUILDING_SIZE_MULT = 1.0;
 // Convert field units (0..FIELD_SIZE) to CSS percentage for positioning.
 function fieldPct(v: number): string { return (v / FIELD_SIZE * 100) + '%'; }
 type Direction = 'up' | 'down' | 'left' | 'right';
-type Point = { x: number; y: number };
+export type Point = { x: number; y: number };
 const PLAYER_COLLISION_BOX = { halfWidth: 3.6, halfHeight: 2.7 };
 const GOAT_COLLISION_BOX = { halfWidth: 0.5, halfHeight: 0.6 };
 const COLLISION_GAP = 0.35;
@@ -182,7 +183,7 @@ const delta: Record<Direction, Point> = {
 };
 const terrainTypes = ['meadow', 'forest', 'rock', 'shore', 'desert', 'tundra', 'ocean'] as const;
 type Terrain = (typeof terrainTypes)[number];
-const fieldPalettes: Record<Terrain, { field: string; path: string; glow: string }> = {
+export const fieldPalettes: Record<Terrain, { field: string; path: string; glow: string }> = {
   meadow: { field: '#77a45b', path: '#d9b979', glow: 'rgba(255, 227, 157, .22)' },
   forest: { field: '#4f7c50', path: '#c7a66b', glow: 'rgba(180, 214, 141, .18)' },
   rock: { field: '#87927a', path: '#c9b27d', glow: 'rgba(238, 228, 186, .2)' },
@@ -240,7 +241,7 @@ function chunkTerrain(chunk: Point): Terrain {
 }
 
 type SettlementKind = 'village' | 'town' | 'dungeon' | 'ruin';
-type MapTile = {
+export type MapTile = {
   x: number;
   y: number;
   terrain: Terrain;
@@ -259,7 +260,7 @@ type MapTile = {
 
 const mapLandmarks = LANDMARKS;
 
-function isStartingArea(point: Point) {
+export function isStartingArea(point: Point) {
   return point.x >= 3 && point.x <= 5 && point.y >= 6 && point.y <= 8;
 }
 
@@ -368,7 +369,7 @@ function worldRoadAt(x: number, y: number): boolean {
   return horizontalRoad || verticalRoad || outerHorizontalRoad || continentRoad;
 }
 
-function mapTileFor(point: Point): MapTile {
+export function mapTileFor(point: Point): MapTile {
   const worldTile = generatedWorldTileFor(point);
   const biome = worldTile?.biome || 'ocean';
   const regionStyle = regionStyleForWorldBiome(biome);
@@ -409,7 +410,7 @@ function mapTileFor(point: Point): MapTile {
   };
 }
 
-type FieldTree = { id: number; x: number; y: number; scale: number; variant: number; style: RegionStyle; sprite: EnvSpriteKey };
+export type FieldTree = { id: number; x: number; y: number; scale: number; variant: number; style: RegionStyle; sprite: EnvSpriteKey };
 
 // Biome vegetation from the FreeEnvironment pack (public/environment/FreePack.png,
 // 512x384). Boxes are the trimmed alpha bounds of each sprite: { x, y, w, h }.
@@ -448,7 +449,7 @@ function envSpriteForTerrain(terrain: Terrain, variant: number): EnvSpriteKey {
     default: return (['grass1', 'grass2', 'pine2', 'pear'] as EnvSpriteKey[])[variant] || 'grass1';
   }
 }
-type FieldRect = { left: number; top: number; right: number; bottom: number };
+export type FieldRect = { left: number; top: number; right: number; bottom: number };
 
 // BUILD 342: organic screenshot-style town generator. Houses cluster along
 // the world road arms with varied setbacks and sizes, like a hand-built
@@ -585,7 +586,7 @@ function pointOnFieldRoad(point: Point, road: MapTile['road']) {
   return onWestArm || onEastArm || onNorthArm || onSouthArm;
 }
 
-function fieldTreesFor(chunk: Point): FieldTree[] {
+export function fieldTreesFor(chunk: Point): FieldTree[] {
   const startingCenter = isTutorialCenter(chunk);
   const landmark = mapLandmarks[chunk.x + ',' + chunk.y];
   const treeStyle = regionStyleFor(chunk);
@@ -875,7 +876,7 @@ type EscapeSpawn = {
   position: Point;
   logs: Array<{ text: string; color: string }>;
 };
-type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number; rect: { left: number; top: number; right: number; bottom: number } };
+export type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number; rect: { left: number; top: number; right: number; bottom: number } };
 // Bram the smith works the Wayfarer Guild in the starting area. Talking to
 // him opens the crafting / sell / rumours flow.
 const GUILD_SMITH: TownNpc = {
@@ -904,7 +905,7 @@ const WORLD_RUMORS = [
   'Someone found an old shrine in the forest.',
 ];
 
-function buildingDoorwaysFor(chunk: Point): Doorway[] {
+export function buildingDoorwaysFor(chunk: Point): Doorway[] {
   // Use the same landmark source as the visual renderer (mapTileFor) so door
   // triggers always align with the visible buildings.
   const landmark = mapTileFor(chunk).landmark;
@@ -3704,6 +3705,16 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   ];
   // Debug markers (green dots): toggleable from options menu. Syncs with module-level debugDoors.
   const [markerMode, setMarkerMode] = useState(debugDoors);
+  // BUILD 365: 2.5D isometric field renderer (beta). Pure visual swap — the sim,
+  // input, HUD, quests and saves are untouched. Persisted across sessions.
+  const [isoFieldBeta, setIsoFieldBeta] = useState(() => {
+    try { return localStorage.getItem('ag-iso-field-beta') === '1'; } catch { return false; }
+  });
+  const toggleIsoFieldBeta = () => {
+    const next = !isoFieldBeta;
+    setIsoFieldBeta(next);
+    try { localStorage.setItem('ag-iso-field-beta', next ? '1' : '0'); } catch { /* ignore */ }
+  };
   const toggleMarkerMode = () => {
     const next = !markerMode;
     debugDoors = next;
@@ -6605,7 +6616,13 @@ if (active) {
               </button>
             </div>
           )}
-          <div className="field-world-layer" style={gameZoom !== 1 ? (() => {
+          {/* BUILD 365: 2.5D isometric field (beta). Covers the DOM field with a
+              canvas rendering the same live state — same chunk, same player,
+              same townsfolk sim. Input/HUD/quests/saves untouched. */}
+          {isoFieldBeta && (
+            <IsoFieldView chunk={chunk} position={position} townsfolk={townsfolk} onExit={toggleIsoFieldBeta} />
+          )}
+          <div className="field-world-layer" style={isoFieldBeta ? { display: 'none' } : (gameZoom !== 1 ? (() => {
             // BUILD 327: zoom centers the player in the viewport — the layer
             // is scaled around the top-left, then translated so the player's
             // field position lands at 50%/50% of the frame.
@@ -6614,7 +6631,7 @@ if (active) {
             const tx = zoomTranslatePct(cameraFrac(position.x / FIELD_SIZE, gameZoom), gameZoom);
             const ty = zoomTranslatePct(cameraFrac(position.y / FIELD_SIZE, gameZoom), gameZoom);
             return { transform: `translate(${tx}%, ${ty}%) scale(${gameZoom})`, transformOrigin: '0 0' };
-          })() : undefined}>
+          })() : undefined)}>
           {/* BUILD 340: the procedural ground canvas lives INSIDE the world layer so it
               pans/zooms with the world. As a direct child of .pixel-field it stayed
               glued to the screen, making the path appear to follow the player and
@@ -7801,6 +7818,10 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMapBuilder(); }} data-testid="button-debug-mapbuilder">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>🗺️ Map Builder{mapBuilderMode ? ' (Exit)' : ''}</strong><small>{mapBuilderMode ? 'Return to normal play' : 'Paint terrain tiles like a tilemap editor'}</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); toggleIsoFieldBeta(); }} data-testid="button-iso-field-beta">
+                  <span className="options-action-icon">🏔️</span>
+                  <span><strong>2.5D Field{isoFieldBeta ? ' (On)' : ''}</strong><small>{isoFieldBeta ? 'Return to 2D view' : 'Isometric renderer (beta) · visual only'}</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); onOpenJournal(); }} data-testid="button-options-journal">
                   <span className="options-action-icon"><BookOpen size={17} /></span>
