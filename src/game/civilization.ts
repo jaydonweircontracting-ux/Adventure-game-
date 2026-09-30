@@ -329,7 +329,7 @@ function stopFromWorldUnits(wx: number, wy: number): { chunk: CivChunk; position
  * waypoints placed on road junctions keep caravans on actual roads.
  */
 export function positionAlongStops(stops: RouteStop[], progress: number): { chunk: CivChunk; position: CivPoint } {
-  if (stops.length === 0) return { chunk: { x: 0, y: 0 }, position: { x: 70, y: 70 } };
+  if (stops.length === 0) return { chunk: { x: 0, y: 0 }, position: { x: 140, y: 140 } };
   if (stops.length === 1 || progress <= 0) {
     const s = stops[0];
     return { chunk: { ...s.chunk }, position: { ...s.position } };
@@ -404,7 +404,7 @@ export function caravanPosition(
     return {
       status, progress, routeId: caravan.routeId,
       chunk: { ...(origin?.chunk ?? { x: 0, y: 0 }) },
-      position: { ...(origin?.position ?? { x: 70, y: 70 }) },
+      position: { ...(origin?.position ?? { x: 140, y: 140 }) },
     };
   }
   const stops = caravan.reversed ? [...route.waypoints].reverse() : route.waypoints;
@@ -492,7 +492,7 @@ export function militaryPosition(unit: MilitaryUnit, clock: WorldClockState, civ
   const home = civ.settlements.find((s) => s.id === unit.homeSettlementId);
   const homePos = {
     chunk: { ...(home?.chunk ?? { x: 0, y: 0 }) },
-    position: { ...(home?.position ?? { x: 70, y: 70 }) },
+    position: { ...(home?.position ?? { x: 140, y: 140 }) },
   };
   if (!unit.journey) return { status: 'stationed', progress: 0, ...homePos };
   const dayFloat = civDayFloat(clock);
@@ -974,8 +974,8 @@ const ROUTE_DEFS: RouteDef[] = [
     from: 'riverbend-farm-1', to: 'aldor',
     goods: ['grain', 'livestock', 'leather'], dangerBase: 0.12,
     junctions: [
-      { chunk: { x: 4, y: 12 }, position: { x: 70, y: 70 }, label: 'Crossroads' },
-      { chunk: { x: 4, y: 7 }, position: { x: 70, y: 70 }, label: 'Mosslight junction' },
+      { chunk: { x: 4, y: 12 }, position: { x: 140, y: 140 }, label: 'Crossroads' },
+      { chunk: { x: 4, y: 7 }, position: { x: 140, y: 140 }, label: 'Mosslight junction' },
     ],
   },
   {
@@ -993,9 +993,9 @@ const ROUTE_DEFS: RouteDef[] = [
     from: 'oakfield', to: 'emberhold',
     goods: ['ore', 'iron', 'stone', 'coal'], dangerBase: 0.18,
     junctions: [
-      { chunk: { x: 160, y: 0 }, position: { x: 70, y: 70 }, label: 'Oakfield east junction' },
-      { chunk: { x: 160, y: 25 }, position: { x: 70, y: 70 }, label: 'Saltmarsh junction' },
-      { chunk: { x: 184, y: 25 }, position: { x: 70, y: 70 }, label: 'Emberhold south junction' },
+      { chunk: { x: 160, y: 0 }, position: { x: 140, y: 140 }, label: 'Oakfield east junction' },
+      { chunk: { x: 160, y: 25 }, position: { x: 140, y: 140 }, label: 'Saltmarsh junction' },
+      { chunk: { x: 184, y: 25 }, position: { x: 140, y: 140 }, label: 'Emberhold south junction' },
     ],
   },
   {
@@ -1003,10 +1003,10 @@ const ROUTE_DEFS: RouteDef[] = [
     from: 'dunmere-farm-1', to: 'valdris',
     goods: ['grain', 'food', 'livestock'], dangerBase: 0.1,
     junctions: [
-      { chunk: { x: 150, y: 35 }, position: { x: 70, y: 70 }, label: 'Dunmere road' },
-      { chunk: { x: 150, y: 0 }, position: { x: 70, y: 70 }, label: 'Oakfield west junction' },
-      { chunk: { x: 140, y: 0 }, position: { x: 70, y: 70 }, label: 'Frostwatch junction' },
-      { chunk: { x: 140, y: -16 }, position: { x: 70, y: 70 }, label: 'Stormhaven junction' },
+      { chunk: { x: 150, y: 35 }, position: { x: 140, y: 140 }, label: 'Dunmere road' },
+      { chunk: { x: 150, y: 0 }, position: { x: 140, y: 140 }, label: 'Oakfield west junction' },
+      { chunk: { x: 140, y: 0 }, position: { x: 140, y: 140 }, label: 'Frostwatch junction' },
+      { chunk: { x: 140, y: -16 }, position: { x: 140, y: 140 }, label: 'Stormhaven junction' },
     ],
   },
 ];
@@ -1095,9 +1095,9 @@ const GARRISON_DEFS: GarrisonDef[] = [
     journey: {
       to: 'frosthold', purpose: 'Border patrol',
       junctions: [
-        { chunk: { x: 4, y: 7 }, position: { x: 70, y: 70 }, label: 'Mosslight junction' },
-        { chunk: { x: 4, y: 4 }, position: { x: 70, y: 70 }, label: 'North road' },
-        { chunk: { x: 5, y: 4 }, position: { x: 70, y: 70 }, label: 'Frosthold turn' },
+        { chunk: { x: 4, y: 7 }, position: { x: 140, y: 140 }, label: 'Mosslight junction' },
+        { chunk: { x: 4, y: 4 }, position: { x: 140, y: 140 }, label: 'North road' },
+        { chunk: { x: 5, y: 4 }, position: { x: 140, y: 140 }, label: 'Frosthold turn' },
       ],
     },
   },
@@ -1112,9 +1112,9 @@ const GARRISON_DEFS: GarrisonDef[] = [
     journey: {
       to: 'frosthold', purpose: 'Supply run',
       junctions: [
-        { chunk: { x: 4, y: 12 }, position: { x: 70, y: 70 }, label: 'Crossroads' },
-        { chunk: { x: 4, y: 4 }, position: { x: 70, y: 70 }, label: 'North road' },
-        { chunk: { x: 5, y: 4 }, position: { x: 70, y: 70 }, label: 'Frosthold turn' },
+        { chunk: { x: 4, y: 12 }, position: { x: 140, y: 140 }, label: 'Crossroads' },
+        { chunk: { x: 4, y: 4 }, position: { x: 140, y: 140 }, label: 'North road' },
+        { chunk: { x: 5, y: 4 }, position: { x: 140, y: 140 }, label: 'Frosthold turn' },
       ],
     },
   },
@@ -1131,10 +1131,10 @@ const GARRISON_DEFS: GarrisonDef[] = [
     journey: {
       to: 'stonebridge', purpose: 'Border patrol',
       junctions: [
-        { chunk: { x: 140, y: -16 }, position: { x: 70, y: 70 }, label: 'Stormhaven junction' },
-        { chunk: { x: 140, y: 0 }, position: { x: 70, y: 70 }, label: 'Frostwatch junction' },
-        { chunk: { x: 155, y: 0 }, position: { x: 70, y: 70 }, label: 'Oakfield' },
-        { chunk: { x: 165, y: 0 }, position: { x: 70, y: 70 }, label: 'Stonebridge leg' },
+        { chunk: { x: 140, y: -16 }, position: { x: 140, y: 140 }, label: 'Stormhaven junction' },
+        { chunk: { x: 140, y: 0 }, position: { x: 140, y: 140 }, label: 'Frostwatch junction' },
+        { chunk: { x: 155, y: 0 }, position: { x: 140, y: 140 }, label: 'Oakfield' },
+        { chunk: { x: 165, y: 0 }, position: { x: 140, y: 140 }, label: 'Stonebridge leg' },
       ],
     },
   },
@@ -1144,8 +1144,8 @@ const GARRISON_DEFS: GarrisonDef[] = [
     journey: {
       to: 'oakfield', purpose: 'Scouting the wilds',
       junctions: [
-        { chunk: { x: 140, y: -16 }, position: { x: 70, y: 70 }, label: 'Stormhaven junction' },
-        { chunk: { x: 140, y: 0 }, position: { x: 70, y: 70 }, label: 'Frostwatch junction' },
+        { chunk: { x: 140, y: -16 }, position: { x: 140, y: 140 }, label: 'Stormhaven junction' },
+        { chunk: { x: 140, y: 0 }, position: { x: 140, y: 140 }, label: 'Frostwatch junction' },
       ],
     },
   },

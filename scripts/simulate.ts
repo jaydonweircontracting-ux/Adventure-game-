@@ -9,6 +9,7 @@ import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/g
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
 import { npcPersonality, npcAge, npcAgeYears, npcNeeds, villageTarget, npcRelationships, addNPCMemory, npcWage, npcGold, adjustNPCGold, villageEventsForDay } from '../src/game/villageLife';
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
+import { landscapeSeed, moistureAt, forestDensityAt, rockDensityAt, macroLandformAt, regionForChunk, roadCorridorsFor, pointInCorridors, townInfluenceAt, landUseAt, landscapeSitesFor, checkFieldContinuity } from '../src/game/landscape';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText, EDITOR_LOG_MAX } from '../src/game/worldEditor';
 import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE } from '../src/game/mapBuilder';
 import { organicTownSpecs } from '../src/game/organicTowns';
@@ -1422,20 +1423,21 @@ for (const kind of EXPECTED_KINDS) {
 
 // ---- BUILD 321: road preference in NPC pathfinding ----
 {
-  // 1. Road corridor detection (field units; visual road at 47-56% of 140).
-  assert(isOnFieldRoad(72, 72, 'nesw'), 'center should be on road for nesw');
-  assert(isOnFieldRoad(72, 72, 'n'), 'center intersection belongs to every arm');
-  assert(isOnFieldRoad(10, 72, 'ew'), 'west arm should be road for ew');
-  assert(!isOnFieldRoad(10, 72, 'ns'), 'west arm should not be road for ns');
-  assert(isOnFieldRoad(72, 10, 'ns'), 'north arm should be road for ns');
-  assert(!isOnFieldRoad(72, 10, 'ew'), 'north arm should not be road for ew');
+  // 1. Road corridor detection (field units; BUILD 367: canonical 280-space
+  // corridors at 131.6..156.8, center 144).
+  assert(isOnFieldRoad(144, 144, 'nesw'), 'center should be on road for nesw');
+  assert(isOnFieldRoad(144, 144, 'n'), 'center intersection belongs to every arm');
+  assert(isOnFieldRoad(10, 144, 'ew'), 'west arm should be road for ew');
+  assert(!isOnFieldRoad(10, 144, 'ns'), 'west arm should not be road for ns');
+  assert(isOnFieldRoad(144, 10, 'ns'), 'north arm should be road for ns');
+  assert(!isOnFieldRoad(144, 10, 'ew'), 'north arm should not be road for ew');
   assert(!isOnFieldRoad(10, 10, 'nesw'), 'corner should not be road');
-  assert(!isOnFieldRoad(72, 72, 'none'), 'none piece should never be road');
-  assert(!isOnFieldRoad(72, 72, undefined), 'missing piece should never be road');
+  assert(!isOnFieldRoad(144, 144, 'none'), 'none piece should never be road');
+  assert(!isOnFieldRoad(144, 144, undefined), 'missing piece should never be road');
   // 2. A* prefers roads: a trip parallel to (but just off) a road arm walks
   // along the road instead of cutting straight across the grass.
-  const from = { x: 10, y: 90 };
-  const to = { x: 130, y: 90 };
+  const from = { x: 10, y: 170 };
+  const to = { x: 270, y: 170 };
   const roadPath = findPath(from, to, [], undefined, 'nesw');
   const dirtPath = findPath(from, to, [], undefined, undefined);
   assert(roadPath && dirtPath, 'both paths should exist on open ground');
@@ -1465,10 +1467,10 @@ for (const kind of EXPECTED_KINDS) {
   assert(JSON.stringify(again) === JSON.stringify(roadPath), 'road pathfinding must be deterministic');
   // 4. Road preference never overrides obstacles: a wall across the road
   // still forces a detour, not a walk through the wall.
-  const wall = [{ left: 60, top: 60, right: 84, bottom: 84 }];
-  const wallPath = findPath({ x: 20, y: 72 }, { x: 120, y: 72 }, wall, undefined, 'ew');
+  const wall = [{ left: 132, top: 132, right: 156, bottom: 156 }];
+  const wallPath = findPath({ x: 20, y: 144 }, { x: 260, y: 144 }, wall, undefined, 'ew');
   assert(wallPath, 'path around the wall should exist');
-  const throughWall = wallPath!.some((p) => p.x > 60 && p.x < 84 && p.y > 60 && p.y < 84);
+  const throughWall = wallPath!.some((p) => p.x > 132 && p.x < 156 && p.y > 132 && p.y < 156);
   assert(!throughWall, 'road preference must not route through the wall rect');
 }
 
@@ -1489,18 +1491,18 @@ for (const kind of EXPECTED_KINDS) {
     }
     return total === 0 ? 0 : on / total;
   };
-  const p1 = findPath({ x: 10, y: 40 }, { x: 130, y: 40 }, [], undefined, 'nesw');
+  const p1 = findPath({ x: 10, y: 100 }, { x: 270, y: 100 }, [], undefined, 'nesw');
   assert(p1, 'offset parallel trip should have a path');
   assert(frac(p1!) > 0.4, `offset trip should ride the road (got ${frac(p1!).toFixed(2)})`);
   const last1 = p1![p1!.length - 1];
-  assert(Math.hypot(last1.x - 130, last1.y - 40) < 6, 'offset trip must still reach its destination');
-  const p2 = findPath({ x: 10, y: 90 }, { x: 130, y: 90 }, [], undefined, 'nesw');
+  assert(Math.hypot(last1.x - 270, last1.y - 100) < 6, 'offset trip must still reach its destination');
+  const p2 = findPath({ x: 10, y: 170 }, { x: 270, y: 170 }, [], undefined, 'nesw');
   assert(p2 && frac(p2!) > 0.6, `east-west trip should strongly follow the road (got ${p2 ? frac(p2!).toFixed(2) : 'none'})`);
   // Deterministic.
-  const again = findPath({ x: 10, y: 40 }, { x: 130, y: 40 }, [], undefined, 'nesw');
+  const again = findPath({ x: 10, y: 100 }, { x: 270, y: 100 }, [], undefined, 'nesw');
   assert(JSON.stringify(again) === JSON.stringify(p1), 'strengthened road pathfinding must be deterministic');
   // Without a road piece, smoothing still collapses open-ground zigzag.
-  const dirt = findPath({ x: 10, y: 40 }, { x: 130, y: 40 }, [], undefined, undefined);
+  const dirt = findPath({ x: 10, y: 100 }, { x: 270, y: 100 }, [], undefined, undefined);
   assert(dirt && dirt.length <= 3, `no-road smoothing should still collapse (got ${dirt ? dirt.length : 'none'} waypoints)`);
 }
 
@@ -2111,6 +2113,65 @@ console.log('Testing ground detail determinism...');
   const [r, g, b2] = hexToRgb('#77a45b');
   assert(r === 0x77 && g === 0xa4 && b2 === 0x5b, 'hexToRgb should parse meadow green');
   assert(GROUND_PX_PER_UNIT === 4, 'ground canvas should be 4px per field unit');
+}
+
+// ---- BUILD 367: landscape substrate (regions, fields, corridors) ----
+console.log('Testing landscape substrate...');
+{
+  // Subsystem seeds: deterministic per (seed, chunk, subsystem).
+  const s1 = landscapeSeed(847291583, 4, 7, 'vegetation');
+  const s2 = landscapeSeed(847291583, 4, 7, 'vegetation');
+  const s3 = landscapeSeed(847291583, 4, 7, 'rocks');
+  const s4 = landscapeSeed(847291583, 5, 7, 'vegetation');
+  assert(s1() === s2(), 'same subsystem stream should be deterministic');
+  assert(s1() !== s3(), 'different subsystems should differ');
+  assert(s1() !== s4(), 'different chunks should differ');
+  // World-anchored fields: continuous, bounded, border-seamless.
+  for (const f of [moistureAt, forestDensityAt, rockDensityAt, macroLandformAt]) {
+    const v = f(1234.5, 678.9);
+    assert(v >= 0 && v <= 1, 'landscape fields should be in [0,1]');
+  }
+  assert(moistureAt(100, 100) === moistureAt(100, 100), 'fields should be pure functions');
+  // Continuity: adjacent chunks must agree across the shared edge.
+  const cont = checkFieldContinuity([{ x: 4, y: 7 }, { x: 5, y: 7 }, { x: 4, y: 8 }]);
+  for (const s of cont) {
+    assert(s.maxDelta < 0.01, `field continuity ${s.chunk.x},${s.chunk.y} ${s.edge}: delta ${s.maxDelta}`);
+  }
+  // Region layer: stable ids, known landforms.
+  const r1 = regionForChunk(4, 7);
+  const r2 = regionForChunk(4, 7);
+  assert(r1.regionId === r2.regionId && r1.landform === r2.landform, 'region should be deterministic');
+  assert(regionForChunk(4, 7).regionId === regionForChunk(6, 6).regionId, '4x4 chunks share a region');
+  assert(regionForChunk(4, 7).regionId !== regionForChunk(8, 7).regionId, 'regions tile every 4 chunks');
+  // Canonical road corridors: 131.6..156.8 band, arms reach chunk edges.
+  const corr = roadCorridorsFor('nesw');
+  assert(corr.length === 5, `nesw should give 4 arms + center (got ${corr.length})`);
+  const nArm = corr.find((r) => r.y === 0)!;
+  assert(Math.abs(nArm.x - 131.6) < 0.01 && Math.abs(nArm.w - 25.2) < 0.01, `north arm x/w should be 131.6/25.2 (got ${nArm.x}/${nArm.w})`);
+  assert(nArm.h >= 131.6, 'north arm should reach the center');
+  assert(roadCorridorsFor('none').length === 0, 'none should give no corridors');
+  assert(roadCorridorsFor('e').length === 2, 'single arm + center');
+  assert(pointInCorridors(144, 144, corr), 'center should be in corridors');
+  assert(!pointInCorridors(10, 10, corr), 'corner should not be in corridors');
+  assert(pointInCorridors(144, 10, roadCorridorsFor('ns')), 'north arm point');
+  assert(!pointInCorridors(144, 10, roadCorridorsFor('ew')), 'north arm not in ew');
+  const margined = roadCorridorsFor('n', { margin: 6 });
+  assert(margined[0].x < 131.6 && margined[0].w > 25.2, 'margin should expand corridors');
+  // Settlement influence: Mosslight (4,7) is the strongest local source.
+  const moss = townInfluenceAt(4.5 * 280, 7.5 * 280);
+  const wild = townInfluenceAt(-8 * 280, -6 * 280);
+  assert(moss.influence > 0.9, `town center should have high influence (got ${moss.influence})`);
+  assert(wild.influence < 0.2, `far corner should be wilderness (got ${wild.influence})`);
+  assert(landUseAt(4.5 * 280, 7.5 * 280) === 'town', 'Mosslight center should be town land use');
+  assert(landUseAt(-8 * 280, -6 * 280) === 'wilderness', 'far corner should be wilderness');
+  // Activity sites: deterministic, in-bounds.
+  const sites1 = landscapeSitesFor({ x: 6, y: 7 });
+  const sites2 = landscapeSitesFor({ x: 6, y: 7 });
+  assert(JSON.stringify(sites1) === JSON.stringify(sites2), 'sites should be deterministic');
+  for (const s of sites1) {
+    assert(s.rect.x >= 0 && s.rect.y >= 0 && s.rect.x + s.rect.w <= 280 && s.rect.y + s.rect.h <= 280,
+      `site ${s.kind} should be inside the chunk`);
+  }
 }
 
 // ---- Results ----

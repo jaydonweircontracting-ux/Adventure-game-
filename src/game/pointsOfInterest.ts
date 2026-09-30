@@ -385,8 +385,10 @@ export function poisForChunk(
     usedKinds.add(kind);
 
     const position: PoiPosition = {
-      x: 8 + rng.nextFloat() * 124,
-      y: 8 + rng.nextFloat() * 124,
+      // BUILD 367: 280-unit field space (was 8..132, clustering POIs in the
+      // top-left of the 280-unit field).
+      x: 8 + rng.nextFloat() * 264,
+      y: 8 + rng.nextFloat() * 264,
     };
     const base: PointOfInterest = {
       id: `poi-${chunk.x},${chunk.y}-${kind}-${i}`,

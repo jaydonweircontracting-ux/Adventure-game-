@@ -73,8 +73,10 @@ export type NPCLocationState = {
 // Coarse grid A* for building avoidance.
 // ---------------------------------------------------------------------------
 
-const CELL = 4; // field units per cell; 140/4 = 35x35 grid
-const GRID = 35;
+const CELL = 4; // field units per cell; 280/4 = 70x70 grid (BUILD 367: was
+// 35x35, covering only a quarter of the 280-unit field — destinations in
+// the lower/right half collapsed to the grid edge)
+const GRID = 70;
 
 type GridCell = { x: number; y: number };
 
@@ -125,13 +127,14 @@ function heuristic(a: GridCell, b: GridCell): number {
  * use a fallback destination).
  */
 /**
- * Field road corridors (BUILD 321): the visual road renders at --road-x/--road-y
- * 47% with 9% width/height on the 140-unit field → 65.8..78.4 units. Slightly
- * widened so the 4-unit A* cells register as road. Pure.
+ * Field road corridors (BUILD 367): the canonical corridor from
+ * landscape.ts roadCorridorsFor — visual road at 47% with 9% width on the
+ * 280-unit field → 131.6..156.8 units. Slightly widened so the 4-unit A*
+ * cells register as road. Pure.
  */
-const ROAD_MIN = 64;
-const ROAD_MAX = 80;
-const ROAD_MID = 72;
+const ROAD_MIN = 128;
+const ROAD_MAX = 160;
+const ROAD_MID = 144;
 /** Cost multiplier for A* steps through non-road cells (road cells cost 1).
  * BUILD 328: raised from 1.45 so cross-town trips visibly divert onto roads
  * instead of cutting straight across the grass — NPCs walk like they live
@@ -199,8 +202,9 @@ export function findPath(
 
   let found = false;
   let guard = 0;
-  while (open.length > 0 && guard++ < 4000) {
-    // Pick lowest fScore (linear scan is fine at 35x35).
+  while (open.length > 0 && guard++ < 12000) {
+    // Pick lowest fScore (linear scan; fine at 70x70 for occasional repaths —
+    // paths are computed on destination change, not per tick).
     let best = 0;
     for (let i = 1; i < open.length; i++) {
       if ((fScore.get(key(open[i])) ?? Infinity) < (fScore.get(key(open[best])) ?? Infinity)) best = i;

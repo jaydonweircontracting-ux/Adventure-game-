@@ -63,6 +63,7 @@ import {
 } from '@/game/horses';
 import { generateSettlementPopulation, type CharacterProfile } from '@/game/characterGen';
 import { poisForChunk as modulePoisForChunk, treasureForPoi, monstersForPoiKind, type PointOfInterest, type PoiKind } from '@/game/pointsOfInterest';
+import { roadCorridorsFor, pointInCorridors, LANDSCAPE_FIELD_SIZE } from '@/game/landscape';
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, resolveMonsterSprite } from '@/game/monsterSprites';
 import { probeMonsterSheets, isMonsterSheetFailed, onMonsterSheetFailure } from './game/monsterSprites/sheetProbe';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
@@ -92,7 +93,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '366';
+const BUILD_NUMBER = '367';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -577,15 +578,11 @@ function pointInWater(position: Point, tile: MapTile) {
 }
 
 function pointOnFieldRoad(point: Point, road: MapTile['road']) {
-  // Keep tree canopies and trunks off the road arms, not just the center lines.
+  // BUILD 367: canonical road corridors (131.6..156.8 field units) from
+  // landscape.ts — replaces the stale 44..59 band that let trees spawn on
+  // the real road. 6-unit canopy margin keeps trunks AND canopies clear.
   if (road === 'none') return false;
-  const onHorizontalCorridor = point.y >= 44 && point.y <= 59;
-  const onVerticalCorridor = point.x >= 44 && point.x <= 59;
-  const onWestArm = road.includes('w') && point.x < 54 && onHorizontalCorridor;
-  const onEastArm = road.includes('e') && point.x >= 46 && onHorizontalCorridor;
-  const onNorthArm = road.includes('n') && point.y < 54 && onVerticalCorridor;
-  const onSouthArm = road.includes('s') && point.y >= 46 && onVerticalCorridor;
-  return onWestArm || onEastArm || onNorthArm || onSouthArm;
+  return pointInCorridors(point.x, point.y, roadCorridorsFor(road, { margin: 6 }));
 }
 
 export function fieldTreesFor(chunk: Point): FieldTree[] {
