@@ -685,36 +685,43 @@ console.log('Testing NPC physical movement scenarios (BUILD 312)...');
     assert(teleports === 0, `${teleports} teleports detected among 20 NPCs`);
   }
 
-  // TEST 4 — Adventurer exodus: all 10 starting adventurers physically leave
-  // the starting area within 1 in-game hour (sim ticks), via varied routes,
-  // with no teleporting.
+  // TEST 4 — Adventurer exodus on the AUTHORITATIVE world clock: all 10
+  // starting adventurers physically leave the starting area within 1 in-game
+  // hour of stepping out of the starting house, via varied routes, with no
+  // teleporting. The world clock advances 10 game-minutes every 3 real
+  // seconds; the living sim ticks every 1.9s, so each living tick = 19/3
+  // game-minutes — modeled exactly the way App.tsx runs both loops.
   {
-    const { initialSimulatedAdventurers, spawnDueAdventurer, advanceSimulatedAdventurers, MAX_ADVENTURERS, EXODUS_DEADLINE_TICKS } =
+    const { initialSimulatedAdventurers, spawnDueAdventurer, advanceSimulatedAdventurers, MAX_ADVENTURERS, EXODUS_DEADLINE_MINUTES, worldClockMinutes } =
       await import('../src/game/simulatedAdventurers');
     let advs = initialSimulatedAdventurers.map((a) => ({ ...a }));
     const lastPos = new Map<string, { x: number; y: number }>();
     const lastLoc = new Map<string, string>();
-    const leftAt = new Map<string, number>(); // tick when each first left
+    const leftAt = new Map<string, number>(); // world-clock minutes when each first left
     let teleports = 0;
-    // 1 in-game hour in sim ticks: spawn stagger (9*32) + exodus walk (~60) + margin.
-    const HOUR_TICKS = 500;
+    // Spawn stagger (9*32 ticks) + exodus march (<=8 ticks each) + margin.
+    const HOUR_TICKS = 400;
+    const startClock = worldClockMinutes(5, 360); // day 5, 06:00
     for (let tick = 0; tick <= HOUR_TICKS; tick++) {
+      const clockMinutes = startClock + (tick * 19) / 3;
       advs = spawnDueAdventurer(advs, tick);
-      advs = advanceSimulatedAdventurers(advs, tick, []);
+      advs = advanceSimulatedAdventurers(advs, tick, [], clockMinutes);
       for (const a of advs) {
         const prev = lastPos.get(a.id);
         const prevLoc = lastLoc.get(a.id);
         if (prev && prevLoc === 'field' && (a.location || 'field') === 'field') {
           // Both in field: position must be continuous (door exits are the
-          // only allowed transition, and those change location).
+          // only allowed transition, and those change location). Exodus
+          // marchers legitimately move up to their calibrated march speed.
+          const maxStep = a.outing === 'exodus' ? (a.exodusSpeed ?? 18) : 5;
           const jump = Math.hypot(a.position.x - prev.x, a.position.y - prev.y);
-          if (jump > 5) teleports++;
+          if (jump > maxStep + 0.001) teleports++;
         }
         // "Left" = reached traveling (exodus complete) or at a boundary.
         const p = a.position;
         const atBoundary = p.x <= 6 || p.x >= 134 || p.y <= 6 || p.y >= 134;
         if (!leftAt.has(a.id) && ((a.location || 'field') === 'traveling' || atBoundary)) {
-          leftAt.set(a.id, tick);
+          leftAt.set(a.id, clockMinutes);
         }
         lastPos.set(a.id, { ...a.position });
         lastLoc.set(a.id, a.location || 'field');
@@ -722,15 +729,22 @@ console.log('Testing NPC physical movement scenarios (BUILD 312)...');
     }
     assert(advs.length === MAX_ADVENTURERS, `Expected ${MAX_ADVENTURERS} adventurers, got ${advs.length}`);
     assert(teleports === 0, `${teleports} adventurer teleports detected during exodus`);
-    // Every adventurer must have left within the deadline after spawning.
+    // Every adventurer must have left within 1 in-game hour of stepping out.
     const late: string[] = [];
     for (const a of advs) {
       const lt = leftAt.get(a.id);
-      const st = (a as { spawnTick?: number }).spawnTick ?? 0;
+      const st = a.exodusStartClockMinutes ?? startClock;
       if (lt === undefined) late.push(`${a.id} never left`);
-      else if (lt - st > EXODUS_DEADLINE_TICKS) late.push(`${a.id} left at tick ${lt} (spawned ${st})`);
+      else if (lt - st > EXODUS_DEADLINE_MINUTES) late.push(`${a.id} left ${(lt - st).toFixed(1)} min after stepping out`);
     }
-    assert(late.length === 0, `Adventurers did not leave in time: ${late.join(', ')}`);
+    assert(late.length === 0, `Adventurers did not leave within 1 in-game hour: ${late.join(', ')}`);
+    // Physical arrival must beat the backstop: nobody should have been
+    // force-completed without reaching their boundary.
+    const backstopped = advs.filter((a) => {
+      const p = a.position;
+      return (a.location || 'field') === 'traveling' && !(p.x <= 6 || p.x >= 134 || p.y <= 6 || p.y >= 134);
+    });
+    assert(backstopped.length === 0, `Exodus backstop fired without physical arrival: ${backstopped.map((a) => a.id).join(', ')}`);
     // Varied routes: not all adventurers exited via the same edge.
     const edges = new Set(advs.map((a) => {
       const t = (a as { exodusTarget?: { x: number; y: number } }).exodusTarget;

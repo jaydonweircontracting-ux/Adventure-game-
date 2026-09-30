@@ -24,6 +24,12 @@ export type SimulatedAdventurer = {
   outingTicks?: number;
   /** Sim tick when this adventurer spawned (for the exodus deadline). */
   spawnTick?: number;
+  /** Authoritative world-clock minutes (day * 1440 + minuteOfDay) when the
+   * adventurer stepped out of the starting house and began the exodus. */
+  exodusStartClockMinutes?: number;
+  /** March speed (field units per living-sim tick) calibrated at exodus start
+   * so the walk to the assigned boundary finishes within 1 in-game hour. */
+  exodusSpeed?: number;
   /** Assigned chunk-boundary exit for the exodus (varied per adventurer). */
   exodusTarget?: { x: number; y: number };
   /** Deterministic motivation for leaving (shown in activity). */
@@ -59,6 +65,42 @@ const BOUNDARY_SOUTH = FIELD_SIZE - 2;
 // adventurer sim ticks faster, so 200 ticks is a generous upper bound that
 // still enforces prompt departure (the walk itself takes ~40 ticks).
 export const EXODUS_DEADLINE_TICKS = 200;
+
+/**
+ * Authoritative exodus deadline: 1 in-game hour (60 world-clock minutes)
+ * after the adventurer steps out of the starting house. The world clock
+ * advances 10 minutes every 3 real seconds, so 1 game-hour = 18 real seconds
+ * = ~9.5 living-sim ticks (1.9s each). The march speed is calibrated per
+ * adventurer so the physical walk to their assigned boundary completes inside
+ * the hour — no teleporting, whatever the route length.
+ */
+export const EXODUS_DEADLINE_MINUTES = 60;
+export const EXODUS_LIVING_TICKS_PER_HOUR = 9.5;
+/**
+ * Target living-sim ticks for the exodus march — comfortably inside 1
+ * game-hour (~9.5 ticks), so physical arrival always beats the deadline
+ * backstop regardless of clock/tick phase alignment.
+ */
+export const EXODUS_MARCH_TICKS = 8;
+const EXODUS_MIN_SPEED = 3.4;
+const EXODUS_MAX_SPEED = 18;
+
+/** World-clock minutes for a (day, minuteOfDay) pair — the authoritative clock. */
+export function worldClockMinutes(day: number, minuteOfDay: number): number {
+  return day * 1440 + minuteOfDay;
+}
+
+/**
+ * March speed so the walk from `from` to `target` finishes within 1 game-hour.
+ * Calibrated on Manhattan distance because the sim's moveToward walks
+ * axis-by-axis (staircase), not diagonally — Euclidean calibration
+ * underestimates the true path by up to ~40%.
+ */
+export function exodusMarchSpeed(from: Point, target: Point): number {
+  const dist = Math.abs(target.x - from.x) + Math.abs(target.y - from.y);
+  const speed = dist / EXODUS_MARCH_TICKS;
+  return Math.min(EXODUS_MAX_SPEED, Math.max(EXODUS_MIN_SPEED, speed));
+}
 
 const routes: Record<string, Point[]> = {
   kael: [{ x: 43, y: 48 }, { x: 47, y: 42 }, { x: 55, y: 42 }, { x: 60, y: 49 }, { x: 55, y: 56 }, { x: 45, y: 56 }],
@@ -246,7 +288,7 @@ function maybeChooseClass(adventurer: SimulatedAdventurer, tick: number): Simula
   };
 }
 
-function advanceFromHouse(adventurer: SimulatedAdventurer, tick: number): SimulatedAdventurer {
+function advanceFromHouse(adventurer: SimulatedAdventurer, tick: number, clockMinutes?: number): SimulatedAdventurer {
   const path = houseRoutes[adventurer.id] || [];
   const current = adventurer.interiorPosition || { x: 50, y: 48 };
   const target = path[adventurer.routeIndex] || path[path.length - 1];
@@ -258,10 +300,13 @@ function advanceFromHouse(adventurer: SimulatedAdventurer, tick: number): Simula
       // Physical door exit: step out at the REAL starting-house door exterior
       // (not a hardcoded field point). Interior and field are different
       // coordinate spaces — this is a door transition, not a teleport.
-      const exodus = adventurer.exodusTarget ? {} : assignExodus(adventurer);
+      const assigned = adventurer.exodusTarget ? undefined : assignExodus(adventurer);
+      // `assigned` is defined exactly when adventurer.exodusTarget is not; the
+      // fallback is unreachable but satisfies the type checker.
+      const exodusTarget = adventurer.exodusTarget ?? assigned?.exodusTarget ?? { x: BOUNDARY_EAST, y: 70 };
       return {
         ...adventurer,
-        ...exodus,
+        ...assigned,
         location: 'field' as const,
         position: { ...STARTING_HOUSE_DOOR_EXTERIOR },
         interiorPosition: target,
@@ -272,6 +317,10 @@ function advanceFromHouse(adventurer: SimulatedAdventurer, tick: number): Simula
         outing: 'exodus' as const,
         outingTicks: EXODUS_DEADLINE_TICKS,
         spawnTick: adventurer.spawnTick ?? tick,
+        // Authoritative deadline: the world clock starts now, and the march
+        // speed is calibrated so the physical walk beats the 1-hour mark.
+        exodusStartClockMinutes: clockMinutes ?? adventurer.exodusStartClockMinutes,
+        exodusSpeed: exodusMarchSpeed(STARTING_HOUSE_DOOR_EXTERIOR, exodusTarget),
       };
     }
     return { ...adventurer, interiorPosition: target, routeIndex: nextIndex, facing: (target.x >= current.x ? 'right' : 'left') as 'right' | 'left', moving: false, activity: 'heading for the front door' };
@@ -286,21 +335,35 @@ function advanceFromHouse(adventurer: SimulatedAdventurer, tick: number): Simula
  * Exodus: the adventurer's first outing — walk from the starting-house door
  * to their assigned chunk boundary and leave the starting area. This is
  * mandatory; normal outings (wander/hunt/tavern/guild) only begin after the
- * exodus completes. Enforces the 1-in-game-hour departure.
+ * exodus completes. Enforces the 1-in-game-hour departure on the
+ * AUTHORITATIVE world clock (tick-based fallback when no clock is passed).
  */
-function advanceExodus(adventurer: SimulatedAdventurer, tick: number): SimulatedAdventurer {
+function advanceExodus(adventurer: SimulatedAdventurer, tick: number, clockMinutes?: number): SimulatedAdventurer {
   const target = adventurer.exodusTarget;
   if (!target) {
     // No target assigned (shouldn't happen) — assign and keep walking.
-    return { ...advanceExodus({ ...adventurer, ...assignExodus(adventurer) }, tick) };
+    return { ...advanceExodus({ ...adventurer, ...assignExodus(adventurer) }, tick, clockMinutes) };
   }
   const ticksLeft = (adventurer.outingTicks ?? 1) - 1;
   const spawnTick = adventurer.spawnTick ?? tick;
-  const overdue = tick - spawnTick > EXODUS_DEADLINE_TICKS;
-  const moved = moveToward(adventurer.position, target, 3.4);
+  // March speed calibrated at exodus start so the walk beats the 1-hour
+  // deadline; recompute from the current position for older saves that lack
+  // it (never slower than the legacy 3.4).
+  const speed = adventurer.exodusSpeed
+    ?? Math.max(3.4, exodusMarchSpeed(adventurer.position, target));
+  // Authoritative deadline: 60 world-clock minutes after stepping out.
+  // Falls back to the legacy tick count when no clock is available (tests).
+  const startClock = adventurer.exodusStartClockMinutes;
+  const overdue = clockMinutes !== undefined && startClock !== undefined
+    ? clockMinutes - startClock >= EXODUS_DEADLINE_MINUTES
+    : tick - spawnTick > EXODUS_DEADLINE_TICKS;
+  const moved = moveToward(adventurer.position, target, speed);
   const arrived = moved.distance < 2.5;
   if (arrived || ticksLeft <= 0 || overdue) {
-    // Left the starting area (or ran out of time — bee-lined to the edge).
+    // Left the starting area. The overdue backstop only fires when the walk
+    // couldn't physically finish in time (far-sim 1/8 ticking while the
+    // player is in another chunk, or a clock jump) — the adventurer left
+    // while out of view, a legitimate simulation event.
     const dir = target.x >= BOUNDARY_EAST ? 'eastern' : target.x <= BOUNDARY_WEST ? 'western' : target.y <= BOUNDARY_NORTH ? 'northern' : 'southern';
     return {
       ...adventurer,
@@ -462,12 +525,19 @@ function advanceTravel(adventurer: SimulatedAdventurer, tick: number): Simulated
   return { ...adventurer, outingTicks: ticksLeft, moving: false };
 }
 
-export function advanceSimulatedAdventurers(adventurers: SimulatedAdventurer[], tick: number, goatTargets: GoatTarget[] = []): SimulatedAdventurer[] {
+export function advanceSimulatedAdventurers(
+  adventurers: SimulatedAdventurer[],
+  tick: number,
+  goatTargets: GoatTarget[] = [],
+  /** Authoritative world-clock minutes (day * 1440 + minuteOfDay). When
+   * provided, the exodus deadline is enforced on the world clock. */
+  clockMinutes?: number,
+): SimulatedAdventurer[] {
   return adventurers.map((adventurer) => {
-    if ((adventurer.location || 'field') === 'starting-house') return advanceFromHouse(adventurer, tick);
+    if ((adventurer.location || 'field') === 'starting-house') return advanceFromHouse(adventurer, tick, clockMinutes);
     // Exodus is mandatory: no other outings until the adventurer has left the
     // starting area once.
-    if (adventurer.outing === 'exodus') return advanceExodus(adventurer, tick);
+    if (adventurer.outing === 'exodus') return advanceExodus(adventurer, tick, clockMinutes);
     // Occasionally change goals (every ~100 ticks) — deterministic.
     let goal = adventurer.goal;
     let status: 'healthy' | 'injured' | 'resting' = adventurer.status || 'healthy';
