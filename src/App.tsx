@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '242';
+const BUILD_NUMBER = '243';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -820,10 +820,12 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
 }
 
 function doorwayExteriorPosition(rect: FieldRect, doorway: Point): Point {
-  // Spawn at the door position (not south in the grass) so the player appears
-  // at the visible doorway. The door is at the bottom of the house; the
-  // collision padding is handled by the movement system.
-  return { x: doorway.x, y: Math.min(FIELD_SIZE - 6, doorway.y + 1.5) };
+  // Spawn south of the house's collision rect (not at the door, which is
+  // inside the solid rect) so the player never spawns trapped. Aligned with
+  // the door's x so they appear at the visible doorway.
+  // BUILD 243: was doorway.y + 1.5, which is inside the rect for the new
+  // stone houses (door at 72.5% height, rect extends to 100%).
+  return { x: doorway.x, y: Math.min(FIELD_SIZE - 6, rect.bottom + 1.2) };
 }
 
 const STARTING_DOORWAY_ID = 'tutorial-house-door';
