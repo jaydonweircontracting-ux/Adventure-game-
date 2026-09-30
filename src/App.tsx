@@ -18,6 +18,14 @@ import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint } from '@/game/townsfolk';
 import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
 import { LANDMARKS } from '@/game/landmarks';
+import {
+  advanceCivilization,
+  createCivilization,
+  deserializeCivilization,
+  serializeCivilization,
+  settlementsByChunk,
+  type CivilizationState,
+} from '@/game/civilization';
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor } from '@/game/monsterSprites';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
@@ -1171,6 +1179,7 @@ type SaveGameData = {
   escortHired?: boolean;
   questLog?: string;
   openedChests?: string;
+  civ?: string;
   logs: Array<{ text: string; color: string }>;
   time: string;
   brainState: RpgGameState | null;
@@ -1327,7 +1336,8 @@ function isSaveGameData(value: unknown): value is SaveGameData {
     && typeof value.time === 'string'
     && Array.isArray(value.logs)
     && value.logs.every((log) => isRecord(log) && typeof log.text === 'string' && typeof log.color === 'string')
-    && (value.brainState === null || isBrainStateSave(value.brainState));
+    && (value.brainState === null || isBrainStateSave(value.brainState))
+    && (value.civ === undefined || typeof value.civ === 'string');
 }
 
 
@@ -3103,6 +3113,17 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   // Lockpicking: opened locked-chest ids (pure logic in src/game/lockpicking.ts).
   const [openedChests, setOpenedChests] = useState<string[]>([]);
   const openedChestsRef = useRef<string[]>([]);
+  // Civilization (phase 3+): settlement hierarchy, kingdoms, rulers, trade.
+  // Created lazily on first clock tick; advanced once per in-game day.
+  const civRef = useRef<CivilizationState | null>(null);
+  const ensureCiv = () => {
+    if (!civRef.current) civRef.current = createCivilization(DEFAULT_WORLD_SEED);
+    return civRef.current;
+  };
+  const advanceCivForClock = (clock: WorldClockState | null | undefined) => {
+    if (!clock) return;
+    advanceCivilization(ensureCiv(), clock);
+  };
   const questRumoredRef = useRef<Set<string>>(new Set());
   const [questDialog, setQuestDialog] = useState<{ giverName: string; questId: string } | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -3277,6 +3298,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     escortHired: escortHiredRef.current,
     questLog: serializeQuestStates(questStatesRef.current),
     openedChests: serializeOpenedChests(openedChestsRef.current),
+    civ: civRef.current ? serializeCivilization(civRef.current) : undefined,
     brainState: brainRef.current?.getGameState() || null,
   });
   saveStateRef.current = createSaveData;
@@ -3331,6 +3353,16 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     questStatesRef.current = restoredQuests; setQuestStates(restoredQuests);
     const restoredChests = parseOpenedChests(loadState.openedChests);
     openedChestsRef.current = restoredChests; setOpenedChests(restoredChests);
+    // Civilization: restore the simulated hierarchy, or rebuild it lazily.
+    if (loadState.civ) {
+      try {
+        civRef.current = deserializeCivilization(loadState.civ);
+      } catch {
+        civRef.current = null;
+      }
+    } else {
+      civRef.current = null;
+    }
     setNpcDialogue(null); setAttackFlash(null); setLogOpen(false); setMoving(false);
     if (loadState.brainState) {
       // Phase 1: persistent world time must survive a corrupt/incompatible
@@ -3511,6 +3543,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
       if (remaining <= 0) { cancelWait(); if (onComplete) onComplete(); return; }
       const nextClock = brainRef.current?.worldCore.advance(1);
       if (nextClock) setTime(formatWorldClock(nextClock));
+      advanceCivForClock(nextClock);
       // The world does NOT freeze: NPC schedules, travelers and the
       // simulated adventurers all advance one tick per world tick.
       advanceLivingSimTickRef.current();
@@ -3579,6 +3612,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     const timer = window.setInterval(() => {
       const nextClock = brainRef.current?.worldCore.advance(1);
       if (nextClock) setTime(formatWorldClock(nextClock));
+      advanceCivForClock(nextClock);
       advanceLivingSimTickRef.current();
       done += 1;
       if (done >= totalTicks) {
@@ -4160,6 +4194,7 @@ if (active) {
       if (waitingRef.current) return; // the wait driver owns the clock while waiting
       const nextClock = brainRef.current?.worldCore.advance(1);
       if (nextClock) setTime(formatWorldClock(nextClock));
+      advanceCivForClock(nextClock);
     }, 3000);
     return () => {
       window.cancelAnimationFrame(animationFrame);
@@ -4849,6 +4884,23 @@ if (active) {
                   Close
                 </button>
               </div>
+              {(() => {
+                const civ = ensureCiv();
+                const here = settlementsByChunk(civ, chunk);
+                return (
+                  <div className="inspector-section">
+                    <div className="inspector-heading">Civilization ({civ.kingdoms.length} kingdoms · {civ.settlements.length} settlements)</div>
+                    {here.map((s) => (
+                      <div key={s.id} className="inspector-row">
+                        <span>🏰 <strong>{s.name}</strong> · {s.kind}{s.kingdomId ? ` · ${s.kingdomId === 'aldoria' ? 'Kingdom of Aldoria' : 'Thalara'}` : ''}</span>
+                      </div>
+                    ))}
+                    {here.length === 0 && (
+                      <div className="inspector-row"><span>Wilderness — no settlement on this chunk.</span></div>
+                    )}
+                  </div>
+                );
+              })()}
               {townsfolk.length > 0 && (
                 <div className="inspector-section">
                   <div className="inspector-heading">Mosslight townsfolk ({townsfolk.length})</div>
