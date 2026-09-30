@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '245';
+const BUILD_NUMBER = '246';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -884,19 +884,32 @@ function newHouseDoorPosition(rect: FieldRect): Point {
   };
 }
 
+function doorwayTriggerDims(rect: { left: number; right: number }): { xTol: number } {
+  // Hard-lock the trigger to the visual doorway: the CSS door (::after) is
+  // 24% of the house width, centered. Trigger x-tolerance = half the visual
+  // door width plus a tiny padding so it feels precise, not loose.
+  const halfDoorWidth = (rect.right - rect.left) * 0.12;
+  return { xTol: halfDoorWidth + 0.3 };
+}
+
 function doorwayNear(position: Point, chunk: Point, offsets?: Record<string, Point>) {
   // Only trigger when the player is south of the door (where entry is possible),
-  // not on the sides or north of the house. This prevents the prompt from
-  // appearing at the same relative spots on either side of each house.
+  // not on the sides or north of the house. The trigger is hard-locked to the
+  // visual doorway dimensions — not a loose approximation.
   // If house offsets are provided (mover mode), the trigger follows the visual —
   // the entry point is attached to the house, not a stagnant separate position.
   const found = buildingDoorwaysFor(chunk).find((doorway) => {
     const off = offsets?.[doorway.id] || { x: 0, y: 0 };
     const dx = doorway.position.x + off.x;
     const dy = doorway.position.y + off.y;
+    const movedRect = {
+      left: doorway.rect.left + off.x,
+      right: doorway.rect.right + off.x,
+    };
+    const { xTol } = doorwayTriggerDims(movedRect);
     return position.y > dy
-      && position.y - dy <= 4.0
-      && Math.abs(position.x - dx) <= 3.0;
+      && position.y - dy <= 2.5
+      && Math.abs(position.x - dx) <= xTol;
   });
   if (!found) return null;
   // Return a copy with the offset applied so entry/exit use the moved position.
@@ -922,10 +935,14 @@ function doorwayNear(position: Point, chunk: Point, offsets?: Record<string, Poi
 }
 
 function canEnterDoorway(currentPosition: Point, nextPosition: Point, doorway: Doorway, direction: Direction) {
+  // Hard-locked to the visual doorway: same x-tolerance as the prompt, and the
+  // player must be moving up from just south of the door into the trigger zone.
+  // The doorway passed in already has mover offsets applied (from doorwayNear).
+  const { xTol } = doorwayTriggerDims(doorway.rect);
   return direction === 'up'
     && currentPosition.y > doorway.position.y
-    && nextPosition.y <= doorway.position.y + 6.0
-    && Math.abs(nextPosition.x - doorway.position.x) <= 6.0;
+    && nextPosition.y <= doorway.position.y + 2.5
+    && Math.abs(nextPosition.x - doorway.position.x) <= xTol;
 }
 
 type InteriorCollisionRect = FieldRect;
