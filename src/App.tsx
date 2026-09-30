@@ -63,7 +63,7 @@ import {
 } from '@/game/horses';
 import { generateSettlementPopulation, type CharacterProfile } from '@/game/characterGen';
 import { poisForChunk as modulePoisForChunk, treasureForPoi, monstersForPoiKind, type PointOfInterest, type PoiKind } from '@/game/pointsOfInterest';
-import { roadCorridorsFor, pointInCorridors, LANDSCAPE_FIELD_SIZE } from '@/game/landscape';
+import { roadCorridorsFor, pointInCorridors, waterAt, LANDSCAPE_FIELD_SIZE } from '@/game/landscape';
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, resolveMonsterSprite } from '@/game/monsterSprites';
 import { probeMonsterSheets, isMonsterSheetFailed, onMonsterSheetFailure } from './game/monsterSprites/sheetProbe';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
@@ -93,7 +93,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '368';
+const BUILD_NUMBER = '369';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -2600,6 +2600,31 @@ function renderTerrainAtlas(tiles: AtlasTile[], cols: number, rows: number): HTM
     if (at(x, y + 1)?.world.biome !== 'ocean') ctx.fillRect(X0, Y0 + T - 2, T, 2);
     if (at(x - 1, y)?.world.biome !== 'ocean') ctx.fillRect(X0, Y0, 2, T);
     if (at(x + 1, y)?.world.biome !== 'ocean') ctx.fillRect(X0 + T - 2, Y0, 2, T);
+  }
+
+  // BUILD 369 (Phase 2b): rivers and lakes on the atlas. Sample the
+  // authoritative water at 3x3 sub-points per tile; wet sub-points draw as
+  // blue dots so rivers read as winding lines and lakes as blobs.
+  for (const tile of tiles) {
+    const { x, y, biome } = tile.world;
+    if (biome === 'ocean') continue;
+    const X0 = px(x);
+    const Y0 = py(y);
+    const S = LANDSCAPE_FIELD_SIZE;
+    for (let sy = 0; sy < 3; sy++) {
+      for (let sx = 0; sx < 3; sx++) {
+        const wx = x * S + ((sx + 0.5) / 3) * S;
+        const wy = y * S + ((sy + 0.5) / 3) * S;
+        const w = waterAt(wx, wy);
+        if (w.depth <= 0.3) continue;
+        const dx = X0 + ((sx + 0.5) / 3) * T;
+        const dy = Y0 + ((sy + 0.5) / 3) * T;
+        ctx.fillStyle = w.kind === 'lake' ? 'rgba(58, 130, 200, 0.95)' : 'rgba(70, 140, 210, 0.9)';
+        ctx.beginPath();
+        ctx.arc(dx, dy, w.kind === 'lake' ? 5 : 3.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 
   // Pass 4: roads as continuous cased paths; bridges over water.
@@ -5600,6 +5625,9 @@ if (active) {
     paints: mapPaints[chunkKey] ?? [],
     // BUILD 355: elevation hills + cliff faces.
     hills: buildGroundHills(chunk),
+    // BUILD 369 (Phase 2b): authoritative rivers/lakes/bridges.
+    chunkX: chunk.x,
+    chunkY: chunk.y,
   };
   const talkToNpc = (npc: TownNpc) => {
     setNpcDialogue(npc);
@@ -8894,6 +8922,9 @@ function ChunkSurroundings({ chunk, gameZoom, hiddenRoadChunks, mapPaints }: {
         paints: mapPaints[nKey] ?? [],
         // BUILD 355: keep hills continuous across chunk borders.
         hills: buildGroundHills(nChunk),
+        // BUILD 369 (Phase 2b): authoritative rivers/lakes/bridges.
+        chunkX: nChunk.x,
+        chunkY: nChunk.y,
       };
       return { dx, dy, key: nKey, spec };
     });

@@ -506,6 +506,87 @@ export function bridgeAt(
 }
 
 // ---------------------------------------------------------------------------
+// WaterGrid — cached per-chunk water sampling for renderers (Phase 2b)
+// ---------------------------------------------------------------------------
+
+/**
+ * A chunk's water sampled on a coarse grid. Renderers (2D field canvas,
+ * world-map atlas, iso view) share this instead of calling waterAt per
+ * pixel: the 3x3-neighborhood lakes are computed once per grid, not once
+ * per sample. Pure and deterministic.
+ */
+export interface WaterGrid {
+  /** Cells per side. */
+  cells: number;
+  /** Field units per cell. */
+  cellSize: number;
+  /** World x of the grid origin (chunk's min corner). */
+  originX: number;
+  /** World y of the grid origin. */
+  originY: number;
+  /** cells*cells depths, 0..1, row-major. */
+  depths: Float32Array;
+  /** cells*cells kinds: 0 = none, 1 = river, 2 = lake. */
+  kinds: Uint8Array;
+}
+
+export const WATER_GRID_DEFAULT_CELLS = 70;
+
+/**
+ * Sample every cell center of a chunk: river channels plus the cached
+ * 3x3-neighborhood lakes (deepest wins, same rule as waterAt).
+ */
+export function waterGridForChunk(
+  cx: number,
+  cy: number,
+  cells: number = WATER_GRID_DEFAULT_CELLS,
+  worldSeed: number = DEFAULT_WORLD_SEED,
+): WaterGrid {
+  const S = LANDSCAPE_FIELD_SIZE;
+  // Lakes for the containing chunk + 8 neighbors, computed once.
+  const lakes: Lake[] = [];
+  for (let oy = -1; oy <= 1; oy++) {
+    for (let ox = -1; ox <= 1; ox++) {
+      const chunkLakes = lakesForChunk(cx + ox, cy + oy, worldSeed);
+      for (const lake of chunkLakes) lakes.push(lake);
+    }
+  }
+  const cellSize = S / cells;
+  const depths = new Float32Array(cells * cells);
+  const kinds = new Uint8Array(cells * cells);
+  for (let gy = 0; gy < cells; gy++) {
+    for (let gx = 0; gx < cells; gx++) {
+      const wx = cx * S + (gx + 0.5) * cellSize;
+      const wy = cy * S + (gy + 0.5) * cellSize;
+      let best: WaterSample = riverAt(wx, wy);
+      for (const lake of lakes) {
+        const depth = lakeDepthAt(wx, wy, lake);
+        if (depth > best.depth) best = { kind: 'lake', depth };
+      }
+      const i = gy * cells + gx;
+      depths[i] = best.depth;
+      kinds[i] = best.kind === 'river' ? 1 : best.kind === 'lake' ? 2 : 0;
+    }
+  }
+  return { cells, cellSize, originX: cx * S, originY: cy * S, depths, kinds };
+}
+
+/** Nearest-cell sample of a WaterGrid at world coordinates. */
+export function waterGridAt(
+  grid: WaterGrid,
+  wx: number,
+  wy: number,
+): { depth: number; kind: 0 | 1 | 2 } {
+  const gx = Math.floor((wx - grid.originX) / grid.cellSize);
+  const gy = Math.floor((wy - grid.originY) / grid.cellSize);
+  if (gx < 0 || gy < 0 || gx >= grid.cells || gy >= grid.cells) {
+    return { depth: 0, kind: 0 };
+  }
+  const i = gy * grid.cells + gx;
+  return { depth: grid.depths[i], kind: grid.kinds[i] as 0 | 1 | 2 };
+}
+
+// ---------------------------------------------------------------------------
 // Continuity self-check (developer-only, no player-facing score)
 // ---------------------------------------------------------------------------
 

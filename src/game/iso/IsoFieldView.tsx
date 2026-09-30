@@ -16,6 +16,8 @@ import {
   type Point,
 } from '../../App';
 import type { Townsperson } from '../townsfolk';
+// BUILD 369 (Phase 2b): authoritative water/bridges in the iso field.
+import { waterGridForChunk, waterGridAt } from '../landscape';
 
 interface IsoFieldViewProps {
   chunk: Point;
@@ -52,7 +54,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
     const buildings = buildingDoorwaysFor(chunk);
     const trees = fieldTreesFor(chunk);
     const tile = mapTileFor(chunk);
-    return { buildings, trees, tile };
+    // BUILD 369 (Phase 2b): authoritative water grid, sampled per tile below.
+    const water = waterGridForChunk(chunk.x, chunk.y, 70);
+    return { buildings, trees, tile, water };
   }, [chunk.x, chunk.y]);
 
   const zoomRef = useRef(1);
@@ -196,6 +200,24 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
           else if (isRoadTile(tx, ty)) col = palette.path;
           else if ((tx + ty) % 2 === 0) col = palette.field;
           else col = palette.field; // base; dither below adds variety
+          // BUILD 369 (Phase 2b): authoritative rivers/lakes; road crossings draw as bridges.
+          if (!ocean) {
+            const wq = waterGridAt(scene.water, chunk.x * FIELD_SIZE + tx + 0.5, chunk.y * FIELD_SIZE + ty + 0.5);
+            if (wq.depth > 0.25) {
+              if (isRoadTile(tx, ty)) col = '#8a6a44'; // bridge planks
+              else {
+                const t = Math.min(1, wq.depth);
+                const deep = wq.kind === 2 ? '#2a64b0' : '#2f6cb8';
+                const shal = wq.kind === 2 ? '#5aa3de' : '#55a0dd';
+                // mix shallow->deep by depth (hex lerp)
+                const sd = parseInt(shal.slice(1), 16), dd = parseInt(deep.slice(1), 16);
+                const r = Math.round(((sd >> 16) & 255) + (((dd >> 16) & 255) - ((sd >> 16) & 255)) * t);
+                const gg = Math.round(((sd >> 8) & 255) + (((dd >> 8) & 255) - ((sd >> 8) & 255)) * t);
+                const b = Math.round((sd & 255) + ((dd & 255) - (sd & 255)) * t);
+                col = '#' + ((1 << 24) + (r << 16) + (gg << 8) + b).toString(16).slice(1);
+              }
+            }
+          }
           g.fillStyle = col;
           g.fill();
           // BUILD 366: deterministic per-tile detail (chunk-gen video techniques).

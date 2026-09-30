@@ -17,6 +17,8 @@ import type { PaintedTile } from './mapBuilder';
 // BUILD 355: elevation hills + CraftPix kit cliff faces.
 import { getKitTileset, kitCliffSlice, kitCliffLip } from './kitAssets';
 import { isCliffStep } from './elevation';
+// BUILD 369 (Phase 2b): authoritative rivers/lakes/bridges.
+import { waterGridForChunk, roadCorridorsFor, pointInCorridors } from './landscape';
 export const MAP_TILE_PX = 80; // 10 field units * 8 px/unit
 
 /** BUILD 355: sub-chunk elevation for the ground renderer. */
@@ -49,6 +51,9 @@ export interface GroundDetailSpec {
   paints?: PaintedTile[];
   /** BUILD 355: elevation hills; null/omitted = flat. */
   hills?: GroundHills | null;
+  /** BUILD 369 (Phase 2b): chunk coords for authoritative water sampling. */
+  chunkX?: number;
+  chunkY?: number;
 }
 
 export const GROUND_PX_PER_UNIT = 4; // BUILD 343: was 8 for 140-unit chunks
@@ -478,6 +483,40 @@ export function renderGroundDetail(spec: GroundDetailSpec): HTMLCanvasElement {
       // Pebbles on the road.
       for (let i = 0; i < 14; i++) {
         rect(ax + ri(Math.max(1, aw - 2)), ay + ri(Math.max(1, ah - 2)), 2, 1, pick([dirtDark, dirtLight, edgeDark]));
+      }
+    }
+  }
+
+  // --- BUILD 369 (Phase 2b): authoritative rivers, lakes, and bridges.
+  // Painted after roads so water covers submerged road segments; where a
+  // road corridor crosses water we draw bridge planks instead. Painted
+  // before map-builder paints so the user's tilemap design still wins. ---
+  if (spec.chunkX !== undefined && spec.chunkY !== undefined && !isWater) {
+    const grid = waterGridForChunk(spec.chunkX, spec.chunkY, 70);
+    const corridors = roadCorridorsFor(spec.road);
+    const pxPerCell = grid.cellSize * GROUND_PX_PER_UNIT;
+    for (let gy = 0; gy < grid.cells; gy++) {
+      for (let gx = 0; gx < grid.cells; gx++) {
+        const i = gy * grid.cells + gx;
+        const depth = grid.depths[i];
+        if (depth <= 0.25) continue;
+        const lx = (gx + 0.5) * grid.cellSize;
+        const ly = (gy + 0.5) * grid.cellSize;
+        const x0 = gx * pxPerCell;
+        const y0 = gy * pxPerCell;
+        const isBridge = corridors.length > 0 && pointInCorridors(lx, ly, corridors);
+        if (isBridge) {
+          // Wooden planks spanning the water.
+          rect(x0, y0, pxPerCell, pxPerCell, '#8a6a44');
+          rect(x0, y0 + pxPerCell / 2 - 1, pxPerCell, 2, '#6b4f30');
+          rect(x0, y0, 2, pxPerCell, 'rgba(0,0,0,0.25)');
+          rect(x0 + pxPerCell - 2, y0, 2, pxPerCell, 'rgba(0,0,0,0.25)');
+        } else {
+          const t = Math.min(1, depth);
+          const deep = grid.kinds[i] === 2 ? '#2a64b0' : '#2f6cb8';
+          const shallow = grid.kinds[i] === 2 ? '#5aa3de' : '#55a0dd';
+          rect(x0, y0, pxPerCell, pxPerCell, mixColor(shallow, deep, t));
+        }
       }
     }
   }
