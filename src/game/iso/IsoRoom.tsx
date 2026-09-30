@@ -1,4 +1,4 @@
-// Isometric demo (BUILD 359): data-driven world + in-game map builder (?iso=1).
+// Isometric demo (BUILD 360): data-driven world + in-game map builder (?iso=1).
 // Play mode: explore, move crates, wandering NPCs. Edit mode: full map builder
 // (select/move/delete, paint terrain, place objects, copy/paste regions, resize
 // up to 200x200, undo). World persists in localStorage.
@@ -72,7 +72,25 @@ function preloadLpcSprites() {
 function lpcReady(keys: string[]): boolean {
   return keys.every(k => {
     const im = sprCache[k];
-    return im && im.complete && im.naturalWidth > 0;
+    return im !== undefined && im.complete && im.naturalWidth > 0;  });
+}
+// Ghostpixxells pixel food on the market stall counters
+const FOOD_FILES = ['07_bread', '15_burger', '05_apple_pie', '95_steak', '97_sushi', '99_taco'];
+const foodCache: Record<string, HTMLImageElement> = {};
+let foodPreloaded = false;
+function preloadFoodSprites() {
+  if (foodPreloaded) return;
+  foodPreloaded = true;
+  for (const f of FOOD_FILES) {
+    const img = new Image();
+    img.src = `${import.meta.env.BASE_URL}iso-food/${f}.png`;
+    foodCache[f] = img;
+  }
+}
+function foodReady(): boolean {
+  return FOOD_FILES.every(f => {
+    const im = foodCache[f];
+    return im !== undefined && im.complete && im.naturalWidth > 0;
   });
 }
 
@@ -102,7 +120,7 @@ export default function IsoRoom(): React.JSX.Element {
   const [worldSize, setWorldSize] = useState('56×56');
   const [infoOpen, setInfoOpen] = useState(false);
 
-  useEffect(() => { preloadLpcSprites(); }, []);
+  useEffect(() => { preloadLpcSprites(); preloadFoodSprites(); }, []);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -341,7 +359,7 @@ export default function IsoRoom(): React.JSX.Element {
       return out;
     }
 
-    function stallDrawable(s: { x0: number; y0: number; x1: number }): Drawable {
+    function stallDrawable(s: { x0: number; y0: number; x1: number }, stallIdx: number): Drawable {
       const wpt = isoToScreen(s.x0, s.y0); const p0 = { x: wpt.x - TILE_W / 2, y: wpt.y };
       const e = isoToScreen(s.x1, s.y0); const p1 = { x: e.x + TILE_W / 2, y: e.y };
       return {
@@ -356,6 +374,17 @@ export default function IsoRoom(): React.JSX.Element {
           g.moveTo(p0.x - 6, p0.y - ch - 4); g.lineTo(p1.x + 6, p1.y - ch - 4);
           g.lineTo(p1.x, p1.y - ch); g.lineTo(p0.x, p0.y - ch);
           g.closePath(); g.fillStyle = '#c9a86b'; g.fill(); g.stroke();
+          // Ghostpixxells pixel food sitting on the counter (3 per stall, varies by stall)
+          if (foodReady()) {
+            for (let i = 0; i < 3; i++) {
+              const t = 0.25 + i * 0.25;
+              const fx = p0.x + (p1.x - p0.x) * t, fy = p0.y + (p1.y - p0.y) * t;
+              const key = FOOD_FILES[(stallIdx + i * 2) % FOOD_FILES.length];
+              const im = foodCache[key];
+              const sz = 20;
+              g.drawImage(im, fx - sz / 2, fy - ch - sz + 2, sz, sz);
+            }
+          }
           g.fillStyle = '#d94f3d';
           g.beginPath(); g.arc((p0.x + p1.x) / 2 - 20, p0.y - ch - 10, 6, 0, 7); g.fill();
           g.fillStyle = '#e8a13d';
@@ -560,7 +589,7 @@ export default function IsoRoom(): React.JSX.Element {
         if (run.h ? inR(run.x1, run.y0) : inR(run.x0, run.y1)) draws.push(...wallRunDrawables(run));
       }
       for (const h of w.huts) if (inR(h.x1, h.y1)) draws.push(...hutDrawables(h));
-      for (const s of w.stalls) if (inR(s.x1, s.y0)) draws.push(stallDrawable(s));
+      for (let si = 0; si < w.stalls.length; si++) { const s = w.stalls[si]; if (inR(s.x1, s.y0)) draws.push(stallDrawable(s, si)); }
       for (const t of w.trees) if (inR(t.tx, t.ty)) draws.push(treeDrawable(t));
       for (const t of w.rocks) if (inR(t.tx, t.ty)) draws.push(rockDrawable(t));
       for (const t of w.crates) if (inR(t.tx, t.ty)) draws.push(crateDrawable(t));
@@ -1229,7 +1258,7 @@ export default function IsoRoom(): React.JSX.Element {
       {mode === 'play' ? (
         <>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 12px', gap: 8 }}>
-            <div style={chip}>⛰️ Isometric demo · build 359 · {worldSize} · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
+            <div style={chip}>⛰️ Isometric demo · build 360 · {worldSize} · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button style={btn} onClick={() => api.enterEdit()}>🔨 Builder</button>
               <button style={btn} onClick={() => setInfoOpen(true)}>ℹ Info</button>
@@ -1352,9 +1381,14 @@ export default function IsoRoom(): React.JSX.Element {
             maxHeight: '84vh', overflowY: 'auto', color: '#222', fontSize: 13, lineHeight: 1.5,
             boxShadow: '0 12px 40px rgba(0,0,0,0.35)',
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '-18px -20px 8px',
+              padding: '12px 20px', borderRadius: '14px 14px 0 0',
+              backgroundImage: `url(${import.meta.env.BASE_URL}iso-ui/wood-panel.png)`,
+              backgroundSize: 'cover', color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.7)',
+            }}>
               <div style={{ fontWeight: 800, fontSize: 17 }}>⛰️ Isometric Demo — Info</div>
-              <button style={btn} onClick={() => setInfoOpen(false)}>✕ Close</button>
+              <button style={{ ...btn, background: 'rgba(20,30,40,0.7)' }} onClick={() => setInfoOpen(false)}>✕ Close</button>
             </div>
             <div style={{ fontWeight: 700, margin: '10px 0 4px' }}>About</div>
             <div>
@@ -1386,6 +1420,29 @@ export default function IsoRoom(): React.JSX.Element {
               <a href="https://github.com/liberatedpixelcup/Universal-LPC-Spritesheet-Character-Generator" target="_blank" rel="noreferrer">Source on GitHub</a>
               {' · '}
               <a href="https://opengameart.org" target="_blank" rel="noreferrer">OpenGameArt.org</a>
+            </div>
+            <div style={{ fontWeight: 700, marginTop: 10 }}>Market food — Ghostpixxells pixel food</div>
+            <div>
+              The bread, burgers, pies and more on the market stalls come from the
+              "pixelfood" sprite set by Ghostpixxells. Thank you!
+            </div>
+            <div style={{ fontWeight: 700, marginTop: 10 }}>UI art — free pixel UI sprite sheet</div>
+            <div>
+              The wooden panels and UI icons (supplied by the user, original author unknown).
+            </div>
+            <div style={{ fontWeight: 700, marginTop: 10 }}>MSCA — Mana Seed Character Animator for Godot 4</div>
+            <div>
+              Animation plugin for the Mana Seed sprite systems by Nadine Schwingler
+              (feendrache), MIT License. A Godot-side companion tool — the web demo uses the
+              same Mana Seed art directly.
+            </div>
+            <div style={{ marginTop: 4 }}>
+              <a href="https://github.com/feendrache/Godot4_msca" target="_blank" rel="noreferrer">MSCA on GitHub</a>
+            </div>
+            <div style={{ fontWeight: 700, marginTop: 10 }}>little_world_generator</div>
+            <div>
+              A standalone world-map generator tool (Windows). Not part of the browser demo,
+              but a fun companion for drawing your own worlds.
             </div>
             <div style={{ fontWeight: 700, marginTop: 10 }}>Mana Seed sprite packs — Seliel the Shaper</div>
             <div>
