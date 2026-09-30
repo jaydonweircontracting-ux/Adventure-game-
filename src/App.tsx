@@ -80,10 +80,23 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '326';
+const BUILD_NUMBER = '327';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
+// BUILD 327: default gameplay zoom is 225%. When zoomed, the world layer is
+// scaled around the top-left corner and translated so the player's field
+// position lands at the viewport center:
+//   screen = zoom * layer + (0.5 - zoom * playerFrac) * size
+// The player sprite keeps its own scale(gameZoom) so it matches NPC size.
+const DEFAULT_GAME_ZOOM = 2.25;
+function zoomTranslatePct(playerFrac: number, zoom: number): number {
+  return (0.5 - zoom * playerFrac) * 100;
+}
+function screenPxToFieldUnits(screenPx: number, sizePx: number, playerFrac: number, zoom: number): number {
+  const t = (zoomTranslatePct(playerFrac, zoom) / 100) * sizePx;
+  return (((screenPx - t) / zoom) / sizePx) * FIELD_SIZE;
+}
 // Buildings render larger than their authored 0..100 specs.
 const BUILDING_SIZE_MULT = 1.0;
 // Convert field units (0..FIELD_SIZE) to CSS percentage for positioning.
@@ -3178,7 +3191,8 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const [selectedHouse, setSelectedHouse] = useState<string | null>(null);
   // Mover zoom level.
   // Game zoom (base game feature): +/− buttons on the right side. Min 100%.
-  const [gameZoom, setGameZoom] = useState(1);
+  // BUILD 327: default is 225% with the player centered in the viewport.
+  const [gameZoom, setGameZoom] = useState(DEFAULT_GAME_ZOOM);
   // Debug mover mode (toggleable from options menu). Syncs with module-level moveHouses.
   const [moverMode, setMoverMode] = useState(moveHouses);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -3277,11 +3291,11 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
     if (gameZoom !== 1) {
-      const ox = (position.x / FIELD_SIZE) * rect.width;
-      const oy = (position.y / FIELD_SIZE) * rect.height;
+      // BUILD 327: invert the centered-zoom transform (translate then scale,
+      // origin 0 0) to recover true field-unit coordinates.
       return {
-        x: ((ox + (px - ox) / gameZoom) / rect.width) * FIELD_SIZE,
-        y: ((oy + (py - oy) / gameZoom) / rect.height) * FIELD_SIZE,
+        x: screenPxToFieldUnits(px, rect.width, position.x / FIELD_SIZE, gameZoom),
+        y: screenPxToFieldUnits(py, rect.height, position.y / FIELD_SIZE, gameZoom),
       };
     }
     return { x: (px / rect.width) * FIELD_SIZE, y: (py / rect.height) * FIELD_SIZE };
@@ -5322,18 +5336,17 @@ if (active) {
         } as CSSProperties}
         onClick={markerMode ? (e) => {
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          // Account for zoom: the world layer is scaled around the player position.
+          // Account for zoom: the world layer is translated+scaled (BUILD 327)
+          // so the player sits at the viewport center.
           // Invert the transform to get the true field coordinates.
           const px = e.clientX - rect.left;
           const py = e.clientY - rect.top;
           let fx: number, fy: number;
           if (gameZoom !== 1) {
-            const ox = (position.x / FIELD_SIZE) * rect.width;
-            const oy = (position.y / FIELD_SIZE) * rect.height;
-            const ux = ox + (px - ox) / gameZoom;
-            const uy = oy + (py - oy) / gameZoom;
-            fx = (ux / rect.width) * FIELD_SIZE;
-            fy = (uy / rect.height) * FIELD_SIZE;
+            // BUILD 327: invert the centered-zoom transform (translate then
+            // scale, origin 0 0) to recover true field-unit coordinates.
+            fx = screenPxToFieldUnits(px, rect.width, position.x / FIELD_SIZE, gameZoom);
+            fy = screenPxToFieldUnits(py, rect.height, position.y / FIELD_SIZE, gameZoom);
           } else {
             fx = (px / rect.width) * FIELD_SIZE;
             fy = (py / rect.height) * FIELD_SIZE;
@@ -5826,9 +5839,12 @@ if (active) {
             </div>
           )}
           <div className="field-world-layer" style={gameZoom !== 1 ? (() => {
-            const ox = (position.x / FIELD_SIZE) * 100;
-            const oy = (position.y / FIELD_SIZE) * 100;
-            return { transform: `scale(${gameZoom})`, transformOrigin: `${ox}% ${oy}%` };
+            // BUILD 327: zoom centers the player in the viewport — the layer
+            // is scaled around the top-left, then translated so the player's
+            // field position lands at 50%/50% of the frame.
+            const tx = zoomTranslatePct(position.x / FIELD_SIZE, gameZoom);
+            const ty = zoomTranslatePct(position.y / FIELD_SIZE, gameZoom);
+            return { transform: `translate(${tx}%, ${ty}%) scale(${gameZoom})`, transformOrigin: '0 0' };
           })() : undefined}>
           {/* Marker dots: inside the world layer so they stay locked to field positions when walking/zooming. */}
           {markerMode && debugMarks.map((mark, i) => [
@@ -6801,7 +6817,7 @@ if (active) {
           })()}
           </div>
           {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
-             data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: fieldPct(position.x), top: fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, ...(gameZoom !== 1 ? { transform: `translate(-50%, -50%) scale(${gameZoom})` } : {}) } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
+             data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: gameZoom !== 1 ? '50%' : fieldPct(position.x), top: gameZoom !== 1 ? '50%' : fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, ...(gameZoom !== 1 ? { transform: `translate(-50%, -50%) scale(${gameZoom})` } : {}) } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
             {equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}
