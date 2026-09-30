@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Hourglass, Map as MapIcon, Menu, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
+import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
 import { type ChangeEvent, type PointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -24,6 +24,8 @@ import { isInMeleeArc } from '@/game/combat';
 import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS } from '@/game/ai';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
+import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, questProgressText, questRumors, serializeQuestStates, parseQuestStates, type QuestState, type QuestEvent, type QuestDef } from '@/game/quests';
+import { sitesForActiveStages, resolveSiteChunk, chunkSatisfiesStage, type ActiveQuestStage } from '@/game/questSites';
 import { playCombatSound } from '@/game/effects';
 import { cornStalksForChunk, type CornStalk } from '@/game/cornfield';
 import { getSpriteState } from '@/game/animation';
@@ -1197,6 +1199,7 @@ type SaveGameData = {
   reputation?: ReputationState;
   carriage?: { earnings?: Record<string, number> };
   escortHired?: boolean;
+  questLog?: string;
   logs: Array<{ text: string; color: string }>;
   time: string;
   brainState: RpgGameState | null;
@@ -2755,8 +2758,8 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     </div>
   );
 }
-function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow, onToggleBow, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive }: { inventory: GameInventory; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean }) {
-  const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats'>('inventory');
+function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow, onToggleBow, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, questPlayerLevel, onAcceptQuest, onWeaveBowstring }: { inventory: GameInventory; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onWeaveBowstring: () => void }) {
+  const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats' | 'quests'>('inventory');
   const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn + inventory.wood + inventory.silk + inventory.bow + inventory.beer;
   const visibleItems = [
     { key: 'goatHorns', label: 'Goat horns', detail: 'Crafting material', mark: '✦', className: 'horn-mark' },
@@ -2790,6 +2793,7 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow
           <button className={'satchel-tab ' + (activeTab === 'inventory' ? 'is-active' : '')} role="tab" aria-selected={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} data-testid="tab-inventory">Inventory</button>
           <button className={'satchel-tab ' + (activeTab === 'equipment' ? 'is-active' : '')} role="tab" aria-selected={activeTab === 'equipment'} onClick={() => setActiveTab('equipment')} data-testid="tab-equipment">Equipment</button>
           <button className={'satchel-tab ' + (activeTab === 'stats' ? 'is-active' : '')} role="tab" aria-selected={activeTab === 'stats'} onClick={() => setActiveTab('stats')} data-testid="tab-stats">Stats</button>
+          <button className={'satchel-tab ' + (activeTab === 'quests' ? 'is-active' : '')} role="tab" aria-selected={activeTab === 'quests'} onClick={() => setActiveTab('quests')} data-testid="tab-quests">Quests</button>
         </div>
         <div className="inventory-body">
           {activeTab === 'inventory' ? (
@@ -2806,6 +2810,8 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow
             </>
           ) : activeTab === 'equipment' ? (
             <div className="equipment-panel" role="tabpanel" aria-label="Equipment"><div className="inventory-count">Equipped gear changes your character</div><div className="paper-doll-wrap"><div className="paper-doll" role="img" aria-label={'Paper doll: ' + (equippedDagger ? 'dagger in hand' : 'no weapon') + ', ' + (equippedBow ? 'bow on back' : 'no bow')} data-testid="paper-doll"><span className="paper-doll-head" aria-hidden="true" /><span className="paper-doll-torso" aria-hidden="true" /><span className="paper-doll-arm arm-left" aria-hidden="true" /><span className="paper-doll-arm arm-right" aria-hidden="true" /><span className="paper-doll-leg leg-left" aria-hidden="true" /><span className="paper-doll-leg leg-right" aria-hidden="true" />{equippedBow && <span className="paper-doll-bow" aria-hidden="true">🏹</span>}{equippedDagger && <span className="paper-doll-dagger" aria-hidden="true">†</span>}</div><div className="paper-doll-slots"><div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot"><span className="equipment-slot-mark dagger-mark">†</span><span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>{(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedBow ? 'is-equipped' : '')} data-testid="equipment-ranged-slot"><span className="equipment-slot-mark bow-mark">🏹</span><span><small>Ranged slot</small><strong>{equippedBow ? 'Hunting bow' : 'Empty'}</strong></span>{(inventory.bow > 0 || equippedBow) && <button className="item-action" onClick={onToggleBow} data-testid="button-equipment-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}</div></div></div><p className="equipment-hint">{equippedBow ? 'The bow is on your back — attacks fire arrows, even while mounted.' : equippedDagger ? 'The dagger is visible in your hand.' : 'Craft a dagger, then equip it from this tab.'}</p></div>
+          ) : activeTab === 'quests' ? (
+            <QuestLogPanel questStates={questStates} playerLevel={questPlayerLevel} silkCount={inventory.silk} onAcceptQuest={onAcceptQuest} onWeaveBowstring={onWeaveBowstring} />
           ) : <StatsPanel playerStats={playerStats} statPoints={statPoints} onAssign={onAssignStat} />}
         </div>
       </div>
@@ -2813,11 +2819,61 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow
   );
 }
 
+function QuestLogPanel({ questStates, playerLevel, silkCount, onAcceptQuest, onWeaveBowstring }: { questStates: QuestState[]; playerLevel: number; silkCount: number; onAcceptQuest: (questId: string) => void; onWeaveBowstring: () => void }) {
+  const [questTab, setQuestTab] = useState<'active' | 'available' | 'completed'>('active');
+  const byId = new Map(questStates.map((s) => [s.questId, s]));
+  const activeDefs = QUESTS.filter((def) => byId.get(def.id)?.status === 'active');
+  const completedDefs = QUESTS.filter((def) => byId.get(def.id)?.status === 'completed');
+  const availableDefs = availableQuests(playerLevel, questStates);
+  const shown = questTab === 'active' ? activeDefs : questTab === 'available' ? availableDefs : completedDefs;
+  return (
+    <section className="quest-log-panel" role="tabpanel" aria-label="Quest log" data-testid="quest-log-panel">
+      <div className="quest-log-tabs" role="tablist" aria-label="Quest lists">
+        <button className={'quest-log-tab ' + (questTab === 'active' ? 'is-active' : '')} onClick={() => setQuestTab('active')} data-testid="quest-tab-active">Active ({activeDefs.length})</button>
+        <button className={'quest-log-tab ' + (questTab === 'available' ? 'is-active' : '')} onClick={() => setQuestTab('available')} data-testid="quest-tab-available">Available ({availableDefs.length})</button>
+        <button className={'quest-log-tab ' + (questTab === 'completed' ? 'is-active' : '')} onClick={() => setQuestTab('completed')} data-testid="quest-tab-completed">Completed ({completedDefs.length})</button>
+      </div>
+      {shown.length === 0 && <div className="quest-log-empty">{questTab === 'active' ? 'No active quests. Find someone with a ! over their head.' : questTab === 'available' ? 'No quests available at your level yet. Keep exploring.' : 'No quests completed yet.'}</div>}
+      {shown.map((def) => {
+        const state = byId.get(def.id);
+        const stage = state?.status === 'active' ? def.stages[state.stageIndex] : null;
+        const needsWeave = !!stage && stage.kind === 'craft' && stage.target === 'bowstring';
+        return (
+          <article className={'quest-card' + (def.storyQuest ? ' is-story' : '')} key={def.id} data-testid={'quest-card-' + def.id}>
+            <header className="quest-card-head">
+              <div>
+                <strong>{def.title}</strong>
+                {def.storyQuest && <span className="quest-story-badge" title="Main story quest">⭐ Story</span>}
+              </div>
+              <span className="quest-card-level">Lv {def.level}</span>
+            </header>
+            <p className="quest-card-desc">{def.description}</p>
+            <p className="quest-card-giver">🗣 {def.giver.name} — {def.giver.location}</p>
+            {state?.status === 'active' && (
+              <ol className="quest-card-stages">
+                {def.stages.map((s, index) => (
+                  <li key={s.id} className={index < state.stageIndex ? 'is-done' : index === state.stageIndex ? 'is-current' : ''}>
+                    {index < state.stageIndex ? '✓ ' : ''}{index === state.stageIndex ? questProgressText(def, state) : s.description}
+                  </li>
+                ))}
+              </ol>
+            )}
+            <div className="quest-card-rewards" aria-label="Quest rewards"><span>🪙 {def.rewards.coins}</span><span>✦ {def.rewards.xp} XP</span>{def.rewards.items.slice(0, 3).map((item) => <span key={item}>🎁 {item}</span>)}</div>
+            {questTab === 'available' && <button className="quest-accept-button" onClick={() => onAcceptQuest(def.id)} data-testid={'button-quest-accept-' + def.id}>Accept quest</button>}
+            {questTab === 'completed' && <div className="quest-card-done">✓ Complete</div>}
+            {needsWeave && <button className="quest-weave-button" onClick={onWeaveBowstring} disabled={silkCount < 6} data-testid="button-quest-weave">Weave bowstring ({silkCount}/6 silk)</button>}
+          </article>
+        );
+      })}
+    </section>
+  );
+}
+
 function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: PlayerStats; statPoints: number; onAssign: (stat: StatKey) => void }) {
   return <section className="satchel-stats-panel" role="tabpanel" aria-label="Adventurer Stats"><div className="satchel-stats-heading"><span className="atlas-eyebrow">Character growth</span><h3>Adventurer Stats</h3></div><div className="satchel-stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div><div className="satchel-stats-list">{STAT_KEYS.map((stat) => <div className="satchel-stat-row" key={stat} data-testid={'stat-row-' + stat}><span className="satchel-stat-key">{stat.toUpperCase()}</span><span className="satchel-stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span><b className="satchel-stat-value">{playerStats[stat]}</b><button className="satchel-stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button></div>)}</div><div className="satchel-stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div></section>;
 }
 
-function InteriorRoom({ area, position, facing, moving, equippedDagger, equippedBow, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onEnterDungeon, onTavernSleep }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; equippedBow: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onEnterDungeon: () => void; onTavernSleep: () => void }) {
+function InteriorRoom({ area, position, facing, moving, equippedDagger, equippedBow, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onTalkToQuestGiver, onEnterDungeon, onTavernSleep }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; equippedBow: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onTalkToQuestGiver: (name: string) => void; onEnterDungeon: () => void; onTavernSleep: () => void }) {
   // Tavern patron nameplates auto-hide (bartender Mira's stays); tapping a patron pops theirs for 4s.
   const [shownPatron, setShownPatron] = useState<string | null>(null);
   const patronTimerRef = useRef<number | null>(null);
@@ -2843,6 +2899,39 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
           <span className="interior-npc-nameplate" aria-hidden="true"><strong>Bram</strong><small>Guild smith · Talk</small></span>
           <span className="npc-sprite" aria-hidden="true" />
         </button>
+      )}
+      {area.id === 'wayfarer-guild' && (
+        <>
+          <button type="button" className="interior-npc npc-guide quest-giver" onClick={() => onTalkToQuestGiver('Elsa')} style={{ left: '20%', top: '52%' }} aria-label="Talk to Elsa, the seamstress" data-testid="guild-quest-elsa" data-facing="down">
+            <span className="quest-giver-badge" aria-hidden="true">!</span>
+            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Elsa</strong><small>Seamstress · Talk</small></span>
+            <span className="npc-sprite" aria-hidden="true" />
+          </button>
+          <button type="button" className="interior-npc npc-warrior quest-giver" onClick={() => onTalkToQuestGiver('Rowan')} style={{ left: '36%', top: '58%' }} aria-label="Talk to Rowan, guard captain" data-testid="guild-quest-rowan" data-facing="down">
+            <span className="quest-giver-badge" aria-hidden="true">!</span>
+            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Rowan</strong><small>Guard captain · Talk</small></span>
+            <span className="npc-sprite" aria-hidden="true" />
+          </button>
+          <button type="button" className="interior-npc npc-mage quest-giver" onClick={() => onTalkToQuestGiver('Steward Anselm')} style={{ left: '80%', top: '30%' }} aria-label="Talk to Steward Anselm" data-testid="guild-quest-anselm" data-facing="down">
+            <span className="quest-giver-badge" aria-hidden="true">!</span>
+            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Steward Anselm</strong><small>King's steward · Talk</small></span>
+            <span className="npc-sprite" aria-hidden="true" />
+          </button>
+        </>
+      )}
+      {area.id === 'rootbound-chapel' && (
+        <>
+          <button type="button" className="interior-npc npc-guide quest-giver" onClick={() => onTalkToQuestGiver('Mabel')} style={{ left: '28%', top: '62%' }} aria-label="Talk to Mabel" data-testid="chapel-quest-mabel" data-facing="down">
+            <span className="quest-giver-badge" aria-hidden="true">!</span>
+            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Mabel</strong><small>Chapel-goer · Talk</small></span>
+            <span className="npc-sprite" aria-hidden="true" />
+          </button>
+          <button type="button" className="interior-npc npc-mage quest-giver" onClick={() => onTalkToQuestGiver('Father Aldous')} style={{ left: '68%', top: '55%' }} aria-label="Talk to Father Aldous" data-testid="chapel-quest-aldous" data-facing="down">
+            <span className="quest-giver-badge" aria-hidden="true">!</span>
+            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Father Aldous</strong><small>Priest · Talk</small></span>
+            <span className="npc-sprite" aria-hidden="true" />
+          </button>
+        </>
       )}
       {area.id === 'fourth-house' && (
         <>
@@ -2898,7 +2987,15 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
   );
 }
 
-function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equippedDagger: boolean; equippedBow: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
+// Quest givers who live out in the field (chunk, field-unit position, display name).
+const QUEST_GIVER_FIELD_NPCS: Array<{ name: string; displayName: string; title: string; chunk: Point; position: Point; sprite: string }> = [
+  { name: 'Aldric', displayName: 'Aldric', title: 'Farmer', chunk: { x: 5, y: 7 }, position: { x: 70, y: 60 }, sprite: 'npc-guide' },
+  { name: 'Cedric', displayName: 'Cedric', title: 'Merchant', chunk: { x: 4, y: 7 }, position: { x: 84, y: 72 }, sprite: 'npc-mage' },
+  { name: 'Kess', displayName: 'Kess', title: 'Bridge-keeper', chunk: { x: 3, y: 12 }, position: { x: 70, y: 60 }, sprite: 'npc-warrior' },
+  { name: 'Bram', displayName: 'Old Bram', title: 'Fisher', chunk: { x: 4, y: 8 }, position: { x: 60, y: 70 }, sprite: 'npc-rogue' },
+];
+
+function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equippedDagger: boolean; equippedBow: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
   // Debug tap marks (?debugDoors=1): user taps to mark where they think the
   // invisible exit/entrance is; rendered as lime green dots with coordinates.
@@ -3023,6 +3120,12 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const [horse, setHorse] = useState<HorseState>(initialHorseState);
   const [horseFacing, setHorseFacing] = useState<Direction>('down');
   const [logOpen, setLogOpen] = useState(false);
+  const [hpBoxHidden, setHpBoxHidden] = useState(false);
+  // Quest system: active/completed quest states (pure logic in src/game/quests.ts).
+  const [questStates, setQuestStates] = useState<QuestState[]>([]);
+  const questStatesRef = useRef<QuestState[]>([]);
+  const questRumoredRef = useRef<Set<string>>(new Set());
+  const [questDialog, setQuestDialog] = useState<{ giverName: string; questId: string } | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [logs, setLogs] = useState(initialLogs);
   const [time, setTime] = useState('6:00 AM · Day 1 · Y1');
@@ -3097,9 +3200,9 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const [wildlife, setWildlife] = useState<WildlifeState[]>(() => wildlifeForChunk({ x: 4, y: 7 }));
   const [waterLife, setWaterLife] = useState<WaterLifeState[]>(() => waterLifeForChunk({ x: 4, y: 7 }));
   const waterLifeRef = useRef<WaterLifeState[]>(waterLife);
-  // Bridge so the menu sheet (rendered by App) can open GameField's options overlay and read the clock.
+  // Bridge so the menu sheet (rendered by App) can open GameField's options overlay, read the clock, and drive quests.
   useEffect(() => {
-    menuBridgeRef.current = { openOptions: () => setOptionsOpen(true), getTime: () => time };
+    menuBridgeRef.current = { openOptions: () => setOptionsOpen(true), getTime: () => time, acceptQuest, emitQuestEvent };
   });
   const wildlifeRef = useRef<WildlifeState[]>(wildlife);
   useEffect(() => { waterLifeRef.current = waterLife; }, [waterLife]);
@@ -3193,6 +3296,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     time,
     carriage: serializeCarriage(carriageEarningsRef.current),
     escortHired: escortHiredRef.current,
+    questLog: serializeQuestStates(questStatesRef.current),
     brainState: brainRef.current?.getGameState() || null,
   });
   saveStateRef.current = createSaveData;
@@ -3243,6 +3347,8 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     setLogs(loadState.logs); setTime(loadState.time);
     carriageEarningsRef.current = deserializeCarriage(loadState.carriage);
     escortHiredRef.current = !!loadState.escortHired; setEscortHired(!!loadState.escortHired);
+    const restoredQuests = loadState.questLog ? parseQuestStates(loadState.questLog) : [];
+    questStatesRef.current = restoredQuests; setQuestStates(restoredQuests);
     setNpcDialogue(null); setAttackFlash(null); setLogOpen(false); setMoving(false);
     if (loadState.brainState) {
       brainRef.current?.loadGameState(loadState.brainState);
@@ -3636,6 +3742,8 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
         const loot: GoatLoot = monsterLootForKind(monsterTarget.kind);
         const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot };
         droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
+        // Quest hook: kills feed kill stages (rats, wolves, bandits, trolls).
+        emitQuestEvent({ type: 'kill', target: monsterTarget.kind });
         const xpReward = goatExperienceReward(monsterTarget, playerLevelRef.current, playerStatsRef.current);
         const nextXp = playerXpRef.current + xpReward; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
         playerXpRef.current = nextXp; setPlayerXp(nextXp);
@@ -4119,7 +4227,117 @@ if (active) {
     setLogs((currentLogs) => [{ text: message, color: 'blue' }, ...currentLogs].slice(0, 3));
     setAttackFlash(message);
     window.setTimeout(() => setAttackFlash(null), 1200);
+    // Quest hook: spider silk feeds the seamstress quest's collect stage.
+    if (drop.loot.silk) emitQuestEvent({ type: 'collect', target: 'spider_silk', count: drop.loot.silk });
   };
+
+  // ------------------------------------------------------------------
+  // Quest system: state, events, rewards (pure rules in src/game/quests.ts).
+  // ------------------------------------------------------------------
+  const currentWorldDay = () => brainRef.current?.worldCore.getClock()?.day ?? 1;
+
+  const grantQuestXp = (amount: number) => {
+    const nextXp = playerXpRef.current + amount; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
+    playerXpRef.current = nextXp; setPlayerXp(nextXp);
+    spawnCombatText('+' + amount + ' XP', positionRef.current, 'reward');
+    setLogs((currentLogs) => [{ text: 'Quest reward: +' + amount + ' XP.', color: 'blue' }, ...currentLogs].slice(0, 5));
+    if (nextLevel > previousLevel) {
+      const awardedStatPoints = (nextLevel - previousLevel) * PLAYER_STAT_POINTS_PER_LEVEL;
+      playerLevelRef.current = nextLevel; setPlayerLevel(nextLevel); onStatPointsChange((current) => current + awardedStatPoints);
+      spawnCombatText('LEVEL UP! Lv. ' + nextLevel, positionRef.current, 'reward');
+      setLogs((currentLogs) => [{ text: 'Level up! You reached level ' + nextLevel + ' (+' + awardedStatPoints + ' stat points).', color: 'blue' }, ...currentLogs].slice(0, 5));
+    }
+  };
+
+  const completeQuest = (def: QuestDef) => {
+    if (def.rewards.coins) onLoot({ coins: def.rewards.coins });
+    if (def.rewards.xp) grantQuestXp(def.rewards.xp);
+    // 'Hunting bow' maps to the real bow item; other reward items are keepsakes named in the log.
+    if (def.rewards.items.includes('Hunting bow')) onLoot({ bow: 1 });
+    if (def.rewards.reputation) onQuestReputation(def.rewards.reputation);
+    const keepsakes = def.rewards.items.filter((name) => name !== 'Hunting bow');
+    const rewardText = `Quest complete: ${def.title}! +${def.rewards.coins} gold, +${def.rewards.xp} XP` + (keepsakes.length ? ', ' + keepsakes.join(', ') : '') + '.';
+    setLogs((currentLogs) => [{ text: rewardText, color: 'green' }, ...currentLogs].slice(0, 5));
+    spawnCombatText('QUEST COMPLETE', positionRef.current, 'reward');
+    announceQuestRumors();
+  };
+
+  const emitQuestEvent = (event: QuestEvent) => {
+    const withDay = { ...event, day: event.day ?? currentWorldDay() };
+    const completedDefs: QuestDef[] = [];
+    const advancedTitles: string[] = [];
+    let changed = false;
+    const next = questStatesRef.current.map((st) => {
+      if (st.status !== 'active') return st;
+      const def = questById(st.questId);
+      if (!def) return st;
+      const res = advanceQuestStage(st, def, withDay);
+      if (!res.advanced) return st;
+      changed = true;
+      if (res.completed) completedDefs.push(def);
+      else advancedTitles.push(def.title + ' — ' + questProgressText(def, res.state));
+      return res.state;
+    });
+    if (!changed) return;
+    questStatesRef.current = next;
+    setQuestStates(next);
+    if (advancedTitles.length) setLogs((currentLogs) => [...advancedTitles.map((text) => ({ text: 'Quest updated: ' + text, color: 'blue' as const })), ...currentLogs].slice(0, 5));
+    for (const def of completedDefs) completeQuest(def);
+  };
+
+  const acceptQuest = (questId: string) => {
+    const def = questById(questId);
+    if (!def) return;
+    if (questStatesRef.current.some((s) => s.questId === questId)) return;
+    const day = currentWorldDay();
+    // Accepting IS talking to the giver: the opening talk stage completes at once.
+    const res = advanceQuestStage(startQuest(def, day), def, { type: 'talk', target: def.giver.name, day });
+    const next = [...questStatesRef.current, res.state];
+    questStatesRef.current = next;
+    setQuestStates(next);
+    setQuestDialog(null);
+    setLogs((currentLogs) => [{ text: `Quest started: ${def.title}.`, color: 'green' }, ...currentLogs].slice(0, 5));
+  };
+
+  const questStateFor = (questId: string): QuestState | undefined => questStatesRef.current.find((s) => s.questId === questId);
+
+  const openQuestDialog = (giverName: string) => {
+    const def = QUESTS.find((q) => q.giver.name === giverName);
+    if (!def) return;
+    const state = questStateFor(def.id);
+    if (state?.status === 'completed') {
+      setLogs((currentLogs) => [{ text: `${giverName} thanks you again for your help.`, color: 'blue' }, ...currentLogs].slice(0, 5));
+      return;
+    }
+    setQuestDialog({ giverName, questId: def.id });
+  };
+
+  const announceQuestRumors = () => {
+    for (const def of availableQuests(playerLevelRef.current, questStatesRef.current)) {
+      if (questRumoredRef.current.has(def.id)) continue;
+      questRumoredRef.current.add(def.id);
+      onAddRumor(def.rumor ?? questRumors(def)[0], 'Quest: ' + def.title);
+    }
+  };
+
+  // Push quest state + level up to Home so the menu's quest log can render.
+  useEffect(() => { onQuestStatesChange(questStatesRef.current, playerLevelRef.current); }, [questStates, onQuestStatesChange]);
+  useEffect(() => { onQuestStatesChange(questStatesRef.current, playerLevelRef.current); announceQuestRumors(); }, [playerLevel]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Quest site discovery: entering a site chunk advances matching explore/visit stages.
+  useEffect(() => {
+    const dungeonChunk = currentWorldTile.landmark && currentWorldTile.landmark.kind === 'dungeon' ? { ...chunkRef.current } : null;
+    for (const st of questStatesRef.current) {
+      if (st.status !== 'active') continue;
+      const def = questById(st.questId);
+      if (!def) continue;
+      const stage = def.stages[st.stageIndex];
+      if (!stage || !stage.target) continue;
+      const activeStage: ActiveQuestStage = { questId: st.questId, kind: stage.kind, target: stage.target };
+      if (chunkSatisfiesStage(activeStage, chunkRef.current, dungeonChunk)) {
+        emitQuestEvent({ type: stage.kind === 'visit' ? 'visit' : 'explore', target: stage.target });
+      }
+    }
+  }, [chunk]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pressDirection = (direction: Direction) => {
     keysRef.current[direction] = true;
@@ -4407,7 +4625,7 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onEnterDungeon={onEnterDungeon} onTavernSleep={tavernSleepUntilMorning} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onTavernSleep={tavernSleepUntilMorning} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -4899,6 +5117,37 @@ if (active) {
                 {nearby && <button className="pickup-button" onClick={() => pickupDrop(drop)} data-testid={'button-pickup-loot-' + drop.id}>Pick up</button>}
               </div>;
             })}
+            {/* Quest givers out in the field: find them, talk to them, get quests. */}
+            {QUEST_GIVER_FIELD_NPCS.filter((giver) => giver.chunk.x === chunk.x && giver.chunk.y === chunk.y).map((giver) => (
+              <button type="button" key={'quest-giver-' + giver.name} className={'quest-giver ' + giver.sprite} onClick={() => openQuestDialog(giver.name)} style={{ left: fieldPct(giver.position.x), top: fieldPct(giver.position.y) }} aria-label={'Talk to ' + giver.displayName} data-testid={'quest-giver-' + giver.name} data-facing="down">
+                <span className="quest-giver-badge" aria-hidden="true">!</span>
+                <span className="interior-npc-nameplate" aria-hidden="true"><strong>{giver.displayName}</strong><small>{giver.title} · Talk</small></span>
+                <span className="npc-sprite" aria-hidden="true" />
+              </button>
+            ))}
+            {/* Quest sites: landmarks and pickups for active explore/visit/collect stages. */}
+            {(() => {
+              const stages: ActiveQuestStage[] = [];
+              for (const st of questStates) {
+                if (st.status !== 'active') continue;
+                const def = questById(st.questId);
+                const stage = def?.stages[st.stageIndex];
+                if (def && stage && stage.target) stages.push({ questId: st.questId, kind: stage.kind, target: stage.target });
+              }
+              const dungeonChunk = currentWorldTile.landmark && currentWorldTile.landmark.kind === 'dungeon' ? { ...chunk } : null;
+              return sitesForActiveStages(stages).map((site) => {
+                const siteChunk = resolveSiteChunk(site, dungeonChunk);
+                if (!siteChunk || siteChunk.x !== chunk.x || siteChunk.y !== chunk.y) return null;
+                const nearby = Math.hypot(site.position.x - position.x, site.position.y - position.y) <= 16;
+                return (
+                  <div className="quest-site" key={'quest-site-' + site.target + '-' + site.label} style={{ left: fieldPct(site.position.x), top: fieldPct(site.position.y) }}>
+                    <span className={'quest-site-visual quest-site-' + site.kind} aria-label={site.label} title={site.label} />
+                    <span className="quest-site-label" aria-hidden="true">{site.label}</span>
+                    {nearby && site.kind === 'pickup' && <button className="pickup-button" onClick={() => emitQuestEvent({ type: 'collect', target: site.target })} data-testid={'button-quest-pickup-' + site.target}>Take</button>}
+                  </div>
+                );
+              });
+            })()}
           </div>
           {/* Arrows in flight: player bow shots and bandit-archer volleys. */}
           <div className="field-arrows" aria-hidden="true">
@@ -5730,12 +5979,48 @@ if (active) {
                     <button className="tavern-menu-option" onClick={tavernHireEscort} data-testid="button-tavern-escort"><strong>🧭 Hire an escort — 50 gold</strong><small>A seasoned guide's wisdom: bonus XP, one time only.</small></button>
                   )}
                   <button className="tavern-menu-option" onClick={tavernRumor} data-testid="button-tavern-rumor"><strong>👂 Ask for rumors</strong><small>Free, of course.</small></button>
+                  {questStateFor('rats-in-the-cellar')?.status !== 'completed' && (
+                    <button className="tavern-menu-option" onClick={() => { setTavernMenuOpen(false); openQuestDialog('Mira'); }} data-testid="button-tavern-work"><strong>🐀 Ask about work</strong><small>Mira might have a job for you.</small></button>
+                  )}
                 </div>
                 <button className="dialogue-close" onClick={() => setTavernMenuOpen(false)} data-testid="button-close-tavern">Leave</button>
               </div>
             </div>
           </div>
         )}
+        {questDialog && (() => {
+          const def = questById(questDialog.questId);
+          if (!def) return null;
+          const state = questStates.find((s) => s.questId === def.id);
+          const stage = state?.status === 'active' ? def.stages[state.stageIndex] : null;
+          const talkToGiver = !!stage && stage.kind === 'talk' && !!stage.target && stage.target.toLowerCase() === def.giver.name.toLowerCase();
+          const bramMapStage = !!stage && stage.kind === 'collect' && stage.target === 'old_merchants_map' && def.giver.name === 'Bram';
+          return (
+            <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="quest-dialogue-title" data-testid="overlay-quest-dialogue">
+              <div className="npc-dialogue-card quest-dialogue-card">
+                <div className="dialogue-portrait npc-guide" data-facing="down"><span className="npc-sprite" /></div>
+                <div className="npc-dialogue-copy">
+                  <span className="dialogue-kicker">Quest {def.storyQuest ? '· ⭐ Story' : ''}</span>
+                  <h2 id="quest-dialogue-title">{def.title}</h2>
+                  <p>"{def.description}"</p>
+                  <p className="quest-dialogue-giver"><strong>{def.giver.name}</strong> · {def.giver.location}</p>
+                  {state?.status === 'active' && stage && (
+                    <p className="quest-dialogue-progress" data-testid="quest-dialogue-progress">Current: {questProgressText(def, state)}</p>
+                  )}
+                  <div className="quest-dialogue-rewards" aria-label="Quest rewards">
+                    <span>🪙 {def.rewards.coins}</span><span>✦ {def.rewards.xp} XP</span>{def.rewards.items.map((item) => <span key={item}>🎁 {item}</span>)}
+                  </div>
+                  <div className="dialogue-options" role="group" aria-label="Quest options">
+                    {!state && <button type="button" className="dialogue-option" onClick={() => acceptQuest(def.id)} data-testid="button-quest-accept">Accept quest</button>}
+                    {talkToGiver && <button type="button" className="dialogue-option" onClick={() => emitQuestEvent({ type: 'talk', target: def.giver.name })} data-testid="button-quest-talk">Talk</button>}
+                    {bramMapStage && <button type="button" className="dialogue-option" onClick={() => emitQuestEvent({ type: 'collect', target: 'old_merchants_map' })} data-testid="button-quest-take-map">Take the Old Merchant's Map</button>}
+                    <button type="button" className="dialogue-option" onClick={() => setQuestDialog(null)} data-testid="button-quest-leave">Leave</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         {attackFlash && <div className="combat-flash" aria-live="polite">{attackFlash}</div>}
         {!interior && (() => { const promptDoor = doorwayNear(position, chunk, houseOffsets); return promptDoor && <button type="button" className="door-prompt" aria-live="polite" onClick={() => enterDoorway(promptDoor, chunk)}>Enter {promptDoor.area.name}</button>; })()}
         {areaFlash && (
@@ -5745,6 +6030,7 @@ if (active) {
           </div>
         )}
         <div className="world-hud">
+          {!hpBoxHidden ? (
           <div className={'hud-card ' + (playerHp / playerMaxHp <= 0.25 ? 'is-wounded' : '')} data-testid="hud-player">
             <div className="hud-label"><span>Player</span><span data-testid="text-level">LV {playerLevel}</span></div>
             <div className="bar" aria-label={'Health ' + playerHp + ' of ' + playerMaxHp} ><div className="bar-fill health" style={{ width: ((playerHp / playerMaxHp) * 100) + '%' }} /></div><span className="hud-health-value">{playerHp} / {playerMaxHp} HP</span>
@@ -5755,6 +6041,7 @@ if (active) {
             )}
             <button className="hud-quick-button" onClick={() => setWaitSheetOpen(true)} aria-label="Wait / pass time" title="Wait" data-testid="button-wait"><Hourglass size={15} /></button>
             <div className="hud-quick-actions">
+              <button className="hud-quick-button" onClick={() => setHpBoxHidden(true)} aria-label="Hide HP box" title="Hide HP box" data-testid="button-hide-hp-box"><EyeOff size={15} /></button>
               <button className="hud-quick-button" onClick={onOpenMap} aria-label="Open world map" title="World map" data-testid="button-open-map"><MapIcon size={15} /></button>
               <button className="hud-quick-button" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={15} /></button>
               <button className="hud-quick-button" onClick={onOpenJournal} aria-label="Open journal" title="Journal" data-testid="button-open-journal"><BookOpen size={15} /></button>
@@ -5767,6 +6054,9 @@ if (active) {
             )}
             {mounted && <button className="horse-dismount-button" onClick={toggleMount} aria-label="Dismount horse" data-testid="button-dismount-horse">Dismount</button>}
           </div>
+          ) : (
+            <button className="hud-quick-button hud-card-restore" onClick={() => setHpBoxHidden(false)} aria-label="Show HP box" title="Show HP box" data-testid="button-show-hp-box"><Eye size={15} /></button>
+          )}
           <button className="hud-bag-button" onClick={onOpenInventory} aria-label="Open menu" title="Menu" data-testid="button-open-inventory"><Backpack size={17} /></button>
         </div>
         <div className="touch-controls" aria-label="Touch movement controls">
@@ -5817,10 +6107,21 @@ function SaveIcon() {
 function Home() {
   const [mapOpen, setMapOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
-  const menuBridgeRef = useRef<{ openOptions: () => void; getTime: () => string } | null>(null);
+  const menuBridgeRef = useRef<{ openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void } | null>(null);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
   const [inventory, setInventory] = useState<GameInventory>(initialInventory);
+  // Quest log: states pushed up from GameField; the menu renders them.
+  const [questStates, setQuestStates] = useState<QuestState[]>([]);
+  const [questPlayerLevel, setQuestPlayerLevel] = useState(1);
+  const weaveBowstring = () => {
+    if (inventory.silk < 6) return;
+    setInventory((current) => ({ ...current, silk: Math.max(0, current.silk - 6) }));
+    menuBridgeRef.current?.emitQuestEvent({ type: 'craft', target: 'bowstring' });
+  };
+  const questReputationReward = (points: number) => {
+    setReputation((current) => ({ ...current, mosslight: current.mosslight + points }));
+  };
   // Beer buff: drinking a beer grants +50% attack for 1 minute (wall clock).
   const [beerBuffUntil, setBeerBuffUntil] = useState(0);
   const drinkBeer = () => {
@@ -6210,12 +6511,12 @@ function Home() {
       ) : (
         <>
           <div className="game-layout">
-            <GameField inventory={inventory} equippedDagger={equippedDagger} equippedBow={equippedBow} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
+            <GameField inventory={inventory} equippedDagger={equippedDagger} equippedBow={equippedBow} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
           {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1' && <DebugOverlay chunk={chunk} />}
-          {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} />}
+          {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onWeaveBowstring={weaveBowstring} />}
           {journalOpen && (
             <div className="sheet journal-sheet" role="dialog" aria-label="Adventure journal" data-testid="journal-sheet">
               <div className="sheet-header">

@@ -702,6 +702,9 @@
   background: rgba(29, 67, 49, .91);
   box-shadow: 3px 3px 0 rgba(28, 55, 42, .26);
 }
+.hud-card-restore {
+  pointer-events: auto;
+}
 .hud-card.right { min-width: 136px; text-align: right; }
 .hud-button {
   pointer-events: auto;
@@ -4603,3 +4606,141 @@ body {
 }
 /* Beer inventory mark. */
 .beer-mark::before { content: '🍺'; font-size: 15px; }
+
+/* Quest system (BUILD 283). */
+.quest-giver {
+  position: absolute;
+  z-index: 6;
+  width: 46px;
+  height: 48px;
+  transform: translate(-50%, -50%);
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.quest-giver .npc-sprite {
+  position: absolute;
+  inset: 0;
+}
+.quest-giver-badge {
+  position: absolute;
+  top: -10px;
+  right: -6px;
+  z-index: 2;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 10px;
+  background: #e8b93c;
+  color: #3a2a10;
+  font-weight: 800;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+  box-shadow: 0 0 6px rgba(232, 185, 60, .9);
+  animation: quest-badge-bob 1.6s ease-in-out infinite;
+}
+@keyframes quest-badge-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+.interior-npc .interior-npc-nameplate, .quest-giver .interior-npc-nameplate { pointer-events: none; }
+.quest-site {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.quest-site-visual {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px dashed rgba(232, 185, 60, .95);
+  background: rgba(29, 67, 49, .55);
+  display: inline-block;
+}
+.quest-site-pickup {
+  border-style: solid;
+  background: rgba(232, 185, 60, .35);
+}
+.quest-site-label {
+  margin-top: 2px;
+  font-size: 10px;
+  color: #f8efd8;
+  background: rgba(23, 54, 46, .85);
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.quest-site .pickup-button { pointer-events: auto; }
+/* Quest dialogue. */
+.quest-dialogue-card .quest-dialogue-giver { opacity: .85; font-size: 13px; }
+.quest-dialogue-progress { color: #e8b93c; font-weight: 700; }
+.quest-dialogue-rewards { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.quest-dialogue-rewards span {
+  background: rgba(232, 211, 161, .14);
+  border: 1px solid rgba(232, 211, 161, .4);
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+/* Quest log tab. */
+.quest-log-panel { display: flex; flex-direction: column; gap: 10px; }
+.quest-log-tabs { display: flex; gap: 6px; }
+.quest-log-tab {
+  flex: 1;
+  padding: 7px 4px;
+  border-radius: 8px;
+  border: 1px solid rgba(232, 211, 161, .45);
+  background: rgba(29, 67, 49, .5);
+  color: #f8efd8;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.quest-log-tab.is-active { background: rgba(232, 185, 60, .28); border-color: #e8b93c; }
+.quest-log-empty { opacity: .75; font-size: 13px; padding: 12px 4px; }
+.quest-card {
+  border: 1px solid rgba(232, 211, 161, .45);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(23, 54, 46, .55);
+}
+.quest-card.is-story { border-color: #e8b93c; box-shadow: 0 0 10px rgba(232, 185, 60, .25); }
+.quest-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.quest-card-head strong { font-size: 15px; }
+.quest-story-badge {
+  margin-left: 6px;
+  font-size: 11px;
+  background: rgba(232, 185, 60, .25);
+  border: 1px solid #e8b93c;
+  border-radius: 8px;
+  padding: 1px 7px;
+}
+.quest-card-level { font-size: 12px; opacity: .8; white-space: nowrap; }
+.quest-card-desc { font-size: 13px; margin: 6px 0; }
+.quest-card-giver { font-size: 12px; opacity: .85; margin: 0 0 6px; }
+.quest-card-stages { margin: 6px 0; padding-left: 18px; font-size: 13px; }
+.quest-card-stages li.is-done { opacity: .55; text-decoration: line-through; }
+.quest-card-stages li.is-current { color: #e8b93c; font-weight: 700; }
+.quest-card-rewards { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; margin: 6px 0; }
+.quest-accept-button, .quest-weave-button {
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #e8b93c;
+  background: rgba(232, 185, 60, .22);
+  color: #f8efd8;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.quest-weave-button:disabled { opacity: .45; cursor: default; }
+.quest-card-done { color: #8fd18f; font-weight: 700; font-size: 13px; margin-top: 4px; }
