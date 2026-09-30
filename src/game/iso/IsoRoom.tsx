@@ -1,4 +1,4 @@
-// Isometric demo (BUILD 360): data-driven world + in-game map builder (?iso=1).
+// Isometric demo (BUILD 361): data-driven world + in-game map builder (?iso=1).
 // Play mode: explore, move crates, wandering NPCs. Edit mode: full map builder
 // (select/move/delete, paint terrain, place objects, copy/paste regions, resize
 // up to 200x200, undo). World persists in localStorage.
@@ -48,14 +48,14 @@ interface Drawable { depth: number; tx: number; ty: number; draw: (g: CanvasRend
 // Character looks built from Universal LPC Spritesheet Character Generator layers
 // (see the in-demo Info page for full credits). Index 0 is the player.
 const NPC_LOOKS = [
-  { body: 'body-m', shirt: 'shirt-scoop-m', hair: 'hair-page' },
-  { body: 'body-f', shirt: 'shirt-scoop-f', hair: 'hair-bob' },
-  { body: 'body-m', shirt: 'shirt-cuffed-m', hair: 'hair-messy1' },
-  { body: 'body-f', shirt: 'shirt-scoop-f', hair: 'hair-pixie' },
-  { body: 'body-m', shirt: 'shirt-formal-m', hair: 'hair-page' },
+  { body: 'body-m', head: 'head-m', shirt: 'shirt-scoop-m', hair: 'hair-pixie' },
+  { body: 'body-f', head: 'head-f', shirt: 'shirt-scoop-f', hair: 'hair-bob' },
+  { body: 'body-m', head: 'head-m', shirt: 'shirt-cuffed-m', hair: 'hair-messy1' },
+  { body: 'body-f', head: 'head-f', shirt: 'shirt-scoop-f', hair: 'hair-pixie' },
+  { body: 'body-m', head: 'head-m', shirt: 'shirt-formal-m', hair: 'hair-messy1' },
 ];
-const LPC_FILES = ['body-m', 'body-f', 'pants-m', 'shirt-scoop-m', 'shirt-scoop-f',
-  'shirt-cuffed-m', 'shirt-formal-m', 'hair-page', 'hair-bob', 'hair-pixie', 'hair-messy1'];
+const LPC_FILES = ['body-m', 'body-f', 'head-m', 'head-f', 'pants-m', 'shirt-scoop-m', 'shirt-scoop-f',
+  'shirt-cuffed-m', 'shirt-formal-m', 'hair-pixie', 'hair-bob', 'hair-messy1'];
 const LPC_ROW: Record<Face4, number> = { up: 0, left: 1, down: 2, right: 3 };
 // module-level LPC sprite cache (read by the canvas loop; filled once)
 const sprCache: Record<string, HTMLImageElement> = {};
@@ -191,6 +191,19 @@ export default function IsoRoom(): React.JSX.Element {
     const held = new Set<string>();
     const cam = { x: 0, y: 0 };
     let zoom = 1;
+    // Keep the play camera on the map: when the whole map fits in the viewport,
+    // center it; otherwise clamp the edges so empty background doesn't dominate.
+    const clampCamToMap = (c: { x: number; y: number }, zm: number, wpx: number, hpx: number) => {
+      const w = W();
+      const m = 48; // world-px margin of background around the map
+      const minX = -(w.h - 1) * (TILE_W / 2) - m, maxX = (w.w - 1) * (TILE_W / 2) + m;
+      const minY = -m, maxY = (w.w + w.h - 2) * (TILE_H / 2) + m;
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      const hw = wpx / (2 * zm), hh = hpx / (2 * zm);
+      const ex = (maxX - minX) / 2, ey = (maxY - minY) / 2;
+      c.x = ex <= hw ? cx : Math.min(cx + (ex - hw), Math.max(cx - (ex - hw), c.x));
+      c.y = ey <= hh ? cy : Math.min(cy + (ey - hh), Math.max(cy - (ey - hh), c.y));
+    };
     const savePlay = () => {
       try {
         localStorage.setItem('iso-player-v2', JSON.stringify({ x: player.tx, y: player.ty }));
@@ -233,6 +246,7 @@ export default function IsoRoom(): React.JSX.Element {
       });
       const c = isoToScreen(player.fx, player.fy);
       cam.x = c.x; cam.y = c.y;
+      clampCamToMap(cam, zoom, canvas.clientWidth, canvas.clientHeight);
       setCoords(`${player.tx}, ${player.ty}`);
     };
 
@@ -468,7 +482,7 @@ export default function IsoRoom(): React.JSX.Element {
       look: number, depth: number, nowMs: number): Drawable {
       const c = isoToScreen(px, py);
       const L = NPC_LOOKS[((look % NPC_LOOKS.length) + NPC_LOOKS.length) % NPC_LOOKS.length];
-      const keys = [L.body, 'pants-m', L.shirt, L.hair];
+      const keys = [L.body, 'pants-m', L.shirt, L.head, L.hair];
       return {
         depth, tx: px, ty: py, draw: (g) => {
           const lift = moving ? Math.abs(Math.sin(nowMs / 130)) * 3 : 0;
@@ -1170,6 +1184,7 @@ export default function IsoRoom(): React.JSX.Element {
           const k = Math.min(1, dt / 90);
           cam.x += (c.x - cam.x) * k;
           cam.y += (c.y - cam.y) * k;
+          clampCamToMap(cam, zoom, wpx, hpx);
         }
       }
 
@@ -1258,7 +1273,7 @@ export default function IsoRoom(): React.JSX.Element {
       {mode === 'play' ? (
         <>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 12px', gap: 8 }}>
-            <div style={chip}>⛰️ Isometric demo · build 360 · {worldSize} · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
+            <div style={chip}>⛰️ Isometric demo · build 361 · {worldSize} · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button style={btn} onClick={() => api.enterEdit()}>🔨 Builder</button>
               <button style={btn} onClick={() => setInfoOpen(true)}>ℹ Info</button>
