@@ -6,7 +6,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, buildMosslightHousing, cottageDoorways, mosslightObstacles, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
 import { validateDestination, trackStep, pathTo, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
@@ -1076,6 +1076,73 @@ for (const kind of EXPECTED_KINDS) {
   const movedAnchors: TownsfolkAnchors = { ...anchors, gardens: [{ x: 50, y: 50 }, { x: 51, y: 51 }] };
   const resumed = advanceTownsfolk([stuckNpc], movedAnchors, clockAt(10, 0), navCtx)[0];
   assert(resumed.moving && !resumed.path!.gaveUp, 'NPC must resume walking when the destination changes');
+}
+
+
+// ---- BUILD 319: light crowd separation ----
+{
+  const mkNpc = (id: string, x: number, y: number, moving: boolean, location: 'OUTDOOR' | 'SLEEPING' = 'OUTDOOR', indoors = false) => ({
+    id, name: id, gender: 'male' as const, archetype: 'commoner' as const, role: 'mage' as const,
+    seed: 1, homeKey: 'guild', home: { x, y }, position: { x, y }, facing: 'down' as const,
+    moving, activity: 'test', indoors, location, path: undefined, homeId: undefined, bedId: undefined, buildingId: undefined,
+  });
+  // 1. Two overlapping walkers are pushed apart.
+  const a = mkNpc('a', 70, 70, true);
+  const b = mkNpc('b', 70.4, 70, true);
+  const d0 = Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y);
+  const [a2, b2] = separateCrowd([a, b]);
+  const d1 = Math.hypot(a2.position.x - b2.position.x, a2.position.y - b2.position.y);
+  assert(d1 > d0, `walkers should separate (was ${d0}, now ${d1})`);
+  // 2. Settled NPC holds its ground; only the walker is pushed (and keeps identity otherwise).
+  const settled = mkNpc('s', 70, 70, false);
+  const walker = mkNpc('w', 70.4, 70, true);
+  const [s2, w2] = separateCrowd([settled, walker]);
+  assert(s2 === settled, 'settled NPC must keep object identity');
+  assert(w2 !== walker, 'pushed walker must be a new object');
+  assert(s2.position.x === 70 && s2.position.y === 70, 'settled NPC must not be displaced');
+  assert(w2.position.x !== 70.4, 'walker should be pushed away from the settled NPC');
+  // 3. Nobody close: same array ref, no churn for the renderer's change check.
+  const far = [mkNpc('a', 10, 10, true), mkNpc('b', 100, 100, true)];
+  assert(separateCrowd(far) === far, 'separateCrowd must return the same ref when nobody overlaps');
+  // 4. Indoor/sleeping NPCs are never touched.
+  const sleeper = mkNpc('z', 70.2, 70, false, 'SLEEPING', true);
+  const [w3, z3] = separateCrowd([mkNpc('w', 70, 70, true), sleeper]);
+  assert(z3 === sleeper, 'sleeping NPC must keep identity');
+  // 5. Deterministic: identical input -> identical output.
+  const r1 = separateCrowd([mkNpc('a', 70, 70, true), mkNpc('b', 70.4, 70, true), mkNpc('c', 70.2, 70.3, true)]);
+  const r2 = separateCrowd([mkNpc('a', 70, 70, true), mkNpc('b', 70.4, 70, true), mkNpc('c', 70.2, 70.3, true)]);
+  assert(JSON.stringify(r1.map((n) => n.position)) === JSON.stringify(r2.map((n) => n.position)), 'separation must be deterministic');
+  // 6. No orbit: a walker heading for a spot next to a settled NPC settles and stays.
+  const anchors: TownsfolkAnchors = {
+    points: {
+      guild: { x: 90, y: 60 }, chapel: { x: 40, y: 90 }, tavern: { x: 90, y: 90 },
+      farm0: { x: 30, y: 119 }, farm1: { x: 110, y: 119 },
+    },
+    plaza: { x: 70, y: 82 },
+    stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
+    gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
+    patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
+  };
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+  const folk = createTownsfolk(anchors, 847291583);
+  const navCtx: TownsfolkNavContext = {
+    housing: buildMosslightHousing(folk.map((n) => n.id)),
+    doors: cottageDoorways(),
+    obstacles: mosslightObstacles(),
+  };
+  const farmer = folk.find((n) => n.archetype === 'farmer')!;
+  const target = townsfolkTarget(farmer, anchors, clockAt(10, 0)).target;
+  const occupant = { ...farmer, id: 'occupant', position: { ...target }, moving: false, location: 'OUTDOOR' as const, path: undefined };
+  let incoming = { ...farmer, position: { x: target.x - 6, y: target.y }, moving: false, location: 'OUTDOOR' as const, path: undefined };
+  let pair = [incoming, occupant];
+  for (let i = 0; i < 400; i++) pair = advanceTownsfolk(pair, anchors, clockAt(10, 0), navCtx);
+  const arrivedDist = Math.hypot(pair[0].position.x - target.x, pair[0].position.y - target.y);
+  assert(!pair[0].moving, 'walker should settle near its target');
+  assert(arrivedDist < 1.5, `walker should stay near its target, ended ${arrivedDist.toFixed(2)} away`);
+  assert(pair[1].position.x === target.x && pair[1].position.y === target.y, 'settled occupant must never be shoved off its spot');
 }
 
 // ---- Results ----

@@ -506,7 +506,57 @@ export function advanceTownsfolk(
   nav: TownsfolkNavContext,
   step = 0.22,
 ): Townsperson[] {
-  return folk.map((npc) => advanceOne(npc, anchors, clock, nav, step));
+  return separateCrowd(folk.map((npc) => advanceOne(npc, anchors, clock, nav, step)));
+}
+
+/**
+ * Light crowd separation (BUILD 319): after stepping, nudge apart outdoor
+ * NPCs that overlap. Pure and deterministic (index-ordered pairs).
+ *
+ * Stability rules (no orbit jitter):
+ * - Indoor/sleeping NPCs are authored positions — never touched.
+ * - Settled NPCs (!moving) are anchors: only the moving member of a pair is
+ *   pushed, so a walker flows around someone standing at a stall instead of
+ *   shoving them off their spot (which would replan -> walk back -> loop).
+ * - Pairs where nobody moves are left alone (a gathered crowd looks natural).
+ * - NPCs far apart keep object identity so the renderer's change check works.
+ */
+export function separateCrowd(folk: Townsperson[], radius = 1.1, push = 0.14): Townsperson[] {
+  const positions = folk.map((n) => ({ ...n.position }));
+  const displaced = new Array<boolean>(folk.length).fill(false);
+  const eligible = (n: Townsperson) =>
+    !n.indoors && n.location !== 'SLEEPING' && n.location !== 'INTERIOR';
+  for (let i = 0; i < folk.length; i++) {
+    if (!eligible(folk[i])) continue;
+    for (let j = i + 1; j < folk.length; j++) {
+      if (!eligible(folk[j])) continue;
+      const iMoving = folk[i].moving;
+      const jMoving = folk[j].moving;
+      if (!iMoving && !jMoving) continue;
+      const dx = positions[j].x - positions[i].x;
+      const dy = positions[j].y - positions[i].y;
+      const dist = Math.hypot(dx, dy);
+      if (dist >= radius) continue;
+      const nx = dist < 1e-6 ? 1 : dx / dist;
+      const ny = dist < 1e-6 ? 0 : dy / dist;
+      const overlap = (radius - Math.max(dist, 1e-6)) / radius;
+      const px = nx * push * overlap;
+      const py = ny * push * overlap;
+      // Push the moving member(s); settled NPCs hold their ground.
+      if (iMoving) {
+        positions[i].x -= px;
+        positions[i].y -= py;
+        displaced[i] = true;
+      }
+      if (jMoving) {
+        positions[j].x += px;
+        positions[j].y += py;
+        displaced[j] = true;
+      }
+    }
+  }
+  if (!displaced.some(Boolean)) return folk;
+  return folk.map((n, i) => (displaced[i] ? { ...n, position: positions[i] } : n));
 }
 
 /**
