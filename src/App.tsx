@@ -7894,7 +7894,7 @@ if (active) {
             return <button className="dungeon-descend-button" style={{ left: fieldPct((entrance.x + 16)), top: fieldPct(entrance.y) }} onClick={onEnterDungeon} aria-label={'Descend into ' + dungeon.name} data-testid="button-enter-field-dungeon">Descend</button>;
           })()}
           </div>
-          {!mounted && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
+          {!mounted && !isoFieldBeta && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
              data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: gameZoom !== 1 ? playerScreenPct(position.x / FIELD_SIZE, gameZoom) + '%' : fieldPct(position.x), top: gameZoom !== 1 ? playerScreenPct(position.y / FIELD_SIZE, gameZoom) + '%' : fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, ...(gameZoom !== 1 ? { transform: `translate(-50%, -50%) scale(${gameZoom})` } : {}) } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
