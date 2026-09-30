@@ -1,257 +1,197 @@
-/**
- * BUILD 357: Isometric 2.5D vertical slice — one 20x20 chunk
- * (four 10x10 quadrants merged into a single area).
- *
- * Separate from the main game renderer: the world model here is a tiny
- * tile grid (integer tile coords, tile collision). Reached via ?iso=1;
- * the main game's systems are untouched.
- *
- * Contents: diamond floor, stone walls with a real doorway, two enterable
- * huts, two market stalls, trees, rocks, movable crates (tap to pick up /
- * tap a tile to place), wandering NPCs, tile-based player movement with
- * smooth interpolation, depth-sorted canvas rendering, smooth camera,
- * zoom, D-pad + keyboard, tap-to-move pathfinding, localStorage save/load.
- */
-import { useEffect, useRef, useState } from 'react';
+// Isometric demo (BUILD 358): data-driven world + in-game map builder (?iso=1).
+// Play mode: explore, move crates, wandering NPCs. Edit mode: full map builder
+// (select/move/delete, paint terrain, place objects, copy/paste regions, resize
+// up to 200x200, undo). World persists in localStorage.
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  TILE_W, TILE_H, WALL_H,
-  isoToScreen, screenToTileInt, depthKey, findPath,
+  isoToScreen, screenToTileInt, depthKey, findPath, TILE_W, TILE_H,
   type TilePoint,
 } from './projection';
+import {
+  loadWorld, saveWorld, defaultWorld, resizeWorld, copyRegion, pasteClipboard,
+  clipboardSize, terrainAt, terrainKey, inBounds, isWalkableWorld,
+  mergeWallRuns, WALL_H, HUT_H,
+  type IsoWorld, type Clipboard, type Terrain, type Region,
+  type HutRect, type WallRun,
+} from './isoWorld';
 
-// ---------- room model ----------
-// One 20x20 chunk (four 10x10 quadrants as one area).
-const BX0 = 0, BX1 = 19, BY0 = -3, BY1 = 19; // walkable bounds (courtyard + meadow apron)
-const DOOR_FROM = 9, DOOR_TO = 10;           // door gap tiles in the north wall
-const HUT_H = 64;
+const STEP_MS = 170;
+const NPC_STEP_MS = 420;
+const MAX_UNDO = 30;
 
-interface HutRect { x0: number; x1: number; y0: number; y1: number; }
-const HUTS: HutRect[] = [
-  { x0: 6, x1: 8, y0: 5, y1: 7 },     // hut footprint; south side open (door)
-  { x0: 12, x1: 14, y0: 12, y1: 14 },
-];
-interface StallRect { x0: number; x1: number; y: number; }
-const STALLS: StallRect[] = [
-  { x0: 2, x1: 3, y: 4 },
-  { x0: 15, x1: 16, y: 12 },
-];
-const TREES: TilePoint[] = [
-  { tx: 2, ty: -2 }, { tx: 17, ty: -2 }, { tx: 16, ty: 3 }, { tx: 4, ty: 15 },
-];
-const ROCKS: TilePoint[] = [
-  { tx: 7, ty: -2 }, { tx: 12, ty: -2 }, { tx: 3, ty: 12 },
-];
-const CRATE_STARTS: TilePoint[] = [{ tx: 5, ty: 5 }, { tx: 13, ty: 8 }];
-const PLAYER_START: TilePoint = { tx: 9, ty: 16 };
+const TERRAIN_COLORS: Record<Terrain, [string, string]> = {
+  grass: ['#7cc24a', '#74b843'],
+  dirt: ['#c9a86b', '#c09a62'],
+  sand: ['#e8d89a', '#dfcf8d'],
+  stone: ['#9aa0a8', '#9298a0'],
+  water: ['#4aa3df', '#3f97d4'],
+};
+const TERRAIN_LIST: Terrain[] = ['grass', 'dirt', 'sand', 'stone', 'water'];
 
-interface NpcDef {
-  start: TilePoint; waypoints: TilePoint[];
-  tunic: string; hair: string; facing: 'left' | 'right';
-}
-const NPC_DEFS: NpcDef[] = [
-  {
-    start: { tx: 1, ty: 1 }, tunic: '#3fa34d', hair: '#7a4a21', facing: 'left',
-    waypoints: [{ tx: 1, ty: 1 }, { tx: 8, ty: 2 }, { tx: 5, ty: 12 }, { tx: 2, ty: 16 }],
-  },
-  {
-    start: { tx: 14, ty: 2 }, tunic: '#b5651d', hair: '#2b2b2b', facing: 'right',
-    waypoints: [{ tx: 14, ty: 2 }, { tx: 17, ty: 8 }, { tx: 12, ty: 16 }, { tx: 16, ty: 15 }],
-  },
-];
+type Mode = 'play' | 'edit';
+type Tool = 'select' | 'pan' | 'paint' | 'place' | 'copy' | 'paste' | 'erase';
+type PlaceKind = 'tree' | 'rock' | 'crate' | 'hut' | 'stall' | 'wallH' | 'wallV' | 'npc' | 'start';
+type SelKind = 'tree' | 'rock' | 'crate' | 'npc' | 'stall' | 'hut' | 'wall' | 'start';
+interface Selection { kind: SelKind; index: number }
 
-const SAVE_KEY = 'isoRoomV1';
-const STEP_MS = 170;   // player ms per tile
-const NPC_STEP_MS = 300;
-
-type FloorKind = 'grass' | 'path' | 'wood' | 'meadow';
-function floorAt(tx: number, ty: number): FloorKind {
-  if (ty < 0) return 'meadow';
-  for (const h of HUTS) if (tx >= h.x0 && tx <= h.x1 && ty >= h.y0 && ty <= h.y1) return 'wood';
-  if (tx === 9 || tx === 10) return 'path';  // door path, north-south
-  if (ty === 9) return 'path';               // cross path, east-west
-  return 'grass';
+interface CharState { tx: number; ty: number; fx: number; fy: number }
+interface PlayNpc extends CharState {
+  name: string; tunic: string; hair: string;
+  waypoints: TilePoint[]; path: TilePoint[]; stepT: number; thinkT: number;
+  from: { x: number; y: number }; moving: boolean; facing: 'left' | 'right';
 }
 
-interface SliceState {
-  player: TilePoint; npcs: TilePoint[]; crates: TilePoint[];
-}
+interface Drawable { depth: number; tx: number; ty: number; draw: (g: CanvasRenderingContext2D) => void }
 
-function loadSaved(): SliceState | null {
-  try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return null;
-    const s = JSON.parse(raw) as SliceState;
-    if (!s || !s.player || !Array.isArray(s.crates)) return null;
-    return s;
-  } catch { return null; }
-}
+const NPC_LOOKS = [
+  { tunic: '#3b6fd4', hair: '#5a3a22' }, { tunic: '#b44a3c', hair: '#222222' },
+  { tunic: '#4a8b5c', hair: '#8a5a2a' }, { tunic: '#8b5aa0', hair: '#d9c08a' },
+  { tunic: '#c47b2d', hair: '#3a2a1a' },
+];
 
-interface NpcState {
-  tx: number; ty: number; fx: number; fy: number;
-  from: { x: number; y: number };
-  path: TilePoint[]; stepT: number; facing: 'left' | 'right';
-  moving: boolean; thinkT: number;
-  waypoints: TilePoint[]; tunic: string; hair: string;
-}
-
-export default function IsoRoomDemo() {
+export default function IsoRoom(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const apiRef = useRef({
-    hold: (_d: string, _on: boolean) => { /* replaced in effect */ },
-    zoomIn: () => { /* replaced in effect */ },
-    zoomOut: () => { /* replaced in effect */ },
-    back: () => { window.location.href = window.location.pathname; },
-  });
-  const [toast, setToast] = useState('');
+  const apiRef = useRef({ hold: (_d: string, _on: boolean) => { }, zoomIn: () => { }, zoomOut: () => { }, back: () => { }, enterEdit: () => { }, exitEdit: () => { } });
+  const toastTimer = useRef(0);
+  const [mode, setMode] = useState<Mode>('play');
+  const [, setVer] = useState(0); // bump to refresh editor UI
+  const [coords, setCoords] = useState('');
   const [carrying, setCarrying] = useState(false);
-  const [coords, setCoords] = useState(`${PLAYER_START.tx}, ${PLAYER_START.ty}`);
-  const toastTimer = useRef<number>(0);
+  const [toast, setToast] = useState('');
+  const [tool, setTool] = useState<Tool>('select');
+  const [paintTerrain, setPaintTerrain] = useState<Terrain>('dirt');
+  const [placeKind, setPlaceKind] = useState<PlaceKind>('tree');
+  const [resizeOpen, setResizeOpen] = useState(false);
+  const [resizeW, setResizeW] = useState(56);
+  const [resizeH, setResizeH] = useState(56);
+  const [worldSize, setWorldSize] = useState('56×56');
 
   const showToast = (msg: string) => {
     setToast(msg);
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(''), 2200);
   };
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const ctxOrNull = canvas.getContext('2d');
+    if (!ctxOrNull) return;
+    const ctx: CanvasRenderingContext2D = ctxOrNull;
 
-    // ----- mutable sim state (refs, not React state) -----
-    const saved = loadSaved();
-    const player = {
-      tx: saved?.player.tx ?? PLAYER_START.tx,
-      ty: saved?.player.ty ?? PLAYER_START.ty,
-      fx: 0, fy: 0,
+    const worldRef = { current: loadWorld() };
+    const W = () => worldRef.current;
+    const modeRef = { current: 'play' as Mode };
+    const bump = () => { setVer(v => v + 1); setWorldSize(`${W().w}×${W().h}`); };
+
+    // ---------- editor state ----------
+    const ed = {
+      tool: 'select' as Tool,
+      paintTerrain: 'dirt' as Terrain,
+      placeKind: 'tree' as PlaceKind,
+      sel: null as Selection | null,
+      copyA: null as TilePoint | null,
+      clipboard: null as Clipboard | null,
+      hover: null as TilePoint | null,
+      cam: { x: 0, y: 0 },
+      zoom: 1,
+      pan: null as { sx: number; sy: number; cx: number; cy: number; moved: boolean } | null,
+      stroke: false,
+      moving: null as { kind: SelKind; index: number; ox: number; oy: number } | null,
+      undo: [] as string[],
+      npcCount: 0,
     };
-    player.fx = player.tx; player.fy = player.ty;
-    const npcs: NpcState[] = NPC_DEFS.map((d, i) => {
-      const sp = saved?.npcs?.[i] ?? d.start;
-      return {
-        tx: sp.tx, ty: sp.ty, fx: sp.tx, fy: sp.ty,
-        from: { x: sp.tx, y: sp.ty },
-        path: [] as TilePoint[], stepT: 0, facing: d.facing,
-        moving: false, thinkT: 1500 + i * 1200,
-        waypoints: d.waypoints, tunic: d.tunic, hair: d.hair,
-      };
-    });
-    let crates: TilePoint[] = (saved?.crates ?? CRATE_STARTS).map(c => ({ tx: c.tx, ty: c.ty }));
-    let carryingIdx = -1;
+
+    const pushUndo = () => {
+      ed.undo.push(JSON.stringify(worldRef.current));
+      if (ed.undo.length > MAX_UNDO) ed.undo.shift();
+    };
+    const doUndo = () => {
+      const s = ed.undo.pop();
+      if (!s) { showToastRef.current('Nothing to undo'); return; }
+      worldRef.current = JSON.parse(s) as IsoWorld;
+      saveWorld(worldRef.current);
+      ed.sel = null;
+      bump();
+    };
+    const mutate = (fn: (w: IsoWorld) => void) => {
+      pushUndo();
+      fn(worldRef.current);
+      saveWorld(worldRef.current);
+      bump();
+    };
+
+    // ---------- play state ----------
+    const player: CharState = { tx: 0, ty: 0, fx: 0, fy: 0 };
+    const npcs: PlayNpc[] = [];
     let playerPath: TilePoint[] = [];
-    let playerStepT = 0;
-    let playerFacing: 'left' | 'right' = 'right';
+    const pFrom = { x: 0, y: 0 };
+    const pStepT = { t: 0 };
     let playerMoving = false;
+    let playerFacing: 'left' | 'right' = 'right';
+    let carryingIdx = -1;
     const held = new Set<string>();
     const cam = { x: 0, y: 0 };
     let zoom = 1;
-    let destroyed = false;
-
-    const isHutWall = (h: HutRect, tx: number, ty: number) =>
-      (ty === h.y0 && tx >= h.x0 && tx <= h.x1) ||                 // north wall row
-      ((tx === h.x0 || tx === h.x1) && ty > h.y0 && ty <= h.y1);  // side walls
-
-    const isWalkable = (tx: number, ty: number, forNpc: boolean, npcIdx = -1) => {
-      if (tx < BX0 || tx > BX1 || ty < BY0 || ty > BY1) return false;
-      for (const h of HUTS) if (isHutWall(h, tx, ty)) return false;
-      for (const s of STALLS) if (ty === s.y && tx >= s.x0 && tx <= s.x1) return false;
-      for (const t of TREES) if (tx === t.tx && ty === t.ty) return false;
-      for (const t of ROCKS) if (tx === t.tx && ty === t.ty) return false;
-      for (let i = 0; i < crates.length; i++) {
-        if (i !== carryingIdx && tx === crates[i].tx && ty === crates[i].ty) return false;
-      }
-      if (forNpc) {
-        if (tx === player.tx && ty === player.ty) return false;
-        for (let i = 0; i < npcs.length; i++) {
-          if (i !== npcIdx && tx === npcs[i].tx && ty === npcs[i].ty) return false;
-        }
-      } else {
-        for (const n of npcs) if (tx === n.tx && ty === n.ty) return false;
-      }
-      return true;
-    };
-
-    const save = () => {
+    const savePlay = () => {
       try {
-        localStorage.setItem(SAVE_KEY, JSON.stringify({
-          player: { tx: player.tx, ty: player.ty },
-          npcs: npcs.map(n => ({ tx: n.tx, ty: n.ty })),
-          crates,
-        }));
-      } catch { /* noop */ }
+        localStorage.setItem('iso-player-v2', JSON.stringify({ x: player.tx, y: player.ty }));
+        localStorage.setItem('iso-npcs-v2', JSON.stringify(npcs.map(n => ({ x: n.tx, y: n.ty }))));
+      } catch { /* ignore */ }
+      saveWorld(worldRef.current);
     };
 
-    // ----- canvas sizing -----
+    const initPlay = () => {
+      const w = W();
+      let px = w.playerStart.tx, py = w.playerStart.ty;
+      try {
+        const raw = localStorage.getItem('iso-player-v2');
+        if (raw) {
+          const s = JSON.parse(raw);
+          if (inBounds(w, s.x, s.y) && isWalkableWorld(w, w.crates, s.x, s.y)) { px = s.x; py = s.y; }
+        }
+      } catch { /* ignore */ }
+      player.tx = px; player.ty = py; player.fx = px; player.fy = py;
+      pFrom.x = px; pFrom.y = py;
+      playerPath = []; carryingIdx = -1; setCarrying(false);
+      npcs.length = 0;
+      let saved: Array<{ x: number; y: number }> = [];
+      try {
+        const raw = localStorage.getItem('iso-npcs-v2');
+        if (raw) saved = JSON.parse(raw);
+      } catch { /* ignore */ }
+      w.npcSpawns.forEach((s, i) => {
+        const sv = saved[i];
+        const sx = sv && inBounds(w, sv.x, sv.y) ? sv.x : s.x;
+        const sy = sv && inBounds(w, sv.x, sv.y) ? sv.y : s.y;
+        const wps = s.waypoints.filter(p => inBounds(w, p.tx, p.ty) && isWalkableWorld(w, w.crates, p.tx, p.ty));
+        npcs.push({
+          name: s.name, tunic: s.tunic, hair: s.hair,
+          tx: sx, ty: sy, fx: sx, fy: sy,
+          waypoints: wps.length > 0 ? wps : [{ tx: s.x, ty: s.y }],
+          path: [], stepT: 0, thinkT: 500 + i * 900,
+          from: { x: sx, y: sy }, moving: false, facing: 'right',
+        });
+      });
+      const c = isoToScreen(player.fx, player.fy);
+      cam.x = c.x; cam.y = c.y;
+      setCoords(`${player.tx}, ${player.ty}`);
+    };
+
+    // ---------- canvas sizing ----------
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const w = canvas.clientWidth, h = canvas.clientHeight;
-      canvas.width = Math.max(1, Math.round(w * dpr));
-      canvas.height = Math.max(1, Math.round(h * dpr));
+      const wpx = canvas.clientWidth, hpx = canvas.clientHeight;
+      canvas.width = Math.max(1, Math.round(wpx * dpr));
+      canvas.height = Math.max(1, Math.round(hpx * dpr));
     };
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
 
-    // ----- static floor cache (offscreen, world coords at zoom 1) -----
-    let floorCache: HTMLCanvasElement | null = null;
-    let cacheZoom = 0;
-    const FLOOR_COLORS: Record<FloorKind, [string, string]> = {
-      grass: ['#7ec850', '#75bd49'],
-      meadow: ['#93d765', '#8acf5c'],
-      path: ['#cfa96b', '#c69e60'],
-      wood: ['#a9744f', '#9d6a44'],
-    };
-    const buildFloorCache = () => {
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      for (let ty = BY0; ty <= BY1; ty++) for (let tx = BX0; tx <= BX1; tx++) {
-        const c = isoToScreen(tx, ty);
-        minX = Math.min(minX, c.x - TILE_W / 2); maxX = Math.max(maxX, c.x + TILE_W / 2);
-        minY = Math.min(minY, c.y - TILE_H / 2); maxY = Math.max(maxY, c.y + TILE_H / 2);
-      }
-      const M = 40;
-      minX -= M; minY -= M; maxX += M; maxY += M;
-      floorCache = document.createElement('canvas');
-      floorCache.width = Math.ceil(maxX - minX);
-      floorCache.height = Math.ceil(maxY - minY);
-      const g = floorCache.getContext('2d')!;
-      g.translate(-minX, -minY);
-      for (let ty = BY0; ty <= BY1; ty++) for (let tx = BX0; tx <= BX1; tx++) {
-        const kind = floorAt(tx, ty);
-        const [c1, c2] = FLOOR_COLORS[kind];
-        const c = isoToScreen(tx, ty);
-        g.beginPath();
-        g.moveTo(c.x, c.y - TILE_H / 2);
-        g.lineTo(c.x + TILE_W / 2, c.y);
-        g.lineTo(c.x, c.y + TILE_H / 2);
-        g.lineTo(c.x - TILE_W / 2, c.y);
-        g.closePath();
-        g.fillStyle = ((tx + ty) & 1) === 0 ? c1 : c2;
-        g.fill();
-        g.strokeStyle = 'rgba(0,0,0,0.08)';
-        g.lineWidth = 1;
-        g.stroke();
-        if (kind === 'wood') {
-          g.strokeStyle = 'rgba(60,30,10,0.35)';
-          g.beginPath();
-          g.moveTo(c.x - TILE_W / 2 + 8, c.y - 4); g.lineTo(c.x + TILE_W / 2 - 8, c.y - 4);
-          g.moveTo(c.x - TILE_W / 2 + 8, c.y + 4); g.lineTo(c.x + TILE_W / 2 - 8, c.y + 4);
-          g.stroke();
-        }
-        if (kind === 'meadow' && ((tx * 7 + ty * 13) % 5 === 0)) {
-          g.fillStyle = '#ffffff';
-          g.beginPath(); g.arc(c.x + 6, c.y - 2, 2, 0, 7); g.fill();
-          g.fillStyle = '#ff6b9d';
-          g.beginPath(); g.arc(c.x - 8, c.y + 4, 2, 0, 7); g.fill();
-        }
-      }
-      (floorCache as unknown as { _ox: number })._ox = minX;
-      (floorCache as unknown as { _oy: number })._oy = minY;
-      cacheZoom = zoom;
-    };
-    // ----- draw helpers (screen space = world iso coords, camera applied by caller) -----
-    interface Drawable { depth: number; draw: (g: CanvasRenderingContext2D) => void; }
-
+    // ---------- draw helpers ----------
     function wallQuad(g: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number,
       h: number, face: string, cap: string) {
       g.beginPath();
@@ -259,7 +199,7 @@ export default function IsoRoomDemo() {
       g.closePath();
       g.fillStyle = face; g.fill();
       g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 1; g.stroke();
-      const bx = -9, by = -5; // top cap = wall thickness illusion
+      const bx = -9, by = -5;
       g.beginPath();
       g.moveTo(x0 + bx, y0 - h + by); g.lineTo(x1 + bx, y1 - h + by);
       g.lineTo(x1, y1 - h); g.lineTo(x0, y0 - h);
@@ -268,17 +208,13 @@ export default function IsoRoomDemo() {
       g.strokeStyle = 'rgba(0,0,0,0.2)'; g.stroke();
     }
 
-    // courtyard north wall: from N(BX0,0) to E(BX1,0), door gap at DOOR_FROM..DOOR_TO
-    function northWallDrawables(): Drawable[] {
+    function wallRunDrawables(run: WallRun): Drawable[] {
       const out: Drawable[] = [];
-      const segs: Array<[number, number]> = [[BX0, DOOR_FROM - 1], [DOOR_TO + 1, BX1]];
-      for (const [a, b] of segs) {
-        if (a > b) continue;
-        const n = isoToScreen(a, 0); const p0 = { x: n.x, y: n.y - TILE_H / 2 };
-        const e = isoToScreen(b, 0); const p1 = { x: e.x + TILE_W / 2, y: e.y };
-        const depth = depthKey(b, 0);
+      if (run.h) {
+        const n = isoToScreen(run.x0, run.y0); const p0 = { x: n.x - TILE_W / 2, y: n.y - TILE_H / 2 };
+        const e = isoToScreen(run.x1, run.y0); const p1 = { x: e.x + TILE_W / 2, y: e.y };
         out.push({
-          depth, draw: (g) => {
+          depth: depthKey(run.x1, run.y0), tx: run.x1, ty: run.y0, draw: (g) => {
             wallQuad(g, p0.x, p0.y, p1.x, p1.y, WALL_H, '#9aa0a8', '#c6ccd4');
             g.strokeStyle = 'rgba(0,0,0,0.12)';
             for (let i = 1; i < 3; i++) {
@@ -290,40 +226,38 @@ export default function IsoRoomDemo() {
             }
           },
         });
-      }
-      for (const tx of [DOOR_FROM, DOOR_TO + 1]) {
-        const n = isoToScreen(tx, 0);
-        const px = tx <= DOOR_FROM ? n.x - TILE_W / 2 + 6 : n.x + TILE_W / 2 - 6;
-        const py = tx <= DOOR_FROM ? n.y : n.y - TILE_H;
+        for (const ex of [run.x0, run.x1 + 1]) {
+          const nn = isoToScreen(ex, run.y0);
+          const px = ex === run.x0 ? nn.x - TILE_W / 2 + 6 : nn.x + TILE_W / 2 - 6;
+          const py = ex === run.x0 ? nn.y : nn.y - TILE_H;
+          out.push({
+            depth: depthKey(ex, run.y0) + 1, tx: ex, ty: run.y0, draw: (g) => {
+              g.fillStyle = '#6e4526';
+              g.fillRect(px - 4, py - WALL_H - 8, 8, WALL_H + 8);
+              g.fillStyle = '#8a5a33';
+              g.fillRect(px - 4, py - WALL_H - 8, 8, 4);
+            },
+          });
+        }
+      } else {
+        const n = isoToScreen(run.x0, run.y0); const p0 = { x: n.x - TILE_W / 2, y: n.y - TILE_H / 2 };
+        const s = isoToScreen(run.x0, run.y1); const p1 = { x: s.x - TILE_W / 2, y: s.y };
         out.push({
-          depth: depthKey(tx, 0) + 1, draw: (g) => {
-            g.fillStyle = '#6e4526';
-            g.fillRect(px - 4, py - WALL_H - 8, 8, WALL_H + 8);
-            g.fillStyle = '#8a5a33';
-            g.fillRect(px - 4, py - WALL_H - 8, 8, 4);
+          depth: depthKey(run.x0, run.y1), tx: run.x0, ty: run.y1, draw: (g) => {
+            wallQuad(g, p0.x, p0.y, p1.x, p1.y, WALL_H, '#8b9098', '#b9bfc7');
           },
         });
       }
       return out;
     }
 
-    function westWallDrawables(): Drawable[] {
-      const n = isoToScreen(BX0, 0); const p0 = { x: n.x, y: n.y - TILE_H / 2 };
-      const w = isoToScreen(BX0, BY1); const p1 = { x: w.x - TILE_W / 2, y: w.y };
-      return [{
-        depth: depthKey(BX0, BY1), draw: (g) => {
-          wallQuad(g, p0.x, p0.y, p1.x, p1.y, WALL_H, '#8b9098', '#b9bfc7');
-        },
-      }];
-    }
-
     function hutDrawables(h: HutRect): Drawable[] {
       const out: Drawable[] = [];
-      { // north wall (south face, lit)
-        const n = isoToScreen(h.x0, h.y0); const p0 = { x: n.x, y: n.y - TILE_H / 2 };
+      {
+        const n = isoToScreen(h.x0, h.y0); const p0 = { x: n.x - TILE_W / 2, y: n.y - TILE_H / 2 };
         const e = isoToScreen(h.x1, h.y0); const p1 = { x: e.x + TILE_W / 2, y: e.y };
         out.push({
-          depth: depthKey(h.x1, h.y0), draw: (g) => {
+          depth: depthKey(h.x1, h.y0), tx: h.x1, ty: h.y0, draw: (g) => {
             wallQuad(g, p0.x, p0.y, p1.x, p1.y, HUT_H, '#8a5a33', '#b08a5a');
             g.strokeStyle = 'rgba(40,20,5,0.4)';
             for (let i = 1; i < 4; i++) {
@@ -336,28 +270,28 @@ export default function IsoRoomDemo() {
           },
         });
       }
-      { // west wall (east face, darker)
-        const n = isoToScreen(h.x0, h.y0 + 1); const p0 = { x: n.x, y: n.y - TILE_H / 2 };
-        const w = isoToScreen(h.x0, h.y1); const p1 = { x: w.x - TILE_W / 2, y: w.y };
+      {
+        const n = isoToScreen(h.x0, h.y0 + 1); const p0 = { x: n.x - TILE_W / 2, y: n.y - TILE_H / 2 };
+        const wpt = isoToScreen(h.x0, h.y1); const p1 = { x: wpt.x - TILE_W / 2, y: wpt.y };
         out.push({
-          depth: depthKey(h.x0, h.y1), draw: (g) => {
+          depth: depthKey(h.x0, h.y1), tx: h.x0, ty: h.y1, draw: (g) => {
             wallQuad(g, p0.x, p0.y, p1.x, p1.y, HUT_H, '#75502c', '#9a7448');
           },
         });
       }
-      { // east wall (east face)
+      {
         const e = isoToScreen(h.x1, h.y0 + 1); const p0 = { x: e.x + TILE_W / 2, y: e.y };
         const s = isoToScreen(h.x1, h.y1); const p1 = { x: s.x, y: s.y + TILE_H / 2 };
         out.push({
-          depth: depthKey(h.x1, h.y1), draw: (g) => {
+          depth: depthKey(h.x1, h.y1), tx: h.x1, ty: h.y1, draw: (g) => {
             wallQuad(g, p0.x, p0.y, p1.x, p1.y, HUT_H, '#75502c', '#9a7448');
           },
         });
       }
-      { // sign by the door
+      {
         const c = isoToScreen(h.x1 + 0.5, h.y1 + 0.7);
         out.push({
-          depth: depthKey(h.x1, h.y1) + 2, draw: (g) => {
+          depth: depthKey(h.x1, h.y1) + 2, tx: h.x1, ty: h.y1, draw: (g) => {
             g.fillStyle = '#6e4526'; g.fillRect(c.x - 2, c.y - 26, 4, 26);
             g.fillStyle = '#c9a86b'; g.fillRect(c.x - 14, c.y - 40, 28, 14);
             g.strokeStyle = '#6e4526'; g.strokeRect(c.x - 14, c.y - 40, 28, 14);
@@ -369,11 +303,11 @@ export default function IsoRoomDemo() {
       return out;
     }
 
-    function stallDrawables(s: StallRect): Drawable[] {
-      const w = isoToScreen(s.x0, s.y); const p0 = { x: w.x - TILE_W / 2, y: w.y };
-      const e = isoToScreen(s.x1, s.y); const p1 = { x: e.x + TILE_W / 2, y: e.y };
-      return [{
-        depth: depthKey(s.x0, s.y), draw: (g) => {
+    function stallDrawable(s: { x0: number; y0: number; x1: number }): Drawable {
+      const wpt = isoToScreen(s.x0, s.y0); const p0 = { x: wpt.x - TILE_W / 2, y: wpt.y };
+      const e = isoToScreen(s.x1, s.y0); const p1 = { x: e.x + TILE_W / 2, y: e.y };
+      return {
+        depth: depthKey(s.x0, s.y0), tx: s.x0, ty: s.y0, draw: (g) => {
           const ch = 26, ah = 58;
           g.beginPath();
           g.moveTo(p0.x, p0.y); g.lineTo(p1.x, p1.y);
@@ -405,13 +339,13 @@ export default function IsoRoomDemo() {
             g.fill();
           }
         },
-      }];
+      };
     }
 
     function treeDrawable(t: TilePoint): Drawable {
       const c = isoToScreen(t.tx, t.ty);
       return {
-        depth: depthKey(t.tx, t.ty), draw: (g) => {
+        depth: depthKey(t.tx, t.ty), tx: t.tx, ty: t.ty, draw: (g) => {
           g.fillStyle = 'rgba(0,0,0,0.2)';
           g.beginPath(); g.ellipse(c.x, c.y + 4, 20, 8, 0, 0, 7); g.fill();
           g.fillStyle = '#6b4a2a';
@@ -430,7 +364,7 @@ export default function IsoRoomDemo() {
     function rockDrawable(t: TilePoint): Drawable {
       const c = isoToScreen(t.tx, t.ty);
       return {
-        depth: depthKey(t.tx, t.ty), draw: (g) => {
+        depth: depthKey(t.tx, t.ty), tx: t.tx, ty: t.ty, draw: (g) => {
           g.fillStyle = 'rgba(0,0,0,0.18)';
           g.beginPath(); g.ellipse(c.x, c.y + 3, 18, 7, 0, 0, 7); g.fill();
           g.beginPath();
@@ -445,11 +379,11 @@ export default function IsoRoomDemo() {
       };
     }
 
-    function crateDrawable(c: TilePoint): Drawable {
-      const p = isoToScreen(c.tx, c.ty);
+    function crateDrawable(t: TilePoint): Drawable {
+      const p = isoToScreen(t.tx, t.ty);
       const s = 15, h = 22;
       return {
-        depth: depthKey(c.tx, c.ty), draw: (g) => {
+        depth: depthKey(t.tx, t.ty), tx: t.tx, ty: t.ty, draw: (g) => {
           g.beginPath();
           g.moveTo(p.x, p.y - h - 8); g.lineTo(p.x + s, p.y - h); g.lineTo(p.x, p.y - h + 8); g.lineTo(p.x - s, p.y - h);
           g.closePath(); g.fillStyle = '#c9a86b'; g.fill(); g.strokeStyle = 'rgba(0,0,0,0.3)'; g.stroke();
@@ -467,7 +401,7 @@ export default function IsoRoomDemo() {
       tunic: string, hair: string, depth: number, bob: number): Drawable {
       const c = isoToScreen(px, py);
       return {
-        depth, draw: (g) => {
+        depth, tx: px, ty: py, draw: (g) => {
           const lift = moving ? Math.abs(Math.sin(bob)) * 3 : 0;
           g.fillStyle = 'rgba(0,0,0,0.22)';
           g.beginPath(); g.ellipse(c.x, c.y + 3, 12, 5, 0, 0, 7); g.fill();
@@ -492,36 +426,499 @@ export default function IsoRoomDemo() {
         },
       };
     }
-    // ----- tap-to-move / crate interaction -----
-    const pFrom = { x: player.tx, y: player.ty };
-    const tap = (tx: number, ty: number) => {
+
+    function startMarkerDrawable(t: TilePoint): Drawable {
+      const c = isoToScreen(t.tx, t.ty);
+      return {
+        depth: depthKey(t.tx, t.ty) + 0.5, tx: t.tx, ty: t.ty, draw: (g) => {
+          g.strokeStyle = '#ffd23d'; g.lineWidth = 3;
+          g.beginPath();
+          g.moveTo(c.x, c.y - 18); g.lineTo(c.x + 16, c.y - 9);
+          g.lineTo(c.x, c.y); g.lineTo(c.x - 16, c.y - 9);
+          g.closePath(); g.stroke();
+          g.fillStyle = '#ffd23d'; g.font = 'bold 10px monospace'; g.textAlign = 'center';
+          g.fillText('START', c.x, c.y - 24);
+        },
+      };
+    }
+    // ---------- viewport culling ----------
+    function tileRange(cx: number, cy: number, zm: number, wpx: number, hpx: number) {
+      const hw = wpx / 2 / zm, hh = hpx / 2 / zm;
+      const corners = [
+        [cx - hw, cy - hh], [cx + hw, cy - hh], [cx - hw, cy + hh], [cx + hw, cy + hh],
+      ];
+      let mnx = Infinity, mxx = -Infinity, mny = Infinity, mxy = -Infinity;
+      for (const [wx, wy] of corners) {
+        const tx = (wx / TILE_W + wy / TILE_H) / 2;
+        const ty = (wy / TILE_H - wx / TILE_W) / 2;
+        mnx = Math.min(mnx, tx); mxx = Math.max(mxx, tx);
+        mny = Math.min(mny, ty); mxy = Math.max(mxy, ty);
+      }
+      return {
+        x0: Math.max(0, Math.floor(mnx) - 2), x1: Math.min(W().w - 1, Math.ceil(mxx) + 2),
+        y0: Math.max(0, Math.floor(mny) - 2), y1: Math.min(W().h - 1, Math.ceil(mxy) + 2),
+      };
+    }
+
+    function diamond(g: CanvasRenderingContext2D, cx: number, cy: number) {
+      g.beginPath();
+      g.moveTo(cx, cy - TILE_H / 2); g.lineTo(cx + TILE_W / 2, cy);
+      g.lineTo(cx, cy + TILE_H / 2); g.lineTo(cx - TILE_W / 2, cy);
+      g.closePath();
+    }
+
+    // ---------- scene render ----------
+    function renderScene(now: number, wpx: number, hpx: number) {
+      const w = W();
+      const isEdit = modeRef.current === 'edit';
+      const c = isEdit ? ed.cam : cam;
+      const zm = isEdit ? ed.zoom : zoom;
+      const r = tileRange(c.x, c.y, zm, wpx, hpx);
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const grad = ctx.createLinearGradient(0, 0, 0, hpx);
+      grad.addColorStop(0, '#9fd9f2'); grad.addColorStop(1, '#d9f2df');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, wpx, hpx);
+      ctx.save();
+      ctx.translate(wpx / 2, hpx / 2);
+      ctx.scale(zm, zm);
+      ctx.translate(-c.x, -c.y);
+
+      // floor
+      for (let y = r.y0; y <= r.y1; y++) {
+        for (let x = r.x0; x <= r.x1; x++) {
+          const p = isoToScreen(x, y);
+          const t = terrainAt(w, x, y);
+          const cols = TERRAIN_COLORS[t];
+          diamond(ctx, p.x, p.y);
+          ctx.fillStyle = ((x + y) % 2 === 0) ? cols[0] : cols[1];
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+
+      const inR = (tx: number, ty: number) => tx >= r.x0 - 3 && tx <= r.x1 + 3 && ty >= r.y0 - 3 && ty <= r.y1 + 3;
+      const draws: Drawable[] = [];
+      for (const run of mergeWallRuns(w.walls)) {
+        if (run.h ? inR(run.x1, run.y0) : inR(run.x0, run.y1)) draws.push(...wallRunDrawables(run));
+      }
+      for (const h of w.huts) if (inR(h.x1, h.y1)) draws.push(...hutDrawables(h));
+      for (const s of w.stalls) if (inR(s.x1, s.y0)) draws.push(stallDrawable(s));
+      for (const t of w.trees) if (inR(t.tx, t.ty)) draws.push(treeDrawable(t));
+      for (const t of w.rocks) if (inR(t.tx, t.ty)) draws.push(rockDrawable(t));
+      for (const t of w.crates) if (inR(t.tx, t.ty)) draws.push(crateDrawable(t));
+
+      if (isEdit) {
+        for (const s of w.npcSpawns) {
+          if (!inR(s.x, s.y)) continue;
+          draws.push(personDrawable(s.x, s.y, false, 'right', s.tunic, s.hair, depthKey(s.x, s.y, 1), 0));
+        }
+        if (inR(w.playerStart.tx, w.playerStart.ty)) draws.push(startMarkerDrawable(w.playerStart));
+      } else {
+        for (const n of npcs) {
+          if (!inR(n.fx, n.fy)) continue;
+          draws.push(personDrawable(n.fx, n.fy, n.moving, n.facing, n.tunic, n.hair,
+            depthKey(n.fx, n.fy, 1), now / 280));
+        }
+        draws.push(personDrawable(player.fx, player.fy, playerMoving, playerFacing, '#3b6fd4', '#5a3a22',
+          depthKey(player.fx, player.fy, 1), now / 130));
+        if (carryingIdx >= 0) {
+          const cp = isoToScreen(player.fx, player.fy);
+          draws.push({
+            depth: depthKey(player.fx, player.fy, 2), tx: player.fx, ty: player.fy, draw: (g) => {
+              const s = 10, h = 13;
+              g.save(); g.translate(cp.x, cp.y - 58);
+              g.beginPath();
+              g.moveTo(0, -h - 6); g.lineTo(s, -h); g.lineTo(0, -h + 6); g.lineTo(-s, -h);
+              g.closePath(); g.fillStyle = '#c9a86b'; g.fill(); g.strokeStyle = 'rgba(0,0,0,0.3)'; g.stroke();
+              g.beginPath();
+              g.moveTo(-s, -h); g.lineTo(0, -h + 6); g.lineTo(0, 6); g.lineTo(-s, 0);
+              g.closePath(); g.fillStyle = '#a97e4e'; g.fill(); g.stroke();
+              g.beginPath();
+              g.moveTo(s, -h); g.lineTo(0, -h + 6); g.lineTo(0, 6); g.lineTo(s, 0);
+              g.closePath(); g.fillStyle = '#8f6a3f'; g.fill(); g.stroke();
+              g.restore();
+            },
+          });
+        }
+      }
+      draws.sort((a, b) => a.depth - b.depth);
+      for (const d of draws) d.draw(ctx);
+
+      if (!isEdit && playerPath.length > 1) {
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        for (const p of playerPath) {
+          const cp = isoToScreen(p.tx, p.ty);
+          ctx.beginPath(); ctx.arc(cp.x, cp.y, 3, 0, 7); ctx.fill();
+        }
+      }
+
+      // ---------- editor overlays ----------
+      if (isEdit) {
+        if (ed.hover && inBounds(w, ed.hover.tx, ed.hover.ty)) {
+          const p = isoToScreen(ed.hover.tx, ed.hover.ty);
+          diamond(ctx, p.x, p.y);
+          ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2; ctx.stroke();
+        }
+        if (ed.sel) {
+          ctx.strokeStyle = '#ffd23d'; ctx.lineWidth = 3;
+          const outline = (x0: number, y0: number, x1: number, y1: number) => {
+            const a = isoToScreen(x0, y0), b = isoToScreen(x1, y0), cc = isoToScreen(x1, y1), d = isoToScreen(x0, y1);
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y - TILE_H / 2); ctx.lineTo(b.x + TILE_W / 2, b.y);
+            ctx.lineTo(cc.x, cc.y + TILE_H / 2); ctx.lineTo(d.x - TILE_W / 2, d.y);
+            ctx.closePath(); ctx.stroke();
+          };
+          const s = ed.sel;
+          if (s.kind === 'tree') { const t = w.trees[s.index]; if (t) outline(t.tx, t.ty, t.tx, t.ty); }
+          else if (s.kind === 'rock') { const t = w.rocks[s.index]; if (t) outline(t.tx, t.ty, t.tx, t.ty); }
+          else if (s.kind === 'crate') { const t = w.crates[s.index]; if (t) outline(t.tx, t.ty, t.tx, t.ty); }
+          else if (s.kind === 'npc') { const t = w.npcSpawns[s.index]; if (t) outline(t.x, t.y, t.x, t.y); }
+          else if (s.kind === 'wall') { const t = w.walls[s.index]; if (t) outline(t.x, t.y, t.x, t.y); }
+          else if (s.kind === 'start') outline(w.playerStart.tx, w.playerStart.ty, w.playerStart.tx, w.playerStart.ty);
+          else if (s.kind === 'stall') { const t = w.stalls[s.index]; if (t) outline(t.x0, t.y0, t.x1, t.y0); }
+          else if (s.kind === 'hut') { const t = w.huts[s.index]; if (t) outline(t.x0, t.y0, t.x1, t.y1); }
+        }
+        if (ed.copyA && ed.hover) {
+          const x0 = Math.min(ed.copyA.tx, ed.hover.tx), x1 = Math.max(ed.copyA.tx, ed.hover.tx);
+          const y0 = Math.min(ed.copyA.ty, ed.hover.ty), y1 = Math.max(ed.copyA.ty, ed.hover.ty);
+          const a = isoToScreen(x0, y0), b = isoToScreen(x1, y0), cc = isoToScreen(x1, y1), d = isoToScreen(x0, y1);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y - TILE_H / 2); ctx.lineTo(b.x + TILE_W / 2, b.y);
+          ctx.lineTo(cc.x, cc.y + TILE_H / 2); ctx.lineTo(d.x - TILE_W / 2, d.y);
+          ctx.closePath();
+          ctx.setLineDash([6, 4]);
+          ctx.strokeStyle = '#ffd23d'; ctx.lineWidth = 2; ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        if (ed.tool === 'paste' && ed.clipboard && ed.hover) {
+          const c = ed.clipboard;
+          const items: Array<{ dx: number; dy: number }> = [
+            ...c.trees, ...c.rocks, ...c.crates, ...c.walls,
+            ...c.terrain.map(e => ({ dx: e.dx, dy: e.dy })),
+          ];
+          ctx.fillStyle = 'rgba(255,210,61,0.35)';
+          for (const it of items) {
+            const x = ed.hover.tx + it.dx, y = ed.hover.ty + it.dy;
+            if (!inBounds(w, x, y)) continue;
+            const p = isoToScreen(x, y);
+            diamond(ctx, p.x, p.y); ctx.fill();
+          }
+        }
+      }
+      ctx.restore();
+    }
+
+    // ---------- editor object ops ----------
+    function pickObject(tx: number, ty: number): Selection | null {
+      const w = W();
+      const ni = w.npcSpawns.findIndex(s => s.x === tx && s.y === ty);
+      if (ni >= 0) return { kind: 'npc', index: ni };
+      const ci = w.crates.findIndex(c => c.tx === tx && c.ty === ty);
+      if (ci >= 0) return { kind: 'crate', index: ci };
+      const ti = w.trees.findIndex(t => t.tx === tx && t.ty === ty);
+      if (ti >= 0) return { kind: 'tree', index: ti };
+      const ri = w.rocks.findIndex(t => t.tx === tx && t.ty === ty);
+      if (ri >= 0) return { kind: 'rock', index: ri };
+      const si = w.stalls.findIndex(s => ty === s.y0 && tx >= s.x0 && tx <= s.x1);
+      if (si >= 0) return { kind: 'stall', index: si };
+      const hi = w.huts.findIndex(h => tx >= h.x0 && tx <= h.x1 && ty >= h.y0 && ty <= h.y1);
+      if (hi >= 0) return { kind: 'hut', index: hi };
+      const wi = w.walls.findIndex(t => t.x === tx && t.y === ty);
+      if (wi >= 0) return { kind: 'wall', index: wi };
+      if (w.playerStart.tx === tx && w.playerStart.ty === ty) return { kind: 'start', index: 0 };
+      return null;
+    }
+
+    function eraseAt(tx: number, ty: number): boolean {
+      const w = W();
+      let changed = false;
+      const drop = <T extends { tx: number; ty: number }>(arr: T[]) => {
+        const i = arr.findIndex(t => t.tx === tx && t.ty === ty);
+        if (i >= 0) { arr.splice(i, 1); changed = true; }
+      };
+      drop(w.trees); drop(w.rocks); drop(w.crates);
+      const ni = w.npcSpawns.findIndex(s => s.x === tx && s.y === ty);
+      if (ni >= 0) { w.npcSpawns.splice(ni, 1); changed = true; }
+      const si = w.stalls.findIndex(s => ty === s.y0 && tx >= s.x0 && tx <= s.x1);
+      if (si >= 0) { w.stalls.splice(si, 1); changed = true; }
+      const hi = w.huts.findIndex(h => tx >= h.x0 && tx <= h.x1 && ty >= h.y0 && ty <= h.y1);
+      if (hi >= 0) { w.huts.splice(hi, 1); changed = true; }
+      const wi = w.walls.findIndex(t => t.x === tx && t.y === ty);
+      if (wi >= 0) { w.walls.splice(wi, 1); changed = true; }
+      if (terrainKey(tx, ty) in w.terrain) { delete w.terrain[terrainKey(tx, ty)]; changed = true; }
+      return changed;
+    }
+
+    function placeAt(tx: number, ty: number) {
+      const w = W();
+      if (!inBounds(w, tx, ty)) return;
+      const kind = ed.placeKind;
+      if (kind === 'tree') w.trees.push({ tx, ty });
+      else if (kind === 'rock') w.rocks.push({ tx, ty });
+      else if (kind === 'crate') w.crates.push({ tx, ty });
+      else if (kind === 'wallH') { if (!w.walls.some(t => t.x === tx && t.y === ty)) w.walls.push({ x: tx, y: ty, h: true }); }
+      else if (kind === 'wallV') { if (!w.walls.some(t => t.x === tx && t.y === ty)) w.walls.push({ x: tx, y: ty, h: false }); }
+      else if (kind === 'hut') {
+        const x0 = tx - 1, y0 = ty - 1, x1 = tx + 1, y1 = ty + 1;
+        if (inBounds(w, x0, y0) && inBounds(w, x1, y1)) w.huts.push({ x0, y0, x1, y1 });
+      }
+      else if (kind === 'stall') {
+        if (inBounds(w, tx + 1, ty)) w.stalls.push({ x0: tx, y0: ty, x1: tx + 1 });
+      }
+      else if (kind === 'npc') {
+        const look = NPC_LOOKS[ed.npcCount % NPC_LOOKS.length];
+        ed.npcCount++;
+        const wps = [{ tx: tx - 2, ty }, { tx: tx + 2, ty }, { tx, ty: ty + 2 }]
+          .filter(p => inBounds(w, p.tx, p.ty));
+        w.npcSpawns.push({ name: `Villager ${ed.npcCount}`, tunic: look.tunic, hair: look.hair, x: tx, y: ty, waypoints: wps });
+      }
+      else if (kind === 'start') w.playerStart = { tx, ty };
+      saveWorld(w);
+      bump();
+    }
+
+    function deleteSelection() {
+      const s = ed.sel;
+      if (!s) return;
+      mutate((w) => {
+        if (s.kind === 'tree') w.trees.splice(s.index, 1);
+        else if (s.kind === 'rock') w.rocks.splice(s.index, 1);
+        else if (s.kind === 'crate') w.crates.splice(s.index, 1);
+        else if (s.kind === 'npc') w.npcSpawns.splice(s.index, 1);
+        else if (s.kind === 'stall') w.stalls.splice(s.index, 1);
+        else if (s.kind === 'hut') w.huts.splice(s.index, 1);
+        else if (s.kind === 'wall') w.walls.splice(s.index, 1);
+        // 'start' cannot be deleted
+      });
+      ed.sel = null;
+      showToastRef.current('Deleted');
+    }
+
+    function copySelection() {
+      const s = ed.sel;
+      if (!s) return;
+      const w = W();
+      let r: Region | null = null;
+      if (s.kind === 'tree') { const t = w.trees[s.index]; r = { x0: t.tx, y0: t.ty, x1: t.tx, y1: t.ty }; }
+      else if (s.kind === 'rock') { const t = w.rocks[s.index]; r = { x0: t.tx, y0: t.ty, x1: t.tx, y1: t.ty }; }
+      else if (s.kind === 'crate') { const t = w.crates[s.index]; r = { x0: t.tx, y0: t.ty, x1: t.tx, y1: t.ty }; }
+      else if (s.kind === 'npc') { const t = w.npcSpawns[s.index]; r = { x0: t.x, y0: t.y, x1: t.x, y1: t.y }; }
+      else if (s.kind === 'wall') { const t = w.walls[s.index]; r = { x0: t.x, y0: t.y, x1: t.x, y1: t.y }; }
+      else if (s.kind === 'stall') { const t = w.stalls[s.index]; r = { x0: t.x0, y0: t.y0, x1: t.x1, y1: t.y0 }; }
+      else if (s.kind === 'hut') { const t = w.huts[s.index]; r = { x0: t.x0, y0: t.y0, x1: t.x1, y1: t.y1 }; }
+      if (!r) return;
+      ed.clipboard = copyRegion(w, r);
+      ed.tool = 'paste';
+      setTool('paste');
+      showToastRef.current(`Copied ${clipboardSize(ed.clipboard)} items — tap to paste`);
+    }
+
+    function applyEditorDown(tx: number, ty: number) {
+      const w = W();
+      if (!inBounds(w, tx, ty)) return;
+      if (ed.tool === 'pan') return;
+      if (ed.tool === 'select') {
+        const s = pickObject(tx, ty);
+        ed.sel = s;
+        if (s) {
+          let ox = tx, oy = ty;
+          if (s.kind === 'hut') { const h = w.huts[s.index]; ox = tx - h.x0; oy = ty - h.y0; }
+          if (s.kind === 'stall') { const st = w.stalls[s.index]; ox = tx - st.x0; oy = 0; }
+          ed.moving = { kind: s.kind, index: s.index, ox, oy };
+        }
+        bump();
+        return;
+      }
+      if (ed.tool === 'paint') {
+        pushUndo();
+        ed.stroke = true;
+        if (ed.paintTerrain === 'grass') delete w.terrain[terrainKey(tx, ty)];
+        else w.terrain[terrainKey(tx, ty)] = ed.paintTerrain;
+        saveWorld(w); bump();
+        return;
+      }
+      if (ed.tool === 'erase') {
+        pushUndo();
+        ed.stroke = true;
+        eraseAt(tx, ty);
+        saveWorld(w); bump();
+        return;
+      }
+      if (ed.tool === 'place') {
+        pushUndo();
+        placeAt(tx, ty);
+        return;
+      }
+      if (ed.tool === 'copy') {
+        if (!ed.copyA) {
+          ed.copyA = { tx, ty };
+          showToastRef.current('Corner A set — tap corner B');
+        } else {
+          const r: Region = {
+            x0: Math.min(ed.copyA.tx, tx), y0: Math.min(ed.copyA.ty, ty),
+            x1: Math.max(ed.copyA.tx, tx), y1: Math.max(ed.copyA.ty, ty),
+          };
+          ed.clipboard = copyRegion(w, r);
+          ed.copyA = null;
+          ed.tool = 'paste';
+          setTool('paste');
+          showToastRef.current(`Copied ${clipboardSize(ed.clipboard)} items — tap to paste`);
+        }
+        bump();
+        return;
+      }
+      if (ed.tool === 'paste') {
+        if (!ed.clipboard) { showToastRef.current('Clipboard is empty — use Copy first'); return; }
+        pushUndo();
+        worldRef.current = pasteClipboard(w, ed.clipboard, tx, ty);
+        saveWorld(worldRef.current);
+        bump();
+        return;
+      }
+    }
+
+    function applyEditorMove(tx: number, ty: number) {
+      const w = W();
+      if (ed.moving && inBounds(w, tx, ty)) {
+        const m = ed.moving;
+        const nx = tx - m.ox, ny = ty - m.oy;
+        if (m.kind === 'tree') { const t = w.trees[m.index]; t.tx = tx; t.ty = ty; }
+        else if (m.kind === 'rock') { const t = w.rocks[m.index]; t.tx = tx; t.ty = ty; }
+        else if (m.kind === 'crate') { const t = w.crates[m.index]; t.tx = tx; t.ty = ty; }
+        else if (m.kind === 'npc') {
+          const t = w.npcSpawns[m.index];
+          const dx = tx - t.x, dy = ty - t.y;
+          t.x = tx; t.y = ty;
+          t.waypoints = t.waypoints.map(p => ({ tx: p.tx + dx, ty: p.ty + dy })).filter(p => inBounds(w, p.tx, p.ty));
+        }
+        else if (m.kind === 'wall') { const t = w.walls[m.index]; t.x = tx; t.y = ty; }
+        else if (m.kind === 'start') w.playerStart = { tx, ty };
+        else if (m.kind === 'stall') { const t = w.stalls[m.index]; t.x0 = nx; t.x1 = nx + (t.x1 - t.x0); t.y0 = ty; }
+        else if (m.kind === 'hut') {
+          const h = w.huts[m.index];
+          const hw = h.x1 - h.x0, hh = h.y1 - h.y0;
+          if (inBounds(w, nx, ny) && inBounds(w, nx + hw, ny + hh)) {
+            h.x0 = nx; h.y0 = ny; h.x1 = nx + hw; h.y1 = ny + hh;
+          }
+        }
+        saveWorld(w);
+        bump();
+        return;
+      }
+      if (ed.stroke && inBounds(w, tx, ty)) {
+        if (ed.tool === 'paint') {
+          if (ed.paintTerrain === 'grass') delete w.terrain[terrainKey(tx, ty)];
+          else w.terrain[terrainKey(tx, ty)] = ed.paintTerrain;
+          saveWorld(w); bump();
+        } else if (ed.tool === 'erase') {
+          if (eraseAt(tx, ty)) { saveWorld(w); bump(); }
+        }
+      }
+    }
+
+    // ---------- play tap ----------
+    const tapPlay = (tx: number, ty: number) => {
+      const w = W();
       if (carryingIdx >= 0) {
-        if (isWalkable(tx, ty, false) && !(tx === player.tx && ty === player.ty)) {
-          crates[carryingIdx] = { tx, ty };
+        if (isWalkableWorld(w, w.crates, tx, ty) && !(tx === player.tx && ty === player.ty)) {
+          w.crates[carryingIdx] = { tx, ty };
           carryingIdx = -1;
           setCarrying(false);
-          save();
-          showToast('Placed the crate');
+          savePlay();
+          showToastRef.current('Placed the crate');
         } else {
-          showToast("Can't place that there");
+          showToastRef.current("Can't place that there");
         }
         return;
       }
-      const ci = crates.findIndex(c => c.tx === tx && c.ty === ty);
+      const ci = w.crates.findIndex(c => c.tx === tx && c.ty === ty);
       if (ci >= 0) {
         carryingIdx = ci;
         setCarrying(true);
         playerPath = [];
-        showToast('Picked up the crate — tap a tile to place it');
+        showToastRef.current('Picked up the crate — tap a tile to place it');
         return;
       }
       const path = findPath({ tx: player.tx, ty: player.ty }, { tx, ty },
-        (x, y) => isWalkable(x, y, false));
-      if (!path) showToast("Can't get there");
-      else if (path.length > 0) { playerPath = path; playerStepT = 0; pFrom.x = player.tx; pFrom.y = player.ty; }
+        (x, y) => isWalkableWorld(w, w.crates, x, y));
+      if (!path) showToastRef.current("Can't get there");
+      else if (path.length > 0) { playerPath = path; pStepT.t = 0; pFrom.x = player.tx; pFrom.y = player.ty; }
     };
 
-    // ----- input -----
+    // ---------- pointer events ----------
+    const toTile = (e: PointerEvent): TilePoint => {
+      const rect = canvas.getBoundingClientRect();
+      const px = e.clientX - rect.left, py = e.clientY - rect.top;
+      const isEdit = modeRef.current === 'edit';
+      const c = isEdit ? ed.cam : cam;
+      const zm = isEdit ? ed.zoom : zoom;
+      const wx = (px - rect.width / 2) / zm + c.x;
+      const wy = (py - rect.height / 2) / zm + c.y;
+      return screenToTileInt(wx, wy);
+    };
+
+    let pDown: { x: number; y: number; t: number } | null = null;
+    const onPointerDown = (e: PointerEvent) => {
+      pDown = { x: e.clientX, y: e.clientY, t: performance.now() };
+      if (modeRef.current === 'edit') {
+        const rect = canvas.getBoundingClientRect();
+        if (ed.tool === 'pan') {
+          ed.pan = { sx: e.clientX, sy: e.clientY, cx: ed.cam.x, cy: ed.cam.y, moved: false };
+        } else {
+          const t = toTile(e);
+          ed.hover = t;
+          applyEditorDown(t.tx, t.ty);
+        }
+        void rect;
+      }
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (modeRef.current !== 'edit') return;
+      const t = toTile(e);
+      ed.hover = t;
+      if (ed.pan) {
+        const rect = canvas.getBoundingClientRect();
+        const dx = (e.clientX - ed.pan.sx) / ed.zoom;
+        const dy = (e.clientY - ed.pan.sy) / ed.zoom;
+        if (Math.abs(e.clientX - ed.pan.sx) + Math.abs(e.clientY - ed.pan.sy) > 6) ed.pan.moved = true;
+        ed.cam.x = ed.pan.cx - dx;
+        ed.cam.y = ed.pan.cy - dy;
+        void rect;
+      } else {
+        applyEditorMove(t.tx, t.ty);
+      }
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      if (modeRef.current === 'play') {
+        if (!pDown) return;
+        const dx = e.clientX - pDown.x, dy = e.clientY - pDown.y;
+        const dtap = performance.now() - pDown.t;
+        pDown = null;
+        if (dx * dx + dy * dy > 100 || dtap > 600) return;
+        const t = toTile(e);
+        tapPlay(t.tx, t.ty);
+      } else {
+        if (ed.pan && !ed.pan.moved) {
+          // treat as tap with current tool
+          const t = toTile(e);
+          if (ed.tool !== 'pan') applyEditorDown(t.tx, t.ty);
+        }
+        ed.pan = null;
+        ed.stroke = false;
+        ed.moving = null;
+        pDown = null;
+      }
+    };
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+
+    // ---------- keyboard ----------
     const DIRS: Record<string, { dx: number; dy: number }> = {
       up: { dx: 0, dy: -1 }, down: { dx: 0, dy: 1 }, left: { dx: -1, dy: 0 }, right: { dx: 1, dy: 0 },
     };
@@ -531,7 +928,8 @@ export default function IsoRoomDemo() {
     };
     const onKeyDown = (e: KeyboardEvent) => {
       const d = keymap[e.code];
-      if (d) { e.preventDefault(); held.add(d); }
+      if (d && modeRef.current === 'play') { e.preventDefault(); held.add(d); }
+      if (e.code === 'KeyZ' && (e.metaKey || e.ctrlKey) && modeRef.current === 'edit') { e.preventDefault(); doUndo(); }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       const d = keymap[e.code];
@@ -540,44 +938,75 @@ export default function IsoRoomDemo() {
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
 
-    let pDown: { x: number; y: number; t: number } | null = null;
-    const onPointerDown = (e: PointerEvent) => { pDown = { x: e.clientX, y: e.clientY, t: performance.now() }; };
-    const onPointerUp = (e: PointerEvent) => {
-      if (!pDown) return;
-      const dx = e.clientX - pDown.x, dy = e.clientY - pDown.y;
-      const dtap = performance.now() - pDown.t;
-      pDown = null;
-      if (dx * dx + dy * dy > 100 || dtap > 600) return;
-      const rect = canvas.getBoundingClientRect();
-      const px = e.clientX - rect.left, py = e.clientY - rect.top;
-      const wx = (px - rect.width / 2) / zoom + cam.x;
-      const wy = (py - rect.height / 2) / zoom + cam.y;
-      const t = screenToTileInt(wx, wy);
-      tap(t.tx, t.ty);
+    const onWheel = (e: WheelEvent) => {
+      if (modeRef.current !== 'edit') return;
+      e.preventDefault();
+      ed.zoom = Math.min(2.5, Math.max(0.4, ed.zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
     };
-    canvas.addEventListener('pointerdown', onPointerDown);
-    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
 
+    // ---------- api ----------
+    const centerEditCam = () => {
+      const w = W();
+      const c = isoToScreen(w.w / 2, w.h / 2);
+      ed.cam.x = c.x; ed.cam.y = c.y;
+      ed.zoom = Math.min(1, 900 / ((w.w + w.h) * TILE_W / 2));
+    };
     apiRef.current = {
       hold: (d: string, on: boolean) => { if (on) held.add(d); else held.delete(d); },
-      zoomIn: () => { zoom = Math.min(2.5, zoom * 1.2); },
-      zoomOut: () => { zoom = Math.max(0.5, zoom / 1.2); },
+      zoomIn: () => {
+        if (modeRef.current === 'edit') ed.zoom = Math.min(2.5, ed.zoom * 1.2);
+        else zoom = Math.min(2.5, zoom * 1.2);
+      },
+      zoomOut: () => {
+        if (modeRef.current === 'edit') ed.zoom = Math.max(0.4, ed.zoom / 1.2);
+        else zoom = Math.max(0.5, zoom / 1.2);
+      },
       back: () => { window.location.href = window.location.pathname; },
+      enterEdit: () => {
+        savePlay();
+        modeRef.current = 'edit';
+        centerEditCam();
+        ed.sel = null; ed.copyA = null;
+        setResizeW(W().w); setResizeH(W().h);
+        setMode('edit');
+      },
+      exitEdit: () => {
+        saveWorld(W());
+        modeRef.current = 'play';
+        initPlay();
+        setMode('play');
+      },
+    };
+    (apiRef.current as unknown as { setEdTool: (t: Tool) => void }).setEdTool = (t: Tool) => { ed.tool = t; ed.copyA = null; };
+    (apiRef.current as unknown as { setEdPaint: (t: Terrain) => void }).setEdPaint = (t: Terrain) => { ed.paintTerrain = t; };
+    (apiRef.current as unknown as { setEdPlace: (k: PlaceKind) => void }).setEdPlace = (k: PlaceKind) => { ed.placeKind = k; };
+    (apiRef.current as unknown as { doUndo: () => void }).doUndo = doUndo;
+    (apiRef.current as unknown as { deleteSelection: () => void }).deleteSelection = deleteSelection;
+    (apiRef.current as unknown as { copySelection: () => void }).copySelection = copySelection;
+    (apiRef.current as unknown as { resetWorld: () => void }).resetWorld = () => {
+      if (!window.confirm('Reset the demo world to the default? Your edits will be lost.')) return;
+      pushUndo();
+      worldRef.current = defaultWorld();
+      saveWorld(worldRef.current);
+      ed.sel = null; ed.copyA = null; ed.clipboard = null;
+      bump();
+    };
+    (apiRef.current as unknown as { applyResize: (w: number, h: number) => void }).applyResize = (nw: number, nh: number) => {
+      pushUndo();
+      worldRef.current = resizeWorld(worldRef.current, nw, nh);
+      saveWorld(worldRef.current);
+      ed.sel = null;
+      centerEditCam();
+      bump();
     };
 
-    // ----- camera init -----
-    {
-      const c = isoToScreen(player.tx, player.ty);
-      cam.x = c.x; cam.y = c.y;
-    }
+    initPlay();
 
-    // ----- main loop -----
+    // ---------- main loop ----------
     let lastDt = 0;
-    const pStepT = { t: 0 };
-
     const stepChar = (
-      ch: { tx: number; ty: number; fx: number; fy: number },
-      path: TilePoint[], stepT: { t: number }, from: { x: number; y: number },
+      ch: CharState, path: TilePoint[], stepT: { t: number }, from: { x: number; y: number },
       ms: number, onStep: () => void,
     ): { path: TilePoint[]; moving: boolean } => {
       if (path.length === 0) { ch.fx = ch.tx; ch.fy = ch.ty; return { path, moving: false }; }
@@ -598,6 +1027,7 @@ export default function IsoRoomDemo() {
       return { path, moving: true };
     };
 
+    let destroyed = false;
     let last = performance.now();
     let raf = 0;
     const frame = (now: number) => {
@@ -605,124 +1035,63 @@ export default function IsoRoomDemo() {
       lastDt = Math.min(50, now - last);
       last = now;
       const dt = lastDt;
-
-      // --- player ---
-      if (playerPath.length === 0) {
-        const arr = [...held];
-        const hd = arr.length > 0 ? DIRS[arr[arr.length - 1]] : null;
-        if (hd) {
-          const nx = player.tx + hd.dx, ny = player.ty + hd.dy;
-          if (isWalkable(nx, ny, false)) {
-            playerPath = [{ tx: nx, ty: ny }];
-            pStepT.t = 0;
-            pFrom.x = player.tx; pFrom.y = player.ty;
-          }
-        }
-      }
-      {
-        const r = stepChar(player, playerPath, pStepT, pFrom, STEP_MS, () => {
-          setCoords(`${player.tx}, ${player.ty}`);
-          save();
-        });
-        playerPath = r.path; playerMoving = r.moving;
-        if (r.moving && playerPath.length > 0) {
-          const n = playerPath[0];
-          if (n.tx !== player.tx) playerFacing = n.tx > player.tx ? 'right' : 'left';
-        }
-      }
-
-      // --- npcs wander ---
-      for (let i = 0; i < npcs.length; i++) {
-        const n = npcs[i];
-        n.thinkT -= dt;
-        if (n.path.length === 0 && n.thinkT <= 0) {
-          n.thinkT = 2000 + Math.random() * 3000;
-          const w = n.waypoints[Math.floor(Math.random() * n.waypoints.length)];
-          const p = findPath({ tx: n.tx, ty: n.ty }, w, (x, y) => isWalkable(x, y, true, i));
-          if (p && p.length > 0) {
-            n.path = p;
-            n.stepT = 0;
-            n.from.x = n.tx; n.from.y = n.ty;
-          }
-        }
-        const st = { t: n.stepT };
-        const r = stepChar(n, n.path, st, n.from, NPC_STEP_MS, () => undefined);
-        n.stepT = st.t; n.path = r.path; n.moving = r.moving;
-        if (r.moving && n.path.length > 0) {
-          const nxt = n.path[0];
-          if (nxt.tx !== n.tx) n.facing = nxt.tx > n.tx ? 'right' : 'left';
-        }
-      }
-
-      // --- camera ---
-      {
-        const c = isoToScreen(player.fx, player.fy);
-        const k = Math.min(1, dt / 90);
-        cam.x += (c.x - cam.x) * k;
-        cam.y += (c.y - cam.y) * k;
-      }
-
-      // --- render ---
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const wpx = canvas.clientWidth, hpx = canvas.clientHeight;
-      const grad = ctx.createLinearGradient(0, 0, 0, hpx);
-      grad.addColorStop(0, '#9fd9f2'); grad.addColorStop(1, '#d9f2df');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, wpx, hpx);
-      if (!floorCache || Math.abs(zoom - cacheZoom) > 0.001) buildFloorCache();
-      ctx.save();
-      ctx.translate(wpx / 2, hpx / 2);
-      ctx.scale(zoom, zoom);
-      ctx.translate(-cam.x, -cam.y);
-      const fc = floorCache!;
-      ctx.drawImage(fc, (fc as unknown as { _ox: number })._ox, (fc as unknown as { _oy: number })._oy);
 
-      const draws: Drawable[] = [...northWallDrawables(), ...westWallDrawables()];
-      for (const h of HUTS) draws.push(...hutDrawables(h));
-      for (const s of STALLS) draws.push(...stallDrawables(s));
-      for (const t of TREES) draws.push(treeDrawable(t));
-      for (const r of ROCKS) draws.push(rockDrawable(r));
-      for (let i = 0; i < crates.length; i++) {
-        if (i !== carryingIdx) draws.push(crateDrawable(crates[i]));
-      }
-      for (const n of npcs) {
-        draws.push(personDrawable(n.fx, n.fy, n.moving, n.facing, n.tunic, n.hair,
-          depthKey(n.fx, n.fy, 1), now / 280));
-      }
-      draws.push(personDrawable(player.fx, player.fy, playerMoving, playerFacing, '#3b6fd4', '#5a3a22',
-        depthKey(player.fx, player.fy, 1), now / 130));
-      if (carryingIdx >= 0) {
-        const c = isoToScreen(player.fx, player.fy);
-        draws.push({
-          depth: depthKey(player.fx, player.fy, 2), draw: (g) => {
-            const s = 10, h = 13;
-            g.save(); g.translate(c.x, c.y - 58);
-            g.beginPath();
-            g.moveTo(0, -h - 6); g.lineTo(s, -h); g.lineTo(0, -h + 6); g.lineTo(-s, -h);
-            g.closePath(); g.fillStyle = '#c9a86b'; g.fill(); g.strokeStyle = 'rgba(0,0,0,0.3)'; g.stroke();
-            g.beginPath();
-            g.moveTo(-s, -h); g.lineTo(0, -h + 6); g.lineTo(0, 6); g.lineTo(-s, 0);
-            g.closePath(); g.fillStyle = '#a97e4e'; g.fill(); g.stroke();
-            g.beginPath();
-            g.moveTo(s, -h); g.lineTo(0, -h + 6); g.lineTo(0, 6); g.lineTo(s, 0);
-            g.closePath(); g.fillStyle = '#8f6a3f'; g.fill(); g.stroke();
-            g.restore();
-          },
-        });
-      }
-      draws.sort((a, b) => a.depth - b.depth);
-      for (const d of draws) d.draw(ctx);
-
-      if (playerPath.length > 1) {
-        ctx.fillStyle = 'rgba(255,255,255,0.75)';
-        for (const p of playerPath) {
-          const c = isoToScreen(p.tx, p.ty);
-          ctx.beginPath(); ctx.arc(c.x, c.y, 3, 0, 7); ctx.fill();
+      if (modeRef.current === 'play') {
+        const w = W();
+        if (playerPath.length === 0) {
+          const arr = [...held];
+          const hd = arr.length > 0 ? DIRS[arr[arr.length - 1]] : null;
+          if (hd) {
+            const nx = player.tx + hd.dx, ny = player.ty + hd.dy;
+            if (isWalkableWorld(w, w.crates, nx, ny)) {
+              playerPath = [{ tx: nx, ty: ny }];
+              pStepT.t = 0;
+              pFrom.x = player.tx; pFrom.y = player.ty;
+            }
+          }
+        }
+        {
+          const r = stepChar(player, playerPath, pStepT, pFrom, STEP_MS, () => {
+            setCoords(`${player.tx}, ${player.ty}`);
+            savePlay();
+          });
+          playerPath = r.path; playerMoving = r.moving;
+          if (r.moving && playerPath.length > 0) {
+            const n = playerPath[0];
+            if (n.tx !== player.tx) playerFacing = n.tx > player.tx ? 'right' : 'left';
+          }
+        }
+        for (let i = 0; i < npcs.length; i++) {
+          const n = npcs[i];
+          n.thinkT -= dt;
+          if (n.path.length === 0 && n.thinkT <= 0) {
+            n.thinkT = 2000 + Math.random() * 3000;
+            const wpick = n.waypoints[Math.floor(Math.random() * n.waypoints.length)];
+            const p = findPath({ tx: n.tx, ty: n.ty }, wpick, (x, y) => isWalkableWorld(w, w.crates, x, y));
+            if (p && p.length > 0) {
+              n.path = p;
+              n.stepT = 0;
+              n.from.x = n.tx; n.from.y = n.ty;
+            }
+          }
+          const st = { t: n.stepT };
+          const r = stepChar(n, n.path, st, n.from, NPC_STEP_MS, () => undefined);
+          n.stepT = st.t; n.path = r.path; n.moving = r.moving;
+          if (r.moving && n.path.length > 0) {
+            const nxt = n.path[0];
+            if (nxt.tx !== n.tx) n.facing = nxt.tx > n.tx ? 'right' : 'left';
+          }
+        }
+        {
+          const c = isoToScreen(player.fx, player.fy);
+          const k = Math.min(1, dt / 90);
+          cam.x += (c.x - cam.x) * k;
+          cam.y += (c.y - cam.y) * k;
         }
       }
-      ctx.restore();
 
+      renderScene(now, wpx, hpx);
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
@@ -733,12 +1102,21 @@ export default function IsoRoomDemo() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('wheel', onWheel);
       ro.disconnect();
       window.clearTimeout(toastTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // keep editor tool refs in sync with React state
+  const edSync = (t: Tool) => {
+    setTool(t);
+    // the effect reads tool via its own ed object; sync through a custom event on apiRef
+    (apiRef.current as unknown as { setEdTool: (t: Tool) => void }).setEdTool?.(t);
+  };
 
   const chip: React.CSSProperties = {
     background: 'rgba(20,30,40,0.72)', color: '#fff', borderRadius: 10,
@@ -753,6 +1131,10 @@ export default function IsoRoomDemo() {
     background: 'rgba(20,30,40,0.6)', color: '#fff', border: '1px solid rgba(255,255,255,0.25)',
     touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none',
   };
+  const toolBtn = (active: boolean): React.CSSProperties => ({
+    ...btn, background: active ? 'rgba(255,210,61,0.9)' : btn.background,
+    color: active ? '#222' : '#fff', fontSize: 12, padding: '6px 9px',
+  });
 
   const PadButton = ({ d, label }: { d: string; label: string }) => (
     <button
@@ -765,37 +1147,153 @@ export default function IsoRoomDemo() {
     >{label}</button>
   );
 
+  const api = apiRef.current as unknown as {
+    back: () => void; zoomIn: () => void; zoomOut: () => void;
+    enterEdit: () => void; exitEdit: () => void; doUndo: () => void;
+    deleteSelection: () => void; copySelection: () => void;
+    resetWorld: () => void; applyResize: (w: number, h: number) => void;
+    setEdTool: (t: Tool) => void; setEdPaint: (t: Terrain) => void; setEdPlace: (k: PlaceKind) => void;
+  };
+
+  const TOOL_HINTS: Record<Tool, string> = {
+    select: 'Tap an object to select · drag to move it',
+    pan: 'Drag to pan the map',
+    paint: 'Drag to paint terrain',
+    place: 'Tap a tile to place',
+    copy: 'Tap corner A, then corner B',
+    paste: 'Tap a tile to paste',
+    erase: 'Drag to erase objects and terrain',
+  };
+  const PLACE_LABELS: Record<PlaceKind, string> = {
+    tree: '🌳 Tree', rock: '🪨 Rock', crate: '📦 Crate', hut: '🛖 Hut',
+    stall: '🏪 Stall', wallH: '🧱 Wall —', wallV: '🧱 Wall |', npc: '🧍 NPC', start: '🚩 Start',
+  };
+
   return (
     <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', background: '#9fd9f2', fontFamily: 'system-ui, sans-serif' }}>
       <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', touchAction: 'none' }} />
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 12px', gap: 8 }}>
-        <div style={chip}>⛰️ Isometric demo · build 357 · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
-        <button style={btn} onClick={() => apiRef.current.back()}>← Back to game</button>
-      </div>
+
+      {mode === 'play' ? (
+        <>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 12px', gap: 8 }}>
+            <div style={chip}>⛰️ Isometric demo · build 358 · {worldSize} · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button style={btn} onClick={() => api.enterEdit()}>🔨 Builder</button>
+              <button style={btn} onClick={() => api.back()}>← Back to game</button>
+            </div>
+          </div>
+          <div style={{
+            position: 'absolute', left: 14, bottom: 14, display: 'grid',
+            gridTemplateColumns: 'repeat(3, 52px)', gridTemplateRows: 'repeat(3, 52px)', gap: 6,
+          }}>
+            <span /><PadButton d="up" label="⬆" /><span />
+            <PadButton d="left" label="⬅" /><span /><PadButton d="right" label="➡" />
+            <span /><PadButton d="down" label="⬇" /><span />
+          </div>
+          <div style={{ position: 'absolute', right: 14, bottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <button style={{ ...padBtn }} onClick={() => api.zoomIn()}>+</button>
+            <button style={{ ...padBtn }} onClick={() => api.zoomOut()}>−</button>
+          </div>
+          <div style={{
+            position: 'absolute', bottom: 76, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(20,30,40,0.55)', color: '#fff', borderRadius: 8,
+            padding: '6px 10px', fontSize: 11, pointerEvents: 'none', whiteSpace: 'nowrap',
+          }}>Tap a tile to walk · tap a crate to pick it up</div>
+        </>
+      ) : (
+        <>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button style={toolBtn(tool === 'select')} onClick={() => edSync('select')}>✋ Select</button>
+              <button style={toolBtn(tool === 'pan')} onClick={() => edSync('pan')}>🖐 Pan</button>
+              <button style={toolBtn(tool === 'paint')} onClick={() => edSync('paint')}>🖌 Paint</button>
+              <button style={toolBtn(tool === 'place')} onClick={() => edSync('place')}>➕ Place</button>
+              <button style={toolBtn(tool === 'copy')} onClick={() => edSync('copy')}>⧉ Copy</button>
+              <button style={toolBtn(tool === 'paste')} onClick={() => edSync('paste')}>📋 Paste</button>
+              <button style={toolBtn(tool === 'erase')} onClick={() => edSync('erase')}>🧽 Erase</button>
+              <span style={{ ...chip, maxWidth: 'none' }}>{worldSize}</span>
+            </div>
+            {tool === 'paint' && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {TERRAIN_LIST.map(t => (
+                  <button key={t} style={toolBtn(paintTerrain === t)} onClick={() => {
+                    setPaintTerrain(t);
+                    (apiRef.current as unknown as { setEdPaint: (x: Terrain) => void }).setEdPaint?.(t);
+                  }}>
+                    <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: TERRAIN_COLORS[t][0], marginRight: 4 }} />{t}
+                  </button>
+                ))}
+              </div>
+            )}
+            {tool === 'place' && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {(Object.keys(PLACE_LABELS) as PlaceKind[]).map(k => (
+                  <button key={k} style={toolBtn(placeKind === k)} onClick={() => {
+                    setPlaceKind(k);
+                    (apiRef.current as unknown as { setEdPlace: (x: PlaceKind) => void }).setEdPlace?.(k);
+                  }}>{PLACE_LABELS[k]}</button>
+                ))}
+              </div>
+            )}
+            {tool === 'select' && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button style={btn} onClick={() => api.deleteSelection()}>🗑 Delete</button>
+                <button style={btn} onClick={() => api.copySelection()}>⧉ Copy selection</button>
+              </div>
+            )}
+          </div>
+          <div style={{ position: 'absolute', right: 14, bottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <button style={{ ...padBtn }} onClick={() => api.zoomIn()}>+</button>
+            <button style={{ ...padBtn }} onClick={() => api.zoomOut()}>−</button>
+          </div>
+          <div style={{ position: 'absolute', left: 14, bottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <button style={btn} onClick={() => api.exitEdit()}>← Demo</button>
+            <button style={btn} onClick={() => api.back()}>← Game</button>
+          </div>
+          <div style={{ position: 'absolute', right: 14, bottom: 140, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <button style={btn} onClick={() => api.doUndo()}>↩ Undo</button>
+            <button style={btn} onClick={() => { setResizeW(56); setResizeH(56); setResizeOpen(true); }}>📐 Resize</button>
+            <button style={btn} onClick={() => api.resetWorld()}>♻ Reset</button>
+          </div>
+          <div style={{
+            position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(20,30,40,0.55)', color: '#fff', borderRadius: 8,
+            padding: '6px 10px', fontSize: 11, pointerEvents: 'none', whiteSpace: 'nowrap', maxWidth: '92vw', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>{TOOL_HINTS[tool]}</div>
+          {resizeOpen && (
+            <div style={{
+              position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.45)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10,
+            }}>
+              <div style={{ background: '#fff', borderRadius: 12, padding: 18, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 240 }}>
+                <div style={{ fontWeight: 700 }}>Map size (10–200)</div>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>Width
+                  <input type="number" min={10} max={200} value={resizeW}
+                    onChange={(e) => setResizeW(Number(e.target.value))}
+                    style={{ width: 80, padding: 6, borderRadius: 6, border: '1px solid #999' }} />
+                </label>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>Height
+                  <input type="number" min={10} max={200} value={resizeH}
+                    onChange={(e) => setResizeH(Number(e.target.value))}
+                    style={{ width: 80, padding: 6, borderRadius: 6, border: '1px solid #999' }} />
+                </label>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button style={{ ...btn, color: '#222', background: '#eee' }} onClick={() => setResizeOpen(false)}>Cancel</button>
+                  <button style={btn} onClick={() => { setResizeOpen(false); api.applyResize(resizeW, resizeH); }}>Apply</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
       {toast !== '' && (
         <div style={{
-          position: 'absolute', top: 64, left: '50%', transform: 'translateX(-50%)',
+          position: 'absolute', top: mode === 'edit' ? 120 : 64, left: '50%', transform: 'translateX(-50%)',
           background: 'rgba(20,30,40,0.85)', color: '#fff', borderRadius: 10,
           padding: '8px 14px', fontSize: 13, pointerEvents: 'none', maxWidth: '80vw', textAlign: 'center',
         }}>{toast}</div>
       )}
-      <div style={{
-        position: 'absolute', left: 14, bottom: 14, display: 'grid',
-        gridTemplateColumns: 'repeat(3, 52px)', gridTemplateRows: 'repeat(3, 52px)', gap: 6,
-      }}>
-        <span /><PadButton d="up" label="⬆" /><span />
-        <PadButton d="left" label="⬅" /><span /><PadButton d="right" label="➡" />
-        <span /><PadButton d="down" label="⬇" /><span />
-      </div>
-      <div style={{ position: 'absolute', right: 14, bottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <button style={{ ...padBtn }} onClick={() => apiRef.current.zoomIn()}>+</button>
-        <button style={{ ...padBtn }} onClick={() => apiRef.current.zoomOut()}>−</button>
-      </div>
-      <div style={{
-        position: 'absolute', bottom: 76, left: '50%', transform: 'translateX(-50%)',
-        background: 'rgba(20,30,40,0.55)', color: '#fff', borderRadius: 8,
-        padding: '6px 10px', fontSize: 11, pointerEvents: 'none', whiteSpace: 'nowrap',
-      }}>Tap a tile to walk · tap a crate to pick it up</div>
     </div>
   );
 }
