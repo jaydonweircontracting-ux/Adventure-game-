@@ -37,6 +37,35 @@ export function editorSolidsFor(objects: PlacedObject[]): EditorSolid[] {
   });
 }
 
+// BUILD 305: generated trees/rocks deleted via the Erase tool, keyed by
+// chunk ("x,y") -> generated tree ids. Ids are deduped per chunk.
+export type DeletedGenTrees = Record<string, number[]>;
+
+export function editorDeleteGenTree(deleted: DeletedGenTrees, chunkKey: string, treeId: number): DeletedGenTrees {
+  const existing = deleted[chunkKey] ?? [];
+  if (existing.includes(treeId)) return deleted;
+  return { ...deleted, [chunkKey]: [...existing, treeId] };
+}
+
+export function editorRestoreGenTrees(deleted: DeletedGenTrees, chunkKey: string): DeletedGenTrees {
+  if (!(chunkKey in deleted)) return deleted;
+  const next = { ...deleted };
+  delete next[chunkKey];
+  return next;
+}
+
+// BUILD 305: split flagged items into the concrete deletions the
+// "Delete flagged" button performs (generated houses can't be deleted).
+export function editorFlaggedDeletions(flags: FlaggedItem[], chunkKey: string): { placedIds: string[]; treeIds: number[] } {
+  const here = flags.filter((f) => f.chunk === chunkKey);
+  const placedIds = here.filter((f) => f.kind === 'placed').map((f) => f.id);
+  const treeIds = here
+    .filter((f) => f.kind === 'tree')
+    .map((f) => parseInt(f.id.split('-').pop() || '', 10))
+    .filter((n) => !isNaN(n));
+  return { placedIds, treeIds };
+}
+
 export function editorRemovalList(flags: FlaggedItem[]): string {
   if (flags.length === 0) return 'REMOVE: (nothing flagged)';
   return 'REMOVE:\n' + flags.map((f) => f.kind + ' "' + f.label + '" at (' + f.x.toFixed(1) + ', ' + f.y.toFixed(1) + ') chunk ' + f.chunk).join('\n');

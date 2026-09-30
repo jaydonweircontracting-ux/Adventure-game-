@@ -4226,6 +4226,34 @@ body {
   font-weight: 700;
   margin-bottom: 8px;
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* BUILD 305: minimize the editor panel so it stops blocking the view. */
+.editor-minimize-btn {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  padding: 0 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  cursor: pointer;
+}
+.editor-minimized-chip {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
 }
 .editor-panel-chunk {
   font-weight: 400;
@@ -4718,6 +4746,7 @@ body {
 /* BUILD 302 (civ phase 17): simulation LOD — documented tier policy; fake-player adventurers tick at 1/8 rate when the player is away from Mosslight (logins still spawn on cadence); townsfolk clear when leaving town; travelers/caravans/military/horses/events stay analytic. */
 /* BUILD 303 (civ phase 18): persistence — carriage rides in progress now save and resume after load (extracted runCarriageTravel driver, validated resume on restore). */
 /* BUILD 304 (civ phase 19): debug tools — NPC Inspector gains a Points of interest section (kind, danger, Go to) and Go to buttons on the Horses rows. */
+/* BUILD 305: world editor QoL — minimize the editor panel (floating chip to reopen), Erase tool deletes generated trees/rocks for good (per-chunk, persisted), 🗑️ Delete flagged button, restore deleted trees, hide/show generated road visuals per chunk. */
 .locked-chest {
   position: absolute;
   z-index: 5;

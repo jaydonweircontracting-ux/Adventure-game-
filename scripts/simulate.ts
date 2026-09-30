@@ -7,7 +7,7 @@ import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, type TownsfolkAnchors } from '../src/game/townsfolk';
-import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize } from '../src/game/worldEditor';
+import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
 
 let passed = 0;
 let failed = 0;
@@ -339,6 +339,27 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
   const list = editorRemovalList([flag]);
   assert(list.includes('tree "tree #3" at (34.2, 51.8) chunk 4,7'), 'editorRemovalList format wrong: ' + list);
   assert(editorRemovalList([]).includes('nothing flagged'), 'editorRemovalList empty wrong');
+  // BUILD 305: deleted generated trees per chunk.
+  let del = editorDeleteGenTree({}, '4,7', 3);
+  assert(del['4,7'].length === 1 && del['4,7'][0] === 3, 'editorDeleteGenTree did not add');
+  del = editorDeleteGenTree(del, '4,7', 3);
+  assert(del['4,7'].length === 1, 'editorDeleteGenTree must dedupe');
+  del = editorDeleteGenTree(del, '5,7', 0);
+  assert(Object.keys(del).length === 2, 'editorDeleteGenTree chunk keys wrong');
+  del = editorRestoreGenTrees(del, '4,7');
+  assert(!('4,7' in del) && '5,7' in del, 'editorRestoreGenTrees did not clear chunk');
+  del = editorRestoreGenTrees(del, '9,9');
+  assert(Object.keys(del).length === 1, 'editorRestoreGenTrees changed missing chunk');
+  // BUILD 305: flagged deletions split placed/tree, skip generated houses.
+  const flags2 = [
+    { id: 'placed-a', kind: 'placed' as const, label: 'p', x: 1, y: 1, chunk: '4,7' },
+    { id: 'gen-tree-4,7-7', kind: 'tree' as const, label: 'tree #7', x: 2, y: 2, chunk: '4,7' },
+    { id: 'gen-house-x', kind: 'house' as const, label: 'h', x: 3, y: 3, chunk: '4,7' },
+    { id: 'gen-tree-5,7-1', kind: 'tree' as const, label: 't', x: 4, y: 4, chunk: '5,7' },
+  ];
+  const split = editorFlaggedDeletions(flags2, '4,7');
+  assert(split.placedIds.length === 1 && split.placedIds[0] === 'placed-a', 'editorFlaggedDeletions placed wrong');
+  assert(split.treeIds.length === 1 && split.treeIds[0] === 7, 'editorFlaggedDeletions tree wrong');
 }
 
 // ---- 12. World clock display + wait math (BUILD 275) ----

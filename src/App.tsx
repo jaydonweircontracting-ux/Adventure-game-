@@ -12,7 +12,7 @@ import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/r
 import { DEFAULT_WORLD_SEED, formatClockDisplay, ticksUntilHour, type WorldClockState } from '@/game/worldCore';
 import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
-import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList } from './game/worldEditor';
+import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from './game/worldEditor';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint } from '@/game/townsfolk';
@@ -74,7 +74,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '281';
+const BUILD_NUMBER = '305';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -628,7 +628,7 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
   const tile = mapTileFor(chunk);
   if (pointInWater(position, tile)) return true;
 
-  const treeBlocked = fieldTreesFor(chunk).some((tree) => !felledTreeKeys.has(fieldTreeKey(chunk, tree.id)) && pointInRect(position, fieldTreeBaseRect(tree), 0.45));
+  const treeBlocked = fieldTreesFor(chunk).some((tree) => !felledTreeKeys.has(fieldTreeKey(chunk, tree.id)) && !editorDeletedTreeKeys.has(fieldTreeKey(chunk, tree.id)) && pointInRect(position, fieldTreeBaseRect(tree), 0.45));
   if (treeBlocked) return true;
 
   // Rusty Tankard annexes are solid in the starting town.
@@ -1052,6 +1052,9 @@ const TREE_HITS_TO_FELL = 3;
 const TREE_REGROW_MS = 5 * 60 * 1000;
 const fieldTreeKey = (chunk: Point, treeId: number) => chunk.x + ',' + chunk.y + ':' + treeId;
 const felledTreeKeys = new Set<string>();
+// Debug world editor (BUILD 305): generated trees/rocks the user deleted in
+// the editor, as fieldTreeKey strings. Synced from component state below.
+const editorDeletedTreeKeys = new Set<string>();
 type GoatState = {
   id: number;
   position: Point;
@@ -3141,6 +3144,43 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   };
   const [placedObjects, setPlacedObjects] = useState<PlacedObject[]>(loadPlacedObjects);
   const [flaggedItems, setFlaggedItems] = useState<FlaggedItem[]>(loadFlaggedItems);
+  // BUILD 305: generated trees/rocks deleted via the Erase tool, per chunk.
+  const loadDeletedTrees = (): Record<string, number[]> => {
+    try {
+      const raw = localStorage.getItem('worldEditorDeletedTrees');
+      const parsed = raw ? JSON.parse(raw) : {};
+      if (!parsed || typeof parsed !== 'object') return {};
+      const clean: Record<string, number[]> = {};
+      for (const k of Object.keys(parsed)) {
+        if (Array.isArray(parsed[k])) clean[k] = parsed[k].filter((n: unknown) => typeof n === 'number');
+      }
+      return clean;
+    } catch { return {}; }
+  };
+  const [deletedGenTrees, setDeletedGenTrees] = useState<Record<string, number[]>>(loadDeletedTrees);
+  useEffect(() => {
+    try { localStorage.setItem('worldEditorDeletedTrees', JSON.stringify(deletedGenTrees)); } catch { /* ignore */ }
+  }, [deletedGenTrees]);
+  // Sync the module-level key set so collision skips deleted trees.
+  useEffect(() => {
+    editorDeletedTreeKeys.clear();
+    for (const ck of Object.keys(deletedGenTrees)) {
+      for (const id of deletedGenTrees[ck]) editorDeletedTreeKeys.add(ck + ':' + id);
+    }
+  }, [deletedGenTrees]);
+  // BUILD 305: chunks where the user hid the generated road visuals.
+  const [hiddenRoadChunks, setHiddenRoadChunks] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('worldEditorHiddenRoads');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((s) => typeof s === 'string') : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('worldEditorHiddenRoads', JSON.stringify(hiddenRoadChunks)); } catch { /* ignore */ }
+  }, [hiddenRoadChunks]);
+  // BUILD 305: minimize the editor panel so it doesn't block the view.
+  const [editorMinimized, setEditorMinimized] = useState(false);
   useEffect(() => {
     try { localStorage.setItem('worldEditorObjects', JSON.stringify(placedObjects)); } catch { /* ignore */ }
   }, [placedObjects]);
@@ -4624,7 +4664,8 @@ if (active) {
   const currentWorldTile = mapTileFor(chunk);
   const selectedGoat = targetGoatId === null ? null : goats.find((goat) => goat.id === targetGoatId && goat.disposition !== 'defeated') || null;
   const playerMaxHp = playerMaxHpForStats(playerStats);
-  const fieldTrees = fieldTreesFor(chunk);
+  const deletedHere = deletedGenTrees[chunkKey] ?? [];
+  const fieldTrees = fieldTreesFor(chunk).filter((t) => !deletedHere.includes(t.id));
   const fieldAccents = fieldAccentsFor(chunk);
   const fieldPalette = fieldPalettes[currentWorldTile.terrain];
   const startingArea = isStartingArea(chunk);
@@ -5036,9 +5077,16 @@ if (active) {
               {markColor === 'red' ? '🔴 Red' : '🟢 Green'}
             </button>
           )}
-          {moverMode && (
+          {moverMode && editorMinimized && (
+            <button type="button" className="editor-minimized-chip" onClick={() => setEditorMinimized(false)} aria-label="Expand world editor">
+              🛠️ Editor
+            </button>
+          )}
+          {moverMode && !editorMinimized && (
             <div className="editor-panel">
-              <div className="editor-panel-title">🛠️ World Editor <span className="editor-panel-chunk">chunk {chunkKey}</span></div>
+              <div className="editor-panel-title">🛠️ World Editor <span className="editor-panel-chunk">chunk {chunkKey}</span>
+                <button type="button" className="editor-minimize-btn" onClick={() => setEditorMinimized(true)} aria-label="Minimize world editor">—</button>
+              </div>
               <div className="editor-tools">
                 {editorTools.map((t) => (
                   <button
@@ -5054,7 +5102,7 @@ if (active) {
               <div className="editor-hint">
                 {editorTool === 'select' && <>👆 Tap a house or placed object to pick it up, then tap the field to drop it.</>}
                 {editorTool === 'flag' && <>🚩 Tap any tree, house, or placed object to flag it for removal. Tap again to unflag.</>}
-                {editorTool === 'erase' && <>🧹 Tap a placed object to delete it. (Generated trees/houses: flag them instead.)</>}
+                {editorTool === 'erase' && <>🧹 Tap a generated tree/rock or placed object to delete it for good.</>}
                 {editorTool === 'player' && <>📍 Tap the field to teleport the player there.</>}
                 {(editorTool === 'house' || editorTool === 'tree' || editorTool === 'pine' || editorTool === 'rock' || editorTool === 'roadH' || editorTool === 'roadV') && <>Tap the field to stamp a {editorTool === 'roadH' ? 'horizontal road' : editorTool === 'roadV' ? 'vertical road' : editorTool}.</>}
               </div>
@@ -5089,6 +5137,44 @@ if (active) {
                 >
                   Clear placed (chunk)
                 </button>
+                <button
+                  type="button"
+                  className="editor-btn"
+                  onClick={() => {
+                    // BUILD 305: actually delete what was flagged — placed
+                    // objects are removed, generated trees/rocks go to the
+                    // per-chunk deleted set. Generated houses can't be deleted.
+                    const { placedIds, treeIds } = editorFlaggedDeletions(flaggedItems, chunkKey);
+                    if (placedIds.length > 0) setPlacedObjects((prev) => prev.filter((o) => !placedIds.includes(o.id)));
+                    if (treeIds.length > 0) setDeletedGenTrees((prev) => {
+                      let next = prev;
+                      for (const tid of treeIds) next = editorDeleteGenTree(next, chunkKey, tid);
+                      return next;
+                    });
+                    setFlaggedItems((prev) => prev.filter((f) => !(f.chunk === chunkKey && (f.kind === 'placed' || f.kind === 'tree'))));
+                    setSelectedPlacedId(null);
+                  }}
+                >
+                  🗑️ Delete flagged ({flaggedHere.filter((f) => f.kind !== 'house').length})
+                </button>
+                {(deletedGenTrees[chunkKey] ?? []).length > 0 && (
+                  <button
+                    type="button"
+                    className="editor-btn"
+                    onClick={() => setDeletedGenTrees((prev) => editorRestoreGenTrees(prev, chunkKey))}
+                  >
+                    ↩️ Restore deleted trees ({(deletedGenTrees[chunkKey] ?? []).length})
+                  </button>
+                )}
+                {currentWorldTile.road !== 'none' && (
+                  <button
+                    type="button"
+                    className="editor-btn"
+                    onClick={() => setHiddenRoadChunks((prev) => prev.includes(chunkKey) ? prev.filter((c) => c !== chunkKey) : [...prev, chunkKey])}
+                  >
+                    {hiddenRoadChunks.includes(chunkKey) ? '🛤️ Show roads here' : '🛤️ Hide roads here'}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="editor-btn"
@@ -5450,7 +5536,7 @@ if (active) {
                />
              ))}
            </div>
-          {currentWorldTile.road !== 'none' && (
+          {currentWorldTile.road !== 'none' && !hiddenRoadChunks.includes(chunkKey) && (
             <div className={'field-road' + (currentWorldTile.bridge ? ' field-bridge' : '')} aria-hidden="true">
               <span className="field-road-center" />
               {currentWorldTile.road.includes('n') && <span className="field-road-arm field-road-arm-n" />}
@@ -5752,7 +5838,7 @@ if (active) {
                 // Flag tool: mark the nearest flaggable object for removal.
                 if (editorTool === 'flag') {
                   const candidates: FlaggedItem[] = [
-                    ...fieldTreesFor(chunk).map((t) => ({
+                    ...fieldTreesFor(chunk).filter((t) => !(deletedGenTrees[chunkKey] ?? []).includes(t.id)).map((t) => ({
                       id: 'gen-tree-' + chunkKey + '-' + t.id,
                       kind: 'tree' as const,
                       label: 'tree #' + t.id,
@@ -5795,8 +5881,35 @@ if (active) {
                   setPosition({ x: fx, y: fy });
                   return;
                 }
+                // Erase tool (BUILD 305): delete the nearest generated tree/rock
+                // or placed object. Generated trees/rocks are remembered per
+                // chunk so they stay gone.
+                if (editorTool === 'erase') {
+                  const treeCands = fieldTreesFor(chunk)
+                    .filter((t) => !(deletedGenTrees[chunkKey] ?? []).includes(t.id))
+                    .map((t) => ({ id: t.id, x: t.x, y: t.y, gen: true as const }));
+                  const placedCands = placedHere.map((o) => ({ id: o.id, x: o.x, y: o.y, gen: false as const }));
+                  let best: { id: number | string; x: number; y: number; gen: boolean } | null = null;
+                  let bestDist = 8;
+                  for (const c of [...treeCands, ...placedCands]) {
+                    const dist = Math.hypot(c.x - fx, c.y - fy);
+                    if (dist < bestDist) { bestDist = dist; best = c; }
+                  }
+                  if (best) {
+                    if (best.gen) {
+                      const tid = best.id as number;
+                      setDeletedGenTrees((prev) => ({ ...prev, [chunkKey]: [...(prev[chunkKey] ?? []), tid] }));
+                      setFlaggedItems((prev) => prev.filter((f) => f.id !== 'gen-tree-' + chunkKey + '-' + tid));
+                    } else {
+                      const pid = best.id as string;
+                      setPlacedObjects((prev) => prev.filter((o) => o.id !== pid));
+                      setFlaggedItems((prev) => prev.filter((f) => f.id !== pid));
+                    }
+                  }
+                  return;
+                }
                 // Stamp tools: place a new object at the tap.
-                if (editorTool !== 'select' && editorTool !== 'erase') {
+                if (editorTool !== 'select') {
                   setPlacedObjects((prev) => editorPlaceObject(prev, editorTool, fx, fy, chunkKey));
                   return;
                 }
