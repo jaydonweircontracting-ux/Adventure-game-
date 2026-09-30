@@ -26,6 +26,15 @@ export type TownsfolkArchetype = 'farmer' | 'merchant' | 'guard' | 'priest' | 's
 export type TownsfolkRole = 'mage' | 'warrior' | 'guide' | 'rogue';
 export type TownsfolkPoint = { x: number; y: number };
 
+/** A single remembered event. The only mutable per-NPC life state (event-driven). */
+export type NPCMemory = {
+  event: string;
+  /** World day the event happened. */
+  day: number;
+  /** 1 = trivial (decays first), 2 = notable, 3 = life-changing (kept). */
+  importance: 1 | 2 | 3;
+};
+
 export type Townsperson = {
   id: string;
   name: string;
@@ -55,6 +64,14 @@ export type Townsperson = {
   bedId?: string;
   /** Building id when INTERIOR / ENTERING / EXITING / SLEEPING. */
   buildingId?: string;
+  // --- Village life (BUILD 366): needs/personality are derived from the seed
+  // + clock (see villageLife.ts); only genuine events persist below. ---
+  /** Age category override (defaults to seed-derived). */
+  age?: 'child' | 'young' | 'adult' | 'elder';
+  /** Player-driven gold adjustments (tips, gifts). Base purse is derived. */
+  goldDelta?: number;
+  /** Bounded event memories (max 12, pruned by importance). */
+  memories?: NPCMemory[];
 };
 
 /** Named world anchors townsfolk schedules resolve against. */
@@ -341,6 +358,15 @@ export function createTownsfolk(anchors: TownsfolkAnchors, worldSeed: number): T
       activity: 'At home',
       indoors: false,
       location: 'OUTDOOR' as NPCWorldLocation,
+      // BUILD 366: seed founding memories (villageLife.addNPCMemory handles
+      // runtime events; kept inline here to avoid a circular import).
+      memories: [
+        {
+          event: townsfolkHash(seed, 9301) < 0.5 ? 'Settled in Mosslight years ago.' : 'Grew up in Mosslight.',
+          day: 0,
+          importance: 2 as const,
+        },
+      ],
     };
   });
 }
@@ -372,6 +398,10 @@ export type TownsfolkSave = {
   homeId?: string;
   bedId?: string;
   buildingId?: string;
+  /** BUILD 366: village-life state (all optional — old saves restore fine). */
+  age?: 'child' | 'young' | 'adult' | 'elder';
+  goldDelta?: number;
+  memories?: NPCMemory[];
 };
 
 const VALID_LOCATIONS: NPCWorldLocation[] = ['OUTDOOR', 'ENTERING', 'INTERIOR', 'EXITING', 'SLEEPING', 'WORKING'];
@@ -388,6 +418,9 @@ export function serializeTownsfolk(folk: Townsperson[]): TownsfolkSave[] {
     homeId: npc.homeId,
     bedId: npc.bedId,
     buildingId: npc.buildingId,
+    age: npc.age,
+    goldDelta: npc.goldDelta,
+    memories: npc.memories?.map((m) => ({ ...m })),
   }));
 }
 
@@ -399,6 +432,10 @@ export function isTownsfolkSave(value: unknown): value is TownsfolkSave {
   if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return false;
   if (typeof v.activity !== 'string') return false;
   if (!VALID_LOCATIONS.includes(v.location as NPCWorldLocation)) return false;
+  // BUILD 366: optional life fields — validate leniently, ignore if malformed.
+  if (v.age !== undefined && !['child', 'young', 'adult', 'elder'].includes(v.age as string)) return false;
+  if (v.goldDelta !== undefined && !Number.isFinite(v.goldDelta)) return false;
+  if (v.memories !== undefined && !Array.isArray(v.memories)) return false;
   return true;
 }
 
@@ -417,6 +454,11 @@ export function restoreTownsfolk(folk: Townsperson[], saved: unknown): Townspers
   return folk.map((npc) => {
     const s = byId.get(npc.id);
     if (!s) return npc;
+    const memories = Array.isArray(s.memories)
+      ? (s.memories as NPCMemory[]).filter(
+          (m) => m && typeof m.event === 'string' && Number.isFinite(m.day) && m.importance >= 1 && m.importance <= 3,
+        ).slice(0, 12)
+      : undefined;
     return {
       ...npc,
       position: { x: s.position.x, y: s.position.y },
@@ -429,6 +471,9 @@ export function restoreTownsfolk(folk: Townsperson[], saved: unknown): Townspers
       homeId: s.homeId ?? npc.homeId,
       bedId: s.bedId ?? npc.bedId,
       buildingId: s.buildingId,
+      age: s.age ?? npc.age,
+      goldDelta: s.goldDelta ?? npc.goldDelta,
+      memories: memories ?? npc.memories,
     };
   });
 }
@@ -461,8 +506,9 @@ function advanceOne(
   clock: WorldClockState,
   nav: TownsfolkNavContext,
   step: number,
+  resolveTarget: (npc: Townsperson, anchors: TownsfolkAnchors, clock: WorldClockState) => TownsfolkTarget = townsfolkTarget,
 ): Townsperson {
-  const want = townsfolkTarget(npc, anchors, clock);
+  const want = resolveTarget(npc, anchors, clock);
   const wantsSleep = want.indoors && want.activity === 'Sleeping';
   const wantsIndoors = want.indoors;
 
@@ -757,8 +803,15 @@ export function advanceTownsfolk(
   clock: WorldClockState,
   nav: TownsfolkNavContext,
   step = 0.22,
+  /**
+   * Optional target resolver. Defaults to the base schedule (townsfolkTarget).
+   * The village-life layer (villageLife.ts) passes `villageTarget` here to add
+   * need-based overrides — kept as a callback so townsfolk.ts stays free of a
+   * circular import.
+   */
+  resolveTarget: (npc: Townsperson, anchors: TownsfolkAnchors, clock: WorldClockState) => TownsfolkTarget = townsfolkTarget,
 ): Townsperson[] {
-  return separateCrowd(folk.map((npc) => advanceOne(npc, anchors, clock, nav, step)));
+  return separateCrowd(folk.map((npc) => advanceOne(npc, anchors, clock, nav, step, resolveTarget)));
 }
 
 /**

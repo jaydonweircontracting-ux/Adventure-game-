@@ -201,6 +201,28 @@ export function renderGroundDetail(spec: GroundDetailSpec): HTMLCanvasElement {
       rect(x, y + 1, 1, 3, dry);
       rect(x + 3, y + 1, 1, 3, dry);
     }
+    // BUILD 366: shore shells + desert cacti (biome-contextual decorations).
+    if (spec.terrain === 'shore') {
+      for (let i = 0; i < 26; i++) {
+        const x = ri(SIZE - 5);
+        const y = ri(SIZE - 4);
+        const shell = pick(['#f2e4d8', '#eac9c2', '#f7f0e6']);
+        rect(x, y + 1, 5, 2, shell);
+        rect(x + 1, y, 3, 1, shadeColor(shell, 1.1));
+        rect(x + 2, y + 1, 1, 2, shadeColor(shell, 0.85));
+      }
+    } else {
+      // desert: small barrel cacti with highlights
+      for (let i = 0; i < 18; i++) {
+        const x = ri(SIZE - 6);
+        const y = ri(SIZE - 8);
+        const cactus = pick(['#4a7c3a', '#3f6e33', '#548844']);
+        rect(x + 1, y + 2, 4, 6, cactus);
+        rect(x + 2, y, 2, 2, shadeColor(cactus, 1.25));
+        rect(x + 1, y + 2, 1, 6, shadeColor(cactus, 1.18));
+        rect(x + 4, y + 2, 1, 6, shadeColor(cactus, 0.78));
+      }
+    }
   } else if (spec.terrain === 'rock') {
     // --- Rock: gray dither, cracks, stones. ---
     rect(0, 0, SIZE, SIZE, field);
@@ -266,6 +288,20 @@ export function renderGroundDetail(spec: GroundDetailSpec): HTMLCanvasElement {
       rect(x, y + 1, 4, 2, p);
       rect(x + 1, y, 2, 4, p);
       rect(x + 1, y + 1, 2, 2, '#f7e08a');
+    }
+    // Forest mushrooms: red caps with white dots (BUILD 366: biome-contextual
+    // decorations from the chunk-gen video — each biome gets its own details).
+    if (forest) {
+      for (let i = 0; i < 22; i++) {
+        const x = ri(SIZE - 8);
+        const y = ri(SIZE - 8);
+        const cap = pick(['#c23b2e', '#a83226', '#d14a35']);
+        rect(x + 2, y + 4, 2, 3, '#e8dcc0'); // stem
+        rect(x, y + 1, 6, 3, cap); // cap
+        rect(x + 1, y, 4, 1, shadeColor(cap, 1.2));
+        rect(x + 1, y + 2, 1, 1, '#f5f0e0');
+        rect(x + 4, y + 2, 1, 1, '#f5f0e0');
+      }
     }
     // Dirt patches (meadow only): irregular blobs of path tone.
     if (spec.terrain === 'meadow') {

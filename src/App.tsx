@@ -1,5 +1,7 @@
 import IsoRoomDemo from './game/iso/IsoRoom';
 import IsoFieldView from './game/iso/IsoFieldView';
+import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
+import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay } from './game/villageLife';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
@@ -90,7 +92,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '358';
+const BUILD_NUMBER = '366';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -410,7 +412,7 @@ export function mapTileFor(point: Point): MapTile {
   };
 }
 
-export type FieldTree = { id: number; x: number; y: number; scale: number; variant: number; style: RegionStyle; sprite: EnvSpriteKey };
+export type FieldTree = { id: number; x: number; y: number; scale: number; variant: number; style: RegionStyle; sprite: EnvSpriteKey; flip: boolean };
 
 // Biome vegetation from the FreeEnvironment pack (public/environment/FreePack.png,
 // 512x384). Boxes are the trimmed alpha bounds of each sprite: { x, y, w, h }.
@@ -598,11 +600,14 @@ export function fieldTreesFor(chunk: Point): FieldTree[] {
     // renderer (fieldPct) and collision (fieldTreeBaseRect). Values below are
     // the long-standing visual positions (old 0..100 values × 2.8), so the
     // on-screen layout does not move — only the logical positions now agree.
+    // BUILD 366: deterministic horizontal flip per tree (video technique: flipping
+    // sprites along the vertical axis is a cheap way to avoid visual repetition).
+    // Purely visual — collision uses the symmetric base rect, unaffected.
     const perimeterTrees = [
-      { x: 56, y: 61.6, scale: 0.56, variant: 1 },
-      { x: 196, y: 61.6, scale: 0.56, variant: 2 },
-      { x: 50.4, y: 190.4, scale: 0.56, variant: 2 },
-      { x: 240.8, y: 179.2, scale: 0.56, variant: 1 },
+      { x: 56, y: 61.6, scale: 0.56, variant: 1, flip: false },
+      { x: 196, y: 61.6, scale: 0.56, variant: 2, flip: true },
+      { x: 50.4, y: 190.4, scale: 0.56, variant: 2, flip: false },
+      { x: 240.8, y: 179.2, scale: 0.56, variant: 1, flip: true },
     ];
     return perimeterTrees.map((tree, id) => ({ ...tree, id, style: treeStyle, sprite: (tree.variant === 1 ? 'bigpine' : 'pine2') as EnvSpriteKey }));
   }
@@ -644,7 +649,7 @@ export function fieldTreesFor(chunk: Point): FieldTree[] {
     // Grass tufts removed (dense blades render as solid green bars) — uncomment to re-enable.
     if (sprite === 'grass1' || sprite === 'grass2') continue;
     const finalScale = naturalScale;
-    trees.push({ id: trees.length, x, y, scale: finalScale, variant, style: treeStyle, sprite });
+    trees.push({ id: trees.length, x, y, scale: finalScale, variant, style: treeStyle, sprite, flip: random() < 0.5 });
   }
 
   // BUILD 342: dense forest clusters ring non-starting towns, like the
@@ -674,7 +679,7 @@ export function fieldTreesFor(chunk: Point): FieldTree[] {
         const variant = Math.floor(crandom() * 4);
         const sprite = envSpriteForTerrain(mapTileFor(chunk).terrain, variant);
         if (sprite === 'grass1' || sprite === 'grass2') continue;
-        trees.push({ id: trees.length, x, y, scale, variant, style: treeStyle, sprite });
+        trees.push({ id: trees.length, x, y, scale, variant, style: treeStyle, sprite, flip: crandom() < 0.5 });
       }
     }
   }
@@ -3949,6 +3954,11 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   // src/game/touchInput.ts) — declared beside keysRef since every input-reset
   // path must clear both.
   const touchHoldsRef = useRef<TouchHoldState>(createTouchHoldState());
+  // BUILD 366: tap-to-move target (2.5D iso field). When set and no manual
+  // input is held, the game loop steers the player toward this field-unit
+  // point using the normal movement/collision/doorway pipeline. Cleared on
+  // arrival or when the player presses a direction/D-pad key.
+  const tapMoveTargetRef = useRef<Point | null>(null);
   // BUILD 337: immortal-loop diagnostics. If a frame throws, the message is
   // recorded here and shown as a small on-screen badge (tap to dismiss) so
   // the cause is visible instead of the character silently freezing.
@@ -3993,6 +4003,45 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   // The chunk the player was in when they entered the current interior, so
   // exit can resolve the same doorway from the same chunk (not hardcoded 4,7).
   const interiorEntryChunkRef = useRef<Point>({ x: 4, y: 7 });
+  // BUILD 366: shared interior-exit path (2D doorway walk-out and the 2.5D
+  // IsoInteriorView exit button/tap-door both funnel through here).
+  const exitInteriorToField = () => {
+    const currentInterior = interiorRef.current;
+    if (!currentInterior) return;
+    // BUILD 326: the cellar ladder climbs back up into the tavern the
+    // player descended from — never out to the field.
+    if (currentInterior.roomType === 'cellar' && interiorReturnRef.current) {
+      const backTo = interiorReturnRef.current;
+      interiorReturnRef.current = null;
+      interiorRef.current = backTo; setInterior(backTo);
+      interiorPositionRef.current = { x: 50, y: 62 }; setInteriorPosition({ x: 50, y: 62 });
+      setMoving(false);
+      setLogs((currentLogs) => [{ text: 'You climb back up into the Rusty Tankard.', color: 'blue' }, ...currentLogs].slice(0, 3));
+      return;
+    }
+    // Compute exit position fresh from the doorway (not stored data) to ensure
+    // the player appears directly outside the visible door. Use the actual
+    // entry chunk, not a hardcoded one, so the doorway resolves correctly.
+    let exitPosition = currentInterior.exteriorPosition;
+    const doorwayId = interiorDoorwayIdRef.current;
+    if (doorwayId) {
+      const freshDoorway = buildingDoorwaysFor(interiorEntryChunkRef.current).find((d) => d.id === doorwayId);
+      if (freshDoorway) {
+        // Use the doorway's computed exterior position (just outside the
+        // door, south of the building rect), not an arbitrary offset.
+        // Apply mover offsets so the exit follows the house visual —
+        // otherwise the player appears at the stale base position and
+        // can get stuck inside the offset collision rect.
+        const off = houseOffsetsRef.current[doorwayId] || { x: 0, y: 0 };
+        exitPosition = { x: freshDoorway.area.exteriorPosition.x + off.x, y: freshDoorway.area.exteriorPosition.y + off.y };
+      }
+    }
+    interiorDoorwayIdRef.current = null;
+    interiorRef.current = null; setInterior(null);
+    interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
+    positionRef.current = exitPosition; setPosition(exitPosition);
+    setLogs((currentLogs) => [{ text: 'You step back outside into Mosslight Crossing.', color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
   const goatWorldStepRef = useRef(0);
   const simulatedTickRef = useRef(0);
   const simulatedAdventurersRef = useRef(initialSimulatedAdventurers);
@@ -4285,7 +4334,9 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
       const folkAnchors = townsfolkAnchorsRef.current;
       const folkClock = brainRef.current?.worldCore.getClock();
       if (folkAnchors && folkClock && townsfolkRef.current.length > 0) {
-        const next = advanceTownsfolk(townsfolkRef.current, folkAnchors, folkClock, townsfolkNavRef.current!);
+        // BUILD 366: village-life target resolution (needs-based overrides on
+        // top of the base schedule). Physical movement/doors unchanged.
+        const next = advanceTownsfolk(townsfolkRef.current, folkAnchors, folkClock, townsfolkNavRef.current!, 0.22, villageTarget);
         if (next.some((npc, index) => npc !== townsfolkRef.current[index])) {
           townsfolkRef.current = next;
           setTownsfolk(next);
@@ -4856,7 +4907,21 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
         x: inputLocked || optionsOpen || waitingRef.current ? 0 : (heldRight ? 1 : 0) - (heldLeft ? 1 : 0),
         y: inputLocked || optionsOpen || waitingRef.current ? 0 : (heldDown ? 1 : 0) - (heldUp ? 1 : 0),
       };
-      const length = Math.hypot(input.x, input.y);
+      // BUILD 366: tap-to-move steering. Manual input always wins and cancels
+      // an in-flight tap target. Otherwise steer toward the tap target using
+      // the same movement/collision/doorway pipeline below.
+      let tapSteer = { x: 0, y: 0 };
+      const tapTarget = tapMoveTargetRef.current;
+      if (tapTarget && (input.x !== 0 || input.y !== 0)) tapMoveTargetRef.current = null;
+      else if (tapTarget && !inputLocked && !optionsOpen && !waitingRef.current) {
+        const dx = tapTarget.x - positionRef.current.x;
+        const dy = tapTarget.y - positionRef.current.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1.5) tapMoveTargetRef.current = null; // arrived
+        else tapSteer = { x: dx / dist, y: dy / dist };
+      }
+      const effInput = (input.x !== 0 || input.y !== 0) ? input : tapSteer;
+      const length = Math.hypot(effInput.x, effInput.y);
       const active = length > 0;
       setMoving(active);
 
@@ -5137,39 +5202,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
          const doorwayHalfWidth = (((INTERIOR_DOORWAY_WIDTH_PX + INTERIOR_PLAYER_WIDTH_PX) / 2 + INTERIOR_DOORWAY_PADDING_PX) / Math.max(1, frameWidth)) * 100;
          const atDoorway = Math.abs(next.x - 50) <= doorwayHalfWidth;
          if (next.y > 91 && atDoorway) {
-           // BUILD 326: the cellar ladder climbs back up into the tavern the
-           // player descended from — never out to the field.
-           if (currentInterior.roomType === 'cellar' && interiorReturnRef.current) {
-             const backTo = interiorReturnRef.current;
-             interiorReturnRef.current = null;
-             interiorRef.current = backTo; setInterior(backTo);
-             interiorPositionRef.current = { x: 50, y: 62 }; setInteriorPosition({ x: 50, y: 62 });
-             setMoving(false);
-             setLogs((currentLogs) => [{ text: 'You climb back up into the Rusty Tankard.', color: 'blue' }, ...currentLogs].slice(0, 3));
-           } else {
-           // Compute exit position fresh from the doorway (not stored data) to ensure
-           // the player appears directly outside the visible door. Use the actual
-           // entry chunk, not a hardcoded one, so the doorway resolves correctly.
-           let exitPosition = currentInterior.exteriorPosition;
-           const doorwayId = interiorDoorwayIdRef.current;
-           if (doorwayId) {
-             const freshDoorway = buildingDoorwaysFor(interiorEntryChunkRef.current).find((d) => d.id === doorwayId);
-             if (freshDoorway) {
-               // Use the doorway's computed exterior position (just outside the
-               // door, south of the building rect), not an arbitrary offset.
-               // Apply mover offsets so the exit follows the house visual —
-               // otherwise the player appears at the stale base position and
-               // can get stuck inside the offset collision rect.
-               const off = houseOffsetsRef.current[doorwayId] || { x: 0, y: 0 };
-               exitPosition = { x: freshDoorway.area.exteriorPosition.x + off.x, y: freshDoorway.area.exteriorPosition.y + off.y };
-             }
-           }
-           interiorDoorwayIdRef.current = null;
-           interiorRef.current = null; setInterior(null);
-           interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
-           positionRef.current = exitPosition; setPosition(exitPosition);
-           setLogs((currentLogs) => [{ text: 'You step back outside into Mosslight Crossing.', color: 'blue' }, ...currentLogs].slice(0, 3));
-           }
+           exitInteriorToField();
          } else {
            const interiorPosition = next.y > 91
              ? { ...resolvedInteriorPosition, y: 91 }
@@ -5180,15 +5213,15 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
          return;
        }
 if (active) {
-        const direction = input.x > 0 ? 'right' : input.x < 0 ? 'left' : input.y < 0 ? 'up' : 'down';
+        const direction = effInput.x > 0 ? 'right' : effInput.x < 0 ? 'left' : effInput.y < 0 ? 'up' : 'down';
         facingRef.current = direction;
         setFacing(direction);
         const speed = mountedRef.current ? HORSE_SPEED : WALK_SPEED;
         const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
         const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
         const movement = {
-          x: (input.x / length) * speed * elapsed * FIELD_SIZE / frameWidth,
-          y: (input.y / length) * speed * elapsed * FIELD_SIZE / frameHeight,
+          x: (effInput.x / length) * speed * elapsed * FIELD_SIZE / frameWidth,
+          y: (effInput.y / length) * speed * elapsed * FIELD_SIZE / frameHeight,
         };
         const current = positionRef.current;
         const currentChunk = chunkRef.current;
@@ -5596,6 +5629,17 @@ if (active) {
     setTownsfolkDialogue(npc);
     setDialogueTopic(null);
     setDisposition((d) => ({ ...d, [npc.id]: adjustDisposition(d[npc.id] ?? defaultDisposition(), 1) }));
+    // BUILD 366: the conversation becomes part of the NPC's life — record a
+    // memory (once per day max, so repeated chats don't spam the log).
+    const clock = brainRef.current?.worldCore.getClock();
+    const day = clock ? Math.floor(clock.day) : 0;
+    townsfolkRef.current = townsfolkRef.current.map((t) => {
+      if (t.id !== npc.id) return t;
+      const hasToday = (t.memories ?? []).some((m) => m.day === day && m.event.startsWith('Talked with the traveler'));
+      if (hasToday) return t;
+      return addNPCMemory(t, 'Talked with the traveler.', day, 1);
+    });
+    setTownsfolk([...townsfolkRef.current]);
   };
 
   const chooseDialogueTopic = (npc: Townsperson, topic: DialogueTopicId) => {
@@ -5928,6 +5972,7 @@ if (active) {
     setLogs((currentLogs) => [{ text: `${name} turns to you: ${title}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
   };
   const enterDoorway = (doorway: Doorway, entryChunk: Point) => {
+    tapMoveTargetRef.current = null; // a tap-walk ends at the door
     interiorDoorwayIdRef.current = doorway.id;
     interiorEntryChunkRef.current = { x: entryChunk.x, y: entryChunk.y };
     interiorRef.current = doorway.area; setInterior(doorway.area);
@@ -5989,7 +6034,25 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onEnterCellar={enterCellar} onTavernSleep={tavernSleepUntilMorning} cellarRats={cellarRats} onStrikeCellarRat={strikeCellarRat} questStates={questStates} interiorTownsfolk={interiorTownsfolk} onTalkToTownsfolk={talkToTownsfolk} /> : (
+        {interior ? (isoFieldBeta ? (
+          <IsoInteriorView
+            roomId={interior.id}
+            roomType={interior.roomType as IsoRoomType}
+            npcs={interiorTownsfolk.map(({ npc, xPct, yPct }): IsoInteriorNpc => ({
+              id: npc.id,
+              name: npc.name,
+              tx: Math.min(11, Math.max(0, Math.round((xPct / 100) * 11))),
+              ty: Math.min(8, Math.max(0, Math.round((yPct / 100) * 9))),
+              facing: 'down',
+              look: Math.abs(npc.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 5,
+            }))}
+            onExit={exitInteriorToField}
+            onTalkTo={(npcId) => {
+              const npc = townsfolk.find((n) => n.id === npcId);
+              if (npc) talkToTownsfolk(npc);
+            }}
+          />
+        ) : <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onEnterCellar={enterCellar} onTavernSleep={tavernSleepUntilMorning} cellarRats={cellarRats} onStrikeCellarRat={strikeCellarRat} questStates={questStates} interiorTownsfolk={interiorTownsfolk} onTalkToTownsfolk={talkToTownsfolk} />) : (
         <div className={'pixel-field world-field has-ground-detail world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -6496,18 +6559,38 @@ if (active) {
                     // BUILD 314: debug overlay — location state, position,
                     // home/bed, destination, path waypoint, nav status.
                     // BUILD 335: also shows the dialogue disposition (330).
+                    // BUILD 366: village-life panel — age, personality, needs,
+                    // gold, relationships, memories (the AI-village debug view).
                     const npcAny = npc as unknown as Record<string, unknown>;
                     const loc = npcAny.location as string | undefined;
                     const path = npcAny.path as { waypoints?: unknown[]; waypointIndex?: number } | undefined;
                     const homeId = npcAny.homeId as string | undefined;
                     const bedId = npcAny.bedId as string | undefined;
                     const disp = disposition[npc.id] ?? defaultDisposition();
+                    const lifeClock = brainRef.current?.worldCore.getClock();
+                    const life = lifeClock ? npcLifeSummary(npc, townsfolk, lifeClock) : null;
+                    const needBar = (v: number) => {
+                      const n = Math.max(0, Math.min(10, Math.round(v / 10)));
+                      return '█'.repeat(n) + '░'.repeat(10 - n);
+                    };
                     return (
-                      <div key={npc.id} className="inspector-row">
+                      <div key={npc.id} className="inspector-row" style={{ display: 'block' }}>
                         <span>{npc.indoors ? '🏠' : '🌳'} <strong>{npc.gender === 'female' ? '♀' : '♂'} {npc.name}</strong> · {npc.archetype} · <em>{loc || (npc.indoors ? 'indoors' : 'outdoor')}</em> @({npc.position.x.toFixed(1)},{npc.position.y.toFixed(1)}) · {npc.activity} · 💭{dispositionTier(disp)}({disp})
                           {homeId && <> · 🏠{homeId}{bedId ? `/🛏️${bedId}` : ''}</>}
                           {path && path.waypoints && <> · 📍wp{path.waypointIndex ?? 0}/{path.waypoints.length}</>}
                         </span>
+                        {life && (
+                          <div style={{ fontSize: '11px', opacity: 0.9, marginTop: '2px', lineHeight: 1.5 }}>
+                            <div>🎂 {life.age} ({life.ageYears}) · 💰 {life.gold}g ({life.wage}g/day) · 🧠 soc {Math.round(life.personality.sociability * 100)}% · dil {Math.round(life.personality.diligence * 100)}% · thr {Math.round(life.personality.thrift * 100)}%</div>
+                            <div>🍖 <span title="hunger">{needBar(life.needs.hunger)}</span> ⚡ <span title="energy">{needBar(life.needs.energy)}</span> 💬 <span title="social">{needBar(life.needs.social)}</span> 🛋️ <span title="comfort">{needBar(life.needs.comfort)}</span></div>
+                            {life.relationships.length > 0 && (
+                              <div>❤️ {life.relationships.slice(0, 4).map((r) => `${r.targetName}(${r.kind.slice(0, 4)}:${r.affinity})`).join(', ')}{life.relationships.length > 4 ? ` +${life.relationships.length - 4}` : ''}</div>
+                            )}
+                            {life.memories.length > 0 && (
+                              <div>📝 {life.memories.slice(0, 3).map((m) => `d${m.day}: ${m.event}`).join(' · ')}</div>
+                            )}
+                          </div>
+                        )}
                         {!npc.indoors && (
                           <button
                             type="button"
@@ -6525,6 +6608,21 @@ if (active) {
                   })}
                 </div>
               )}
+              {/* BUILD 366: village-life events for today (deterministic). */}
+              {(() => {
+                const clock = brainRef.current?.worldCore.getClock();
+                if (!clock) return null;
+                const events = villageEventsForDay(Math.floor(clock.day), DEFAULT_WORLD_SEED);
+                return (
+                  <div className="inspector-section">
+                    <div className="inspector-heading">Village life — day {Math.floor(clock.day)}</div>
+                    {events.length === 0 && <div className="inspector-row"><span>Quiet day in Mosslight.</span></div>}
+                    {events.map((e) => (
+                      <div key={e.id} className="inspector-row"><span>📰 {e.text}</span></div>
+                    ))}
+                  </div>
+                );
+              })()}
               {travelers.length > 0 && (
                 <div className="inspector-section">
                   <div className="inspector-heading">Road travelers ({travelers.length})</div>
@@ -6620,7 +6718,9 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView chunk={chunk} position={position} townsfolk={townsfolk} onExit={toggleIsoFieldBeta} />
+            <IsoFieldView chunk={chunk} position={position} townsfolk={townsfolk} onExit={toggleIsoFieldBeta}
+              onTapMove={(point) => { tapMoveTargetRef.current = point; }}
+              onTalkTo={(npc) => talkToTownsfolk(npc)} />
           )}
           <div className="field-world-layer" style={isoFieldBeta ? { display: 'none' } : (gameZoom !== 1 ? (() => {
             // BUILD 327: zoom centers the player in the viewport — the layer
@@ -6990,8 +7090,10 @@ if (active) {
                     top: 'calc(' + fieldPct(anchorY) + ' - ' + box.h * tree.scale + 'px)',
                     width: box.w,
                     height: box.h,
-                    transform: 'scale(' + tree.scale + ')',
-                    transformOrigin: 'top left',
+                    // BUILD 366: horizontal flip around the top-center keeps the
+                    // trunk anchored while mirroring the canopy.
+                    transform: 'scale(' + (tree.flip ? -tree.scale : tree.scale) + ',' + tree.scale + ')',
+                    transformOrigin: 'center top',
                   }}
                 />
               );

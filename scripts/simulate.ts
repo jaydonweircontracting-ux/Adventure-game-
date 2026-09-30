@@ -7,6 +7,7 @@ import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
+import { npcPersonality, npcAge, npcAgeYears, npcNeeds, villageTarget, npcRelationships, addNPCMemory, npcWage, npcGold, adjustNPCGold, villageEventsForDay } from '../src/game/villageLife';
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText, EDITOR_LOG_MAX } from '../src/game/worldEditor';
 import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE } from '../src/game/mapBuilder';
@@ -735,6 +736,96 @@ console.log('Testing townsfolk living-town simulation...');
   assert(guildNpc.home.x === 1 && guildNpc.home.y === 2, 'Re-anchor did not update guild home');
   const unchanged = reanchorTownsfolk(folk, anchors);
   assert(unchanged.every((n, i) => n === folk[i]), 'Re-anchor changed refs without anchor changes');
+}
+
+console.log('Testing village life layer (BUILD 366)...');
+{
+  const anchors: TownsfolkAnchors = {
+    points: {
+      guild: { x: 90, y: 60 }, chapel: { x: 40, y: 90 }, tavern: { x: 90, y: 90 },
+      farm0: { x: 30, y: 119 }, farm1: { x: 110, y: 119 },
+    },
+    plaza: { x: 70, y: 82 },
+    stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
+    gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
+    patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
+  };
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+  const folk = createTownsfolk(anchors, 847291583);
+  const npc = folk[0];
+
+  // Personality & age: deterministic, in range.
+  const p1 = npcPersonality(npc);
+  const p2 = npcPersonality(npc);
+  assert(JSON.stringify(p1) === JSON.stringify(p2), 'Personality not deterministic');
+  for (const v of Object.values(p1)) assert(v >= 0 && v <= 1, 'Personality trait out of range');
+  assert(['child', 'young', 'adult', 'elder'].includes(npcAge(npc)), 'Bad age category');
+  assert(npcAgeYears(npc) >= 7 && npcAgeYears(npc) <= 74, 'Age years out of range');
+
+  // Needs: deterministic, hunger decays then resets at meals.
+  const morning = npcNeeds(npc, clockAt(7, 0));
+  const preLunch = npcNeeds(npc, clockAt(11, 59));
+  const postLunch = npcNeeds(npc, clockAt(13, 0));
+  assert(JSON.stringify(morning) === JSON.stringify(npcNeeds(npc, clockAt(7, 0))), 'Needs not deterministic');
+  assert(preLunch.hunger < morning.hunger, 'Hunger did not decay before lunch');
+  assert(postLunch.hunger > preLunch.hunger, 'Hunger did not reset after lunch');
+  assert(morning.energy > npcNeeds(npc, clockAt(20, 0)).energy, 'Energy did not drain through the day');
+  for (const v of Object.values(morning)) assert(v >= 0 && v <= 100, 'Need out of 0..100 range');
+
+  // villageTarget: never overrides sleep; hunger override still walks (outdoors).
+  const sleepTarget = villageTarget(npc, anchors, clockAt(2, 0));
+  assert(sleepTarget.activity === 'Sleeping', 'villageTarget overrode sleep');
+  const det1 = villageTarget(npc, anchors, clockAt(10, 0));
+  const det2 = villageTarget(npc, anchors, clockAt(10, 0));
+  assert(det1.activity === det2.activity, 'villageTarget not deterministic');
+
+  // Relationships: housemates are family; deterministic.
+  const rels = npcRelationships(npc, folk, clockAt(10, 0));
+  const rels2 = npcRelationships(npc, folk, clockAt(10, 0));
+  assert(JSON.stringify(rels) === JSON.stringify(rels2), 'Relationships not deterministic');
+  const housemate = folk.find((o) => o.id !== npc.id && o.homeKey === npc.homeKey);
+  if (housemate) {
+    const fam = rels.find((r) => r.targetId === housemate.id);
+    assert(fam?.kind === 'family', 'Housemate not family');
+    assert(fam!.affinity > 0, 'Family affinity not positive');
+  }
+
+  // Memories: seeded, bounded, deduped.
+  assert((npc.memories ?? []).length >= 1, 'No seeded memories');
+  let m = npc;
+  for (let i = 0; i < 20; i++) m = addNPCMemory(m, `event ${i}`, 5, 1);
+  assert(m.memories!.length <= 12, 'Memories exceeded bound');
+  const before = m.memories!.length;
+  m = addNPCMemory(m, 'event 19', 5, 1);
+  assert(m.memories!.length === before, 'Duplicate memory recorded');
+  m = addNPCMemory(m, 'The player saved my life.', 6, 3);
+  assert(m.memories!.some((x) => x.importance === 3), 'Important memory lost');
+
+  // Economy: deterministic, grows with days worked; wages differ by job.
+  const g1 = npcGold(npc, clockAt(10, 0, 5));
+  assert(g1 === npcGold(npc, clockAt(10, 0, 5)), 'Gold not deterministic');
+  assert(npcGold(npc, clockAt(10, 0, 10)) >= g1, 'Gold did not grow with days');
+  const merchant = folk.find((n) => n.archetype === 'merchant')!;
+  const child = folk.find((n) => n.archetype === 'child')!;
+  assert(npcWage(merchant.archetype) > npcWage(child.archetype), 'Wage order wrong');
+  const tipped = adjustNPCGold(npc, 50);
+  assert(npcGold(tipped, clockAt(10, 0, 5)) === g1 + 50, 'Gold delta not applied');
+
+  // Village events: deterministic per day.
+  const e1 = villageEventsForDay(7, 12345);
+  const e2 = villageEventsForDay(7, 12345);
+  assert(JSON.stringify(e1) === JSON.stringify(e2), 'Village events not deterministic');
+  assert(villageEventsForDay(4, 12345).some((e) => e.id.startsWith('market-')), 'No market day event on day 4');
+
+  // Persistence round-trip keeps life state.
+  const saved = serializeTownsfolk([tipped]);
+  const restored = restoreTownsfolk(folk, saved);
+  const rt = restored.find((n) => n.id === tipped.id)!;
+  assert(rt.goldDelta === 50, 'goldDelta not restored');
+  assert((rt.memories ?? []).length === (tipped.memories ?? []).length, 'memories not restored');
 }
 
 console.log('Testing NPC physical movement scenarios (BUILD 312)...');

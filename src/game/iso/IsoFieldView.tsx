@@ -22,6 +22,8 @@ interface IsoFieldViewProps {
   position: Point; // player, field units (0..FIELD_SIZE)
   townsfolk: Townsperson[];
   onExit: () => void; // back to the 2D field
+  onTapMove?: (point: Point) => void; // BUILD 366: tap-to-move target
+  onTalkTo?: (npc: Townsperson) => void; // BUILD 366: tap an NPC to talk
 }
 
 interface Drawable { depth: number; draw: (g: CanvasRenderingContext2D, now: number) => void }
@@ -36,11 +38,14 @@ function faceForDelta(dx: number, dy: number): Face4 {
   return sy > 0 ? 'down' : 'up';
 }
 
-export default function IsoFieldView({ chunk, position, townsfolk, onExit }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTapMove, onTalkTo }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk });
   liveRef.current = { px: position.x, py: position.y, folk: townsfolk };
+  // tap callbacks via ref so the canvas listener always calls the latest
+  const tapRef = useRef({ onTapMove, onTalkTo });
+  tapRef.current = { onTapMove, onTalkTo };
 
   // Real chunk scene — same pure world-gen the 2D renderer uses.
   const scene = useMemo(() => {
@@ -190,12 +195,48 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit }: Iso
           if (ocean) col = palette.field;
           else if (isRoadTile(tx, ty)) col = palette.path;
           else if ((tx + ty) % 2 === 0) col = palette.field;
+          else col = palette.field; // base; dither below adds variety
           g.fillStyle = col;
           g.fill();
-          if (!ocean && (tx * 7 + ty * 13) % 29 === 0) {
-            // sparse grass tuft
-            g.fillStyle = 'rgba(0,0,0,0.08)';
-            g.fillRect(p.x - 1, p.y - 3, 2, 5);
+          // BUILD 366: deterministic per-tile detail (chunk-gen video techniques).
+          const h = (tx * 73856093) ^ (ty * 19349663) ^ (scene.tile.terrain.length * 83492791);
+          const hh2 = ((h ^ (h >>> 13)) * 1274126177) >>> 0;
+          const r1 = (hh2 % 1000) / 1000;
+          const r2 = (((hh2 >>> 10) ^ hh2) % 1000) / 1000;
+          const terr = scene.tile.terrain;
+          if (!ocean && !isRoadTile(tx, ty)) {
+            if ((tx + ty) % 2 === 1) {
+              g.fillStyle = 'rgba(0,0,0,0.05)';
+              g.fill();
+            }
+            if (r1 < 0.10) {
+              // sparse grass tuft
+              g.fillStyle = 'rgba(0,0,0,0.10)';
+              g.fillRect(p.x - 1, p.y - 3, 2, 5);
+            } else if (terr === 'forest' && r1 < 0.14) {
+              // mushroom
+              g.fillStyle = '#c23b2e';
+              g.fillRect(p.x - 2, p.y - 4, 5, 3);
+              g.fillStyle = '#f5f0e0';
+              g.fillRect(p.x - 1, p.y - 3, 1, 1);
+              g.fillRect(p.x + 1, p.y - 3, 1, 1);
+              g.fillStyle = '#e8dcc0';
+              g.fillRect(p.x - 1, p.y - 1, 2, 2);
+            } else if ((terr === 'desert' || terr === 'shore') && r1 < 0.16) {
+              // pebble / shell
+              g.fillStyle = terr === 'shore' ? '#f2e4d8' : '#b9a67f';
+              g.fillRect(p.x - 2, p.y - 1, 4, 2);
+              g.fillStyle = 'rgba(255,255,255,0.5)';
+              g.fillRect(p.x - 1, p.y - 1, 1, 1);
+            } else if (terr === 'rock' && r1 < 0.15) {
+              // stone chip
+              g.fillStyle = 'rgba(0,0,0,0.12)';
+              g.fillRect(p.x - 2, p.y - 2, 4, 3);
+            } else if (r2 < 0.06) {
+              // flower dot (meadow)
+              g.fillStyle = r2 < 0.02 ? '#f2d06b' : r2 < 0.04 ? '#e07856' : '#f5f4e6';
+              g.fillRect(p.x - 1, p.y - 2, 2, 2);
+            }
           }
         }
       }
@@ -295,7 +336,53 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit }: Iso
       g.restore();
     };
     raf = requestAnimationFrame(frame);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
+
+    // BUILD 366: tap-to-move + tap-to-talk. Hit-test NPCs first (screen
+    // distance), then doors (walk to the doorway — the game loop's existing
+    // doorway check fires entry), else walk to the tapped field point.
+    const onTap = (e: PointerEvent) => {
+      const { onTapMove: tapMove, onTalkTo: talk } = tapRef.current;
+      if (!tapMove && !talk) return;
+      const rect = canvas.getBoundingClientRect();
+      const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+      const zm = zoomRef.current;
+      const wpx = rect.width || 1, hpx = rect.height || 1;
+      // inverse of the frame()'s translate/scale/translate camera transform
+      const wx = (sx - wpx / 2) / zm + cam.x;
+      const wy = (sy - hpx / 2) / zm + cam.y;
+      // NPC hit test in screen space (generous 34px radius for touch)
+      if (talk) {
+        let best: Townsperson | null = null; let bestD = 34;
+        for (const npc of liveRef.current.folk) {
+          if (npc.indoors) continue;
+          const w = isoToScreen(npc.position.x, npc.position.y);
+          const px = (w.x - cam.x) * zm + wpx / 2;
+          const py = (w.y - cam.y) * zm + hpx / 2 - 24; // sprite center-ish
+          const d = Math.hypot(px - sx, py - sy);
+          if (d < bestD) { bestD = d; best = npc; }
+        }
+        if (best) { talk(best); return; }
+      }
+      // door hit test: tap near a doorway walks the player to it
+      if (tapMove) {
+        let bestDoor: { x: number; y: number } | null = null; let bestD = 40;
+        for (const b of scene.buildings) {
+          const w = isoToScreen(b.position.x, b.position.y);
+          const px = (w.x - cam.x) * zm + wpx / 2;
+          const py = (w.y - cam.y) * zm + hpx / 2;
+          const d = Math.hypot(px - sx, py - sy);
+          if (d < bestD) { bestD = d; bestDoor = b.position; }
+        }
+        if (bestDoor) { tapMove({ x: bestDoor.x, y: bestDoor.y }); return; }
+        // otherwise walk to the tapped tile (field units == tile space)
+        const t = screenToTile(wx, wy);
+        const tx = Math.min(N - 1, Math.max(0, t.tx));
+        const ty = Math.min(N - 1, Math.max(0, t.ty));
+        tapMove({ x: tx, y: ty });
+      }
+    };
+    canvas.addEventListener('pointerdown', onTap);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); canvas.removeEventListener('pointerdown', onTap); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene]);
 
