@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
+import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
 import { type ChangeEvent, type PointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -14,6 +14,7 @@ import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem } from './
 export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from './game/worldEditor';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
+import { findTalkTarget } from './game/talkTarget';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, buildMosslightHousing, cottageDoorways, mosslightObstacles, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext } from '@/game/townsfolk';
@@ -75,7 +76,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '314';
+const BUILD_NUMBER = '315';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -4736,6 +4737,27 @@ if (active) {
     }, 4000);
     setLogs((currentLogs) => [{ text: `${npc.name} the ${npc.archetype} is ${npc.activity.toLowerCase()}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
   };
+  // Pokémon-style talk: when the player faces an NPC within range, a Talk
+  // button appears beside Attack. Covers quest givers, town NPCs and outdoor
+  // townsfolk — the same handlers as tapping the NPC directly.
+  const talkTarget = useMemo(() => {
+    if (interior || moverMode || markerMode || inputLocked) return null;
+    const inMosslight = currentWorldTile.landmark?.name === 'Mosslight Crossing';
+    const candidates: Array<{ name: string; position: Point; talk: () => void }> = [];
+    for (const giver of QUEST_GIVER_FIELD_NPCS) {
+      if (giver.chunk.x !== chunk.x || giver.chunk.y !== chunk.y) continue;
+      candidates.push({ name: giver.displayName, position: giver.position, talk: () => openQuestDialog(giver.name) });
+    }
+    if (inMosslight) {
+      for (const npc of npcStates) candidates.push({ name: npc.name, position: npc.position, talk: () => talkToNpc(npc) });
+      for (const npc of townsfolk) {
+        if (npc.indoors) continue;
+        candidates.push({ name: npc.name, position: npc.position, talk: () => talkToTownsfolk(npc) });
+      }
+    }
+    if (candidates.length === 0) return null;
+    return findTalkTarget(candidates, position, facing);
+  }, [interior, moverMode, markerMode, inputLocked, currentWorldTile, chunk, npcStates, townsfolk, position, facing]);
   // Road traffic: analytic travelers resolved from the world clock (civ phase 2).
   // Recomputed whenever the clock ticks, so waiting visibly moves traffic.
   // Road links are static for the world seed — built once.
@@ -6866,6 +6888,9 @@ if (active) {
              <span className="equipped-weapon-icon" aria-hidden="true">{equippedBow ? '🏹' : equippedDagger ? '†' : '✊'}</span>
              <span className="equipped-weapon-label">{equippedBow ? 'Bow' : equippedDagger ? 'Dagger' : 'Fists'}</span>
            </div>
+           {talkTarget && (
+             <button className="icon-button field-talk-button" onClick={() => talkTarget.talk()} aria-label={'Talk to ' + talkTarget.name} title={'Talk to ' + talkTarget.name} data-testid="button-talk"><MessageCircle size={16} /></button>
+           )}
            <button className="icon-button field-attack-button" onClick={() => attackGoat()} disabled={attackCooldownMs > 0 || attacking || inputLocked || Boolean(interior) || (mounted && !equippedBow)} aria-label={equippedBow ? (selectedGoat ? 'Loose arrow at target' : 'Loose arrow') : (selectedGoat ? 'Strike selected goat' : 'Strike nearest goat')} title={equippedBow ? 'Fire bow · Space' : (selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space')} aria-disabled={attackCooldownMs > 0 || attacking} data-testid="button-attack">{equippedBow ? '🏹' : <Sword size={16} />}{attackCooldownMs > 0 && <span className="attack-cooldown-ring" style={{ background: 'conic-gradient(rgba(219, 120, 94, .95) ' + ((attackCooldownMs / PLAYER_ATTACK_COOLDOWN_MS) * 100) + '%, rgba(19, 43, 34, .2) 0)' }} aria-hidden="true" />}</button>
          </div>
       </div>

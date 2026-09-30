@@ -243,6 +243,18 @@
 }
 .icon-button:hover, .map-button:hover { transform: translateY(-2px); background: var(--paper-bright); }
 .icon-button[aria-pressed='true'] { color: var(--clay); background: #f0dfc5; }
+/* Pokémon-style talk button: appears beside Attack when facing an NPC. */
+.field-talk-button {
+  border-color: rgba(232, 211, 161, .85);
+  color: #ffe9ad;
+  background: rgba(47, 73, 53, .94);
+  animation: talk-button-pop .18s ease-out;
+}
+.field-talk-button:hover { background: #b26b48; }
+@keyframes talk-button-pop {
+  from { transform: scale(.6); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
 
 .game-layout {
   width: 100%;
@@ -4819,6 +4831,8 @@ body {
   background: transparent;
   color: inherit;
   cursor: pointer;
+  /* Lives inside .field-drops (pointer-events: none) — re-enable taps. */
+  pointer-events: auto;
 }
 .quest-giver .npc-sprite {
   position: absolute;

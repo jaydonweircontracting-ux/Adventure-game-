@@ -9,6 +9,7 @@ import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/g
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, buildMosslightHousing, cottageDoorways, mosslightObstacles, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
+import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 
 let passed = 0;
 let failed = 0;
@@ -380,6 +381,33 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
   assert(facingForDelta(1, 5) === 'down', 'facingForDelta +y wrong');
   assert(facingForDelta(1, -5) === 'up', 'facingForDelta -y wrong');
   assert(facingForDelta(0, 0) === 'right', 'facingForDelta zero wrong');
+}
+
+// ---- BUILD 315: Pokémon-style talk targeting ----
+{
+  const mk = (name: string, x: number, y: number) => ({ name, position: { x, y } });
+  const player = { x: 70, y: 70 };
+  // NPC directly in front (facing down) is picked.
+  let t = findTalkTarget([mk('A', 70, 76), mk('B', 70, 64)], player, 'down');
+  assert(t?.name === 'A', 'talk target should be the NPC in front, got ' + t?.name);
+  // NPC behind the player is ignored even when closer than one ahead.
+  t = findTalkTarget([mk('Behind', 70, 66), mk('Ahead', 70, 78)], player, 'down');
+  assert(t?.name === 'Ahead', 'talk target should prefer facing over proximity, got ' + t?.name);
+  // NPC to the side (outside the facing cone) is ignored.
+  t = findTalkTarget([mk('Side', 78, 70)], player, 'down');
+  assert(t === null, 'talk target should ignore NPCs outside the facing cone');
+  // Beyond talk range: nothing.
+  t = findTalkTarget([mk('Far', 70, 70 + TALK_RANGE + 1)], player, 'down');
+  assert(t === null, 'talk target should ignore NPCs beyond range');
+  // Very close NPC is talkable regardless of facing.
+  t = findTalkTarget([mk('Close', 69, 70)], player, 'down');
+  assert(t?.name === 'Close', 'talk target should allow very close NPCs in any direction');
+  // Nearest in-front NPC wins.
+  t = findTalkTarget([mk('Near', 70, 74), mk('Far2', 70, 78)], player, 'down');
+  assert(t?.name === 'Near', 'talk target should pick the nearest, got ' + t?.name);
+  // Empty roster: nothing.
+  t = findTalkTarget([], player, 'up');
+  assert(t === null, 'talk target should be null with no candidates');
 }
 
 // ---- 12. World clock display + wait math (BUILD 275) ----
