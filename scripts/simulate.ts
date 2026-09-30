@@ -8,7 +8,7 @@ import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from 
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
-import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
+import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText, EDITOR_LOG_MAX } from '../src/game/worldEditor';
 import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE } from '../src/game/mapBuilder';
 import { organicTownSpecs } from '../src/game/organicTowns';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
@@ -392,6 +392,26 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
   assert(split3.paintKeys[0].tx === 3 && split3.paintKeys[0].ty === 5, 'editorFlaggedDeletions paint coords wrong');
   assert(split3.paintKeys[1].tx === 0 && split3.paintKeys[1].ty === 0, 'editorFlaggedDeletions paint coords wrong');
   assert(split3.placedIds.length === 0 && split3.treeIds.length === 0, 'editorFlaggedDeletions paint leaked');
+  // BUILD 353: red ✕ markers are chunk-aware and removable.
+  let xmarks = editorAddXMark([], '4,7', 12.34, 56.78);
+  assert(xmarks.length === 1 && xmarks[0].chunk === '4,7' && xmarks[0].x === 12.3 && xmarks[0].y === 56.8, 'editorAddXMark wrong');
+  xmarks = editorAddXMark(xmarks, '5,7', 1, 2);
+  assert(editorXMarksFor(xmarks, '4,7').length === 1, 'editorXMarksFor did not filter chunk');
+  assert(editorXMarksFor(xmarks, '5,7').length === 1, 'editorXMarksFor missed chunk');
+  const mid = xmarks[0].id;
+  xmarks = editorRemoveXMark(xmarks, mid);
+  assert(xmarks.length === 1 && xmarks[0].chunk === '5,7', 'editorRemoveXMark wrong');
+  // BUILD 353: change log appends, caps at EDITOR_LOG_MAX, formats text.
+  let elog = editorAppendLog([], { build: '353', action: 'stamp', detail: 'stamped tree', chunk: '4,7', x: 1.2, y: 3.4 });
+  assert(elog.length === 1 && typeof elog[0].t === 'number', 'editorAppendLog wrong');
+  for (let i = 0; i < EDITOR_LOG_MAX + 10; i++) {
+    elog = editorAppendLog(elog, { build: '353', action: 'paint', detail: 'stroke ' + i, chunk: '4,7' });
+  }
+  assert(elog.length === EDITOR_LOG_MAX, 'editorAppendLog cap wrong');
+  assert(elog[elog.length - 1].detail === 'stroke ' + (EDITOR_LOG_MAX + 9), 'editorAppendLog cap dropped newest');
+  const ltext = editorLogText(elog.slice(-2));
+  assert(ltext.includes('EDITOR CHANGE LOG') && ltext.includes('paint') && ltext.includes('chunk 4,7'), 'editorLogText wrong');
+  assert(editorLogText([]) === 'EDITOR CHANGE LOG: (no entries yet)', 'editorLogText empty wrong');
 }
 
 // ---- BUILD 341: map-builder tile painting ----

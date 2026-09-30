@@ -10,9 +10,9 @@ import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/rpgBrain';
 import { DEFAULT_WORLD_SEED, formatClockDisplay, ticksUntilHour, type WorldClockState } from '@/game/worldCore';
-import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
+import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem, EditorXMark, EditorLogEntry } from './game/worldEditor';
 export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
-import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from './game/worldEditor';
+import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText } from './game/worldEditor';
 import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, type MapPaints, type MapPaintTile } from './game/mapBuilder';
 import { organicTownSpecs } from './game/organicTowns';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
@@ -85,7 +85,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '352';
+const BUILD_NUMBER = '353';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -3269,7 +3269,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   };
   // Debug world editor (BUILD 274): stamp houses/trees/rocks/roads onto the
   // field, flag generated objects for removal, teleport the player.
-  type EditorTool = 'select' | 'house' | 'tree' | 'pine' | 'rock' | 'roadH' | 'roadV' | 'flag' | 'erase' | 'player';
+  type EditorTool = 'select' | 'house' | 'tree' | 'pine' | 'rock' | 'roadH' | 'roadV' | 'flag' | 'erase' | 'player' | 'xmark';
   const [editorTool, setEditorTool] = useState<EditorTool>('select');
   const [showGrid, setShowGrid] = useState(false);
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
@@ -3343,6 +3343,75 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   }, [hiddenRoadChunks]);
   // BUILD 305: minimize the editor panel so it doesn't block the view.
   const [editorMinimized, setEditorMinimized] = useState(false);
+  // BUILD 353: persistent red ✕ markers (chunk-aware) — the user drops these
+  // on coordinates that need fixing / where something was deleted.
+  const [xMarks, setXMarks] = useState<EditorXMark[]>(() => {
+    try {
+      const raw = localStorage.getItem('worldEditorXMarks');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((m) => m && typeof m.id === 'string' && typeof m.chunk === 'string' && typeof m.x === 'number' && typeof m.y === 'number') : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('worldEditorXMarks', JSON.stringify(xMarks)); } catch { /* ignore */ }
+  }, [xMarks]);
+  // BUILD 353: editor change log — every editor mutation is recorded so the
+  // user can open it in the debug panel, screenshot it, or copy it as text.
+  const [editorLog, setEditorLog] = useState<EditorLogEntry[]>(() => {
+    try {
+      const raw = localStorage.getItem('editorChangeLog');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((e) => e && typeof e.action === 'string' && typeof e.detail === 'string' && typeof e.chunk === 'string') : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('editorChangeLog', JSON.stringify(editorLog)); } catch { /* ignore */ }
+  }, [editorLog]);
+  const [showEditorLog, setShowEditorLog] = useState(false);
+  const [logCopied, setLogCopied] = useState(false);
+  // Append a change-log entry for the current chunk (call at every mutation).
+  const logEditorChange = (action: string, detail: string, x?: number, y?: number) => {
+    setEditorLog((prev) => editorAppendLog(prev, { build: BUILD_NUMBER, action, detail, chunk: chunkKey, x, y }));
+  };
+  const copyEditorLog = () => {
+    const text = editorLogText(editorLog);
+    const done = () => { setLogCopied(true); window.setTimeout(() => setLogCopied(false), 1800); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(done);
+    } else {
+      done();
+    }
+  };
+  // BUILD 353: shared change-log panel for the world editor + map builder.
+  // Clean monospace rows so it screenshots well for the dev.
+  const renderEditorLogPanel = () => (
+    showEditorLog ? (
+      <div className="editor-log-panel" aria-label="Editor change log">
+        <div className="editor-log-title">📋 Editor change log <span className="editor-log-count">{editorLog.length} entries</span></div>
+        <div className="editor-log-list">
+          {editorLog.length === 0 ? (
+            <div className="editor-log-empty">No changes logged yet. Every stamp, erase, flag, move, paint, and marker shows up here.</div>
+          ) : (
+            [...editorLog].reverse().map((e, i) => (
+              <div key={e.t + '-' + i} className="editor-log-entry">
+                <span className="editor-log-time">{new Date(e.t).toLocaleDateString()} {new Date(e.t).toLocaleTimeString()}</span>
+                <span className="editor-log-action">{e.action}</span>
+                <span className="editor-log-detail">{e.detail} · chunk {e.chunk}{typeof e.x === 'number' && typeof e.y === 'number' ? ' (' + e.x.toFixed(1) + ',' + e.y.toFixed(1) + ')' : ''}</span>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="editor-log-actions">
+          <button type="button" className="editor-btn" onClick={copyEditorLog}>
+            {logCopied ? 'Copied!' : '📋 Copy log'}
+          </button>
+          <button type="button" className="editor-btn" onClick={() => setEditorLog([])}>
+            🧹 Clear log
+          </button>
+        </div>
+      </div>
+    ) : null
+  );
   useEffect(() => {
     try { localStorage.setItem('worldEditorObjects', JSON.stringify(placedObjects)); } catch { /* ignore */ }
   }, [placedObjects]);
@@ -3381,11 +3450,15 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     setMapPaints(last.paints);
     setPlacedObjects(last.placed);
     setMapUndo((prev) => prev.slice(0, -1));
+    logEditorChange('undo', 'undid last map-builder action (paint/stamp/clear restored)');
   };
   // BUILD 352: explicit stroke tracking so drag-painting works even when
   // e.buttons is unreliable (some touch browsers) and so the stroke never
   // leaks into camera pan/scroll handlers.
   const mapPaintingRef = useRef(false);
+  // BUILD 353: remember the painted-tile count when a stroke starts so the
+  // change log can record how many tiles the stroke changed.
+  const mapStrokeStartRef = useRef<{ count: number; brush: MapBrush } | null>(null);
   const loadMapPaints = (): MapPaints => {
     try {
       const raw = localStorage.getItem('mapBuilderPaints');
@@ -3439,6 +3512,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
       const hx = Math.round(fx * 10) / 10;
       const hy = Math.round(fy * 10) / 10;
       setPlacedObjects((obs) => editorPlaceObject(obs, 'house', hx, hy, chunkKey));
+      logEditorChange('stamp', 'stamped house (map builder)', hx, hy);
       return;
     }
     const tx = Math.floor(fx / MAP_TILE_UNITS);
@@ -5689,6 +5763,7 @@ if (active) {
     { id: 'roadV', label: '🛤️ Road ↕' },
     { id: 'flag', label: '🚩 Flag' },
     { id: 'erase', label: '🧹 Erase' },
+    { id: 'xmark', label: '❌ Mark' },
     { id: 'player', label: '📍 Teleport' },
   ];
   const copyRemovalList = () => {
@@ -5823,6 +5898,7 @@ if (active) {
                 {editorTool === 'select' && <>👆 Tap a house, generated tree, or placed object to pick it up, then tap the field to drop it.</>}
                 {editorTool === 'flag' && <>🚩 Tap any tree, house, placed object, or painted tile to flag it for removal. Tap again to unflag.</>}
                 {editorTool === 'erase' && <>🧹 Tap a generated tree, placed object, painted tile, or corn stalk to delete it for good.</>}
+                {editorTool === 'xmark' && <>❌ Tap the field to drop a red ✕ marker at those coordinates (needs fixing / something was deleted here). Tap an existing ✕ to remove it.</>}
                 {editorTool === 'player' && <>📍 Tap the field to teleport the player there.</>}
                 {(editorTool === 'house' || editorTool === 'tree' || editorTool === 'pine' || editorTool === 'rock' || editorTool === 'roadH' || editorTool === 'roadV') && <>Tap the field to stamp a {editorTool === 'roadH' ? 'horizontal road' : editorTool === 'roadV' ? 'vertical road' : editorTool}.</>}
               </div>
@@ -5850,9 +5926,11 @@ if (active) {
                   type="button"
                   className="editor-btn"
                   onClick={() => {
+                    const n = placedHere.length;
                     setPlacedObjects((prev) => prev.filter((o) => o.chunk !== chunkKey));
                     setFlaggedItems((prev) => prev.filter((f) => !(f.chunk === chunkKey && f.kind === 'placed')));
                     setSelectedPlacedId(null);
+                    logEditorChange('clear-placed', 'cleared ' + n + ' placed object(s) in chunk');
                   }}
                 >
                   Clear placed (chunk)
@@ -5879,6 +5957,7 @@ if (active) {
                     });
                     setFlaggedItems((prev) => prev.filter((f) => !(f.chunk === chunkKey && (f.kind === 'placed' || f.kind === 'tree' || f.kind === 'paint'))));
                     setSelectedPlacedId(null);
+                    logEditorChange('delete-flagged', 'deleted flagged: ' + placedIds.length + ' placed, ' + treeIds.length + ' trees, ' + paintKeys.length + ' painted tiles');
                   }}
                 >
                   🗑️ Delete flagged ({flaggedHere.filter((f) => f.kind !== 'house').length})
@@ -5911,7 +5990,11 @@ if (active) {
                 <button type="button" className="editor-btn" onClick={() => setGameZoom(1)}>
                   Reset zoom
                 </button>
+                <button type="button" className="editor-btn" onClick={() => setShowEditorLog((s) => !s)}>
+                  📋 Change log ({editorLog.length})
+                </button>
               </div>
+              {renderEditorLogPanel()}
             </div>
           )}
           {/* BUILD 341: map-builder overlay + tile palette. The overlay sits
@@ -5925,6 +6008,7 @@ if (active) {
                 try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
                 mapPaintingRef.current = true;
                 pushMapUndo();
+                mapStrokeStartRef.current = { count: (mapPaints[chunkKey] ?? []).length, brush: mapBrush };
                 paintAtEvent(e, true);
               }}
               onPointerMove={(e) => {
@@ -5938,7 +6022,19 @@ if (active) {
                 } catch { /* ignore */ }
                 paintAtEvent(e, false);
               }}
-              onPointerUp={(e) => { e.stopPropagation(); mapPaintingRef.current = false; }}
+              onPointerUp={(e) => {
+                e.stopPropagation();
+                mapPaintingRef.current = false;
+                const start = mapStrokeStartRef.current;
+                mapStrokeStartRef.current = null;
+                if (start && start.brush !== 'house') {
+                  const now = (mapPaints[chunkKey] ?? []).length;
+                  const delta = now - start.count;
+                  if (delta !== 0) {
+                    logEditorChange('paint', (start.brush === 'erase' ? 'erased ' : 'painted ') + Math.abs(delta) + ' tile(s) with ' + start.brush + ' brush');
+                  }
+                }
+              }}
               onPointerCancel={() => { mapPaintingRef.current = false; }}
               onLostPointerCapture={() => { mapPaintingRef.current = false; }}
               onContextMenu={(e) => e.preventDefault()}
@@ -5975,9 +6071,16 @@ if (active) {
                 <button
                   type="button"
                   className="map-builder-btn"
-                  onClick={() => { pushMapUndo(); setMapPaints((p) => clearChunkPaints(p, chunkKey)); }}
+                  onClick={() => { pushMapUndo(); const n = (mapPaints[chunkKey] ?? []).length; setMapPaints((p) => clearChunkPaints(p, chunkKey)); logEditorChange('clear-paint', 'cleared ' + n + ' painted tile(s) in chunk'); }}
                 >
                   🧹 Clear painted tiles (chunk)
+                </button>
+                <button
+                  type="button"
+                  className="map-builder-btn"
+                  onClick={() => setShowEditorLog((s) => !s)}
+                >
+                  📋 Change log ({editorLog.length})
                 </button>
               </div>
               <div className="map-builder-hint">
@@ -5987,6 +6090,7 @@ if (active) {
                     ? '🧹 Tap or drag to erase painted tiles.'
                     : 'Tap or drag on the field to paint. Water and forest tiles block movement.'}
               </div>
+              {renderEditorLogPanel()}
             </div>
           )}
           {mapBuilderMode && mapBuilderMin && (
@@ -6375,6 +6479,36 @@ if (active) {
               whiteSpace: 'nowrap',
             }}>{mark.x},{mark.y}</span>
           ])}
+          {/* BUILD 353: persistent red ✕ markers from the World Editor ❌ Mark
+              tool — chunk-aware, rendered with coordinates so they screenshot
+              cleanly for the change log. */}
+          {moverMode && editorXMarksFor(xMarks, chunkKey).map((m) => [
+            <span key={'xmark-' + m.id} aria-hidden="true" className="editor-xmark"
+              style={{
+                position: 'absolute',
+                left: fieldPct(m.x),
+                top: fieldPct(m.y),
+                transform: 'translate(-50%, -50%)',
+                fontSize: '24px',
+                lineHeight: 1,
+                filter: 'drop-shadow(0 0 3px #fff)',
+                pointerEvents: 'none',
+                zIndex: 57,
+              }} title={'❌ (' + m.x + ', ' + m.y + ') chunk ' + m.chunk}>❌</span>,
+            <span key={'xmark-label-' + m.id} aria-hidden="true" style={{
+              position: 'absolute',
+              left: fieldPct(m.x - 4),
+              top: fieldPct(m.y + 2.5),
+              fontSize: '10px',
+              color: '#b00000',
+              background: 'rgba(255,255,255,0.85)',
+              padding: '1px 3px',
+              borderRadius: '3px',
+              pointerEvents: 'none',
+              zIndex: 58,
+              whiteSpace: 'nowrap',
+            }}>{m.x},{m.y}</span>
+          ])}
           {currentWorldTile.waterFeature && <div className={'field-water world-water-' + currentWorldTile.waterFeature + (currentWorldTile.waterEdge ? ' water-edge-' + currentWorldTile.waterEdge : '')} aria-hidden="true" />}
            <div className="field-accents" aria-hidden="true">
              {fieldAccents.map((accent) => (
@@ -6745,7 +6879,11 @@ if (active) {
                     const dist = Math.hypot(c.x - fx, c.y - fy);
                     if (dist < bestDist) { bestDist = dist; best = c; }
                   }
-                  if (best) setFlaggedItems((prev) => editorToggleFlag(prev, best as FlaggedItem));
+                  if (best) {
+                    const wasFlagged = flaggedItems.some((f) => f.id === (best as FlaggedItem).id);
+                    setFlaggedItems((prev) => editorToggleFlag(prev, best as FlaggedItem));
+                    logEditorChange(wasFlagged ? 'unflag' : 'flag', (wasFlagged ? 'unflagged ' : 'flagged ') + (best as FlaggedItem).label + ' (' + (best as FlaggedItem).kind + ')', (best as FlaggedItem).x, (best as FlaggedItem).y);
+                  }
                   return;
                 }
                 // Teleport tool: walk the player to the tap.
@@ -6781,26 +6919,45 @@ if (active) {
                       const tid = best.id as number;
                       setDeletedGenTrees((prev) => ({ ...prev, [chunkKey]: [...(prev[chunkKey] ?? []), tid] }));
                       setFlaggedItems((prev) => prev.filter((f) => f.id !== 'gen-tree-' + chunkKey + '-' + tid));
+                      logEditorChange('erase-tree', 'deleted generated tree #' + tid, best.x, best.y);
                     } else if (best.kind === 'placed') {
                       const pid = best.id as string;
                       setPlacedObjects((prev) => prev.filter((o) => o.id !== pid));
                       setFlaggedItems((prev) => prev.filter((f) => f.id !== pid));
+                      logEditorChange('erase-placed', 'deleted placed object ' + pid.slice(-6), best.x, best.y);
                     } else if (best.kind === 'paint') {
                       const ptx = best.tx as number;
                       const pty = best.ty as number;
                       setMapPaints((prev) => paintTile(prev, chunkKey, ptx, pty, null));
                       setFlaggedItems((prev) => prev.filter((f) => f.id !== 'paint-' + chunkKey + '-' + ptx + '-' + pty));
+                      logEditorChange('erase-paint', 'erased painted tile (' + ptx + ',' + pty + ')', best.x, best.y);
                     } else {
                       const sid = best.id as number;
                       setDeletedCorn((prev) => ({ ...prev, [chunkKey]: [...(prev[chunkKey] ?? []), sid] }));
                       setCornStalks((prev) => prev.filter((s) => s.id !== sid));
+                      logEditorChange('erase-corn', 'deleted corn stalk #' + sid, best.x, best.y);
                     }
+                  }
+                  return;
+                }
+                // BUILD 353: red ✕ marker tool — toggle a persistent chunk-aware
+                // marker at the tap. Marking means "needs fixing / I deleted
+                // something here" so no change gets missed.
+                if (editorTool === 'xmark') {
+                  const existing = xMarks.find((m) => m.chunk === chunkKey && Math.hypot(m.x - fx, m.y - fy) < 4);
+                  if (existing) {
+                    setXMarks((prev) => editorRemoveXMark(prev, existing.id));
+                    logEditorChange('remove-xmark', 'removed red ✕ marker', existing.x, existing.y);
+                  } else {
+                    setXMarks((prev) => editorAddXMark(prev, chunkKey, fx, fy));
+                    logEditorChange('add-xmark', 'red ✕ marker: needs fixing / deleted here', fx, fy);
                   }
                   return;
                 }
                 // Stamp tools: place a new object at the tap.
                 if (editorTool !== 'select') {
                   setPlacedObjects((prev) => editorPlaceObject(prev, editorTool, fx, fy, chunkKey));
+                  logEditorChange('stamp', 'stamped ' + editorTool, fx, fy);
                   return;
                 }
                 // BUILD 352: Select tool with nothing held — pick up the nearest
@@ -6821,6 +6978,7 @@ if (active) {
                     setPlacedObjects((prev) => [...prev, { id: pid, kind, x: Math.round(best!.x * 10) / 10, y: Math.round(best!.y * 10) / 10, chunk: chunkKey }]);
                     setFlaggedItems((prev) => prev.filter((f) => f.id !== 'gen-tree-' + chunkKey + '-' + tid));
                     setSelectedPlacedId(pid);
+                    logEditorChange('pickup-tree', 'picked up generated tree #' + tid + ' (now a movable placed ' + kind + ')', Math.round(best!.x * 10) / 10, Math.round(best!.y * 10) / 10);
                     return;
                   }
                 }
@@ -6838,12 +6996,15 @@ if (active) {
                   const offY = newTop - dw.rect.top;
                   setHouseOffsets((prev) => ({ ...prev, [selectedHouse]: { x: offX, y: offY } }));
                   setSelectedHouse(null);
+                  logEditorChange('move-house', 'moved generated house ' + selectedHouse, fx, fy);
                   return;
                 }
                 // Select tool: tap-to-place a picked-up placed object.
                 if (selectedPlacedId) {
+                  const moved = placedObjects.find((o) => o.id === selectedPlacedId);
                   setPlacedObjects((prev) => prev.map((o) => o.id === selectedPlacedId ? { ...o, x: fx, y: fy } : o));
                   setSelectedPlacedId(null);
+                  logEditorChange('move-placed', 'moved placed ' + (moved ? moved.kind : 'object') + ' ' + selectedPlacedId.slice(-6), fx, fy);
                 }
               } : undefined}
             >
@@ -6916,6 +7077,7 @@ if (active) {
                     setPlacedObjects((prev) => prev.filter((p) => p.id !== o.id));
                     setFlaggedItems((prev) => prev.filter((f) => f.id !== o.id));
                     if (selectedPlacedId === o.id) setSelectedPlacedId(null);
+                    logEditorChange('erase-placed', 'deleted placed ' + o.kind + ' ' + o.id.slice(-6), o.x, o.y);
                     return;
                   }
                   if (editorTool !== 'select') return;

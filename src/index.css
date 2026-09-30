@@ -4565,6 +4565,70 @@ body {
   z-index: 5;
 }
 
+/* BUILD 353: editor change-log panel. Dark, monospace, screenshot-friendly. */
+.editor-log-panel {
+  margin-top: 8px;
+  background: rgba(10, 12, 16, 0.94);
+  border: 1px solid #4a4a4a;
+  border-radius: 6px;
+  padding: 8px;
+  max-width: 100%;
+}
+.editor-log-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+}
+.editor-log-count {
+  font-weight: 400;
+  color: #9fd3ff;
+  font-size: 11px;
+}
+.editor-log-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+.editor-log-empty {
+  font-size: 11px;
+  color: #aaa;
+  padding: 6px 2px;
+}
+.editor-log-entry {
+  font-family: monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: #e8e8e8;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 3px solid #4a90d9;
+  padding: 3px 6px;
+  border-radius: 2px;
+  word-break: break-word;
+}
+.editor-log-entry .editor-log-time {
+  color: #9fd3ff;
+  margin-right: 6px;
+}
+.editor-log-entry .editor-log-action {
+  display: inline-block;
+  color: #ffd76a;
+  font-weight: 700;
+  margin-right: 6px;
+  min-width: 78px;
+}
+.editor-log-entry .editor-log-detail {
+  color: #d8d8d8;
+}
+.editor-log-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 /* Coordinate grid overlay */
 .editor-grid {
   position: absolute;
