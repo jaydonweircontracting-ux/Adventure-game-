@@ -1,3 +1,4 @@
+import IsoRoomDemo from './game/iso/IsoRoom';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
@@ -88,7 +89,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '355';
+const BUILD_NUMBER = '356';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -8625,6 +8626,11 @@ function Home() {
 }
 
 function Router() {
+  // BUILD 356: isometric 2.5D vertical slice (?iso=1). Separate demo route —
+  // the main game renderer and simulation are untouched.
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('iso') === '1') {
+    return <IsoRoomDemo />;
+  }
   return <RoutedErrorBoundary><Switch><Route path="/" component={Home} /><Route component={NotFound} /></Switch></RoutedErrorBoundary>;
 }
 
