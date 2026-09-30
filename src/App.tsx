@@ -85,7 +85,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '347';
+const BUILD_NUMBER = '348';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -3182,6 +3182,21 @@ const QUEST_GIVER_FIELD_NPCS: Array<{ name: string; displayName: string; title: 
   { name: 'Kess', displayName: 'Kess', title: 'Bridge-keeper', chunk: { x: 3, y: 12 }, position: { x: 70, y: 60 }, sprite: 'npc-warrior' },
   { name: 'Bram', displayName: 'Old Bram', title: 'Fisher', chunk: { x: 4, y: 8 }, position: { x: 60, y: 70 }, sprite: 'npc-rogue' },
 ];
+
+// BUILD 348: RuneScape-style dialogue faces. Role -> sprite-sheet column,
+// matching the column the NPC wears in the world.
+const FACE_ROLE_COLUMN: Record<string, number> = { warrior: 1, mage: 2, guide: 3, rogue: 4 };
+function facePortraitStyle(role: string): CSSProperties {
+  return { '--npc-appearance-x': (-(FACE_ROLE_COLUMN[role] ?? 0) * 32) + 'px' } as CSSProperties;
+}
+// Quest giver name -> role for their dialogue face.
+function questGiverFaceRole(name: string): string {
+  const lowered = name.toLowerCase();
+  const field = QUEST_GIVER_FIELD_NPCS.find((g) => g.name.toLowerCase() === lowered);
+  if (field) return field.sprite.replace('npc-', '');
+  const interior: Record<string, string> = { elsa: 'guide', rowan: 'warrior', 'steward anselm': 'mage', mabel: 'guide', 'father aldous': 'mage' };
+  return interior[lowered] ?? 'guide';
+}
 
 function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equippedDagger: boolean; equippedBow: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[] } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
@@ -7290,7 +7305,7 @@ if (active) {
         {npcDialogue && (
           <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="npc-dialogue-title">
             <div className="npc-dialogue-card">
-              <div className={'dialogue-portrait npc-' + npcDialogue.role} data-facing={npcDialogue.facing}><span className="npc-sprite" /></div>
+              <div className="dialogue-portrait is-face" style={facePortraitStyle(npcDialogue.role)}><span className="npc-sprite" /></div>
               <div className="npc-dialogue-copy">
                 <span className="dialogue-kicker">{npcDialogue.title}</span>
                 <h2 id="npc-dialogue-title">{npcDialogue.name}</h2>
@@ -7377,7 +7392,7 @@ if (active) {
           return (
             <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="carriage-dialogue-title">
               <div className="npc-dialogue-card carriage-dialogue-card">
-                <div className={'dialogue-portrait npc-guide'} data-facing="down"><span className="npc-sprite" /></div>
+                <div className="dialogue-portrait is-face" style={facePortraitStyle('guide')}><span className="npc-sprite" /></div>
                 <div className="npc-dialogue-copy">
                   <span className="dialogue-kicker">Carriage Service</span>
                   <h2 id="carriage-dialogue-title">{driver.name}</h2>
@@ -7429,7 +7444,7 @@ if (active) {
         {tavernMenuOpen && (
           <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="tavern-menu-title">
             <div className="npc-dialogue-card tavern-menu-card">
-              <div className="dialogue-portrait npc-guide" data-facing="down"><span className="npc-sprite" /></div>
+              <div className="dialogue-portrait is-face" style={facePortraitStyle('guide')}><span className="npc-sprite" /></div>
               <div className="npc-dialogue-copy">
                 <span className="dialogue-kicker">The Rusty Tankard</span>
                 <h2 id="tavern-menu-title">Mira, Bartender</h2>
@@ -7461,7 +7476,7 @@ if (active) {
           return (
             <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="quest-dialogue-title" data-testid="overlay-quest-dialogue">
               <div className="npc-dialogue-card quest-dialogue-card">
-                <div className="dialogue-portrait npc-guide" data-facing="down"><span className="npc-sprite" /></div>
+                <div className="dialogue-portrait is-face" style={facePortraitStyle(questGiverFaceRole(def.giver.name))}><span className="npc-sprite" /></div>
                 <div className="npc-dialogue-copy">
                   <span className="dialogue-kicker">Quest {def.storyQuest ? '· ⭐ Story' : ''}</span>
                   <h2 id="quest-dialogue-title">{def.title}</h2>
@@ -7494,7 +7509,7 @@ if (active) {
           return (
             <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="townsfolk-dialogue-title" data-testid="townsfolk-dialogue">
               <div className="npc-dialogue-card townsfolk-dialogue">
-                <div className={'dialogue-portrait npc-' + npc.role} data-facing={npc.facing} style={npcAppearanceStyle(npc.id, npc.archetype) as CSSProperties}><span className="npc-sprite" /></div>
+                <div className="dialogue-portrait is-face" style={npcAppearanceStyle(npc.id, npc.archetype) as CSSProperties}><span className="npc-sprite" /></div>
                 <div className="npc-dialogue-copy">
                   <span className="dialogue-kicker">{npc.archetype} · {npc.activity}</span>
                   <h2 id="townsfolk-dialogue-title">{npc.name}</h2>

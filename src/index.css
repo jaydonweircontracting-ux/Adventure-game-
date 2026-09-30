@@ -2700,6 +2700,21 @@ body {
 .dialogue-portrait.npc-mage .npc-sprite { background-position-x: -64px; }
 .dialogue-portrait.npc-guide .npc-sprite { background-position-x: -96px; }
 .dialogue-portrait.npc-rogue .npc-sprite { background-position-x: -128px; }
+/* BUILD 348: RuneScape-style face portraits — 3x head crop, always front-facing.
+   --npc-appearance-x carries the speaker's sheet column (px at 1x); scale it
+   to the 3x background-size. transform is cleared so body-scale never shifts
+   the face; the per-NPC tint filter still applies. */
+.dialogue-portrait.is-face .npc-sprite {
+  width: 96px;
+  height: 96px;
+  left: -16px;
+  top: 9px;
+  background-size: 576px 960px;
+  background-position-x: calc(var(--npc-appearance-x, 0px) * 3);
+  background-position-y: 0;
+  transform: none;
+  filter: var(--npc-appearance-filter, none);
+}
 .npc-dialogue-copy { min-width: 0; }
 .dialogue-kicker { color: var(--clay); font: 9px var(--app-font-mono); letter-spacing: .1em; text-transform: uppercase; }
 .npc-dialogue-copy h2 { margin: 3px 0 5px; font-size: 20px; }
@@ -2745,6 +2760,7 @@ body {
   .npc-dialogue-card { grid-template-columns: 48px minmax(0, 1fr); gap: 10px; padding: 12px; }
   .dialogue-portrait { width: 48px; height: 58px; }
   .dialogue-portrait .npc-sprite { left: 8px; top: 22px; }
+  .dialogue-portrait.is-face .npc-sprite { left: -24px; top: 2px; }
   .class-choice-grid { grid-template-columns: 1fr; }
 }
 
