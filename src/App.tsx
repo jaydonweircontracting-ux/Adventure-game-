@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '251';
+const BUILD_NUMBER = '252';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -3282,7 +3282,11 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
              if (freshDoorway) {
                // Use the doorway's computed exterior position (just outside the
                // door, south of the building rect), not an arbitrary offset.
-               exitPosition = { x: freshDoorway.area.exteriorPosition.x, y: freshDoorway.area.exteriorPosition.y };
+               // Apply mover offsets so the exit follows the house visual —
+               // otherwise the player appears at the stale base position and
+               // can get stuck inside the offset collision rect.
+               const off = houseOffsetsRef.current[doorwayId] || { x: 0, y: 0 };
+               exitPosition = { x: freshDoorway.area.exteriorPosition.x + off.x, y: freshDoorway.area.exteriorPosition.y + off.y };
              }
            }
            interiorDoorwayIdRef.current = null;
