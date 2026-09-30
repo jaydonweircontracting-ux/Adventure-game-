@@ -88,15 +88,15 @@ export const QUESTS: QuestDef[] = [
     giver: {
       name: 'Mira',
       location: 'The Rusty Tankard tavern, Mosslight Crossing',
-      hint: 'They say Mira at the Tankard is paying for rat tails — her cellar is overrun.',
+      hint: 'They say Mira at the Tankard is paying for rat tails — her cellar is overrun. Look for the hatch behind the bar.',
     },
     stages: [
       { id: 'talk-mira', kind: 'talk', description: 'Talk to Mira at the Rusty Tankard', target: 'Mira' },
-      { id: 'kill-rats', kind: 'kill', description: 'Kill rats in the tavern cellar (0/5)', target: 'rat', count: 5 },
+      { id: 'kill-rats', kind: 'kill', description: 'Descend through the hatch behind the bar and kill the cellar rats (0/5)', target: 'rat', count: 5 },
       { id: 'return-mira', kind: 'talk', description: 'Return to Mira', target: 'Mira' },
     ],
     rewards: { coins: 25, xp: 40, items: ['Rat-skin gloves', 'Bread'] },
-    description: 'Mira\'s cellar is overrun with rats. She will pay for every tail.',
+    description: 'Mira\'s cellar is overrun with rats. Descend through the hatch behind the bar and deal with them — she will pay for every tail.',
     rumor: 'They say Mira at the Tankard is paying for rat tails...',
   },
   {
@@ -273,6 +273,27 @@ export const QUESTS: QuestDef[] = [
 
 export function questById(id: string): QuestDef | undefined {
   return QUESTS.find((q) => q.id === id);
+}
+
+export type QuestGiverMarker = 'available' | 'turnin' | null;
+
+/**
+ * BUILD 326: which quest marker a giver should show.
+ * - 'available' (!): the giver has a quest the player has not picked up.
+ * - 'turnin' (?): the giver is the target of the player's current talk stage
+ *   (quest ready to advance/complete with them).
+ * - null: quest active but not at a talk-to-giver stage, or already completed.
+ * Pure, so the sim covers the marker-state transitions.
+ */
+export function markerForGiver(def: QuestDef, states: QuestState[]): QuestGiverMarker {
+  const state = states.find((s) => s.questId === def.id);
+  if (!state) return 'available';
+  if (state.status !== 'active') return null;
+  const stage = def.stages[state.stageIndex];
+  if (stage && stage.kind === 'talk' && stage.target && stage.target.toLowerCase() === def.giver.name.toLowerCase()) {
+    return 'turnin';
+  }
+  return null;
 }
 
 export function storyQuest(): QuestDef {

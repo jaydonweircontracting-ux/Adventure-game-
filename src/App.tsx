@@ -15,6 +15,7 @@ export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEdi
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from './game/worldEditor';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 import { findTalkTarget } from './game/talkTarget';
+import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cellarRats';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, type TouchHoldState } from './game/touchInput';
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
@@ -62,7 +63,7 @@ import { isInMeleeArc } from '@/game/combat';
 import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS, gearForMonster, bonesForMonster } from '@/game/ai';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, LOCKPICK_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
-import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, questProgressText, questRumors, serializeQuestStates, parseQuestStates, type QuestState, type QuestEvent, type QuestDef } from '@/game/quests';
+import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, questProgressText, questRumors, serializeQuestStates, parseQuestStates, markerForGiver, type QuestState, type QuestEvent, type QuestDef } from '@/game/quests';
 import { chestsForChunk, attemptLockpick, serializeOpenedChests, parseOpenedChests, type LockedChest } from '@/game/lockpicking';
 import { sitesForActiveStages, resolveSiteChunk, chunkSatisfiesStage, type ActiveQuestStage } from '@/game/questSites';
 import { playCombatSound } from '@/game/effects';
@@ -79,7 +80,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '325';
+const BUILD_NUMBER = '326';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -729,7 +730,7 @@ function resolveFieldMovement(current: Point, movement: Point, chunk: Point, goa
   return null;
 }
 
-type InteriorArea = { id: string; name: string; description: string; roomType: 'guild' | 'inn' | 'chapel' | 'building' | 'prison' | 'tavern'; exteriorPosition: Point };
+type InteriorArea = { id: string; name: string; description: string; roomType: 'guild' | 'inn' | 'chapel' | 'building' | 'prison' | 'tavern' | 'cellar'; exteriorPosition: Point };
 type PrisonState = {
   foundShiv: boolean;
   talkedToPrisoner: boolean;
@@ -1030,11 +1031,29 @@ const interiorFurnitureCollision: Record<InteriorArea['roomType'], InteriorColli
     { left: 68, top: 60, right: 88, bottom: 80 }, // sewer grate (interactable, not blocking)
     { left: 40, top: 8, right: 60, bottom: 20 }, // cell bars (wall)
   ],
+  cellar: [
+    { left: 8, top: 18, right: 20, bottom: 40 }, // barrel row west
+    { left: 80, top: 18, right: 92, bottom: 40 }, // barrel row east
+    { left: 10, top: 66, right: 26, bottom: 84 }, // grain sacks
+    { left: 74, top: 66, right: 90, bottom: 84 }, // crate stack
+    // The entry ladder (x 44..56, bottom) stays walkable: it is the exit.
+  ],
 };
 
 function isInteriorPositionBlocked(position: Point, area: InteriorArea) {
   return (interiorFurnitureCollision[area.roomType] || []).some((rect) => pointInRect(position, rect));
 }
+
+// BUILD 326: the Rusty Tankard's cellar — the real destination for the
+// "Rats in the Cellar" quest. Entered through the hatch in the tavern (not a
+// field doorway), exited back up to the tavern; exteriorPosition unused.
+const TANKARD_CELLAR_AREA: InteriorArea = {
+  id: 'rusty-tankard-cellar',
+  name: 'Tankard Cellar',
+  description: 'A low, earthy cellar beneath the Rusty Tankard. Something rustles between the barrels.',
+  roomType: 'cellar',
+  exteriorPosition: { x: 70, y: 70 },
+};
 
 type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
 type GoatStateName = GoatAIState;
@@ -2963,7 +2982,7 @@ function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: Player
   return <section className="satchel-stats-panel" role="tabpanel" aria-label="Adventurer Stats"><div className="satchel-stats-heading"><span className="atlas-eyebrow">Character growth</span><h3>Adventurer Stats</h3></div><div className="satchel-stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div><div className="satchel-stats-list">{STAT_KEYS.map((stat) => <div className="satchel-stat-row" key={stat} data-testid={'stat-row-' + stat}><span className="satchel-stat-key">{stat.toUpperCase()}</span><span className="satchel-stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span><b className="satchel-stat-value">{playerStats[stat]}</b><button className="satchel-stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button></div>)}</div><div className="satchel-stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div></section>;
 }
 
-function InteriorRoom({ area, position, facing, moving, equippedDagger, equippedBow, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onTalkToQuestGiver, onEnterDungeon, onTavernSleep }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; equippedBow: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onTalkToQuestGiver: (name: string) => void; onEnterDungeon: () => void; onTavernSleep: () => void }) {
+function InteriorRoom({ area, position, facing, moving, equippedDagger, equippedBow, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onTalkToQuestGiver, onEnterDungeon, onEnterCellar, onTavernSleep, cellarRats, onStrikeCellarRat, questStates }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; equippedBow: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onTalkToQuestGiver: (name: string) => void; onEnterDungeon: () => void; onEnterCellar: () => void; onTavernSleep: () => void; cellarRats: CellarRat[]; onStrikeCellarRat: (ratId: number) => void; questStates: QuestState[] }) {
   // Tavern patron nameplates auto-hide (bartender Mira's stays); tapping a patron pops theirs for 4s.
   const [shownPatron, setShownPatron] = useState<string | null>(null);
   const patronTimerRef = useRef<number | null>(null);
@@ -2973,6 +2992,23 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
     patronTimerRef.current = window.setTimeout(() => { setShownPatron(null); patronTimerRef.current = null; }, 4000);
   };
   // Room-type-specific furniture: each building type gets its own visual identity.
+  // BUILD 326: quest-giver badges are quest-state-aware — '!' only while the
+  // quest is unaccepted, '?' when the giver is the current turn-in target,
+  // nothing otherwise (fixes the stuck yellow marker after accepting).
+  const giverMarker = (name: string) => {
+    const lowered = name.toLowerCase();
+    const def = QUESTS.find((q) => {
+      const giver = q.giver.name.toLowerCase();
+      return giver === lowered || giver.includes(lowered) || lowered.includes(giver);
+    });
+    return def ? markerForGiver(def, questStates) : null;
+  };
+  const giverBadge = (name: string) => {
+    const marker = giverMarker(name);
+    if (marker === 'available') return <span className="quest-giver-badge" aria-hidden="true">!</span>;
+    if (marker === 'turnin') return <span className="quest-giver-badge is-turnin" aria-hidden="true">?</span>;
+    return null;
+  };
   const furniture = {
     guild: (<><span className="interior-rug" /><span className="interior-workbench" /><span className="interior-forge" aria-hidden="true"><span className="forge-fire"><span className="forge-flame forge-flame-back" /><span className="forge-flame forge-flame-mid" /><span className="forge-flame forge-flame-core" /><span className="forge-sparks"><i /><i /><i /><i /><i /></span></span><span className="forge-logs" /></span><span className="interior-weapon-rack" aria-hidden="true"><span className="rack-weapon" style={{ left: '8%', height: '58%', transform: 'rotate(-6deg)' }} /><span className="rack-weapon" style={{ left: '27%', height: '66%', transform: 'rotate(4deg)' }} /><span className="rack-weapon" style={{ left: '46%', height: '60%', transform: 'rotate(-3deg)' }} /><span className="rack-weapon" style={{ left: '65%', height: '68%', transform: 'rotate(5deg)' }} /><span className="rack-weapon" style={{ left: '82%', height: '56%', transform: 'rotate(-5deg)' }} /></span><span className="interior-quest-board" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     inn: (<><span className="interior-rug" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-bar" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
@@ -2980,6 +3016,7 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
     building: (<><span className="interior-rug" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     tavern: (<><span className="interior-rug" /><span className="interior-bed" aria-hidden="true" /><span className="interior-bar-counter" aria-hidden="true"><span className="bar-mug mug-1" /><span className="bar-mug mug-2" /><span className="bar-mug mug-3" /></span><span className="interior-stool stool-1" aria-hidden="true" /><span className="interior-stool stool-2" aria-hidden="true" /><span className="interior-stool stool-3" aria-hidden="true" /><span className="interior-round-table table-1" aria-hidden="true"><span className="bar-mug table-mug" /><span className="table-candle" /></span><span className="interior-round-table table-2" aria-hidden="true"><span className="bar-mug table-mug" /><span className="table-candle" /></span><span className="interior-barrel barrel-1" aria-hidden="true" /><span className="interior-barrel barrel-2" aria-hidden="true" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     prison: (<><span className="prison-bars" /><span className="prison-straw-bed" /><span className="prison-sewer-grate" /><span className="prison-torch" /><span className="interior-lantern lantern-left" /></>),
+    cellar: (<><span className="cellar-barrel cellar-barrel-1" aria-hidden="true" /><span className="cellar-barrel cellar-barrel-2" aria-hidden="true" /><span className="cellar-sacks" aria-hidden="true" /><span className="cellar-crates" aria-hidden="true" /><span className="cellar-cobweb cellar-cobweb-1" aria-hidden="true" /><span className="cellar-cobweb cellar-cobweb-2" aria-hidden="true" /><span className="cellar-ladder" aria-hidden="true" /><span className="interior-lantern lantern-left" /></>),
   }[area.roomType];
   return (
     <div className={'interior-scene interior-' + area.roomType + ' interior-variant-' + (Math.abs(area.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={area.name + ' interior'} data-testid={'interior-' + area.id}>
@@ -2993,17 +3030,17 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
       {area.id === 'wayfarer-guild' && (
         <>
           <button type="button" className="interior-npc npc-guide quest-giver" onClick={() => onTalkToQuestGiver('Elsa')} style={{ ...npcAppearanceStyle('guild-quest-elsa', 'guide'), left: '20%', top: '52%' }} aria-label="Talk to Elsa, the seamstress" data-testid="guild-quest-elsa" data-facing="down">
-            <span className="quest-giver-badge" aria-hidden="true">!</span>
+            {giverBadge('Elsa')}
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Elsa</strong><small>Seamstress · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
           <button type="button" className="interior-npc npc-warrior quest-giver" onClick={() => onTalkToQuestGiver('Rowan')} style={{ ...npcAppearanceStyle('guild-quest-rowan', 'warrior'), left: '36%', top: '58%' }} aria-label="Talk to Rowan, guard captain" data-testid="guild-quest-rowan" data-facing="down">
-            <span className="quest-giver-badge" aria-hidden="true">!</span>
+            {giverBadge('Rowan')}
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Rowan</strong><small>Guard captain · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
           <button type="button" className="interior-npc npc-mage quest-giver" onClick={() => onTalkToQuestGiver('Steward Anselm')} style={{ ...npcAppearanceStyle('guild-quest-anselm', 'mage'), left: '80%', top: '30%' }} aria-label="Talk to Steward Anselm" data-testid="guild-quest-anselm" data-facing="down">
-            <span className="quest-giver-badge" aria-hidden="true">!</span>
+            {giverBadge('Steward Anselm')}
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Steward Anselm</strong><small>King's steward · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
@@ -3012,12 +3049,12 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
       {area.id === 'rootbound-chapel' && (
         <>
           <button type="button" className="interior-npc npc-guide quest-giver" onClick={() => onTalkToQuestGiver('Mabel')} style={{ ...npcAppearanceStyle('chapel-quest-mabel', 'guide'), left: '28%', top: '62%' }} aria-label="Talk to Mabel" data-testid="chapel-quest-mabel" data-facing="down">
-            <span className="quest-giver-badge" aria-hidden="true">!</span>
+            {giverBadge('Mabel')}
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Mabel</strong><small>Chapel-goer · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
           <button type="button" className="interior-npc npc-mage quest-giver" onClick={() => onTalkToQuestGiver('Father Aldous')} style={{ ...npcAppearanceStyle('chapel-quest-aldous', 'mage'), left: '68%', top: '55%' }} aria-label="Talk to Father Aldous" data-testid="chapel-quest-aldous" data-facing="down">
-            <span className="quest-giver-badge" aria-hidden="true">!</span>
+            {giverBadge('Father Aldous')}
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Father Aldous</strong><small>Priest · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
@@ -3064,15 +3101,35 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
         </button>;
         });
       })()}
-      <div className="interior-doorway" aria-label="Exit to Mosslight Crossing"><span>EXIT</span></div>
+      <div className="interior-doorway" aria-label={area.roomType === 'cellar' ? 'Climb back up to the tavern' : 'Exit to Mosslight Crossing'}><span>EXIT</span></div>
       {area.id === 'rootbound-chapel' && (
         <button className="interior-dungeon-staircase" onClick={onEnterDungeon} aria-label="Descend to the Ember Vault dungeon" data-testid="button-enter-dungeon">
           <span className="dungeon-stairs-visual" aria-hidden="true" />
           <span className="dungeon-stairs-label">Ember Vault</span>
         </button>
       )}
+      {area.id === 'fourth-house' && (
+        <button className="cellar-hatch" onClick={onEnterCellar} aria-label="Descend into the Tankard Cellar" data-testid="button-enter-cellar">
+          <span className="cellar-hatch-visual" aria-hidden="true" />
+          <span className="cellar-hatch-label">Cellar</span>
+        </button>
+      )}
+      {area.roomType === 'cellar' && cellarRats.filter((rat) => rat.hp > 0).map((rat) => (
+        <button
+          type="button"
+          key={'cellar-rat-' + rat.id}
+          className={'cellar-rat' + (rat.hitFlash ? ' is-hit' : '')}
+          style={{ left: rat.x + '%', top: rat.y + '%' }}
+          onClick={() => onStrikeCellarRat(rat.id)}
+          aria-label={'Attack the rat, ' + rat.hp + ' of ' + rat.maxHp + ' health'}
+          data-testid={'button-cellar-rat-' + rat.id}
+          data-facing="left"
+        >
+          <span className="cellar-rat-sprite" aria-hidden="true" />
+        </button>
+      ))}
       <div className={'interior-player ' + (moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')} data-facing={facing} style={{ left: position.x + '%', top: position.y + '%', '--attack-y': `${-attackDirectionRow[facing] * 48}px` } as CSSProperties}><span className="player-sprite" />{attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[facing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}{equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}{equippedBow && <span className="player-bow" aria-label="Equipped bow" />}</div>
-      <div className="interior-exit-hint">Walk to the door to leave</div>
+      <div className="interior-exit-hint">{area.roomType === 'cellar' ? 'Walk to the ladder to climb up' : 'Walk to the door to leave'}</div>
     </div>
   );
 }
@@ -3424,6 +3481,13 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const [attackSequence, setAttackSequence] = useState(0);
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
   const [interior, setInterior] = useState<InteriorArea | null>(playtestInteriorArea ?? (playtestMounted || playtestChunk ? null : startingHouse));
+  // BUILD 326: the interior to return to when leaving the tankard cellar
+  // (the tavern), and the cellar's rats. Rats persist for the session once
+  // spawned so leaving mid-quest and coming back keeps the remaining rats.
+  const interiorReturnRef = useRef<InteriorArea | null>(null);
+  const [cellarRats, setCellarRats] = useState<CellarRat[]>([]);
+  const cellarRatsRef = useRef<CellarRat[]>([]);
+  const syncCellarRats = (next: CellarRat[]) => { cellarRatsRef.current = next; setCellarRats(next); };
   // Spawn on clear floor below the furniture: (50, 47) sits inside the
   // inn/building fireplace collision rect and permanently soft-locks movement.
   const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 78 });
@@ -4030,6 +4094,21 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
 
   // Shared player-damage application: melee swings and arrows both land here,
   // so defeat, loot, XP and level-ups behave identically at any range.
+  // BUILD 326: shared XP grant + level-up handling for creature defeats
+  // (field monsters and cellar rats). The goat branch keeps its own inline
+  // copy because it also rescales goats on level-up.
+  const grantCombatXp = (xpReward: number, hitPosition: Point) => {
+    const nextXp = playerXpRef.current + xpReward; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
+    playerXpRef.current = nextXp; setPlayerXp(nextXp);
+    spawnCombatText('+' + xpReward + ' XP', hitPosition, 'reward');
+    if (nextLevel > previousLevel) {
+      const awardedStatPoints = (nextLevel - previousLevel) * PLAYER_STAT_POINTS_PER_LEVEL;
+      playerLevelRef.current = nextLevel; setPlayerLevel(nextLevel); onStatPointsChange((current) => current + awardedStatPoints);
+      spawnCombatText('LEVEL UP! Lv. ' + nextLevel, hitPosition, 'reward');
+      setLogs((currentLogs) => [{ text: 'Level up! You reached level ' + nextLevel + ' (+' + awardedStatPoints + ' stat points).', color: 'blue' }, ...currentLogs].slice(0, 3));
+    }
+  };
+
   const applyPlayerHitToCreature = (attackTarget: { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, damage: number, critical: boolean) => {
     const nextHp = Math.max(0, attackTarget.hp - damage);
     const defeated = nextHp <= 0;
@@ -4052,15 +4131,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
         // Quest hook: kills feed kill stages (rats, wolves, bandits, trolls).
         emitQuestEvent({ type: 'kill', target: monsterTarget.kind });
         const xpReward = goatExperienceReward(monsterTarget, playerLevelRef.current, playerStatsRef.current);
-        const nextXp = playerXpRef.current + xpReward; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
-        playerXpRef.current = nextXp; setPlayerXp(nextXp);
-        spawnCombatText('+' + xpReward + ' XP', hitPosition, 'reward');
-        if (nextLevel > previousLevel) {
-          const awardedStatPoints = (nextLevel - previousLevel) * PLAYER_STAT_POINTS_PER_LEVEL;
-          playerLevelRef.current = nextLevel; setPlayerLevel(nextLevel); onStatPointsChange((current) => current + awardedStatPoints);
-          spawnCombatText('LEVEL UP! Lv. ' + nextLevel, hitPosition, 'reward');
-          setLogs((currentLogs) => [{ text: 'Level up! You reached level ' + nextLevel + ' (+' + awardedStatPoints + ' stat points).', color: 'blue' }, ...currentLogs].slice(0, 3));
-        }
+        grantCombatXp(xpReward, hitPosition);
       }
     } else {
       let updatedGoats = goatsRef.current.map((goat) => goat.id === attackTarget.id ? { ...goat, hp: nextHp, position: goat.position, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, respawnTicks: defeated ? 0 : goat.respawnTicks } : goat);
@@ -4088,6 +4159,33 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
         }
         targetGoatIdRef.current = null; setTargetGoatId(null);
       }
+    }
+  };
+
+  // BUILD 326: damage resolution for Tankard Cellar rats. Same cadence as the
+  // field path (hit flash, crit text, loot, XP, quest event) but loot goes
+  // straight into the inventory — a field-coordinate drop would land outside
+  // the tavern when the player climbs back up.
+  const applyHitToCellarRat = (rat: CellarRat, damage: number, critical: boolean) => {
+    const nextHp = Math.max(0, rat.hp - damage);
+    const defeated = nextHp <= 0;
+    const hitPosition = { x: rat.x, y: rat.y };
+    const updated = cellarRatsRef.current.map((r) => r.id === rat.id ? { ...r, hp: nextHp, hitFlash: true } : r);
+    syncCellarRats(updated);
+    spawnCombatText((critical ? 'CRIT ' : '') + '-' + damage, hitPosition, critical ? 'critical' : 'damage');
+    playCombatSound('shing', muted);
+    window.setTimeout(() => syncCellarRats(cellarRatsRef.current.map((r) => r.id === rat.id ? { ...r, hitFlash: false } : r)), 100);
+    setLogs((currentLogs) => [{ text: defeated ? 'Rat defeated.' : 'You hit the rat for ' + damage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
+    if (defeated) {
+      const loot: GoatLoot = monsterLootForKind('rat');
+      if ((loot.coins || 0) > 0) {
+        onLoot(loot);
+        setLogs((currentLogs) => [{ text: 'You find ' + loot.coins + ' coin' + (loot.coins === 1 ? '' : 's') + ' on the rat.', color: 'blue' }, ...currentLogs].slice(0, 3));
+      }
+      // Quest hook: cellar rat kills feed the kill-rats stage.
+      emitQuestEvent({ type: 'kill', target: 'rat' });
+      const xpReward = goatExperienceReward({ level: 1 } as GoatState, playerLevelRef.current, playerStatsRef.current);
+      grantCombatXp(xpReward, hitPosition);
     }
   };
 
@@ -4192,28 +4290,39 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
             // target). Works on foot and on horseback.
             firePlayerArrow(playerAttack.direction, playerAttack.targetId);
           } else {
-          const goatCandidates = (goatsRef.current as (GoatState & { entityKind?: string })[])
-            .filter((goat) => goat.disposition !== 'defeated' && goatIsInAttackArc(goat, positionRef.current, playerAttack.direction))
+          // BUILD 326: in the Tankard Cellar the swing targets rats using the
+          // interior position as the attacker origin. Field goats/monsters/
+          // corn are excluded down there — their field-unit coordinates share
+          // the same number range as interior percents and would false-hit.
+          const inCellar = interiorRef.current?.roomType === 'cellar';
+          const attackerPos = inCellar ? interiorPositionRef.current : positionRef.current;
+          const ratCandidates = inCellar
+            ? cellarRatsRef.current
+              .filter((rat) => rat.hp > 0 && goatIsInAttackArc({ position: { x: rat.x, y: rat.y } } as GoatState, attackerPos, playerAttack.direction))
+              .map((rat) => ({ ...rat, position: { x: rat.x, y: rat.y }, entityKind: 'cellar-rat' as const }))
+            : [];
+          const goatCandidates = inCellar ? [] : (goatsRef.current as (GoatState & { entityKind?: string })[])
+            .filter((goat) => goat.disposition !== 'defeated' && goatIsInAttackArc(goat, attackerPos, playerAttack.direction))
             .map((goat) => ({ ...goat, entityKind: 'goat' as const }));
-          const monsterCandidates = (monstersRef.current as (MonsterState & { entityKind?: string })[])
-            .filter((monster) => monster.disposition !== 'defeated' && goatIsInAttackArc(monster, positionRef.current, playerAttack.direction))
+          const monsterCandidates = inCellar ? [] : (monstersRef.current as (MonsterState & { entityKind?: string })[])
+            .filter((monster) => monster.disposition !== 'defeated' && goatIsInAttackArc(monster, attackerPos, playerAttack.direction))
             .map((monster) => ({ ...monster, entityKind: 'monster' as const }));
-          const cornCandidates = cornStalksRef.current
+          const cornCandidates = inCellar ? [] : cornStalksRef.current
             .filter((stalk) => {
               if (stalk.harvested) return false;
               // Corn is harvested with a scythe-like swing: any stalk within
               // reach counts, not just the facing arc (player stands among rows).
-              const dist = Math.hypot(stalk.position.x - positionRef.current.x, stalk.position.y - positionRef.current.y);
-              return dist <= 4.5 || goatIsInAttackArc(stalk as unknown as GoatState, positionRef.current, playerAttack.direction);
+              const dist = Math.hypot(stalk.position.x - attackerPos.x, stalk.position.y - attackerPos.y);
+              return dist <= 4.5 || goatIsInAttackArc(stalk as unknown as GoatState, attackerPos, playerAttack.direction);
             })
             .map((stalk) => ({ ...stalk, entityKind: 'corn' as const }));
-          const attackCandidates: Array<(typeof goatCandidates)[number] | (typeof monsterCandidates)[number] | (typeof cornCandidates)[number]> =
-            [...goatCandidates, ...monsterCandidates, ...cornCandidates]
-              .sort((a, b) => goatDistance(a as unknown as GoatState, positionRef.current) - goatDistance(b as unknown as GoatState, positionRef.current));
+          const attackCandidates: Array<(typeof goatCandidates)[number] | (typeof monsterCandidates)[number] | (typeof cornCandidates)[number] | (typeof ratCandidates)[number]> =
+            [...goatCandidates, ...monsterCandidates, ...cornCandidates, ...ratCandidates]
+              .sort((a, b) => goatDistance(a as unknown as GoatState, attackerPos) - goatDistance(b as unknown as GoatState, attackerPos));
           const attackTarget = playerAttack.targetId == null
             ? attackCandidates[0]
             : attackCandidates.find((goat) => goat.id === playerAttack.targetId);
-          if (attackTarget && goatIsInAttackArc(attackTarget as GoatState, positionRef.current, playerAttack.direction)) {
+          if (attackTarget && goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction)) {
             // Harvesting corn: one swing cuts the stalk, which disappears and
             // drops corn loot. No HP, no combat — it's a crop, not a creature.
             if (attackTarget.entityKind === 'corn') {
@@ -4229,6 +4338,12 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
               spawnCombatText('+' + cornCount + ' corn', hitPosition, 'reward');
               playCombatSound('shing', muted);
               setLogs((currentLogs) => [{ text: 'Harvested ' + cornCount + ' corn.', color: 'blue' }, ...currentLogs].slice(0, 3));
+            } else if (attackTarget.entityKind === 'cellar-rat') {
+              const stats = playerStatsRef.current;
+              const critical = Math.random() < playerCriticalChanceForStats(stats);
+              const damage = playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil);
+              const rat = cellarRatsRef.current.find((r) => r.id === attackTarget.id && r.hp > 0);
+              if (rat) applyHitToCellarRat(rat, damage, critical);
             } else {
             const stats = playerStatsRef.current;
             const critical = Math.random() < playerCriticalChanceForStats(stats);
@@ -4238,7 +4353,9 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
           } else {
             // Woodcutting: a melee swing that hits no creature may still chop
             // a tree in the arc. Enough swings fell it into wood pickups and
-            // leave a stump that regrows after a few minutes.
+            // leave a stump that regrows after a few minutes. Never in the
+            // cellar — there are no trees down there.
+            if (!inCellar) {
             const treeTarget = fieldTreesFor(chunkRef.current).find((tree) => {
               const key = fieldTreeKey(chunkRef.current, tree.id);
               if (isTreeFelled(key)) return false;
@@ -4265,6 +4382,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
                 playCombatSound('shing', muted);
               }
             }
+            } // end cellar woodcutting guard
           }
           } // end bow-ranged else
         }
@@ -4420,6 +4538,16 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
          const doorwayHalfWidth = (((INTERIOR_DOORWAY_WIDTH_PX + INTERIOR_PLAYER_WIDTH_PX) / 2 + INTERIOR_DOORWAY_PADDING_PX) / Math.max(1, frameWidth)) * 100;
          const atDoorway = Math.abs(next.x - 50) <= doorwayHalfWidth;
          if (next.y > 91 && atDoorway) {
+           // BUILD 326: the cellar ladder climbs back up into the tavern the
+           // player descended from — never out to the field.
+           if (currentInterior.roomType === 'cellar' && interiorReturnRef.current) {
+             const backTo = interiorReturnRef.current;
+             interiorReturnRef.current = null;
+             interiorRef.current = backTo; setInterior(backTo);
+             interiorPositionRef.current = { x: 50, y: 62 }; setInteriorPosition({ x: 50, y: 62 });
+             setMoving(false);
+             setLogs((currentLogs) => [{ text: 'You climb back up into the Rusty Tankard.', color: 'blue' }, ...currentLogs].slice(0, 3));
+           } else {
            // Compute exit position fresh from the doorway (not stored data) to ensure
            // the player appears directly outside the visible door. Use the actual
            // entry chunk, not a hardcoded one, so the doorway resolves correctly.
@@ -4442,6 +4570,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
            interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
            positionRef.current = exitPosition; setPosition(exitPosition);
            setLogs((currentLogs) => [{ text: 'You step back outside into Mosslight Crossing.', color: 'blue' }, ...currentLogs].slice(0, 3));
+           }
          } else {
            const interiorPosition = next.y > 91
              ? { ...resolvedInteriorPosition, y: 91 }
@@ -4537,18 +4666,32 @@ if (active) {
 
   const attackGoat = (preferredTargetId?: number) => {
     const bowEquipped = equippedBowRef.current;
-    // Melee is disabled while mounted; the bow fires from horseback.
-    if (interiorRef.current || (!bowEquipped && mountedRef.current) || playerAttackStateRef.current.active || playerAttackCooldownRef.current > 0) return;
+    const inCellar = interiorRef.current?.roomType === 'cellar';
+    // BUILD 326: combat is enabled in the Tankard Cellar (rats), melee only —
+    // the bow's arrows fly in field coordinates and would break down there.
+    if ((!inCellar && interiorRef.current) || (!bowEquipped && mountedRef.current) || playerAttackStateRef.current.active || playerAttackCooldownRef.current > 0) return;
     const currentPlayer = positionRef.current;
     const currentFacing = facingRef.current;
     const targetId = preferredTargetId ?? targetGoatIdRef.current;
     const target = targetId == null
       ? null
       : goatsRef.current.find((goat) => goat.id === targetId && goat.disposition !== 'defeated');
-    playerAttackStateRef.current = { active: true, direction: currentFacing, targetId: target?.id ?? null, elapsed: 0, hitApplied: false, ranged: bowEquipped };
+    playerAttackStateRef.current = { active: true, direction: currentFacing, targetId: target?.id ?? null, elapsed: 0, hitApplied: false, ranged: inCellar ? false : bowEquipped };
     playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS;
     setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS);
     playAttackAnimation(currentFacing);
+  };
+
+  // BUILD 326: tap a cellar rat to swing at it (mirrors the field monster tap).
+  const strikeCellarRat = (ratId: number) => {
+    if (interiorRef.current?.roomType !== 'cellar' || inputLocked || optionsOpen || waitingRef.current || playerAttackStateRef.current.active) return;
+    const rat = cellarRatsRef.current.find((r) => r.id === ratId && r.hp > 0);
+    if (!rat) return;
+    if (!isInMeleeArc(interiorPositionRef.current, { x: rat.x, y: rat.y }, facingRef.current)) {
+      setLogs((currentLogs) => [{ text: 'The rat is too far away — get closer.', color: 'red' }, ...currentLogs].slice(0, 3));
+      return;
+    }
+    attackGoat(ratId);
   };
 
   // Lockpicking: simple for now — each attempt consumes one lockpick and rolls
@@ -4700,12 +4843,6 @@ if (active) {
     }
   }, [chunk]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // BUILD 308: D-pad input rides on touch events (one identifier per touch)
-  // instead of pointer capture. On iOS, tapping another button (attack) while
-  // holding the D-pad could break pointer capture and silently release the
-  // held direction with the thumb still down, freezing movement until the user
-  // lifted and re-pressed. A second touch can never disturb touch events.
-  // Pointer handlers stay for mouse users only.
   // BUILD 325: D-pad touch holds are tracked by touch.identifier (see
   // src/game/touchInput.ts). Only the touch that pressed a direction can
   // release it, so a spurious touchend/touchcancel from a *different* touch —
@@ -5124,6 +5261,32 @@ if (active) {
     setMoving(false);
     setLogs((currentLogs) => [{ text: 'You enter the ' + doorway.area.name + '.', color: 'blue' }, ...currentLogs].slice(0, 3));
   };
+  // BUILD 326: descend into the Tankard Cellar through the tavern hatch.
+  // Unlike field doorways, the cellar exits back up to the tavern (tracked in
+  // interiorReturnRef), not out to the field. Rats top up to a full cellar
+  // when the kill-rats stage is active; otherwise a few ambient rats remain.
+  const enterCellar = () => {
+    const from = interiorRef.current;
+    if (!from || from.roomType === 'cellar') return;
+    interiorReturnRef.current = from;
+    const ratStageActive = questStatesRef.current.some((st) => {
+      if (st.questId !== 'rats-in-the-cellar' || st.status !== 'active') return false;
+      const def = questById(st.questId);
+      return def?.stages[st.stageIndex]?.id === 'kill-rats';
+    });
+    const want = ratStageActive ? CELLAR_RAT_COUNT : 3;
+    const live = cellarRatsRef.current.filter((rat) => rat.hp > 0);
+    if (live.length < want) {
+      const fresh = initialCellarRats(want);
+      // Keep surviving rats where they are; only add replacements.
+      const topped = [...live, ...fresh.slice(live.length)];
+      syncCellarRats(topped);
+    }
+    interiorRef.current = TANKARD_CELLAR_AREA; setInterior(TANKARD_CELLAR_AREA);
+    interiorPositionRef.current = { x: 50, y: 76 }; setInteriorPosition({ x: 50, y: 76 });
+    setMoving(false);
+    setLogs((currentLogs) => [{ text: 'You climb down into the Tankard Cellar.', color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
 
   // Debug world editor (BUILD 274) toolbar definition.
   const editorTools: { id: EditorTool; label: string }[] = [
@@ -5151,7 +5314,7 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onTavernSleep={tavernSleepUntilMorning} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onEnterCellar={enterCellar} onTavernSleep={tavernSleepUntilMorning} cellarRats={cellarRats} onStrikeCellarRat={strikeCellarRat} questStates={questStates} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -5878,7 +6041,18 @@ if (active) {
             {/* Quest givers out in the field: find them, talk to them, get quests. */}
             {QUEST_GIVER_FIELD_NPCS.filter((giver) => giver.chunk.x === chunk.x && giver.chunk.y === chunk.y).map((giver) => (
               <button type="button" key={'quest-giver-' + giver.name} className={'quest-giver ' + giver.sprite} onClick={() => openQuestDialog(giver.name)} style={{ left: fieldPct(giver.position.x), top: fieldPct(giver.position.y) }} aria-label={'Talk to ' + giver.displayName} data-testid={'quest-giver-' + giver.name} data-facing="down">
-                <span className="quest-giver-badge" aria-hidden="true">!</span>
+                {(() => {
+                  // BUILD 326: quest-state-aware badges (same rule as interiors).
+                  const lowered = giver.name.toLowerCase();
+                  const def = QUESTS.find((q) => {
+                    const gname = q.giver.name.toLowerCase();
+                    return gname === lowered || gname.includes(lowered) || lowered.includes(gname);
+                  });
+                  const marker = def ? markerForGiver(def, questStates) : null;
+                  if (marker === 'available') return <span className="quest-giver-badge" aria-hidden="true">!</span>;
+                  if (marker === 'turnin') return <span className="quest-giver-badge is-turnin" aria-hidden="true">?</span>;
+                  return null;
+                })()}
                 <span className="interior-npc-nameplate" aria-hidden="true"><strong>{giver.displayName}</strong><small>{giver.title} · Talk</small></span>
                 <span className="npc-sprite" aria-hidden="true" />
               </button>
@@ -6987,7 +7161,7 @@ if (active) {
            {talkTarget && (
              <button className="icon-button field-talk-button" onClick={() => talkTarget.talk()} aria-label={'Talk to ' + talkTarget.name} title={'Talk to ' + talkTarget.name} data-testid="button-talk"><MessageCircle size={16} /></button>
            )}
-           <button className="icon-button field-attack-button" onClick={() => attackGoat()} disabled={attackCooldownMs > 0 || attacking || inputLocked || Boolean(interior) || (mounted && !equippedBow)} aria-label={equippedBow ? (selectedGoat ? 'Loose arrow at target' : 'Loose arrow') : (selectedGoat ? 'Strike selected goat' : 'Strike nearest goat')} title={equippedBow ? 'Fire bow · Space' : (selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space')} aria-disabled={attackCooldownMs > 0 || attacking} data-testid="button-attack">{equippedBow ? '🏹' : <Sword size={16} />}{attackCooldownMs > 0 && <span className="attack-cooldown-ring" style={{ background: 'conic-gradient(rgba(219, 120, 94, .95) ' + ((attackCooldownMs / PLAYER_ATTACK_COOLDOWN_MS) * 100) + '%, rgba(19, 43, 34, .2) 0)' }} aria-hidden="true" />}</button>
+           <button className="icon-button field-attack-button" onClick={() => attackGoat()} disabled={attackCooldownMs > 0 || attacking || inputLocked || (Boolean(interior) && interior?.roomType !== 'cellar') || (mounted && !equippedBow)} aria-label={equippedBow ? (selectedGoat ? 'Loose arrow at target' : 'Loose arrow') : (selectedGoat ? 'Strike selected goat' : 'Strike nearest goat')} title={equippedBow ? 'Fire bow · Space' : (selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space')} aria-disabled={attackCooldownMs > 0 || attacking} data-testid="button-attack">{equippedBow ? '🏹' : <Sword size={16} />}{attackCooldownMs > 0 && <span className="attack-cooldown-ring" style={{ background: 'conic-gradient(rgba(219, 120, 94, .95) ' + ((attackCooldownMs / PLAYER_ATTACK_COOLDOWN_MS) * 100) + '%, rgba(19, 43, 34, .2) 0)' }} aria-hidden="true" />}</button>
          </div>
       </div>
       <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? (mounted ? 'Riding through Mosslight Crossing' : 'Moving through Mosslight Crossing') : (mounted ? 'Mounted and ready' : 'Standing still')}</div>

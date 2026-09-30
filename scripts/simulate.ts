@@ -12,6 +12,8 @@ import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection } from '../src/game/touchInput';
+import { markerForGiver, questById, type QuestState } from '../src/game/quests';
+import { initialCellarRats, CELLAR_RAT_ID_BASE, CELLAR_RAT_HP, CELLAR_RAT_COUNT } from '../src/game/cellarRats';
 import { appearanceForNpc, npcAppearanceStyle } from '../src/game/npcAppearance';
 import {
   resolveMonsterSprite,
@@ -1454,6 +1456,42 @@ for (const kind of EXPECTED_KINDS) {
   assert(heldTouchDirections(holds).length === 0, 'clearTouchHolds left a hold behind');
   // Releasing a direction that was never held is a no-op.
   assert(!releaseTouchHold(holds, 'down', 99), 'release of a never-held direction reported a release');
+}
+
+// ---- BUILD 326: Tankard Cellar rats + quest-giver marker states ----
+console.log('Testing cellar rats and quest markers...');
+// Rats: deterministic, unique ids, full HP, inside the room, clear of the ladder.
+const ratsA = initialCellarRats();
+const ratsB = initialCellarRats();
+assert(ratsA.length === CELLAR_RAT_COUNT, `expected ${CELLAR_RAT_COUNT} rats, got ${ratsA.length}`);
+assert(JSON.stringify(ratsA) === JSON.stringify(ratsB), 'cellar rats are not deterministic');
+const ratIds = new Set(ratsA.map((r) => r.id));
+assert(ratIds.size === ratsA.length, 'cellar rat ids are not unique');
+assert(ratsA.every((r) => r.id >= CELLAR_RAT_ID_BASE), 'cellar rat id collides with field entity ids');
+assert(ratsA.every((r) => r.hp === CELLAR_RAT_HP && r.maxHp === CELLAR_RAT_HP && !r.hitFlash), 'cellar rat hp state wrong');
+assert(ratsA.every((r) => r.x >= 10 && r.x <= 90 && r.y >= 10 && r.y <= 90), 'cellar rat out of room bounds');
+assert(ratsA.every((r) => !(r.x > 44 && r.x < 56 && r.y > 78)), 'cellar rat spawns on the entry ladder');
+// Marker states for the reported stuck-yellow-marker bug: the badge must NOT
+// show immediately after accepting (kill stage), only when unaccepted (!) or
+// ready to turn in (?).
+const ratsQuest = questById('rats-in-the-cellar');
+assert(!!ratsQuest, 'rats-in-the-cellar quest missing');
+if (ratsQuest) {
+  const stateFor = (stageIndex: number, status: QuestState['status']): QuestState[] =>
+    [{ questId: 'rats-in-the-cellar', stageIndex, status, counts: {}, startedAt: 0 }];
+  assert(markerForGiver(ratsQuest, []) === 'available', 'unaccepted quest should show !');
+  assert(markerForGiver(ratsQuest, stateFor(0, 'active')) === 'turnin', 'opening talk stage with Mira should show ?');
+  assert(markerForGiver(ratsQuest, stateFor(1, 'active')) === null, 'kill stage must show no marker (was stuck !)');
+  assert(markerForGiver(ratsQuest, stateFor(2, 'active')) === 'turnin', 'return-to-Mira stage should show ?');
+  assert(markerForGiver(ratsQuest, stateFor(2, 'completed')) === null, 'completed quest must show no marker');
+  assert(markerForGiver(ratsQuest, stateFor(1, 'failed')) === null, 'failed quest must show no marker');
+}
+// A second quest (Mabel's) follows the same rule independently.
+const heirloom = questById('lost-heirloom');
+assert(!!heirloom, 'lost-heirloom quest missing');
+if (heirloom) {
+  assert(markerForGiver(heirloom, []) === 'available', 'unaccepted heirloom should show !');
+  assert(markerForGiver(heirloom, [{ questId: 'lost-heirloom', stageIndex: 1, status: 'active', counts: {}, startedAt: 0 }]) === null, 'explore stage must show no marker');
 }
 
 // ---- Results ----

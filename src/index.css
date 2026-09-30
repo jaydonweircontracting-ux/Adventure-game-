@@ -2566,6 +2566,29 @@ body {
 .interior-barrel { position: absolute; right: 5%; width: 10%; height: 15%; border: 2px solid #3d2c1c; border-radius: 9px; background: repeating-linear-gradient(0deg, #7d5a3a 0 8px, #5f4229 8px 11px); box-shadow: 2px 3px 0 rgba(50, 35, 28, .25); }
 .interior-barrel::before, .interior-barrel::after { content: ''; position: absolute; left: -2px; right: -2px; height: 3px; background: #2e2013; border-radius: 2px; }
 .interior-barrel::before { top: 24%; } .interior-barrel::after { bottom: 24%; }
+/* BUILD 326: Tankard Cellar — dark packed-earth store room under the tavern */
+.interior-cellar { background: #2e2318; }
+.interior-cellar::after { background: linear-gradient(180deg, rgba(0, 0, 0, .55), transparent 40%), #3a2c1e; }
+.cellar-barrel { position: absolute; width: 11%; height: 20%; border: 2px solid #241a10; border-radius: 9px; background: repeating-linear-gradient(0deg, #6a4c2e 0 8px, #4e3822 8px 11px); box-shadow: 2px 3px 0 rgba(0, 0, 0, .4); }
+.cellar-barrel::before, .cellar-barrel::after { content: ''; position: absolute; left: -2px; right: -2px; height: 3px; background: #1c130a; border-radius: 2px; }
+.cellar-barrel::before { top: 24%; } .cellar-barrel::after { bottom: 24%; }
+.cellar-barrel-1 { left: 8%; top: 18%; } .cellar-barrel-2 { right: 8%; top: 18%; }
+.cellar-sacks { position: absolute; left: 10%; top: 66%; width: 16%; height: 18%; background: radial-gradient(ellipse at 30% 80%, #8a7648 0 30%, transparent 31%), radial-gradient(ellipse at 60% 85%, #7a6540 0 32%, transparent 33%), radial-gradient(ellipse at 82% 78%, #8a7648 0 28%, transparent 29%), linear-gradient(180deg, transparent 55%, rgba(0,0,0,.35) 100%); filter: drop-shadow(2px 2px 0 rgba(0,0,0,.4)); }
+.cellar-crates { position: absolute; right: 10%; top: 66%; width: 16%; height: 18%; background: linear-gradient(180deg, #6a4c2e 0 45%, #5a3f26 45% 100%); border: 2px solid #2c1f12; box-shadow: 2px 3px 0 rgba(0,0,0,.4); }
+.cellar-crates::before { content: ''; position: absolute; left: 0; right: 0; top: 45%; height: 2px; background: #2c1f12; }
+.cellar-cobweb { position: absolute; width: 12%; height: 14%; background: conic-gradient(from 0deg at 0% 0%, transparent 0 12%, rgba(220,220,220,.28) 12% 14%, transparent 14% 30%, rgba(220,220,220,.28) 30% 32%, transparent 32% 55%, rgba(220,220,220,.28) 55% 57%, transparent 57% 80%, rgba(220,220,220,.28) 80% 82%, transparent 82%); }
+.cellar-cobweb-1 { left: 0; top: 0; } .cellar-cobweb-2 { right: 0; top: 0; transform: scaleX(-1); }
+.cellar-ladder { position: absolute; left: 44%; bottom: 4%; width: 12%; height: 16%; background: repeating-linear-gradient(180deg, transparent 0 8px, #8a6a42 8px 12px), linear-gradient(90deg, #8a6a42 0 12%, transparent 12% 88%, #8a6a42 88% 100%); border-radius: 3px; }
+.cellar-hatch { position: absolute; left: 50%; top: 30%; transform: translate(-50%, 0); width: 64px; height: 48px; padding: 0; border: 2px solid #3a2c1c; background: transparent; cursor: pointer; }
+.cellar-hatch-visual { display: block; width: 100%; height: 100%; background: linear-gradient(180deg, rgba(0,0,0,.9) 0 30%, transparent 30%), repeating-linear-gradient(90deg, #7d5a3a 0 10px, #5f4229 10px 13px); clip-path: polygon(0 0, 100% 0, 88% 100%, 12% 100%); box-shadow: inset 0 -12px 16px rgba(0,0,0,.6); }
+.cellar-hatch-label { position: absolute; left: 50%; bottom: -20px; transform: translateX(-50%); font-size: 10px; color: #e8dcc0; text-shadow: 1px 1px 0 #000; white-space: nowrap; }
+.cellar-hatch:hover .cellar-hatch-visual, .cellar-hatch:focus-visible .cellar-hatch-visual { filter: brightness(1.25); }
+.cellar-rat { position: absolute; width: 44px; height: 32px; transform: translate(-50%, -50%); padding: 0; border: none; background: transparent; cursor: pointer; touch-action: manipulation; }
+.cellar-rat-sprite { display: block; width: 100%; height: 100%; background: radial-gradient(ellipse at 30% 55%, #6a6a72 0 45%, #4a4a52 46% 100%); border-radius: 50% 50% 45% 45%; position: relative; }
+.cellar-rat-sprite::before { content: ''; position: absolute; left: 8%; top: 18%; width: 22%; height: 30%; background: #4a4a52; border-radius: 50%; box-shadow: inset 1px 1px 0 rgba(255,255,255,.25); }
+.cellar-rat-sprite::after { content: ''; position: absolute; right: -14%; top: 52%; width: 34%; height: 8%; background: #8a8a92; border-radius: 4px; transform: rotate(-12deg); }
+.cellar-rat.is-hit .cellar-rat-sprite { filter: brightness(2) sepia(1) hue-rotate(-50deg) saturate(3); }
+.quest-giver-badge.is-turnin { background: #2f8f4e; color: #fff; }
 .barrel-1 { top: 10%; } .barrel-2 { top: 27%; }
 /* Hanging tavern sign on the bar's exterior */
 .field-house-sign { position: absolute; left: 37%; top: -16%; width: 26%; height: 20%; background: #6a4c30; border: 2px solid #3d2c1c; border-radius: 2px; box-shadow: 0 2px 0 rgba(0, 0, 0, .25); pointer-events: none; }
