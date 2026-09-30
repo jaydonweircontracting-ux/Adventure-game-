@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '247';
+const BUILD_NUMBER = '248';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -646,7 +646,7 @@ function fieldTreeBaseRect(tree: FieldTree): FieldRect {
   };
 }
 
-function isFieldPositionBlocked(position: Point, chunk: Point) {
+function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Record<string, Point>) {
   const tile = mapTileFor(chunk);
   if (pointInWater(position, tile)) return true;
 
@@ -658,7 +658,24 @@ function isFieldPositionBlocked(position: Point, chunk: Point) {
   // into the surrounding grass where it reads as a random invisible wall.
   // In mover mode (?moveHouses=1), skip building collision so the user can
   // walk freely while positioning houses.
-  if (!moveHouses && landmark && fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17).some((rect) => pointInRect(position, rect, 0.35))) return true;
+  // If house offsets are provided (mover mode), collision follows the visual —
+  // the solid area is attached to the house, not a stagnant separate position.
+  if (!moveHouses && landmark) {
+    const rects = fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17);
+    const doorways = buildingDoorwaysFor(chunk);
+    const blocked = rects.some((rect, index) => {
+      const doorway = doorways[index];
+      const off = (doorway && houseOffsets?.[doorway.id]) || { x: 0, y: 0 };
+      const movedRect = {
+        left: rect.left + off.x,
+        top: rect.top + off.y,
+        right: rect.right + off.x,
+        bottom: rect.bottom + off.y,
+      };
+      return pointInRect(position, movedRect, 0.35);
+    });
+    if (blocked) return true;
+  }
 
   // Farmhouses are solid enterable buildings too.
   if (!moveHouses && !landmark && ['meadow', 'grassland', 'greenvale'].includes(tile.terrain)) {
@@ -686,7 +703,7 @@ function wrapFieldPosition(position: Point, chunk: Point) {
   return { position: nextPosition, chunk: nextChunk, travelLabels };
 }
 
-function resolveFieldMovement(current: Point, movement: Point, chunk: Point, goats: GoatState[] = []) {
+function resolveFieldMovement(current: Point, movement: Point, chunk: Point, goats: GoatState[] = [], houseOffsets?: Record<string, Point>) {
   const candidates = [
     { x: current.x + movement.x, y: current.y + movement.y },
     { x: current.x + movement.x, y: current.y },
@@ -694,7 +711,7 @@ function resolveFieldMovement(current: Point, movement: Point, chunk: Point, goa
   ];
   for (const candidate of candidates) {
     const wrapped = wrapFieldPosition(candidate, chunk);
-    if (wrapped && !isFieldPositionBlocked(wrapped.position, wrapped.chunk) && !isPositionOccupiedByGoat(wrapped.position, goats)) return wrapped;
+    if (wrapped && !isFieldPositionBlocked(wrapped.position, wrapped.chunk, houseOffsets) && !isPositionOccupiedByGoat(wrapped.position, goats)) return wrapped;
   }
   return null;
 }
@@ -3294,7 +3311,7 @@ if (active) {
           enterDoorway(nearbyDoor, currentChunk);
           animationFrame = window.requestAnimationFrame(animate); return;
         }
-        const resolved = resolveFieldMovement(current, movement, currentChunk, goatsRef.current);
+        const resolved = resolveFieldMovement(current, movement, currentChunk, goatsRef.current, houseOffsetsRef.current);
         if (resolved) {
           // The current continent is the tutorial world. Its ocean edge is reserved for the future boat route.
           positionRef.current = resolved.position;
