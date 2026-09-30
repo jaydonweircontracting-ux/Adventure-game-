@@ -48,6 +48,7 @@ import {
   type Stable,
 } from '@/game/horses';
 import { generateSettlementPopulation, type CharacterProfile } from '@/game/characterGen';
+import { poisForChunk as modulePoisForChunk, type PointOfInterest } from '@/game/pointsOfInterest';
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor } from '@/game/monsterSprites';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
@@ -468,37 +469,6 @@ function fieldFarmRects(chunkX: number, chunkY: number): { houses: FieldRect[]; 
     return { left: cx - hw, top: cy - hh, right: cx + hw, bottom: cy + hh };
   };
   return { houses: houses.map((r) => grow(toField(r))), fields: fields.map(toField) };
-}
-
-// Points of Interest: ruins, caves, camps, shrines scattered in the wilderness.
-// Deterministic per-chunk, ~25% of non-settlement chunks get a POI.
-type POIKind = 'ruin' | 'cave' | 'camp' | 'shrine';
-type PointOfInterest = { kind: POIKind; x: number; y: number; name: string };
-
-function poisForChunk(chunkX: number, chunkY: number): PointOfInterest[] {
-  const seed = Math.abs(chunkX * 83492791 ^ chunkY * 2971215073) >>> 0;
-  const rng = () => {
-    const x = Math.sin(seed + 7) * 10000;
-    return x - Math.floor(x);
-  };
-  // Only ~25% of chunks get a POI
-  if (rng() > 0.25) return [];
-  
-  const kinds: POIKind[] = ['ruin', 'cave', 'camp', 'shrine'];
-  const kind = kinds[Math.floor(rng() * kinds.length)];
-  const x = 25 + rng() * 50;
-  const y = 25 + rng() * 50;
-  
-  const names: Record<POIKind, string[]> = {
-    ruin: ['Ancient Ruins', 'Forgotten Stones', 'Old Watchtower'],
-    cave: ['Dark Cave', 'Goblin Den', 'Echo Cavern'],
-    camp: ['Bandit Camp', 'Abandoned Camp', 'Hunter\'s Camp'],
-    shrine: ['Old Shrine', 'Forest Altar', 'Stone Circle'],
-  };
-  const nameList = names[kind];
-  const name = nameList[Math.floor(rng() * nameList.length)];
-  
-  return [{ kind, x, y, name }];
 }
 
 function pointInWater(position: Point, tile: MapTile) {
@@ -4279,7 +4249,7 @@ if (active) {
               onDiscoverLocation(discoveredLandmark.name, discoveredLandmark.kind, resolved.chunk);
               setLogs((currentLogs) => [{ text: 'Discovered: ' + discoveredLandmark.name, color: 'green' }, ...currentLogs].slice(0, 5));
             }
-            poisForChunk(resolved.chunk.x, resolved.chunk.y).forEach((poi) => {
+            modulePoisForChunk(resolved.chunk, DEFAULT_WORLD_SEED, { isTownChunk: !!discoveredLandmark }).forEach((poi) => {
               onDiscoverLocation(poi.name, poi.kind, resolved.chunk);
               setLogs((currentLogs) => [{ text: 'Discovered: ' + poi.name, color: 'green' }, ...currentLogs].slice(0, 5));
             });
@@ -5919,14 +5889,28 @@ if (active) {
           })()}
           {/* Points of Interest: ruins, caves, camps, shrines */}
           {!currentWorldTile.landmark && (() => {
-            const pois = poisForChunk(chunk.x, chunk.y);
+            const pois = modulePoisForChunk(chunk, DEFAULT_WORLD_SEED, {});
+            const tappable = (kind: string) => kind === 'cemetery' || kind === 'ruin' || kind === 'crypt' || kind === 'forgotten_grave';
+            const inspectPoi = (poi: PointOfInterest) => {
+              setLogs((currentLogs) => [{ text: `${poi.name}: ${poi.description}`, color: 'blue' }, ...currentLogs].slice(0, 3));
+            };
             return (
               <>
-                {pois.map((poi, i) => (
+                {pois.map((poi, i) => tappable(poi.kind) ? (
+                  <button
+                    key={'poi-' + i}
+                    type="button"
+                    className={'poi poi-' + poi.kind}
+                    style={{ left: fieldPct(poi.position.x), top: fieldPct(poi.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : 'auto', cursor: 'pointer' }}
+                    onClick={() => inspectPoi(poi)}
+                    aria-label={poi.name}
+                    title={poi.name}
+                  />
+                ) : (
                   <span
                     key={'poi-' + i}
                     className={'poi poi-' + poi.kind}
-                    style={{ left: fieldPct(poi.x), top: fieldPct(poi.y) }}
+                    style={{ left: fieldPct(poi.position.x), top: fieldPct(poi.position.y) }}
                     aria-label={poi.name}
                     title={poi.name}
                   />
