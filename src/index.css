@@ -4426,3 +4426,180 @@ body {
 .carriage-travel-progress { width: 220px; height: 10px; margin: 12px auto 0; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; overflow: hidden; }
 .carriage-travel-progress span { display: block; height: 100%; background: linear-gradient(90deg, #a8843c, #ffd97a); transition: width 0.12s linear; }
 @keyframes carriage-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ============ BUILD 282: Rusty Tankard expansion ============ */
+/* Tavern annexes: two stone guest-room wings rendered behind the tavern. */
+.tavern-annex {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, -50%);
+  border: 2px solid #4a4a5a;
+  background: #8a8a9a;
+  box-shadow: 2px 3px 0 rgba(64, 59, 39, .3);
+}
+.tavern-annex::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: -8px;
+  width: calc(100% + 6px);
+  height: 12px;
+  background: #6a6a7a;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+/* Bed inside the tavern interior (top-right corner, rent-a-room flavor). */
+.interior-bed {
+  position: absolute;
+  right: 6%;
+  top: 4%;
+  width: 12%;
+  height: 16%;
+  border: 2px solid #4a3320;
+  background: linear-gradient(180deg, #b08d5e 0 32%, #7d5a3a 32% 100%);
+  box-shadow: 2px 3px 0 rgba(50, 35, 28, .25);
+}
+.interior-bed::before {
+  content: '';
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: 38%;
+  height: 34%;
+  background: #e8dcc0;
+  border: 1px solid #a08c68;
+}
+.interior-bed::after {
+  content: '';
+  position: absolute;
+  left: 6%;
+  top: 8%;
+  width: 30%;
+  height: 20%;
+  background: #f4ecd8;
+  border: 1px solid #a08c68;
+  border-radius: 3px;
+}
+.tavern-sleep-button {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, -50%);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #fff3d0;
+  background: rgba(42, 66, 56, .92);
+  border: 1px solid #d4c29f;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.tavern-sleep-button:active { transform: translate(-50%, -50%) scale(.95); }
+/* Mira's tavern service menu. */
+.tavern-menu-card .tavern-menu-options {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+.tavern-menu-option {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  padding: 9px 12px;
+  color: var(--ink);
+  background: rgba(251, 246, 233, .66);
+  border: 1px solid #d4c29f;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.tavern-menu-option strong { font-size: 13px; }
+.tavern-menu-option small { color: var(--ink-soft); font-size: 10px; }
+.tavern-menu-option:active { transform: scale(.98); }
+/* ============ BUILD 282: paper doll ============ */
+.paper-doll-wrap {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 10px;
+}
+.paper-doll {
+  position: relative;
+  width: 120px;
+  height: 168px;
+  border: 1px solid #d4c29f;
+  background: rgba(251, 246, 233, .5);
+  border-radius: 8px;
+}
+.paper-doll-head {
+  position: absolute; left: 50%; top: 10px;
+  width: 30px; height: 30px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #e8b88a;
+  border: 2px solid #8a5a3a;
+}
+.paper-doll-torso {
+  position: absolute; left: 50%; top: 44px;
+  width: 44px; height: 56px;
+  transform: translateX(-50%);
+  background: #7d8a9a;
+  border: 2px solid #4a5a6a;
+  border-radius: 6px;
+}
+.paper-doll-arm {
+  position: absolute; top: 48px;
+  width: 12px; height: 48px;
+  background: #e8b88a;
+  border: 2px solid #8a5a3a;
+  border-radius: 6px;
+}
+.paper-doll-arm.arm-left { left: 14px; }
+.paper-doll-arm.arm-right { right: 14px; }
+.paper-doll-leg {
+  position: absolute; top: 102px;
+  width: 14px; height: 50px;
+  background: #5a4a3a;
+  border: 2px solid #3a2a20;
+  border-radius: 6px;
+}
+.paper-doll-leg.leg-left { left: 42px; }
+.paper-doll-leg.leg-right { right: 42px; }
+.paper-doll-bow {
+  position: absolute; left: 8px; top: 30px;
+  font-size: 26px;
+  transform: rotate(-18deg);
+  filter: drop-shadow(1px 2px 0 rgba(0,0,0,.25));
+}
+.paper-doll-dagger {
+  position: absolute; right: 6px; top: 78px;
+  font-size: 26px;
+  color: #8a8a9a;
+  transform: rotate(24deg);
+  filter: drop-shadow(1px 2px 0 rgba(0,0,0,.25));
+}
+.paper-doll-slots { display: grid; gap: 10px; }
+/* ============ BUILD 282: equipped-weapon HUD box ============ */
+.equipped-weapon-box {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  color: #f4d7ad;
+  background: rgba(19, 43, 34, .82);
+  border: 1px solid #d4c29f;
+  border-radius: 8px;
+  font-size: 12px;
+  pointer-events: none;
+}
+.equipped-weapon-icon { font-size: 17px; line-height: 1; }
+.equipped-weapon-label { font-family: var(--app-font-mono); letter-spacing: .04em; }
+/* Beer buff chip in the HUD. */
+.hud-buff-chip {
+  display: inline-grid;
+  place-items: center;
+  width: 26px; height: 26px;
+  font-size: 15px;
+  background: rgba(19, 43, 34, .82);
+  border: 1px solid #d4c29f;
+  border-radius: 50%;
+}
+/* Beer inventory mark. */
+.beer-mark::before { content: '🍺'; font-size: 15px; }

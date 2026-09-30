@@ -23,6 +23,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { isInMeleeArc } from '@/game/combat';
 import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS } from '@/game/ai';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
+import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
 import { playCombatSound } from '@/game/effects';
 import { cornStalksForChunk, type CornStalk } from '@/game/cornfield';
 import { getSpriteState } from '@/game/animation';
@@ -657,6 +658,11 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
   const treeBlocked = fieldTreesFor(chunk).some((tree) => !felledTreeKeys.has(fieldTreeKey(chunk, tree.id)) && pointInRect(position, fieldTreeBaseRect(tree), 0.45));
   if (treeBlocked) return true;
 
+  // Rusty Tankard annexes are solid in the starting town.
+  if (chunk.x === 4 && chunk.y === 7) {
+    if (TAVERN_ANNEX_RECTS.some((r) => pointInRect(position, r, 0.45))) return true;
+  }
+
   // Carriage stations/stops: house, stable and the carriage itself are solid.
   const station = getCarriageStation(chunk);
   if (station) {
@@ -1058,7 +1064,7 @@ const statDetails: Record<StatKey, { label: string; description: string }> = {
   luk: { label: 'Luck', description: 'Improves critical hits and loot rolls.' },
 };
 const initialPlayerStats: PlayerStats = { str: 4, dex: 4, int: 4, luk: 4 };
-type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number; wood: number; silk: number; bow: number };
+type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number; wood: number; silk: number; bow: number; beer: number };
 type GoatLoot = Partial<GameInventory>;
 type DroppedLoot = { id: number; chunk: Point; position: Point; loot: GoatLoot };
 // Ranged combat: arrows fired by the player's bow and by bandit archers.
@@ -1147,7 +1153,7 @@ const PLAYER_MAX_HP = 88;
 const PLAYER_BASE_ATTACK_DAMAGE = 5;
 const PLAYER_STAT_POINTS_PER_LEVEL = 5;
 const GOAT_LOOT_TYPES: Array<keyof GameInventory> = ['goatHorns', 'fabric', 'coins'];
-const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0, wood: 0, silk: 0, bow: 0 };
+const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0, wood: 0, silk: 0, bow: 0, beer: 0 };
 
 function playerMaxHpForStats(stats: PlayerStats) {
   return PLAYER_MAX_HP + stats.int * 3;
@@ -1190,6 +1196,7 @@ type SaveGameData = {
   journal?: JournalState;
   reputation?: ReputationState;
   carriage?: { earnings?: Record<string, number> };
+  escortHired?: boolean;
   logs: Array<{ text: string; color: string }>;
   time: string;
   brainState: RpgGameState | null;
@@ -1229,7 +1236,8 @@ function isGameInventory(value: unknown): value is GameInventory {
     && (value.corn == null || isFiniteNumber(value.corn))
     && (value.wood == null || isFiniteNumber(value.wood))
     && (value.silk == null || isFiniteNumber(value.silk))
-    && (value.bow == null || isFiniteNumber(value.bow));
+    && (value.bow == null || isFiniteNumber(value.bow))
+    && (value.beer == null || isFiniteNumber(value.beer));
 }
 
 function isPlayerStats(value: unknown): value is PlayerStats {
@@ -2747,9 +2755,9 @@ function WorldMap({ chunk, onClose }: { chunk: Point; onClose: () => void }) {
     </div>
   );
 }
-function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow, onToggleBow, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose }: { inventory: GameInventory; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void }) {
+function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow, onToggleBow, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive }: { inventory: GameInventory; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean }) {
   const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats'>('inventory');
-  const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn + inventory.wood + inventory.silk + inventory.bow;
+  const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn + inventory.wood + inventory.silk + inventory.bow + inventory.beer;
   const visibleItems = [
     { key: 'goatHorns', label: 'Goat horns', detail: 'Crafting material', mark: '✦', className: 'horn-mark' },
     { key: 'fabric', label: 'Fabric', detail: 'Useful cloth', mark: '▤', className: 'fabric-mark' },
@@ -2762,6 +2770,7 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow
     { key: 'wood', label: 'Wood', detail: 'Chopped from trees', mark: '🪵', className: 'wood-mark' },
     { key: 'silk', label: 'Silk', detail: 'Spider silk for bowstrings', mark: '🕸', className: 'silk-mark' },
     { key: 'bow', label: 'Hunting bow', detail: 'Ranged weapon', mark: '🏹', className: 'bow-mark' },
+    { key: 'beer', label: 'Beer', detail: '+50% attack for 1 min', mark: '🍺', className: 'beer-mark' },
   ].filter((item) => inventory[item.key as keyof GameInventory] > 0);
   return (
     <div className="map-overlay" role="dialog" aria-modal="true" aria-labelledby="inventory-title" data-testid="overlay-inventory">
@@ -2790,13 +2799,13 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow
                 <div className="inventory-item" data-testid="inventory-coins"><span className="inventory-item-mark coin-mark" aria-hidden="true" /><span><strong>Coins</strong><small>Spendable gold</small></span><b>{inventory.coins}</b></div>
                 {visibleItems.map((item) => {
                   const count = inventory[item.key as keyof GameInventory] as number;
-                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className} aria-hidden="true" /><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}{item.key === 'bow' && <button className={'item-action ' + (equippedBow ? 'is-equipped' : '')} onClick={onToggleBow} data-testid="button-toggle-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}</div>;
+                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className} aria-hidden="true" /><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}{item.key === 'bow' && <button className={'item-action ' + (equippedBow ? 'is-equipped' : '')} onClick={onToggleBow} data-testid="button-toggle-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}{item.key === 'beer' && <button className="item-action" onClick={onDrinkBeer} data-testid="button-drink-beer">Drink</button>}</div>;
                 })}
               </div>
               {itemCount === 0 && <div className="inventory-empty"><Backpack size={30} strokeWidth={1.5} /><strong>Menu is empty</strong></div>}
             </>
           ) : activeTab === 'equipment' ? (
-            <div className="equipment-panel" role="tabpanel" aria-label="Equipment"><div className="inventory-count">Equipped gear changes your character</div><div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot"><span className="equipment-slot-mark dagger-mark">†</span><span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>{(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedBow ? 'is-equipped' : '')} data-testid="equipment-ranged-slot"><span className="equipment-slot-mark bow-mark">🏹</span><span><small>Ranged slot</small><strong>{equippedBow ? 'Hunting bow' : 'Empty'}</strong></span>{(inventory.bow > 0 || equippedBow) && <button className="item-action" onClick={onToggleBow} data-testid="button-equipment-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}</div><p className="equipment-hint">{equippedBow ? 'The bow is on your back — attacks fire arrows, even while mounted.' : equippedDagger ? 'The dagger is visible in your hand.' : 'Craft a dagger, then equip it from this tab.'}</p></div>
+            <div className="equipment-panel" role="tabpanel" aria-label="Equipment"><div className="inventory-count">Equipped gear changes your character</div><div className="paper-doll-wrap"><div className="paper-doll" role="img" aria-label={'Paper doll: ' + (equippedDagger ? 'dagger in hand' : 'no weapon') + ', ' + (equippedBow ? 'bow on back' : 'no bow')} data-testid="paper-doll"><span className="paper-doll-head" aria-hidden="true" /><span className="paper-doll-torso" aria-hidden="true" /><span className="paper-doll-arm arm-left" aria-hidden="true" /><span className="paper-doll-arm arm-right" aria-hidden="true" /><span className="paper-doll-leg leg-left" aria-hidden="true" /><span className="paper-doll-leg leg-right" aria-hidden="true" />{equippedBow && <span className="paper-doll-bow" aria-hidden="true">🏹</span>}{equippedDagger && <span className="paper-doll-dagger" aria-hidden="true">†</span>}</div><div className="paper-doll-slots"><div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot"><span className="equipment-slot-mark dagger-mark">†</span><span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>{(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedBow ? 'is-equipped' : '')} data-testid="equipment-ranged-slot"><span className="equipment-slot-mark bow-mark">🏹</span><span><small>Ranged slot</small><strong>{equippedBow ? 'Hunting bow' : 'Empty'}</strong></span>{(inventory.bow > 0 || equippedBow) && <button className="item-action" onClick={onToggleBow} data-testid="button-equipment-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}</div></div></div><p className="equipment-hint">{equippedBow ? 'The bow is on your back — attacks fire arrows, even while mounted.' : equippedDagger ? 'The dagger is visible in your hand.' : 'Craft a dagger, then equip it from this tab.'}</p></div>
           ) : <StatsPanel playerStats={playerStats} statPoints={statPoints} onAssign={onAssignStat} />}
         </div>
       </div>
@@ -2808,7 +2817,7 @@ function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: Player
   return <section className="satchel-stats-panel" role="tabpanel" aria-label="Adventurer Stats"><div className="satchel-stats-heading"><span className="atlas-eyebrow">Character growth</span><h3>Adventurer Stats</h3></div><div className="satchel-stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div><div className="satchel-stats-list">{STAT_KEYS.map((stat) => <div className="satchel-stat-row" key={stat} data-testid={'stat-row-' + stat}><span className="satchel-stat-key">{stat.toUpperCase()}</span><span className="satchel-stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span><b className="satchel-stat-value">{playerStats[stat]}</b><button className="satchel-stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button></div>)}</div><div className="satchel-stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div></section>;
 }
 
-function InteriorRoom({ area, position, facing, moving, equippedDagger, equippedBow, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onEnterDungeon }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; equippedBow: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onEnterDungeon: () => void }) {
+function InteriorRoom({ area, position, facing, moving, equippedDagger, equippedBow, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onEnterDungeon, onTavernSleep }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; equippedBow: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onEnterDungeon: () => void; onTavernSleep: () => void }) {
   // Tavern patron nameplates auto-hide (bartender Mira's stays); tapping a patron pops theirs for 4s.
   const [shownPatron, setShownPatron] = useState<string | null>(null);
   const patronTimerRef = useRef<number | null>(null);
@@ -2823,7 +2832,7 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
     inn: (<><span className="interior-rug" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-bar" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     chapel: (<><span className="interior-rug" /><span className="interior-altar" /><span className="interior-pew pew-left" /><span className="interior-pew pew-right" /><span className="interior-candle candle-left" /><span className="interior-candle candle-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     building: (<><span className="interior-rug" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
-    tavern: (<><span className="interior-rug" /><span className="interior-bar-counter" aria-hidden="true"><span className="bar-mug mug-1" /><span className="bar-mug mug-2" /><span className="bar-mug mug-3" /></span><span className="interior-stool stool-1" aria-hidden="true" /><span className="interior-stool stool-2" aria-hidden="true" /><span className="interior-stool stool-3" aria-hidden="true" /><span className="interior-round-table table-1" aria-hidden="true"><span className="bar-mug table-mug" /><span className="table-candle" /></span><span className="interior-round-table table-2" aria-hidden="true"><span className="bar-mug table-mug" /><span className="table-candle" /></span><span className="interior-barrel barrel-1" aria-hidden="true" /><span className="interior-barrel barrel-2" aria-hidden="true" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
+    tavern: (<><span className="interior-rug" /><span className="interior-bed" aria-hidden="true" /><span className="interior-bar-counter" aria-hidden="true"><span className="bar-mug mug-1" /><span className="bar-mug mug-2" /><span className="bar-mug mug-3" /></span><span className="interior-stool stool-1" aria-hidden="true" /><span className="interior-stool stool-2" aria-hidden="true" /><span className="interior-stool stool-3" aria-hidden="true" /><span className="interior-round-table table-1" aria-hidden="true"><span className="bar-mug table-mug" /><span className="table-candle" /></span><span className="interior-round-table table-2" aria-hidden="true"><span className="bar-mug table-mug" /><span className="table-candle" /></span><span className="interior-barrel barrel-1" aria-hidden="true" /><span className="interior-barrel barrel-2" aria-hidden="true" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     prison: (<><span className="prison-bars" /><span className="prison-straw-bed" /><span className="prison-sewer-grate" /><span className="prison-torch" /><span className="interior-lantern lantern-left" /></>),
   }[area.roomType];
   return (
@@ -2841,6 +2850,7 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Mira</strong><small>Bartender · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
+          <button type="button" className="tavern-sleep-button" onClick={onTavernSleep} style={{ left: '87%', top: '12%' }} aria-label="Sleep in the tavern bed until morning" data-testid="tavern-sleep-bed">😴 Sleep</button>
           <button type="button" className={'interior-npc npc-mage tavern-patron' + (shownPatron === 'tavern-noah' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-noah'); onTalkToTeacher('Noah', 'Mage teacher', 'mage'); }} style={{ left: '13%', top: '63%' }} aria-label="Talk to Noah" data-testid="tavern-patron-noah" data-facing="right">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Noah</strong><small>Mage teacher · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
@@ -2888,7 +2898,7 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
   );
 }
 
-function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn }: { inventory: GameInventory; equippedDagger: boolean; equippedBow: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null }) {
+function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equippedDagger: boolean; equippedBow: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
   // Debug tap marks (?debugDoors=1): user taps to mark where they think the
   // invisible exit/entrance is; rendered as lime green dots with coordinates.
@@ -3182,6 +3192,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     logs,
     time,
     carriage: serializeCarriage(carriageEarningsRef.current),
+    escortHired: escortHiredRef.current,
     brainState: brainRef.current?.getGameState() || null,
   });
   saveStateRef.current = createSaveData;
@@ -3231,6 +3242,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     if (loadState.reputation) onRestoreReputation(loadState.reputation);
     setLogs(loadState.logs); setTime(loadState.time);
     carriageEarningsRef.current = deserializeCarriage(loadState.carriage);
+    escortHiredRef.current = !!loadState.escortHired; setEscortHired(!!loadState.escortHired);
     setNpcDialogue(null); setAttackFlash(null); setLogOpen(false); setMoving(false);
     if (loadState.brainState) {
       brainRef.current?.loadGameState(loadState.brainState);
@@ -3392,7 +3404,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     waitingRef.current = false;
     setWaitProgress(null);
   };
-  const startWait = (ticks: number) => {
+  const startWait = (ticks: number, onComplete?: () => void) => {
     if (ticks <= 0 || waitingRef.current) return;
     cancelWait();
     waitingRef.current = true;
@@ -3402,7 +3414,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     setMoving(false);
     let remaining = ticks;
     const timer = window.setInterval(() => {
-      if (remaining <= 0) { cancelWait(); return; }
+      if (remaining <= 0) { cancelWait(); if (onComplete) onComplete(); return; }
       const nextClock = brainRef.current?.worldCore.advance(1);
       if (nextClock) setTime(formatWorldClock(nextClock));
       // The world does NOT freeze: NPC schedules, travelers and the
@@ -3669,7 +3681,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     const origin = { ...positionRef.current };
     const stats = playerStatsRef.current;
     const critical = Math.random() < playerCriticalChanceForStats(stats);
-    const damage = Math.round(playerDamageForStats(stats) * (critical ? 2 : 1) * BOW_ARROW_DAMAGE_MULT);
+    const damage = Math.round(playerDamageForStats(stats) * (critical ? 2 : 1) * BOW_ARROW_DAMAGE_MULT * beerDamageMultiplier(beerBuffUntil));
     let dx = 0; let dy = 0;
     const target = targetId == null ? null : [...goatsRef.current, ...monstersRef.current].find((c) => c.id === targetId && c.disposition !== 'defeated');
     if (target && Math.hypot(target.position.x - origin.x, target.position.y - origin.y) <= ARROW_RANGE) {
@@ -3777,7 +3789,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
             } else {
             const stats = playerStatsRef.current;
             const critical = Math.random() < playerCriticalChanceForStats(stats);
-            const damage = playerDamageForStats(stats) * (critical ? 2 : 1);
+            const damage = playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil);
             applyPlayerHitToCreature(attackTarget as { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, damage, critical);
             } // end harvest else
           } else {
@@ -4300,10 +4312,56 @@ if (active) {
     setLogs((currentLogs) => [{ text: `Bram shares a rumor: "${rumor}"`, color: 'purple' }, ...currentLogs].slice(0, 5));
   };
   // Rusty Tankard tavern: the bartender shares rumors, patrons share flavor.
-  const talkToBartender = () => {
+  // Rusty Tankard: Mira's full service menu (beer, rooms, escort, rumors).
+  const [tavernMenuOpen, setTavernMenuOpen] = useState(false);
+  const [escortHired, setEscortHired] = useState(false);
+  const escortHiredRef = useRef(false);
+  useEffect(() => { escortHiredRef.current = escortHired; }, [escortHired]);
+  const talkToBartender = () => { setTavernMenuOpen(true); };
+  const tavernBuyBeer = () => {
+    if (inventory.coins < BEER_PRICE) { setLogs((c) => [{ text: "You don't have enough gold for a beer.", color: 'red' }, ...c].slice(0, 5)); return; }
+    onLoot({ coins: -BEER_PRICE, beer: 1 } as GoatLoot);
+    setLogs((c) => [{ text: 'Mira slides you a foaming mug. "Drink it from your inventory — it\'ll put fire in your arm."', color: 'green' }, ...c].slice(0, 5));
+  };
+  const tavernSleepUntilMorning = () => {
+    if (inventory.coins < ROOM_PRICE) { setLogs((c) => [{ text: "Rooms cost 10 gold. Come back when you have the coin.", color: 'red' }, ...c].slice(0, 5)); return; }
+    onLoot({ coins: -ROOM_PRICE } as GoatLoot);
+    setTavernMenuOpen(false);
+    const heal = () => {
+      const maxHp = playerMaxHpForStats(playerStatsRef.current);
+      playerHpRef.current = maxHp; setPlayerHp(maxHp);
+      setLogs((c) => [{ text: 'You wake at dawn fully rested. HP restored.', color: 'green' }, ...c].slice(0, 5));
+    };
+    const clock = brainRef.current?.worldCore.getClock();
+    const ticks = clock ? ticksUntilHour(clock, 6) : 48;
+    if (ticks <= 0) { heal(); return; }
+    setLogs((c) => [{ text: 'Mira shows you to a small room upstairs. You sleep until morning…', color: 'blue' }, ...c].slice(0, 5));
+    startWait(ticks, heal);
+  };
+  const tavernHireEscort = () => {
+    if (escortHiredRef.current) return;
+    if (inventory.coins < ESCORT_PRICE) { setLogs((c) => [{ text: "An escort costs 50 gold.", color: 'red' }, ...c].slice(0, 5)); return; }
+    onLoot({ coins: -ESCORT_PRICE } as GoatLoot);
+    escortHiredRef.current = true; setEscortHired(true);
+    setTavernMenuOpen(false);
+    // One-time bonus: a full level's worth of XP (100 XP), with level-up.
+    const nextXp = playerXpRef.current + ESCORT_BONUS_XP;
+    const nextLevel = Math.floor(nextXp / 100) + 1;
+    const previousLevel = playerLevelRef.current;
+    playerXpRef.current = nextXp; setPlayerXp(nextXp);
+    if (nextLevel > previousLevel) {
+      const awarded = (nextLevel - previousLevel) * PLAYER_STAT_POINTS_PER_LEVEL;
+      playerLevelRef.current = nextLevel; setPlayerLevel(nextLevel);
+      onStatPointsChange((current) => current + awarded);
+      setLogs((c) => [{ text: `A seasoned guide takes you under their wing. Level up! You reached level ${nextLevel} (+${awarded} stat points).`, color: 'blue' }, ...c].slice(0, 5));
+    } else {
+      setLogs((c) => [{ text: 'A seasoned guide shares hard-won wisdom. (+' + ESCORT_BONUS_XP + ' XP)', color: 'blue' }, ...c].slice(0, 5));
+    }
+  };
+  const tavernRumor = () => {
     const rumor = WORLD_RUMORS[Math.floor(Math.random() * WORLD_RUMORS.length)];
     onAddRumor(rumor, 'Mira');
-    setLogs((currentLogs) => [{ text: `Mira slides a mug down the bar. "On the house, traveler! Hear this one: ${rumor}"`, color: 'purple' }, ...currentLogs].slice(0, 5));
+    setLogs((currentLogs) => [{ text: `Mira leans in. "Hear this one: ${rumor}"`, color: 'purple' }, ...currentLogs].slice(0, 5));
   };
   const talkToPatron = (name: string, line: string) => {
     setLogs((currentLogs) => [{ text: `${name} says: "${line}"`, color: 'blue' }, ...currentLogs].slice(0, 5));
@@ -4349,7 +4407,7 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onEnterDungeon={onEnterDungeon} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onEnterDungeon={onEnterDungeon} onTavernSleep={tavernSleepUntilMorning} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -5400,6 +5458,14 @@ if (active) {
               </div>
             );
           })()}
+          {chunk.x === 4 && chunk.y === 7 && TAVERN_ANNEX_RECTS.map((r, i) => (
+            <div
+              key={'annex-' + i}
+              className="tavern-annex"
+              style={{ left: fieldPct((r.left + r.right) / 2), top: fieldPct((r.top + r.bottom) / 2), width: fieldPct(r.right - r.left), height: fieldPct(r.bottom - r.top) }}
+              aria-label="Tavern guest rooms"
+            />
+          ))}
           {(() => {
             // Dungeon POI entrance: offer Descend when the player is near the crypt stairs.
             const dungeon = currentWorldTile.landmark && currentWorldTile.landmark.kind === 'dungeon' ? currentWorldTile.landmark : null;
@@ -5649,6 +5715,27 @@ if (active) {
             </div>
           </div>
         )}
+        {tavernMenuOpen && (
+          <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="tavern-menu-title">
+            <div className="npc-dialogue-card tavern-menu-card">
+              <div className="dialogue-portrait npc-guide" data-facing="down"><span className="npc-sprite" /></div>
+              <div className="npc-dialogue-copy">
+                <span className="dialogue-kicker">The Rusty Tankard</span>
+                <h2 id="tavern-menu-title">Mira, Bartender</h2>
+                <p>"Welcome in! What'll it be?"</p>
+                <div className="tavern-menu-options" role="group" aria-label="Tavern services">
+                  <button className="tavern-menu-option" onClick={tavernBuyBeer} data-testid="button-tavern-beer"><strong>🍺 Buy beer — 5 gold</strong><small>+50% attack for 1 minute. Drink it from your inventory.</small></button>
+                  <button className="tavern-menu-option" onClick={tavernSleepUntilMorning} data-testid="button-tavern-room"><strong>🛏️ Rent a room — 10 gold</strong><small>Sleep until morning, wake fully healed.</small></button>
+                  {!escortHired && (
+                    <button className="tavern-menu-option" onClick={tavernHireEscort} data-testid="button-tavern-escort"><strong>🧭 Hire an escort — 50 gold</strong><small>A seasoned guide's wisdom: bonus XP, one time only.</small></button>
+                  )}
+                  <button className="tavern-menu-option" onClick={tavernRumor} data-testid="button-tavern-rumor"><strong>👂 Ask for rumors</strong><small>Free, of course.</small></button>
+                </div>
+                <button className="dialogue-close" onClick={() => setTavernMenuOpen(false)} data-testid="button-close-tavern">Leave</button>
+              </div>
+            </div>
+          </div>
+        )}
         {attackFlash && <div className="combat-flash" aria-live="polite">{attackFlash}</div>}
         {!interior && (() => { const promptDoor = doorwayNear(position, chunk, houseOffsets); return promptDoor && <button type="button" className="door-prompt" aria-live="polite" onClick={() => enterDoorway(promptDoor, chunk)}>Enter {promptDoor.area.name}</button>; })()}
         {areaFlash && (
@@ -5663,6 +5750,9 @@ if (active) {
             <div className="bar" aria-label={'Health ' + playerHp + ' of ' + playerMaxHp} ><div className="bar-fill health" style={{ width: ((playerHp / playerMaxHp) * 100) + '%' }} /></div><span className="hud-health-value">{playerHp} / {playerMaxHp} HP</span>
             <div className="bar xp-bar" aria-label={'Experience ' + (playerXp % 100) + ' of 100 to next level'}><div className="bar-fill xp-fill" style={{ width: ((playerXp % 100)) + '%' }} /></div><span className="hud-xp-value">{playerXp % 100} / 100 XP</span>
             <span className="hud-clock" data-testid="text-hud-time">{time}</span>
+            {Date.now() < beerBuffUntil && (
+              <span className="hud-buff-chip" role="status" aria-label="Beer buff: +50% attack" title="Beer: +50% attack" data-testid="hud-beer-buff">🍺</span>
+            )}
             <button className="hud-quick-button" onClick={() => setWaitSheetOpen(true)} aria-label="Wait / pass time" title="Wait" data-testid="button-wait"><Hourglass size={15} /></button>
             <div className="hud-quick-actions">
               <button className="hud-quick-button" onClick={onOpenMap} aria-label="Open world map" title="World map" data-testid="button-open-map"><MapIcon size={15} /></button>
@@ -5697,6 +5787,10 @@ if (active) {
            </section>
          )}
          <div className="field-actions">
+           <div className="equipped-weapon-box" role="status" aria-label={'Equipped weapon: ' + (equippedBow ? 'Hunting bow' : equippedDagger ? 'Goat-horn dagger' : 'Fists')} title={equippedBow ? 'Hunting bow — attacks fire arrows' : equippedDagger ? 'Goat-horn dagger' : 'Fists'} data-testid="hud-equipped-weapon">
+             <span className="equipped-weapon-icon" aria-hidden="true">{equippedBow ? '🏹' : equippedDagger ? '†' : '✊'}</span>
+             <span className="equipped-weapon-label">{equippedBow ? 'Bow' : equippedDagger ? 'Dagger' : 'Fists'}</span>
+           </div>
            <button className="icon-button field-attack-button" onClick={() => attackGoat()} disabled={attackCooldownMs > 0 || attacking || inputLocked || Boolean(interior) || (mounted && !equippedBow)} aria-label={equippedBow ? (selectedGoat ? 'Loose arrow at target' : 'Loose arrow') : (selectedGoat ? 'Strike selected goat' : 'Strike nearest goat')} title={equippedBow ? 'Fire bow · Space' : (selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space')} aria-disabled={attackCooldownMs > 0 || attacking} data-testid="button-attack">{equippedBow ? '🏹' : <Sword size={16} />}{attackCooldownMs > 0 && <span className="attack-cooldown-ring" style={{ background: 'conic-gradient(rgba(219, 120, 94, .95) ' + ((attackCooldownMs / PLAYER_ATTACK_COOLDOWN_MS) * 100) + '%, rgba(19, 43, 34, .2) 0)' }} aria-hidden="true" />}</button>
          </div>
       </div>
@@ -5727,6 +5821,16 @@ function Home() {
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
   const [inventory, setInventory] = useState<GameInventory>(initialInventory);
+  // Beer buff: drinking a beer grants +50% attack for 1 minute (wall clock).
+  const [beerBuffUntil, setBeerBuffUntil] = useState(0);
+  const drinkBeer = () => {
+    if (inventory.beer < 1) return;
+    setInventory((current) => ({ ...current, beer: Math.max(0, current.beer - 1) }));
+    const until = Date.now() + 60000;
+    setBeerBuffUntil(until);
+    window.setTimeout(() => setBeerBuffUntil((current) => (current === until ? 0 : current)), 60500);
+  };
+  const beerBuffActive = Date.now() < beerBuffUntil;
   const [playerStats, setPlayerStats] = useState<PlayerStats>(initialPlayerStats);
   const [statPoints, setStatPoints] = useState(0);
   const [equippedDagger, setEquippedDagger] = useState(false);
@@ -5823,6 +5927,7 @@ function Home() {
     wood: Math.max(0, current.wood + (loot.wood || 0)),
     silk: Math.max(0, current.silk + (loot.silk || 0)),
     bow: Math.max(0, current.bow + (loot.bow || 0)),
+    beer: Math.max(0, current.beer + (loot.beer || 0)),
   }));
 
   const toggleDagger = () => {
@@ -6105,12 +6210,12 @@ function Home() {
       ) : (
         <>
           <div className="game-layout">
-            <GameField inventory={inventory} equippedDagger={equippedDagger} equippedBow={equippedBow} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
+            <GameField inventory={inventory} equippedDagger={equippedDagger} equippedBow={equippedBow} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} />}
           {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1' && <DebugOverlay chunk={chunk} />}
-          {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} />}
+          {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} />}
           {journalOpen && (
             <div className="sheet journal-sheet" role="dialog" aria-label="Adventure journal" data-testid="journal-sheet">
               <div className="sheet-header">
