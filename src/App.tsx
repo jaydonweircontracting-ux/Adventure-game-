@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '269';
+const BUILD_NUMBER = '270';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -1854,11 +1854,8 @@ type TownNpc = {
   smith?: boolean;
 };
 
-const startingTownNpcs: TownNpc[] = [
-  { name: 'Noah', title: 'Mage teacher', role: 'mage', position: { x: 40, y: 47 }, facing: 'right', moving: false, target: null, home: { x: 35, y: 60 }, work: { x: 40, y: 47 }, leisure: { x: 50, y: 50 } },
-  { name: 'Damon', title: 'Warrior teacher', role: 'warrior', position: { x: 60, y: 47 }, facing: 'left', moving: false, target: null, home: { x: 65, y: 60 }, work: { x: 60, y: 47 }, leisure: { x: 50, y: 55 } },
-  { name: 'Shawn', title: 'Rogue instructor', role: 'rogue', position: { x: 50, y: 64 }, facing: 'up', moving: false, target: null, home: { x: 45, y: 65 }, work: { x: 50, y: 64 }, leisure: { x: 55, y: 50 } },
-];
+// Noah, Damon and Shawn now drink in the Rusty Tankard (fourth house) — removed from the field.
+const startingTownNpcs: TownNpc[] = [];
 
 // Get where an NPC should be based on the time of day
 function npcScheduleTarget(npc: TownNpc, hour: number): Point {
@@ -2571,7 +2568,7 @@ function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: Player
   return <section className="satchel-stats-panel" role="tabpanel" aria-label="Adventurer Stats"><div className="satchel-stats-heading"><span className="atlas-eyebrow">Character growth</span><h3>Adventurer Stats</h3></div><div className="satchel-stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div><div className="satchel-stats-list">{STAT_KEYS.map((stat) => <div className="satchel-stat-row" key={stat} data-testid={'stat-row-' + stat}><span className="satchel-stat-key">{stat.toUpperCase()}</span><span className="satchel-stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span><b className="satchel-stat-value">{playerStats[stat]}</b><button className="satchel-stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button></div>)}</div><div className="satchel-stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div></section>;
 }
 
-function InteriorRoom({ area, position, facing, moving, equippedDagger, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onEnterDungeon }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onEnterDungeon: () => void }) {
+function InteriorRoom({ area, position, facing, moving, equippedDagger, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onEnterDungeon }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onEnterDungeon: () => void }) {
   // Room-type-specific furniture: each building type gets its own visual identity.
   const furniture = {
     guild: (<><span className="interior-rug" /><span className="interior-workbench" /><span className="interior-forge" aria-hidden="true"><span className="forge-fire"><span className="forge-flame forge-flame-back" /><span className="forge-flame forge-flame-mid" /><span className="forge-flame forge-flame-core" /><span className="forge-sparks"><i /><i /><i /><i /><i /></span></span><span className="forge-logs" /></span><span className="interior-weapon-rack" aria-hidden="true"><span className="rack-weapon" style={{ left: '8%', height: '58%', transform: 'rotate(-6deg)' }} /><span className="rack-weapon" style={{ left: '27%', height: '66%', transform: 'rotate(4deg)' }} /><span className="rack-weapon" style={{ left: '46%', height: '60%', transform: 'rotate(-3deg)' }} /><span className="rack-weapon" style={{ left: '65%', height: '68%', transform: 'rotate(5deg)' }} /><span className="rack-weapon" style={{ left: '82%', height: '56%', transform: 'rotate(-5deg)' }} /></span><span className="interior-quest-board" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
@@ -2602,16 +2599,24 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, attackin
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Mira</strong><small>Bartender · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className="interior-npc npc-mage" onClick={() => onTalkToPatron('Noah', "Even mages need a night off. This ale has excellent foam structure — it's all about the fundamentals.")} style={{ left: '13%', top: '63%' }} aria-label="Talk to Noah" data-testid="tavern-patron-noah" data-facing="right">
+          <button type="button" className="interior-npc npc-mage" onClick={() => onTalkToTeacher('Noah', 'Mage teacher', 'mage')} style={{ left: '13%', top: '63%' }} aria-label="Talk to Noah" data-testid="tavern-patron-noah" data-facing="right">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Noah</strong><small>Mage teacher · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className="interior-npc npc-warrior" onClick={() => onTalkToPatron('Damon', "Arm wrestle? You'd lose, but I admire the spirit! Mira, another round!")} style={{ left: '81%', top: '66%' }} aria-label="Talk to Damon" data-testid="tavern-patron-damon" data-facing="left">
+          <button type="button" className="interior-npc npc-warrior" onClick={() => onTalkToTeacher('Damon', 'Warrior teacher', 'warrior')} style={{ left: '81%', top: '66%' }} aria-label="Talk to Damon" data-testid="tavern-patron-damon" data-facing="left">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Damon</strong><small>Warrior teacher · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className="interior-npc npc-rogue" onClick={() => onTalkToPatron('Shawn', "You didn't see me. ...Good footwork slipping past the door, though.")} style={{ left: '48%', top: '44%' }} aria-label="Talk to Shawn" data-testid="tavern-patron-shawn" data-facing="up">
+          <button type="button" className="interior-npc npc-rogue" onClick={() => onTalkToTeacher('Shawn', 'Rogue instructor', 'rogue')} style={{ left: '48%', top: '44%' }} aria-label="Talk to Shawn" data-testid="tavern-patron-shawn" data-facing="up">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Shawn</strong><small>Rogue instructor · Talk</small></span>
+            <span className="npc-sprite" aria-hidden="true" />
+          </button>
+          <button type="button" className="interior-npc npc-warrior" onClick={() => onTalkToPatron('Old Tam', "Back in my day, the goats were bigger. And meaner. Mostly meaner.")} style={{ left: '24%', top: '81%' }} aria-label="Talk to Old Tam" data-testid="tavern-patron-tam" data-facing="up">
+            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Old Tam</strong><small>Regular · Talk</small></span>
+            <span className="npc-sprite" aria-hidden="true" />
+          </button>
+          <button type="button" className="interior-npc npc-mage" onClick={() => onTalkToPatron('Sella', "They say the Ember Vault under the chapel glows when danger stirs. I don't go down there.")} style={{ left: '66%', top: '82%' }} aria-label="Talk to Sella" data-testid="tavern-patron-sella" data-facing="up">
+            <span className="interior-npc-nameplate" aria-hidden="true"><strong>Sella</strong><small>Traveler · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
         </>
@@ -2851,7 +2856,8 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
     const restoredStats = loadState.playerStats || initialPlayerStats;
     playerStatsRef.current = restoredStats; onPlayerStatsChange(restoredStats);
     onStatPointsChange(Math.max(0, Math.floor(loadState.statPoints || 0)));
-    setNpcStates(loadState.npcStates);
+    // Teachers moved to the Rusty Tankard: drop any saved field copies.
+    setNpcStates((loadState.npcStates || []).filter((npc) => npc.name !== 'Noah' && npc.name !== 'Damon' && npc.name !== 'Shawn'));
     const restoredAdventurers = loadState.simulatedAdventurers.length
       ? loadState.simulatedAdventurers.map((adventurer) => ({ ...adventurer, level: 1, location: adventurer.location ?? 'field', interiorPosition: adventurer.interiorPosition ?? { x: 50, y: 47 } }))
       : initialSimulatedAdventurers;
@@ -3630,6 +3636,12 @@ if (active) {
   const talkToPatron = (name: string, line: string) => {
     setLogs((currentLogs) => [{ text: `${name} says: "${line}"`, color: 'blue' }, ...currentLogs].slice(0, 5));
   };
+  // Class teachers now live in the Rusty Tankard. Tapping them opens their full
+  // teacher dialogue (including the level-10 class choice), same as before.
+  const talkToTavernTeacher = (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => {
+    setNpcDialogue({ name, title, role, position: { x: 50, y: 50 }, facing: 'down', moving: false, target: null });
+    setLogs((currentLogs) => [{ text: `${name} turns to you: ${title}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
   const enterDoorway = (doorway: Doorway, entryChunk: Point) => {
     interiorDoorwayIdRef.current = doorway.id;
     interiorEntryChunkRef.current = { x: entryChunk.x, y: entryChunk.y };
@@ -3642,7 +3654,7 @@ if (active) {
   return (
     <div className="field-column">
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
-        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onEnterDungeon={onEnterDungeon} /> : (
+        {interior ? <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onEnterDungeon={onEnterDungeon} /> : (
         <div className={'pixel-field world-field world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
