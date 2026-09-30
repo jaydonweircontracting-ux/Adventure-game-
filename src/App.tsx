@@ -29,6 +29,7 @@ import {
   serializeCivilization,
   settlementById,
   settlementsByChunk,
+  topProducedResources,
   type CivilizationState,
 } from '@/game/civilization';
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor } from '@/game/monsterSprites';
@@ -4952,6 +4953,17 @@ if (active) {
                         );
                       });
                     })()}
+                    <div className="inspector-heading">Economy &amp; resources</div>
+                    {civ.kingdoms.map((k) => (
+                      <div key={k.id} className="inspector-row">
+                        <span>💰 <strong>{k.name}</strong> · daily output {Math.round(k.economy).toLocaleString()}g · treasury {k.treasury.toLocaleString()}g</span>
+                      </div>
+                    ))}
+                    {settlementsByChunk(civ, chunk).map((s) => (
+                      <div key={s.id} className="inspector-row">
+                        <span>🌾 <strong>{s.name}</strong> produces {topProducedResources(s).map((r) => `${r.resource} ${r.amount}/d (${r.price}g)`).join(', ') || 'nothing'}</span>
+                      </div>
+                    ))}
                   </div>
                 );
               })()}

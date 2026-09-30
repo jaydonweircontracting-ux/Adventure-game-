@@ -1324,6 +1324,22 @@ export function castleBySettlementId(civ: CivilizationState, settlementId: strin
   return civ.castles.find((c) => c.settlementId === settlementId);
 }
 
+/** Top N produced resources of a settlement, with current market prices. */
+export function topProducedResources(
+  settlement: Settlement,
+  n = 4,
+): { resource: Resource; amount: number; price: number }[] {
+  return (Object.entries(settlement.production) as [Resource, number][])
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([resource, amount]) => ({
+      resource,
+      amount: Math.round(amount * 10) / 10,
+      price: Math.round((settlement.prices[resource] ?? 0) * 100) / 100,
+    }));
+}
+
 // ---------------------------------------------------------------------------
 // Daily simulation advance (NOT per frame)
 // ---------------------------------------------------------------------------
