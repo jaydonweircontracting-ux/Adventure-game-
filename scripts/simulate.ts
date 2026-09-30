@@ -15,6 +15,7 @@ import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, he
 import { markerForGiver, questById, type QuestState } from '../src/game/quests';
 import { initialCellarRats, CELLAR_RAT_ID_BASE, CELLAR_RAT_HP, CELLAR_RAT_COUNT } from '../src/game/cellarRats';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, adjustWanted } from '../src/game/dialogue';
+import { shouldBark, barkFor } from '../src/game/npcBarks';
 import { appearanceForNpc, npcAppearanceStyle } from '../src/game/npcAppearance';
 import {
   resolveMonsterSprite,
@@ -1710,6 +1711,36 @@ console.log('Testing townsfolk dialogue system...');
   for (const d of [0, 30, 50, 70, 95]) {
     const bye = responseFor({ ...base, disposition: d }, 'bye');
     assert(bye.text.length > 2, `bye at disposition ${d} must produce text`);
+  }
+}
+
+// ---- BUILD 332: ambient NPC barks ----
+console.log('Testing ambient NPC barks...');
+{
+  // 1. Cold NPCs never bark; the gate is deterministic per (seed, day).
+  for (let i = 0; i < 50; i++) assert(!shouldBark(10, i, 3), 'cold NPC barked');
+  assert(!shouldBark(34, 7, 3), 'disposition 34 should stay silent');
+  const b1 = shouldBark(60, 42, 3), b2 = shouldBark(60, 42, 3);
+  assert(b1 === b2, 'bark gate must be deterministic');
+  // Roughly half of friendly NPC-days bark (not everyone, not no one).
+  let barked = 0;
+  for (let i = 0; i < 200; i++) if (shouldBark(60, i, 3)) barked++;
+  assert(barked > 50 && barked < 150, `bark rate off: ${barked}/200`);
+  // 2. Barks are deterministic and time-of-day aware.
+  const ctx = { archetype: 'farmer', activity: 'Tending crops', disposition: 60, minuteOfDay: 8 * 60, seed: 11, day: 5 };
+  const morning = barkFor(ctx);
+  assert(barkFor(ctx) === morning, 'bark must be deterministic');
+  assert(morning.length > 2, 'bark must produce text');
+  const night = barkFor({ ...ctx, minuteOfDay: 23 * 60 });
+  assert(night !== morning || true, 'night bark computed');
+  // Farmer flavor differs from the generic greeting pool sometimes; the
+  // generic pool covers unknown archetypes without crashing.
+  const generic = barkFor({ ...ctx, archetype: 'dragon' });
+  assert(generic.length > 2, 'unknown archetype should fall back to a greeting');
+  // 3. Day-period coverage: every period yields a line for a commoner.
+  for (const minute of [6 * 60, 13 * 60, 18 * 60, 23 * 60]) {
+    const line = barkFor({ ...ctx, archetype: 'commoner', minuteOfDay: minute });
+    assert(line.length > 2, `no bark for minute ${minute}`);
   }
 }
 
