@@ -34,7 +34,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '277';
+const BUILD_NUMBER = '278';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -2749,6 +2749,7 @@ function GameField({ inventory, equippedDagger, playerStats, statPoints, charact
   const [gameZoom, setGameZoom] = useState(1);
   // Debug mover mode (toggleable from options menu). Syncs with module-level moveHouses.
   const [moverMode, setMoverMode] = useState(moveHouses);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const toggleMoverMode = () => {
     const next = !moverMode;
     moveHouses = next;
@@ -4097,6 +4098,66 @@ if (active) {
               </div>
             </div>
           )}
+          {inspectorOpen && (
+            <div className="editor-panel inspector-panel">
+              <div className="editor-panel-title">🔍 NPC Inspector <span className="editor-panel-chunk">{time}</span></div>
+              <div className="editor-actions">
+                <button type="button" className="editor-btn" onClick={() => setInspectorOpen(false)}>
+                  Close
+                </button>
+              </div>
+              {townsfolk.length > 0 && (
+                <div className="inspector-section">
+                  <div className="inspector-heading">Mosslight townsfolk ({townsfolk.length})</div>
+                  {townsfolk.map((npc) => (
+                    <div key={npc.id} className="inspector-row">
+                      <span>{npc.indoors ? '🏠' : '🌳'} <strong>{npc.name}</strong> · {npc.archetype} · {npc.activity}</span>
+                      {!npc.indoors && (
+                        <button
+                          type="button"
+                          className="editor-btn"
+                          onClick={() => {
+                            setPosition({ x: Math.min(134, Math.max(4, npc.position.x + 3)), y: Math.min(134, Math.max(4, npc.position.y + 3)) });
+                            setInspectorOpen(false);
+                          }}
+                        >
+                          Go to
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {travelers.length > 0 && (
+                <div className="inspector-section">
+                  <div className="inspector-heading">Road travelers ({travelers.length})</div>
+                  {travelers.map((traveler) => (
+                    <div key={traveler.id} className="inspector-row">
+                      <span>🚶 <strong>{traveler.name}</strong> · {traveler.kind} → {traveler.destination}</span>
+                      <button
+                        type="button"
+                        className="editor-btn"
+                        onClick={() => {
+                          setPosition({ x: Math.min(134, Math.max(4, traveler.position.x + 3)), y: Math.min(134, Math.max(4, traveler.position.y + 3)) });
+                          setInspectorOpen(false);
+                        }}
+                      >
+                        Go to
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="inspector-section">
+                <div className="inspector-heading">Adventurers ({simulatedAdventurers.length})</div>
+                {simulatedAdventurers.map((adv) => (
+                  <div key={adv.id} className="inspector-row">
+                    <span>⚔️ <strong>{adv.name}</strong> · Lv{adv.level} {adv.className} · {adv.location} — {adv.activity}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {!interior && (
             <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', zIndex: 60, display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
@@ -4892,6 +4953,10 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMarkerMode(); }} data-testid="button-debug-markers">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: {markerMode ? 'Hide' : 'Show'} Markers</strong><small>{markerMode ? 'Hide dots' : 'Green=triggers, Red=remove'}</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); setInspectorOpen(true); }} data-testid="button-debug-inspector">
+                  <span className="options-action-icon"><Settings size={17} /></span>
+                  <span><strong>Debug: NPC Inspector</strong><small>Townsfolk, travelers, adventurers · go-to</small></span>
                 </button>
               </div>
               <button className="options-menu-button" onClick={() => { setOptionsOpen(false); onOpenMenu(); }} data-testid="button-options-main-menu">Main Menu</button>
