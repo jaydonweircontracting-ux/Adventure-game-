@@ -4717,6 +4717,7 @@ body {
 /* BUILD 301 (civ phase 16): world events — the civilization's deterministic daily events are announced in the game log as days advance and listed in the NPC Inspector's World events section. */
 /* BUILD 302 (civ phase 17): simulation LOD — documented tier policy; fake-player adventurers tick at 1/8 rate when the player is away from Mosslight (logins still spawn on cadence); townsfolk clear when leaving town; travelers/caravans/military/horses/events stay analytic. */
 /* BUILD 303 (civ phase 18): persistence — carriage rides in progress now save and resume after load (extracted runCarriageTravel driver, validated resume on restore). */
+/* BUILD 304 (civ phase 19): debug tools — NPC Inspector gains a Points of interest section (kind, danger, Go to) and Go to buttons on the Horses rows. */
 .locked-chest {
   position: absolute;
   z-index: 5;

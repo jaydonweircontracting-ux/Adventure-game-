@@ -5264,6 +5264,18 @@ if (active) {
                         return (
                           <div key={h.id} className="inspector-row">
                             <span>🐴 <strong>{h.name}</strong> · {h.color} · {target.activity.replace(/_/g, ' ')}{here ? ' · here' : ''}</span>
+                            {here && (
+                              <button
+                                type="button"
+                                className="editor-btn"
+                                onClick={() => {
+                                  setPosition({ x: Math.min(134, Math.max(4, target.position.x + 3)), y: Math.min(134, Math.max(4, target.position.y + 3)) });
+                                  setInspectorOpen(false);
+                                }}
+                              >
+                                Go to
+                              </button>
+                            )}
                           </div>
                         );
                       });
@@ -5313,6 +5325,28 @@ if (active) {
                   ))}
                 </div>
               )}
+              <div className="inspector-section">
+                <div className="inspector-heading">Points of interest</div>
+                {(() => {
+                  const pois = modulePoisForChunk(chunk, DEFAULT_WORLD_SEED, {});
+                  if (pois.length === 0) return <div className="inspector-row"><span>None on this chunk.</span></div>;
+                  return pois.map((poi) => (
+                    <div key={poi.id} className="inspector-row">
+                      <span>📍 <strong>{poi.name}</strong> · {poi.kind.replace(/_/g, ' ')} · danger {poi.danger}</span>
+                      <button
+                        type="button"
+                        className="editor-btn"
+                        onClick={() => {
+                          setPosition({ x: Math.min(134, Math.max(4, poi.position.x + 3)), y: Math.min(134, Math.max(4, poi.position.y + 3)) });
+                          setInspectorOpen(false);
+                        }}
+                      >
+                        Go to
+                      </button>
+                    </div>
+                  ));
+                })()}
+              </div>
               <div className="inspector-section">
                 <div className="inspector-heading">Adventurers ({simulatedAdventurers.length})</div>
                 {simulatedAdventurers.map((adv) => (
