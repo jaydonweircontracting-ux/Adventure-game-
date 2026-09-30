@@ -1273,6 +1273,32 @@ for (const kind of EXPECTED_KINDS) {
   assert(before === after, 'monster-sprites.gen.css was out of sync with JSON defs (regenerated — re-run sim)');
 }
 
+// ---- BUILD 373: iso paper-doll character sprites (Mana Seed) ----
+{
+  const { NPC_LOOKS: ISO_LOOKS, msLookKeys: isoLookKeys, MS_FEET_ROW: ISO_FEET, MS_CELL: ISO_CELL } =
+    await import('../src/game/iso/isoSprites');
+  assert(ISO_LOOKS.length >= 5, `expected at least 5 iso looks, got ${ISO_LOOKS.length}`);
+  assert(ISO_FEET > 0 && ISO_FEET < ISO_CELL, `MS_FEET_ROW ${ISO_FEET} out of range`);
+  const seenBodies = new Set<string>();
+  for (let i = 0; i < ISO_LOOKS.length; i++) {
+    const look = ISO_LOOKS[i];
+    const keys = isoLookKeys(look);
+    assert(keys.length >= 3, `look ${i}: paper-doll needs body+outfit+hair`);
+    assert(keys[0] === look.body && keys[1] === look.outfit, `look ${i}: body/outfit must draw first`);
+    seenBodies.add(look.body);
+    for (const k of keys) {
+      const p = `public/manaseed/${k}.png`;
+      assert(existsSync(p), `look ${i}: missing paper-doll sheet ${p}`);
+      const png = readFileSyncSprites(p);
+      const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
+      assert(w === 512 && h === 512, `look ${i}: ${k} is ${w}x${h}, expected 512x512`);
+    }
+  }
+  assert(seenBodies.size >= 4, `expected at least 4 distinct body variants, got ${seenBodies.size}`);
+  // Player (look 0) starts in underwear/shorts, not street clothes.
+  assert(/undi|boxr/.test(ISO_LOOKS[0].outfit), `player look should start in underwear/shorts, got ${ISO_LOOKS[0].outfit}`);
+}
+
 // ---- BUILD 317: monster sprite fallback hierarchy ----
 {
   clearMonsterSpriteCaches();

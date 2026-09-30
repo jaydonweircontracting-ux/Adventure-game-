@@ -35,7 +35,7 @@ type SelKind = 'tree' | 'rock' | 'crate' | 'npc' | 'stall' | 'hut' | 'wall' | 's
 interface Selection { kind: SelKind; index: number }
 
 import {
-  preloadMsSprites, msReady, msSprite, NPC_LOOKS, MS_ROW, MS_CELL, MS_WALK_FRAMES, msLookKeys,
+  preloadMsSprites, msReady, msSprite, NPC_LOOKS, MS_ROW, MS_CELL, MS_WALK_FRAMES, MS_FEET_ROW, msLookKeys,
   preloadFoodSprites, foodReady, foodSprite, FOOD_KEYS,
   type Face4,
 } from './isoSprites';
@@ -453,7 +453,8 @@ export default function IsoRoom(): React.JSX.Element {
       const keys = msLookKeys(L);
       return {
         depth, tx: px, ty: py, draw: (g) => {
-          const lift = moving ? Math.abs(Math.sin(nowMs / 130)) * 3 : 0;
+          // Feet anchor: MS_FEET_ROW of the 64px cell lands on the tile point.
+          const lift = moving ? Math.abs(Math.sin(nowMs / 130)) * 2 : 0;
           g.fillStyle = 'rgba(0,0,0,0.22)';
           g.beginPath(); g.ellipse(c.x, c.y + 3, 12, 5, 0, 0, 7); g.fill();
           const ready = msReady(keys);
@@ -464,7 +465,7 @@ export default function IsoRoom(): React.JSX.Element {
             const frame = moving ? Math.floor(nowMs / 150) % MS_WALK_FRAMES : 0;
             const sx = frame * MS_CELL, sy = (moving ? rows.walk : rows.stand) * MS_CELL;
             const size = 52;
-            const dx = c.x - size / 2, dy = c.y - size + 6 - lift;
+            const dx = c.x - size / 2, dy = c.y - (MS_FEET_ROW / MS_CELL) * size - lift;
             for (const k of keys) {
               const im = msSprite(k);
               if (!im) continue;

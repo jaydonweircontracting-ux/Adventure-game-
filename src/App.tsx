@@ -171,7 +171,7 @@ function formatWorldClock(clock: WorldClockState) {
   return formatClockDisplay(clock);
 }
 
-const WALK_SPEED = 56; // Deliberately slower exploration pace
+const WALK_SPEED = 40; // Deliberately slower exploration pace
 const HORSE_SPEED = 180;
 const HORSE_MOUNT_DISTANCE = 4.5;
 const initialHorseState: HorseState = { chunk: { x: 4, y: 7 }, position: { x: 58, y: 52 } };
@@ -6111,6 +6111,13 @@ if (active) {
               look: Math.abs(npc.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 5,
             }))}
             onExit={exitInteriorToField}
+            getHeldDir={() => {
+              const r = keysRef.current.right === true || isTouchHeld(touchHoldsRef.current, 'right');
+              const l = keysRef.current.left === true || isTouchHeld(touchHoldsRef.current, 'left');
+              const d = keysRef.current.down === true || isTouchHeld(touchHoldsRef.current, 'down');
+              const u = keysRef.current.up === true || isTouchHeld(touchHoldsRef.current, 'up');
+              return { x: (r ? 1 : 0) - (l ? 1 : 0), y: (d ? 1 : 0) - (u ? 1 : 0) };
+            }}
             onTalkTo={(npcId) => {
               const npc = townsfolk.find((n) => n.id === npcId);
               if (npc) talkToTownsfolk(npc);

@@ -11,16 +11,24 @@ export interface MsLook {
   outfit: string;
   hair: string;
   hat?: string;
+  // Future armor layer: drawn over the outfit, under hair/hat. Armor sprites
+  // drop in here with no renderer changes.
+  armor?: string;
 }
 
-// Character looks built from Mana Seed paper-doll layers. Index 0 is the player.
+// Character looks built from Mana Seed paper-doll layers (pONE3 set — the
+// complete wardrobe: 11 skin tones, underwear/boxers, clothes, hair, hats).
+// Index 0 is the player. Base state is underwear/shorts; the outfit slot
+// takes clothes or armor later.
+// Body variants are skin tones: v00 light, v01/v02 fair, v03/v04 tan,
+// v05/v06 brown, v07/v08 deep, v09/v10 dark.
 export const NPC_LOOKS: MsLook[] = [
-  { body: 'char_a_p1_0bas_humn_v00', outfit: 'char_a_p1_1out_fstr_v01', hair: 'char_a_p1_4har_bob1_v01' },
-  { body: 'char_a_p1_0bas_humn_v03', outfit: 'char_a_p1_1out_pfpn_v02', hair: 'char_a_p1_4har_dap1_v03', hat: 'char_a_p1_5hat_pfht_v01' },
-  { body: 'char_a_p1_0bas_humn_v06', outfit: 'char_a_p1_1out_fstr_v02', hair: 'char_a_p1_4har_bob1_v05' },
-  { body: 'char_a_p1_0bas_humn_v09', outfit: 'char_a_p1_1out_fstr_v03', hair: 'char_a_p1_4har_dap1_v09', hat: 'char_a_p1_5hat_pnty_v03' },
-  { body: 'char_a_p1_0bas_humn_v00', outfit: 'char_a_p1_1out_pfpn_v02', hair: 'char_a_p1_4har_dap1_v03' },
-  { body: 'char_a_p1_0bas_humn_v06', outfit: 'char_a_p1_1out_fstr_v01', hair: 'char_a_p1_4har_bob1_v01', hat: 'char_a_p1_5hat_pfht_v01' },
+  { body: 'char_a_pONE3_0bas_humn_v00', outfit: 'char_a_pONE3_1out_undi_v01', hair: 'char_a_pONE3_4har_bob1_v00' },
+  { body: 'char_a_pONE3_0bas_humn_v03', outfit: 'char_a_pONE3_1out_boxr_v01', hair: 'char_a_pONE3_4har_dap1_v03' },
+  { body: 'char_a_pONE3_0bas_humn_v06', outfit: 'char_a_pONE3_1out_fstr_v02', hair: 'char_a_pONE3_4har_bob1_v05' },
+  { body: 'char_a_pONE3_0bas_humn_v09', outfit: 'char_a_pONE3_1out_pfpn_v02', hair: 'char_a_pONE3_4har_dap1_v09', hat: 'char_a_pONE3_5hat_pfht_v02' },
+  { body: 'char_a_pONE3_0bas_humn_v01', outfit: 'char_a_pONE3_1out_undi_v01', hair: 'char_a_pONE3_4har_bob1_v08' },
+  { body: 'char_a_pONE3_0bas_humn_v07', outfit: 'char_a_pONE3_1out_fstr_v04', hair: 'char_a_pONE3_4har_dap1_v12', hat: 'char_a_pONE3_5hat_pnty_v03' },
 ];
 
 /**
@@ -30,6 +38,10 @@ export const NPC_LOOKS: MsLook[] = [
  */
 export const MS_CELL = 64;
 export const MS_WALK_FRAMES = 6;
+// Measured foot baseline across all body variants: stand rows end at source
+// row 43, walk rows at 44 (64px cells). Anchor sprites here so feet land on
+// the tile point instead of floating above it.
+export const MS_FEET_ROW = 43.5;
 export const MS_ROW: Record<Face4, { stand: number; walk: number }> = {
   down: { stand: 0, walk: 4 },
   up: { stand: 1, walk: 5 },
@@ -37,21 +49,26 @@ export const MS_ROW: Record<Face4, { stand: number; walk: number }> = {
   right: { stand: 3, walk: 7 },
 };
 
-/** Paper-doll draw order: body -> outfit -> hair -> hat. */
+/** Paper-doll draw order: body -> outfit -> armor -> hair -> hat. */
 export function msLookKeys(look: MsLook): string[] {
-  const keys = [look.body, look.outfit, look.hair];
+  const keys = [look.body, look.outfit];
+  if (look.armor) keys.push(look.armor);
+  keys.push(look.hair);
   if (look.hat) keys.push(look.hat);
   return keys;
 }
 
 const MS_FILES = [
-  'char_a_p1_0bas_humn_v00', 'char_a_p1_0bas_humn_v03',
-  'char_a_p1_0bas_humn_v06', 'char_a_p1_0bas_humn_v09',
-  'char_a_p1_1out_fstr_v01', 'char_a_p1_1out_fstr_v02',
-  'char_a_p1_1out_fstr_v03', 'char_a_p1_1out_pfpn_v02',
-  'char_a_p1_4har_bob1_v01', 'char_a_p1_4har_bob1_v05',
-  'char_a_p1_4har_dap1_v03', 'char_a_p1_4har_dap1_v09',
-  'char_a_p1_5hat_pfht_v01', 'char_a_p1_5hat_pnty_v03',
+  'char_a_pONE3_0bas_humn_v00', 'char_a_pONE3_0bas_humn_v01',
+  'char_a_pONE3_0bas_humn_v03', 'char_a_pONE3_0bas_humn_v06',
+  'char_a_pONE3_0bas_humn_v07', 'char_a_pONE3_0bas_humn_v09',
+  'char_a_pONE3_1out_undi_v01', 'char_a_pONE3_1out_boxr_v01',
+  'char_a_pONE3_1out_fstr_v02', 'char_a_pONE3_1out_fstr_v04',
+  'char_a_pONE3_1out_pfpn_v02',
+  'char_a_pONE3_4har_bob1_v00', 'char_a_pONE3_4har_bob1_v05',
+  'char_a_pONE3_4har_bob1_v08', 'char_a_pONE3_4har_dap1_v03',
+  'char_a_pONE3_4har_dap1_v09', 'char_a_pONE3_4har_dap1_v12',
+  'char_a_pONE3_5hat_pfht_v02', 'char_a_pONE3_5hat_pnty_v03',
 ];
 
 // module-level Mana Seed sprite cache (read by canvas loops; filled once)

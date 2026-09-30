@@ -9,7 +9,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import {
-  preloadMsSprites, msReady, msSprite, NPC_LOOKS, MS_ROW, MS_CELL, MS_WALK_FRAMES, msLookKeys, type Face4,
+  preloadMsSprites, msReady, msSprite, NPC_LOOKS, MS_ROW, MS_CELL, MS_WALK_FRAMES, MS_FEET_ROW, msLookKeys, type Face4,
 } from './isoSprites';
 import {
   buildingDoorwaysFor, fieldTreesFor, mapTileFor, fieldPalettes, FIELD_SIZE,
@@ -121,7 +121,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
       const keys = msLookKeys(L);
       d.push({
         depth: tx + ty + 0.01, draw: (g2) => {
-          const lift = moving ? Math.abs(Math.sin(now / 130)) * 3 : 0;
+          // Feet anchor: MS_FEET_ROW of the 64px cell lands on the tile point
+          // so characters stand on the ground instead of floating above it.
+          const lift = moving ? Math.abs(Math.sin(now / 130)) * 2 : 0;
           g2.fillStyle = 'rgba(0,0,0,0.22)';
           g2.beginPath(); g2.ellipse(c.x, c.y + 3, 12, 5, 0, 0, 7); g2.fill();
           if (msReady(keys)) {
@@ -131,7 +133,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
             const frame = moving ? Math.floor(now / 150) % MS_WALK_FRAMES : 0;
             const sx = frame * MS_CELL, sy = (moving ? rows.walk : rows.stand) * MS_CELL;
             const size = 52;
-            const dx = c.x - size / 2, dy = c.y - size + 6 - lift;
+            const dx = c.x - size / 2, dy = c.y - (MS_FEET_ROW / MS_CELL) * size - lift;
             for (const k of keys) {
               const im = msSprite(k);
               if (!im) continue;
@@ -299,27 +301,48 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
             g2.moveTo(p11.x, p11.y); g2.lineTo(p01.x, p01.y);
             g2.lineTo(t01.x, t01.y); g2.lineTo(t11.x, t11.y);
             g2.closePath(); g2.fill();
-            // pitched roof: two parallelograms meeting at a ridge
+            // pitched roof: ridge runs tile-north/south; four closed planes so
+            // no terrain shows through. Back slopes darker, front lighter.
             const ridge = 34;
             const r0 = { x: (t00.x + t10.x) / 2, y: (t00.y + t10.y) / 2 - ridge };
             const r1 = { x: (t01.x + t11.x) / 2, y: (t01.y + t11.y) / 2 - ridge };
-            g2.fillStyle = '#a8442f';
+            // back slopes first
+            g2.fillStyle = '#93391f';
             g2.beginPath();
             g2.moveTo(t00.x, t00.y); g2.lineTo(t10.x, t10.y);
             g2.lineTo(r0.x, r0.y); g2.closePath(); g2.fill();
-            g2.fillStyle = '#93391f';
+            g2.fillStyle = '#7c2f22';
+            g2.beginPath();
+            g2.moveTo(t01.x, t01.y); g2.lineTo(t00.x, t00.y);
+            g2.lineTo(r0.x, r0.y); g2.lineTo(r1.x, r1.y);
+            g2.closePath(); g2.fill();
+            // front slopes
+            g2.fillStyle = '#a8442f';
             g2.beginPath();
             g2.moveTo(t10.x, t10.y); g2.lineTo(t11.x, t11.y);
             g2.lineTo(r1.x, r1.y); g2.lineTo(r0.x, r0.y);
             g2.closePath(); g2.fill();
-            g2.fillStyle = '#7c2f22';
+            g2.fillStyle = '#b05038';
             g2.beginPath();
             g2.moveTo(t11.x, t11.y); g2.lineTo(t01.x, t01.y);
             g2.lineTo(r1.x, r1.y); g2.closePath(); g2.fill();
-            // door marker at the real doorway position
-            const dp = isoToScreen(b.position.x, b.position.y);
-            g2.fillStyle = '#3a2a1c';
-            g2.fillRect(dp.x - 5, dp.y - 22, 10, 22);
+            // door: project the doorway trigger onto the nearest VISIBLE wall
+            // face (south or east) instead of drawing the interior point.
+            const dpx = b.position.x, dpy = b.position.y;
+            const southDist = r.bottom - dpy, eastDist = r.right - dpx;
+            let dg: { x: number; y: number };
+            if (southDist <= eastDist) {
+              const t = Math.min(0.92, Math.max(0.08, (dpx - r.left) / Math.max(1, r.right - r.left)));
+              dg = { x: p01.x + (p11.x - p01.x) * t, y: p01.y + (p11.y - p01.y) * t };
+            } else {
+              const t = Math.min(0.92, Math.max(0.08, (dpy - r.top) / Math.max(1, r.bottom - r.top)));
+              dg = { x: p10.x + (p11.x - p10.x) * t, y: p10.y + (p11.y - p10.y) * t };
+            }
+            const doorW = 12, doorH = 26;
+            g2.fillStyle = '#4a3524';
+            g2.fillRect(dg.x - doorW / 2 - 1, dg.y - doorH - 1, doorW + 2, doorH + 2);
+            g2.fillStyle = '#2a1c12';
+            g2.fillRect(dg.x - doorW / 2, dg.y - doorH, doorW, doorH);
           },
         });
       }

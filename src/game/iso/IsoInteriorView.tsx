@@ -13,7 +13,7 @@ import {
   type TilePoint,
 } from './projection';
 import {
-  preloadMsSprites, msReady, msSprite, NPC_LOOKS, MS_ROW, MS_CELL, MS_WALK_FRAMES, msLookKeys,
+  preloadMsSprites, msReady, msSprite, NPC_LOOKS, MS_ROW, MS_CELL, MS_WALK_FRAMES, MS_FEET_ROW, msLookKeys,
   type Face4,
 } from './isoSprites';
 
@@ -33,6 +33,10 @@ interface IsoInteriorViewProps {
   npcs: IsoInteriorNpc[];
   onExit: () => void;
   onTalkTo?: (npcId: string) => void;
+  // Live directional input (D-pad / keyboard) from the app shell. When a
+  // direction is held the player steps tile-by-tile; manual input cancels
+  // tap-to-move. Screen up = tile north, matching the iso demo.
+  getHeldDir?: () => { x: number; y: number };
 }
 
 const ROOM_W = 12;
@@ -134,7 +138,7 @@ function faceForMove(ax: number, ay: number, bx: number, by: number): Face4 {
   return dy > 0 ? 'down' : 'up';
 }
 
-export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo }: IsoInteriorViewProps): React.JSX.Element {
+export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir }: IsoInteriorViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const exitRef = useRef(onExit);
@@ -143,6 +147,8 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
   talkRef.current = onTalkTo;
   const npcsRef = useRef(npcs);
   npcsRef.current = npcs;
+  const heldDirRef = useRef(getHeldDir);
+  heldDirRef.current = getHeldDir;
 
   useEffect(() => { preloadMsSprites(); }, []);
 
@@ -164,6 +170,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       px: doorTile.tx, py: doorTile.ty - 1,
       fx: doorTile.tx, fy: doorTile.ty - 1,
       path: [] as TilePoint[], stepT: 0, moving: false, facing: 'up' as Face4,
+      tapPath: false,
       zoom: 1, camX: 0, camY: 0, w: 0, h: 0, dpr: 1,
     };
 
@@ -203,6 +210,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       const path = findPath({ tx: Math.round(state.px), ty: Math.round(state.py) }, { tx, ty }, walkable);
       if (path && path.length > 1) {
         state.path = path.slice(1);
+        state.tapPath = true;
         state.moving = true;
         state.stepT = performance.now();
       }
@@ -222,7 +230,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
 
     let raf = 0;
     let last = performance.now();
-    const STEP_MS = 200;
+    const STEP_MS = 280;
 
     const drawFurniture = (g: CanvasRenderingContext2D, f: Furniture, nowMs: number) => {
       const c = toScreen(f.tx + f.w / 2, f.ty + f.h / 2);
@@ -459,7 +467,8 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       const depth = depthKey(Math.round(fx), Math.round(fy));
       const L = NPC_LOOKS[((look % NPC_LOOKS.length) + NPC_LOOKS.length) % NPC_LOOKS.length];
       const keys = msLookKeys(L);
-      const lift = moving ? Math.abs(Math.sin(nowMs / 130)) * 3 : 0;
+      // Feet anchor: MS_FEET_ROW of the 64px cell lands on the tile point.
+      const lift = moving ? Math.abs(Math.sin(nowMs / 130)) * 2 : 0;
       const draw = (g2: CanvasRenderingContext2D) => {
         g2.fillStyle = 'rgba(0,0,0,0.22)';
         g2.beginPath(); g2.ellipse(c.x, c.y + 3, 12, 5, 0, 0, 7); g2.fill();
@@ -470,7 +479,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
           const frame = moving ? Math.floor(nowMs / 150) % MS_WALK_FRAMES : 0;
           const sx = frame * MS_CELL, sy = (moving ? rows.walk : rows.stand) * MS_CELL;
           const size = 52;
-          const dx = c.x - size / 2, dy = c.y - size + 6 - lift;
+          const dx = c.x - size / 2, dy = c.y - (MS_FEET_ROW / MS_CELL) * size - lift;
           for (const k of keys) {
             const im = msSprite(k);
             if (!im) continue;
@@ -494,6 +503,24 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     const frame = (nowMs: number) => {
       const dt = Math.min(50, nowMs - last);
       last = nowMs;
+      // D-pad / keyboard held input: step tile-by-tile; manual input cancels
+      // an in-flight tap-to-move path.
+      const hd = heldDirRef.current ? heldDirRef.current() : { x: 0, y: 0 };
+      if (hd.x !== 0 || hd.y !== 0) {
+        if (state.tapPath) { state.path = []; state.tapPath = false; }
+        if (state.path.length === 0) {
+          const dx = hd.x !== 0 ? Math.sign(hd.x) : 0;
+          const dy = hd.x !== 0 ? 0 : Math.sign(hd.y);
+          const nx = Math.round(state.px) + dx, ny = Math.round(state.py) + dy;
+          if (nx === doorTile.tx && ny === doorTile.ty) { exitRef.current(); }
+          else if (walkable(nx, ny)) {
+            state.facing = faceForMove(state.px, state.py, nx, ny);
+            state.path = [{ tx: nx, ty: ny }];
+            state.tapPath = false;
+            state.moving = true;
+          }
+        }
+      }
       // movement interpolation
       if (state.moving && state.path.length > 0) {
         const target = state.path[0];
@@ -504,7 +531,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
           state.fx = target.tx; state.fy = target.ty;
           state.px = target.tx; state.py = target.ty;
           state.path.shift();
-          if (state.path.length === 0) state.moving = false;
+          if (state.path.length === 0) { state.moving = false; state.tapPath = false; }
           else state.facing = faceForMove(state.fx, state.fy, state.path[0].tx, state.path[0].ty);
         } else {
           state.facing = faceForMove(state.fx, state.fy, target.tx, target.ty);
