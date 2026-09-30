@@ -464,20 +464,22 @@ function advanceOne(
     }
     const res = stepAlongPath(npc.path!, npc.position, step);
     if (res.arrived) {
-      // At the interior door. Walk out: position is NOT snapped — the NPC
-      // walks from the interior door through the doorway to the exterior as
-      // the first leg of the outdoor path.
-      const outPath = pathTo(door.exterior, want.target, nav.obstacles, nav.roadPiece);
-      const fullWps = [{ ...door.exterior }, ...(outPath?.waypoints ?? [straightFallbackPath(want.target, nav.obstacles).waypoints[0]])];
+      // At the interior door: step out through the doorway as EXITING (still
+      // hidden — indoors stays true until the NPC reaches the exterior, so
+      // they never visibly pop inside the cottage walls).
+      const waypoints = findPath(door.interior, door.exterior, []);
+      const exitPath: NavPath = waypoints
+        ? { waypoints, index: 0, destination: { ...door.exterior } }
+        : straightFallbackPath(door.exterior, []);
       return {
         ...npc,
-        location: 'OUTDOOR',
-        indoors: false,
-        buildingId: undefined,
-        path: { waypoints: fullWps, index: 0, destination: { ...want.target }, replanCooldown: REPLAN_COOLDOWN_TICKS },
+        position: res.position,
+        location: 'EXITING',
+        indoors: true,
+        path: exitPath,
         moving: true,
         facing: res.facing,
-        activity: want.activity,
+        activity: 'Leaving',
       };
     }
     const tracked = trackStep(npc.path!, npc.position, res, (from) => {
@@ -485,6 +487,46 @@ function advanceOne(
       return wps ? { waypoints: wps, index: 0, destination: { ...door.interior } } : null;
     });
     return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, activity: want.activity, indoors: true };
+  }
+
+  // --- EXITING: stepping out through the doorway (hidden — indoors stays true
+  // until the NPC reaches the exterior, so they never visibly pop inside the
+  // cottage walls). Mirrors ENTERING. ---
+  if (npc.location === 'EXITING') {
+    const door = homeDoorFor(npc, nav);
+    if (!door) return { ...npc, location: 'INTERIOR' as NPCWorldLocation, indoors: true, moving: false, path: undefined, activity: want.activity };
+    if (npc.path?.gaveUp) {
+      // Doorway blocked: wait inside rather than clipping through walls.
+      return { ...npc, moving: false, indoors: true, activity: 'Leaving' };
+    }
+    if (!npc.path) {
+      const waypoints = findPath(npc.position, door.exterior, []);
+      const path: NavPath = waypoints
+        ? { waypoints, index: 0, destination: { ...door.exterior } }
+        : straightFallbackPath(door.exterior, []);
+      return { ...npc, path, moving: true, indoors: true, activity: 'Leaving' };
+    }
+    const res = stepAlongPath(npc.path, npc.position, step);
+    if (res.arrived) {
+      // Stepped outside: become a normal outdoor NPC at the door exterior.
+      // The OUTDOOR branch paths to the schedule target on the next tick.
+      return {
+        ...npc,
+        position: res.position,
+        location: 'OUTDOOR',
+        indoors: false,
+        buildingId: undefined,
+        path: undefined,
+        moving: false,
+        facing: res.facing,
+        activity: want.activity,
+      };
+    }
+    const tracked = trackStep(npc.path, npc.position, res, (from) => {
+      const wps = findPath(from, door.exterior, []);
+      return wps ? { waypoints: wps, index: 0, destination: { ...door.exterior } } : null;
+    });
+    return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, indoors: true, activity: 'Leaving' };
   }
 
   // --- ENTERING: walking the outdoor path to the home door exterior. ---

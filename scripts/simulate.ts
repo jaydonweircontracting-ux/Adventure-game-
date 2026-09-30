@@ -643,7 +643,10 @@ console.log('Testing NPC physical movement scenarios (BUILD 312)...');
       const prevLoc = npc.location;
       const next = advanceTownsfolk([npc], anchors, clock, navCtx, 0.5)[0];
       const jump = Math.hypot(next.position.x - lastPos.x, next.position.y - lastPos.y);
-      const isDoorCross = (prevLoc === 'INTERIOR' && next.location === 'OUTDOOR');
+      // Door crossing is now INTERIOR -> EXITING -> OUTDOOR (BUILD 324): the
+      // NPC stays hidden (indoors) while stepping through the doorway.
+      const isDoorCross = (prevLoc === 'INTERIOR' && next.location === 'EXITING')
+        || (prevLoc === 'EXITING' && next.location === 'OUTDOOR');
       if (jump > 2.5 && !isDoorCross) {
         teleported = true;
         break;
@@ -1350,6 +1353,72 @@ for (const kind of EXPECTED_KINDS) {
   const inside = { ...folk[0], location: 'INTERIOR' as const, indoors: true, moving: false, path: undefined, position: { x: 17, y: 64 } };
   const held = advanceTownsfolk([inside], anchors, clockAt(10, 0), noDoors)[0];
   assert(held.location === 'INTERIOR' && held.indoors, 'doorless NPC flipped OUTDOOR while physically inside');
+}
+
+
+// ---- BUILD 324: EXITING state (no pop through cottage walls) ----
+{
+  const anchors: TownsfolkAnchors = {
+    points: {
+      guild: { x: 90, y: 60 }, chapel: { x: 40, y: 90 }, tavern: { x: 90, y: 90 },
+      farm0: { x: 30, y: 119 }, farm1: { x: 110, y: 119 },
+    },
+    plaza: { x: 70, y: 82 },
+    stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
+    gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
+    patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
+  };
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+  const folk = createTownsfolk(anchors, 847291583);
+  const navCtx: TownsfolkNavContext = {
+    housing: buildMosslightHousing(folk.map((n) => n.id)),
+    doors: cottageDoorways(),
+    obstacles: mosslightObstacles(),
+  };
+  const clock = clockAt(10, 0); // morning: everyone wants to be outdoors
+  const assign = navCtx.housing.assignments[folk[0].id];
+  const home = navCtx.housing.homes.find((h) => h.id === assign.homeId)!;
+  const door = navCtx.doors.find((d) => d.id === home.doorwayId)!;
+  // 1. Full exit flow: INTERIOR -> EXITING (hidden) -> OUTDOOR at the exterior.
+  let npc = { ...folk[0], location: 'INTERIOR' as const, indoors: true, moving: false, path: undefined, position: { ...door.interior } };
+  const flow: string[] = [];
+  let maxStep = 0, prev = { ...npc.position }, hiddenThroughoutExit = true;
+  for (let i = 0; i < 60; i++) {
+    npc = advanceTownsfolk([npc], anchors, clock, navCtx, 0.5)[0];
+    maxStep = Math.max(maxStep, Math.hypot(npc.position.x - prev.x, npc.position.y - prev.y));
+    prev = { ...npc.position };
+    const loc = npc.location;
+    if (flow[flow.length - 1] !== loc) flow.push(loc);
+    if (loc === 'EXITING' && !npc.indoors) hiddenThroughoutExit = false;
+    if (loc === 'OUTDOOR' && !npc.moving) break;
+  }
+  assert(flow.join('>') === 'INTERIOR>EXITING>OUTDOOR', `exit flow wrong: ${flow.join('>')}`);
+  assert(hiddenThroughoutExit, 'EXITING NPC was visible (indoors flipped early)');
+  assert(maxStep <= 1.2, `teleport during exit (maxStep ${maxStep.toFixed(2)})`);
+  assert(Math.hypot(npc.position.x - door.exterior.x, npc.position.y - door.exterior.y) < 1.5, 'did not emerge at the door exterior');
+  // The field renderer only draws !indoors NPCs: EXITING never pops into view mid-wall.
+  assert(!npc.indoors || npc.location !== 'EXITING', 'exiting NPC leaked to renderer');
+  // 2. Doorless EXITING falls back inside instead of walking through walls.
+  const noDoors: TownsfolkNavContext = { ...navCtx, doors: [] };
+  const stranded = { ...folk[1], location: 'EXITING' as const, indoors: true, moving: true, path: undefined, position: { ...door.interior } };
+  const held = advanceTownsfolk([stranded], anchors, clock, noDoors)[0];
+  assert(held.location === 'INTERIOR' && held.indoors, 'doorless EXITING NPC did not fall back inside');
+  // 3. Save/load round-trip of an EXITING NPC resumes the doorway walk.
+  const assign2 = navCtx.housing.assignments[folk[2].id];
+  const home2 = navCtx.housing.homes.find((h) => h.id === assign2.homeId)!;
+  const door2 = navCtx.doors.find((d) => d.id === home2.doorwayId)!;
+  let exiter = { ...folk[2], location: 'INTERIOR' as const, indoors: true, moving: false, path: undefined, position: { ...door2.interior } };
+  for (let i = 0; i < 8 && exiter.location !== 'EXITING'; i++) exiter = advanceTownsfolk([exiter], anchors, clock, navCtx, 0.5)[0];
+  assert(exiter.location === 'EXITING', 'could not reach EXITING for the round-trip test');
+  const saved = serializeTownsfolk([exiter]);
+  const restored = restoreTownsfolk([{ ...folk[2] }], saved)[0];
+  assert(restored.location === 'EXITING' && restored.indoors, 'EXITING state did not survive save/load');
+  let resumed = restored;
+  for (let i = 0; i < 60 && resumed.location !== 'OUTDOOR'; i++) resumed = advanceTownsfolk([resumed], anchors, clock, navCtx, 0.5)[0];
+  assert(resumed.location === 'OUTDOOR' && !resumed.indoors, 'restored EXITING NPC never emerged');
 }
 
 // ---- Results ----
