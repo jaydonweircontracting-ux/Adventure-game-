@@ -14,6 +14,7 @@ import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection } from '../src/game/touchInput';
 import { markerForGiver, questById, type QuestState } from '../src/game/quests';
 import { initialCellarRats, CELLAR_RAT_ID_BASE, CELLAR_RAT_HP, CELLAR_RAT_COUNT } from '../src/game/cellarRats';
+import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, adjustWanted } from '../src/game/dialogue';
 import { appearanceForNpc, npcAppearanceStyle } from '../src/game/npcAppearance';
 import {
   resolveMonsterSprite,
@@ -1615,6 +1616,58 @@ assert(!!heirloom, 'lost-heirloom quest missing');
 if (heirloom) {
   assert(markerForGiver(heirloom, []) === 'available', 'unaccepted heirloom should show !');
   assert(markerForGiver(heirloom, [{ questId: 'lost-heirloom', stageIndex: 1, status: 'active', counts: {}, startedAt: 0 }]) === null, 'explore stage must show no marker');
+}
+
+// ---- BUILD 330: Oblivion-style dialogue (topics, disposition, wanted) ----
+console.log('Testing townsfolk dialogue system...');
+{
+  // 1. Topics are archetype-driven and always end with Rumors / Town / Goodbye.
+  const farmerTopics = topicsFor('farmer').map((t) => t.id);
+  assert(farmerTopics.join(',') === 'who,work,rumors,town,bye', 'farmer topics wrong: ' + farmerTopics.join(','));
+  assert(topicsFor('farmer').find((t) => t.id === 'work')!.label === 'The crops', 'farmer work label wrong');
+  assert(topicsFor('guard').find((t) => t.id === 'work')!.label === 'Trouble in town?', 'guard work label wrong');
+  assert(topicsFor('child').find((t) => t.id === 'work')!.label === 'What are you playing?', 'child work label wrong');
+  assert(topicsFor('commoner').find((t) => t.id === 'work')!.label === 'Your work', 'commoner fallback work label wrong');
+  // 2. Disposition tiers and labels.
+  const tiers: Array<[number, string]> = [[0, 'cold'], [19, 'cold'], [20, 'wary'], [39, 'wary'], [40, 'neutral'], [59, 'neutral'], [60, 'warm'], [79, 'warm'], [80, 'admiring'], [100, 'admiring']];
+  for (const [d, want] of tiers) assert(dispositionTier(d) === want, `tier(${d}) should be ${want}`);
+  assert(dispositionLabel('admiring') === 'Admires you', 'admiring label wrong');
+  assert(defaultDisposition() === 50, 'default disposition should be 50');
+  assert(adjustDisposition(99, 5) === 100, 'disposition must clamp at 100');
+  assert(adjustDisposition(1, -5) === 0, 'disposition must clamp at 0');
+  // 3. Wanted labels and clamping.
+  assert(wantedLabel(0) === 'Clean', 'wanted 0 should be Clean');
+  assert(wantedLabel(2) === 'Suspect', 'wanted 2 should be Suspect');
+  assert(wantedLabel(5) === 'Wanted', 'wanted 5 should be Wanted');
+  assert(wantedLabel(9) === 'Hunted', 'wanted 9 should be Hunted');
+  assert(adjustWanted(9, 5) === 10, 'wanted must clamp at 10');
+  assert(adjustWanted(1, -5) === 0, 'wanted must clamp at 0');
+  // 4. Responses are deterministic and disposition-toned.
+  const base = { name: 'Aldric', archetype: 'farmer', activity: 'Tending crops', townReputation: 0, seed: 7 };
+  const coldWho = responseFor({ ...base, disposition: 5 }, 'who');
+  const warmWho = responseFor({ ...base, disposition: 70 }, 'who');
+  assert(coldWho.text !== warmWho.text, 'cold and warm who-responses should differ');
+  assert(responseFor({ ...base, disposition: 70 }, 'who').text === warmWho.text, 'responses must be deterministic');
+  assert(warmWho.text.includes('Aldric') && warmWho.text.includes('tending crops'), 'warm who should name the NPC and activity');
+  const coldWork = responseFor({ ...base, disposition: 5 }, 'work');
+  const warmWork = responseFor({ ...base, disposition: 70 }, 'work');
+  assert(coldWork.text.length < warmWork.text.length, 'cold work response should be curt');
+  // 5. Rumors: strangers get nothing, friends get a journal rumor.
+  const stranger = responseFor({ ...base, disposition: 10 }, 'rumors');
+  assert(!stranger.rumor, 'cold NPC should not hand out rumors');
+  const friend = responseFor({ ...base, disposition: 70 }, 'rumors');
+  assert(!!friend.rumor && friend.text.includes(friend.rumor), 'warm NPC rumor should be filed to the journal');
+  assert(responseFor({ ...base, disposition: 70 }, 'rumors').rumor === friend.rumor, 'rumor pick must be deterministic per NPC');
+  // 6. Town topic reflects reputation.
+  const loved = responseFor({ ...base, disposition: 60, townReputation: 15 }, 'town');
+  const hated = responseFor({ ...base, disposition: 60, townReputation: -15 }, 'town');
+  assert(loved.text.includes('speak well of you'), 'high rep should be praised');
+  assert(hated.text.includes('whisper about you'), 'low rep should be warned');
+  // 7. Goodbye always resolves per tier.
+  for (const d of [0, 30, 50, 70, 95]) {
+    const bye = responseFor({ ...base, disposition: d }, 'bye');
+    assert(bye.text.length > 2, `bye at disposition ${d} must produce text`);
+  }
 }
 
 // ---- Results ----

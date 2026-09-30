@@ -18,6 +18,7 @@ import { findTalkTarget } from './game/talkTarget';
 import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cellarRats';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, type TouchHoldState } from './game/touchInput';
 import { npcAppearanceStyle } from './game/npcAppearance';
+import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, type DialogueTopicId } from './game/dialogue';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
@@ -80,7 +81,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '329';
+const BUILD_NUMBER = '330';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -1216,6 +1217,10 @@ type SaveGameData = {
   prisonState?: { foundShiv: boolean; talkedToPrisoner: boolean; helpedPrisoner: boolean; escapeRoute: 'sewer' | 'gate' | null };
   journal?: JournalState;
   reputation?: ReputationState;
+  dialogue?: {
+    disposition?: Record<string, number>;
+    wantedMosslight?: number;
+  };
   carriage?: { earnings?: Record<string, number> };
   carriageTravel?: { destName: string; destChunk: Point; arrival: Point; totalTicks: number; doneTicks: number };
   escortHired?: boolean;
@@ -1378,6 +1383,7 @@ function isSaveGameData(value: unknown): value is SaveGameData {
     && (value.prisonState === undefined || (isRecord(value.prisonState) && typeof value.prisonState.foundShiv === 'boolean' && typeof value.prisonState.talkedToPrisoner === 'boolean' && typeof value.prisonState.helpedPrisoner === 'boolean' && (value.prisonState.escapeRoute === null || value.prisonState.escapeRoute === 'sewer' || value.prisonState.escapeRoute === 'gate')))
     && (value.journal === undefined || isRecord(value.journal))
     && (value.reputation === undefined || isRecord(value.reputation))
+    && (value.dialogue === undefined || isRecord(value.dialogue))
     && typeof value.time === 'string'
     && Array.isArray(value.logs)
     && value.logs.every((log) => isRecord(log) && typeof log.text === 'string' && typeof log.color === 'string')
@@ -3422,6 +3428,13 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const [playerLevel, setPlayerLevel] = useState(1);
   const [playerClass, setPlayerClass] = useState<PlayerClass>('Beginner');
   const [npcDialogue, setNpcDialogue] = useState<TownNpc | null>(null);
+  // BUILD 330: Oblivion-style dialogue — open townsfolk, selected topic,
+  // per-NPC disposition (0-100) and the Mosslight wanted level. Both persist
+  // in the save under the optional `dialogue` field.
+  const [townsfolkDialogue, setTownsfolkDialogue] = useState<Townsperson | null>(null);
+  const [dialogueTopic, setDialogueTopic] = useState<DialogueTopicId | null>(null);
+  const [disposition, setDisposition] = useState<Record<string, number>>({});
+  const [wantedMosslight, setWantedMosslight] = useState(0);
   // Town NPC nameplates (Noah/Damon/Shawn) stay hidden until the NPC is
   // tapped, then auto-hide after a few seconds.
   const [nameplateNpc, setNameplateNpc] = useState<string | null>(null);
@@ -3603,6 +3616,7 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     prisonState,
     journal,
     reputation,
+    dialogue: { disposition, wantedMosslight },
     logs,
     time,
     carriage: serializeCarriage(carriageEarningsRef.current),
@@ -3675,6 +3689,11 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     onRestorePrison(loadState.inPrison || false, loadState.prisonState);
     if (loadState.journal) onRestoreJournal(loadState.journal);
     if (loadState.reputation) onRestoreReputation(loadState.reputation);
+    // BUILD 330: dialogue state is optional — old saves simply start neutral.
+    if (loadState.dialogue) {
+      if (loadState.dialogue.disposition) setDisposition(loadState.dialogue.disposition);
+      if (typeof loadState.dialogue.wantedMosslight === 'number') setWantedMosslight(loadState.dialogue.wantedMosslight);
+    }
     setLogs(loadState.logs); setTime(loadState.time);
     carriageEarningsRef.current = deserializeCarriage(loadState.carriage);
     // Civ phase 18: resume a carriage ride that was saved mid-travel.
@@ -4988,6 +5007,9 @@ if (active) {
   useEffect(() => () => {
     if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
   }, []);
+  // BUILD 330: tapping / Talk-button on a townsfolk opens the Oblivion-style
+  // dialogue window (topics, disposition, town standing). Talking warms them
+  // up slightly, capped so quests remain the real way to win hearts.
   const talkToTownsfolk = (npc: Townsperson) => {
     setNameplateNpc(npc.name);
     if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
@@ -4995,7 +5017,25 @@ if (active) {
       setNameplateNpc(null);
       nameplateTimerRef.current = null;
     }, 4000);
-    setLogs((currentLogs) => [{ text: `${npc.name} the ${npc.archetype} is ${npc.activity.toLowerCase()}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+    setTownsfolkDialogue(npc);
+    setDialogueTopic(null);
+    setDisposition((d) => ({ ...d, [npc.id]: adjustDisposition(d[npc.id] ?? defaultDisposition(), 1) }));
+  };
+
+  const chooseDialogueTopic = (npc: Townsperson, topic: DialogueTopicId) => {
+    if (topic === 'bye') {
+      setTownsfolkDialogue(null);
+      setDialogueTopic(null);
+      return;
+    }
+    const disp = disposition[npc.id] ?? defaultDisposition();
+    const resp = responseFor(
+      { name: npc.name, archetype: npc.archetype, activity: npc.activity, disposition: disp, townReputation: reputation.mosslight, seed: npc.seed },
+      topic,
+    );
+    if (resp.rumor) onAddRumor(resp.rumor, npc.name);
+    setDialogueTopic(topic);
+    setDisposition((d) => ({ ...d, [npc.id]: adjustDisposition(d[npc.id] ?? defaultDisposition(), 1) }));
   };
   // Pokémon-style talk: when the player faces an NPC within range, a Talk
   // button appears beside Attack. Covers quest givers, town NPCs and outdoor
@@ -7148,6 +7188,40 @@ if (active) {
                     <button type="button" className="dialogue-option" onClick={() => setQuestDialog(null)} data-testid="button-quest-leave">Leave</button>
                   </div>
                 </div>
+              </div>
+            </div>
+          );
+        })()}
+        {/* BUILD 330: Oblivion-style townsfolk dialogue — selectable topics,
+            per-NPC disposition, town reputation and wanted level. */}
+        {townsfolkDialogue && (() => {
+          const npc = townsfolkDialogue;
+          const disp = disposition[npc.id] ?? defaultDisposition();
+          const ctx = { name: npc.name, archetype: npc.archetype, activity: npc.activity, disposition: disp, townReputation: reputation.mosslight, seed: npc.seed };
+          const resp = dialogueTopic ? responseFor(ctx, dialogueTopic) : null;
+          return (
+            <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="townsfolk-dialogue-title" data-testid="townsfolk-dialogue">
+              <div className="npc-dialogue-card townsfolk-dialogue">
+                <div className={'dialogue-portrait npc-' + npc.role} data-facing={npc.facing}><span className="npc-sprite" /></div>
+                <div className="npc-dialogue-copy">
+                  <span className="dialogue-kicker">{npc.archetype} · {npc.activity}</span>
+                  <h2 id="townsfolk-dialogue-title">{npc.name}</h2>
+                  <div className="dialogue-standing">
+                    <span className="disposition-meter" role="img" aria-label={'Disposition ' + disp + ' of 100'}><i style={{ width: disp + '%' }} /></span>
+                    <span className="disposition-label">{dispositionLabel(dispositionTier(disp))} ({disp})</span>
+                  </div>
+                  <div className="dialogue-standing">
+                    <span>Mosslight rep: <strong className={reputation.mosslight >= 0 ? 'rep-positive' : 'rep-negative'}>{reputation.mosslight >= 0 ? '+' : ''}{reputation.mosslight}</strong></span>
+                    <span>Wanted: <strong>{wantedLabel(wantedMosslight)}</strong></span>
+                  </div>
+                  {resp && <p className="dialogue-response">“{resp.text}”</p>}
+                  <div className="dialogue-topics">
+                    {topicsFor(npc.archetype).map((t) => (
+                      <button key={t.id} type="button" className={'dialogue-topic' + (dialogueTopic === t.id ? ' is-active' : '')} onClick={() => chooseDialogueTopic(npc, t.id)}>{t.label}</button>
+                    ))}
+                  </div>
+                </div>
+                <button type="button" className="dialogue-close" onClick={() => { setTownsfolkDialogue(null); setDialogueTopic(null); }} aria-label="Close dialogue">✕</button>
               </div>
             </div>
           );
