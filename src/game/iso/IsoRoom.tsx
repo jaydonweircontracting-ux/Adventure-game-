@@ -35,7 +35,7 @@ type SelKind = 'tree' | 'rock' | 'crate' | 'npc' | 'stall' | 'hut' | 'wall' | 's
 interface Selection { kind: SelKind; index: number }
 
 import {
-  preloadLpcSprites, lpcReady, lpcSprite, NPC_LOOKS, LPC_ROW,
+  preloadMsSprites, msReady, msSprite, NPC_LOOKS, MS_ROW, MS_CELL, MS_WALK_FRAMES, msLookKeys,
   preloadFoodSprites, foodReady, foodSprite, FOOD_KEYS,
   type Face4,
 } from './isoSprites';
@@ -77,7 +77,7 @@ export default function IsoRoom(): React.JSX.Element {
   const [worldSize, setWorldSize] = useState('56×56');
   const [infoOpen, setInfoOpen] = useState(false);
 
-  useEffect(() => { preloadLpcSprites(); preloadFoodSprites(); }, []);
+  useEffect(() => { preloadMsSprites(); preloadFoodSprites(); }, []);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -450,23 +450,25 @@ export default function IsoRoom(): React.JSX.Element {
       look: number, depth: number, nowMs: number): Drawable {
       const c = isoToScreen(px, py);
       const L = NPC_LOOKS[((look % NPC_LOOKS.length) + NPC_LOOKS.length) % NPC_LOOKS.length];
-      const keys = [L.body, 'pants-m', L.shirt, L.head, L.hair];
+      const keys = msLookKeys(L);
       return {
         depth, tx: px, ty: py, draw: (g) => {
           const lift = moving ? Math.abs(Math.sin(nowMs / 130)) * 3 : 0;
           g.fillStyle = 'rgba(0,0,0,0.22)';
           g.beginPath(); g.ellipse(c.x, c.y + 3, 12, 5, 0, 0, 7); g.fill();
-          const ready = lpcReady(keys);
+          const ready = msReady(keys);
           if (ready) {
-            // Universal LPC walk sheet: 9 frames x 4 rows (up, left, down, right), 64x64 cells
-            const frame = moving ? Math.floor(nowMs / 150) % 9 : 0;
-            const sx = frame * 64, sy = LPC_ROW[facing] * 64;
+            // Mana Seed sheet: 64x64 cells; stand = col 0 of the facing stand
+            // row, walk = 6 frames (cols 0-5) of the facing walk row.
+            const rows = MS_ROW[facing];
+            const frame = moving ? Math.floor(nowMs / 150) % MS_WALK_FRAMES : 0;
+            const sx = frame * MS_CELL, sy = (moving ? rows.walk : rows.stand) * MS_CELL;
             const size = 52;
             const dx = c.x - size / 2, dy = c.y - size + 6 - lift;
             for (const k of keys) {
-              const im = lpcSprite(k);
+              const im = msSprite(k);
               if (!im) continue;
-              g.drawImage(im, sx, sy, 64, 64, dx, dy, size, size);
+              g.drawImage(im, sx, sy, MS_CELL, MS_CELL, dx, dy, size, size);
             }
             return;
           }
@@ -1410,23 +1412,16 @@ export default function IsoRoom(): React.JSX.Element {
               🖌 paint terrain, ➕ place objects, ⧉ copy / 📋 paste areas, 🧽 erase, ↩ undo.
             </div>
             <div style={{ fontWeight: 700, margin: '12px 0 4px' }}>Sprite credits</div>
-            <div style={{ fontWeight: 700 }}>Characters — Universal LPC Spritesheet Character Generator</div>
+            <div style={{ fontWeight: 700 }}>Characters — Mana Seed Character Base (demo)</div>
             <div>
-              Liberated Pixel Cup community project. Contributing artists for the layers used here:
-              Benjamin K. Smith (BenCreating), bluecarrot16, Durrani, Eliza Wyatt (ElizaWy), Evert,
-              JaidynReiman, Johannes Sjölund (wulax), Manuel Riecke (MrBeast), Matthew Krohn (makrohn),
-              MuffinElZangano, Page, Pierre Vigier (pvigier), Stephen Challener (Redshrike),
-              Thane Brimhall (pennomi), TheraHedwig, laetissima.
+              Paper-doll character sprites by Seliel the Shaper — body, outfit,
+              hair and hat layers with 4-directional walk animations. The free
+              demo is usable commercially and non-commercially; the full pack
+              (15+ animation pages: farming, fishing, bow, spear, combat) is on
+              itch.io. Thank you, Seliel!
             </div>
             <div style={{ marginTop: 4 }}>
-              Licensed under CC-BY-SA 3.0, GPL 3.0 and OGA-BY 3.0 — thank you to all the artists.
-            </div>
-            <div style={{ marginTop: 4 }}>
-              <a href="https://liberatedpixelcup.github.io/Universal-LPC-Spritesheet-Character-Generator/" target="_blank" rel="noreferrer">Sprite generator</a>
-              {' · '}
-              <a href="https://github.com/liberatedpixelcup/Universal-LPC-Spritesheet-Character-Generator" target="_blank" rel="noreferrer">Source on GitHub</a>
-              {' · '}
-              <a href="https://opengameart.org" target="_blank" rel="noreferrer">OpenGameArt.org</a>
+              <a href="https://seliel-the-shaper.itch.io/character-base" target="_blank" rel="noreferrer">Mana Seed Character Base on itch.io</a>
             </div>
             <div style={{ fontWeight: 700, marginTop: 10 }}>Market food — Ghostpixxells pixel food</div>
             <div>

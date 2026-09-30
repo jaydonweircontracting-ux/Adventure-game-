@@ -9,7 +9,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import {
-  preloadLpcSprites, lpcReady, lpcSprite, NPC_LOOKS, LPC_ROW, type Face4,
+  preloadMsSprites, msReady, msSprite, NPC_LOOKS, MS_ROW, MS_CELL, MS_WALK_FRAMES, msLookKeys, type Face4,
 } from './isoSprites';
 import {
   buildingDoorwaysFor, fieldTreesFor, mapTileFor, fieldPalettes, FIELD_SIZE,
@@ -63,7 +63,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
   const [, setZoomTick] = React.useState(0);
 
   useEffect(() => {
-    preloadLpcSprites();
+    preloadMsSprites();
     const canvas = canvasRef.current!;
     const wrap = wrapRef.current!;
     const g = canvas.getContext('2d')!;
@@ -114,21 +114,24 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
     const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face4, moving: boolean, look: number, now: number) => {
       const c = isoToScreen(tx, ty);
       const L = NPC_LOOKS[((look % NPC_LOOKS.length) + NPC_LOOKS.length) % NPC_LOOKS.length];
-      const keys = [L.body, 'pants-m', L.shirt, L.head, L.hair];
+      const keys = msLookKeys(L);
       d.push({
         depth: tx + ty + 0.01, draw: (g2) => {
           const lift = moving ? Math.abs(Math.sin(now / 130)) * 3 : 0;
           g2.fillStyle = 'rgba(0,0,0,0.22)';
           g2.beginPath(); g2.ellipse(c.x, c.y + 3, 12, 5, 0, 0, 7); g2.fill();
-          if (lpcReady(keys)) {
-            const frame = moving ? Math.floor(now / 150) % 9 : 0;
-            const sx = frame * 64, sy = LPC_ROW[facing] * 64;
+          if (msReady(keys)) {
+            // Mana Seed sheet: 64x64 cells; stand = col 0 of the facing stand
+            // row, walk = 6 frames (cols 0-5) of the facing walk row.
+            const rows = MS_ROW[facing];
+            const frame = moving ? Math.floor(now / 150) % MS_WALK_FRAMES : 0;
+            const sx = frame * MS_CELL, sy = (moving ? rows.walk : rows.stand) * MS_CELL;
             const size = 52;
             const dx = c.x - size / 2, dy = c.y - size + 6 - lift;
             for (const k of keys) {
-              const im = lpcSprite(k);
+              const im = msSprite(k);
               if (!im) continue;
-              g2.drawImage(im, sx, sy, 64, 64, dx, dy, size, size);
+              g2.drawImage(im, sx, sy, MS_CELL, MS_CELL, dx, dy, size, size);
             }
             return;
           }
