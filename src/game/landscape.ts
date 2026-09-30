@@ -20,6 +20,7 @@
 import { PerlinNoise } from './noise';
 import { DEFAULT_WORLD_SEED } from './worldCore';
 import { LANDMARK_LIST } from './landmarks';
+import { hillValueAt } from './elevation';
 
 /** Field units per chunk side (matches App FIELD_SIZE). */
 export const LANDSCAPE_FIELD_SIZE = 280;
@@ -82,6 +83,8 @@ export function landscapeSeed(
 const macroNoise = new PerlinNoise(0x1a2b3c4d);
 const mesoNoise = new PerlinNoise(0x5e6f7a8b);
 const microNoise = new PerlinNoise(0x9c8d7e6f);
+const riverNoise = new PerlinNoise(0x3f2a1b0c);
+const riverWidthNoise = new PerlinNoise(0x0d1e2f3a);
 
 function fbm(noise: PerlinNoise, x: number, y: number, octaves = 3): number {
   let total = 0;
@@ -360,6 +363,146 @@ export function landscapeSitesFor(
     });
   }
   return sites;
+}
+
+// ---------------------------------------------------------------------------
+// Water: rivers (carved channel networks) + lakes (basin ellipses)
+// ---------------------------------------------------------------------------
+
+export type WaterKind = 'none' | 'river' | 'lake';
+
+export interface WaterSample {
+  kind: WaterKind;
+  /** 0 = dry .. 1 = deep center. Depth > 0.5 blocks movement. */
+  depth: number;
+}
+
+const DRY: WaterSample = { kind: 'none', depth: 0 };
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * River channel signal, 0..1 — 1 at the channel centerline.
+ * Built from ridged fBm at world coordinates, so channels form continuous
+ * networks that cross chunk borders seamlessly (no per-chunk RNG).
+ */
+export function riverChannelAt(wx: number, wy: number): number {
+  const n = fbm(riverNoise, wx / 900, wy / 900, 3);
+  return 1 - Math.abs(2 * n - 1);
+}
+
+/**
+ * River water sample at a world point. Rivers fade out on peaks, in
+ * sea-level flats, and near towns (they divert around settlements).
+ */
+export function riverAt(wx: number, wy: number): WaterSample {
+  const channel = riverChannelAt(wx, wy);
+  // Width varies along the channel: threshold 0.90..0.94.
+  const wobble = fbm(riverWidthNoise, wx / 500 + 3.1, wy / 500 - 1.7, 2);
+  const threshold = 0.9 + wobble * 0.04;
+  if (channel <= threshold) return DRY;
+  const hill = hillValueAt(wx, wy);
+  // No rivers on high peaks or in the lowest flats (sea handles those).
+  const hillMask = smoothstep(0.92, 0.72, hill) * smoothstep(0.06, 0.18, hill);
+  if (hillMask <= 0) return DRY;
+  // Rivers divert around towns.
+  const { influence } = townInfluenceAt(wx, wy);
+  const townMask = 1 - smoothstep(0.45, 0.7, influence);
+  if (townMask <= 0) return DRY;
+  const depth = smoothstep(threshold, 0.995, channel) * hillMask * townMask;
+  return depth <= 0.01 ? DRY : { kind: 'river', depth };
+}
+
+export interface Lake {
+  /** World-coordinate center. */
+  x: number;
+  y: number;
+  /** Radius in field units. */
+  r: number;
+}
+
+/**
+ * Deterministic lakes for a chunk. Lakes form in damp basins
+ * (moisture > 0.78, macro < 0.38) away from towns and off river channels.
+ * Positions come from the chunk's 'water' stream; geometry is world-anchored.
+ */
+export function lakesForChunk(
+  cx: number,
+  cy: number,
+  worldSeed: number = DEFAULT_WORLD_SEED,
+): Lake[] {
+  const wx = (cx + 0.5) * LANDSCAPE_FIELD_SIZE;
+  const wy = (cy + 0.5) * LANDSCAPE_FIELD_SIZE;
+  if (moistureAt(wx, wy) < 0.78) return [];
+  if (macroLandformAt(wx, wy) > 0.38) return [];
+  if (townInfluenceAt(wx, wy).influence > 0.35) return [];
+  const rng = landscapeSeed(worldSeed, cx, cy, 'water');
+  const lakes: Lake[] = [];
+  const count = rng() < 0.35 ? 2 : 1;
+  for (let i = 0; i < count; i++) {
+    const lx = 40 + rng() * (LANDSCAPE_FIELD_SIZE - 80);
+    const ly = 40 + rng() * (LANDSCAPE_FIELD_SIZE - 80);
+    const gx = cx * LANDSCAPE_FIELD_SIZE + lx;
+    const gy = cy * LANDSCAPE_FIELD_SIZE + ly;
+    if (riverChannelAt(gx, gy) > 0.8) continue; // not on a river channel
+    const r = 20 + rng() * 40;
+    lakes.push({ x: gx, y: gy, r });
+  }
+  return lakes;
+}
+
+function lakeDepthAt(wx: number, wy: number, lake: Lake): number {
+  const d = Math.hypot(wx - lake.x, wy - lake.y) / lake.r;
+  if (d >= 1) return 0;
+  // Deep center, shallow rim.
+  return Math.cos((d * Math.PI) / 2) ** 1.5;
+}
+
+/**
+ * Combined water sample: deepest of river channel and nearby lakes wins.
+ * Checks the containing chunk plus its 8 neighbors so border lakes work.
+ * Pure and world-anchored — identical from either side of a chunk border.
+ */
+export function waterAt(
+  wx: number,
+  wy: number,
+  worldSeed: number = DEFAULT_WORLD_SEED,
+): WaterSample {
+  let best: WaterSample = riverAt(wx, wy);
+  const cx = Math.floor(wx / LANDSCAPE_FIELD_SIZE);
+  const cy = Math.floor(wy / LANDSCAPE_FIELD_SIZE);
+  for (let ox = -1; ox <= 1; ox++) {
+    for (let oy = -1; oy <= 1; oy++) {
+      const lakes = lakesForChunk(cx + ox, cy + oy, worldSeed);
+      for (const lake of lakes) {
+        const depth = lakeDepthAt(wx, wy, lake);
+        if (depth > best.depth) best = { kind: 'lake', depth };
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * True when a road crosses water here — the road segment is a bridge
+ * (walkable, rendered as planks). `lx, ly` are chunk-local field units.
+ */
+export function bridgeAt(
+  wx: number,
+  wy: number,
+  corridors: CorridorRect[],
+  worldSeed: number = DEFAULT_WORLD_SEED,
+): boolean {
+  if (corridors.length === 0) return false;
+  const cx = Math.floor(wx / LANDSCAPE_FIELD_SIZE);
+  const cy = Math.floor(wy / LANDSCAPE_FIELD_SIZE);
+  const lx = wx - cx * LANDSCAPE_FIELD_SIZE;
+  const ly = wy - cy * LANDSCAPE_FIELD_SIZE;
+  if (!pointInCorridors(lx, ly, corridors)) return false;
+  return waterAt(wx, wy, worldSeed).depth > 0.25;
 }
 
 // ---------------------------------------------------------------------------

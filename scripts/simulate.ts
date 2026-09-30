@@ -9,7 +9,7 @@ import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/g
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
 import { npcPersonality, npcAge, npcAgeYears, npcNeeds, villageTarget, npcRelationships, addNPCMemory, npcWage, npcGold, adjustNPCGold, villageEventsForDay } from '../src/game/villageLife';
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
-import { landscapeSeed, moistureAt, forestDensityAt, rockDensityAt, macroLandformAt, regionForChunk, roadCorridorsFor, pointInCorridors, townInfluenceAt, landUseAt, landscapeSitesFor, checkFieldContinuity } from '../src/game/landscape';
+import { landscapeSeed, moistureAt, forestDensityAt, rockDensityAt, macroLandformAt, regionForChunk, roadCorridorsFor, pointInCorridors, townInfluenceAt, landUseAt, landscapeSitesFor, checkFieldContinuity, riverChannelAt, riverAt, lakesForChunk, waterAt, bridgeAt } from '../src/game/landscape';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText, EDITOR_LOG_MAX } from '../src/game/worldEditor';
 import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE } from '../src/game/mapBuilder';
 import { organicTownSpecs } from '../src/game/organicTowns';
@@ -2171,6 +2171,74 @@ console.log('Testing landscape substrate...');
   for (const s of sites1) {
     assert(s.rect.x >= 0 && s.rect.y >= 0 && s.rect.x + s.rect.w <= 280 && s.rect.y + s.rect.h <= 280,
       `site ${s.kind} should be inside the chunk`);
+  }
+}
+
+// ---- BUILD 367 Phase 2a: water systems (rivers + lakes) ----
+console.log('Testing water systems...');
+{
+  // Determinism.
+  assert(waterAt(1500, 2100).depth === waterAt(1500, 2100).depth, 'waterAt should be deterministic');
+  assert(waterAt(1500, 2100).kind === waterAt(1500, 2100).kind, 'water kind should be deterministic');
+  assert(JSON.stringify(lakesForChunk(4, 7)) === JSON.stringify(lakesForChunk(4, 7)), 'lakes should be deterministic');
+  // Bounds.
+  for (let i = 0; i < 200; i++) {
+    const wx = -2800 + i * 37.7;
+    const wy = -2240 + i * 53.3;
+    const w = waterAt(wx, wy);
+    assert(w.depth >= 0 && w.depth <= 1, `water depth in [0,1] (got ${w.depth})`);
+    const ch = riverChannelAt(wx, wy);
+    assert(ch >= 0 && ch <= 1, 'river channel in [0,1]');
+  }
+  // Border continuity: sampling just inside vs just outside a chunk edge agrees.
+  for (let i = 0; i < 40; i++) {
+    const y = 1500 + i * 25;
+    const a = waterAt(4 * 280 - 0.5, y);
+    const b = waterAt(4 * 280 + 0.5, y);
+    assert(Math.abs(a.depth - b.depth) < 0.05 && a.kind === b.kind,
+      `water should be continuous across chunk border (got ${a.kind}/${a.depth} vs ${b.kind}/${b.depth})`);
+  }
+  // Rivers exist somewhere in the starting region (channel networks are global).
+  let riverFound = false;
+  let riverWx = 0;
+  let riverWy = 0;
+  outer: for (let gx = 0; gx < 40; gx++) {
+    for (let gy = 0; gy < 40; gy++) {
+      const wx = 2 * 280 + gx * 14;
+      const wy = 5 * 280 + gy * 14;
+      const r = riverAt(wx, wy);
+      if (r.depth > 0.3) { riverFound = true; riverWx = wx; riverWy = wy; break outer; }
+    }
+  }
+  assert(riverFound, 'should find river water in a 560x560 scan near the start');
+  // Lakes: deterministic, world-anchored, away from towns.
+  let lakeChunk: { x: number; y: number } | null = null;
+  for (let cx = -10; cx <= 20 && !lakeChunk; cx++) {
+    for (let cy = -8; cy <= 22 && !lakeChunk; cy++) {
+      if (lakesForChunk(cx, cy).length > 0) lakeChunk = { x: cx, y: cy };
+    }
+  }
+  if (lakeChunk) {
+    const lakes = lakesForChunk(lakeChunk.x, lakeChunk.y);
+    for (const lake of lakes) {
+      const center = waterAt(lake.x, lake.y);
+      assert(center.kind === 'lake' && center.depth > 0.5, 'lake center should be deep lake water');
+      const rim = waterAt(lake.x + lake.r * 1.5, lake.y);
+      assert(rim.kind !== 'lake' || rim.depth < 0.2, 'outside lake radius should not be lake water');
+      const { influence } = townInfluenceAt(lake.x, lake.y);
+      assert(influence <= 0.35, 'lakes should stay away from towns');
+    }
+  }
+  // Bridges: a road corridor crossing river water reports a bridge.
+  if (riverFound) {
+    const cx = Math.floor(riverWx / 280);
+    const cy = Math.floor(riverWy / 280);
+    const lx = riverWx - cx * 280;
+    // A synthetic north-south road strip through the river point.
+    const corridors = [{ x: lx - 12, y: 0, w: 24, h: 280 }];
+    assert(bridgeAt(riverWx, riverWy, corridors), 'road over river should be a bridge');
+    assert(!bridgeAt(riverWx, riverWy, []), 'no corridors means no bridge');
+    assert(!bridgeAt(cx * 280 + 10, cy * 280 + 10, corridors), 'dry land on a road is not a bridge');
   }
 }
 
