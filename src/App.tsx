@@ -85,7 +85,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '345';
+const BUILD_NUMBER = '346';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -6201,6 +6201,9 @@ if (active) {
               pans/zooms with the world. As a direct child of .pixel-field it stayed
               glued to the screen, making the path appear to follow the player and
               houses appear to sit on pathways when zoomed. */}
+          {/* BUILD 346: neighboring chunks' ground renders behind, so zooming out
+              shows the world outside the chunk boundary (roads continuing/ending). */}
+          <ChunkSurroundings chunk={chunk} gameZoom={gameZoom} hiddenRoadChunks={hiddenRoadChunks} mapPaints={mapPaints} />
           <FieldGroundLayer spec={groundSpec} />
           {/* Marker dots: inside the world layer so they stay locked to field positions when walking/zooming. */}
           {markerMode && debugMarks.map((mark, i) => [
@@ -8150,6 +8153,54 @@ function FieldGroundLayer({ spec }: { spec: GroundDetailSpec }) {
     }
   }, [spec.terrain, spec.field, spec.path, spec.road, spec.sea, spec.seed, paintSig]);
   return <div ref={hostRef} className="field-ground-layer" aria-hidden="true" />;
+}
+
+// BUILD 346: neighbor-chunk surroundings. When zoomed out (gameZoom < 1) the
+// viewport extends past the current chunk's edge — render the 8 neighboring
+// chunks' procedural ground (terrain + roads) so you can see the world outside
+// the boundary and where roads continue or end, instead of void.
+const NEIGHBOR_OFFSETS: Array<[number, number]> = [
+  [-1, -1], [0, -1], [1, -1],
+  [-1, 0], [1, 0],
+  [-1, 1], [0, 1], [1, 1],
+];
+
+function ChunkSurroundings({ chunk, gameZoom, hiddenRoadChunks, mapPaints }: {
+  chunk: Point;
+  gameZoom: number;
+  hiddenRoadChunks: string[];
+  mapPaints: MapPaints;
+}) {
+  const neighbors = useMemo(() => {
+    if (gameZoom >= 1) return [];
+    return NEIGHBOR_OFFSETS.map(([dx, dy]) => {
+      const nChunk = { x: chunk.x + dx, y: chunk.y + dy };
+      const nTile = mapTileFor(nChunk);
+      const nPalette = fieldPalettes[nTile.terrain];
+      const nKey = nChunk.x + ',' + nChunk.y;
+      const spec: GroundDetailSpec = {
+        terrain: nTile.terrain,
+        field: nPalette.field,
+        path: nPalette.path,
+        road: (nTile.road !== 'none' && !hiddenRoadChunks.includes(nKey) && !nTile.bridge) ? nTile.road : 'none',
+        roadRect: { x: 0.47, y: 0.47, w: 0.09, h: 0.09 },
+        sea: nTile.waterFeature === 'sea',
+        seed: ((nChunk.x * 73856093) ^ (nChunk.y * 19349663)) >>> 0,
+        paints: mapPaints[nKey] ?? [],
+      };
+      return { dx, dy, key: nKey, spec };
+    });
+  }, [chunk.x, chunk.y, gameZoom, hiddenRoadChunks, mapPaints]);
+  if (neighbors.length === 0) return null;
+  return (
+    <div className="chunk-surroundings" aria-hidden="true">
+      {neighbors.map((n) => (
+        <div key={n.key} className="chunk-neighbor" style={{ left: (n.dx * 100) + '%', top: (n.dy * 100) + '%' }}>
+          <FieldGroundLayer spec={n.spec} />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function App() {

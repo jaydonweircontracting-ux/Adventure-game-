@@ -5201,3 +5201,16 @@ body {
   color: #b9c9bd;
   cursor: pointer;
 }
+
+/* BUILD 346: neighbor-chunk surroundings, visible when zoomed out past the chunk edge. */
+.chunk-surroundings {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.chunk-neighbor {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
