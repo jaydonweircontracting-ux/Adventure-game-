@@ -8,7 +8,7 @@ export interface HutRect { x0: number; y0: number; x1: number; y1: number }
 export interface StallRect { x0: number; y0: number; x1: number }
 export interface WallTile { x: number; y: number; h: boolean } // h=true: horizontal (north-wall style); false: vertical
 export interface WallRun { x0: number; y0: number; x1: number; y1: number; h: boolean }
-export interface NpcSpawn { name: string; tunic: string; hair: string; x: number; y: number; waypoints: TilePoint[] }
+export interface NpcSpawn { name: string; look: number; x: number; y: number; waypoints: TilePoint[] }
 
 export interface IsoWorld {
   v: number;
@@ -33,7 +33,7 @@ export interface Clipboard {
   trees: Array<{ dx: number; dy: number }>;
   rocks: Array<{ dx: number; dy: number }>;
   crates: Array<{ dx: number; dy: number }>;
-  npcSpawns: Array<{ name: string; tunic: string; hair: string; dx: number; dy: number; waypoints: Array<{ dx: number; dy: number }> }>;
+  npcSpawns: Array<{ name: string; look: number; dx: number; dy: number; waypoints: Array<{ dx: number; dy: number }> }>;
 }
 
 const WORLD_KEY = 'iso-world-v2';
@@ -112,7 +112,7 @@ export function defaultWorld(): IsoWorld {
   for (let y = 20; y <= 35; y++) walls.push({ x: 20, y, h: false });
 
   return {
-    v: 2, w, h, terrain, walls,
+    v: 3, w, h, terrain, walls,
     huts: [
       { x0: 24, y0: 23, x1: 26, y1: 25 },
       { x0: 30, y0: 30, x1: 32, y1: 32 },
@@ -134,10 +134,10 @@ export function defaultWorld(): IsoWorld {
     rocks: [wp(15, 30), wp(40, 12), wp(25, 45), wp(48, 48), wp(6, 20)],
     crates: [wp(26, 26), wp(31, 33), wp(12, 11), wp(43, 41)],
     npcSpawns: [
-      { name: 'Bram', tunic: '#3b6fd4', hair: '#5a3a22', x: 25, y: 22, waypoints: [wp(22, 22), wp(28, 22), wp(25, 26)] },
-      { name: 'Wren', tunic: '#b44a3c', hair: '#222222', x: 33, y: 31, waypoints: [wp(30, 30), wp(35, 32), wp(33, 28)] },
-      { name: 'Odo', tunic: '#4a8b5c', hair: '#8a5a2a', x: 11, y: 14, waypoints: [wp(9, 13), wp(13, 15), wp(11, 16)] },
-      { name: 'Sella', tunic: '#8b5aa0', hair: '#d9c08a', x: 42, y: 42, waypoints: [wp(40, 41), wp(44, 43), wp(42, 45)] },
+      { name: 'Bram', look: 1, x: 25, y: 22, waypoints: [wp(22, 22), wp(28, 22), wp(25, 26)] },
+      { name: 'Wren', look: 2, x: 33, y: 31, waypoints: [wp(30, 30), wp(35, 32), wp(33, 28)] },
+      { name: 'Odo', look: 3, x: 11, y: 14, waypoints: [wp(9, 13), wp(13, 15), wp(11, 16)] },
+      { name: 'Sella', look: 4, x: 42, y: 42, waypoints: [wp(40, 41), wp(44, 43), wp(42, 45)] },
     ],
     playerStart: wp(27, 33),
   };
@@ -148,7 +148,17 @@ export function loadWorld(): IsoWorld {
     const raw = localStorage.getItem(WORLD_KEY);
     if (raw) {
       const w = JSON.parse(raw) as IsoWorld;
-      if (w && w.v === 2 && w.w >= 10 && w.h >= 10) return w;
+      if (w && (w.v === 2 || w.v === 3) && w.w >= 10 && w.h >= 10) {
+        // migrate v2 npc color looks (tunic/hair) to v3 sprite look indices
+        if (w.v === 2 && Array.isArray(w.npcSpawns)) {
+          w.npcSpawns = w.npcSpawns.map((s: NpcSpawn, i: number) => ({
+            name: s.name, look: 1 + (i % 4), x: s.x, y: s.y, waypoints: s.waypoints || [],
+          }));
+          w.v = 3;
+          saveWorld(w);
+        }
+        return w;
+      }
     }
   } catch { /* fall through to default */ }
   const w = defaultWorld();
@@ -217,7 +227,7 @@ export function copyRegion(w: IsoWorld, r: Region): Clipboard {
   for (const s of w.npcSpawns) {
     if (inR(s.x, s.y)) {
       clip.npcSpawns.push({
-        name: s.name, tunic: s.tunic, hair: s.hair, dx: s.x - r.x0, dy: s.y - r.y0,
+        name: s.name, look: s.look, dx: s.x - r.x0, dy: s.y - r.y0,
         waypoints: s.waypoints.filter(p => inR(p.tx, p.ty)).map(p => ({ dx: p.tx - r.x0, dy: p.ty - r.y0 })),
       });
     }
@@ -260,7 +270,7 @@ export function pasteClipboard(w: IsoWorld, c: Clipboard, tx: number, ty: number
     const x = tx + e.dx, y = ty + e.dy;
     if (inBounds(nw, x, y)) {
       nw.npcSpawns.push({
-        name: e.name, tunic: e.tunic, hair: e.hair, x, y,
+        name: e.name, look: e.look, x, y,
         waypoints: e.waypoints.map(p => ({ tx: tx + p.dx, ty: ty + p.dy })).filter(p => inBounds(nw, p.tx, p.ty)),
       });
     }

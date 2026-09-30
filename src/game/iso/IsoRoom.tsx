@@ -1,4 +1,4 @@
-// Isometric demo (BUILD 358): data-driven world + in-game map builder (?iso=1).
+// Isometric demo (BUILD 359): data-driven world + in-game map builder (?iso=1).
 // Play mode: explore, move crates, wandering NPCs. Edit mode: full map builder
 // (select/move/delete, paint terrain, place objects, copy/paste regions, resize
 // up to 200x200, undo). World persists in localStorage.
@@ -34,20 +34,55 @@ type PlaceKind = 'tree' | 'rock' | 'crate' | 'hut' | 'stall' | 'wallH' | 'wallV'
 type SelKind = 'tree' | 'rock' | 'crate' | 'npc' | 'stall' | 'hut' | 'wall' | 'start';
 interface Selection { kind: SelKind; index: number }
 
+type Face4 = 'up' | 'left' | 'down' | 'right';
+
 interface CharState { tx: number; ty: number; fx: number; fy: number }
 interface PlayNpc extends CharState {
-  name: string; tunic: string; hair: string;
+  name: string; look: number;
   waypoints: TilePoint[]; path: TilePoint[]; stepT: number; thinkT: number;
-  from: { x: number; y: number }; moving: boolean; facing: 'left' | 'right';
+  from: { x: number; y: number }; moving: boolean; facing: Face4;
 }
 
 interface Drawable { depth: number; tx: number; ty: number; draw: (g: CanvasRenderingContext2D) => void }
 
+// Character looks built from Universal LPC Spritesheet Character Generator layers
+// (see the in-demo Info page for full credits). Index 0 is the player.
 const NPC_LOOKS = [
-  { tunic: '#3b6fd4', hair: '#5a3a22' }, { tunic: '#b44a3c', hair: '#222222' },
-  { tunic: '#4a8b5c', hair: '#8a5a2a' }, { tunic: '#8b5aa0', hair: '#d9c08a' },
-  { tunic: '#c47b2d', hair: '#3a2a1a' },
+  { body: 'body-m', shirt: 'shirt-scoop-m', hair: 'hair-page' },
+  { body: 'body-f', shirt: 'shirt-scoop-f', hair: 'hair-bob' },
+  { body: 'body-m', shirt: 'shirt-cuffed-m', hair: 'hair-messy1' },
+  { body: 'body-f', shirt: 'shirt-scoop-f', hair: 'hair-pixie' },
+  { body: 'body-m', shirt: 'shirt-formal-m', hair: 'hair-page' },
 ];
+const LPC_FILES = ['body-m', 'body-f', 'pants-m', 'shirt-scoop-m', 'shirt-scoop-f',
+  'shirt-cuffed-m', 'shirt-formal-m', 'hair-page', 'hair-bob', 'hair-pixie', 'hair-messy1'];
+const LPC_ROW: Record<Face4, number> = { up: 0, left: 1, down: 2, right: 3 };
+// module-level LPC sprite cache (read by the canvas loop; filled once)
+const sprCache: Record<string, HTMLImageElement> = {};
+let sprPreloaded = false;
+function preloadLpcSprites() {
+  if (sprPreloaded) return;
+  sprPreloaded = true;
+  for (const f of LPC_FILES) {
+    const img = new Image();
+    img.src = `${import.meta.env.BASE_URL}iso-chars/${f}.png`;
+    sprCache[f] = img;
+  }
+}
+function lpcReady(keys: string[]): boolean {
+  return keys.every(k => {
+    const im = sprCache[k];
+    return im && im.complete && im.naturalWidth > 0;
+  });
+}
+
+// screen-space facing for a tile step (isoToScreen imported from projection.ts)
+function faceForMove(ax: number, ay: number, bx: number, by: number): Face4 {
+  const a = isoToScreen(ax, ay), b = isoToScreen(bx, by);
+  const dx = b.x - a.x, dy = b.y - a.y;
+  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left';
+  return dy > 0 ? 'down' : 'up';
+}
 
 export default function IsoRoom(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -65,6 +100,9 @@ export default function IsoRoom(): React.JSX.Element {
   const [resizeW, setResizeW] = useState(56);
   const [resizeH, setResizeH] = useState(56);
   const [worldSize, setWorldSize] = useState('56×56');
+  const [infoOpen, setInfoOpen] = useState(false);
+
+  useEffect(() => { preloadLpcSprites(); }, []);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -130,7 +168,7 @@ export default function IsoRoom(): React.JSX.Element {
     const pFrom = { x: 0, y: 0 };
     const pStepT = { t: 0 };
     let playerMoving = false;
-    let playerFacing: 'left' | 'right' = 'right';
+    let playerFacing: Face4 = 'down';
     let carryingIdx = -1;
     const held = new Set<string>();
     const cam = { x: 0, y: 0 };
@@ -168,11 +206,11 @@ export default function IsoRoom(): React.JSX.Element {
         const sy = sv && inBounds(w, sv.x, sv.y) ? sv.y : s.y;
         const wps = s.waypoints.filter(p => inBounds(w, p.tx, p.ty) && isWalkableWorld(w, w.crates, p.tx, p.ty));
         npcs.push({
-          name: s.name, tunic: s.tunic, hair: s.hair,
+          name: s.name, look: s.look,
           tx: sx, ty: sy, fx: sx, fy: sy,
           waypoints: wps.length > 0 ? wps : [{ tx: s.x, ty: s.y }],
           path: [], stepT: 0, thinkT: 500 + i * 900,
-          from: { x: sx, y: sy }, moving: false, facing: 'right',
+          from: { x: sx, y: sy }, moving: false, facing: 'down',
         });
       });
       const c = isoToScreen(player.fx, player.fy);
@@ -397,29 +435,44 @@ export default function IsoRoom(): React.JSX.Element {
       };
     }
 
-    function personDrawable(px: number, py: number, moving: boolean, facing: 'left' | 'right',
-      tunic: string, hair: string, depth: number, bob: number): Drawable {
+    function personDrawable(px: number, py: number, moving: boolean, facing: Face4,
+      look: number, depth: number, nowMs: number): Drawable {
       const c = isoToScreen(px, py);
+      const L = NPC_LOOKS[((look % NPC_LOOKS.length) + NPC_LOOKS.length) % NPC_LOOKS.length];
+      const keys = [L.body, 'pants-m', L.shirt, L.hair];
       return {
         depth, tx: px, ty: py, draw: (g) => {
-          const lift = moving ? Math.abs(Math.sin(bob)) * 3 : 0;
+          const lift = moving ? Math.abs(Math.sin(nowMs / 130)) * 3 : 0;
           g.fillStyle = 'rgba(0,0,0,0.22)';
           g.beginPath(); g.ellipse(c.x, c.y + 3, 12, 5, 0, 0, 7); g.fill();
+          const ready = lpcReady(keys);
+          if (ready) {
+            // Universal LPC walk sheet: 9 frames x 4 rows (up, left, down, right), 64x64 cells
+            const frame = moving ? Math.floor(nowMs / 150) % 9 : 0;
+            const sx = frame * 64, sy = LPC_ROW[facing] * 64;
+            const size = 52;
+            const dx = c.x - size / 2, dy = c.y - size + 6 - lift;
+            for (const k of keys) {
+              const im = sprCache[k] as HTMLImageElement;
+              g.drawImage(im, sx, sy, 64, 64, dx, dy, size, size);
+            }
+            return;
+          }
+          // vector fallback while sprites load
           g.save();
           g.translate(c.x, c.y - lift);
-          if (facing === 'left') g.scale(-1, 1);
-          const legSwing = moving ? Math.sin(bob) * 4 : 0;
+          const legSwing = moving ? Math.sin(nowMs / 130) * 4 : 0;
           g.fillStyle = '#4a3220';
           g.fillRect(-7, -12 + legSwing * 0.4, 6, 12);
           g.fillRect(1, -12 - legSwing * 0.4, 6, 12);
-          g.fillStyle = tunic;
+          g.fillStyle = '#3b6fd4';
           g.beginPath();
           g.moveTo(-10, -12); g.lineTo(10, -12); g.lineTo(8, -30); g.lineTo(-8, -30);
           g.closePath(); g.fill();
           g.fillRect(-13, -28, 4, 14); g.fillRect(9, -28, 4, 14);
           g.fillStyle = '#f2c89b';
           g.beginPath(); g.arc(0, -38, 9, 0, 7); g.fill();
-          g.fillStyle = hair;
+          g.fillStyle = '#5a3a22';
           g.beginPath(); g.arc(0, -40, 9, Math.PI, 0); g.fill();
           g.fillRect(-9, -40, 4, 8);
           g.restore();
@@ -515,17 +568,17 @@ export default function IsoRoom(): React.JSX.Element {
       if (isEdit) {
         for (const s of w.npcSpawns) {
           if (!inR(s.x, s.y)) continue;
-          draws.push(personDrawable(s.x, s.y, false, 'right', s.tunic, s.hair, depthKey(s.x, s.y, 1), 0));
+          draws.push(personDrawable(s.x, s.y, false, 'down', s.look, depthKey(s.x, s.y, 1), 0));
         }
         if (inR(w.playerStart.tx, w.playerStart.ty)) draws.push(startMarkerDrawable(w.playerStart));
       } else {
         for (const n of npcs) {
           if (!inR(n.fx, n.fy)) continue;
-          draws.push(personDrawable(n.fx, n.fy, n.moving, n.facing, n.tunic, n.hair,
-            depthKey(n.fx, n.fy, 1), now / 280));
+          draws.push(personDrawable(n.fx, n.fy, n.moving, n.facing, n.look,
+            depthKey(n.fx, n.fy, 1), now));
         }
-        draws.push(personDrawable(player.fx, player.fy, playerMoving, playerFacing, '#3b6fd4', '#5a3a22',
-          depthKey(player.fx, player.fy, 1), now / 130));
+        draws.push(personDrawable(player.fx, player.fy, playerMoving, playerFacing, 0,
+          depthKey(player.fx, player.fy, 1), now));
         if (carryingIdx >= 0) {
           const cp = isoToScreen(player.fx, player.fy);
           draws.push({
@@ -671,11 +724,11 @@ export default function IsoRoom(): React.JSX.Element {
         if (inBounds(w, tx + 1, ty)) w.stalls.push({ x0: tx, y0: ty, x1: tx + 1 });
       }
       else if (kind === 'npc') {
-        const look = NPC_LOOKS[ed.npcCount % NPC_LOOKS.length];
+        const look = 1 + (ed.npcCount % 4);
         ed.npcCount++;
         const wps = [{ tx: tx - 2, ty }, { tx: tx + 2, ty }, { tx, ty: ty + 2 }]
           .filter(p => inBounds(w, p.tx, p.ty));
-        w.npcSpawns.push({ name: `Villager ${ed.npcCount}`, tunic: look.tunic, hair: look.hair, x: tx, y: ty, waypoints: wps });
+        w.npcSpawns.push({ name: `Villager ${ed.npcCount}`, look, x: tx, y: ty, waypoints: wps });
       }
       else if (kind === 'start') w.playerStart = { tx, ty };
       saveWorld(w);
@@ -1059,7 +1112,7 @@ export default function IsoRoom(): React.JSX.Element {
           playerPath = r.path; playerMoving = r.moving;
           if (r.moving && playerPath.length > 0) {
             const n = playerPath[0];
-            if (n.tx !== player.tx) playerFacing = n.tx > player.tx ? 'right' : 'left';
+            playerFacing = faceForMove(player.tx, player.ty, n.tx, n.ty);
           }
         }
         for (let i = 0; i < npcs.length; i++) {
@@ -1080,7 +1133,7 @@ export default function IsoRoom(): React.JSX.Element {
           n.stepT = st.t; n.path = r.path; n.moving = r.moving;
           if (r.moving && n.path.length > 0) {
             const nxt = n.path[0];
-            if (nxt.tx !== n.tx) n.facing = nxt.tx > n.tx ? 'right' : 'left';
+            n.facing = faceForMove(n.tx, n.ty, nxt.tx, nxt.ty);
           }
         }
         {
@@ -1176,9 +1229,10 @@ export default function IsoRoom(): React.JSX.Element {
       {mode === 'play' ? (
         <>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 12px', gap: 8 }}>
-            <div style={chip}>⛰️ Isometric demo · build 358 · {worldSize} · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
+            <div style={chip}>⛰️ Isometric demo · build 359 · {worldSize} · tile {coords}{carrying ? ' · carrying crate' : ''}</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button style={btn} onClick={() => api.enterEdit()}>🔨 Builder</button>
+              <button style={btn} onClick={() => setInfoOpen(true)}>ℹ Info</button>
               <button style={btn} onClick={() => api.back()}>← Back to game</button>
             </div>
           </div>
@@ -1249,6 +1303,7 @@ export default function IsoRoom(): React.JSX.Element {
           <div style={{ position: 'absolute', left: 14, bottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <button style={btn} onClick={() => api.exitEdit()}>← Demo</button>
             <button style={btn} onClick={() => api.back()}>← Game</button>
+            <button style={btn} onClick={() => setInfoOpen(true)}>ℹ Info</button>
           </div>
           <div style={{ position: 'absolute', right: 14, bottom: 140, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <button style={btn} onClick={() => api.doUndo()}>↩ Undo</button>
@@ -1285,6 +1340,63 @@ export default function IsoRoom(): React.JSX.Element {
             </div>
           )}
         </>
+      )}
+
+      {infoOpen && (
+        <div style={{
+          position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20, padding: 16,
+        }} onClick={() => setInfoOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: '#fffdf6', borderRadius: 14, padding: '18px 20px', maxWidth: 520, width: '100%',
+            maxHeight: '84vh', overflowY: 'auto', color: '#222', fontSize: 13, lineHeight: 1.5,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.35)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>⛰️ Isometric Demo — Info</div>
+              <button style={btn} onClick={() => setInfoOpen(false)}>✕ Close</button>
+            </div>
+            <div style={{ fontWeight: 700, margin: '10px 0 4px' }}>About</div>
+            <div>
+              A vertical slice of the game's isometric 2.5D direction. Walk the demo town,
+              pick up crates, talk-free wandering villagers — then open the 🔨 Builder to paint
+              terrain and place objects on maps up to 200×200. Your edits are saved on this device.
+            </div>
+            <div style={{ fontWeight: 700, margin: '10px 0 4px' }}>Controls</div>
+            <div>
+              Tap a tile to walk · tap a crate to pick it up, tap again to set it down ·
+              D-pad or WASD / arrow keys · + / − to zoom. In the Builder: ✋ select & drag to move,
+              🖌 paint terrain, ➕ place objects, ⧉ copy / 📋 paste areas, 🧽 erase, ↩ undo.
+            </div>
+            <div style={{ fontWeight: 700, margin: '12px 0 4px' }}>Sprite credits</div>
+            <div style={{ fontWeight: 700 }}>Characters — Universal LPC Spritesheet Character Generator</div>
+            <div>
+              Liberated Pixel Cup community project. Contributing artists for the layers used here:
+              Benjamin K. Smith (BenCreating), bluecarrot16, Durrani, Eliza Wyatt (ElizaWy), Evert,
+              JaidynReiman, Johannes Sjölund (wulax), Manuel Riecke (MrBeast), Matthew Krohn (makrohn),
+              MuffinElZangano, Page, Pierre Vigier (pvigier), Stephen Challener (Redshrike),
+              Thane Brimhall (pennomi), TheraHedwig, laetissima.
+            </div>
+            <div style={{ marginTop: 4 }}>
+              Licensed under CC-BY-SA 3.0, GPL 3.0 and OGA-BY 3.0 — thank you to all the artists.
+            </div>
+            <div style={{ marginTop: 4 }}>
+              <a href="https://liberatedpixelcup.github.io/Universal-LPC-Spritesheet-Character-Generator/" target="_blank" rel="noreferrer">Sprite generator</a>
+              {' · '}
+              <a href="https://github.com/liberatedpixelcup/Universal-LPC-Spritesheet-Character-Generator" target="_blank" rel="noreferrer">Source on GitHub</a>
+              {' · '}
+              <a href="https://opengameart.org" target="_blank" rel="noreferrer">OpenGameArt.org</a>
+            </div>
+            <div style={{ fontWeight: 700, marginTop: 10 }}>Mana Seed sprite packs — Seliel the Shaper</div>
+            <div>
+              "Mana Seed Farmer Sprite System" and "Mana Seed Character Base Demo" assets are used
+              in the main game. Thank you!
+            </div>
+            <div style={{ marginTop: 4 }}>
+              <a href="https://seliel-the-shaper.itch.io/" target="_blank" rel="noreferrer">seliel-the-shaper.itch.io</a>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast !== '' && (
