@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '261';
+const BUILD_NUMBER = '262';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -381,16 +381,11 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
       { left: 68, top: 70, width: 19, height: 13, scale: 0.8 },
     ];
   } else {
-    // Four corners (starting area default). REMOVED per user request 2026-09-29
-    // ("Remove the houses for now"). Previous positions from user screenshot:
-    // tutorial 24.0,44.3 | crafting 97.0,45.4 | chapel 28.1,92.9 | fourth 100.4,93.9
-    // Kept here for restore: specs were [
-    //   { left: -8.0, top: 16.8, width: 11.5, height: 8.4, scale: 1.5 },
-    //   { left: 88.6, top: 18.3, width: 11.5, height: 8.4, scale: 1.5 },
-    //   { left: -2.5, top: 83.6, width: 11.5, height: 8.4, scale: 1.5 },
-    //   { left: 93.1, top: 84.9, width: 11.5, height: 8.4, scale: 1.5 },
-    // ]
-    specs = [];
+    // Four corners (starting area default). Only the tutorial/starting house
+    // is restored per user request 2026-09-29 ("Place the starting house here"
+    // at 41.7,48.8). Other three houses remain removed.
+    // House is 13 x 9.2 field units, centered at (41.7, 48.8).
+    return [{ left: 35.2, top: 44.2, right: 48.2, bottom: 53.4 }];
   }
 
   if (!startingArea) {
