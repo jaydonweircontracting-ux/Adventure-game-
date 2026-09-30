@@ -3636,6 +3636,16 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     return () => window.clearInterval(timer);
   }, []);
 
+  // Simulation LOD policy (civ phase 17):
+  // - Nearby/full: the player's chunk — goats, monsters, townsfolk, POI dens
+  //   tick every frame/interval.
+  // - Regional/reduced: fake-player adventurers (they live around Mosslight
+  //   Crossing) tick at 1/8 rate when the player is elsewhere; logins still
+  //   spawn on cadence.
+  // - Distant/abstract: townsfolk roster clears when the player leaves
+  //   Mosslight (re-snapped to the clock on return); travelers, caravans,
+  //   military, horses, trade prices, and world events are pure functions of
+  //   the world clock — no per-frame cost at any distance.
   // One living-simulation tick shared by the ambient interval and the wait
   // driver. Stored in a ref so both interval callbacks stay stable.
   const advanceLivingSimTickRef = useRef(() => {});
@@ -3645,7 +3655,10 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     const liveGoats = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goat.hp > 0);
     // A new "player" logs in every minute, up to 10.
     const withSpawns = spawnDueAdventurer(simulatedAdventurersRef.current, nextTick);
-    const next = advanceSimulatedAdventurers(withSpawns, nextTick, liveGoats.map((goat) => ({ id: goat.id, position: goat.position })));
+    const nearAdventurers = chunkRef.current.x === TOWNSFOLK_CHUNK.x && chunkRef.current.y === TOWNSFOLK_CHUNK.y;
+    const next = (nearAdventurers || nextTick % 8 === 0)
+      ? advanceSimulatedAdventurers(withSpawns, nextTick, liveGoats.map((goat) => ({ id: goat.id, position: goat.position })))
+      : withSpawns;
     // BUG-006 fix: background adventurers never touch the player's loaded
     // goats. Goat HP/disposition only change from the player's own attacks —
     // no more "random" damage on goats across the map.
