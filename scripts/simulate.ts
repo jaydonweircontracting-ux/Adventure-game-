@@ -10,6 +10,7 @@ import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, to
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
+import { appearanceForNpc, npcAppearanceStyle } from '../src/game/npcAppearance';
 
 let passed = 0;
 let failed = 0;
@@ -408,6 +409,54 @@ assert(allClustered && clusteredOk === clusteredTotal, `Corn not a dense field: 
   // Empty roster: nothing.
   t = findTalkTarget([], player, 'up');
   assert(t === null, 'talk target should be null with no candidates');
+}
+
+// ---- BUILD 316: deterministic NPC visual identity ----
+{
+  // Determinism: same id+archetype => identical appearance every time.
+  const a1 = appearanceForNpc('townsfolk-3', 'farmer');
+  const a2 = appearanceForNpc('townsfolk-3', 'farmer');
+  assert(a1.column === a2.column && a1.filter === a2.filter, 'npc appearance must be deterministic');
+  // Column is a valid sprite-sheet outfit column.
+  assert(a1.column >= 0 && a1.column <= 5 && Number.isInteger(a1.column), 'npc appearance column out of range');
+  // Profession consistency: mages only ever wear mage-palette columns.
+  const mageCols = new Set([0, 1, 2, 3, 4, 5].map((_, i) => appearanceForNpc('mage-' + i, 'mage').column));
+  for (const c of mageCols) assert([2, 0, 5].includes(c), 'mage picked a non-mage outfit column: ' + c);
+  // Guards stay in guard colors.
+  for (let i = 0; i < 40; i++) {
+    const c = appearanceForNpc('guard-' + i, 'guard').column;
+    assert([1, 4, 0].includes(c), 'guard picked a non-guard outfit column: ' + c);
+  }
+  // Unknown archetypes fall back to the commoner palette, never crash.
+  const weird = appearanceForNpc('x-1', 'dragon');
+  assert([0, 3, 5, 2].includes(weird.column), 'unknown archetype should use commoner palette');
+  // Filter carries the archetype base tint.
+  assert(appearanceForNpc('m-1', 'mage').filter.includes('sepia(.35)'), 'mage filter lost its base tint');
+  assert(appearanceForNpc('w-1', 'warrior').filter.includes('sepia(.52)'), 'warrior filter lost its base tint');
+  // Adventurer kind keeps the drop shadow; town kind does not add one.
+  assert(appearanceForNpc('kael', 'beginner', { kind: 'adventurer' }).filter.includes('drop-shadow'), 'adventurer lost drop shadow');
+  assert(!appearanceForNpc('townsfolk-1', 'farmer').filter.includes('drop-shadow'), 'town npc should not gain a drop shadow');
+  // Children never get the graying treatment.
+  for (let i = 0; i < 100; i++) {
+    assert(!appearanceForNpc('kid-' + i, 'child').filter.includes('saturate(.8)'), 'child should never be grayed');
+  }
+  // Region rotates palettes (different towns dress differently).
+  let regionDiffers = false;
+  for (let i = 0; i < 30; i++) {
+    if (appearanceForNpc('n-' + i, 'commoner', { region: 'frosthold' }).column !== appearanceForNpc('n-' + i, 'commoner', { region: 'mosslight' }).column) { regionDiffers = true; break; }
+  }
+  assert(regionDiffers, 'region should rotate outfit palettes');
+  // Diversity: 12 townsfolk should not be identical clones.
+  const seen = new Set<string>();
+  for (let i = 0; i < 12; i++) {
+    const a = appearanceForNpc('townsfolk-' + i, ['farmer', 'merchant', 'guard', 'priest', 'smith', 'commoner'][i % 6]);
+    seen.add(a.column + '|' + a.filter);
+  }
+  assert(seen.size >= 8, 'expected visual diversity across townsfolk, got ' + seen.size + ' distinct looks');
+  // Style helper emits the CSS vars the sprite rules consume.
+  const style = npcAppearanceStyle('townsfolk-3', 'farmer');
+  assert(style['--npc-appearance-x'] === (-a1.column * 32) + 'px', 'appearance x var wrong');
+  assert(style['--npc-appearance-filter'] === a1.filter, 'appearance filter var wrong');
 }
 
 // ---- 12. World clock display + wait math (BUILD 275) ----

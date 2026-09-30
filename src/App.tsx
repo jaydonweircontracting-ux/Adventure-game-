@@ -15,6 +15,7 @@ export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEdi
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from './game/worldEditor';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 import { findTalkTarget } from './game/talkTarget';
+import { npcAppearanceStyle } from './game/npcAppearance';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, buildMosslightHousing, cottageDoorways, mosslightObstacles, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext } from '@/game/townsfolk';
@@ -76,7 +77,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '315';
+const BUILD_NUMBER = '316';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -2980,24 +2981,24 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
     <div className={'interior-scene interior-' + area.roomType + ' interior-variant-' + (Math.abs(area.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 4)} aria-label={area.name + ' interior'} data-testid={'interior-' + area.id}>
       <div className="interior-room" aria-hidden="true">{furniture}</div>
       {area.id === 'wayfarer-guild' && (
-        <button type="button" className="interior-npc npc-warrior" onClick={onTalkToSmith} style={{ left: '62%', top: '40%' }} aria-label="Talk to Bram, the guild smith" data-testid="guild-smith" data-facing="down">
+        <button type="button" className="interior-npc npc-warrior" onClick={onTalkToSmith} style={{ ...npcAppearanceStyle('guild-smith', 'warrior'), left: '62%', top: '40%' }} aria-label="Talk to Bram, the guild smith" data-testid="guild-smith" data-facing="down">
           <span className="interior-npc-nameplate" aria-hidden="true"><strong>Bram</strong><small>Guild smith · Talk</small></span>
           <span className="npc-sprite" aria-hidden="true" />
         </button>
       )}
       {area.id === 'wayfarer-guild' && (
         <>
-          <button type="button" className="interior-npc npc-guide quest-giver" onClick={() => onTalkToQuestGiver('Elsa')} style={{ left: '20%', top: '52%' }} aria-label="Talk to Elsa, the seamstress" data-testid="guild-quest-elsa" data-facing="down">
+          <button type="button" className="interior-npc npc-guide quest-giver" onClick={() => onTalkToQuestGiver('Elsa')} style={{ ...npcAppearanceStyle('guild-quest-elsa', 'guide'), left: '20%', top: '52%' }} aria-label="Talk to Elsa, the seamstress" data-testid="guild-quest-elsa" data-facing="down">
             <span className="quest-giver-badge" aria-hidden="true">!</span>
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Elsa</strong><small>Seamstress · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className="interior-npc npc-warrior quest-giver" onClick={() => onTalkToQuestGiver('Rowan')} style={{ left: '36%', top: '58%' }} aria-label="Talk to Rowan, guard captain" data-testid="guild-quest-rowan" data-facing="down">
+          <button type="button" className="interior-npc npc-warrior quest-giver" onClick={() => onTalkToQuestGiver('Rowan')} style={{ ...npcAppearanceStyle('guild-quest-rowan', 'warrior'), left: '36%', top: '58%' }} aria-label="Talk to Rowan, guard captain" data-testid="guild-quest-rowan" data-facing="down">
             <span className="quest-giver-badge" aria-hidden="true">!</span>
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Rowan</strong><small>Guard captain · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className="interior-npc npc-mage quest-giver" onClick={() => onTalkToQuestGiver('Steward Anselm')} style={{ left: '80%', top: '30%' }} aria-label="Talk to Steward Anselm" data-testid="guild-quest-anselm" data-facing="down">
+          <button type="button" className="interior-npc npc-mage quest-giver" onClick={() => onTalkToQuestGiver('Steward Anselm')} style={{ ...npcAppearanceStyle('guild-quest-anselm', 'mage'), left: '80%', top: '30%' }} aria-label="Talk to Steward Anselm" data-testid="guild-quest-anselm" data-facing="down">
             <span className="quest-giver-badge" aria-hidden="true">!</span>
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Steward Anselm</strong><small>King's steward · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
@@ -3006,12 +3007,12 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
       )}
       {area.id === 'rootbound-chapel' && (
         <>
-          <button type="button" className="interior-npc npc-guide quest-giver" onClick={() => onTalkToQuestGiver('Mabel')} style={{ left: '28%', top: '62%' }} aria-label="Talk to Mabel" data-testid="chapel-quest-mabel" data-facing="down">
+          <button type="button" className="interior-npc npc-guide quest-giver" onClick={() => onTalkToQuestGiver('Mabel')} style={{ ...npcAppearanceStyle('chapel-quest-mabel', 'guide'), left: '28%', top: '62%' }} aria-label="Talk to Mabel" data-testid="chapel-quest-mabel" data-facing="down">
             <span className="quest-giver-badge" aria-hidden="true">!</span>
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Mabel</strong><small>Chapel-goer · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className="interior-npc npc-mage quest-giver" onClick={() => onTalkToQuestGiver('Father Aldous')} style={{ left: '68%', top: '55%' }} aria-label="Talk to Father Aldous" data-testid="chapel-quest-aldous" data-facing="down">
+          <button type="button" className="interior-npc npc-mage quest-giver" onClick={() => onTalkToQuestGiver('Father Aldous')} style={{ ...npcAppearanceStyle('chapel-quest-aldous', 'mage'), left: '68%', top: '55%' }} aria-label="Talk to Father Aldous" data-testid="chapel-quest-aldous" data-facing="down">
             <span className="quest-giver-badge" aria-hidden="true">!</span>
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Father Aldous</strong><small>Priest · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
@@ -3020,28 +3021,28 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
       )}
       {area.id === 'fourth-house' && (
         <>
-          <button type="button" className="interior-npc npc-guide" onClick={onTalkToBartender} style={{ left: '50%', top: '24%' }} aria-label="Talk to Mira, the bartender" data-testid="tavern-bartender" data-facing="down">
+          <button type="button" className="interior-npc npc-guide" onClick={onTalkToBartender} style={{ ...npcAppearanceStyle('tavern-bartender', 'guide'), left: '50%', top: '24%' }} aria-label="Talk to Mira, the bartender" data-testid="tavern-bartender" data-facing="down">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Mira</strong><small>Bartender · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
           <button type="button" className="tavern-sleep-button" onClick={onTavernSleep} style={{ left: '87%', top: '12%' }} aria-label="Sleep in the tavern bed until morning" data-testid="tavern-sleep-bed">😴 Sleep</button>
-          <button type="button" className={'interior-npc npc-mage tavern-patron' + (shownPatron === 'tavern-noah' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-noah'); onTalkToTeacher('Noah', 'Mage teacher', 'mage'); }} style={{ left: '13%', top: '63%' }} aria-label="Talk to Noah" data-testid="tavern-patron-noah" data-facing="right">
+          <button type="button" className={'interior-npc npc-mage tavern-patron' + (shownPatron === 'tavern-noah' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-noah'); onTalkToTeacher('Noah', 'Mage teacher', 'mage'); }} style={{ ...npcAppearanceStyle('tavern-patron-noah', 'mage'), left: '13%', top: '63%' }} aria-label="Talk to Noah" data-testid="tavern-patron-noah" data-facing="right">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Noah</strong><small>Mage teacher · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className={'interior-npc npc-warrior tavern-patron' + (shownPatron === 'tavern-damon' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-damon'); onTalkToTeacher('Damon', 'Warrior teacher', 'warrior'); }} style={{ left: '81%', top: '66%' }} aria-label="Talk to Damon" data-testid="tavern-patron-damon" data-facing="left">
+          <button type="button" className={'interior-npc npc-warrior tavern-patron' + (shownPatron === 'tavern-damon' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-damon'); onTalkToTeacher('Damon', 'Warrior teacher', 'warrior'); }} style={{ ...npcAppearanceStyle('tavern-patron-damon', 'warrior'), left: '81%', top: '66%' }} aria-label="Talk to Damon" data-testid="tavern-patron-damon" data-facing="left">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Damon</strong><small>Warrior teacher · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className={'interior-npc npc-rogue tavern-patron' + (shownPatron === 'tavern-shawn' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-shawn'); onTalkToTeacher('Shawn', 'Rogue instructor', 'rogue'); }} style={{ left: '48%', top: '44%' }} aria-label="Talk to Shawn" data-testid="tavern-patron-shawn" data-facing="up">
+          <button type="button" className={'interior-npc npc-rogue tavern-patron' + (shownPatron === 'tavern-shawn' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-shawn'); onTalkToTeacher('Shawn', 'Rogue instructor', 'rogue'); }} style={{ ...npcAppearanceStyle('tavern-patron-shawn', 'rogue'), left: '48%', top: '44%' }} aria-label="Talk to Shawn" data-testid="tavern-patron-shawn" data-facing="up">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Shawn</strong><small>Rogue instructor · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className={'interior-npc npc-warrior tavern-patron' + (shownPatron === 'tavern-tam' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-tam'); onTalkToPatron('Old Tam', "Back in my day, the goats were bigger. And meaner. Mostly meaner."); }} style={{ left: '24%', top: '81%' }} aria-label="Talk to Old Tam" data-testid="tavern-patron-tam" data-facing="up">
+          <button type="button" className={'interior-npc npc-warrior tavern-patron' + (shownPatron === 'tavern-tam' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-tam'); onTalkToPatron('Old Tam', "Back in my day, the goats were bigger. And meaner. Mostly meaner."); }} style={{ ...npcAppearanceStyle('tavern-patron-tam', 'warrior'), left: '24%', top: '81%' }} aria-label="Talk to Old Tam" data-testid="tavern-patron-tam" data-facing="up">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Old Tam</strong><small>Regular · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className={'interior-npc npc-mage tavern-patron' + (shownPatron === 'tavern-sella' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-sella'); onTalkToPatron('Sella', "They say the Ember Vault under the chapel glows when danger stirs. I don't go down there."); }} style={{ left: '66%', top: '82%' }} aria-label="Talk to Sella" data-testid="tavern-patron-sella" data-facing="up">
+          <button type="button" className={'interior-npc npc-mage tavern-patron' + (shownPatron === 'tavern-sella' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-sella'); onTalkToPatron('Sella', "They say the Ember Vault under the chapel glows when danger stirs. I don't go down there."); }} style={{ ...npcAppearanceStyle('tavern-patron-sella', 'mage'), left: '66%', top: '82%' }} aria-label="Talk to Sella" data-testid="tavern-patron-sella" data-facing="up">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Sella</strong><small>Traveler · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
@@ -3053,7 +3054,7 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
         if (!interiorLocation) return null;
         return simulatedAdventurers.filter((adventurer) => (adventurer.location || 'field') === interiorLocation).map((adventurer) => {
         const housePosition = adventurer.interiorPosition || { x: 50, y: 47 };
-        return <button type="button" key={adventurer.id} className={'simulated-adventurer interior-simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (adventurer.moving ? ' is-moving' : '') + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '')} onClick={() => onInspect(adventurer)} style={{ left: housePosition.x + '%', top: housePosition.y + '%' }} data-facing={adventurer.facing} aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className} data-testid={'simulated-adventurer-' + adventurer.id}>
+        return <button type="button" key={adventurer.id} className={'simulated-adventurer interior-simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (adventurer.moving ? ' is-moving' : '') + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '')} onClick={() => onInspect(adventurer)} style={{ ...npcAppearanceStyle(adventurer.id, adventurer.className.toLowerCase(), { kind: 'adventurer' }), left: housePosition.x + '%', top: housePosition.y + '%' }} data-facing={adventurer.facing} aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className} data-testid={'simulated-adventurer-' + adventurer.id}>
           <span className="simulated-adventurer-nameplate"><strong>{adventurer.name}</strong><small>Lv. {adventurer.level} · {adventurer.activity}</small></span>
           <span className="simulated-adventurer-sprite" aria-hidden="true" />
         </button>;
@@ -6293,7 +6294,7 @@ if (active) {
             <button
               className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => talkToNpc(npc)}
-              style={{ left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
+              style={{ ...npcAppearanceStyle('npcstate-' + npc.name, npc.role), left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role={npc.role}
               data-facing={npc.facing}
               aria-label={npc.name + ', ' + npc.title}
@@ -6315,7 +6316,7 @@ if (active) {
               key={traveler.id}
               className={'town-npc traveler npc-' + traveler.role + (nameplateNpc === traveler.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => talkToTraveler(traveler)}
-              style={{ left: fieldPct(traveler.position.x), top: fieldPct(traveler.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
+              style={{ ...npcAppearanceStyle('traveler-' + traveler.name, traveler.role), left: fieldPct(traveler.position.x), top: fieldPct(traveler.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role={traveler.role}
               data-facing={traveler.facing}
               data-gender={traveler.gender}
@@ -6339,7 +6340,7 @@ if (active) {
               key={c.id}
               className={'town-npc traveler npc-merchant' + (nameplateNpc === c.merchant ? ' show-nameplate' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => talkToCaravan(c)}
-              style={{ left: fieldPct(c.position.x), top: fieldPct(c.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
+              style={{ ...npcAppearanceStyle('caravan-' + c.merchant, 'merchant'), left: fieldPct(c.position.x), top: fieldPct(c.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role="merchant"
               data-facing={c.facing}
               aria-label={c.merchant + ', caravan merchant, bound for ' + c.destination}
@@ -6362,7 +6363,7 @@ if (active) {
               key={u.id}
               className={'town-npc npc-guard' + (nameplateNpc === u.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => talkToUnit(u)}
-              style={{ left: fieldPct(u.position.x), top: fieldPct(u.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
+              style={{ ...npcAppearanceStyle('guard-' + u.name, 'guard'), left: fieldPct(u.position.x), top: fieldPct(u.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role="guard"
               data-facing={u.facing}
               aria-label={u.name + ', ' + u.kind + ', ' + u.activity}
@@ -6412,7 +6413,7 @@ if (active) {
               key={npc.id}
               className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => talkToTownsfolk(npc)}
-              style={{ left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
+              style={{ ...npcAppearanceStyle(npc.id, npc.archetype), left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role={npc.role}
               data-facing={npc.facing}
               data-gender={npc.gender}
@@ -6437,7 +6438,7 @@ if (active) {
               key={adventurer.id}
               className={'simulated-adventurer adventurer-' + adventurer.className.toLowerCase() + (adventurer.moving ? ' is-moving' : '') + (selectedAdventurerId === adventurer.id ? ' is-nameplate-visible' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => inspectAdventurer(adventurer)}
-              style={{ left: fieldPct(adventurer.position.x), top: fieldPct(adventurer.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
+              style={{ ...npcAppearanceStyle(adventurer.id, adventurer.className.toLowerCase(), { kind: 'adventurer' }), left: fieldPct(adventurer.position.x), top: fieldPct(adventurer.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-facing={adventurer.facing}
               aria-label={adventurer.name + ', level ' + adventurer.level + ' ' + adventurer.className}
               title={adventurer.name + ' — ' + adventurer.goal}

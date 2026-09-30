@@ -630,13 +630,13 @@
 }
 .town-npc[data-facing='left'] .npc-sprite { transform: scaleX(-1); }
 .town-npc.npc-mage .npc-sprite {
-  filter: sepia(.35) saturate(1.5) hue-rotate(-12deg) brightness(.95);
+  filter: var(--npc-appearance-filter, sepia(.35) saturate(1.5) hue-rotate(-12deg) brightness(.95));
 }
 .town-npc.npc-warrior .npc-sprite {
-  filter: sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9);
+  filter: var(--npc-appearance-filter, sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9));
 }
 .town-npc.npc-guide .npc-sprite {
-  filter: hue-rotate(10deg) saturate(1.25) brightness(1.05);
+  filter: var(--npc-appearance-filter, hue-rotate(10deg) saturate(1.25) brightness(1.05));
 }
 .npc-nameplate {
   position: absolute;
@@ -2034,7 +2034,7 @@ body {
 
 
 /* Shawn teaches roguecraft: a distinct stealth-school marker and tint (natural skin preserved). */
-.town-npc.npc-rogue .npc-sprite { filter: sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9); }
+.town-npc.npc-rogue .npc-sprite { filter: var(--npc-appearance-filter, sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9)); }
 .npc-rogue .npc-role-mark { background: #8b67b0; transform: rotate(45deg) scale(.78); }
 
 /* Compact action icons: labels remain available through aria-label and title. */
@@ -2412,9 +2412,10 @@ body {
   height: 32px;
   background-image: var(--player-sprite-url);
   background-size: 192px 320px;
-  background-position: -32px 0;
+  background-position: var(--npc-appearance-x, -32px) 0;
   background-repeat: no-repeat;
   image-rendering: pixelated;
+  filter: var(--npc-appearance-filter, none);
 }
 .interior-npc-nameplate {
   position: absolute;
@@ -3191,15 +3192,15 @@ body {
   --npc-walk-row: 3;
   background-position: var(--npc-x) calc(var(--npc-row) * -32px);
 }
-.adventurer-beginner .simulated-adventurer-sprite { --npc-x: 0px; filter: sepia(.25) saturate(1.2) brightness(1.02) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
-.adventurer-ranger .simulated-adventurer-sprite { --npc-x: -32px; filter: sepia(.4) saturate(1.45) hue-rotate(-22deg) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
-.adventurer-mage .simulated-adventurer-sprite { --npc-x: -64px; filter: sepia(.35) saturate(1.5) hue-rotate(-12deg) brightness(.95) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
-.adventurer-rogue .simulated-adventurer-sprite { --npc-x: -128px; filter: sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
-.town-npc.npc-mage .npc-sprite { --npc-x: -64px; }
-.town-npc.npc-warrior .npc-sprite { --npc-x: -32px; }
-.town-npc.npc-guide .npc-sprite { --npc-x: -96px; }
-.town-npc.npc-rogue .npc-sprite { --npc-x: -128px; }
-.adventurer-warrior .simulated-adventurer-sprite { --npc-x: -96px; filter: sepia(.7) saturate(1.45) hue-rotate(-8deg) brightness(.95) drop-shadow(0 2px 1px rgba(23, 42, 29, .38)); }
+.adventurer-beginner .simulated-adventurer-sprite { --npc-x: var(--npc-appearance-x, 0px); filter: var(--npc-appearance-filter, sepia(.25) saturate(1.2) brightness(1.02) drop-shadow(0 2px 1px rgba(23, 42, 29, .38))); }
+.adventurer-ranger .simulated-adventurer-sprite { --npc-x: var(--npc-appearance-x, -32px); filter: var(--npc-appearance-filter, sepia(.4) saturate(1.45) hue-rotate(-22deg) drop-shadow(0 2px 1px rgba(23, 42, 29, .38))); }
+.adventurer-mage .simulated-adventurer-sprite { --npc-x: var(--npc-appearance-x, -64px); filter: var(--npc-appearance-filter, sepia(.35) saturate(1.5) hue-rotate(-12deg) brightness(.95) drop-shadow(0 2px 1px rgba(23, 42, 29, .38))); }
+.adventurer-rogue .simulated-adventurer-sprite { --npc-x: var(--npc-appearance-x, -128px); filter: var(--npc-appearance-filter, sepia(.52) saturate(1.7) hue-rotate(-18deg) brightness(.9) drop-shadow(0 2px 1px rgba(23, 42, 29, .38))); }
+.town-npc.npc-mage .npc-sprite { --npc-x: var(--npc-appearance-x, -64px); }
+.town-npc.npc-warrior .npc-sprite { --npc-x: var(--npc-appearance-x, -32px); }
+.town-npc.npc-guide .npc-sprite { --npc-x: var(--npc-appearance-x, -96px); }
+.town-npc.npc-rogue .npc-sprite { --npc-x: var(--npc-appearance-x, -128px); }
+.adventurer-warrior .simulated-adventurer-sprite { --npc-x: var(--npc-appearance-x, -96px); filter: var(--npc-appearance-filter, sepia(.7) saturate(1.45) hue-rotate(-8deg) brightness(.95) drop-shadow(0 2px 1px rgba(23, 42, 29, .38))); }
 .town-npc.is-moving .npc-sprite,
 .simulated-adventurer.is-moving .simulated-adventurer-sprite { animation: npc-step .5s step-end infinite; }
 @keyframes npc-step {
