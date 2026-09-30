@@ -85,7 +85,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '349';
+const BUILD_NUMBER = '350';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 343: increased from 140 to 280 for way larger chunks.
@@ -99,8 +99,17 @@ const DEFAULT_GAME_ZOOM = 2.25;
 function zoomTranslatePct(playerFrac: number, zoom: number): number {
   return (0.5 - zoom * playerFrac) * 100;
 }
+// BUILD 350: camera fraction clamped so the viewport never shows out-of-bounds
+// void past the chunk edge when zoomed in (>=100%). Below 100% the viewport is
+// wider than the chunk, so no clamp applies — neighbor chunks render there
+// instead (BUILD 346).
+function cameraFrac(playerFrac: number, zoom: number): number {
+  if (zoom < 1) return playerFrac;
+  const halfView = 0.5 / zoom;
+  return Math.min(Math.max(playerFrac, halfView), 1 - halfView);
+}
 function screenPxToFieldUnits(screenPx: number, sizePx: number, playerFrac: number, zoom: number): number {
-  const t = (zoomTranslatePct(playerFrac, zoom) / 100) * sizePx;
+  const t = (zoomTranslatePct(cameraFrac(playerFrac, zoom), zoom) / 100) * sizePx;
   return (((screenPx - t) / zoom) / sizePx) * FIELD_SIZE;
 }
 // Buildings render larger than their authored 0..100 specs.
@@ -860,6 +869,7 @@ function buildingDoorwaysFor(chunk: Point): Doorway[] {
     return {
       id: chunk.x + ',' + chunk.y + '-farm-' + index,
       position,
+      rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
       area: {
         id: chunk.x + '-' + chunk.y + '-farm-' + index,
         name: 'Farmhouse',
@@ -6208,8 +6218,10 @@ if (active) {
             // BUILD 327: zoom centers the player in the viewport — the layer
             // is scaled around the top-left, then translated so the player's
             // field position lands at 50%/50% of the frame.
-            const tx = zoomTranslatePct(position.x / FIELD_SIZE, gameZoom);
-            const ty = zoomTranslatePct(position.y / FIELD_SIZE, gameZoom);
+            // BUILD 350: clamp the camera at zoom >= 100% so the viewport never
+            // slides past the chunk edge into out-of-bounds void.
+            const tx = zoomTranslatePct(cameraFrac(position.x / FIELD_SIZE, gameZoom), gameZoom);
+            const ty = zoomTranslatePct(cameraFrac(position.y / FIELD_SIZE, gameZoom), gameZoom);
             return { transform: `translate(${tx}%, ${ty}%) scale(${gameZoom})`, transformOrigin: '0 0' };
           })() : undefined}>
           {/* BUILD 340: the procedural ground canvas lives INSIDE the world layer so it
