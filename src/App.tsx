@@ -29,7 +29,7 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
-const BUILD_NUMBER = '270';
+const BUILD_NUMBER = '271';
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 const FIELD_SIZE = 140;
@@ -2569,6 +2569,14 @@ function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: Player
 }
 
 function InteriorRoom({ area, position, facing, moving, equippedDagger, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onEnterDungeon }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onEnterDungeon: () => void }) {
+  // Tavern patron nameplates auto-hide (bartender Mira's stays); tapping a patron pops theirs for 4s.
+  const [shownPatron, setShownPatron] = useState<string | null>(null);
+  const patronTimerRef = useRef<number | null>(null);
+  const flashPatronNameplate = (id: string) => {
+    setShownPatron(id);
+    if (patronTimerRef.current !== null) window.clearTimeout(patronTimerRef.current);
+    patronTimerRef.current = window.setTimeout(() => { setShownPatron(null); patronTimerRef.current = null; }, 4000);
+  };
   // Room-type-specific furniture: each building type gets its own visual identity.
   const furniture = {
     guild: (<><span className="interior-rug" /><span className="interior-workbench" /><span className="interior-forge" aria-hidden="true"><span className="forge-fire"><span className="forge-flame forge-flame-back" /><span className="forge-flame forge-flame-mid" /><span className="forge-flame forge-flame-core" /><span className="forge-sparks"><i /><i /><i /><i /><i /></span></span><span className="forge-logs" /></span><span className="interior-weapon-rack" aria-hidden="true"><span className="rack-weapon" style={{ left: '8%', height: '58%', transform: 'rotate(-6deg)' }} /><span className="rack-weapon" style={{ left: '27%', height: '66%', transform: 'rotate(4deg)' }} /><span className="rack-weapon" style={{ left: '46%', height: '60%', transform: 'rotate(-3deg)' }} /><span className="rack-weapon" style={{ left: '65%', height: '68%', transform: 'rotate(5deg)' }} /><span className="rack-weapon" style={{ left: '82%', height: '56%', transform: 'rotate(-5deg)' }} /></span><span className="interior-quest-board" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
@@ -2599,23 +2607,23 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, attackin
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Mira</strong><small>Bartender · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className="interior-npc npc-mage" onClick={() => onTalkToTeacher('Noah', 'Mage teacher', 'mage')} style={{ left: '13%', top: '63%' }} aria-label="Talk to Noah" data-testid="tavern-patron-noah" data-facing="right">
+          <button type="button" className={'interior-npc npc-mage tavern-patron' + (shownPatron === 'tavern-noah' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-noah'); onTalkToTeacher('Noah', 'Mage teacher', 'mage'); }} style={{ left: '13%', top: '63%' }} aria-label="Talk to Noah" data-testid="tavern-patron-noah" data-facing="right">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Noah</strong><small>Mage teacher · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className="interior-npc npc-warrior" onClick={() => onTalkToTeacher('Damon', 'Warrior teacher', 'warrior')} style={{ left: '81%', top: '66%' }} aria-label="Talk to Damon" data-testid="tavern-patron-damon" data-facing="left">
+          <button type="button" className={'interior-npc npc-warrior tavern-patron' + (shownPatron === 'tavern-damon' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-damon'); onTalkToTeacher('Damon', 'Warrior teacher', 'warrior'); }} style={{ left: '81%', top: '66%' }} aria-label="Talk to Damon" data-testid="tavern-patron-damon" data-facing="left">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Damon</strong><small>Warrior teacher · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className="interior-npc npc-rogue" onClick={() => onTalkToTeacher('Shawn', 'Rogue instructor', 'rogue')} style={{ left: '48%', top: '44%' }} aria-label="Talk to Shawn" data-testid="tavern-patron-shawn" data-facing="up">
+          <button type="button" className={'interior-npc npc-rogue tavern-patron' + (shownPatron === 'tavern-shawn' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-shawn'); onTalkToTeacher('Shawn', 'Rogue instructor', 'rogue'); }} style={{ left: '48%', top: '44%' }} aria-label="Talk to Shawn" data-testid="tavern-patron-shawn" data-facing="up">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Shawn</strong><small>Rogue instructor · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className="interior-npc npc-warrior" onClick={() => onTalkToPatron('Old Tam', "Back in my day, the goats were bigger. And meaner. Mostly meaner.")} style={{ left: '24%', top: '81%' }} aria-label="Talk to Old Tam" data-testid="tavern-patron-tam" data-facing="up">
+          <button type="button" className={'interior-npc npc-warrior tavern-patron' + (shownPatron === 'tavern-tam' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-tam'); onTalkToPatron('Old Tam', "Back in my day, the goats were bigger. And meaner. Mostly meaner."); }} style={{ left: '24%', top: '81%' }} aria-label="Talk to Old Tam" data-testid="tavern-patron-tam" data-facing="up">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Old Tam</strong><small>Regular · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>
-          <button type="button" className="interior-npc npc-mage" onClick={() => onTalkToPatron('Sella', "They say the Ember Vault under the chapel glows when danger stirs. I don't go down there.")} style={{ left: '66%', top: '82%' }} aria-label="Talk to Sella" data-testid="tavern-patron-sella" data-facing="up">
+          <button type="button" className={'interior-npc npc-mage tavern-patron' + (shownPatron === 'tavern-sella' ? ' show-nameplate' : '')} onClick={() => { flashPatronNameplate('tavern-sella'); onTalkToPatron('Sella', "They say the Ember Vault under the chapel glows when danger stirs. I don't go down there."); }} style={{ left: '66%', top: '82%' }} aria-label="Talk to Sella" data-testid="tavern-patron-sella" data-facing="up">
             <span className="interior-npc-nameplate" aria-hidden="true"><strong>Sella</strong><small>Traveler · Talk</small></span>
             <span className="npc-sprite" aria-hidden="true" />
           </button>

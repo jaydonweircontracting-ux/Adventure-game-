@@ -2388,6 +2388,14 @@ body {
   pointer-events: none;
 }
 .interior-npc-nameplate small { color: var(--ink-soft); font-size: 7px; }
+/* Tavern patron nameplates auto-hide; the bartender's stays visible. */
+.interior-npc.tavern-patron .interior-npc-nameplate {
+  opacity: 0;
+  transition: opacity .18s ease;
+}
+.interior-npc.tavern-patron.show-nameplate .interior-npc-nameplate {
+  opacity: 1;
+}
 /* Smith talk flow inside the light dialogue card. */
 .dialogue-options { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .dialogue-option {
