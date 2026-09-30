@@ -257,6 +257,34 @@ export function indoorRestSpot(npc: Townsperson, door: DoorwayLink): NavPoint {
 }
 
 /**
+ * Interior wander target (BUILD 333): an awake NPC spending the evening at
+ * home strolls between a few deterministic spots inside the cottage instead
+ * of standing frozen at the rest spot. The slot rotates every 15 in-game
+ * minutes, so no new sim state is needed — the same (seed, clock) always
+ * yields the same spot, keeping determinism and save/load intact.
+ */
+export function interiorWanderSpot(
+  npc: Townsperson,
+  door: DoorwayLink,
+  clock: { day: number; minuteOfDay: number },
+): NavPoint {
+  const rest = indoorRestSpot(npc, door);
+  const rect = door.buildingRect ?? (npc.buildingId ? cottageRectFor(npc.buildingId) : null);
+  const quarter = Math.floor(clock.minuteOfDay / 15);
+  const slot = Math.floor(townsfolkHash(npc.seed, 7300 + ((clock.day * 96 + quarter) % 100000)) * 4);
+  if (slot === 0 || !rect) return rest;
+  // Small deterministic offsets around the rest spot — hearth-side,
+  // window-side, near the table — clamped 1 unit inside the cottage rect
+  // so wander targets never escape through the walls.
+  const dx = (townsfolkHash(npc.seed, 7310 + slot * 2) - 0.5) * 5;
+  const dy = (townsfolkHash(npc.seed, 7311 + slot * 2) - 0.5) * 3.4;
+  return {
+    x: Math.min(rect.right - 1, Math.max(rect.left + 1, rest.x + dx)),
+    y: Math.min(rect.bottom - 1, Math.max(rect.top + 1, rest.y + dy - 0.6)),
+  };
+}
+
+/**
  * Player-facing interior area id for a townsfolk cottage (BUILD 329).
  * Mirrors buildingDoorwaysFor: cottages are indices 4..9 of fieldHouseRects.
  */
@@ -486,17 +514,28 @@ function advanceOne(
     if (!door) return { ...npc, location: 'INTERIOR' as NPCWorldLocation, indoors: true, moving: false, path: undefined, activity: want.activity };
     if (wantsIndoors) {
       // Awake but the schedule wants them inside ('At home', BUILD 329):
-      // settle at the indoor rest spot and idle. Never the revolving door
-      // back outside — the leave logic below only runs for outdoor wants.
-      const rest = indoorRestSpot(npc, door);
-      if (npc.path && !npc.path.gaveUp) {
+      // stroll between deterministic interior waypoints (BUILD 333) instead
+      // of freezing at one spot. Never the revolving door back outside —
+      // the leave logic below only runs for outdoor wants.
+      const wander = interiorWanderSpot(npc, door, clock);
+      const atSpot = Math.hypot(npc.position.x - wander.x, npc.position.y - wander.y) < 1.0;
+      const dest = npc.path && !npc.path.gaveUp ? npc.path.destination : null;
+      const destStale = !dest || Math.hypot(dest.x - wander.x, dest.y - wander.y) > 1.5;
+      if (!atSpot && destStale) {
+        const waypoints = findPath(npc.position, wander, []);
+        const path: NavPath = waypoints
+          ? { waypoints, index: 0, destination: { ...wander } }
+          : straightFallbackPath(wander, []);
+        return { ...npc, path, moving: true, activity: want.activity, indoors: true, location: 'INTERIOR' as NPCWorldLocation };
+      }
+      if (!atSpot && npc.path && !npc.path.gaveUp) {
         const res = stepAlongPath(npc.path, npc.position, step);
         if (res.arrived) {
           return { ...npc, position: res.position, path: undefined, moving: false, location: 'INTERIOR' as NPCWorldLocation, indoors: true, facing: res.facing, activity: want.activity, buildingId: npc.buildingId ?? bed?.home.id };
         }
         const tracked = trackStep(npc.path, npc.position, res, (from) => {
-          const wps = findPath(from, rest, []);
-          return wps ? { waypoints: wps, index: 0, destination: { ...rest } } : null;
+          const wps = findPath(from, wander, []);
+          return wps ? { waypoints: wps, index: 0, destination: { ...wander } } : null;
         });
         return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, activity: want.activity, indoors: true, location: 'INTERIOR' as NPCWorldLocation };
       }

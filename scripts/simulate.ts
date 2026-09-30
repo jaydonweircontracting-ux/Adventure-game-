@@ -6,7 +6,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorAreaIdForCottage, cottageRectFor, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions } from '../src/game/worldEditor';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
@@ -1375,6 +1375,81 @@ for (const kind of EXPECTED_KINDS) {
     }
   }
   assert(cottageRectFor('chapel') === null, 'non-cottage rect is null');
+}
+
+// ---- BUILD 333: interior waypoints (indoor NPCs stroll their homes) ----
+console.log('Testing interior waypoints...');
+{
+  const anchors: TownsfolkAnchors = {
+    points: {
+      guild: { x: 90, y: 60 }, chapel: { x: 40, y: 90 }, tavern: { x: 90, y: 90 },
+      farm0: { x: 30, y: 119 }, farm1: { x: 110, y: 119 },
+    },
+    plaza: { x: 70, y: 82 },
+    stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
+    gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
+    patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
+  };
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+  const folk0 = createTownsfolk(anchors, 847291583);
+  const navCtx: TownsfolkNavContext = {
+    housing: buildMosslightHousing(folk0.map((n) => n.id)),
+    doors: cottageDoorways(),
+    obstacles: mosslightObstacles(),
+  };
+  // 1. Wander spots are deterministic for the same (seed, clock).
+  const door = cottageDoorways()[0];
+  const npc = { seed: 12345 } as any;
+  const w1 = interiorWanderSpot(npc, door, { day: 5, minuteOfDay: 20 * 60 + 7 });
+  const w2 = interiorWanderSpot(npc, door, { day: 5, minuteOfDay: 20 * 60 + 7 });
+  assert(w1.x === w2.x && w1.y === w2.y, 'wander spot must be deterministic');
+  // 2. Wander spots stay inside the cottage rect for every cottage, NPC,
+  //    day and quarter-hour slot.
+  for (let c = 1; c <= 6; c++) {
+    const rect = cottageRectFor('cottage-' + c)!;
+    const d = cottageDoorways()[c - 1];
+    for (let s = 1; s <= 20; s++) {
+      for (const minute of [18 * 60, 19 * 60 + 30, 20 * 60 + 44, 21 * 60 + 59]) {
+        const w = interiorWanderSpot({ seed: s * 977 } as any, d, { day: 3, minuteOfDay: minute });
+        assert(w.x > rect.left && w.x < rect.right && w.y > rect.top && w.y < rect.bottom,
+          `wander spot outside cottage-${c} for seed ${s} at ${minute}: (${w.x.toFixed(2)},${w.y.toFixed(2)})`);
+      }
+    }
+  }
+  // 3. Slots rotate: the spot changes across quarter-hours for most NPCs.
+  let changed = 0;
+  for (let s = 1; s <= 40; s++) {
+    const a = interiorWanderSpot({ seed: s * 131 } as any, door, { day: 3, minuteOfDay: 20 * 60 });
+    const b = interiorWanderSpot({ seed: s * 131 } as any, door, { day: 3, minuteOfDay: 20 * 60 + 16 });
+    if (Math.hypot(a.x - b.x, a.y - b.y) > 0.5) changed++;
+  }
+  assert(changed > 10, `wander slots should rotate across quarter-hours (changed for ${changed}/40)`);
+  // 4. An INTERIOR 'At home' NPC walks to its wander spot and idles there —
+  //    never leaves, never paces forever, no per-tick replan churn.
+  const folk = createTownsfolk(anchors, 847291583);
+  const farmer = snapTownsfolk(folk, anchors, clockAt(20, 0), navCtx).find((n) => n.archetype === 'farmer')!;
+  let settled = farmer;
+  for (let t = 0; t < 300; t++) settled = advanceTownsfolk([settled], anchors, clockAt(20, 0), navCtx, 0.5)[0];
+  assert(settled.location === 'INTERIOR' && settled.indoors, 'wanderer must stay INTERIOR');
+  assert(!settled.moving && !settled.path, 'wanderer should idle at its spot, not churn');
+  const spot = interiorWanderSpot(settled, door, { day: clockAt(20, 0).day, minuteOfDay: 20 * 60 });
+  assert(Math.hypot(settled.position.x - spot.x, settled.position.y - spot.y) < 1.5,
+    `wanderer not at its spot: (${settled.position.x.toFixed(2)},${settled.position.y.toFixed(2)}) vs (${spot.x.toFixed(2)},${spot.y.toFixed(2)})`);
+  // 5. Slot change mid-evening: the NPC gets up and walks to the new spot.
+  let walker = { ...settled };
+  const before = { ...walker.position };
+  for (let t = 0; t < 400; t++) walker = advanceTownsfolk([walker], anchors, clockAt(20, 16), navCtx, 0.5)[0];
+  assert(walker.location === 'INTERIOR' && walker.indoors, 'walker must stay INTERIOR across slot change');
+  const moved = Math.hypot(walker.position.x - before.x, walker.position.y - before.y);
+  // (Only assert movement when the slot actually rotated for this NPC.)
+  const s1 = interiorWanderSpot(settled, door, { day: clockAt(20, 0).day, minuteOfDay: 20 * 60 });
+  const s2 = interiorWanderSpot(settled, door, { day: clockAt(20, 0).day, minuteOfDay: 20 * 60 + 16 });
+  if (Math.hypot(s1.x - s2.x, s1.y - s2.y) > 2) {
+    assert(moved > 1.0, `NPC should stroll to the new slot (moved ${moved.toFixed(2)})`);
+  }
 }
 
 
