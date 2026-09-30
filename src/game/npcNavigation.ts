@@ -132,8 +132,11 @@ function heuristic(a: GridCell, b: GridCell): number {
 const ROAD_MIN = 64;
 const ROAD_MAX = 80;
 const ROAD_MID = 72;
-/** Cost multiplier for A* steps through non-road cells (road cells cost 1). */
-const OFFROAD_COST = 1.45;
+/** Cost multiplier for A* steps through non-road cells (road cells cost 1).
+ * BUILD 328: raised from 1.45 so cross-town trips visibly divert onto roads
+ * instead of cutting straight across the grass — NPCs walk like they live
+ * here. Detours stay bounded: a road route up to 2x the direct walk wins. */
+const OFFROAD_COST = 2.0;
 
 /**
  * Is a field-unit point on a road arm? `roadPiece` is the chunk's road string
@@ -215,7 +218,7 @@ export function findPath(
       const stepBase = nb.x !== current.x && nb.y !== current.y ? 1.414 : 1;
       // Road preference: road cells cost 1, open ground costs more, so NPCs
       // drift toward roads when they're roughly along the way — but won't
-      // take absurd detours (the 1.45x factor bounds the tradeoff).
+      // take absurd detours (the 2.0x factor bounds the tradeoff).
       const cc = cellCenter(nb);
       const roadFactor = !roadPiece || isOnFieldRoad(cc.x, cc.y, roadPiece) ? 1 : OFFROAD_COST;
       const tentative = (gScore.get(ck) ?? Infinity) + stepBase * roadFactor;
@@ -269,13 +272,17 @@ function smoothPath(points: NavPoint[], obstacles: ObstacleRect[], roadPiece?: s
   let anchor = 0;
   for (let i = 2; i < points.length; i++) {
     const shortcutClear = lineClear(points[anchor], points[i], obstacles);
-    // Road preference: don't smooth away a road waypoint when the shortcut
-    // would leave the road — the NPC should walk along the road, not cut
-    // across the grass. Without a road piece this is a pure no-op.
-    const abandonsRoad = !!roadPiece &&
-      isOnFieldRoad(points[i - 1].x, points[i - 1].y, roadPiece) &&
-      !segmentOnRoad(points[anchor], points[i], roadPiece);
-    if (!shortcutClear || abandonsRoad) {
+    let keep = !shortcutClear;
+    // Road preference: don't smooth away a deliberate road detour. If the raw
+    // stretch from the anchor to i hugs the road much more than the straight
+    // shortcut, the NPC keeps walking the road instead of cutting the grass.
+    // Without a road piece this is a pure no-op.
+    if (roadPiece && shortcutClear) {
+      const rawFrac = roadFractionOfPolyline(points, anchor, i, roadPiece);
+      const cutFrac = roadFractionOfSegment(points[anchor], points[i], roadPiece);
+      if (rawFrac > cutFrac + 0.25) keep = true;
+    }
+    if (keep) {
       out.push(points[i - 1]);
       anchor = i - 1;
     }
@@ -284,8 +291,8 @@ function smoothPath(points: NavPoint[], obstacles: ObstacleRect[], roadPiece?: s
   return out;
 }
 
-/** True when most of segment a-b lies on a road arm (sampled every ~4u). */
-function segmentOnRoad(a: NavPoint, b: NavPoint, roadPiece: string): boolean {
+/** Fraction of segment a-b lying on a road arm (sampled every ~4u). Pure. */
+function roadFractionOfSegment(a: NavPoint, b: NavPoint, roadPiece: string): number {
   const dist = Math.hypot(b.x - a.x, b.y - a.y);
   const steps = Math.max(1, Math.ceil(dist / 4));
   let on = 0;
@@ -293,7 +300,25 @@ function segmentOnRoad(a: NavPoint, b: NavPoint, roadPiece: string): boolean {
     const t = i / steps;
     if (isOnFieldRoad(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, roadPiece)) on++;
   }
-  return on / (steps + 1) >= 0.6;
+  return on / (steps + 1);
+}
+
+/** Fraction of the polyline points[lo..hi] lying on a road arm. Pure. */
+function roadFractionOfPolyline(points: NavPoint[], lo: number, hi: number, roadPiece: string): number {
+  let on = 0;
+  let total = 0;
+  for (let k = lo; k < hi; k++) {
+    const a = points[k];
+    const b = points[k + 1];
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    const steps = Math.max(1, Math.ceil(dist / 4));
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      total++;
+      if (isOnFieldRoad(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, roadPiece)) on++;
+    }
+  }
+  return total === 0 ? 0 : on / total;
 }
 
 // ---------------------------------------------------------------------------

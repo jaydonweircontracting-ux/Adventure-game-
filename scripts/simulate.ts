@@ -1218,6 +1218,38 @@ for (const kind of EXPECTED_KINDS) {
   assert(!throughWall, 'road preference must not route through the wall rect');
 }
 
+// ---- BUILD 328: stronger visible road adherence ----
+{
+  // A trip parallel to a road arm but offset from it must now divert onto
+  // the road instead of walking a straight cross-country line. (Before:
+  // smoothing collapsed the road detour to ~0.15 road fraction.)
+  const frac = (wp: { x: number; y: number }[]) => {
+    let on = 0, total = 0;
+    for (let i = 0; i < wp.length - 1; i++) {
+      const a = wp[i]; const b = wp[i + 1];
+      const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 4));
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps; total++;
+        if (isOnFieldRoad(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, 'nesw')) on++;
+      }
+    }
+    return total === 0 ? 0 : on / total;
+  };
+  const p1 = findPath({ x: 10, y: 40 }, { x: 130, y: 40 }, [], undefined, 'nesw');
+  assert(p1, 'offset parallel trip should have a path');
+  assert(frac(p1!) > 0.4, `offset trip should ride the road (got ${frac(p1!).toFixed(2)})`);
+  const last1 = p1![p1!.length - 1];
+  assert(Math.hypot(last1.x - 130, last1.y - 40) < 6, 'offset trip must still reach its destination');
+  const p2 = findPath({ x: 10, y: 90 }, { x: 130, y: 90 }, [], undefined, 'nesw');
+  assert(p2 && frac(p2!) > 0.6, `east-west trip should strongly follow the road (got ${p2 ? frac(p2!).toFixed(2) : 'none'})`);
+  // Deterministic.
+  const again = findPath({ x: 10, y: 40 }, { x: 130, y: 40 }, [], undefined, 'nesw');
+  assert(JSON.stringify(again) === JSON.stringify(p1), 'strengthened road pathfinding must be deterministic');
+  // Without a road piece, smoothing still collapses open-ground zigzag.
+  const dirt = findPath({ x: 10, y: 40 }, { x: 130, y: 40 }, [], undefined, undefined);
+  assert(dirt && dirt.length <= 3, `no-road smoothing should still collapse (got ${dirt ? dirt.length : 'none'} waypoints)`);
+}
+
 
 // ---- BUILD 322: townsfolk save/load persistence ----
 {
