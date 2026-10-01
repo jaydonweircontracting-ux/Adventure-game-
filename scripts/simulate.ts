@@ -2633,6 +2633,107 @@ console.log('Testing examine system...');
   assert(!isoViewportCovered(390, 844, 0.15, 0, N), 'single chunk cannot cover zoomed-out viewport');
 }
 
+// ---- BUILD 379: shared character animation + asset pipeline ----
+// characterSystem.ts is the single owner of character visuals for the three
+// iso canvas consumers: appearance (curated + deterministic NPC variants),
+// the animation state machine, speed-tied walk timing, and asset fallbacks.
+{
+  const cs = await import('../src/game/iso/characterSystem');
+  const iso = await import('../src/game/iso/isoSprites');
+  const faces = ['up', 'left', 'down', 'right'] as const;
+
+  // hashSeed: deterministic, distributes.
+  assert(cs.hashSeed('townsfolk-3') === cs.hashSeed('townsfolk-3'), 'hashSeed must be deterministic');
+  assert(cs.hashSeed('townsfolk-3') !== cs.hashSeed('townsfolk-4'), 'hashSeed should differ across NPC ids');
+
+  // variantLook: same seed => identical look (chunk reloads / save-load safe).
+  const v1 = cs.variantLook('townsfolk-3');
+  const v2 = cs.variantLook('townsfolk-3');
+  assert(JSON.stringify(v1) === JSON.stringify(v2), 'variantLook must be deterministic per seed');
+  assert(iso.VARIANT_BODIES.includes(v1.body), `variant body must come from the pool, got ${v1.body}`);
+  assert(iso.VARIANT_OUTFITS.includes(v1.outfit), `variant outfit must come from the pool, got ${v1.outfit}`);
+  assert(iso.VARIANT_HAIRS.includes(v1.hair), `variant hair must come from the pool, got ${v1.hair}`);
+  assert(!/undi|boxr/.test(v1.outfit), `variant NPCs must wear clothes, not underwear: ${v1.outfit}`);
+  if (v1.hat !== undefined) assert(iso.VARIANT_HATS.includes(v1.hat), `variant hat must come from the pool, got ${v1.hat}`);
+  // Variety: 12 townsfolk should not all look alike.
+  const seen = new Set(Array.from({ length: 12 }, (_, i) => JSON.stringify(cs.variantLook('townsfolk-' + i))));
+  assert(seen.size >= 10, `expected >= 10 distinct looks for 12 NPCs, got ${seen.size}`);
+  // At least one of the 12 wears a hat (30% hat rate sanity check).
+  const hats = Array.from({ length: 12 }, (_, i) => cs.variantLook('townsfolk-' + i).hat).filter(Boolean);
+  assert(hats.length >= 1, 'expected at least one hatted NPC among 12 variants');
+
+  // resolveLook: legacy numbers wrap, strings seed variants, MsLook passes through.
+  assert(JSON.stringify(cs.resolveLook(0)) === JSON.stringify(iso.NPC_LOOKS[0]), 'resolveLook(0) must be the player look');
+  assert(JSON.stringify(cs.resolveLook(-1)) === JSON.stringify(iso.NPC_LOOKS[iso.NPC_LOOKS.length - 1]), 'resolveLook(-1) must wrap to the last look');
+  assert(JSON.stringify(cs.resolveLook(99)) === JSON.stringify(cs.resolveLook(99 % iso.NPC_LOOKS.length)), 'resolveLook must wrap large indices');
+  assert(JSON.stringify(cs.resolveLook('townsfolk-7')) === JSON.stringify(cs.variantLook('townsfolk-7')), 'resolveLook(string) must equal variantLook');
+  const explicit = { body: 'b', outfit: 'o', hair: 'h' };
+  assert(cs.resolveLook(explicit) === explicit, 'resolveLook(MsLook) must pass through untouched');
+
+  // CHAR_CLIPS: idle/walk rows match the interleaved MS_ROW mapping for every
+  // facing; unimplemented states fall back to the idle (stand) rows.
+  for (const f of faces) {
+    assert(cs.CHAR_CLIPS.idle.row(f) === iso.MS_ROW[f].stand, `idle row for ${f} must be the stand row`);
+    assert(cs.CHAR_CLIPS.walk.row(f) === iso.MS_ROW[f].walk, `walk row for ${f} must be the walk row`);
+    for (const s of ['interact', 'attack', 'hurt', 'dead'] as const) {
+      assert(cs.CHAR_CLIPS[s].placeholder === true, `${s} must be marked placeholder`);
+      assert(cs.CHAR_CLIPS[s].row(f) === iso.MS_ROW[f].stand, `${s} row for ${f} must fall back to the stand row`);
+    }
+  }
+  assert(cs.CHAR_CLIPS.walk.frames === iso.MS_WALK_FRAMES, 'walk clip must have 6 frames');
+  assert(cs.CHAR_CLIPS.idle.frames === 1, 'idle clip must be a single frame');
+  assert(cs.CHAR_STATES.length === 6, 'state machine must expose all 6 states');
+
+  // walkFpsForSpeed: 0 => 0 (no cycling when stopped), monotonic, clamped.
+  assert(cs.walkFpsForSpeed(0) === 0, 'stopped speed must give 0 fps');
+  assert(cs.walkFpsForSpeed(-3) === 0, 'negative speed must give 0 fps');
+  const fpsSlow = cs.walkFpsForSpeed(1.5);   // ambling NPC (~0.22u / 120ms tick)
+  const fpsWalk = cs.walkFpsForSpeed(11.5);  // player on foot
+  const fpsHorse = cs.walkFpsForSpeed(129);  // mounted
+  assert(fpsSlow >= 2 && fpsSlow < fpsWalk, `NPC fps ${fpsSlow} must be >= min and below player fps`);
+  assert(fpsWalk > fpsSlow && fpsWalk <= 12, `player fps ${fpsWalk} must exceed NPC fps and be clamped`);
+  assert(fpsHorse === 12, `horse fps must clamp at 12, got ${fpsHorse}`);
+
+  // walkFrameAt: in-range, 0 when stopped, advances with time.
+  assert(cs.walkFrameAt(1000, 0) === 0, 'walkFrameAt must be 0 when stopped');
+  const fr1 = cs.walkFrameAt(0, 11.5), fr2 = cs.walkFrameAt(500, 11.5);
+  assert(fr1 >= 0 && fr1 < 6 && fr2 >= 0 && fr2 < 6, 'walkFrameAt must stay in [0,6)');
+  assert(fr2 !== fr1, 'walkFrameAt must advance over 500ms at walk speed');
+
+  // CharacterAnimator: sim stays authoritative for moving/facing.
+  const anim = new cs.CharacterAnimator('townsfolk-3');
+  assert(anim.state === 'idle' && anim.facing === 'down', 'animator must start idle facing down');
+  assert(anim.phase >= 0 && anim.phase < 6, 'animator phase seed must be in [0,6)');
+  anim.update({ x: 10, y: 20, moving: true, facing: 'right', nowMs: 1000 });
+  anim.update({ x: 10.5, y: 20, moving: true, facing: 'right', nowMs: 1016 });
+  assert(anim.state === 'walk', 'animator must be walking while the sim reports moving');
+  assert(anim.facing === 'right', 'animator facing must follow the sim');
+  assert(anim.speed > 0, 'animator must measure a positive ground speed');
+  assert(anim.sourceRow() === iso.MS_ROW.right.walk, 'walk+right must use the right walk row');
+  const fi = anim.frameIndex();
+  assert(fi >= 0 && fi < 6, `walk frame must be in [0,6), got ${fi}`);
+  // Stopping keeps the last facing and returns to the idle row.
+  anim.update({ x: 10.5, y: 20, moving: false, facing: 'right', nowMs: 2000 });
+  assert(anim.state === 'idle', 'animator must idle when the sim reports stopped');
+  assert(anim.facing === 'right', 'stopping must keep the last facing direction');
+  assert(anim.frameIndex() === 0, 'idle must show frame 0');
+  assert(anim.sourceRow() === iso.MS_ROW.right.stand, 'idle+right must use the right stand row');
+  // Faster ground speed => faster phase advance (animation tied to movement).
+  const slow = new cs.CharacterAnimator('slow'), fast = new cs.CharacterAnimator('fast');
+  for (let i = 0; i < 10; i++) {
+    slow.update({ x: i * 0.02, y: 0, moving: true, facing: 'down', nowMs: 1000 + i * 16 });
+    fast.update({ x: i * 0.2, y: 0, moving: true, facing: 'down', nowMs: 1000 + i * 16 });
+  }
+  assert(fast.phase % 6 !== slow.phase % 6 || fast.speed > slow.speed,
+    'faster movement must advance the walk phase more than slower movement');
+  assert(fast.speed > slow.speed, `measured speed must reflect distance: fast=${fast.speed} slow=${slow.speed}`);
+  // Future states are settable and render their idle fallback (no crash).
+  anim.setState('attack');
+  assert(anim.state === 'attack', 'setState must switch the animation state');
+  assert(anim.sourceRow() === iso.MS_ROW.right.stand, 'attack (placeholder) must fall back to the stand row');
+  assert(anim.frameIndex() === 0, 'attack (placeholder) must show frame 0');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

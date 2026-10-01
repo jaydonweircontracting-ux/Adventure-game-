@@ -54,26 +54,75 @@ export const MS_ROW: Record<Face4, { stand: number; walk: number }> = {
 };
 
 /** Paper-doll draw order: body -> outfit -> armor -> hair -> hat. */
+export type MsLayer = 'body' | 'outfit' | 'armor' | 'hair' | 'hat';
+
 export function msLookKeys(look: MsLook): string[] {
-  const keys = [look.body, look.outfit];
-  if (look.armor) keys.push(look.armor);
-  keys.push(look.hair);
-  if (look.hat) keys.push(look.hat);
-  return keys;
+  return msLayerKeys(look).map(l => l.key);
 }
 
-const MS_FILES = [
+/** Paper-doll layers with their slot names (used for per-layer fallbacks). */
+export function msLayerKeys(look: MsLook): { key: string; layer: MsLayer }[] {
+  const layers: { key: string; layer: MsLayer }[] = [
+    { key: look.body, layer: 'body' },
+    { key: look.outfit, layer: 'outfit' },
+  ];
+  if (look.armor) layers.push({ key: look.armor, layer: 'armor' });
+  layers.push({ key: look.hair, layer: 'hair' });
+  if (look.hat) layers.push({ key: look.hat, layer: 'hat' });
+  return layers;
+}
+
+// Full Mana Seed pONE3 wardrobe (61 sheets, ~1.3MB total). Bodies are skin
+// tones v00 (light) -> v10 (dark); outfits: undi/boxr are underwear, fstr and
+// pfpn are full clothes; hairs bob1/dap1 x14 colors; hats pfht/pnty x5 colors.
+const MS_BODIES = [
   'char_a_pONE3_0bas_humn_v00', 'char_a_pONE3_0bas_humn_v01',
-  'char_a_pONE3_0bas_humn_v03', 'char_a_pONE3_0bas_humn_v06',
-  'char_a_pONE3_0bas_humn_v07', 'char_a_pONE3_0bas_humn_v09',
-  'char_a_pONE3_1out_undi_v01', 'char_a_pONE3_1out_boxr_v01',
-  'char_a_pONE3_1out_fstr_v02', 'char_a_pONE3_1out_fstr_v04',
-  'char_a_pONE3_1out_pfpn_v02',
-  'char_a_pONE3_4har_bob1_v00', 'char_a_pONE3_4har_bob1_v05',
-  'char_a_pONE3_4har_bob1_v08', 'char_a_pONE3_4har_dap1_v03',
-  'char_a_pONE3_4har_dap1_v09', 'char_a_pONE3_4har_dap1_v12',
-  'char_a_pONE3_5hat_pfht_v02', 'char_a_pONE3_5hat_pnty_v03',
+  'char_a_pONE3_0bas_humn_v02', 'char_a_pONE3_0bas_humn_v03',
+  'char_a_pONE3_0bas_humn_v04', 'char_a_pONE3_0bas_humn_v05',
+  'char_a_pONE3_0bas_humn_v06', 'char_a_pONE3_0bas_humn_v07',
+  'char_a_pONE3_0bas_humn_v08', 'char_a_pONE3_0bas_humn_v09',
+  'char_a_pONE3_0bas_humn_v10',
 ];
+const MS_OUTFITS = [
+  'char_a_pONE3_1out_undi_v01', 'char_a_pONE3_1out_boxr_v01',
+  'char_a_pONE3_1out_fstr_v01', 'char_a_pONE3_1out_fstr_v02',
+  'char_a_pONE3_1out_fstr_v03', 'char_a_pONE3_1out_fstr_v04',
+  'char_a_pONE3_1out_fstr_v05', 'char_a_pONE3_1out_pfpn_v01',
+  'char_a_pONE3_1out_pfpn_v02', 'char_a_pONE3_1out_pfpn_v03',
+  'char_a_pONE3_1out_pfpn_v04', 'char_a_pONE3_1out_pfpn_v05',
+];
+const MS_HAIRS = [
+  'char_a_pONE3_4har_bob1_v00', 'char_a_pONE3_4har_bob1_v01',
+  'char_a_pONE3_4har_bob1_v02', 'char_a_pONE3_4har_bob1_v03',
+  'char_a_pONE3_4har_bob1_v04', 'char_a_pONE3_4har_bob1_v05',
+  'char_a_pONE3_4har_bob1_v06', 'char_a_pONE3_4har_bob1_v07',
+  'char_a_pONE3_4har_bob1_v08', 'char_a_pONE3_4har_bob1_v09',
+  'char_a_pONE3_4har_bob1_v10', 'char_a_pONE3_4har_bob1_v11',
+  'char_a_pONE3_4har_bob1_v12', 'char_a_pONE3_4har_bob1_v13',
+  'char_a_pONE3_4har_dap1_v00', 'char_a_pONE3_4har_dap1_v01',
+  'char_a_pONE3_4har_dap1_v02', 'char_a_pONE3_4har_dap1_v03',
+  'char_a_pONE3_4har_dap1_v04', 'char_a_pONE3_4har_dap1_v05',
+  'char_a_pONE3_4har_dap1_v06', 'char_a_pONE3_4har_dap1_v07',
+  'char_a_pONE3_4har_dap1_v08', 'char_a_pONE3_4har_dap1_v09',
+  'char_a_pONE3_4har_dap1_v10', 'char_a_pONE3_4har_dap1_v11',
+  'char_a_pONE3_4har_dap1_v12', 'char_a_pONE3_4har_dap1_v13',
+];
+const MS_HATS = [
+  'char_a_pONE3_5hat_pfht_v01', 'char_a_pONE3_5hat_pfht_v02',
+  'char_a_pONE3_5hat_pfht_v03', 'char_a_pONE3_5hat_pfht_v04',
+  'char_a_pONE3_5hat_pfht_v05', 'char_a_pONE3_5hat_pnty_v01',
+  'char_a_pONE3_5hat_pnty_v02', 'char_a_pONE3_5hat_pnty_v03',
+  'char_a_pONE3_5hat_pnty_v04', 'char_a_pONE3_5hat_pnty_v05',
+];
+
+const MS_FILES = [...MS_BODIES, ...MS_OUTFITS, ...MS_HAIRS, ...MS_HATS];
+
+// Deterministic NPC-variant pools. Outfits exclude underwear (undi/boxr) so
+// generated villagers wear clothes; hats are optional (see variantLook).
+export const VARIANT_BODIES = MS_BODIES;
+export const VARIANT_OUTFITS = MS_OUTFITS.filter(f => f.includes('_fstr_') || f.includes('_pfpn_'));
+export const VARIANT_HAIRS = MS_HAIRS;
+export const VARIANT_HATS = MS_HATS;
 
 // module-level Mana Seed sprite cache (read by canvas loops; filled once)
 const sprCache: Record<string, HTMLImageElement> = {};
@@ -83,6 +132,8 @@ export function preloadMsSprites() {
   sprPreloaded = true;
   for (const f of MS_FILES) {
     const img = new Image();
+    // Warn once per sheet if it fails — the renderer falls back gracefully.
+    img.onerror = () => console.warn(`[isoSprites] character sheet failed to load: ${f}`);
     img.src = `${import.meta.env.BASE_URL}manaseed/${f}.png`;
     sprCache[f] = img;
   }

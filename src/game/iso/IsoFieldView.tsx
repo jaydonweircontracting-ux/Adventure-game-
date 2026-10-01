@@ -13,8 +13,9 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import {
-  preloadMsSprites, msReady, msSprite, NPC_LOOKS, MS_ROW, MS_CELL, MS_WALK_FRAMES, MS_FEET_ROW, msLookKeys, type Face4,
+  preloadMsSprites, type Face4,
 } from './isoSprites';
+import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
 import {
   buildingDoorwaysFor, fieldTreesFor, mapTileFor, fieldPalettes, FIELD_SIZE,
   type Point, type Doorway, type FieldTree, type MapTile,
@@ -136,6 +137,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
     }
     const playerFace = { f: 'down' as Face4 };
     const prevP = { x: liveRef.current.px, y: liveRef.current.py };
+    // Per-character animation controllers (no React state — plain map in the
+    // render loop; pruned each frame so removed NPCs don't leak).
+    const charAnims = new Map<string, CharacterAnimator>();
+    const seenAnims = new Set<string>(); // reset each frame; prunes charAnims
 
     let raf = 0;
     let last = performance.now();
@@ -159,43 +164,17 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
       return ew || ns;
     };
 
-    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face4, moving: boolean, look: number, now: number) => {
+    // Shared character renderer: one animator per character id drives facing,
+    // walk/idle state and speed-tied walk phase; the draw is feet-anchored.
+    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face4, moving: boolean, look: LookRef, now: number, animKey: string) => {
       const c = isoToScreen(tx, ty);
-      const L = NPC_LOOKS[((look % NPC_LOOKS.length) + NPC_LOOKS.length) % NPC_LOOKS.length];
-      const keys = msLookKeys(L);
+      let anim = charAnims.get(animKey);
+      if (!anim) { anim = new CharacterAnimator(animKey); charAnims.set(animKey, anim); }
+      seenAnims.add(animKey);
+      anim.update({ x: tx, y: ty, moving, facing, nowMs: now });
       d.push({
         depth: tx + ty + 0.01, draw: (g2) => {
-          // Feet anchor: MS_FEET_ROW of the 64px cell lands on the tile point
-          // so characters stand on the ground instead of floating above it.
-          const lift = moving ? Math.abs(Math.sin(now / 130)) * 2 : 0;
-          g2.fillStyle = 'rgba(0,0,0,0.22)';
-          g2.beginPath(); g2.ellipse(c.x, c.y + 3, 12, 5, 0, 0, 7); g2.fill();
-          if (msReady(keys)) {
-            // Mana Seed sheet: 64x64 cells; stand = col 0 of the facing stand
-            // row, walk = 6 frames (cols 0-5) of the facing walk row.
-            const rows = MS_ROW[facing];
-            const frame = moving ? Math.floor(now / 150) % MS_WALK_FRAMES : 0;
-            const sx = frame * MS_CELL, sy = (moving ? rows.walk : rows.stand) * MS_CELL;
-            const size = 52;
-            const dx = c.x - size / 2, dy = c.y - (MS_FEET_ROW / MS_CELL) * size - lift;
-            for (const k of keys) {
-              const im = msSprite(k);
-              if (!im) continue;
-              g2.drawImage(im, sx, sy, MS_CELL, MS_CELL, dx, dy, size, size);
-            }
-            return;
-          }
-          // vector fallback while sprites load
-          g2.save(); g2.translate(c.x, c.y - lift);
-          g2.fillStyle = '#4a3220';
-          g2.fillRect(-7, -12, 6, 12); g2.fillRect(1, -12, 6, 12);
-          g2.fillStyle = '#3b6fd4';
-          g2.beginPath();
-          g2.moveTo(-10, -12); g2.lineTo(10, -12); g2.lineTo(8, -30); g2.lineTo(-8, -30);
-          g2.closePath(); g2.fill();
-          g2.fillStyle = '#e8b98a';
-          g2.beginPath(); g2.arc(0, -36, 7, 0, 7); g2.fill();
-          g2.restore();
+          drawIsoCharacter({ g: g2, x: c.x, y: c.y, look, nowMs: now, animator: anim });
         },
       });
     };
@@ -435,14 +414,16 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
         } // end neighbor-chunk tree loop
       }
 
-      // townsfolk: the live NPC simulation, right where the 2D game has them
+      // townsfolk: the live NPC simulation, right where the 2D game has them.
+      // look = npc.id -> deterministic per-NPC variant (same villager, same
+      // face, every session).
+      seenAnims.clear();
       for (const npc of live.folk) {
-        const seed = npc.seed || 1;
-        const look = npc.gender === 'female' ? (seed % 2 === 0 ? 1 : 3) : (seed % 2 === 0 ? 2 : 4);
-        drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, look, nowMs);
+        drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id);
       }
       // player
-      drawPerson(drawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs);
+      drawPerson(drawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs, 'player');
+      for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
 
       drawables.sort((a, b) => a.depth - b.depth);
       for (const d of drawables) d.draw(g, nowMs);

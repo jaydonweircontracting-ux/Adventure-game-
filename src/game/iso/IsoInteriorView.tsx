@@ -13,9 +13,10 @@ import {
   type TilePoint,
 } from './projection';
 import {
-  preloadMsSprites, msReady, msSprite, NPC_LOOKS, MS_ROW, MS_CELL, MS_WALK_FRAMES, MS_FEET_ROW, msLookKeys,
+  preloadMsSprites,
   type Face4,
 } from './isoSprites';
+import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
 
 export type IsoRoomType = 'guild' | 'inn' | 'chapel' | 'building' | 'tavern' | 'cellar' | 'prison';
 
@@ -24,7 +25,7 @@ export interface IsoInteriorNpc {
   name: string;
   tx: number; ty: number;
   facing: Face4;
-  look: number;
+  look: LookRef;
 }
 
 interface IsoInteriorViewProps {
@@ -173,6 +174,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       tapPath: false,
       zoom: 1, camX: 0, camY: 0, w: 0, h: 0, dpr: 1,
     };
+    // Per-character animation controllers (pruned each frame).
+    const charAnims = new Map<string, CharacterAnimator>();
+    const seenAnims = new Set<string>();
 
     const resize = () => {
       const r = wrap.getBoundingClientRect();
@@ -462,40 +466,17 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       }
     };
 
-    const drawCharacter = (g: CanvasRenderingContext2D, fx: number, fy: number, facing: Face4, moving: boolean, look: number, nowMs: number) => {
+    // Shared character renderer: one animator per character id (pruned per
+    // frame); the draw is feet-anchored with speed-tied walk phase.
+    const drawCharacter = (g: CanvasRenderingContext2D, fx: number, fy: number, facing: Face4, moving: boolean, look: LookRef, nowMs: number, animKey: string) => {
       const c = toScreen(fx, fy);
       const depth = depthKey(Math.round(fx), Math.round(fy));
-      const L = NPC_LOOKS[((look % NPC_LOOKS.length) + NPC_LOOKS.length) % NPC_LOOKS.length];
-      const keys = msLookKeys(L);
-      // Feet anchor: MS_FEET_ROW of the 64px cell lands on the tile point.
-      const lift = moving ? Math.abs(Math.sin(nowMs / 130)) * 2 : 0;
+      let anim = charAnims.get(animKey);
+      if (!anim) { anim = new CharacterAnimator(animKey); charAnims.set(animKey, anim); }
+      seenAnims.add(animKey);
+      anim.update({ x: fx, y: fy, moving, facing, nowMs });
       const draw = (g2: CanvasRenderingContext2D) => {
-        g2.fillStyle = 'rgba(0,0,0,0.22)';
-        g2.beginPath(); g2.ellipse(c.x, c.y + 3, 12, 5, 0, 0, 7); g2.fill();
-        if (msReady(keys)) {
-          // Mana Seed: 64x64 cells; stand = col 0 of the facing stand row,
-          // walk = 6 frames (cols 0-5) of the facing walk row.
-          const rows = MS_ROW[facing];
-          const frame = moving ? Math.floor(nowMs / 150) % MS_WALK_FRAMES : 0;
-          const sx = frame * MS_CELL, sy = (moving ? rows.walk : rows.stand) * MS_CELL;
-          const size = 52;
-          const dx = c.x - size / 2, dy = c.y - (MS_FEET_ROW / MS_CELL) * size - lift;
-          for (const k of keys) {
-            const im = msSprite(k);
-            if (!im) continue;
-            g2.drawImage(im, sx, sy, MS_CELL, MS_CELL, dx, dy, size, size);
-          }
-          return;
-        }
-        g2.save();
-        g2.translate(c.x, c.y - lift);
-        g2.fillStyle = '#4a3220';
-        g2.fillRect(-7, -12, 6, 12); g2.fillRect(1, -12, 6, 12);
-        g2.fillStyle = '#3b6fd4';
-        g2.beginPath(); g2.moveTo(-10, -12); g2.lineTo(10, -12); g2.lineTo(8, -30); g2.lineTo(-8, -30); g2.closePath(); g2.fill();
-        g2.fillStyle = '#f2c89b';
-        g2.beginPath(); g2.arc(0, -38, 9, 0, 7); g2.fill();
-        g2.restore();
+        drawIsoCharacter({ g: g2, x: c.x, y: c.y, look, nowMs, animator: anim });
       };
       return { depth, draw };
     };
@@ -630,8 +611,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       }
 
       // NPCs
+      seenAnims.clear();
       for (const n of npcsRef.current) {
-        const d = drawCharacter(g, n.tx, n.ty, n.facing, false, n.look, nowMs);
+        const d = drawCharacter(g, n.tx, n.ty, n.facing, false, n.look, nowMs, n.id);
         drawables.push(d);
         // nameplate
         const c = toScreen(n.tx, n.ty);
@@ -650,7 +632,8 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       }
 
       // player
-      drawables.push(drawCharacter(g, state.fx, state.fy, state.facing, state.moving, 0, nowMs));
+      drawables.push(drawCharacter(g, state.fx, state.fy, state.facing, state.moving, 0, nowMs, 'player'));
+      for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
 
       drawables.sort((a, b) => a.depth - b.depth);
       for (const d of drawables) d.draw(g);

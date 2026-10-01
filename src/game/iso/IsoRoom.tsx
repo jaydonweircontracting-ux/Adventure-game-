@@ -35,10 +35,11 @@ type SelKind = 'tree' | 'rock' | 'crate' | 'npc' | 'stall' | 'hut' | 'wall' | 's
 interface Selection { kind: SelKind; index: number }
 
 import {
-  preloadMsSprites, msReady, msSprite, NPC_LOOKS, MS_ROW, MS_CELL, MS_WALK_FRAMES, MS_FEET_ROW, msLookKeys,
+  preloadMsSprites,
   preloadFoodSprites, foodReady, foodSprite, FOOD_KEYS,
   type Face4,
 } from './isoSprites';
+import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
 
 interface CharState { tx: number; ty: number; fx: number; fy: number }
 interface PlayNpc extends CharState {
@@ -446,51 +447,20 @@ export default function IsoRoom(): React.JSX.Element {
       };
     }
 
+    // Per-character animation controllers for the shared character renderer
+    // (pruned each frame so removed NPCs don't leak).
+    const charAnims = new Map<string, CharacterAnimator>();
+    const seenAnims = new Set<string>();
     function personDrawable(px: number, py: number, moving: boolean, facing: Face4,
-      look: number, depth: number, nowMs: number): Drawable {
+      look: LookRef, depth: number, nowMs: number, animKey: string): Drawable {
       const c = isoToScreen(px, py);
-      const L = NPC_LOOKS[((look % NPC_LOOKS.length) + NPC_LOOKS.length) % NPC_LOOKS.length];
-      const keys = msLookKeys(L);
+      let anim = charAnims.get(animKey);
+      if (!anim) { anim = new CharacterAnimator(animKey); charAnims.set(animKey, anim); }
+      seenAnims.add(animKey);
+      anim.update({ x: px, y: py, moving, facing, nowMs });
       return {
         depth, tx: px, ty: py, draw: (g) => {
-          // Feet anchor: MS_FEET_ROW of the 64px cell lands on the tile point.
-          const lift = moving ? Math.abs(Math.sin(nowMs / 130)) * 2 : 0;
-          g.fillStyle = 'rgba(0,0,0,0.22)';
-          g.beginPath(); g.ellipse(c.x, c.y + 3, 12, 5, 0, 0, 7); g.fill();
-          const ready = msReady(keys);
-          if (ready) {
-            // Mana Seed sheet: 64x64 cells; stand = col 0 of the facing stand
-            // row, walk = 6 frames (cols 0-5) of the facing walk row.
-            const rows = MS_ROW[facing];
-            const frame = moving ? Math.floor(nowMs / 150) % MS_WALK_FRAMES : 0;
-            const sx = frame * MS_CELL, sy = (moving ? rows.walk : rows.stand) * MS_CELL;
-            const size = 52;
-            const dx = c.x - size / 2, dy = c.y - (MS_FEET_ROW / MS_CELL) * size - lift;
-            for (const k of keys) {
-              const im = msSprite(k);
-              if (!im) continue;
-              g.drawImage(im, sx, sy, MS_CELL, MS_CELL, dx, dy, size, size);
-            }
-            return;
-          }
-          // vector fallback while sprites load
-          g.save();
-          g.translate(c.x, c.y - lift);
-          const legSwing = moving ? Math.sin(nowMs / 130) * 4 : 0;
-          g.fillStyle = '#4a3220';
-          g.fillRect(-7, -12 + legSwing * 0.4, 6, 12);
-          g.fillRect(1, -12 - legSwing * 0.4, 6, 12);
-          g.fillStyle = '#3b6fd4';
-          g.beginPath();
-          g.moveTo(-10, -12); g.lineTo(10, -12); g.lineTo(8, -30); g.lineTo(-8, -30);
-          g.closePath(); g.fill();
-          g.fillRect(-13, -28, 4, 14); g.fillRect(9, -28, 4, 14);
-          g.fillStyle = '#f2c89b';
-          g.beginPath(); g.arc(0, -38, 9, 0, 7); g.fill();
-          g.fillStyle = '#5a3a22';
-          g.beginPath(); g.arc(0, -40, 9, Math.PI, 0); g.fill();
-          g.fillRect(-9, -40, 4, 8);
-          g.restore();
+          drawIsoCharacter({ g, x: c.x, y: c.y, look, nowMs, animator: anim });
         },
       };
     }
@@ -603,19 +573,23 @@ export default function IsoRoom(): React.JSX.Element {
       for (const t of w.crates) if (inR(t.tx, t.ty)) draws.push(crateDrawable(t));
 
       if (isEdit) {
+        seenAnims.clear();
         for (const s of w.npcSpawns) {
           if (!inR(s.x, s.y)) continue;
-          draws.push(personDrawable(s.x, s.y, false, 'down', s.look, depthKey(s.x, s.y, 1), 0));
+          draws.push(personDrawable(s.x, s.y, false, 'down', s.look, depthKey(s.x, s.y, 1), 0, `spawn-${s.x},${s.y}`));
         }
+        for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
         if (inR(w.playerStart.tx, w.playerStart.ty)) draws.push(startMarkerDrawable(w.playerStart));
       } else {
+        seenAnims.clear();
         for (const n of npcs) {
           if (!inR(n.fx, n.fy)) continue;
           draws.push(personDrawable(n.fx, n.fy, n.moving, n.facing, n.look,
-            depthKey(n.fx, n.fy, 1), now));
+            depthKey(n.fx, n.fy, 1), now, `npc-${n.name}`));
         }
         draws.push(personDrawable(player.fx, player.fy, playerMoving, playerFacing, 0,
-          depthKey(player.fx, player.fy, 1), now));
+          depthKey(player.fx, player.fy, 1), now, 'player'));
+        for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
         if (carryingIdx >= 0) {
           const cp = isoToScreen(player.fx, player.fy);
           draws.push({

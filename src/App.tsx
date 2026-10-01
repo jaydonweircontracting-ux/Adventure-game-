@@ -6100,7 +6100,7 @@ if (active) {
               tx: Math.min(11, Math.max(0, Math.round((xPct / 100) * 11))),
               ty: Math.min(8, Math.max(0, Math.round((yPct / 100) * 9))),
               facing: 'down',
-              look: Math.abs(npc.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 5,
+              look: npc.id,
             }))}
             onExit={exitInteriorToField}
             getHeldDir={() => {
