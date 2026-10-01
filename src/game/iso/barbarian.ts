@@ -51,14 +51,14 @@ export const BARB_FRAMES: Record<string, Record<string, Record<string, string[]>
     side: { idle: ['barbarian/bare_side_idle_0.png'], walk: ['barbarian/bare_side_walk_0.png', 'barbarian/bare_side_walk_1.png'], attack: ['barbarian/bare_side_attack_0.png', 'barbarian/bare_side_attack_1.png'] },
     right: { idle: ['barbarian/bare_right_idle_0.png'], walk: ['barbarian/bare_right_walk_0.png', 'barbarian/bare_right_walk_1.png'], attack: ['barbarian/bare_side_attack_0.png', 'barbarian/bare_side_attack_1.png'] },
     left: { idle: ['barbarian/bare_left_idle_0.png'], walk: ['barbarian/bare_left_walk_0.png', 'barbarian/bare_left_walk_1.png'], attack: ['barbarian/bare_side_attack_0.png', 'barbarian/bare_side_attack_1.png'] },
-    up: { idle: ['barbarian/bare_up_idle_0.png'], walk: ['barbarian/bare_up_walk_0.png', 'barbarian/bare_up_walk_1.png'], attack: ['barbarian/bare_up_attack_0.png', 'barbarian/bare_up_attack_1.png'] },
+    up: { idle: ['barbarian/bare_up_idle_0.png'], walk: ['barbarian/bare_up_walk_0.png', 'barbarian/bare_up_walk_1.png', 'barbarian/bare_up_walk_2.png', 'barbarian/bare_up_walk_3.png', 'barbarian/bare_up_walk_4.png', 'barbarian/bare_up_walk_5.png'], attack: ['barbarian/bare_up_attack_0.png', 'barbarian/bare_up_attack_1.png'] },
   },
   blue: {
     down: { idle: ['barbarian/blue_down_idle_0.png'], walk: ['barbarian/blue_down_walk_0.png', 'barbarian/blue_down_walk_1.png'], attack: ['barbarian/blue_down_attack_0.png', 'barbarian/blue_down_attack_1.png'] },
     side: { idle: ['barbarian/blue_side_idle_0.png'], walk: ['barbarian/blue_side_walk_0.png', 'barbarian/blue_side_walk_1.png'], attack: ['barbarian/blue_side_attack_0.png', 'barbarian/blue_side_attack_1.png'] },
     right: { idle: ['barbarian/blue_right_idle_0.png'], walk: ['barbarian/blue_right_walk_0.png', 'barbarian/blue_right_walk_1.png'], attack: ['barbarian/blue_right_attack_0.png', 'barbarian/blue_right_attack_1.png'] },
     left: { idle: ['barbarian/blue_left_idle_0.png'], walk: ['barbarian/blue_left_walk_0.png', 'barbarian/blue_left_walk_1.png'], attack: ['barbarian/blue_left_attack_0.png', 'barbarian/blue_left_attack_1.png'] },
-    up: { idle: ['barbarian/blue_up_idle_0.png'], walk: ['barbarian/blue_up_walk_0.png', 'barbarian/blue_up_walk_1.png'], attack: ['barbarian/blue_up_attack_0.png', 'barbarian/blue_up_attack_1.png'] },
+    up: { idle: ['barbarian/blue_up_idle_0.png'], walk: ['barbarian/blue_up_walk_0.png', 'barbarian/blue_up_walk_1.png', 'barbarian/blue_up_walk_2.png', 'barbarian/blue_up_walk_3.png', 'barbarian/blue_up_walk_4.png', 'barbarian/blue_up_walk_5.png'], attack: ['barbarian/blue_up_attack_0.png', 'barbarian/blue_up_attack_1.png'] },
   },
   sword: {
     down: { idle: ['barbarian/sword_down_idle_0.png'], walk: ['barbarian/sword_down_walk_0.png', 'barbarian/sword_down_walk_1.png'], attack: ['barbarian/sword_down_attack_0.png', 'barbarian/sword_down_attack_1.png', 'barbarian/sword_down_attack_2.png'] },
@@ -72,7 +72,7 @@ export const BARB_FRAMES: Record<string, Record<string, Record<string, string[]>
     side: { idle: ['barbarian/bow_side_idle_0.png'], walk: ['barbarian/bow_side_walk_0.png'], attack: ['barbarian/bow_side_attack_0.png', 'barbarian/bow_side_attack_1.png', 'barbarian/bow_side_attack_2.png'] },
     right: { idle: ['barbarian/bow_right_idle_0.png'], walk: ['barbarian/bow_right_walk_0.png', 'barbarian/bow_right_walk_1.png'], attack: ['barbarian/bow_right_attack_0.png', 'barbarian/bow_right_attack_1.png', 'barbarian/bow_right_attack_2.png'] },
     left: { idle: ['barbarian/bow_left_idle_0.png'], walk: ['barbarian/bow_left_walk_0.png', 'barbarian/bow_left_walk_1.png'], attack: ['barbarian/bow_left_attack_0.png', 'barbarian/bow_left_attack_1.png', 'barbarian/bow_left_attack_2.png'] },
-    up: { idle: ['barbarian/bow_up_idle_0.png'], walk: ['barbarian/bow_up_walk_0.png'], attack: ['barbarian/bow_up_attack_0.png', 'barbarian/bow_up_attack_1.png', 'barbarian/bow_up_attack_2.png'] },
+    up: { idle: ['barbarian/bow_up_idle_0.png'], walk: ['barbarian/bow_up_walk_0.png', 'barbarian/bow_up_walk_1.png', 'barbarian/bow_up_walk_2.png', 'barbarian/bow_up_walk_3.png', 'barbarian/bow_up_walk_4.png', 'barbarian/bow_up_walk_5.png'], attack: ['barbarian/bow_up_attack_0.png', 'barbarian/bow_up_attack_1.png', 'barbarian/bow_up_attack_2.png'] },
   },
 };
 export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[number,number];idleH:number}>> = {

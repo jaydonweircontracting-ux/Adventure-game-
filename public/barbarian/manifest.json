@@ -59,7 +59,11 @@
    ],
    "walk": [
     "bare_up_walk_0.png",
-    "bare_up_walk_1.png"
+    "bare_up_walk_1.png",
+    "bare_up_walk_2.png",
+    "bare_up_walk_3.png",
+    "bare_up_walk_4.png",
+    "bare_up_walk_5.png"
    ],
    "attack": [
     "bare_up_attack_0.png",
@@ -171,7 +175,11 @@
    ],
    "walk": [
     "blue_up_walk_0.png",
-    "blue_up_walk_1.png"
+    "blue_up_walk_1.png",
+    "blue_up_walk_2.png",
+    "blue_up_walk_3.png",
+    "blue_up_walk_4.png",
+    "blue_up_walk_5.png"
    ],
    "attack": [
     "blue_up_attack_0.png",
@@ -421,7 +429,12 @@
     "bow_up_idle_0.png"
    ],
    "walk": [
-    "bow_up_walk_0.png"
+    "bow_up_walk_0.png",
+    "bow_up_walk_1.png",
+    "bow_up_walk_2.png",
+    "bow_up_walk_3.png",
+    "bow_up_walk_4.png",
+    "bow_up_walk_5.png"
    ],
    "attack": [
     "bow_up_attack_0.png",
@@ -584,7 +597,19 @@
    "sword_left_walk_5.png": "left",
    "sword_left_walk_6.png": "left",
    "sword_left_walk_7.png": "left",
-   "sword_left_walk_8.png": "left"
+   "sword_left_walk_8.png": "left",
+   "bare_up_walk_2.png": "up",
+   "bare_up_walk_3.png": "up",
+   "bare_up_walk_4.png": "up",
+   "bare_up_walk_5.png": "up",
+   "blue_up_walk_2.png": "up",
+   "blue_up_walk_3.png": "up",
+   "blue_up_walk_4.png": "up",
+   "blue_up_walk_5.png": "up",
+   "bow_up_walk_2.png": "up",
+   "bow_up_walk_3.png": "up",
+   "bow_up_walk_4.png": "up",
+   "bow_up_walk_5.png": "up"
   },
   "sideFacing": {
    "bare_side_attack_0.png": "right",
