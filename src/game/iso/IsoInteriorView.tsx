@@ -14,7 +14,7 @@ import {
 } from './projection';
 import {
   preloadLpcSprites,
-  isoPlayerFaceForDeltaSticky,
+  isoPlayerFaceForScreenDelta,
   type Face4,
 } from './isoSprites';
 import { preloadBarbarian } from './barbarian';
@@ -145,15 +145,11 @@ function furnitureFor(roomType: IsoRoomType): Furniture[] {
 }
 
 function faceForMove(ax: number, ay: number, bx: number, by: number, current: Face4): Face4 {
-  // BUILD 387/402: tile-space facing, same as the iso field outside.
-  // The old screen-space projection mapped every axis-aligned step to
-  // left/right, so walking forward/back inside showed the side sprite while
-  // outside showed the back/front sprite. BUILD 402: axis moves keep the
-  // tile-axis convention (D-pad up = back sprite); near-diagonal moves now
-  // face the screen direction of travel so the character faces where it's
-  // going in the dimetric projection. BUILD 405: sticky — only switch when
-  // the new direction is clearly indicated, so drift never flips the asset.
-  return isoPlayerFaceForDeltaSticky(bx - ax, by - ay, current);
+  // BUILD 407: screen-space facing, same as the iso field outside. The tile
+  // delta is projected to true screen space (2:1 dimetric) and the dominant
+  // screen axis picks the art, so screen up-right/up-left travel shows the
+  // right/left sprite instead of the back sprite.
+  return isoPlayerFaceForScreenDelta(bx - ax, by - ay, current);
 }
 
 export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair }: IsoInteriorViewProps): React.JSX.Element {

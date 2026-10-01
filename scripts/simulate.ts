@@ -1429,6 +1429,26 @@ for (const kind of EXPECTED_KINDS) {
   assert(isoScreenSpeedScale(0, 0) === 1, 'zero vector is safe (scale 1)');
 }
 
+// BUILD 407: isoPlayerFaceForScreenDelta — screen-space dominant-axis
+// facing for the 2:1 dimetric projection. Screen up-right travel must face
+// right, up-left must face left, mostly-up keeps the back sprite (drift can
+// never outvote the vertical axis), and zero delta keeps current facing.
+{
+  const { isoPlayerFaceForScreenDelta } = await import('../src/game/iso/isoSprites');
+  assert(isoPlayerFaceForScreenDelta(-1, -1, 'down') === 'up', 'straight screen-up faces up');
+  assert(isoPlayerFaceForScreenDelta(1, 1, 'up') === 'down', 'straight screen-down faces down');
+  assert(isoPlayerFaceForScreenDelta(1, -1, 'up') === 'right', 'screen-right travel faces right');
+  assert(isoPlayerFaceForScreenDelta(-1, 1, 'up') === 'left', 'screen-left travel faces left');
+  assert(isoPlayerFaceForScreenDelta(-1, -3, 'up') === 'right', 'right-north screen diagonal faces right');
+  assert(isoPlayerFaceForScreenDelta(-0.5, -2, 'up') === 'right', 'right-north off-diagonal faces right');
+  assert(isoPlayerFaceForScreenDelta(-3, -1, 'up') === 'left', 'left-north screen diagonal faces left');
+  assert(isoPlayerFaceForScreenDelta(-2, -0.5, 'up') === 'left', 'left-north off-diagonal faces left');
+  assert(isoPlayerFaceForScreenDelta(-0.7, -0.75, 'up') === 'up', 'minor drift walking up keeps the back sprite');
+  assert(isoPlayerFaceForScreenDelta(-0.5, -0.9, 'up') === 'up', 'larger drift walking up keeps the back sprite');
+  assert(isoPlayerFaceForScreenDelta(0, 0, 'right') === 'right', 'zero delta keeps current facing');
+  assert(isoPlayerFaceForScreenDelta(0, 0, 'up') === 'up', 'zero delta keeps current facing (up)');
+}
+
 // ---- BUILD 388: dungeon kit panel selectors for cellar/prison interiors ----
 // The kit is purely visual (collision/furniture untouched), so the sim pins
 // the panel metadata: 4 in-bounds panels per strip, correct wall orientation

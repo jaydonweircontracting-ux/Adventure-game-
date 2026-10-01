@@ -128,6 +128,27 @@ export function isoScreenSpeedScale(ux: number, uy: number): number {
   if (projected < 1e-9) return 1;
   return Math.SQRT1_2 / projected; // SQRT1_2 = projected length of up/down
 }
+
+/**
+ * BUILD 407: screen-space player facing. The tile-space helpers above map
+ * screen-diagonal travel (what tap-to-move produces) back to the tile axis,
+ * so walking "right-north" on screen showed the back sprite, and drift near
+ * the diagonal band flickered between assets. Instead, project the tile
+ * delta into true screen space (2:1 dimetric) and let the dominant screen
+ * axis pick the art: screen up-right -> right, up-left -> left, mostly
+ * screen-up -> up (back), mostly screen-down -> down (front). The 45-degree
+ * split is drift-proof by geometry — minor drift while walking straight up
+ * can never outvote the vertical axis — so no directional stickiness is
+ * needed; `current` is only the zero-movement fallback. Exact
+ * screen diagonals break toward the horizontal (right-north -> right).
+ */
+export function isoPlayerFaceForScreenDelta(dx: number, dy: number, current: Face4): Face4 {
+  if (Math.abs(dx) + Math.abs(dy) < 1e-9) return current; // no movement: keep facing
+  const sx = dx - dy; // screen x of the tile delta (2:1 dimetric)
+  const sy = (dx + dy) / 2; // screen y of the tile delta
+  if (Math.abs(sx) >= Math.abs(sy)) return sx > 0 ? 'right' : 'left';
+  return sy > 0 ? 'down' : 'up';
+}
 export const LPC_FRAMES: Record<LpcAnim, number> = { idle: 2, walk: 9, slash: 6, hurt: 6 };
 
 // ---------------------------------------------------------------------------
