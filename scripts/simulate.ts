@@ -3027,11 +3027,12 @@ console.log('Testing examine system...');
       (BARB_FRAMES[v]?.['right']?.['attack']?.length ?? 0) >= 2,
       `${v} dedicated right set must have idle + ${wantWalk} walk + attack frames`);
   }
-  // BUILD 412: bare/blue/bow up walk is the user's 6-frame back-view strip;
+  // BUILD 413: bare/blue/bow up walk is 9 frames sampled (every 4th) from the
+  // user's 36-frame back-view sheet, filling the LPC walk phase cycle;
   // sword keeps its 9 sword-in-hand up frames (BUILD 409).
   for (const v of ['bare', 'blue', 'bow'] as const) {
-    assert(BARB_FRAMES[v]?.['up']?.['walk']?.length === 6,
-      `${v} up walk must be the 6-frame back-view strip`);
+    assert(BARB_FRAMES[v]?.['up']?.['walk']?.length === 9,
+      `${v} up walk must be the 9 sampled back-view frames`);
   }
   assert(BARB_FRAMES['sword']?.['up']?.['walk']?.length === 9,
     'sword up walk must keep its 9 sword-in-hand frames');
