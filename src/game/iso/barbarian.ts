@@ -5,8 +5,9 @@
  *  - bare (brown shorts) and blue (crafted shirt) body variants
  *  - sword and bow weapon variants (weapon art baked into the sheets)
  *  - 17 hairstyles x 3 views, composited as overlays ('bald' = none)
- * Every view (down/side/up) has idle + walk + attack frames; right mirrors
- * side. NPCs keep the LPC paper-doll path — this is player-only.
+ * Every view (down/side/up) has idle + walk + attack frames. The bare variant
+ * also has a dedicated right-facing idle/walk set; left mirrors side. NPCs
+ * keep the LPC paper-doll path — this is player-only.
  */
 import type { Face4 } from './isoSprites';
 
@@ -45,6 +46,7 @@ export const BARB_FRAMES: Record<string, Record<string, Record<string, string[]>
   bare: {
     down: { idle: ['barbarian/bare_down_idle_0.png'], walk: ['barbarian/bare_down_walk_0.png', 'barbarian/bare_down_walk_1.png'], attack: ['barbarian/bare_down_attack_0.png', 'barbarian/bare_down_attack_1.png'] },
     side: { idle: ['barbarian/bare_side_idle_0.png'], walk: ['barbarian/bare_side_walk_0.png', 'barbarian/bare_side_walk_1.png'], attack: ['barbarian/bare_side_attack_0.png', 'barbarian/bare_side_attack_1.png'] },
+    right: { idle: ['barbarian/bare_right_idle_0.png'], walk: ['barbarian/bare_right_walk_0.png', 'barbarian/bare_right_walk_1.png'], attack: ['barbarian/bare_side_attack_0.png', 'barbarian/bare_side_attack_1.png'] },
     up: { idle: ['barbarian/bare_up_idle_0.png'], walk: ['barbarian/bare_up_walk_0.png', 'barbarian/bare_up_walk_1.png'], attack: ['barbarian/bare_up_attack_0.png', 'barbarian/bare_up_attack_1.png'] },
   },
   blue: {
@@ -67,6 +69,7 @@ export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[nu
   bare: {
     down: { w: 195, h: 195, head: [97, 4], idleH: 188 },
     side: { w: 195, h: 195, head: [73, 9], idleH: 186 },
+    right: { w: 195, h: 195, head: [74, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [97, 0], idleH: 193 },
   },
   blue: {
@@ -247,16 +250,26 @@ export function drawBarbarian(o: BarbarianDrawOptions): boolean {
   const g = o.g;
   const variant = barbarianVariant(o.outfit ?? 'bare', o.weapon ?? 'none');
   const view = viewOf(o.facing);
-  // All side-view art natively faces screen-right; mirror when facing left.
-  const flip = o.facing === 'left';
-  const size = o.size ?? 60;
-  const box = BARB_BOX[variant]?.[view];
-  if (!box) return false;
+  // BUILD 398: the bare variant has dedicated right-facing idle/walk art. Use
+  // it when facing right, falling back per-anim to the shared side set (e.g.
+  // attacks still use side art). Left keeps mirroring the side set, which
+  // reproduces the user's original left-facing sheet.
   const anim: BarbarianAnim =
     o.attackT !== undefined && o.attackT >= 0 && o.attackT < BARBARIAN_ATTACK_MS
       ? 'attack'
       : o.moving ? 'walk' : 'idle';
-  const frames = BARB_FRAMES[variant]?.[view]?.[anim];
+  let fview: string = view;
+  if (o.facing === 'right') {
+    const rf = BARB_FRAMES[variant]?.['right']?.[anim];
+    if (rf && rf.length > 0) fview = 'right';
+  }
+  // Shared side art natively faces screen-right; mirror when facing left.
+  // The dedicated right set natively faces right and is never mirrored.
+  const flip = o.facing === 'left';
+  const size = o.size ?? 60;
+  const box = BARB_BOX[variant]?.[fview];
+  if (!box) return false;
+  const frames = BARB_FRAMES[variant]?.[fview]?.[anim];
   if (!frames || frames.length === 0) return false;
   let idx = 0;
   if (anim === 'attack' && o.attackT !== undefined) {
@@ -283,16 +296,19 @@ export function drawBarbarian(o: BarbarianDrawOptions): boolean {
   const s = g.imageSmoothingEnabled;
   g.imageSmoothingEnabled = false;
   try {
+    // Hair overlays only exist for down/side/up; the dedicated right set reuses
+    // the side hair art with the right set's head anchor.
+    const hairView: BarbarianView = fview === 'right' ? 'side' : view;
     if (flip) {
       g.save();
       g.translate(o.x, 0);
       g.scale(-1, 1);
       g.drawImage(body, -dw / 2, dy, dw, dh);
-      drawHair(g, o, view, box, k, -dw / 2, dy);
+      drawHair(g, o, hairView, box, k, -dw / 2, dy);
       g.restore();
     } else {
       g.drawImage(body, dx, dy, dw, dh);
-      drawHair(g, o, view, box, k, dx, dy);
+      drawHair(g, o, hairView, box, k, dx, dy);
     }
   } finally {
     g.imageSmoothingEnabled = s;

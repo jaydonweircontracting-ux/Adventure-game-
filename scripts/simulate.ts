@@ -3039,14 +3039,18 @@ import { inflateSync } from 'node:zlib';
   const barbSrc = readFileSyncSprites('src/game/iso/barbarian.ts', 'utf8');
   assert(/const flip = o\.facing === 'left'/.test(barbSrc),
     'drawBarbarian must mirror side art when facing=left (art natively faces right)');
-  // BUILD 392: frameViews locks the visually-audited view (up/side/down) of
+  // BUILD 398: the bare variant's dedicated right-facing idle/walk set must be
+  // selected when facing=right (per-anim, falling back to the side set).
+  assert(/\?\.\['right'\]\?\.\[anim\]/.test(barbSrc),
+    'drawBarbarian must select the dedicated right frame set when facing=right');
+  // BUILD 392: frameViews locks the visually-audited view (up/side/down/right) of
   // every idle/walk frame, so a mislabeled crop (e.g. a front view saved as
   // *_up_walk_*) fails even if its pixels never change again.
   const frameViews = barbManifest._conventions?.frameViews as Record<string, string> | undefined;
   assert(frameViews && Object.keys(frameViews).length >= 30,
     'barbarian manifest must record audited views for every idle/walk frame');
   for (const [file, view] of Object.entries(frameViews)) {
-    const m = /^(bare|blue|sword|bow)_(down|side|up)_(idle|walk)_\d+\.png$/.exec(file);
+    const m = /^(bare|blue|sword|bow)_(down|side|up|right)_(idle|walk)_\d+\.png$/.exec(file);
     assert(m, `${file}: unexpected frameViews key`);
     assert(m[2] === view,
       `${file}: audited view is "${view}" but the filename says "${m[2]}" — frame is mislabeled`);

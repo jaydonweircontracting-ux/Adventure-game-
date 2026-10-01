@@ -65,6 +65,28 @@
         "bare_up_attack_0.png",
         "bare_up_attack_1.png"
       ]
+    },
+    "right": {
+      "_box": {
+        "w": 195,
+        "h": 195,
+        "head": [
+          74,
+          9
+        ],
+        "idleH": 186
+      },
+      "idle": [
+        "bare_right_idle_0.png"
+      ],
+      "walk": [
+        "bare_right_walk_0.png",
+        "bare_right_walk_1.png"
+      ],
+      "attack": [
+        "bare_side_attack_0.png",
+        "bare_side_attack_1.png"
+      ]
     }
   },
   "blue": {
@@ -297,7 +319,10 @@
       "sword_side_attack_2.png": 0.4855,
       "sword_side_idle_0.png": 0.4907,
       "sword_side_walk_0.png": 0.4907,
-      "sword_side_walk_1.png": 0.4527
+      "sword_side_walk_1.png": 0.4527,
+      "bare_right_idle_0.png": 0.4985,
+      "bare_right_walk_0.png": 0.4787,
+      "bare_right_walk_1.png": 0.5507
     },
     "playerLayering": "IsoFieldView draws the player in a final pass above all depth-sorted drawables (BUILD 391): grass/decor/trees/buildings never cover the player.",
     "frameViews": {
@@ -333,7 +358,10 @@
       "sword_side_walk_0.png": "side",
       "sword_side_walk_1.png": "side",
       "sword_up_idle_0.png": "up",
-      "sword_up_walk_0.png": "up"
+      "sword_up_walk_0.png": "up",
+      "bare_right_idle_0.png": "right",
+      "bare_right_walk_0.png": "right",
+      "bare_right_walk_1.png": "right"
     },
     "sideFacing": {
       "bare_side_attack_0.png": "right",
@@ -356,8 +384,12 @@
       "sword_side_attack_2.png": "right",
       "sword_side_idle_0.png": "right",
       "sword_side_walk_0.png": "right",
-      "sword_side_walk_1.png": "right"
+      "sword_side_walk_1.png": "right",
+      "bare_right_idle_0.png": "right",
+      "bare_right_walk_0.png": "right",
+      "bare_right_walk_1.png": "right"
     },
-    "down": "BUILD 394: bare down idle re-cut from the user-supplied front-facing sheet. BUILD 395: bare down walk replaced per user direction with the two user-supplied 3/4-view walk/run frames. BUILD 396: bare down idle replaced per user direction ('this is down idle') with the user-supplied 3/4-view standing frame, matching the walk set style. Side frames unchanged."
+    "down": "BUILD 394: bare down idle re-cut from the user-supplied front-facing sheet. BUILD 395: bare down walk replaced per user direction with the two user-supplied 3/4-view walk/run frames. BUILD 396: bare down idle replaced per user direction ('this is down idle') with the user-supplied 3/4-view standing frame, matching the walk set style. Side frames unchanged.",
+    "right": "BUILD 398: the bare variant has dedicated right-facing idle/walk art (3/4 view, user-supplied). The renderer uses the 'right' frame set when facing=right and falls back per-anim to the shared side set (attacks still use side art). Left movement keeps the side set mirrored, which reproduces the user's original left-facing sheet."
   }
 }
