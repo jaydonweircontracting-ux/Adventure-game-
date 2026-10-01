@@ -27,6 +27,7 @@ import { waterGridForChunk, waterGridAt, type WaterGrid } from '../landscape';
 // screen at every zoom level — no blue void where nothing was generated.
 import {
   ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset,
+  isoVisibleTileRange,
 } from './isoChunks';
 
 interface IsoFieldViewProps {
@@ -208,10 +209,11 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
 
       // visible tile range (culled) — BUILD 376: spans into neighbor chunks,
       // so zooming out shows real generated terrain instead of blue void.
-      const tl = screenToTile(cam.x - wpx / 2 / zm - TILE_W, cam.y - hpx / 2 / zm - TILE_H);
-      const br = screenToTile(cam.x + wpx / 2 / zm + TILE_W, cam.y + hpx / 2 / zm + TILE_H);
-      const x0 = Math.floor(tl.tx) - 1, x1 = Math.ceil(br.tx) + 1;
-      const y0 = Math.floor(tl.ty) - 1, y1 = Math.ceil(br.ty) + 1;
+      // BUILD 385: four-corner range via isoVisibleTileRange (the old
+      // two-corner range missed the tiles covering the viewport's top and
+      // bottom edges, leaving black bars). Out-of-grid tiles reuse the
+      // edge-clamped scene, so the view fills the whole screen at every zoom.
+      const { x0, x1, y0, y1 } = isoVisibleTileRange(cam.x, cam.y, wpx, hpx, zm);
 
       // ground — per-tile chunk lookup into the scene grid
       // BUILD 376: tile detail is sub-pixel when zoomed out, so skip it there.

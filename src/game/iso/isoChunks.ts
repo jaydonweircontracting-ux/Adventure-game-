@@ -11,7 +11,7 @@
  * neighbor chunk (ox, oy) occupies [ox*N, (ox+1)*N) x [oy*N, (oy+1)*N).
  * The iso projection is linear, so neighbor diamonds tile seamlessly.
  */
-import { TILE_W, TILE_H } from './projection';
+import { TILE_W, TILE_H, screenToTile } from './projection';
 
 /** Chunk render radius around the player's chunk (1 -> 3x3 grid). */
 export const ISO_CHUNK_RENDER_RADIUS = 1;
@@ -95,4 +95,33 @@ export function isoViewportCovered(
     }
   }
   return true;
+}
+
+/**
+ * BUILD 385: visible ground-tile range for the iso field renderer, from all
+ * four viewport corners. In iso projection ty grows with +sy but shrinks
+ * with +sx, so the top-right corner carries the smallest ty and the
+ * bottom-left the largest — a two-corner (top-left/bottom-right) range misses
+ * the tiles covering the viewport's top and bottom edges, which rendered as
+ * black bars. Pure so the simulation suite can pin the coverage.
+ */
+export function isoVisibleTileRange(
+  camX: number, camY: number, viewW: number, viewH: number, zoom: number,
+): { x0: number; x1: number; y0: number; y1: number } {
+  const hw = viewW / (2 * zoom) + TILE_W;
+  const hh = viewH / (2 * zoom) + TILE_H;
+  const corners = [
+    screenToTile(camX - hw, camY - hh),
+    screenToTile(camX + hw, camY - hh),
+    screenToTile(camX - hw, camY + hh),
+    screenToTile(camX + hw, camY + hh),
+  ];
+  const txs = corners.map((c) => c.tx);
+  const tys = corners.map((c) => c.ty);
+  return {
+    x0: Math.floor(Math.min(...txs)) - 1,
+    x1: Math.ceil(Math.max(...txs)) + 1,
+    y0: Math.floor(Math.min(...tys)) - 1,
+    y1: Math.ceil(Math.max(...tys)) + 1,
+  };
 }

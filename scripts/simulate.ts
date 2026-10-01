@@ -33,7 +33,7 @@ import { isMonsterSheetFailed, clearSheetProbeState } from '../src/game/monsterS
 import { mulberry32, shadeColor, mixColor, hexToRgb, GROUND_PX_PER_UNIT } from '../src/game/groundDetail';
 import { FIELD_SIZE, DEFAULT_GAME_ZOOM, zoomTranslatePct, cameraFrac, playerScreenPct, screenPxToFieldUnits, fieldPct } from '../src/game/fieldCamera';
 import { PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP, collisionBoxesOverlap, isPositionOccupiedByGoat, separateGoatFromPlayer } from '../src/game/fieldCollision';
-import { ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset, isoViewportCovered } from '../src/game/iso/isoChunks';
+import { ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset, isoViewportCovered, isoVisibleTileRange } from '../src/game/iso/isoChunks';
 
 let passed = 0;
 let failed = 0;
@@ -2677,6 +2677,41 @@ console.log('Testing examine system...');
   // A single chunk would NOT cover the zoomed-out phone viewport (the old
   // blue-void bug: the diamond corners leave the viewport corners undrawn).
   assert(!isoViewportCovered(390, 844, 0.15, 0, N), 'single chunk cannot cover zoomed-out viewport');
+  // BUILD 385: the ground tile range must include the tile under every
+  // viewport point (the old two-corner range missed the tiles covering the
+  // top/bottom edges, leaving black bars). Out-of-grid tiles are drawn with
+  // the edge-clamped scene, so coverage here means no bars at any zoom.
+  const { screenToTile } = await import('../src/game/iso/projection');
+  const tileInDiamond = (sx: number, sy: number, tx: number, ty: number): boolean => {
+    const cx = (tx - ty) * 32, cy = (tx + ty) * 16;
+    return Math.abs(sx - cx) / 32 + Math.abs(sy - cy) / 16 <= 1.001;
+  };
+  for (const [vw, vh, z, ctx, cty] of [
+    [390, 700, 0.7, 2080, 1176],   // phone portrait, camera near north edge
+    [390, 700, 0.7, 0, 2224],      // phone portrait, grid center
+    [390, 844, 0.15, 0, 2224],     // phone portrait, fully zoomed out
+    [800, 400, 0.7, 2080, 1176],   // landscape, near north edge
+    [1920, 1080, 2.5, -5000, 8000],// desktop zoomed in, far south-west
+  ] as Array<[number, number, number, number, number]>) {
+    const r = isoVisibleTileRange(ctx, cty, vw, vh, z);
+    assert(r.x1 > r.x0 && r.y1 > r.y0, `non-empty range for ${vw}x${vh}@${z}`);
+    let uncovered = 0;
+    for (let fy = 0; fy <= 10; fy++) {
+      for (let fx = 0; fx <= 10; fx++) {
+        const sx = ctx - vw / (2 * z) + (fx / 10) * vw / z;
+        const sy = cty - vh / (2 * z) + (fy / 10) * vh / z;
+        const { tx, ty } = screenToTile(sx, sy);
+        let ok = false;
+        for (let j = Math.floor(ty) - 1; j <= Math.floor(ty) + 1 && !ok; j++) {
+          for (let i = Math.floor(tx) - 1; i <= Math.floor(tx) + 1 && !ok; i++) {
+            if (i >= r.x0 && i <= r.x1 && j >= r.y0 && j <= r.y1 && tileInDiamond(sx, sy, i, j)) ok = true;
+          }
+        }
+        if (!ok) uncovered++;
+      }
+    }
+    assert(uncovered === 0, `viewport ${vw}x${vh}@${z} cam(${ctx},${cty}): ${uncovered} points outside tile range`);
+  }
 }
 
 // ---- BUILD 380: shared character animation + asset pipeline (chibi LPC) ----
