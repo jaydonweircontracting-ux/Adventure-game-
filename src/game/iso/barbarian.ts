@@ -85,20 +85,20 @@ export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[nu
   bare: {
     down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
     side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
-    right: { w: 195, h: 195, head: [104, 9], idleH: 186 },
-    left: { w: 195, h: 195, head: [93, 9], idleH: 186 },
-    up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
-    upright: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 414: same figure as up
-    upleft: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 414: same figure as up
+    right: { w: 195, h: 195, head: [95, 9], idleH: 186 },
+    left: { w: 195, h: 195, head: [94, 9], idleH: 186 },
+    up: { w: 195, h: 195, head: [98, 2], idleH: 193 },
+    upright: { w: 195, h: 195, head: [98, 2], idleH: 193 },  // BUILD 415: true N art
+    upleft: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 415: mirrored N art
   },
   blue: {
     down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
     side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
-    right: { w: 195, h: 195, head: [104, 9], idleH: 186 },
-    left: { w: 195, h: 195, head: [93, 9], idleH: 186 },
-    up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
-    upright: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 414: same figure as up
-    upleft: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 414: same figure as up
+    right: { w: 195, h: 195, head: [95, 9], idleH: 186 },
+    left: { w: 195, h: 195, head: [94, 9], idleH: 186 },
+    up: { w: 195, h: 195, head: [98, 2], idleH: 193 },
+    upright: { w: 195, h: 195, head: [98, 2], idleH: 193 },  // BUILD 415: true N art
+    upleft: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 415: mirrored N art
   },
   sword: {
     down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
@@ -110,11 +110,11 @@ export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[nu
   bow: {
     down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
     side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
-    right: { w: 195, h: 195, head: [104, 9], idleH: 186 },
-    left: { w: 195, h: 195, head: [93, 9], idleH: 186 },
-    up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
-    upright: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 414: same figure as up
-    upleft: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 414: same figure as up
+    right: { w: 195, h: 195, head: [95, 9], idleH: 186 },
+    left: { w: 195, h: 195, head: [94, 9], idleH: 186 },
+    up: { w: 195, h: 195, head: [98, 2], idleH: 193 },
+    upright: { w: 195, h: 195, head: [98, 2], idleH: 193 },  // BUILD 415: true N art
+    upleft: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 415: mirrored N art
   },
 };
 export interface BarbHairInfo { file: string; rel: [number, number]; baseH: number }
