@@ -33,8 +33,12 @@ export const NPC_LOOKS: MsLook[] = [
 
 /**
  * Mana Seed base sheet: 8x8 grid of 64x64 cells.
- * Stand (col 0): row 0 = down, 1 = up, 2 = left, 3 = right.
- * Walk (6 frames, cols 0-5): row 4 = down, 5 = up, 6 = left, 7 = right.
+ * Mana Seed pONE3 layout (verified against the shipped sheets): each
+ * direction interleaves its stand and walk rows —
+ * row 0 = stand down, 1 = walk down, 2 = stand up, 3 = walk up,
+ * row 4 = stand left, 5 = walk left, 6 = stand right, 7 = walk right.
+ * (NOT the LPC layout of stands 0-3 then walks 4-7; that mis-mapping made
+ * left/right face backwards and idles show mid-stride fist-out frames.)
  */
 export const MS_CELL = 64;
 export const MS_WALK_FRAMES = 6;
@@ -43,10 +47,10 @@ export const MS_WALK_FRAMES = 6;
 // the tile point instead of floating above it.
 export const MS_FEET_ROW = 43.5;
 export const MS_ROW: Record<Face4, { stand: number; walk: number }> = {
-  down: { stand: 0, walk: 4 },
-  up: { stand: 1, walk: 5 },
-  left: { stand: 2, walk: 6 },
-  right: { stand: 3, walk: 7 },
+  down: { stand: 0, walk: 1 },
+  up: { stand: 2, walk: 3 },
+  left: { stand: 4, walk: 5 },
+  right: { stand: 6, walk: 7 },
 };
 
 /** Paper-doll draw order: body -> outfit -> armor -> hair -> hat. */

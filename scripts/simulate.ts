@@ -1302,6 +1302,33 @@ for (const kind of EXPECTED_KINDS) {
   assert(/undi|boxr/.test(ISO_LOOKS[0].outfit), `player look should start in underwear/shorts, got ${ISO_LOOKS[0].outfit}`);
 }
 
+// ---- BUILD 378: Mana Seed row layout is interleaved per direction ----
+// The pONE3 sheets interleave stand/walk rows per facing
+// (down 0/1, up 2/3, left 4/5, right 6/7) — NOT the LPC layout of stands
+// 0-3 then walks 4-7. The LPC assumption made left/right face backwards
+// and idles show mid-stride fist-out frames. Lock the mapping here.
+{
+  const { MS_ROW: ISO_ROWS } = await import('../src/game/iso/isoSprites');
+  const expected: Record<string, { stand: number; walk: number }> = {
+    down: { stand: 0, walk: 1 },
+    up: { stand: 2, walk: 3 },
+    left: { stand: 4, walk: 5 },
+    right: { stand: 6, walk: 7 },
+  };
+  for (const [face, rows] of Object.entries(expected)) {
+    const got = (ISO_ROWS as Record<string, { stand: number; walk: number }>)[face];
+    assert(got.stand === rows.stand && got.walk === rows.walk,
+      `MS_ROW.${face} should be stand ${rows.stand}/walk ${rows.walk}, got stand ${got.stand}/walk ${got.walk}`);
+  }
+  // Every referenced row must exist on the 8-row (512px) sheets, and stand
+  // rows must be even (col 0 = true stand frame, never a walk frame).
+  for (const face of Object.keys(expected)) {
+    const r = (ISO_ROWS as Record<string, { stand: number; walk: number }>)[face];
+    assert(r.stand >= 0 && r.stand < 8 && r.walk >= 0 && r.walk < 8, `MS_ROW.${face} rows out of range`);
+    assert(r.stand % 2 === 0 && r.walk === r.stand + 1, `MS_ROW.${face} must be an interleaved stand/walk pair`);
+  }
+}
+
 // ---- BUILD 317: monster sprite fallback hierarchy ----
 {
   clearMonsterSpriteCaches();
