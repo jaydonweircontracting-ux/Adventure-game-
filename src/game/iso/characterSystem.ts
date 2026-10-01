@@ -4,17 +4,18 @@
 // consumers (IsoFieldView, IsoInteriorView, IsoRoom) render characters
 // identically:
 //
-//   appearance   — curated NPC_LOOKS + deterministic per-NPC variants
+//   appearance   — the fixed PLAYER_LOOK + deterministic per-NPC variants
 //                  (same NPC id => same look, forever)
-//   state machine — idle + walk fully implemented; interact / attack /
-//                  hurt / dead prepared as idle-fallback clips so new states
-//                  slot in without touching the renderer
+//   state machine — idle, walk, attack (slash), and hurt have dedicated art;
+//                  interact / dead fall back to idle so new states slot in
+//                  without touching the renderer
 //   timing       — walk-cycle rate is driven by each character's measured
 //                  ground speed (fast attack / slow release, so the 120ms
 //                  NPC sim ticks don't make the animation stutter)
-//   assets       — sprite-sheet row/frame metadata + per-layer fallbacks:
-//                  requested sheet -> base character sheet -> vector
-//                  placeholder. Missing assets warn once, never per frame.
+//   assets       — chibi LPC paper-doll layers (body + legs + torso + hair
+//                  + hat) with per-layer fallbacks: requested sheet ->
+//                  player's sheet for that layer -> vector placeholder.
+//                  Missing assets warn once, never per frame.
 //   draw         — one canvas draw: shadow, feet-anchored paper-doll layers,
 //                  subtle idle breathing, vector fallback while loading.
 //
@@ -22,37 +23,35 @@
 // (pruned per frame) inside its render loop.
 
 import {
-  type Face4, type MsLook, type MsLayer, NPC_LOOKS,
-  MS_CELL, MS_WALK_FRAMES, MS_FEET_ROW, MS_ROW,
-  msLayerKeys, msReady, msSprite,
-  VARIANT_BODIES, VARIANT_OUTFITS, VARIANT_HAIRS, VARIANT_HATS,
+  type Face4, type LpcLook, type LpcLayer, type LpcAnim, PLAYER_LOOK,
+  LPC_CELL, LPC_FEET_ROW, LPC_FRAMES,
+  lpcLayerKeys, lpcClip, lpcReady, lpcSprite,
+  LPC_BODY_TONES, LPC_SHIRTS, LPC_PANTS, LPC_HAIR_POOL, LPC_HATS,
 } from './isoSprites';
 
 // ---------------------------------------------------------------------------
 // Animation state machine
 // ---------------------------------------------------------------------------
 
-/** Character animation states. Only idle/walk have dedicated art; the rest
- *  resolve to the idle clip (placeholder: true) until art exists. */
+/** Character animation states. Interact/dead have no dedicated art yet and
+ *  render the idle clip (placeholder: true) until art exists. */
 export type CharAnimState = 'idle' | 'walk' | 'interact' | 'attack' | 'hurt' | 'dead';
 
 export interface CharAnimClip {
-  /** Sprite-sheet row for (state, facing). */
-  row: (f: Face4) => number;
-  /** Frames in the cycle. */
-  frames: number;
+  /** Which per-animation sprite file the state plays. */
+  anim: LpcAnim;
   loop: boolean;
   /** True when the state has no dedicated art yet (falls back to idle). */
   placeholder?: boolean;
 }
 
 export const CHAR_CLIPS: Record<CharAnimState, CharAnimClip> = {
-  idle: { row: (f) => MS_ROW[f].stand, frames: 1, loop: true },
-  walk: { row: (f) => MS_ROW[f].walk, frames: MS_WALK_FRAMES, loop: true },
-  interact: { row: (f) => MS_ROW[f].stand, frames: 1, loop: true, placeholder: true },
-  attack: { row: (f) => MS_ROW[f].stand, frames: 1, loop: true, placeholder: true },
-  hurt: { row: (f) => MS_ROW[f].stand, frames: 1, loop: true, placeholder: true },
-  dead: { row: (f) => MS_ROW[f].stand, frames: 1, loop: true, placeholder: true },
+  idle: { anim: 'idle', loop: true },
+  walk: { anim: 'walk', loop: true },
+  interact: { anim: 'idle', loop: true, placeholder: true },
+  attack: { anim: 'slash', loop: true },
+  hurt: { anim: 'hurt', loop: true },
+  dead: { anim: 'idle', loop: true, placeholder: true },
 };
 
 export const CHAR_STATES = Object.keys(CHAR_CLIPS) as CharAnimState[];
@@ -72,11 +71,11 @@ export function walkFpsForSpeed(unitsPerSec: number): number {
 export function walkFrameAt(nowMs: number, unitsPerSec: number): number {
   const fps = walkFpsForSpeed(unitsPerSec);
   if (fps <= 0) return 0;
-  return Math.floor((nowMs / 1000) * fps) % MS_WALK_FRAMES;
+  return Math.floor((nowMs / 1000) * fps) % LPC_FRAMES.walk;
 }
 
 // ---------------------------------------------------------------------------
-// Appearance: curated looks + deterministic NPC variants
+// Appearance: the player look + deterministic NPC variants
 // ---------------------------------------------------------------------------
 
 /** FNV-1a 32-bit hash — deterministic across sessions (unlike Math.random). */
@@ -90,31 +89,32 @@ export function hashSeed(str: string): number {
 }
 
 /**
- * Deterministic NPC appearance: same seed string => same body/outfit/hair/hat
- * forever (chunk reloads, save/load, new sessions). Picks from the full
- * Mana Seed wardrobe; outfits exclude underwear; ~30% get a hat.
+ * Deterministic NPC appearance: same seed string => same body/legs/torso/
+ * hair/hat forever (chunk reloads, save/load, new sessions). Picks from the
+ * packed chibi LPC wardrobe; ~9% are bald; ~25% get a headband.
  */
-export function variantLook(seed: string): MsLook {
+export function variantLook(seed: string): LpcLook {
   const h = hashSeed(seed);
-  const body = VARIANT_BODIES[h % VARIANT_BODIES.length];
-  const outfit = VARIANT_OUTFITS[(h >>> 7) % VARIANT_OUTFITS.length];
-  const hair = VARIANT_HAIRS[(h >>> 13) % VARIANT_HAIRS.length];
-  const hat = h % 10 < 3 ? VARIANT_HATS[(h >>> 21) % VARIANT_HATS.length] : undefined;
-  return hat ? { body, outfit, hair, hat } : { body, outfit, hair };
+  const body = LPC_BODY_TONES[h % LPC_BODY_TONES.length];
+  const legs = LPC_PANTS[(h >>> 7) % LPC_PANTS.length];
+  const torso = LPC_SHIRTS[(h >>> 13) % LPC_SHIRTS.length];
+  const hair = LPC_HAIR_POOL[(h >>> 19) % LPC_HAIR_POOL.length];
+  const hat = h % 4 === 0 ? LPC_HATS[(h >>> 27) % LPC_HATS.length] : undefined;
+  return hat ? { body, legs, torso, hair, hat } : { body, legs, torso, hair };
 }
 
 /**
  * Anything that identifies a character's appearance:
- *  - number: legacy index into NPC_LOOKS (player = 0)
- *  - MsLook: explicit paper-doll layers
+ *  - number: 0 = the player look, other values => deterministic legacy variant
+ *  - LpcLook: explicit paper-doll layers
  *  - string: NPC id/seed => deterministic variant
  */
-export type LookRef = number | MsLook | string;
+export type LookRef = number | LpcLook | string;
 
-export function resolveLook(look: LookRef): MsLook {
+export function resolveLook(look: LookRef): LpcLook {
   if (typeof look === 'string') return variantLook(look);
   if (typeof look === 'number') {
-    return NPC_LOOKS[((look % NPC_LOOKS.length) + NPC_LOOKS.length) % NPC_LOOKS.length];
+    return look === 0 ? PLAYER_LOOK : variantLook(`legacy-look-${look}`);
   }
   return look;
 }
@@ -155,7 +155,7 @@ export class CharacterAnimator {
   private init = false;
 
   constructor(seedStr = '') {
-    this.phase = (hashSeed(seedStr) % MS_WALK_FRAMES);
+    this.phase = (hashSeed(seedStr) % LPC_FRAMES.walk);
   }
 
   /** Force an animation state (e.g. a future interact/attack). Placeholder
@@ -175,7 +175,7 @@ export class CharacterAnimator {
     this.facing = u.facing;
     if (u.moving) {
       this.state = 'walk';
-      this.phase = (this.phase + (dt / 1000) * walkFpsForSpeed(this.speed)) % MS_WALK_FRAMES;
+      this.phase = (this.phase + (dt / 1000) * walkFpsForSpeed(this.speed)) % LPC_FRAMES.walk;
     } else {
       this.state = 'idle';
     }
@@ -184,14 +184,9 @@ export class CharacterAnimator {
 
   /** Current sprite-sheet frame index for the active clip. */
   frameIndex(): number {
-    const clip = CHAR_CLIPS[this.state];
-    if (clip.frames <= 1) return 0;
-    return Math.floor(this.phase) % clip.frames;
-  }
-
-  /** Current sprite-sheet row for (state, facing). */
-  sourceRow(): number {
-    return CHAR_CLIPS[this.state].row(this.facing);
+    const frames = LPC_FRAMES[CHAR_CLIPS[this.state].anim];
+    if (frames <= 1) return 0;
+    return Math.floor(this.phase) % frames;
   }
 }
 
@@ -200,26 +195,29 @@ export class CharacterAnimator {
 // ---------------------------------------------------------------------------
 
 const missingWarned = new Set<string>();
-function warnMissingAsset(key: string): void {
-  if (missingWarned.has(key)) return;
-  missingWarned.add(key);
-  console.warn(`[characterSystem] sheet missing/unloaded, using fallback: ${key}`);
+function warnMissingAsset(file: string): void {
+  if (missingWarned.has(file)) return;
+  missingWarned.add(file);
+  console.warn(`[characterSystem] sheet missing/unloaded, using fallback: ${file}`);
 }
 
 /**
  * Resolve one paper-doll layer image. Fallback chain:
  *   1. the requested sheet
- *   2. the base character's sheet for the same layer (NPC_LOOKS[0])
+ *   2. the player look's sheet for the same layer + animation + facing
  *   3. undefined -> the caller draws the vector placeholder
  */
-function layerImage(key: string, layer: MsLayer): HTMLImageElement | undefined {
-  const direct = msSprite(key);
+function layerImage(file: string, layer: LpcLayer, look: LpcLook, anim: LpcAnim, face: Face4): HTMLImageElement | undefined {
+  const direct = lpcSprite(file);
   if (direct) return direct;
-  warnMissingAsset(key);
-  const baseKey = NPC_LOOKS[0][layer];
-  if (baseKey && baseKey !== key) {
-    const base = msSprite(baseKey);
-    if (base) return base;
+  warnMissingAsset(file);
+  const baseKey = lpcLayerKeys(PLAYER_LOOK).find((l) => l.layer === layer)?.key;
+  if (baseKey) {
+    const baseClip = lpcClip(layer, baseKey, anim, face);
+    if (baseClip.file !== file) {
+      const base = lpcSprite(baseClip.file);
+      if (base) return base;
+    }
   }
   return undefined;
 }
@@ -267,7 +265,7 @@ function drawVectorPlaceholder(
 }
 
 /**
- * Draw one character. Feet-anchored: MS_FEET_ROW of the sprite cell lands on
+ * Draw one character. Feet-anchored: LPC_FEET_ROW of the sprite cell lands on
  * (x, y); the root never moves between frames — only the body animates.
  * Walking adds a small step bob; idling adds a subtle ±1px breath.
  */
@@ -275,8 +273,9 @@ export function drawIsoCharacter(o: DrawCharacterOptions): void {
   const g = o.g;
   const size = o.size ?? 52;
   const L = resolveLook(o.look);
-  const layers = msLayerKeys(L);
+  const layers = lpcLayerKeys(L);
   const walking = o.animator.state === 'walk';
+  const anim = CHAR_CLIPS[o.animator.state].anim;
   const lift = walking ? Math.abs(Math.sin(o.nowMs / 130)) * 2 : 0;
   const breathe = walking ? 0 : Math.sin(o.nowMs / 1100); // ±1px idle breath
   if (o.shadow !== false) {
@@ -284,16 +283,16 @@ export function drawIsoCharacter(o: DrawCharacterOptions): void {
     g.beginPath(); g.ellipse(o.x, o.y + 3, 12, 5, 0, 0, 7); g.fill();
   }
   const frame = o.animator.frameIndex();
-  const row = o.animator.sourceRow();
-  const sx = frame * MS_CELL, sy = row * MS_CELL;
   const dx = o.x - size / 2;
-  const dy = o.y - (MS_FEET_ROW / MS_CELL) * size - lift + breathe;
+  const dy = o.y - (LPC_FEET_ROW / LPC_CELL) * size - lift + breathe;
   let drew = false;
-  if (msReady(layers.map((l) => l.key))) {
-    for (const { key, layer } of layers) {
-      const im = layerImage(key, layer);
+  const clips = layers.map(({ key, layer }) => ({ layer, clip: lpcClip(layer, key, anim, o.animator.facing) }));
+  if (lpcReady(clips.map((c) => c.clip.file))) {
+    for (const { layer, clip } of clips) {
+      const im = layerImage(clip.file, layer, L, anim, o.animator.facing);
       if (!im) continue;
-      g.drawImage(im, sx, sy, MS_CELL, MS_CELL, dx, dy, size, size);
+      const f = Math.min(frame, clip.frames - 1);
+      g.drawImage(im, f * LPC_CELL, clip.row * LPC_CELL, LPC_CELL, LPC_CELL, dx, dy, size, size);
       drew = true;
     }
   }

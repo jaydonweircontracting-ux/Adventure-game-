@@ -13,7 +13,7 @@ import {
   type TilePoint,
 } from './projection';
 import {
-  preloadMsSprites,
+  preloadLpcSprites,
   type Face4,
 } from './isoSprites';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
@@ -151,7 +151,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
   const heldDirRef = useRef(getHeldDir);
   heldDirRef.current = getHeldDir;
 
-  useEffect(() => { preloadMsSprites(); }, []);
+  useEffect(() => { preloadLpcSprites(); }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;

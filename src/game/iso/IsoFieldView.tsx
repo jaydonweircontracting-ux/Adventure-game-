@@ -13,7 +13,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import {
-  preloadMsSprites, type Face4,
+  preloadLpcSprites, type Face4,
 } from './isoSprites';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
 import {
@@ -110,7 +110,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
   zoomRef.current = zoom;
 
   useEffect(() => {
-    preloadMsSprites();
+    preloadLpcSprites();
     const canvas = canvasRef.current!;
     const wrap = wrapRef.current!;
     const g = canvas.getContext('2d')!;

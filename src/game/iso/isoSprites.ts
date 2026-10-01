@@ -1,151 +1,141 @@
 // Shared isometric character/food sprite loading for the 2.5D renderer.
 // Used by the iso demo (IsoRoom) and the live-game field view (IsoFieldView).
-// Mana Seed Character Base demo by Seliel the Shaper — paper-doll layers
-// (body + outfit + hair + hat), free for commercial/non-commercial use.
-// See the in-demo Info page for full credits.
+//
+// Character art: chibi paper-doll layers from the Universal LPC Spritesheet
+// Character Generator asset library (CC-BY-SA / GPL / OGA-BY — see the
+// in-demo Info page for full credits), packed offline by
+// work/build-lpc-pack.py into public/lpc/:
+//   body  — child base, 5 skin tones x 4 animations (idle/walk/slash/hurt)
+//   legs  — child pants, 9 colors (walk cycle only)
+//   torso — child shirt, 8 colors (walk cycle only)
+//   hair  — child messy/braid, 5 colors each (walk cycle only)
+//   hat   — child headbands, 2 styles (walk cycle only)
+// Layers that only drew a walk cycle hold walk frame 0 for other states.
 
 export type Face4 = 'up' | 'left' | 'down' | 'right';
 
-export interface MsLook {
+export interface LpcLook {
+  /** Skin tone key, e.g. 'ivory'. */
   body: string;
-  outfit: string;
+  /** Pants color key, e.g. 'darkblue'. */
+  legs: string;
+  /** Shirt color key, e.g. 'blue'. */
+  torso: string;
+  /** 'none' or 'style-color', e.g. 'messy-brown'. */
   hair: string;
+  /** Headband key, e.g. 'hairtie'. Optional. */
   hat?: string;
-  // Future armor layer: drawn over the outfit, under hair/hat. Armor sprites
-  // drop in here with no renderer changes.
-  armor?: string;
 }
 
-// Character looks built from Mana Seed paper-doll layers (pONE3 set — the
-// complete wardrobe: 11 skin tones, underwear/boxers, clothes, hair, hats).
-// Index 0 is the player. Base state is underwear/shorts; the outfit slot
-// takes clothes or armor later.
-// Body variants are skin tones: v00 light, v01/v02 fair, v03/v04 tan,
-// v05/v06 brown, v07/v08 deep, v09/v10 dark.
-export const NPC_LOOKS: MsLook[] = [
-  { body: 'char_a_pONE3_0bas_humn_v00', outfit: 'char_a_pONE3_1out_undi_v01', hair: 'char_a_pONE3_4har_bob1_v00' },
-  { body: 'char_a_pONE3_0bas_humn_v03', outfit: 'char_a_pONE3_1out_boxr_v01', hair: 'char_a_pONE3_4har_dap1_v03' },
-  { body: 'char_a_pONE3_0bas_humn_v06', outfit: 'char_a_pONE3_1out_fstr_v02', hair: 'char_a_pONE3_4har_bob1_v05' },
-  { body: 'char_a_pONE3_0bas_humn_v09', outfit: 'char_a_pONE3_1out_pfpn_v02', hair: 'char_a_pONE3_4har_dap1_v09', hat: 'char_a_pONE3_5hat_pfht_v02' },
-  { body: 'char_a_pONE3_0bas_humn_v01', outfit: 'char_a_pONE3_1out_undi_v01', hair: 'char_a_pONE3_4har_bob1_v08' },
-  { body: 'char_a_pONE3_0bas_humn_v07', outfit: 'char_a_pONE3_1out_fstr_v04', hair: 'char_a_pONE3_4har_dap1_v12', hat: 'char_a_pONE3_5hat_pnty_v03' },
-];
-
-/**
- * Mana Seed base sheet: 8x8 grid of 64x64 cells.
- * Mana Seed pONE3 layout (verified against the shipped sheets): each
- * direction interleaves its stand and walk rows —
- * row 0 = stand down, 1 = walk down, 2 = stand up, 3 = walk up,
- * row 4 = stand left, 5 = walk left, 6 = stand right, 7 = walk right.
- * (NOT the LPC layout of stands 0-3 then walks 4-7; that mis-mapping made
- * left/right face backwards and idles show mid-stride fist-out frames.)
- */
-export const MS_CELL = 64;
-export const MS_WALK_FRAMES = 6;
-// Measured foot baseline across all body variants: stand rows end at source
-// row 43, walk rows at 44 (64px cells). Anchor sprites here so feet land on
-// the tile point instead of floating above it.
-export const MS_FEET_ROW = 43.5;
-export const MS_ROW: Record<Face4, { stand: number; walk: number }> = {
-  down: { stand: 0, walk: 1 },
-  up: { stand: 2, walk: 3 },
-  left: { stand: 4, walk: 5 },
-  right: { stand: 6, walk: 7 },
+// The player character's fixed look.
+export const PLAYER_LOOK: LpcLook = {
+  body: 'ivory',
+  legs: 'darkblue',
+  torso: 'blue',
+  hair: 'messy-brown',
 };
 
-/** Paper-doll draw order: body -> outfit -> armor -> hair -> hat. */
-export type MsLayer = 'body' | 'outfit' | 'armor' | 'hair' | 'hat';
+/** Paper-doll layers, in draw order: body -> legs -> torso -> hair -> hat. */
+export type LpcLayer = 'body' | 'legs' | 'torso' | 'hair' | 'hat';
 
-export function msLookKeys(look: MsLook): string[] {
-  return msLayerKeys(look).map(l => l.key);
-}
+/** Per-animation sprite files. Only the body drew every animation; the
+ *  other layers only drew the walk cycle (verified against the packed PNGs:
+ *  child hair sheets are 768x1344 canvases with only rows 8-11 painted). */
+export type LpcAnim = 'idle' | 'walk' | 'slash' | 'hurt';
 
-/** Paper-doll layers with their slot names (used for per-layer fallbacks). */
-export function msLayerKeys(look: MsLook): { key: string; layer: MsLayer }[] {
-  const layers: { key: string; layer: MsLayer }[] = [
-    { key: look.body, layer: 'body' },
-    { key: look.outfit, layer: 'outfit' },
+export const LPC_CELL = 64;
+// Measured foot baseline on the chibi frames: the bottom-most opaque pixel
+// lands on source row 60-62 across every direction, frame, and animation.
+// Anchor sprites here so feet land on the tile point instead of floating.
+export const LPC_FEET_ROW = 62;
+// LPC direction row order inside per-animation sheets: up, left, down, right
+// (verified: the packed walk.png matches the reference sheet row-for-row).
+export const LPC_DIR_ROW: Record<Face4, number> = { up: 0, left: 1, down: 2, right: 3 };
+export const LPC_FRAMES: Record<LpcAnim, number> = { idle: 2, walk: 9, slash: 6, hurt: 6 };
+// Hair uses classic full-layout sheets: walk cycle lives on rows 8-11.
+export const LPC_CLASSIC_WALK_ROW = 8;
+
+// Deterministic NPC-variant pools.
+export const LPC_BODY_TONES = ['ivory', 'tan', 'tawny', 'bronze', 'brown'];
+export const LPC_SHIRTS = ['black', 'blue', 'brown', 'gray', 'green', 'lavender', 'lightblue', 'pink'];
+export const LPC_PANTS = ['black', 'blue', 'brown', 'darkblue', 'green', 'lightblue', 'maroon', 'red', 'white'];
+export const LPC_HAIR_STYLES = ['messy', 'braid'];
+export const LPC_HAIR_COLORS = ['black', 'brown', 'blonde', 'red', 'whiteblonde'];
+export const LPC_HATS = ['hairtie', 'thick'];
+
+/** Hair pool entries ('none' = bald, matching the bare reference sheet). */
+export const LPC_HAIR_POOL: string[] = [
+  'none',
+  ...LPC_HAIR_STYLES.flatMap((s) => LPC_HAIR_COLORS.map((c) => `${s}-${c}`)),
+];
+
+/** Paper-doll layers with their file keys (used for per-layer fallbacks). */
+export function lpcLayerKeys(look: LpcLook): { key: string; layer: LpcLayer }[] {
+  const layers: { key: string; layer: LpcLayer }[] = [
+    { key: `body-${look.body}`, layer: 'body' },
+    { key: `pants-${look.legs}`, layer: 'legs' },
+    { key: `shirt-${look.torso}`, layer: 'torso' },
   ];
-  if (look.armor) layers.push({ key: look.armor, layer: 'armor' });
-  layers.push({ key: look.hair, layer: 'hair' });
-  if (look.hat) layers.push({ key: look.hat, layer: 'hat' });
+  if (look.hair && look.hair !== 'none') layers.push({ key: `hair-${look.hair}`, layer: 'hair' });
+  if (look.hat) layers.push({ key: `hat-${look.hat}`, layer: 'hat' });
   return layers;
 }
 
-// Full Mana Seed pONE3 wardrobe (61 sheets, ~1.3MB total). Bodies are skin
-// tones v00 (light) -> v10 (dark); outfits: undi/boxr are underwear, fstr and
-// pfpn are full clothes; hairs bob1/dap1 x14 colors; hats pfht/pnty x5 colors.
-const MS_BODIES = [
-  'char_a_pONE3_0bas_humn_v00', 'char_a_pONE3_0bas_humn_v01',
-  'char_a_pONE3_0bas_humn_v02', 'char_a_pONE3_0bas_humn_v03',
-  'char_a_pONE3_0bas_humn_v04', 'char_a_pONE3_0bas_humn_v05',
-  'char_a_pONE3_0bas_humn_v06', 'char_a_pONE3_0bas_humn_v07',
-  'char_a_pONE3_0bas_humn_v08', 'char_a_pONE3_0bas_humn_v09',
-  'char_a_pONE3_0bas_humn_v10',
-];
-const MS_OUTFITS = [
-  'char_a_pONE3_1out_undi_v01', 'char_a_pONE3_1out_boxr_v01',
-  'char_a_pONE3_1out_fstr_v01', 'char_a_pONE3_1out_fstr_v02',
-  'char_a_pONE3_1out_fstr_v03', 'char_a_pONE3_1out_fstr_v04',
-  'char_a_pONE3_1out_fstr_v05', 'char_a_pONE3_1out_pfpn_v01',
-  'char_a_pONE3_1out_pfpn_v02', 'char_a_pONE3_1out_pfpn_v03',
-  'char_a_pONE3_1out_pfpn_v04', 'char_a_pONE3_1out_pfpn_v05',
-];
-const MS_HAIRS = [
-  'char_a_pONE3_4har_bob1_v00', 'char_a_pONE3_4har_bob1_v01',
-  'char_a_pONE3_4har_bob1_v02', 'char_a_pONE3_4har_bob1_v03',
-  'char_a_pONE3_4har_bob1_v04', 'char_a_pONE3_4har_bob1_v05',
-  'char_a_pONE3_4har_bob1_v06', 'char_a_pONE3_4har_bob1_v07',
-  'char_a_pONE3_4har_bob1_v08', 'char_a_pONE3_4har_bob1_v09',
-  'char_a_pONE3_4har_bob1_v10', 'char_a_pONE3_4har_bob1_v11',
-  'char_a_pONE3_4har_bob1_v12', 'char_a_pONE3_4har_bob1_v13',
-  'char_a_pONE3_4har_dap1_v00', 'char_a_pONE3_4har_dap1_v01',
-  'char_a_pONE3_4har_dap1_v02', 'char_a_pONE3_4har_dap1_v03',
-  'char_a_pONE3_4har_dap1_v04', 'char_a_pONE3_4har_dap1_v05',
-  'char_a_pONE3_4har_dap1_v06', 'char_a_pONE3_4har_dap1_v07',
-  'char_a_pONE3_4har_dap1_v08', 'char_a_pONE3_4har_dap1_v09',
-  'char_a_pONE3_4har_dap1_v10', 'char_a_pONE3_4har_dap1_v11',
-  'char_a_pONE3_4har_dap1_v12', 'char_a_pONE3_4har_dap1_v13',
-];
-const MS_HATS = [
-  'char_a_pONE3_5hat_pfht_v01', 'char_a_pONE3_5hat_pfht_v02',
-  'char_a_pONE3_5hat_pfht_v03', 'char_a_pONE3_5hat_pfht_v04',
-  'char_a_pONE3_5hat_pfht_v05', 'char_a_pONE3_5hat_pnty_v01',
-  'char_a_pONE3_5hat_pnty_v02', 'char_a_pONE3_5hat_pnty_v03',
-  'char_a_pONE3_5hat_pnty_v04', 'char_a_pONE3_5hat_pnty_v05',
+/** One drawable frame source: file id + row + usable frame count. */
+export interface LpcClip {
+  file: string;
+  row: number;
+  frames: number;
+}
+
+/**
+ * Resolve (layer, animation, facing) to a concrete sprite region.
+ * Clothes/hair/hat only drew walk cycles, so non-walk states reuse walk
+ * frame 0 for those layers (static while the body plays its real clip).
+ * The body hurt sheet is a single direction-agnostic row.
+ */
+export function lpcClip(layer: LpcLayer, key: string, anim: LpcAnim, face: Face4): LpcClip {
+  const d = LPC_DIR_ROW[face];
+  if (layer === 'body') {
+    return { file: `${key}-${anim}`, row: anim === 'hurt' ? 0 : d, frames: LPC_FRAMES[anim] };
+  }
+  if (layer === 'hair') {
+    return { file: key, row: LPC_CLASSIC_WALK_ROW + d, frames: anim === 'walk' ? 9 : 1 };
+  }
+  return { file: `${key}-walk`, row: d, frames: anim === 'walk' ? 9 : 1 };
+}
+
+// Every packed file, for the preload list.
+const LPC_FILES: string[] = [
+  ...LPC_BODY_TONES.flatMap((t) => (Object.keys(LPC_FRAMES) as LpcAnim[]).map((a) => `body-${t}-${a}`)),
+  ...LPC_SHIRTS.map((c) => `shirt-${c}-walk`),
+  ...LPC_PANTS.map((c) => `pants-${c}-walk`),
+  ...LPC_HAIR_STYLES.flatMap((s) => LPC_HAIR_COLORS.map((c) => `hair-${s}-${c}`)),
+  ...LPC_HATS.map((h) => `hat-${h}-walk`),
 ];
 
-const MS_FILES = [...MS_BODIES, ...MS_OUTFITS, ...MS_HAIRS, ...MS_HATS];
-
-// Deterministic NPC-variant pools. Outfits exclude underwear (undi/boxr) so
-// generated villagers wear clothes; hats are optional (see variantLook).
-export const VARIANT_BODIES = MS_BODIES;
-export const VARIANT_OUTFITS = MS_OUTFITS.filter(f => f.includes('_fstr_') || f.includes('_pfpn_'));
-export const VARIANT_HAIRS = MS_HAIRS;
-export const VARIANT_HATS = MS_HATS;
-
-// module-level Mana Seed sprite cache (read by canvas loops; filled once)
+// module-level LPC sprite cache (read by canvas loops; filled once)
 const sprCache: Record<string, HTMLImageElement> = {};
 let sprPreloaded = false;
-export function preloadMsSprites() {
+export function preloadLpcSprites() {
   if (sprPreloaded) return;
   sprPreloaded = true;
-  for (const f of MS_FILES) {
+  for (const f of LPC_FILES) {
     const img = new Image();
     // Warn once per sheet if it fails — the renderer falls back gracefully.
     img.onerror = () => console.warn(`[isoSprites] character sheet failed to load: ${f}`);
-    img.src = `${import.meta.env.BASE_URL}manaseed/${f}.png`;
+    img.src = `${import.meta.env.BASE_URL}lpc/${f}.png`;
     sprCache[f] = img;
   }
 }
-export function msReady(keys: string[]): boolean {
-  return keys.every(k => {
-    const im = sprCache[k];
+export function lpcReady(files: string[]): boolean {
+  return files.every((f) => {
+    const im = sprCache[f];
     return im !== undefined && im.complete && im.naturalWidth > 0;
   });
 }
-export function msSprite(key: string): HTMLImageElement | undefined {
-  const im = sprCache[key];
+export function lpcSprite(file: string): HTMLImageElement | undefined {
+  const im = sprCache[file];
   return im && im.complete && im.naturalWidth > 0 ? im : undefined;
 }
 
@@ -163,7 +153,7 @@ export function preloadFoodSprites() {
   }
 }
 export function foodReady(): boolean {
-  return FOOD_FILES.every(f => {
+  return FOOD_FILES.every((f) => {
     const im = foodCache[f];
     return im !== undefined && im.complete && im.naturalWidth > 0;
   });

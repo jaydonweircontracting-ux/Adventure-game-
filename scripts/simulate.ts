@@ -1276,57 +1276,75 @@ for (const kind of EXPECTED_KINDS) {
   assert(before === after, 'monster-sprites.gen.css was out of sync with JSON defs (regenerated — re-run sim)');
 }
 
-// ---- BUILD 373: iso paper-doll character sprites (Mana Seed) ----
+// ---- BUILD 380: iso paper-doll character sprites (chibi LPC pack) ----
+// The character art moved from Mana Seed to the chibi LPC paper-doll pack
+// (public/lpc/, built offline by work/build-lpc-pack.py): body (5 skin
+// tones x idle/walk/slash/hurt) + legs/torso/hat (walk only) + hair (walk
+// only, classic-layout sheets). Layers missing an animation hold walk
+// frame 0 for that state.
 {
-  const { NPC_LOOKS: ISO_LOOKS, msLookKeys: isoLookKeys, MS_FEET_ROW: ISO_FEET, MS_CELL: ISO_CELL } =
+  const { PLAYER_LOOK, lpcLayerKeys, lpcClip, LPC_FEET_ROW, LPC_CELL } =
     await import('../src/game/iso/isoSprites');
-  assert(ISO_LOOKS.length >= 5, `expected at least 5 iso looks, got ${ISO_LOOKS.length}`);
-  assert(ISO_FEET > 0 && ISO_FEET < ISO_CELL, `MS_FEET_ROW ${ISO_FEET} out of range`);
-  const seenBodies = new Set<string>();
-  for (let i = 0; i < ISO_LOOKS.length; i++) {
-    const look = ISO_LOOKS[i];
-    const keys = isoLookKeys(look);
-    assert(keys.length >= 3, `look ${i}: paper-doll needs body+outfit+hair`);
-    assert(keys[0] === look.body && keys[1] === look.outfit, `look ${i}: body/outfit must draw first`);
-    seenBodies.add(look.body);
-    for (const k of keys) {
-      const p = `public/manaseed/${k}.png`;
-      assert(existsSync(p), `look ${i}: missing paper-doll sheet ${p}`);
-      const png = readFileSyncSprites(p);
-      const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
-      assert(w === 512 && h === 512, `look ${i}: ${k} is ${w}x${h}, expected 512x512`);
-    }
+  assert(LPC_FEET_ROW > 0 && LPC_FEET_ROW < LPC_CELL, `LPC_FEET_ROW ${LPC_FEET_ROW} out of range`);
+  const layers = lpcLayerKeys(PLAYER_LOOK);
+  assert(layers.length === 4, `player look needs body+legs+torso+hair, got ${layers.length}`);
+  assert(layers[0].layer === 'body' && layers[1].layer === 'legs' && layers[2].layer === 'torso',
+    'paper-doll draw order must be body -> legs -> torso -> hair');
+  assert(layers[0].key === 'body-ivory' && layers[3].key === 'hair-messy-brown',
+    `unexpected player layer keys: ${layers.map((l) => l.key).join(',')}`);
+  // Every packed file must exist on disk with the expected dimensions.
+  const expectedDims: Record<string, [number, number]> = {
+    'body-ivory-walk': [576, 256], 'body-ivory-idle': [128, 256],
+    'body-ivory-slash': [384, 256], 'body-ivory-hurt': [384, 64],
+  };
+  for (const [file, [w, h]] of Object.entries(expectedDims)) {
+    const p = `public/lpc/${file}.png`;
+    assert(existsSync(p), `missing packed sheet ${p}`);
+    const png = readFileSyncSprites(p);
+    assert(png.readUInt32BE(16) === w && png.readUInt32BE(20) === h,
+      `${file} is ${png.readUInt32BE(16)}x${png.readUInt32BE(20)}, expected ${w}x${h}`);
   }
-  assert(seenBodies.size >= 4, `expected at least 4 distinct body variants, got ${seenBodies.size}`);
-  // Player (look 0) starts in underwear/shorts, not street clothes.
-  assert(/undi|boxr/.test(ISO_LOOKS[0].outfit), `player look should start in underwear/shorts, got ${ISO_LOOKS[0].outfit}`);
+  for (const f of ['shirt-blue-walk', 'pants-darkblue-walk', 'hat-hairtie-walk']) {
+    const p = `public/lpc/${f}.png`;
+    assert(existsSync(p), `missing packed sheet ${p}`);
+    const png = readFileSyncSprites(p);
+    assert(png.readUInt32BE(16) === 576 && png.readUInt32BE(20) === 256, `${f} must be 576x256`);
+  }
+  const hairPng = readFileSyncSprites('public/lpc/hair-messy-brown.png');
+  assert(hairPng.readUInt32BE(16) === 768 && hairPng.readUInt32BE(20) === 1344, 'hair sheets must be 768x1344');
+  // Player wears real clothes (shirt + pants), not a bare body.
+  assert(PLAYER_LOOK.torso === 'blue' && PLAYER_LOOK.legs === 'darkblue', 'player must wear clothes');
 }
 
-// ---- BUILD 378: Mana Seed row layout is interleaved per direction ----
-// The pONE3 sheets interleave stand/walk rows per facing
-// (down 0/1, up 2/3, left 4/5, right 6/7) — NOT the LPC layout of stands
-// 0-3 then walks 4-7. The LPC assumption made left/right face backwards
-// and idles show mid-stride fist-out frames. Lock the mapping here.
+// ---- BUILD 380: LPC direction row layout (up/left/down/right) ----
+// The packed per-animation sheets order directions up, left, down, right
+// (rows 0-3) — verified against the reference sprite sheet row-for-row.
+// The body hurt sheet is a single direction-agnostic row.
 {
-  const { MS_ROW: ISO_ROWS } = await import('../src/game/iso/isoSprites');
-  const expected: Record<string, { stand: number; walk: number }> = {
-    down: { stand: 0, walk: 1 },
-    up: { stand: 2, walk: 3 },
-    left: { stand: 4, walk: 5 },
-    right: { stand: 6, walk: 7 },
-  };
-  for (const [face, rows] of Object.entries(expected)) {
-    const got = (ISO_ROWS as Record<string, { stand: number; walk: number }>)[face];
-    assert(got.stand === rows.stand && got.walk === rows.walk,
-      `MS_ROW.${face} should be stand ${rows.stand}/walk ${rows.walk}, got stand ${got.stand}/walk ${got.walk}`);
+  const { LPC_DIR_ROW, lpcClip } = await import('../src/game/iso/isoSprites');
+  const expected: Record<string, number> = { up: 0, left: 1, down: 2, right: 3 };
+  for (const [face, row] of Object.entries(expected)) {
+    assert((LPC_DIR_ROW as Record<string, number>)[face] === row,
+      `LPC_DIR_ROW.${face} should be ${row}`);
   }
-  // Every referenced row must exist on the 8-row (512px) sheets, and stand
-  // rows must be even (col 0 = true stand frame, never a walk frame).
-  for (const face of Object.keys(expected)) {
-    const r = (ISO_ROWS as Record<string, { stand: number; walk: number }>)[face];
-    assert(r.stand >= 0 && r.stand < 8 && r.walk >= 0 && r.walk < 8, `MS_ROW.${face} rows out of range`);
-    assert(r.stand % 2 === 0 && r.walk === r.stand + 1, `MS_ROW.${face} must be an interleaved stand/walk pair`);
+  // lpcClip: body walk down => row 2 of body-<tone>-walk, 9 frames.
+  const walkDown = lpcClip('body', 'body-tan', 'walk', 'down');
+  assert(walkDown.file === 'body-tan-walk' && walkDown.row === 2 && walkDown.frames === 9,
+    `body walk down clip wrong: ${JSON.stringify(walkDown)}`);
+  // Body hurt is direction-agnostic (single row), 6 frames.
+  for (const f of ['up', 'left', 'down', 'right'] as const) {
+    const hurt = lpcClip('body', 'body-ivory', 'hurt', f);
+    assert(hurt.row === 0 && hurt.frames === 6, `body hurt must be row 0 / 6 frames for ${f}`);
   }
+  // Clothes/hair/hat only drew walk cycles: non-walk states hold frame 0.
+  const shirtIdle = lpcClip('torso', 'shirt-blue', 'idle', 'left');
+  assert(shirtIdle.file === 'shirt-blue-walk' && shirtIdle.row === 1 && shirtIdle.frames === 1,
+    `shirt idle clip wrong: ${JSON.stringify(shirtIdle)}`);
+  const hairWalk = lpcClip('hair', 'hair-messy-black', 'walk', 'left');
+  assert(hairWalk.file === 'hair-messy-black' && hairWalk.row === 9 && hairWalk.frames === 9,
+    `hair walk left must be classic row 9 / 9 frames: ${JSON.stringify(hairWalk)}`);
+  const hairIdle = lpcClip('hair', 'hair-messy-black', 'idle', 'up');
+  assert(hairIdle.frames === 1, 'hair idle must hold a single frame');
 }
 
 // ---- BUILD 317: monster sprite fallback hierarchy ----
@@ -2633,14 +2651,14 @@ console.log('Testing examine system...');
   assert(!isoViewportCovered(390, 844, 0.15, 0, N), 'single chunk cannot cover zoomed-out viewport');
 }
 
-// ---- BUILD 379: shared character animation + asset pipeline ----
+// ---- BUILD 380: shared character animation + asset pipeline (chibi LPC) ----
 // characterSystem.ts is the single owner of character visuals for the three
-// iso canvas consumers: appearance (curated + deterministic NPC variants),
-// the animation state machine, speed-tied walk timing, and asset fallbacks.
+// iso canvas consumers: appearance (player look + deterministic NPC
+// variants), the animation state machine, speed-tied walk timing, and asset
+// fallbacks. Art is the packed chibi LPC paper-doll set (public/lpc/).
 {
   const cs = await import('../src/game/iso/characterSystem');
   const iso = await import('../src/game/iso/isoSprites');
-  const faces = ['up', 'left', 'down', 'right'] as const;
 
   // hashSeed: deterministic, distributes.
   assert(cs.hashSeed('townsfolk-3') === cs.hashSeed('townsfolk-3'), 'hashSeed must be deterministic');
@@ -2650,39 +2668,43 @@ console.log('Testing examine system...');
   const v1 = cs.variantLook('townsfolk-3');
   const v2 = cs.variantLook('townsfolk-3');
   assert(JSON.stringify(v1) === JSON.stringify(v2), 'variantLook must be deterministic per seed');
-  assert(iso.VARIANT_BODIES.includes(v1.body), `variant body must come from the pool, got ${v1.body}`);
-  assert(iso.VARIANT_OUTFITS.includes(v1.outfit), `variant outfit must come from the pool, got ${v1.outfit}`);
-  assert(iso.VARIANT_HAIRS.includes(v1.hair), `variant hair must come from the pool, got ${v1.hair}`);
-  assert(!/undi|boxr/.test(v1.outfit), `variant NPCs must wear clothes, not underwear: ${v1.outfit}`);
-  if (v1.hat !== undefined) assert(iso.VARIANT_HATS.includes(v1.hat), `variant hat must come from the pool, got ${v1.hat}`);
+  assert(iso.LPC_BODY_TONES.includes(v1.body), `variant body must come from the pool, got ${v1.body}`);
+  assert(iso.LPC_PANTS.includes(v1.legs), `variant legs must come from the pool, got ${v1.legs}`);
+  assert(iso.LPC_SHIRTS.includes(v1.torso), `variant torso must come from the pool, got ${v1.torso}`);
+  assert(iso.LPC_HAIR_POOL.includes(v1.hair), `variant hair must come from the pool, got ${v1.hair}`);
+  if (v1.hat !== undefined) assert(iso.LPC_HATS.includes(v1.hat), `variant hat must come from the pool, got ${v1.hat}`);
   // Variety: 12 townsfolk should not all look alike.
   const seen = new Set(Array.from({ length: 12 }, (_, i) => JSON.stringify(cs.variantLook('townsfolk-' + i))));
   assert(seen.size >= 10, `expected >= 10 distinct looks for 12 NPCs, got ${seen.size}`);
-  // At least one of the 12 wears a hat (30% hat rate sanity check).
-  const hats = Array.from({ length: 12 }, (_, i) => cs.variantLook('townsfolk-' + i).hat).filter(Boolean);
-  assert(hats.length >= 1, 'expected at least one hatted NPC among 12 variants');
+  // At least one of 20 wears a headband (25% hat rate sanity check).
+  const hats = Array.from({ length: 20 }, (_, i) => cs.variantLook('townsfolk-' + i).hat).filter(Boolean);
+  assert(hats.length >= 1, 'expected at least one hatted NPC among 20 variants');
 
-  // resolveLook: legacy numbers wrap, strings seed variants, MsLook passes through.
-  assert(JSON.stringify(cs.resolveLook(0)) === JSON.stringify(iso.NPC_LOOKS[0]), 'resolveLook(0) must be the player look');
-  assert(JSON.stringify(cs.resolveLook(-1)) === JSON.stringify(iso.NPC_LOOKS[iso.NPC_LOOKS.length - 1]), 'resolveLook(-1) must wrap to the last look');
-  assert(JSON.stringify(cs.resolveLook(99)) === JSON.stringify(cs.resolveLook(99 % iso.NPC_LOOKS.length)), 'resolveLook must wrap large indices');
-  assert(JSON.stringify(cs.resolveLook('townsfolk-7')) === JSON.stringify(cs.variantLook('townsfolk-7')), 'resolveLook(string) must equal variantLook');
-  const explicit = { body: 'b', outfit: 'o', hair: 'h' };
-  assert(cs.resolveLook(explicit) === explicit, 'resolveLook(MsLook) must pass through untouched');
+  // resolveLook: 0 = player, numbers seed legacy variants, strings seed
+  // variants, explicit looks pass through.
+  assert(JSON.stringify(cs.resolveLook(0)) === JSON.stringify(iso.PLAYER_LOOK), 'resolveLook(0) must be the player look');
+  assert(JSON.stringify(cs.resolveLook(3)) === JSON.stringify(cs.variantLook('legacy-look-3')),
+    'resolveLook(n) must be a deterministic legacy variant');
+  assert(JSON.stringify(cs.resolveLook('townsfolk-7')) === JSON.stringify(cs.variantLook('townsfolk-7')),
+    'resolveLook(string) must equal variantLook');
+  const explicit = { body: 'tan', legs: 'red', torso: 'green', hair: 'none' };
+  assert(cs.resolveLook(explicit) === explicit, 'resolveLook(LpcLook) must pass through untouched');
 
-  // CHAR_CLIPS: idle/walk rows match the interleaved MS_ROW mapping for every
-  // facing; unimplemented states fall back to the idle (stand) rows.
-  for (const f of faces) {
-    assert(cs.CHAR_CLIPS.idle.row(f) === iso.MS_ROW[f].stand, `idle row for ${f} must be the stand row`);
-    assert(cs.CHAR_CLIPS.walk.row(f) === iso.MS_ROW[f].walk, `walk row for ${f} must be the walk row`);
-    for (const s of ['interact', 'attack', 'hurt', 'dead'] as const) {
-      assert(cs.CHAR_CLIPS[s].placeholder === true, `${s} must be marked placeholder`);
-      assert(cs.CHAR_CLIPS[s].row(f) === iso.MS_ROW[f].stand, `${s} row for ${f} must fall back to the stand row`);
-    }
+  // CHAR_CLIPS: state -> animation file. Attack/hurt have dedicated art
+  // now (slash/hurt); interact/dead fall back to idle (placeholder).
+  assert(cs.CHAR_CLIPS.idle.anim === 'idle', 'idle must play the idle file');
+  assert(cs.CHAR_CLIPS.walk.anim === 'walk', 'walk must play the walk file');
+  assert(cs.CHAR_CLIPS.attack.anim === 'slash' && !cs.CHAR_CLIPS.attack.placeholder,
+    'attack must play the real slash clip');
+  assert(cs.CHAR_CLIPS.hurt.anim === 'hurt' && !cs.CHAR_CLIPS.hurt.placeholder,
+    'hurt must play the real hurt clip');
+  for (const s of ['interact', 'dead'] as const) {
+    assert(cs.CHAR_CLIPS[s].placeholder === true, `${s} must be marked placeholder`);
+    assert(cs.CHAR_CLIPS[s].anim === 'idle', `${s} must fall back to the idle file`);
   }
-  assert(cs.CHAR_CLIPS.walk.frames === iso.MS_WALK_FRAMES, 'walk clip must have 6 frames');
-  assert(cs.CHAR_CLIPS.idle.frames === 1, 'idle clip must be a single frame');
   assert(cs.CHAR_STATES.length === 6, 'state machine must expose all 6 states');
+  assert(iso.LPC_FRAMES.walk === 9 && iso.LPC_FRAMES.idle === 2 &&
+    iso.LPC_FRAMES.slash === 6 && iso.LPC_FRAMES.hurt === 6, 'LPC frame counts must be 9/2/6/6');
 
   // walkFpsForSpeed: 0 => 0 (no cycling when stopped), monotonic, clamped.
   assert(cs.walkFpsForSpeed(0) === 0, 'stopped speed must give 0 fps');
@@ -2697,41 +2719,40 @@ console.log('Testing examine system...');
   // walkFrameAt: in-range, 0 when stopped, advances with time.
   assert(cs.walkFrameAt(1000, 0) === 0, 'walkFrameAt must be 0 when stopped');
   const fr1 = cs.walkFrameAt(0, 11.5), fr2 = cs.walkFrameAt(500, 11.5);
-  assert(fr1 >= 0 && fr1 < 6 && fr2 >= 0 && fr2 < 6, 'walkFrameAt must stay in [0,6)');
+  assert(fr1 >= 0 && fr1 < 9 && fr2 >= 0 && fr2 < 9, 'walkFrameAt must stay in [0,9)');
   assert(fr2 !== fr1, 'walkFrameAt must advance over 500ms at walk speed');
 
   // CharacterAnimator: sim stays authoritative for moving/facing.
   const anim = new cs.CharacterAnimator('townsfolk-3');
   assert(anim.state === 'idle' && anim.facing === 'down', 'animator must start idle facing down');
-  assert(anim.phase >= 0 && anim.phase < 6, 'animator phase seed must be in [0,6)');
+  assert(anim.phase >= 0 && anim.phase < 9, 'animator phase seed must be in [0,9)');
   anim.update({ x: 10, y: 20, moving: true, facing: 'right', nowMs: 1000 });
   anim.update({ x: 10.5, y: 20, moving: true, facing: 'right', nowMs: 1016 });
   assert(anim.state === 'walk', 'animator must be walking while the sim reports moving');
   assert(anim.facing === 'right', 'animator facing must follow the sim');
   assert(anim.speed > 0, 'animator must measure a positive ground speed');
-  assert(anim.sourceRow() === iso.MS_ROW.right.walk, 'walk+right must use the right walk row');
   const fi = anim.frameIndex();
-  assert(fi >= 0 && fi < 6, `walk frame must be in [0,6), got ${fi}`);
-  // Stopping keeps the last facing and returns to the idle row.
+  assert(fi >= 0 && fi < 9, `walk frame must be in [0,9), got ${fi}`);
+  // Stopping keeps the last facing and idles.
   anim.update({ x: 10.5, y: 20, moving: false, facing: 'right', nowMs: 2000 });
   assert(anim.state === 'idle', 'animator must idle when the sim reports stopped');
   assert(anim.facing === 'right', 'stopping must keep the last facing direction');
   assert(anim.frameIndex() === 0, 'idle must show frame 0');
-  assert(anim.sourceRow() === iso.MS_ROW.right.stand, 'idle+right must use the right stand row');
   // Faster ground speed => faster phase advance (animation tied to movement).
   const slow = new cs.CharacterAnimator('slow'), fast = new cs.CharacterAnimator('fast');
   for (let i = 0; i < 10; i++) {
     slow.update({ x: i * 0.02, y: 0, moving: true, facing: 'down', nowMs: 1000 + i * 16 });
     fast.update({ x: i * 0.2, y: 0, moving: true, facing: 'down', nowMs: 1000 + i * 16 });
   }
-  assert(fast.phase % 6 !== slow.phase % 6 || fast.speed > slow.speed,
+  assert(fast.phase % 9 !== slow.phase % 9 || fast.speed > slow.speed,
     'faster movement must advance the walk phase more than slower movement');
   assert(fast.speed > slow.speed, `measured speed must reflect distance: fast=${fast.speed} slow=${slow.speed}`);
-  // Future states are settable and render their idle fallback (no crash).
+  // Attack/hurt states are settable and render their real clips (no crash).
   anim.setState('attack');
   assert(anim.state === 'attack', 'setState must switch the animation state');
-  assert(anim.sourceRow() === iso.MS_ROW.right.stand, 'attack (placeholder) must fall back to the stand row');
-  assert(anim.frameIndex() === 0, 'attack (placeholder) must show frame 0');
+  assert(anim.frameIndex() >= 0 && anim.frameIndex() < 6, 'attack must show a slash frame');
+  anim.setState('hurt');
+  assert(anim.frameIndex() >= 0 && anim.frameIndex() < 6, 'hurt must show a hurt frame');
 }
 
 // ---- Results ----
