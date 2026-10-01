@@ -132,7 +132,7 @@ function formatWorldClock(clock: WorldClockState) {
   return formatClockDisplay(clock);
 }
 
-const WALK_SPEED = 40; // Deliberately slower exploration pace
+const WALK_SPEED = 16; // Deliberately slow exploration pace (BUILD 377: user asked for a lot slower)
 const HORSE_SPEED = 180;
 const HORSE_MOUNT_DISTANCE = 4.5;
 const initialHorseState: HorseState = { chunk: { x: 4, y: 7 }, position: { x: 58, y: 52 } };
