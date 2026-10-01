@@ -390,6 +390,7 @@
       "bare_right_walk_1.png": "right"
     },
     "down": "BUILD 394: bare down idle re-cut from the user-supplied front-facing sheet. BUILD 395: bare down walk replaced per user direction with the two user-supplied 3/4-view walk/run frames. BUILD 396: bare down idle replaced per user direction ('this is down idle') with the user-supplied 3/4-view standing frame, matching the walk set style. Side frames unchanged.",
-    "right": "BUILD 398: the bare variant has dedicated right-facing idle/walk art (3/4 view, user-supplied). The renderer uses the 'right' frame set when facing=right and falls back per-anim to the shared side set (attacks still use side art). Left movement keeps the side set mirrored, which reproduces the user's original left-facing sheet."
+    "right": "BUILD 398: the bare variant has dedicated right-facing idle/walk art (3/4 view, user-supplied). The renderer uses the 'right' frame set when facing=right and falls back per-anim to the shared side set (attacks still use side art). Left movement keeps the side set mirrored, which reproduces the user's original left-facing sheet.",
+    "up": "BUILD 399: bare up idle/walk replaced per user direction with the user-supplied back-view art (standing idle + two opposite-stride run frames). No code changes needed \u2014 the up view is a single set."
   }
 }
