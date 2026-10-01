@@ -18,6 +18,11 @@ import {
   type Face4,
 } from './isoSprites';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
+import {
+  preloadDungeonKit, dungeonKitReady,
+  drawWallPanel, drawKitBillboard, drawKitFloor,
+  wallPanelFor, floorPanelFor, torchPanelFor, pillarPanelFor, chestPanelFor,
+} from './dungeonKit';
 
 export type IsoRoomType = 'guild' | 'inn' | 'chapel' | 'building' | 'tavern' | 'cellar' | 'prison';
 
@@ -153,7 +158,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
   const heldDirRef = useRef(getHeldDir);
   heldDirRef.current = getHeldDir;
 
-  useEffect(() => { preloadLpcSprites(); }, []);
+  useEffect(() => { preloadLpcSprites(); preloadDungeonKit(); }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -163,6 +168,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     if (!ctx) return;
 
     const furn = furnitureFor(roomType);
+    // BUILD 388: cellar/prison render the dungeon sprite kit (brick walls,
+    // torches, chests, pillars). Collision and furniture data are untouched.
+    const isDungeon = roomType === 'cellar' || roomType === 'prison';
     const solidAt = (tx: number, ty: number): boolean => {
       if (tx < 0 || ty < 0 || tx >= ROOM_W || ty >= ROOM_H) return true;
       return furn.some((f) => f.solid && tx >= f.tx && tx < f.tx + f.w && ty >= f.ty && ty < f.ty + f.h);
@@ -238,7 +246,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     let last = performance.now();
     const STEP_MS = 280;
 
-    const drawFurniture = (g: CanvasRenderingContext2D, f: Furniture, nowMs: number) => {
+    const drawFurniture = (g: CanvasRenderingContext2D, f: Furniture, nowMs: number, kit: boolean) => {
       const c = toScreen(f.tx + f.w / 2, f.ty + f.h / 2);
       const z = state.zoom;
       const tw = TILE_W * z, th = TILE_H * z;
@@ -362,13 +370,23 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
           g.beginPath(); g.ellipse(c.x, yB - bh, tw * 0.32, th * 0.32, 0, 0, 7); g.fill();
           break;
         }
-        case 'crate':
+        case 'crate': {
+          if (kit) {
+            // BUILD 388: dungeon chest (base + lid), same footprint/solidity.
+            const cp = chestPanelFor(f.tx, f.ty);
+            const cw = 46 * z;
+            const baseH = (84 / 116) * cw;
+            drawKitBillboard(g, 'chestBase', cp, c.x, yB, cw);
+            drawKitBillboard(g, 'chestTop', cp, c.x, yB - baseH + 4 * z, cw);
+            break;
+          }
           box(c.x, yB, tw * 0.8, 26 * z, '#a87f4e', '#7a5a36', '#93703f');
           g.strokeStyle = 'rgba(60,40,20,0.6)'; g.lineWidth = 2 * z;
           g.beginPath();
           g.moveTo(c.x - tw * 0.4, yB - 26 * z); g.lineTo(c.x, yB - 26 * z + th * 0.4);
           g.lineTo(c.x + tw * 0.4, yB - 26 * z); g.stroke();
           break;
+        }
         case 'sacks': {
           g.fillStyle = '#c9b184';
           g.beginPath(); g.ellipse(c.x - 8 * z, yB - 8 * z, 12 * z, 10 * z, 0, 0, 7); g.fill();
@@ -435,6 +453,21 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
           break;
         }
         case 'lamp': {
+          if (kit) {
+            // BUILD 388: dungeon torch on a stand, same footprint/solidity.
+            const lp = torchPanelFor(f.tx + f.ty * 2);
+            const lw = 30 * z;
+            const flick = 0.7 + 0.3 * Math.sin(nowMs / 200 + f.tx * 1.7 + f.ty);
+            const gr = g.createRadialGradient(c.x, yB - 44 * z, 2, c.x, yB - 44 * z, 52 * z);
+            gr.addColorStop(0, `rgba(255,170,60,${0.3 * flick})`);
+            gr.addColorStop(1, 'rgba(255,170,60,0)');
+            g.fillStyle = gr;
+            g.fillRect(c.x - 56 * z, yB - 100 * z, 112 * z, 112 * z);
+            g.fillStyle = '#3a3f4a';
+            g.fillRect(c.x - 2 * z, yB - 36 * z, 4 * z, 36 * z);
+            drawKitBillboard(g, 'torch', lp, c.x, yB - 32 * z, lw);
+            break;
+          }
           g.fillStyle = '#4a3220';
           g.fillRect(c.x - 2 * z, yB - 30 * z, 4 * z, 30 * z);
           const flick = 0.75 + 0.25 * Math.sin(nowMs / 220 + f.ty);
@@ -456,6 +489,25 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
           break;
         }
         case 'strawbed': {
+          if (kit) {
+            // BUILD 388: straw pile on the west tile, chest on the east tile —
+            // same 2x1 solid footprint.
+            const wc = toScreen(f.tx + 0.5, f.ty + 0.5);
+            const ec = toScreen(f.tx + 1.5, f.ty + 0.5);
+            g.fillStyle = '#c9a86b';
+            g.beginPath(); g.ellipse(wc.x, wc.y - 8 * z, tw * 0.45, th * 0.4, 0, 0, 7); g.fill();
+            g.fillStyle = '#a8895a';
+            for (let i = 0; i < 8; i++) {
+              const sx = wc.x - tw * 0.35 + (i * tw * 0.7) / 8;
+              g.fillRect(sx, wc.y - 14 * z, 2 * z, 10 * z);
+            }
+            const cp = chestPanelFor(f.tx + 1, f.ty);
+            const cw = 46 * z;
+            const baseH = (84 / 116) * cw;
+            drawKitBillboard(g, 'chestBase', cp, ec.x, ec.y, cw);
+            drawKitBillboard(g, 'chestTop', cp, ec.x, ec.y - baseH + 4 * z, cw);
+            break;
+          }
           g.fillStyle = '#c9a86b';
           g.beginPath(); g.ellipse(c.x, yB - 8 * z, wpx * 0.45, th * 0.4, 0, 0, 7); g.fill();
           g.fillStyle = '#a8895a';
@@ -486,6 +538,8 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     const frame = (nowMs: number) => {
       const dt = Math.min(50, nowMs - last);
       last = nowMs;
+      // Dungeon kit once its images have pixels; otherwise procedural.
+      const kit = isDungeon && dungeonKitReady();
       // D-pad / keyboard held input: step tile-by-tile; manual input cancels
       // an in-flight tap-to-move path.
       const hd = heldDirRef.current ? heldDirRef.current() : { x: 0, y: 0 };
@@ -539,21 +593,29 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         for (let tx = 0; tx < ROOM_W; tx++) {
           const p = toScreen(tx, ty);
           const hw = (TILE_W * state.zoom) / 2, hh = (TILE_H * state.zoom) / 2;
-          g.beginPath();
-          g.moveTo(p.x, p.y - hh); g.lineTo(p.x + hw, p.y);
-          g.lineTo(p.x, p.y + hh); g.lineTo(p.x - hw, p.y);
-          g.closePath();
-          g.fillStyle = (tx + ty) % 2 === 0 ? f1 : f2;
-          g.fill();
-          if (!wood && tx % 3 === 0) {
-            // plank seams
-            g.strokeStyle = 'rgba(60,40,20,0.25)';
-            g.lineWidth = 1;
-            g.beginPath(); g.moveTo(p.x - hw, p.y); g.lineTo(p.x + hw, p.y); g.stroke();
+          if (kit) {
+            // BUILD 388: dungeon stone tiles; the open south edge keeps its skirt.
+            drawKitFloor(g, floorPanelFor(tx, ty), p.x, p.y, TILE_W * state.zoom, ty === ROOM_H - 1);
+          } else {
+            g.beginPath();
+            g.moveTo(p.x, p.y - hh); g.lineTo(p.x + hw, p.y);
+            g.lineTo(p.x, p.y + hh); g.lineTo(p.x - hw, p.y);
+            g.closePath();
+            g.fillStyle = (tx + ty) % 2 === 0 ? f1 : f2;
+            g.fill();
+            if (!wood && tx % 3 === 0) {
+              // plank seams
+              g.strokeStyle = 'rgba(60,40,20,0.25)';
+              g.lineWidth = 1;
+              g.beginPath(); g.moveTo(p.x - hw, p.y); g.lineTo(p.x + hw, p.y); g.stroke();
+            }
           }
           if (tx === doorTile.tx && ty === doorTile.ty) {
             g.fillStyle = 'rgba(255,210,90,0.35)';
-            g.fill();
+            g.beginPath();
+            g.moveTo(p.x, p.y - hh); g.lineTo(p.x + hw, p.y);
+            g.lineTo(p.x, p.y + hh); g.lineTo(p.x - hw, p.y);
+            g.closePath(); g.fill();
           }
         }
       }
@@ -564,10 +626,27 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       // back walls (north ty=0, west tx=0) with windows
       const wallCol = wood ? '#6e6f7a' : '#b08d5a';
       const wallDark = wood ? '#54555e' : '#8a6c42';
+      const wh = WALL_H * state.zoom;
+      if (kit) {
+        // BUILD 388: brick wall panels, one per 2 tiles (panel aspect fits
+        // 2 tile-edges at WALL_H height). Dark panels run down-right (north).
+        for (let i = 0; i < ROOM_W / 2; i++) {
+          const tx = i * 2;
+          const p0 = toScreen(tx, 0);
+          const p2 = toScreen(tx + 2, 0);
+          const hw2 = (TILE_W * state.zoom) / 2;
+          const ax = p0.x - hw2, ay = p0.y;      // W(tx): upper-left end
+          const bx = p2.x - hw2, by = p2.y;      // W(tx+2): lower-right end
+          const panel = wallPanelFor('north', i);
+          drawables.push({
+            depth: depthKey(tx, -1),
+            draw: (g2) => { drawWallPanel(g2, ax, ay, bx, by, wh, panel); },
+          });
+        }
+      } else
       for (let tx = 0; tx < ROOM_W; tx++) {
         const p = toScreen(tx, 0);
         const hw = (TILE_W * state.zoom) / 2;
-        const wh = WALL_H * state.zoom;
         drawables.push({
           depth: depthKey(tx, -1),
           draw: (g2) => {
@@ -587,10 +666,26 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
           },
         });
       }
+      if (kit) {
+        // BUILD 388: light brick panels run up-right (west wall). a = the
+        // lower-left end, b = the upper-right end, matching the art.
+        for (let i = 0; i < ROOM_H / 2; i++) {
+          const ty = i * 2;
+          const pLo = toScreen(0, ty + 2);
+          const pHi = toScreen(0, ty);
+          const hw2 = (TILE_W * state.zoom) / 2;
+          const ax = pLo.x + hw2, ay = pLo.y;   // E(ty+2): lower-left end
+          const bx = pHi.x + hw2, by = pHi.y;   // E(ty): upper-right end
+          const panel = wallPanelFor('west', i);
+          drawables.push({
+            depth: depthKey(-1, ty),
+            draw: (g2) => { drawWallPanel(g2, ax, ay, bx, by, wh, panel); },
+          });
+        }
+      } else
       for (let ty = 0; ty < ROOM_H; ty++) {
         const p = toScreen(0, ty);
         const hw = (TILE_W * state.zoom) / 2;
-        const wh = WALL_H * state.zoom;
         drawables.push({
           depth: depthKey(-1, ty),
           draw: (g2) => {
@@ -604,11 +699,63 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         });
       }
 
+      if (kit) {
+        // BUILD 388: wall torches + engaged pillars on the brick walls.
+        const z = state.zoom;
+        const hwT = (TILE_W * z) / 2, hhT = (TILE_H * z) / 2;
+        let ti = 0;
+        const torchGlow = (g2: CanvasRenderingContext2D, x: number, y: number, tx: number) => {
+          const flick = 0.7 + 0.3 * Math.sin(nowMs / 200 + tx * 1.7);
+          const gr = g2.createRadialGradient(x, y - 14 * z, 2, x, y - 14 * z, 44 * z);
+          gr.addColorStop(0, `rgba(255,170,60,${0.28 * flick})`);
+          gr.addColorStop(1, 'rgba(255,170,60,0)');
+          g2.fillStyle = gr;
+          g2.fillRect(x - 48 * z, y - 62 * z, 96 * z, 96 * z);
+        };
+        for (let tx = 2; tx < ROOM_W - 1; tx += 3) {
+          const p = toScreen(tx, 0);
+          const mx = p.x - hwT / 2, my = p.y + hhT / 2; // north wall face midpoint
+          const bx2 = mx, by2 = my - wh * 0.52;
+          const panel = torchPanelFor(ti++);
+          const d = depthKey(tx, -1) + 1;
+          drawables.push({
+            depth: d,
+            draw: (g2) => {
+              torchGlow(g2, bx2, by2, tx);
+              drawKitBillboard(g2, 'torch', panel, bx2, by2, 30 * z);
+            },
+          });
+        }
+        for (let ty = 2; ty < ROOM_H - 1; ty += 3) {
+          const p = toScreen(0, ty);
+          const mx = p.x + hwT / 2, my = p.y + hhT / 2; // west wall face midpoint
+          const bx2 = mx, by2 = my - wh * 0.52;
+          const panel = torchPanelFor(ti++);
+          const d = depthKey(-1, ty) + 1;
+          drawables.push({
+            depth: d,
+            draw: (g2) => {
+              torchGlow(g2, bx2, by2, ty * 2);
+              drawKitBillboard(g2, 'torch', panel, bx2, by2, 30 * z);
+            },
+          });
+        }
+        // Engaged pillars capping the north wall ends.
+        [[0, 0], [ROOM_W - 1, 0]].forEach(([px, py], i) => {
+          const p = toScreen(px, py);
+          const d = depthKey(px, -1) + 2;
+          drawables.push({
+            depth: d,
+            draw: (g2) => { drawKitBillboard(g2, 'pillar', pillarPanelFor(i), p.x, p.y + hhT * 0.5, 34 * z); },
+          });
+        });
+      }
+
       // furniture
       for (const f of furn) {
         drawables.push({
           depth: depthKey(f.tx + f.w - 1, f.ty + f.h - 1) + 0.1,
-          draw: (g2) => drawFurniture(g2, f, nowMs),
+          draw: (g2) => drawFurniture(g2, f, nowMs, kit),
         });
       }
 

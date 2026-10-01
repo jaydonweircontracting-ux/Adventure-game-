@@ -1375,6 +1375,38 @@ for (const kind of EXPECTED_KINDS) {
   assert(tileFaceForDelta(-2, -2) === 'up', 'north-west diagonal ties break to up');
 }
 
+// ---- BUILD 388: dungeon kit panel selectors for cellar/prison interiors ----
+// The kit is purely visual (collision/furniture untouched), so the sim pins
+// the panel metadata: 4 in-bounds panels per strip, correct wall orientation
+// mapping (dark 1,3 north / light 0,2 west), and selectors in range.
+{
+  const {
+    KIT_PANELS, KIT_DIMS,
+    wallPanelFor, floorPanelFor, torchPanelFor, pillarPanelFor, chestPanelFor,
+  } = await import('../src/game/iso/dungeonKit');
+  for (const key of Object.keys(KIT_PANELS) as (keyof typeof KIT_PANELS)[]) {
+    const panels = KIT_PANELS[key];
+    const dims = KIT_DIMS[key];
+    assert(panels.length === 4, key + ' must have exactly 4 panels');
+    for (const r of panels) {
+      assert(r.w > 0 && r.h > 0, key + ' panel must have positive size');
+      assert(r.x >= 0 && r.y >= 0 && r.x + r.w <= dims.w && r.y + r.h <= dims.h,
+        key + ' panel must lie inside the strip');
+    }
+  }
+  assert(wallPanelFor('north', 0) === 1 && wallPanelFor('north', 1) === 3, 'north wall must alternate dark panels 1,3');
+  assert(wallPanelFor('north', 2) === 1, 'north wall panel pattern must repeat');
+  assert(wallPanelFor('west', 0) === 0 && wallPanelFor('west', 1) === 2, 'west wall must alternate light panels 0,2');
+  assert(wallPanelFor('west', 2) === 0, 'west wall panel pattern must repeat');
+  for (let i = -8; i < 24; i++) {
+    for (const v of [floorPanelFor(i, i * 2), torchPanelFor(i), pillarPanelFor(i), chestPanelFor(i, -i)]) {
+      assert(v >= 0 && v < 4, 'kit panel selector must stay in [0,3], got ' + v);
+    }
+  }
+  assert(floorPanelFor(3, 5) === floorPanelFor(3, 5), 'floor panel must be deterministic');
+  assert(chestPanelFor(8, 6) === chestPanelFor(8, 6), 'chest panel must be deterministic');
+}
+
 // ---- BUILD 317: monster sprite fallback hierarchy ----
 {
   clearMonsterSpriteCaches();
