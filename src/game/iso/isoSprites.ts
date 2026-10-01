@@ -111,6 +111,23 @@ export function isoPlayerFaceForDeltaSticky(dx: number, dy: number, current: Fac
     case 'right': return dx > 0 && ax >= ay ? next : current;
   }
 }
+
+/**
+ * BUILD 406: uniform on-screen speed for the 2:1 dimetric projection. The
+ * game loop drives movement with a tile-space unit vector, but the iso
+ * projection stretches directions unevenly on screen: screen-left/right
+ * (tile diagonals (1,-1)/(-1,1)) cover ~2x the pixels of screen-up/down
+ * (tile diagonals (1,1)/(-1,-1)) per tile step, so left/right felt twice as
+ * fast as up/down. Given a tile-space unit direction (ux, uy), this returns
+ * the speed multiplier that makes on-screen speed uniform, anchored so
+ * screen-up/down keeps its current speed (scale 1 there, 0.5 for
+ * screen-left/right).
+ */
+export function isoScreenSpeedScale(ux: number, uy: number): number {
+  const projected = Math.hypot(ux - uy, (ux + uy) / 2); // 2:1 dimetric
+  if (projected < 1e-9) return 1;
+  return Math.SQRT1_2 / projected; // SQRT1_2 = projected length of up/down
+}
 export const LPC_FRAMES: Record<LpcAnim, number> = { idle: 2, walk: 9, slash: 6, hurt: 6 };
 
 // ---------------------------------------------------------------------------

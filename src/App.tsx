@@ -2,6 +2,7 @@ import IsoRoomDemo from './game/iso/IsoRoom';
 import IsoFieldView from './game/iso/IsoFieldView';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
 import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
+import { isoScreenSpeedScale } from './game/iso/isoSprites';
 import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality } from './game/villageLife';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -3733,6 +3734,10 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
     setIsoFieldBeta(next);
     try { localStorage.setItem('ag-iso-field-beta', next ? '1' : '0'); } catch { /* ignore */ }
   };
+  // BUILD 406: ref mirror of the iso-field flag for the frame loop — its
+  // useEffect deps don't include isoFieldBeta, so the loop reads the ref.
+  const isoFieldBetaRef = useRef(isoFieldBeta);
+  useEffect(() => { isoFieldBetaRef.current = isoFieldBeta; }, [isoFieldBeta]);
   // BUILD 372: the main black zoom buttons drive the iso camera when the 2.5D
   // field beta is on (previously they only scaled the hidden 2D player).
   const [isoZoom, setIsoZoom] = useState(1);
@@ -5270,7 +5275,15 @@ if (active) {
         const direction = effInput.x > 0 ? 'right' : effInput.x < 0 ? 'left' : effInput.y < 0 ? 'up' : 'down';
         facingRef.current = direction;
         setFacing(direction);
-        const speed = mountedRef.current ? HORSE_SPEED : WALK_SPEED;
+        let speed = mountedRef.current ? HORSE_SPEED : WALK_SPEED;
+        // BUILD 406: uniform on-screen speed in the 2.5D iso view. The 2:1
+        // dimetric projection stretches tile-diagonal moves unevenly, so
+        // screen-left/right covered ~2x the pixels of screen-up/down per
+        // step and felt twice as fast. Scale by the inverse projected
+        // screen length (anchored: up/down unchanged). 2D view untouched.
+        if (isoFieldBetaRef.current && length > 0) {
+          speed *= isoScreenSpeedScale(effInput.x / length, effInput.y / length);
+        }
         const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
         const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
         const movement = {

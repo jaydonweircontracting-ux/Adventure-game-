@@ -1412,6 +1412,23 @@ for (const kind of EXPECTED_KINDS) {
   assert(isoPlayerFaceForDeltaSticky(-0.8, 1, 'left') === 'left', 'drift while walking left keeps the left sprite');
 }
 
+// BUILD 406: isoScreenSpeedScale — uniform on-screen speed for the 2:1
+// dimetric projection. Unit tile directions for screen-up/down must scale to
+// 1 (anchor: unchanged speed); screen-left/right must scale to 0.5 (half
+// speed, matching up/down); zero vector is safe.
+{
+  const { isoScreenSpeedScale } = await import('../src/game/iso/isoSprites');
+  const SQ = Math.SQRT1_2;
+  const approx = (v: number, e: number) => Math.abs(v - e) < 1e-9;
+  assert(approx(isoScreenSpeedScale(SQ, SQ), 1), 'screen-down tile diagonal keeps speed (scale 1)');
+  assert(approx(isoScreenSpeedScale(-SQ, -SQ), 1), 'screen-up tile diagonal keeps speed (scale 1)');
+  assert(approx(isoScreenSpeedScale(SQ, -SQ), 0.5), 'screen-right tile diagonal halves speed (scale 0.5)');
+  assert(approx(isoScreenSpeedScale(-SQ, SQ), 0.5), 'screen-left tile diagonal halves speed (scale 0.5)');
+  assert(approx(isoScreenSpeedScale(1, 0), SQ / Math.hypot(1, 0.5)), 'tile-east scales by inverse projected length');
+  assert(approx(isoScreenSpeedScale(0, 1), SQ / Math.hypot(1, 0.5)), 'tile-south scales same as tile-east');
+  assert(isoScreenSpeedScale(0, 0) === 1, 'zero vector is safe (scale 1)');
+}
+
 // ---- BUILD 388: dungeon kit panel selectors for cellar/prison interiors ----
 // The kit is purely visual (collision/furniture untouched), so the sim pins
 // the panel metadata: 4 in-bounds panels per strip, correct wall orientation
