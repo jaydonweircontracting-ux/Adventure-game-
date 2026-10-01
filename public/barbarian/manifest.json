@@ -358,6 +358,6 @@
       "sword_side_walk_0.png": "right",
       "sword_side_walk_1.png": "right"
     },
-    "down": "BUILD 394: bare down idle re-cut from the user-supplied front-facing sheet. BUILD 395: bare down walk replaced per user direction with the two user-supplied 3/4-view walk/run frames (bare_down_walk_0/1) \u2014 user said 'this is down walk'. Side frames unchanged."
+    "down": "BUILD 394: bare down idle re-cut from the user-supplied front-facing sheet. BUILD 395: bare down walk replaced per user direction with the two user-supplied 3/4-view walk/run frames. BUILD 396: bare down idle replaced per user direction ('this is down idle') with the user-supplied 3/4-view standing frame, matching the walk set style. Side frames unchanged."
   }
 }
