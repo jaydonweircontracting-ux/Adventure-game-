@@ -69,43 +69,10 @@ export function tileFaceForDelta(dx: number, dy: number): Face4 {
 export const LPC_FRAMES: Record<LpcAnim, number> = { idle: 2, walk: 9, slash: 6, hurt: 6 };
 
 // ---------------------------------------------------------------------------
-// BUILD 389: "brute" player sprite pack (user-supplied sheet, chroma-keyed).
-// Single 1170x195 strip: six 195px cells = front stand, front walk, side
-// stand, side walk, back stand, back walk. Right reuses the side cells
-// flipped. Feet anchor = bottom of the cell.
+// BUILD 390: the BUILD 389 "brute" single-sheet player sprite was replaced by
+// the barbarian pack (src/game/iso/barbarian.ts). Its exports were removed;
+// the old public/brute/ sheet is deleted.
 // ---------------------------------------------------------------------------
-export const BRUTE_SHEET_FILE = 'brute/brute_sheet.png';
-export const BRUTE_CELL = 195;
-/** [standCol, walkCol] per facing into the brute strip. */
-export const BRUTE_COLS: Record<Face4, [number, number]> = {
-  down: [0, 1],
-  left: [2, 3],
-  up: [4, 5],
-  right: [2, 3],
-};
-/** The right facing reuses the side cells mirrored. */
-export function bruteFlip(face: Face4): boolean {
-  return face === 'right';
-}
-/** Frames per animation for the brute pack (idle/walk art only). */
-export const BRUTE_FRAMES: Record<LpcAnim, number> = { idle: 1, walk: 2, slash: 1, hurt: 1 };
-
-let bruteImg: HTMLImageElement | null = null;
-let brutePreloaded = false;
-export function preloadBruteSprite(): void {
-  if (brutePreloaded || typeof window === 'undefined') return;
-  brutePreloaded = true;
-  const img = new Image();
-  img.onerror = () => console.warn(`[isoSprites] brute sheet failed to load: ${BRUTE_SHEET_FILE}`);
-  img.src = `${import.meta.env.BASE_URL}${BRUTE_SHEET_FILE}`;
-  bruteImg = img;
-}
-export function bruteReady(): boolean {
-  return !!bruteImg && bruteImg.complete && bruteImg.naturalWidth > 0;
-}
-export function bruteSprite(): HTMLImageElement | undefined {
-  return bruteReady() ? bruteImg! : undefined;
-}
 // Hair uses classic full-layout sheets: walk cycle lives on rows 8-11.
 export const LPC_CLASSIC_WALK_ROW = 8;
 

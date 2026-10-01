@@ -16,9 +16,10 @@ import {
   preloadLpcSprites,
   tileFaceForDelta,
   type Face4,
-  preloadBruteSprite,
 } from './isoSprites';
+import { preloadBarbarian } from './barbarian';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
+import type { BarbarianOutfit, BarbarianWeapon } from './barbarian';
 import {
   preloadDungeonKit, dungeonKitReady,
   drawWallPanel, drawKitBillboard, drawKitFloor,
@@ -45,6 +46,10 @@ interface IsoInteriorViewProps {
   // direction is held the player steps tile-by-tile; manual input cancels
   // tap-to-move. Screen up = tile north, matching the iso demo.
   getHeldDir?: () => { x: number; y: number };
+  // BUILD 390: barbarian player equipment (player is look 0).
+  barbOutfit?: BarbarianOutfit;
+  barbWeapon?: BarbarianWeapon;
+  barbHair?: string;
 }
 
 const ROOM_W = 12;
@@ -147,7 +152,7 @@ function faceForMove(ax: number, ay: number, bx: number, by: number): Face4 {
   return tileFaceForDelta(bx - ax, by - ay);
 }
 
-export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir }: IsoInteriorViewProps): React.JSX.Element {
+export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair }: IsoInteriorViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const exitRef = useRef(onExit);
@@ -159,7 +164,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
   const heldDirRef = useRef(getHeldDir);
   heldDirRef.current = getHeldDir;
 
-  useEffect(() => { preloadLpcSprites(); preloadBruteSprite(); preloadDungeonKit(); }, []);
+  useEffect(() => { preloadLpcSprites(); preloadBarbarian(); preloadDungeonKit(); }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -531,7 +536,10 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       seenAnims.add(animKey);
       anim.update({ x: fx, y: fy, moving, facing, nowMs });
       const draw = (g2: CanvasRenderingContext2D) => {
-        drawIsoCharacter({ g: g2, x: c.x, y: c.y, look, nowMs, animator: anim });
+        drawIsoCharacter({
+          g: g2, x: c.x, y: c.y, look, nowMs, animator: anim,
+          barbOutfit, barbWeapon, barbHair,
+        });
       };
       return { depth, draw };
     };

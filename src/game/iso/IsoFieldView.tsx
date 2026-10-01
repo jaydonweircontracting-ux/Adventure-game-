@@ -14,8 +14,10 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import {
   preloadLpcSprites, tileFaceForDelta, type Face4,
-  preloadBruteSprite,
 } from './isoSprites';
+import { preloadBarbarian } from './barbarian';
+import type { BarbarianOutfit, BarbarianWeapon } from './barbarian';
+import { BARBARIAN_ATTACK_MS } from './barbarian';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
 // BUILD 389: user-supplied landscape tileset + ambient critters.
 import {
@@ -49,6 +51,11 @@ interface IsoFieldViewProps {
   onTalkTo?: (npc: Townsperson) => void; // BUILD 366: tap an NPC to talk
   zoom: number; // BUILD 372: zoom is owned by App so the main zoom buttons drive it
   onZoomChange: (z: number) => void;
+  // BUILD 390: barbarian player equipment -> iso sprite variant + attack anim.
+  barbOutfit?: BarbarianOutfit;
+  barbWeapon?: BarbarianWeapon;
+  barbHair?: string;
+  barbAttackSequence?: number;
 }
 
 interface Drawable { depth: number; draw: (g: CanvasRenderingContext2D, now: number) => void }
@@ -69,11 +76,11 @@ interface IsoChunkScene {
 const MARGIN = 48; // world-px background margin around the map
 const ROAD_HALF = 5; // road band half-width in tiles
 
-export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTapMove, onTalkTo, zoom, onZoomChange }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTapMove, onTalkTo, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk });
-  liveRef.current = { px: position.x, py: position.y, folk: townsfolk };
+  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, barbOutfit, barbWeapon, barbHair, barbAttackSequence });
+  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, barbOutfit, barbWeapon, barbHair, barbAttackSequence };
   // tap callbacks via ref so the canvas listener always calls the latest
   const tapRef = useRef({ onTapMove, onTalkTo });
   tapRef.current = { onTapMove, onTalkTo };
@@ -115,7 +122,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
 
   useEffect(() => {
     preloadLpcSprites();
-    preloadBruteSprite(); // BUILD 389: user-supplied player sprite
+    preloadBarbarian(); // BUILD 389: user-supplied player sprite
     preloadIsoTiles(); // BUILD 389: landscape tileset
     preloadCritters(); // BUILD 389: ambient critters
     const canvas = canvasRef.current!;
@@ -148,6 +155,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
     // render loop; pruned each frame so removed NPCs don't leak).
     const charAnims = new Map<string, CharacterAnimator>();
     const seenAnims = new Set<string>(); // reset each frame; prunes charAnims
+    // BUILD 390: track the player's attack sequence -> swing start time so the
+    // barbarian attack clip plays once per swing.
+    let lastAttackSeq = -1;
+    let attackStartMs = -1e9;
 
     let raf = 0;
     let last = performance.now();
@@ -173,7 +184,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
 
     // Shared character renderer: one animator per character id drives facing,
     // walk/idle state and speed-tied walk phase; the draw is feet-anchored.
-    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face4, moving: boolean, look: LookRef, now: number, animKey: string) => {
+    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face4, moving: boolean, look: LookRef, now: number, animKey: string, barb?: { attackT?: number }) => {
       const c = isoToScreen(tx, ty);
       let anim = charAnims.get(animKey);
       if (!anim) { anim = new CharacterAnimator(animKey); charAnims.set(animKey, anim); }
@@ -181,7 +192,13 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
       anim.update({ x: tx, y: ty, moving, facing, nowMs: now });
       d.push({
         depth: tx + ty + 0.01, draw: (g2) => {
-          drawIsoCharacter({ g: g2, x: c.x, y: c.y, look, nowMs: now, animator: anim });
+          drawIsoCharacter({
+            g: g2, x: c.x, y: c.y, look, nowMs: now, animator: anim,
+            barbOutfit: liveRef.current.barbOutfit,
+            barbWeapon: liveRef.current.barbWeapon,
+            barbHair: liveRef.current.barbHair,
+            barbAttackT: barb?.attackT,
+          });
         },
       });
     };
@@ -196,6 +213,11 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const live = liveRef.current;
+      // BUILD 390: a new attack sequence starts the barbarian swing timer.
+      const seq = live.barbAttackSequence ?? 0;
+      if (seq !== lastAttackSeq) { lastAttackSeq = seq; attackStartMs = nowMs; }
+      const swingT = nowMs - attackStartMs;
+      const playerAttackT = swingT < BARBARIAN_ATTACK_MS ? swingT : -1;
       // player facing from movement delta
       const mdx = live.px - prevP.x, mdy = live.py - prevP.y;
       const playerMoving = Math.abs(mdx) + Math.abs(mdy) > 0.01;
@@ -435,7 +457,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
         drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id);
       }
       // player
-      drawPerson(drawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs, 'player');
+      drawPerson(drawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs, 'player', { attackT: playerAttackT });
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
 
       drawables.sort((a, b) => a.depth - b.depth);

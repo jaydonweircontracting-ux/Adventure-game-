@@ -1,0 +1,423 @@
+{
+ "p1_shavedsides": {
+  "down": {
+   "file": "hair_p1_shavedsides_down.png",
+   "rel": [
+    -40,
+    -4
+   ],
+   "baseH": 131
+  },
+  "side": {
+   "file": "hair_p1_shavedsides_side.png",
+   "rel": [
+    -22,
+    -3
+   ],
+   "baseH": 132
+  },
+  "up": {
+   "file": "hair_p1_shavedsides_up.png",
+   "rel": [
+    -41,
+    -1
+   ],
+   "baseH": 134
+  }
+ },
+ "p1_topknot": {
+  "down": {
+   "file": "hair_p1_topknot_down.png",
+   "rel": [
+    -43,
+    -4
+   ],
+   "baseH": 131
+  },
+  "side": {
+   "file": "hair_p1_topknot_side.png",
+   "rel": [
+    -25,
+    -3
+   ],
+   "baseH": 132
+  },
+  "up": {
+   "file": "hair_p1_topknot_up.png",
+   "rel": [
+    -42,
+    0
+   ],
+   "baseH": 134
+  }
+ },
+ "p1_viking": {
+  "down": {
+   "file": "hair_p1_viking_down.png",
+   "rel": [
+    -43,
+    -1
+   ],
+   "baseH": 131
+  },
+  "side": {
+   "file": "hair_p1_viking_side.png",
+   "rel": [
+    -43,
+    0
+   ],
+   "baseH": 132
+  },
+  "up": {
+   "file": "hair_p1_viking_up.png",
+   "rel": [
+    -41,
+    2
+   ],
+   "baseH": 134
+  }
+ },
+ "p1_wizard": {
+  "down": {
+   "file": "hair_p1_wizard_down.png",
+   "rel": [
+    -42,
+    -2
+   ],
+   "baseH": 131
+  },
+  "side": {
+   "file": "hair_p1_wizard_side.png",
+   "rel": [
+    -24,
+    -2
+   ],
+   "baseH": 132
+  },
+  "up": {
+   "file": "hair_p1_wizard_up.png",
+   "rel": [
+    -41,
+    0
+   ],
+   "baseH": 134
+  }
+ },
+ "p1_bedhead": {
+  "down": {
+   "file": "hair_p1_bedhead_down.png",
+   "rel": [
+    -44,
+    -4
+   ],
+   "baseH": 131
+  },
+  "side": {
+   "file": "hair_p1_bedhead_side.png",
+   "rel": [
+    -36,
+    -3
+   ],
+   "baseH": 132
+  },
+  "up": {
+   "file": "hair_p1_bedhead_up.png",
+   "rel": [
+    -41,
+    -1
+   ],
+   "baseH": 134
+  }
+ },
+ "p1_slicked": {
+  "down": {
+   "file": "hair_p1_slicked_down.png",
+   "rel": [
+    -43,
+    0
+   ],
+   "baseH": 131
+  },
+  "side": {
+   "file": "hair_p1_slicked_side.png",
+   "rel": [
+    -43,
+    1
+   ],
+   "baseH": 132
+  },
+  "up": {
+   "file": "hair_p1_slicked_up.png",
+   "rel": [
+    -41,
+    1
+   ],
+   "baseH": 134
+  }
+ },
+ "p1_ponytail": {
+  "down": {
+   "file": "hair_p1_ponytail_down.png",
+   "rel": [
+    -42,
+    -4
+   ],
+   "baseH": 131
+  },
+  "side": {
+   "file": "hair_p1_ponytail_side.png",
+   "rel": [
+    -39,
+    -3
+   ],
+   "baseH": 132
+  },
+  "up": {
+   "file": "hair_p1_ponytail_up.png",
+   "rel": [
+    -40,
+    -1
+   ],
+   "baseH": 134
+  }
+ },
+ "p1_undercut": {
+  "down": {
+   "file": "hair_p1_undercut_down.png",
+   "rel": [
+    -44,
+    -1
+   ],
+   "baseH": 131
+  },
+  "side": {
+   "file": "hair_p1_undercut_side.png",
+   "rel": [
+    -39,
+    -1
+   ],
+   "baseH": 132
+  },
+  "up": {
+   "file": "hair_p1_undercut_up.png",
+   "rel": [
+    -41,
+    1
+   ],
+   "baseH": 134
+  }
+ },
+ "p2_buzz": {
+  "down": null,
+  "side": null,
+  "up": null
+ },
+ "p2_blonde": {
+  "down": {
+   "file": "hair_p2_blonde_down.png",
+   "rel": [
+    -44,
+    1
+   ],
+   "baseH": 121
+  },
+  "side": {
+   "file": "hair_p2_blonde_side.png",
+   "rel": [
+    -18,
+    1
+   ],
+   "baseH": 121
+  },
+  "up": {
+   "file": "hair_p2_blonde_up.png",
+   "rel": [
+    -41,
+    1
+   ],
+   "baseH": 121
+  }
+ },
+ "p2_ponytail": {
+  "down": {
+   "file": "hair_p2_ponytail_down.png",
+   "rel": [
+    -45,
+    1
+   ],
+   "baseH": 121
+  },
+  "side": {
+   "file": "hair_p2_ponytail_side.png",
+   "rel": [
+    -18,
+    1
+   ],
+   "baseH": 121
+  },
+  "up": {
+   "file": "hair_p2_ponytail_up.png",
+   "rel": [
+    -43,
+    1
+   ],
+   "baseH": 121
+  }
+ },
+ "p2_redtopknot": {
+  "down": {
+   "file": "hair_p2_redtopknot_down.png",
+   "rel": [
+    -45,
+    1
+   ],
+   "baseH": 121
+  },
+  "side": {
+   "file": "hair_p2_redtopknot_side.png",
+   "rel": [
+    -18,
+    1
+   ],
+   "baseH": 121
+  },
+  "up": {
+   "file": "hair_p2_redtopknot_up.png",
+   "rel": [
+    -41,
+    1
+   ],
+   "baseH": 121
+  }
+ },
+ "p2_mohawk": {
+  "down": {
+   "file": "hair_p2_mohawk_down.png",
+   "rel": [
+    -46,
+    1
+   ],
+   "baseH": 121
+  },
+  "side": {
+   "file": "hair_p2_mohawk_side.png",
+   "rel": [
+    -30,
+    4
+   ],
+   "baseH": 121
+  },
+  "up": {
+   "file": "hair_p2_mohawk_up.png",
+   "rel": [
+    -36,
+    3
+   ],
+   "baseH": 121
+  }
+ },
+ "p2_dreadlocks": {
+  "down": {
+   "file": "hair_p2_dreadlocks_down.png",
+   "rel": [
+    -47,
+    1
+   ],
+   "baseH": 121
+  },
+  "side": {
+   "file": "hair_p2_dreadlocks_side.png",
+   "rel": [
+    -42,
+    17
+   ],
+   "baseH": 121
+  },
+  "up": {
+   "file": "hair_p2_dreadlocks_up.png",
+   "rel": [
+    -40,
+    1
+   ],
+   "baseH": 121
+  }
+ },
+ "p2_afro": {
+  "down": {
+   "file": "hair_p2_afro_down.png",
+   "rel": [
+    -45,
+    1
+   ],
+   "baseH": 121
+  },
+  "side": {
+   "file": "hair_p2_afro_side.png",
+   "rel": [
+    -56,
+    1
+   ],
+   "baseH": 121
+  },
+  "up": {
+   "file": "hair_p2_afro_up.png",
+   "rel": [
+    -44,
+    1
+   ],
+   "baseH": 121
+  }
+ },
+ "p2_spiky": {
+  "down": {
+   "file": "hair_p2_spiky_down.png",
+   "rel": [
+    -48,
+    1
+   ],
+   "baseH": 121
+  },
+  "side": {
+   "file": "hair_p2_spiky_side.png",
+   "rel": [
+    -55,
+    1
+   ],
+   "baseH": 121
+  },
+  "up": {
+   "file": "hair_p2_spiky_up.png",
+   "rel": [
+    -44,
+    1
+   ],
+   "baseH": 121
+  }
+ },
+ "p2_braids": {
+  "down": {
+   "file": "hair_p2_braids_down.png",
+   "rel": [
+    -48,
+    1
+   ],
+   "baseH": 121
+  },
+  "side": {
+   "file": "hair_p2_braids_side.png",
+   "rel": [
+    -44,
+    1
+   ],
+   "baseH": 121
+  },
+  "up": {
+   "file": "hair_p2_braids_up.png",
+   "rel": [
+    -41,
+    1
+   ],
+   "baseH": 121
+  }
+ }
+}

@@ -1,0 +1,277 @@
+{
+ "bare": {
+  "down": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     97,
+     4
+    ],
+    "idleH": 188
+   },
+   "idle": [
+    "bare_down_idle_0.png"
+   ],
+   "walk": [
+    "bare_down_walk_0.png",
+    "bare_down_walk_1.png"
+   ],
+   "attack": [
+    "bare_down_attack_0.png",
+    "bare_down_attack_1.png"
+   ]
+  },
+  "side": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     73,
+     9
+    ],
+    "idleH": 186
+   },
+   "idle": [
+    "bare_side_idle_0.png"
+   ],
+   "walk": [
+    "bare_side_walk_0.png",
+    "bare_side_walk_1.png"
+   ],
+   "attack": [
+    "bare_side_attack_0.png",
+    "bare_side_attack_1.png"
+   ]
+  },
+  "up": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     97,
+     0
+    ],
+    "idleH": 193
+   },
+   "idle": [
+    "bare_up_idle_0.png"
+   ],
+   "walk": [
+    "bare_up_walk_0.png",
+    "bare_up_walk_1.png"
+   ],
+   "attack": [
+    "bare_up_attack_0.png",
+    "bare_up_attack_1.png"
+   ]
+  }
+ },
+ "blue": {
+  "down": {
+   "_box": {
+    "w": 153,
+    "h": 188,
+    "head": [
+     69,
+     3
+    ],
+    "idleH": 180
+   },
+   "idle": [
+    "blue_down_idle_0.png"
+   ],
+   "walk": [
+    "blue_down_walk_0.png",
+    "blue_down_walk_1.png"
+   ],
+   "attack": [
+    "blue_down_attack_0.png",
+    "blue_down_attack_1.png"
+   ]
+  },
+  "side": {
+   "_box": {
+    "w": 153,
+    "h": 188,
+    "head": [
+     72,
+     5
+    ],
+    "idleH": 174
+   },
+   "idle": [
+    "blue_side_idle_0.png"
+   ],
+   "walk": [
+    "blue_side_walk_0.png",
+    "blue_side_walk_1.png"
+   ],
+   "attack": [
+    "blue_side_attack_0.png",
+    "blue_side_attack_1.png"
+   ]
+  },
+  "up": {
+   "_box": {
+    "w": 153,
+    "h": 188,
+    "head": [
+     70,
+     4
+    ],
+    "idleH": 172
+   },
+   "idle": [
+    "blue_up_idle_0.png"
+   ],
+   "walk": [
+    "blue_up_walk_0.png",
+    "blue_up_walk_1.png"
+   ],
+   "attack": [
+    "blue_up_attack_0.png",
+    "blue_up_attack_1.png"
+   ]
+  }
+ },
+ "sword": {
+  "down": {
+   "_box": {
+    "w": 195,
+    "h": 194,
+    "head": [
+     92,
+     8
+    ],
+    "idleH": 177
+   },
+   "idle": [
+    "sword_down_idle_0.png"
+   ],
+   "walk": [
+    "sword_down_walk_0.png",
+    "sword_down_walk_1.png"
+   ],
+   "attack": [
+    "sword_down_attack_0.png",
+    "sword_down_attack_1.png",
+    "sword_down_attack_2.png"
+   ]
+  },
+  "side": {
+   "_box": {
+    "w": 195,
+    "h": 185,
+    "head": [
+     110,
+     9
+    ],
+    "idleH": 174
+   },
+   "idle": [
+    "sword_side_idle_0.png"
+   ],
+   "walk": [
+    "sword_side_walk_0.png",
+    "sword_side_walk_1.png"
+   ],
+   "attack": [
+    "sword_side_attack_0.png",
+    "sword_side_attack_1.png",
+    "sword_side_attack_2.png"
+   ]
+  },
+  "up": {
+   "_box": {
+    "w": 195,
+    "h": 190,
+    "head": [
+     108,
+     9
+    ],
+    "idleH": 179
+   },
+   "idle": [
+    "sword_up_idle_0.png"
+   ],
+   "walk": [
+    "sword_up_walk_0.png"
+   ],
+   "attack": [
+    "sword_up_attack_0.png",
+    "sword_up_attack_1.png",
+    "sword_up_attack_2.png"
+   ]
+  }
+ },
+ "bow": {
+  "down": {
+   "_box": {
+    "w": 181,
+    "h": 214,
+    "head": [
+     81,
+     15
+    ],
+    "idleH": 164
+   },
+   "idle": [
+    "bow_down_idle_0.png"
+   ],
+   "walk": [
+    "bow_down_walk_0.png",
+    "bow_down_walk_1.png"
+   ],
+   "attack": [
+    "bow_down_attack_0.png",
+    "bow_down_attack_1.png",
+    "bow_down_attack_2.png"
+   ]
+  },
+  "side": {
+   "_box": {
+    "w": 195,
+    "h": 202,
+    "head": [
+     108,
+     2
+    ],
+    "idleH": 176
+   },
+   "idle": [
+    "bow_side_idle_0.png"
+   ],
+   "walk": [
+    "bow_side_walk_0.png"
+   ],
+   "attack": [
+    "bow_side_attack_0.png",
+    "bow_side_attack_1.png",
+    "bow_side_attack_2.png"
+   ]
+  },
+  "up": {
+   "_box": {
+    "w": 181,
+    "h": 214,
+    "head": [
+     59,
+     14
+    ],
+    "idleH": 171
+   },
+   "idle": [
+    "bow_up_idle_0.png"
+   ],
+   "walk": [
+    "bow_up_walk_0.png"
+   ],
+   "attack": [
+    "bow_up_attack_0.png",
+    "bow_up_attack_1.png",
+    "bow_up_attack_2.png"
+   ]
+  }
+ }
+}

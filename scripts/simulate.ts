@@ -34,6 +34,7 @@ import { mulberry32, shadeColor, mixColor, hexToRgb, GROUND_PX_PER_UNIT } from '
 import { FIELD_SIZE, DEFAULT_GAME_ZOOM, zoomTranslatePct, cameraFrac, playerScreenPct, screenPxToFieldUnits, fieldPct } from '../src/game/fieldCamera';
 import { PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP, collisionBoxesOverlap, isPositionOccupiedByGoat, separateGoatFromPlayer } from '../src/game/fieldCollision';
 import { ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset, isoViewportCovered, isoVisibleTileRange } from '../src/game/iso/isoChunks';
+import { barbarianRegistryStats, barbarianVariant, barbarianHairLabel, BARBARIAN_HAIRSTYLES, BARBARIAN_ATTACK_MS } from '../src/game/iso/barbarian';
 
 let passed = 0;
 let failed = 0;
@@ -1450,12 +1451,9 @@ for (const kind of EXPECTED_KINDS) {
   }
 }
 {
-  const { BRUTE_COLS, BRUTE_FRAMES, bruteFlip } = await import('../src/game/iso/isoSprites');
-  assert(BRUTE_COLS.down[0] === 0 && BRUTE_COLS.down[1] === 1, 'down must use front cells 0,1');
-  assert(BRUTE_COLS.up[0] === 4 && BRUTE_COLS.up[1] === 5, 'up must use back cells 4,5');
-  assert(BRUTE_COLS.left[0] === 2 && BRUTE_COLS.right[0] === 2, 'sides must share cells 2,3');
-  assert(bruteFlip('right') && !bruteFlip('left'), 'only the right facing mirrors');
-  assert(BRUTE_FRAMES.walk === 2 && BRUTE_FRAMES.idle === 1, 'brute walk=2 frames, idle=1');
+// BUILD 390: the brute sheet renderer was replaced by the barbarian sprite
+// pack (src/game/iso/barbarian.ts). The barbarian registry tests below cover
+// variants, views, animations, hair, and the outfit/weapon mapping.
 }
 
 // ---- BUILD 317: monster sprite fallback hierarchy ----
@@ -2919,6 +2917,36 @@ console.log('Testing examine system...');
   assert(anim.frameIndex() >= 0 && anim.frameIndex() < 6, 'attack must show a slash frame');
   anim.setState('hurt');
   assert(anim.frameIndex() >= 0 && anim.frameIndex() < 6, 'hurt must show a hurt frame');
+}
+
+// ---- BUILD 390: barbarian sprite registry + hair + equipment mapping ----
+{
+  const stats = barbarianRegistryStats();
+  assert(stats.variants.length === 4 && ['bare', 'blue', 'sword', 'bow'].every((v) => stats.variants.includes(v)),
+    `barbarian registry must have bare/blue/sword/bow variants, got ${stats.variants.join(',')}`);
+  assert(stats.views.length === 3 && ['down', 'side', 'up'].every((v) => stats.views.includes(v)),
+    'barbarian registry must expose down/side/up views (right mirrors side)');
+  assert(stats.anims.length === 3 && ['idle', 'walk', 'attack'].every((a) => stats.anims.includes(a)),
+    'barbarian registry must expose idle/walk/attack animations');
+  assert(stats.missingFrames.length === 0,
+    `barbarian registry must have no missing frames, got ${stats.missingFrames.slice(0, 5).join(',')}`);
+  // Hair registry: bald + 17 extracted styles.
+  assert(BARBARIAN_HAIRSTYLES.length === 18 && BARBARIAN_HAIRSTYLES[0] === 'bald',
+    `must have 18 hairstyles starting with bald, got ${BARBARIAN_HAIRSTYLES.length}`);
+  assert(stats.hairstyles.length === 18, 'registry stats must report all 18 hairstyles');
+  for (const id of BARBARIAN_HAIRSTYLES) {
+    const label = barbarianHairLabel(id);
+    assert(typeof label === 'string' && label.length > 0, `hairstyle ${id} must have a display label`);
+  }
+  assert(barbarianHairLabel('nope-not-real') === 'Bald', 'unknown hairstyle id must fall back to Bald');
+  // Outfit/weapon -> sprite variant mapping.
+  assert(barbarianVariant('bare', 'none') === 'bare', 'bare + no weapon must use bare sprites');
+  assert(barbarianVariant('blue', 'none') === 'blue', 'blue shirt must use blue sprites');
+  assert(barbarianVariant('bare', 'sword') === 'sword', 'sword must use sword sprites regardless of shirt');
+  assert(barbarianVariant('blue', 'sword') === 'sword', 'sword must beat shirt in the variant pick');
+  assert(barbarianVariant('bare', 'bow') === 'bow', 'bow must use bow sprites');
+  assert(barbarianVariant('blue', 'bow') === 'bow', 'bow must beat shirt in the variant pick');
+  assert(BARBARIAN_ATTACK_MS === 480, 'barbarian attack clip window must be 480ms');
 }
 
 // ---- Results ----

@@ -1,6 +1,7 @@
 import IsoRoomDemo from './game/iso/IsoRoom';
 import IsoFieldView from './game/iso/IsoFieldView';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
+import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality } from './game/villageLife';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -1143,7 +1144,7 @@ const statDetails: Record<StatKey, { label: string; description: string }> = {
   luk: { label: 'Luck', description: 'Improves critical hits and loot rolls.' },
 };
 const initialPlayerStats: PlayerStats = { str: 4, dex: 4, int: 4, luk: 4 };
-type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number; wood: number; silk: number; bow: number; beer: number; lockpicks: number };
+type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number; wood: number; silk: number; bow: number; beer: number; lockpicks: number; shirts: number; swords: number };
 type GoatLoot = Partial<GameInventory>;
 type DroppedLoot = { id: number; chunk: Point; position: Point; loot: GoatLoot };
 // Ranged combat: arrows fired by the player's bow and by bandit archers.
@@ -1151,6 +1152,8 @@ type ArrowState = { id: number; chunk: Point; position: Point; dx: number; dy: n
 const ARROW_SPEED = 55; // field units per second
 const ARROW_RANGE = 34;
 const BOW_ARROW_DAMAGE_MULT = 0.9;
+// BUILD 390: the craftable barbarian sword hits harder than fists.
+const SWORD_DAMAGE_MULT = 1.35;
 // Woodcutting: trees take a few axe swings, become stumps, then regrow.
 // Woodcutting: felled trees become walkable stumps until they regrow.
 // Session-local; GameField syncs this set whenever a tree falls or regrows.
@@ -1317,7 +1320,7 @@ const PLAYER_MAX_HP = 88;
 const PLAYER_BASE_ATTACK_DAMAGE = 5;
 const PLAYER_STAT_POINTS_PER_LEVEL = 5;
 const GOAT_LOOT_TYPES: Array<keyof GameInventory> = ['goatHorns', 'fabric', 'coins'];
-const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0, wood: 0, silk: 0, bow: 0, beer: 0, lockpicks: 0 };
+const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0, wood: 0, silk: 0, bow: 0, beer: 0, lockpicks: 0, shirts: 0, swords: 0 };
 
 function playerMaxHpForStats(stats: PlayerStats) {
   return PLAYER_MAX_HP + stats.int * 3;
@@ -1342,6 +1345,9 @@ type SaveGameData = {
   inventory: GameInventory;
   equippedDagger?: boolean;
   equippedBow?: boolean;
+  equippedShirt?: boolean;
+  equippedSword?: boolean;
+  barbHair?: string;
   droppedLoot?: DroppedLoot[];
   playerHp: number;
   playerXp: number;
@@ -1412,7 +1418,9 @@ function isGameInventory(value: unknown): value is GameInventory {
     && (value.wood == null || isFiniteNumber(value.wood))
     && (value.silk == null || isFiniteNumber(value.silk))
     && (value.bow == null || isFiniteNumber(value.bow))
-    && (value.beer == null || isFiniteNumber(value.beer));
+    && (value.beer == null || isFiniteNumber(value.beer))
+    && (value.shirts == null || isFiniteNumber(value.shirts))
+    && (value.swords == null || isFiniteNumber(value.swords));
 }
 
 function isPlayerStats(value: unknown): value is PlayerStats {
@@ -1505,6 +1513,9 @@ function isSaveGameData(value: unknown): value is SaveGameData {
     && isGameInventory(value.inventory)
     && (value.equippedDagger === undefined || typeof value.equippedDagger === 'boolean')
     && (value.equippedBow === undefined || typeof value.equippedBow === 'boolean')
+    && (value.equippedShirt === undefined || typeof value.equippedShirt === 'boolean')
+    && (value.equippedSword === undefined || typeof value.equippedSword === 'boolean')
+    && (value.barbHair === undefined || typeof value.barbHair === 'string')
     && (value.droppedLoot === undefined || (Array.isArray(value.droppedLoot) && value.droppedLoot.every(isDroppedLootSave)))
     && isFiniteNumber(value.playerHp)
     && isFiniteNumber(value.playerXp)
@@ -1567,11 +1578,13 @@ const classDescriptions: Record<Exclude<PlayerClass, 'Beginner'>, string> = {
   Mage: 'A spell-focused path for curious explorers.',
   Rogue: 'A fast, precise path for clever adventurers.',
 };
-type CraftItem = 'dagger' | 'cloths' | 'bow';
+type CraftItem = 'dagger' | 'cloths' | 'bow' | 'shirt' | 'sword';
 const craftRecipes: Record<CraftItem, { name: string; description: string; cost: GoatLoot; reward: GoatLoot }> = {
   dagger: { name: 'Goat-horn dagger', description: 'A sharp beginner weapon.', cost: { goatHorns: 2 }, reward: { daggers: 1 } },
   cloths: { name: 'Field cloths', description: 'Simple protective travel clothes.', cost: { fabric: 2 }, reward: { cloths: 1 } },
   bow: { name: 'Hunting bow', description: 'A ranged weapon. Chop trees for wood, gather silk from spiders.', cost: { wood: 5, silk: 3 }, reward: { bow: 1 } },
+  shirt: { name: 'Blue shirt', description: 'A sturdy blue barbarian shirt. Equip it to wear it.', cost: { fabric: 4 }, reward: { shirts: 1 } },
+  sword: { name: 'Barbarian sword', description: 'A heavy blade. Hits 35% harder than fists. Equip it to wield it.', cost: { wood: 6, bone: 2 }, reward: { swords: 1 } },
 };
 const startingGoatPositions: Point[] = [
   { x: 13, y: 18 }, { x: 29, y: 14 }, { x: 72, y: 14 }, { x: 87, y: 19 },
@@ -3008,7 +3021,7 @@ function WorldMap({ chunk, onClose, kingdomLabels, tradeRoutes }: { chunk: Point
     </div>
   );
 }
-function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow, onToggleBow, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, questPlayerLevel, onAcceptQuest, onWeaveBowstring }: { inventory: GameInventory; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onWeaveBowstring: () => void }) {
+function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow, onToggleBow, equippedShirt, onToggleShirt, equippedSword, onToggleSword, barbHair, onCycleHair, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, questPlayerLevel, onAcceptQuest, onWeaveBowstring }: { inventory: GameInventory; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; equippedShirt: boolean; onToggleShirt: () => void; equippedSword: boolean; onToggleSword: () => void; barbHair: string; onCycleHair: (dir: 1 | -1) => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onWeaveBowstring: () => void }) {
   const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats' | 'quests'>('inventory');
   const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn + inventory.wood + inventory.silk + inventory.bow + inventory.beer;
   const visibleItems = [
@@ -3023,6 +3036,8 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow
     { key: 'wood', label: 'Wood', detail: 'Chopped from trees', mark: '🪵', className: 'wood-mark' },
     { key: 'silk', label: 'Silk', detail: 'Spider silk for bowstrings', mark: '🕸', className: 'silk-mark' },
     { key: 'bow', label: 'Hunting bow', detail: 'Ranged weapon', mark: '🏹', className: 'bow-mark' },
+    { key: 'shirts', label: 'Blue shirt', detail: 'Crafted shirt — equip to wear', mark: '👕', className: 'shirt-mark' },
+    { key: 'swords', label: 'Barbarian sword', detail: 'Heavy blade · +35% damage', mark: '🗡', className: 'sword-mark' },
     { key: 'beer', label: 'Beer', detail: '+50% attack for 1 min', mark: '🍺', className: 'beer-mark' },
     { key: 'lockpicks', label: 'Lockpicks', detail: 'For locked chests', mark: '🗝', className: 'lockpick-mark' },
   ].filter((item) => inventory[item.key as keyof GameInventory] > 0);
@@ -3054,13 +3069,13 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow
                 <div className="inventory-item" data-testid="inventory-coins"><span className="inventory-item-mark coin-mark" aria-hidden="true" /><span><strong>Coins</strong><small>Spendable gold</small></span><b>{inventory.coins}</b></div>
                 {visibleItems.map((item) => {
                   const count = inventory[item.key as keyof GameInventory] as number;
-                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className} aria-hidden="true" /><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}{item.key === 'bow' && <button className={'item-action ' + (equippedBow ? 'is-equipped' : '')} onClick={onToggleBow} data-testid="button-toggle-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}{item.key === 'beer' && <button className="item-action" onClick={onDrinkBeer} data-testid="button-drink-beer">Drink</button>}</div>;
+                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className} aria-hidden="true" /><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}{item.key === 'bow' && <button className={'item-action ' + (equippedBow ? 'is-equipped' : '')} onClick={onToggleBow} data-testid="button-toggle-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}{item.key === 'shirts' && <button className={'item-action ' + (equippedShirt ? 'is-equipped' : '')} onClick={onToggleShirt} data-testid="button-toggle-shirt">{equippedShirt ? 'Unequip' : 'Equip'}</button>}{item.key === 'swords' && <button className={'item-action ' + (equippedSword ? 'is-equipped' : '')} onClick={onToggleSword} data-testid="button-toggle-sword">{equippedSword ? 'Unequip' : 'Equip'}</button>}{item.key === 'beer' && <button className="item-action" onClick={onDrinkBeer} data-testid="button-drink-beer">Drink</button>}</div>;
                 })}
               </div>
               {itemCount === 0 && <div className="inventory-empty"><Backpack size={30} strokeWidth={1.5} /><strong>Menu is empty</strong></div>}
             </>
           ) : activeTab === 'equipment' ? (
-            <div className="equipment-panel" role="tabpanel" aria-label="Equipment"><div className="inventory-count">Equipped gear changes your character</div><div className="paper-doll-wrap"><div className="paper-doll" role="img" aria-label={'Paper doll: ' + (equippedDagger ? 'dagger in hand' : 'no weapon') + ', ' + (equippedBow ? 'bow on back' : 'no bow')} data-testid="paper-doll"><span className="paper-doll-head" aria-hidden="true" /><span className="paper-doll-torso" aria-hidden="true" /><span className="paper-doll-arm arm-left" aria-hidden="true" /><span className="paper-doll-arm arm-right" aria-hidden="true" /><span className="paper-doll-leg leg-left" aria-hidden="true" /><span className="paper-doll-leg leg-right" aria-hidden="true" />{equippedBow && <span className="paper-doll-bow" aria-hidden="true">🏹</span>}{equippedDagger && <span className="paper-doll-dagger" aria-hidden="true">†</span>}</div><div className="paper-doll-slots"><div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot"><span className="equipment-slot-mark dagger-mark">†</span><span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>{(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedBow ? 'is-equipped' : '')} data-testid="equipment-ranged-slot"><span className="equipment-slot-mark bow-mark">🏹</span><span><small>Ranged slot</small><strong>{equippedBow ? 'Hunting bow' : 'Empty'}</strong></span>{(inventory.bow > 0 || equippedBow) && <button className="item-action" onClick={onToggleBow} data-testid="button-equipment-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}</div></div></div><p className="equipment-hint">{equippedBow ? 'The bow is on your back — attacks fire arrows, even while mounted.' : equippedDagger ? 'The dagger is visible in your hand.' : 'Craft a dagger, then equip it from this tab.'}</p></div>
+            <div className="equipment-panel" role="tabpanel" aria-label="Equipment"><div className="inventory-count">Equipped gear changes your character</div><div className="paper-doll-wrap"><div className="paper-doll" role="img" aria-label={'Paper doll: ' + (equippedDagger ? 'dagger in hand' : 'no weapon') + ', ' + (equippedBow ? 'bow on back' : 'no bow')} data-testid="paper-doll"><span className="paper-doll-head" aria-hidden="true" /><span className="paper-doll-torso" aria-hidden="true" /><span className="paper-doll-arm arm-left" aria-hidden="true" /><span className="paper-doll-arm arm-right" aria-hidden="true" /><span className="paper-doll-leg leg-left" aria-hidden="true" /><span className="paper-doll-leg leg-right" aria-hidden="true" />{equippedBow && <span className="paper-doll-bow" aria-hidden="true">🏹</span>}{equippedDagger && <span className="paper-doll-dagger" aria-hidden="true">†</span>}</div><div className="paper-doll-slots"><div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot"><span className="equipment-slot-mark dagger-mark">†</span><span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>{(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedBow ? 'is-equipped' : '')} data-testid="equipment-ranged-slot"><span className="equipment-slot-mark bow-mark">🏹</span><span><small>Ranged slot</small><strong>{equippedBow ? 'Hunting bow' : 'Empty'}</strong></span>{(inventory.bow > 0 || equippedBow) && <button className="item-action" onClick={onToggleBow} data-testid="button-equipment-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedShirt ? 'is-equipped' : '')} data-testid="equipment-shirt-slot"><span className="equipment-slot-mark shirt-mark">👕</span><span><small>Shirt slot</small><strong>{equippedShirt ? 'Blue shirt' : 'Empty'}</strong></span>{(inventory.shirts > 0 || equippedShirt) && <button className="item-action" onClick={onToggleShirt} data-testid="button-equipment-shirt">{equippedShirt ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedSword ? 'is-equipped' : '')} data-testid="equipment-sword-slot"><span className="equipment-slot-mark sword-mark">🗡</span><span><small>Blade slot</small><strong>{equippedSword ? 'Barbarian sword' : 'Empty'}</strong></span>{(inventory.swords > 0 || equippedSword) && <button className="item-action" onClick={onToggleSword} data-testid="button-equipment-sword">{equippedSword ? 'Unequip' : 'Equip'}</button>}</div></div></div><div className="equipment-slot hair-slot" data-testid="equipment-hair-slot"><span className="equipment-slot-mark hair-mark">💇</span><span><small>Hairstyle</small><strong>{barbarianHairLabel(barbHair)}</strong></span><span className="hair-cycle"><button className="item-action" onClick={() => onCycleHair(-1)} aria-label="Previous hairstyle" data-testid="button-hair-prev">‹</button><button className="item-action" onClick={() => onCycleHair(1)} aria-label="Next hairstyle" data-testid="button-hair-next">›</button></span></div><p className="equipment-hint">{equippedSword ? 'The barbarian sword is in your hand — melee hits 35% harder.' : equippedBow ? 'The bow is on your back — attacks fire arrows, even while mounted.' : equippedDagger ? 'The dagger is visible in your hand.' : 'Craft gear at Bram the smith, then equip it from this tab.'}</p></div>
           ) : activeTab === 'quests' ? (
             <QuestLogPanel questStates={questStates} playerLevel={questPlayerLevel} silkCount={inventory.silk} onAcceptQuest={onAcceptQuest} onWeaveBowstring={onWeaveBowstring} />
           ) : <StatsPanel playerStats={playerStats} statPoints={statPoints} onAssign={onAssignStat} />}
@@ -3315,7 +3330,7 @@ function questGiverFaceRole(name: string): string {
   return interior[lowered] ?? 'guide';
 }
 
-function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equippedDagger: boolean; equippedBow: boolean; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[] } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
+function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[] } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
   // Debug tap marks (?debugDoors=1): user taps to mark where they think the
   // invisible exit/entrance is; rendered as lime green dots with coordinates.
@@ -4096,6 +4111,9 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
     inventory,
     equippedDagger,
     equippedBow,
+    equippedShirt,
+    equippedSword,
+    barbHair,
     droppedLoot,
     playerHp,
     playerXp,
@@ -4678,6 +4696,9 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
   const arrowIdRef = useRef(1);
   const equippedBowRef = useRef(false);
   useEffect(() => { equippedBowRef.current = equippedBow; }, [equippedBow]);
+  // BUILD 390: sword melee damage bonus ref (same pattern as the bow).
+  const equippedSwordRef = useRef(false);
+  useEffect(() => { equippedSwordRef.current = equippedSword; }, [equippedSword]);
   const [felledTrees, setFelledTrees] = useState<Record<string, number>>({});
   const felledTreesRef = useRef<Record<string, number>>({});
   const treeHitsRef = useRef<Record<string, number>>({});
@@ -5021,13 +5042,15 @@ function GameField({ inventory, equippedDagger, equippedBow, playerStats, statPo
             } else if (attackTarget.entityKind === 'cellar-rat') {
               const stats = playerStatsRef.current;
               const critical = Math.random() < playerCriticalChanceForStats(stats);
-              const damage = playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil);
+              const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
+              const damage = playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
               const rat = cellarRatsRef.current.find((r) => r.id === attackTarget.id && r.hp > 0);
               if (rat) applyHitToCellarRat(rat, damage, critical);
             } else {
             const stats = playerStatsRef.current;
             const critical = Math.random() < playerCriticalChanceForStats(stats);
-            const damage = playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil);
+            const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
+            const damage = playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
             applyPlayerHitToCreature(attackTarget as { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, damage, critical);
             } // end harvest else
           } else {
@@ -5924,9 +5947,12 @@ if (active) {
       fabric: -(recipe.cost.fabric || 0),
       wood: -(recipe.cost.wood || 0),
       silk: -(recipe.cost.silk || 0),
+      bone: -(recipe.cost.bone || 0),
       daggers: recipe.reward.daggers || 0,
       cloths: recipe.reward.cloths || 0,
       bow: recipe.reward.bow || 0,
+      shirts: recipe.reward.shirts || 0,
+      swords: recipe.reward.swords || 0,
     });
     setAttackFlash(`${recipe.name} crafted.`);
     setLogs((currentLogs) => [{ text: `${recipe.name} added to your satchel.`, color: 'blue' }, ...currentLogs].slice(0, 3));
@@ -6103,6 +6129,9 @@ if (active) {
               look: npc.id,
             }))}
             onExit={exitInteriorToField}
+            barbOutfit={equippedShirt ? 'blue' : 'bare'}
+            barbWeapon={equippedSword ? 'sword' : equippedBow ? 'bow' : 'none'}
+            barbHair={barbHair}
             getHeldDir={() => {
               const r = keysRef.current.right === true || isTouchHeld(touchHoldsRef.current, 'right');
               const l = keysRef.current.left === true || isTouchHeld(touchHoldsRef.current, 'left');
@@ -6803,7 +6832,11 @@ if (active) {
             <IsoFieldView chunk={chunk} position={position} townsfolk={townsfolk} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom}
               onTapMove={(point) => { tapMoveTargetRef.current = point; }}
-              onTalkTo={(npc) => talkToTownsfolk(npc)} />
+              onTalkTo={(npc) => talkToTownsfolk(npc)}
+              barbOutfit={equippedShirt ? 'blue' : 'bare'}
+              barbWeapon={equippedSword ? 'sword' : equippedBow ? 'bow' : 'none'}
+              barbHair={barbHair}
+              barbAttackSequence={attackSequence} />
           )}
           <div className="field-world-layer" style={isoFieldBeta ? { display: 'none' } : (gameZoom !== 1 ? (() => {
             // BUILD 327: zoom centers the player in the viewport — the layer
@@ -7921,6 +7954,7 @@ if (active) {
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
             {equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}
+            {equippedSword && <span className="player-sword" aria-label="Equipped barbarian sword" />}
             {equippedBow && <span className="player-bow" aria-label="Equipped bow" />}
             {markerMode && <span aria-hidden="true" style={{
               position: 'absolute',
@@ -8356,9 +8390,9 @@ if (active) {
            </section>
          )}
          <div className="field-actions">
-           <div className="equipped-weapon-box" role="status" aria-label={'Equipped weapon: ' + (equippedBow ? 'Hunting bow' : equippedDagger ? 'Goat-horn dagger' : 'Fists')} title={equippedBow ? 'Hunting bow — attacks fire arrows' : equippedDagger ? 'Goat-horn dagger' : 'Fists'} data-testid="hud-equipped-weapon">
-             <span className="equipped-weapon-icon" aria-hidden="true">{equippedBow ? '🏹' : equippedDagger ? '†' : '✊'}</span>
-             <span className="equipped-weapon-label">{equippedBow ? 'Bow' : equippedDagger ? 'Dagger' : 'Fists'}</span>
+           <div className="equipped-weapon-box" role="status" aria-label={'Equipped weapon: ' + (equippedSword ? 'Barbarian sword' : equippedBow ? 'Hunting bow' : equippedDagger ? 'Goat-horn dagger' : 'Fists')} title={equippedSword ? 'Barbarian sword — melee hits 35% harder' : equippedBow ? 'Hunting bow — attacks fire arrows' : equippedDagger ? 'Goat-horn dagger' : 'Fists'} data-testid="hud-equipped-weapon">
+             <span className="equipped-weapon-icon" aria-hidden="true">{equippedSword ? '🗡' : equippedBow ? '🏹' : equippedDagger ? '†' : '✊'}</span>
+             <span className="equipped-weapon-label">{equippedSword ? 'Sword' : equippedBow ? 'Bow' : equippedDagger ? 'Dagger' : 'Fists'}</span>
            </div>
            {talkTarget && (
              <button className="icon-button field-talk-button" onClick={() => talkTarget.talk()} aria-label={'Talk to ' + talkTarget.name} title={'Talk to ' + talkTarget.name} data-testid="button-talk"><MessageCircle size={16} /></button>
@@ -8418,6 +8452,9 @@ function Home() {
   const [statPoints, setStatPoints] = useState(0);
   const [equippedDagger, setEquippedDagger] = useState(false);
   const [equippedBow, setEquippedBow] = useState(false);
+  const [equippedShirt, setEquippedShirt] = useState(false);
+  const [equippedSword, setEquippedSword] = useState(false);
+  const [barbHair, setBarbHair] = useState('bald');
   // Start at the title screen so New Game mounts a fresh full-health session.
   const [menuOpen, setMenuOpen] = useState(true);
   // Character creation: custom player sprite composited from Mana Seed parts.
@@ -8512,6 +8549,8 @@ function Home() {
     bow: Math.max(0, current.bow + (loot.bow || 0)),
     beer: Math.max(0, current.beer + (loot.beer || 0)),
     lockpicks: Math.max(0, current.lockpicks + (loot.lockpicks || 0)),
+    shirts: Math.max(0, current.shirts + (loot.shirts || 0)),
+    swords: Math.max(0, current.swords + (loot.swords || 0)),
   }));
 
   const toggleDagger = () => {
@@ -8536,6 +8575,38 @@ function Home() {
     setEquippedBow(true);
   };
 
+  // BUILD 390: blue shirt + barbarian sword equipment.
+  const toggleShirt = () => {
+    if (equippedShirt) {
+      setEquippedShirt(false);
+      setInventory((current) => ({ ...current, shirts: current.shirts + 1 }));
+      return;
+    }
+    if (inventory.shirts < 1) return;
+    setInventory((current) => ({ ...current, shirts: Math.max(0, current.shirts - 1) }));
+    setEquippedShirt(true);
+  };
+
+  const toggleSword = () => {
+    if (equippedSword) {
+      setEquippedSword(false);
+      setInventory((current) => ({ ...current, swords: current.swords + 1 }));
+      return;
+    }
+    if (inventory.swords < 1) return;
+    setInventory((current) => ({ ...current, swords: Math.max(0, current.swords - 1) }));
+    setEquippedSword(true);
+  };
+
+  // BUILD 390: cycle the barbarian hairstyle (iso player overlay).
+  const cycleHair = (dir: 1 | -1) => {
+    setBarbHair((current) => {
+      const ids = BARBARIAN_HAIRSTYLES as readonly string[];
+      const at = ids.indexOf(current);
+      return ids[(((at < 0 ? 0 : at) + dir) % ids.length + ids.length) % ids.length];
+    });
+  };
+
   const startNewGame = () => {
     setLoadedSave(null);
     setInventory(initialInventory);
@@ -8543,6 +8614,9 @@ function Home() {
     setStatPoints(0);
     setEquippedDagger(false);
     setEquippedBow(false);
+    setEquippedShirt(false);
+    setEquippedSword(false);
+    setBarbHair('bald');
     // No prison opening for now: new games start directly in the world.
     setInPrison(false);
     setPrisonState({ foundShiv: false, talkedToPrisoner: false, helpedPrisoner: false, escapeRoute: null });
@@ -8627,11 +8701,16 @@ function Home() {
     setLoadedSave(parsed);
     const savedEquippedDagger = Boolean(parsed.equippedDagger);
     const savedEquippedBow = Boolean(parsed.equippedBow);
-    setInventory({ ...initialInventory, ...parsed.inventory, daggers: Math.max(0, parsed.inventory.daggers - (savedEquippedDagger ? 1 : 0)), bow: Math.max(0, (parsed.inventory.bow || 0) - (savedEquippedBow ? 1 : 0)) });
+    const savedEquippedShirt = Boolean(parsed.equippedShirt);
+    const savedEquippedSword = Boolean(parsed.equippedSword);
+    setInventory({ ...initialInventory, ...parsed.inventory, daggers: Math.max(0, parsed.inventory.daggers - (savedEquippedDagger ? 1 : 0)), bow: Math.max(0, (parsed.inventory.bow || 0) - (savedEquippedBow ? 1 : 0)), shirts: Math.max(0, (parsed.inventory.shirts || 0) - (savedEquippedShirt ? 1 : 0)), swords: Math.max(0, (parsed.inventory.swords || 0) - (savedEquippedSword ? 1 : 0)) });
     setPlayerStats(parsed.playerStats || initialPlayerStats);
     setStatPoints(Math.max(0, Math.floor(parsed.statPoints || 0)));
     setEquippedDagger(savedEquippedDagger);
     setEquippedBow(savedEquippedBow);
+    setEquippedShirt(savedEquippedShirt);
+    setEquippedSword(savedEquippedSword);
+    setBarbHair((BARBARIAN_HAIRSTYLES as readonly string[]).includes(parsed.barbHair as string) ? (parsed.barbHair as string) : 'bald');
     setChunk(parsed.chunk);
     // Restore the custom character sprite when the save has one.
     const savedCharacter = sanitizeCharacterChoices(parsed.characterChoices);
@@ -8795,13 +8874,13 @@ function Home() {
         <>
           <div className="game-layout">
             <GameCrashBoundary chunk={chunk}>
-            <GameField inventory={inventory} equippedDagger={equippedDagger} equippedBow={equippedBow} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
+            <GameField inventory={inventory} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
             </GameCrashBoundary>
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} kingdomLabels={menuBridgeRef.current?.getKingdomLabels() ?? []} tradeRoutes={menuBridgeRef.current?.getTradeRoutes() ?? []} />}
           {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1' && <DebugOverlay chunk={chunk} />}
-          {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onWeaveBowstring={weaveBowstring} />}
+          {inventoryOpen && <InventorySheet inventory={inventory} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onWeaveBowstring={weaveBowstring} />}
           {journalOpen && (
             <div className="sheet journal-sheet" role="dialog" aria-label="Adventure journal" data-testid="journal-sheet">
               <div className="sheet-header">
