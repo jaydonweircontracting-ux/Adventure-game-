@@ -53,6 +53,19 @@ export const LPC_FEET_ROW = 62;
 // LPC direction row order inside per-animation sheets: up, left, down, right
 // (verified: the packed walk.png matches the reference sheet row-for-row).
 export const LPC_DIR_ROW: Record<Face4, number> = { up: 0, left: 1, down: 2, right: 3 };
+
+/**
+ * Tile-space facing from a tile-space movement delta — matches the main 2D
+ * game's convention (D-pad up walks away from the camera). BUILD 384: the iso
+ * field view used to project the delta into screen space first, which mapped
+ * every axis-aligned move to left/right, so walking "forward" (tile north)
+ * rendered the right-facing side sprite instead of the back-of-character
+ * sprite (LPC row 0). Tile-space mapping restores the distinct up/down rows.
+ */
+export function tileFaceForDelta(dx: number, dy: number): Face4 {
+  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left';
+  return dy > 0 ? 'down' : 'up';
+}
 export const LPC_FRAMES: Record<LpcAnim, number> = { idle: 2, walk: 9, slash: 6, hurt: 6 };
 // Hair uses classic full-layout sheets: walk cycle lives on rows 8-11.
 export const LPC_CLASSIC_WALK_ROW = 8;

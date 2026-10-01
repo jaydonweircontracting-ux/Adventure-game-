@@ -1358,6 +1358,23 @@ for (const kind of EXPECTED_KINDS) {
   assert(hairIdle.frames === 1, 'hair idle must hold a single frame');
 }
 
+// ---- BUILD 384: iso player facing uses tile-space deltas ----
+// Walking "forward" (D-pad up = tile north) must show the back-of-character
+// sprite (LPC up row), not the right-facing side sprite. The old screen-space
+// projection mapped every axis-aligned move to left/right, so up/down rows
+// were unreachable for the player.
+{
+  const { tileFaceForDelta } = await import('../src/game/iso/isoSprites');
+  assert(tileFaceForDelta(0, -1) === 'up', 'tile north must face up (back of character)');
+  assert(tileFaceForDelta(0, 1) === 'down', 'tile south must face down');
+  assert(tileFaceForDelta(1, 0) === 'right', 'tile east must face right');
+  assert(tileFaceForDelta(-1, 0) === 'left', 'tile west must face left');
+  assert(tileFaceForDelta(0.3, -2) === 'up', 'mostly-north diagonal must face up');
+  assert(tileFaceForDelta(-3, 0.5) === 'left', 'mostly-west diagonal must face left');
+  assert(tileFaceForDelta(2, 2) === 'down', 'south-east diagonal ties break to down');
+  assert(tileFaceForDelta(-2, -2) === 'up', 'north-west diagonal ties break to up');
+}
+
 // ---- BUILD 317: monster sprite fallback hierarchy ----
 {
   clearMonsterSpriteCaches();

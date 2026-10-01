@@ -13,7 +13,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import {
-  preloadLpcSprites, type Face4,
+  preloadLpcSprites, tileFaceForDelta, type Face4,
 } from './isoSprites';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
 import {
@@ -57,13 +57,6 @@ interface IsoChunkScene {
 
 const MARGIN = 48; // world-px background margin around the map
 const ROAD_HALF = 5; // road band half-width in tiles
-
-function faceForDelta(dx: number, dy: number): Face4 {
-  // screen-space facing from a tile-space delta
-  const sx = (dx - dy) * (TILE_W / 2), sy = (dx + dy) * (TILE_H / 2);
-  if (Math.abs(sx) > Math.abs(sy)) return sx > 0 ? 'right' : 'left';
-  return sy > 0 ? 'down' : 'up';
-}
 
 export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTapMove, onTalkTo, zoom, onZoomChange }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -192,7 +185,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
       // player facing from movement delta
       const mdx = live.px - prevP.x, mdy = live.py - prevP.y;
       const playerMoving = Math.abs(mdx) + Math.abs(mdy) > 0.01;
-      if (playerMoving) playerFace.f = faceForDelta(mdx, mdy);
+      if (playerMoving) playerFace.f = tileFaceForDelta(mdx, mdy);
       prevP.x = live.px; prevP.y = live.py;
 
       // camera follows the player
