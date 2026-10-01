@@ -130,24 +130,28 @@ export function isoScreenSpeedScale(ux: number, uy: number): number {
 }
 
 /**
- * BUILD 407: screen-space player facing. The tile-space helpers above map
- * screen-diagonal travel (what tap-to-move produces) back to the tile axis,
- * so walking "right-north" on screen showed the back sprite, and drift near
- * the diagonal band flickered between assets. Instead, project the tile
- * delta into true screen space (2:1 dimetric) and let the dominant screen
- * axis pick the art: screen up-right -> right, up-left -> left, mostly
- * screen-up -> up (back), mostly screen-down -> down (front). The 45-degree
- * split is drift-proof by geometry — minor drift while walking straight up
- * can never outvote the vertical axis — so no directional stickiness is
- * needed; `current` is only the zero-movement fallback. Exact
- * screen diagonals break toward the horizontal (right-north -> right).
+ * BUILD 408: screen-space player facing with a northward preference. The
+ * tile delta is projected into true screen space (2:1 dimetric) and the
+ * dominant screen axis picks the art — except northward travel always shows
+ * the back/up sprite: anything within 67.5 degrees of straight screen-up
+ * (up, up-right, up-left) faces up, so angling a tap left or right of
+ * straight-up never flips to a side asset. Near-horizontal northward drift
+ * still shows the side sprite. Southward keeps the dominant-axis mapping
+ * (down-right -> right, down-left -> left, mostly-down -> down/front).
+ * `current` is only the zero-movement fallback.
  */
 export function isoPlayerFaceForScreenDelta(dx: number, dy: number, current: Face4): Face4 {
   if (Math.abs(dx) + Math.abs(dy) < 1e-9) return current; // no movement: keep facing
   const sx = dx - dy; // screen x of the tile delta (2:1 dimetric)
   const sy = (dx + dy) / 2; // screen y of the tile delta
-  if (Math.abs(sx) >= Math.abs(sy)) return sx > 0 ? 'right' : 'left';
-  return sy > 0 ? 'down' : 'up';
+  const ax = Math.abs(sx), ay = Math.abs(sy);
+  if (sy < 0) {
+    // northward: back sprite unless the travel is nearly horizontal
+    if (ay >= ax * 0.4142) return 'up'; // tan(22.5deg): within 67.5deg of straight-up
+    return sx > 0 ? 'right' : 'left';
+  }
+  if (ax >= ay) return sx > 0 ? 'right' : 'left';
+  return 'down';
 }
 export const LPC_FRAMES: Record<LpcAnim, number> = { idle: 2, walk: 9, slash: 6, hurt: 6 };
 
