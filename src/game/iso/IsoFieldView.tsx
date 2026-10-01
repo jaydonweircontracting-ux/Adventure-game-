@@ -1,9 +1,13 @@
-// IsoFieldView (BUILD 365): the live game's field rendered through the isometric
-// 2.5D engine. This is a PURE RENDERER — it reads live GameField state (player
-// position, townsfolk simulation) and draws the REAL chunk: real buildings from
-// buildingDoorwaysFor, real trees from fieldTreesFor, real terrain/roads from
-// mapTileFor, in the game's own field palette. All game logic, input, HUD,
-// quests, persistence and saves are untouched — only the presentation changes.
+// IsoFieldView (BUILD 365, multi-chunk render BUILD 376): the live game's
+// field rendered through the isometric 2.5D engine. This is a PURE RENDERER —
+// it reads live GameField state (player position, townsfolk simulation) and
+// draws the REAL chunks: real buildings from buildingDoorwaysFor, real trees
+// from fieldTreesFor, real terrain/roads from mapTileFor, in the game's own
+// field palette. BUILD 376 renders a 3x3 chunk grid around the player's chunk
+// so generated terrain fills the whole screen at every zoom level (the old
+// single-chunk render left the blue background visible around the map
+// diamond). All game logic, input, HUD, quests, persistence and saves are
+// untouched — only the presentation changes.
 // Beta scope: visual field replacement. DOM interaction overlays (door prompts,
 // talk buttons) stay on the 2D renderer for now.
 import React, { useEffect, useMemo, useRef } from 'react';
@@ -13,11 +17,16 @@ import {
 } from './isoSprites';
 import {
   buildingDoorwaysFor, fieldTreesFor, mapTileFor, fieldPalettes, FIELD_SIZE,
-  type Point,
+  type Point, type Doorway, type FieldTree, type MapTile,
 } from '../../App';
 import type { Townsperson } from '../townsfolk';
 // BUILD 369 (Phase 2b): authoritative water/bridges in the iso field.
-import { waterGridForChunk, waterGridAt } from '../landscape';
+import { waterGridForChunk, waterGridAt, type WaterGrid } from '../landscape';
+// BUILD 376: multi-chunk rendering so generated terrain fills the whole
+// screen at every zoom level — no blue void where nothing was generated.
+import {
+  ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset,
+} from './isoChunks';
 
 interface IsoFieldViewProps {
   chunk: Point;
@@ -31,6 +40,19 @@ interface IsoFieldViewProps {
 }
 
 interface Drawable { depth: number; draw: (g: CanvasRenderingContext2D, now: number) => void }
+
+// BUILD 376: one rendered scene per chunk in the chunk grid around the
+// player's chunk. Tiles are addressed relative to the current chunk origin:
+// the home chunk occupies [0, N), neighbor (ox, oy) occupies
+// [ox*N, (ox+1)*N). The iso projection is linear, so neighbor diamonds tile
+// seamlessly and generated terrain fills the whole screen at every zoom.
+interface IsoChunkScene {
+  ox: number; oy: number;
+  buildings: Doorway[]; trees: FieldTree[];
+  tile: MapTile; water: WaterGrid;
+  palette: { field: string; path: string; glow: string };
+  road: string;
+}
 
 const MARGIN = 48; // world-px background margin around the map
 const ROAD_HALF = 5; // road band half-width in tiles
@@ -51,15 +73,35 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
   const tapRef = useRef({ onTapMove, onTalkTo });
   tapRef.current = { onTapMove, onTalkTo };
 
-  // Real chunk scene — same pure world-gen the 2D renderer uses.
-  const scene = useMemo(() => {
-    const buildings = buildingDoorwaysFor(chunk);
-    const trees = fieldTreesFor(chunk);
-    const tile = mapTileFor(chunk);
-    // BUILD 369 (Phase 2b): authoritative water grid, sampled per tile below.
-    const water = waterGridForChunk(chunk.x, chunk.y, 70);
-    return { buildings, trees, tile, water };
+  const R = ISO_CHUNK_RENDER_RADIUS;
+  const GRID = 2 * R + 1;
+
+  // Real chunk scenes — same pure world-gen the 2D renderer uses, built for
+  // the home chunk plus its neighbors.
+  const scenes = useMemo(() => {
+    const list: IsoChunkScene[] = [];
+    for (let oy = -R; oy <= R; oy++) {
+      for (let ox = -R; ox <= R; ox++) {
+        const cp = { x: chunk.x + ox, y: chunk.y + oy };
+        const tile = mapTileFor(cp);
+        list.push({
+          ox, oy,
+          buildings: buildingDoorwaysFor(cp),
+          trees: fieldTreesFor(cp),
+          tile,
+          water: waterGridForChunk(cp.x, cp.y, 70),
+          palette: fieldPalettes[tile.terrain] || fieldPalettes.meadow,
+          road: tile.road,
+        });
+      }
+    }
+    return list;
   }, [chunk.x, chunk.y]);
+  const homeScene = scenes[R * GRID + R];
+  const sceneFor = (ox: number, oy: number): IsoChunkScene => {
+    const c = clampChunkOffset(ox, oy, R);
+    return scenes[(c.oy + R) * GRID + (c.ox + R)];
+  };
 
   // BUILD 372: zoom lives in App (the main black zoom buttons drive it);
   // mirror to a ref for the rAF loop and canvas listeners.
@@ -72,13 +114,13 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
     const wrap = wrapRef.current!;
     const g = canvas.getContext('2d')!;
     const N = FIELD_SIZE;
-    const palette = fieldPalettes[scene.tile.terrain] || fieldPalettes.meadow;
-    const road = scene.tile.road;
-
-    // map bounds in world px (tile space == field units, 1:1)
-    const minX = -(N - 1) * (TILE_W / 2) - MARGIN, maxX = (N - 1) * (TILE_W / 2) + MARGIN;
-    const minY = -MARGIN, maxY = (2 * N - 2) * (TILE_H / 2) + MARGIN;
-    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    // BUILD 376: map bounds in world px (tile space == field units, 1:1)
+    // covering the whole rendered chunk grid, so the camera never reveals
+    // ungenerated void — the old single-chunk bounds are what left the blue
+    // background visible around the map diamond.
+    const gb = isoChunkGridBounds(R, N, MARGIN);
+    const minX = gb.minX, maxX = gb.maxX, minY = gb.minY, maxY = gb.maxY;
+    const cx = gb.cx, cy = gb.cy;
 
     const clampCam = (c: { x: number; y: number }, zm: number, wpx: number, hpx: number) => {
       const hw = wpx / (2 * zm), hh = hpx / (2 * zm);
@@ -107,11 +149,13 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
     resize();
     window.addEventListener('resize', resize);
 
-    const isRoadTile = (tx: number, ty: number): boolean => {
-      if (road === 'none') return false;
+    // BUILD 376: per-chunk road check (each chunk has its own road string).
+    const isRoadTileFor = (sc: IsoChunkScene, lx: number, ly: number): boolean => {
+      const rd = sc.road;
+      if (rd === 'none') return false;
       const c = N / 2;
-      const ew = (road.includes('e') || road.includes('w')) && Math.abs(ty - c) <= ROAD_HALF;
-      const ns = (road.includes('n') || road.includes('s')) && Math.abs(tx - c) <= ROAD_HALF;
+      const ew = (rd.includes('e') || rd.includes('w')) && Math.abs(ly - c) <= ROAD_HALF;
+      const ns = (rd.includes('n') || rd.includes('s')) && Math.abs(lx - c) <= ROAD_HALF;
       return ew || ns;
     };
 
@@ -180,40 +224,46 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
       cam.y += (target.y - cam.y) * k;
       clampCam(cam, zm, wpx, hpx);
 
-      // background
-      g.fillStyle = '#bfe3ef';
+      // background — BUILD 376: dark neutral fallback. Generated terrain now
+      // covers the whole viewport at every zoom, so this should never show;
+      // the old light blue is what used to read as "not generated".
+      g.fillStyle = '#0e1713';
       g.fillRect(0, 0, wpx, hpx);
       g.save();
       g.translate(wpx / 2, hpx / 2);
       g.scale(zm, zm);
       g.translate(-cam.x, -cam.y);
 
-      // visible tile range (culled)
+      // visible tile range (culled) — BUILD 376: spans into neighbor chunks,
+      // so zooming out shows real generated terrain instead of blue void.
       const tl = screenToTile(cam.x - wpx / 2 / zm - TILE_W, cam.y - hpx / 2 / zm - TILE_H);
       const br = screenToTile(cam.x + wpx / 2 / zm + TILE_W, cam.y + hpx / 2 / zm + TILE_H);
-      const x0 = Math.max(0, Math.floor(tl.tx) - 1), x1 = Math.min(N - 1, Math.ceil(br.tx) + 1);
-      const y0 = Math.max(0, Math.floor(tl.ty) - 1), y1 = Math.min(N - 1, Math.ceil(br.ty) + 1);
+      const x0 = Math.floor(tl.tx) - 1, x1 = Math.ceil(br.tx) + 1;
+      const y0 = Math.floor(tl.ty) - 1, y1 = Math.ceil(br.ty) + 1;
 
-      // ground
-      const ocean = scene.tile.terrain === 'ocean';
+      // ground — per-tile chunk lookup into the scene grid
+      // BUILD 376: tile detail is sub-pixel when zoomed out, so skip it there.
+      const showDetail = zm > 0.45;
       for (let ty = y0; ty <= y1; ty++) {
         for (let tx = x0; tx <= x1; tx++) {
+          const { ox, oy, lx, ly } = isoTileChunkOffset(tx, ty, N);
+          const sc = sceneFor(ox, oy);
+          const terr = sc.tile.terrain;
           const p = isoToScreen(tx, ty);
           const hw = TILE_W / 2, hh = TILE_H / 2;
           g.beginPath();
           g.moveTo(p.x, p.y - hh); g.lineTo(p.x + hw, p.y);
           g.lineTo(p.x, p.y + hh); g.lineTo(p.x - hw, p.y);
           g.closePath();
-          let col = palette.field;
-          if (ocean) col = palette.field;
-          else if (isRoadTile(tx, ty)) col = palette.path;
-          else if ((tx + ty) % 2 === 0) col = palette.field;
-          else col = palette.field; // base; dither below adds variety
+          const isOcean = terr === 'ocean';
+          const roadHere = isOcean ? false : isRoadTileFor(sc, lx, ly);
+          let col = sc.palette.field;
+          if (roadHere) col = sc.palette.path;
           // BUILD 369 (Phase 2b): authoritative rivers/lakes; road crossings draw as bridges.
-          if (!ocean) {
-            const wq = waterGridAt(scene.water, chunk.x * FIELD_SIZE + tx + 0.5, chunk.y * FIELD_SIZE + ty + 0.5);
+          if (!isOcean) {
+            const wq = waterGridAt(sc.water, (chunk.x + sc.ox) * FIELD_SIZE + lx + 0.5, (chunk.y + sc.oy) * FIELD_SIZE + ly + 0.5);
             if (wq.depth > 0.25) {
-              if (isRoadTile(tx, ty)) col = '#8a6a44'; // bridge planks
+              if (roadHere) col = '#8a6a44'; // bridge planks
               else {
                 const t = Math.min(1, wq.depth);
                 const deep = wq.kind === 2 ? '#2a64b0' : '#2f6cb8';
@@ -230,13 +280,14 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
           g.fillStyle = col;
           g.fill();
           // BUILD 366: deterministic per-tile detail (chunk-gen video techniques).
-          const h = (tx * 73856093) ^ (ty * 19349663) ^ (scene.tile.terrain.length * 83492791);
-          const hh2 = ((h ^ (h >>> 13)) * 1274126177) >>> 0;
-          const r1 = (hh2 % 1000) / 1000;
-          const r2 = (((hh2 >>> 10) ^ hh2) % 1000) / 1000;
-          const terr = scene.tile.terrain;
-          if (!ocean && !isRoadTile(tx, ty)) {
-            if ((tx + ty) % 2 === 1) {
+          // (chunk offset mixed into the hash so neighbor chunks don't repeat
+          // the home chunk's pattern; home chunk hash is unchanged.)
+          if (showDetail && !isOcean && !roadHere) {
+            const h = (lx * 73856093) ^ (ly * 19349663) ^ (terr.length * 83492791) ^ ((sc.ox * 31 + sc.oy * 57) * 2654435761);
+            const hh2 = ((h ^ (h >>> 13)) * 1274126177) >>> 0;
+            const r1 = (hh2 % 1000) / 1000;
+            const r2 = (((hh2 >>> 10) ^ hh2) % 1000) / 1000;
+            if ((lx + ly) % 2 === 1) {
               g.fillStyle = 'rgba(0,0,0,0.05)';
               g.fill();
             }
@@ -274,9 +325,14 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
 
       const drawables: Drawable[] = [];
 
-      // buildings: real rects -> iso boxes with pitched roofs
-      for (const b of scene.buildings) {
-        const r = b.rect;
+      // buildings: real rects -> iso boxes with pitched roofs. BUILD 376:
+      // drawn for every chunk in the scene grid; neighbor rects are offset
+      // into current-chunk-relative tile space so they tile seamlessly.
+      for (const sc of scenes) {
+        const bx = sc.ox * N, by = sc.oy * N;
+        for (const b of sc.buildings) {
+          const r = { left: b.rect.left + bx, top: b.rect.top + by, right: b.rect.right + bx, bottom: b.rect.bottom + by };
+          const bpos = { x: b.position.x + bx, y: b.position.y + by };
         const p00 = isoToScreen(r.left, r.top), p10 = isoToScreen(r.right, r.top);
         const p11 = isoToScreen(r.right, r.bottom), p01 = isoToScreen(r.left, r.bottom);
         const wallH = 64;
@@ -328,7 +384,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
             g2.lineTo(r1.x, r1.y); g2.closePath(); g2.fill();
             // door: project the doorway trigger onto the nearest VISIBLE wall
             // face (south or east) instead of drawing the interior point.
-            const dpx = b.position.x, dpy = b.position.y;
+            const dpx = bpos.x, dpy = bpos.y;
             const southDist = r.bottom - dpy, eastDist = r.right - dpx;
             let dg: { x: number; y: number };
             if (southDist <= eastDist) {
@@ -345,14 +401,19 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
             g2.fillRect(dg.x - doorW / 2, dg.y - doorH, doorW, doorH);
           },
         });
+        } // end neighbor-chunk building loop
       }
 
-      // trees: real positions
-      for (const t of scene.trees) {
-        const c = isoToScreen(t.x, t.y);
+      // trees: real positions — BUILD 376: every chunk in the scene grid,
+      // offset into current-chunk-relative tile space.
+      for (const sc of scenes) {
+        const bx = sc.ox * N, by = sc.oy * N;
+        for (const t of sc.trees) {
+          const tx2 = t.x + bx, ty2 = t.y + by;
+          const c = isoToScreen(tx2, ty2);
         const s = 0.7 + t.scale * 0.6;
         drawables.push({
-          depth: t.x + t.y, draw: (g2) => {
+          depth: tx2 + ty2, draw: (g2) => {
             g2.fillStyle = 'rgba(0,0,0,0.15)';
             g2.beginPath(); g2.ellipse(c.x, c.y + 2, 10 * s, 4 * s, 0, 0, 7); g2.fill();
             g2.fillStyle = '#5a4128';
@@ -371,6 +432,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
             g2.closePath(); g2.fill();
           },
         });
+        } // end neighbor-chunk tree loop
       }
 
       // townsfolk: the live NPC simulation, right where the 2D game has them
@@ -415,10 +477,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
         }
         if (best) { talk(best); return; }
       }
-      // door hit test: tap near a doorway walks the player to it
+      // door hit test: tap near a doorway walks the player to it.
+      // BUILD 376: home-chunk doors only (neighbor-chunk doors belong to the
+      // 2D game's chunk-crossing flow, unchanged).
       if (tapMove) {
         let bestDoor: { x: number; y: number } | null = null; let bestD = 40;
-        for (const b of scene.buildings) {
+        for (const b of homeScene.buildings) {
           const w = isoToScreen(b.position.x, b.position.y);
           const px = (w.x - cam.x) * zm + wpx / 2;
           const py = (w.y - cam.y) * zm + hpx / 2;
@@ -436,7 +500,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
     canvas.addEventListener('pointerdown', onTap);
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); canvas.removeEventListener('pointerdown', onTap); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scene]);
+  }, [scenes]);
 
   const btn: React.CSSProperties = {
     userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none',
@@ -447,7 +511,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
   };
 
   return (
-    <div ref={wrapRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#bfe3ef' }}>
+    <div ref={wrapRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#0e1713' }}>
       <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }} />
       {/* BUILD 372: zoom is driven by the main black zoom buttons (App), so the
           duplicate in-canvas zoom controls were removed. */}

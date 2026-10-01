@@ -33,6 +33,7 @@ import { isMonsterSheetFailed, clearSheetProbeState } from '../src/game/monsterS
 import { mulberry32, shadeColor, mixColor, hexToRgb, GROUND_PX_PER_UNIT } from '../src/game/groundDetail';
 import { FIELD_SIZE, DEFAULT_GAME_ZOOM, zoomTranslatePct, cameraFrac, playerScreenPct, screenPxToFieldUnits, fieldPct } from '../src/game/fieldCamera';
 import { PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP, collisionBoxesOverlap, isPositionOccupiedByGoat, separateGoatFromPlayer } from '../src/game/fieldCollision';
+import { ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset, isoViewportCovered } from '../src/game/iso/isoChunks';
 
 let passed = 0;
 let failed = 0;
@@ -2547,6 +2548,62 @@ console.log('Testing examine system...');
   const sep = separateGoatFromPlayer({ x: 1, y: 1 }, { x: 0, y: 0 });
   assert(sep !== null && Math.abs(sep.x) + Math.abs(sep.y) > 0, 'separation returns push-apart point');
   assert(separateGoatFromPlayer({ x: 100, y: 100 }, { x: 0, y: 0 }) === null, 'no separation when clear');
+}
+
+// ---- 27. Iso multi-chunk helpers (BUILD 376: isoChunks) ----
+// Proves the 3x3 chunk-grid math the iso field renderer depends on.
+{
+  const N = FIELD_SIZE; // 280
+  assert(ISO_CHUNK_RENDER_RADIUS === 1, 'render radius should be 1 (3x3 grid)');
+  // Home-chunk tiles map to offset (0,0) with identity local coords.
+  const home = isoTileChunkOffset(0, 0, N);
+  assert(home.ox === 0 && home.oy === 0 && home.lx === 0 && home.ly === 0, 'origin tile is home/local');
+  const home2 = isoTileChunkOffset(N - 1, N - 1, N);
+  assert(home2.ox === 0 && home2.oy === 0 && home2.lx === N - 1 && home2.ly === N - 1, 'last home tile');
+  // East / south neighbors.
+  const east = isoTileChunkOffset(N, 5, N);
+  assert(east.ox === 1 && east.oy === 0 && east.lx === 0 && east.ly === 5, 'first east-neighbor tile');
+  const south = isoTileChunkOffset(7, 2 * N + 3, N);
+  assert(south.ox === 0 && south.oy === 2 && south.lx === 7 && south.ly === 3, 'south neighbor two chunks out');
+  // Negative tiles (west/north neighbors) wrap local coords into [0, N).
+  const west = isoTileChunkOffset(-1, -1, N);
+  assert(west.ox === -1 && west.oy === -1 && west.lx === N - 1 && west.ly === N - 1, 'negative tile wraps local');
+  const nw = isoTileChunkOffset(-N, -N, N);
+  assert(nw.ox === -1 && nw.oy === -1 && nw.lx === 0 && nw.ly === 0, 'exact negative boundary');
+  // Local coords always in range across a sweep.
+  for (let t = -3 * N; t <= 3 * N; t += 37) {
+    const r = isoTileChunkOffset(t, -t, N);
+    assert(r.lx >= 0 && r.lx < N && r.ly >= 0 && r.ly < N, `local coords in range for t=${t}`);
+    assert(r.lx === t - r.ox * N && r.ly === -t - r.oy * N, `offset identity for t=${t}`);
+  }
+  // Grid bounds: symmetric, cover exactly the rendered tile range.
+  const b = isoChunkGridBounds(1, N, 48);
+  assert(b.minX === -b.maxX && b.cx === 0, 'x bounds symmetric about 0');
+  assert(b.minX < 0 && b.maxX > 0 && b.minY < b.maxY, 'bounds span the grid');
+  // minT=-280, maxT=559 -> minX = (-280-559)*32-48
+  assert(b.minX === (-280 - 559) * 32 - 48, `minX formula, got ${b.minX}`);
+  assert(b.maxX === (559 + 280) * 32 + 48, `maxX formula, got ${b.maxX}`);
+  assert(b.minY === (-280 + -280) * 16 - 48, `minY formula, got ${b.minY}`);
+  assert(b.maxY === (559 + 559) * 16 + 48, `maxY formula, got ${b.maxY}`);
+  assert(b.cy === (b.minY + b.maxY) / 2, 'cy is midpoint');
+  // Radius 0 collapses to the single home chunk.
+  const b0 = isoChunkGridBounds(0, N, 0);
+  assert(b0.minX === (0 - (N - 1)) * 32 && b0.maxX === ((N - 1) - 0) * 32, 'radius 0 = home chunk x');
+  // Clamp keeps offsets inside the grid.
+  const cc = clampChunkOffset(5, -7, 1);
+  assert(cc.ox === 1 && cc.oy === -1, 'clamp pins to grid');
+  const cc2 = clampChunkOffset(0, 1, 1);
+  assert(cc2.ox === 0 && cc2.oy === 1, 'in-grid offset unchanged');
+  // Viewport coverage: phone-ish 390x844 viewport is fully covered by
+  // generated terrain at every allowed iso zoom (0.15 .. 2.5).
+  for (const z of [0.15, 0.3, 0.7, 1, 2.5]) {
+    assert(isoViewportCovered(390, 844, z, 1, N), `viewport covered at zoom ${z}`);
+  }
+  // Desktop-ish 1920x1080 also covered at min zoom.
+  assert(isoViewportCovered(1920, 1080, 0.15, 1, N), 'desktop viewport covered at min zoom');
+  // A single chunk would NOT cover the zoomed-out phone viewport (the old
+  // blue-void bug: the diamond corners leave the viewport corners undrawn).
+  assert(!isoViewportCovered(390, 844, 0.15, 0, N), 'single chunk cannot cover zoomed-out viewport');
 }
 
 // ---- Results ----
