@@ -89,6 +89,28 @@ export function isoPlayerFaceForDelta(dx: number, dy: number): Face4 {
   }
   return tileFaceForDelta(dx, dy);
 }
+
+/**
+ * BUILD 405: sticky player facing. isoPlayerFaceForDelta flips to the side
+ * asset on minor drift while walking up/down: per-frame actual deltas pick up
+ * collision-slide and touch jitter, and the 1.5 diagonal band projects those
+ * near-axial deltas to screen space (e.g. (0.8,-1) -> 'right'), so the sprite
+ * flickers between assets mid-stride. The candidate only replaces the current
+ * facing when it is clearly indicated — the candidate's tile axis must
+ * dominate (or tie). A marginal diagonal keeps the current facing, so walking
+ * up keeps the back sprite and never flips to the side asset on drift.
+ */
+export function isoPlayerFaceForDeltaSticky(dx: number, dy: number, current: Face4): Face4 {
+  const next = isoPlayerFaceForDelta(dx, dy);
+  if (next === current) return next;
+  const ax = Math.abs(dx), ay = Math.abs(dy);
+  switch (next) {
+    case 'up': return dy < 0 && ay >= ax ? next : current;
+    case 'down': return dy > 0 && ay >= ax ? next : current;
+    case 'left': return dx < 0 && ax >= ay ? next : current;
+    case 'right': return dx > 0 && ax >= ay ? next : current;
+  }
+}
 export const LPC_FRAMES: Record<LpcAnim, number> = { idle: 2, walk: 9, slash: 6, hurt: 6 };
 
 // ---------------------------------------------------------------------------

@@ -1394,6 +1394,23 @@ for (const kind of EXPECTED_KINDS) {
   assert(isoPlayerFaceForDelta(-3, 0.5) === 'left', 'mostly-west diagonal keeps tile convention');
   assert(isoPlayerFaceForDelta(2, 2) === 'down', 'near-diagonal south-east faces down');
 }
+// BUILD 405: sticky facing — the candidate only replaces the current facing
+// when clearly indicated, so drift while walking up never flips to the side
+// asset, while true diagonals and reversals still switch.
+{
+  const { isoPlayerFaceForDeltaSticky } = await import('../src/game/iso/isoSprites');
+  assert(isoPlayerFaceForDeltaSticky(0.8, -1, 'up') === 'up', 'x-drift while walking up keeps the back sprite');
+  assert(isoPlayerFaceForDeltaSticky(-0.8, -1, 'up') === 'up', 'negative x-drift while walking up keeps the back sprite');
+  assert(isoPlayerFaceForDeltaSticky(0.02, -0.025, 'up') === 'up', 'tiny noisy drift while walking up keeps the back sprite');
+  assert(isoPlayerFaceForDeltaSticky(1, -1, 'up') === 'right', 'true north-east diagonal still switches to screen-right');
+  assert(isoPlayerFaceForDeltaSticky(-1, -1, 'up') === 'up', 'true north-west diagonal keeps up');
+  assert(isoPlayerFaceForDeltaSticky(0, 1, 'up') === 'down', 'full reversal up->down switches');
+  assert(isoPlayerFaceForDeltaSticky(0, -1, 'down') === 'up', 'full reversal down->up switches');
+  assert(isoPlayerFaceForDeltaSticky(1, 0, 'up') === 'right', 'pure east switches from up');
+  assert(isoPlayerFaceForDeltaSticky(-1, 0, 'right') === 'left', 'pure west switches from right');
+  assert(isoPlayerFaceForDeltaSticky(0.8, 1, 'down') === 'down', 'x-drift while walking down keeps the front sprite');
+  assert(isoPlayerFaceForDeltaSticky(-0.8, 1, 'left') === 'left', 'drift while walking left keeps the left sprite');
+}
 
 // ---- BUILD 388: dungeon kit panel selectors for cellar/prison interiors ----
 // The kit is purely visual (collision/furniture untouched), so the sim pins

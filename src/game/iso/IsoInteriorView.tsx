@@ -14,7 +14,7 @@ import {
 } from './projection';
 import {
   preloadLpcSprites,
-  isoPlayerFaceForDelta,
+  isoPlayerFaceForDeltaSticky,
   type Face4,
 } from './isoSprites';
 import { preloadBarbarian } from './barbarian';
@@ -144,15 +144,16 @@ function furnitureFor(roomType: IsoRoomType): Furniture[] {
   }
 }
 
-function faceForMove(ax: number, ay: number, bx: number, by: number): Face4 {
+function faceForMove(ax: number, ay: number, bx: number, by: number, current: Face4): Face4 {
   // BUILD 387/402: tile-space facing, same as the iso field outside.
   // The old screen-space projection mapped every axis-aligned step to
   // left/right, so walking forward/back inside showed the side sprite while
   // outside showed the back/front sprite. BUILD 402: axis moves keep the
   // tile-axis convention (D-pad up = back sprite); near-diagonal moves now
   // face the screen direction of travel so the character faces where it's
-  // going in the dimetric projection.
-  return isoPlayerFaceForDelta(bx - ax, by - ay);
+  // going in the dimetric projection. BUILD 405: sticky — only switch when
+  // the new direction is clearly indicated, so drift never flips the asset.
+  return isoPlayerFaceForDeltaSticky(bx - ax, by - ay, current);
 }
 
 export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair }: IsoInteriorViewProps): React.JSX.Element {
@@ -563,7 +564,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
           const nx = Math.round(state.px) + dx, ny = Math.round(state.py) + dy;
           if (nx === doorTile.tx && ny === doorTile.ty) { exitRef.current(); }
           else if (walkable(nx, ny)) {
-            state.facing = faceForMove(state.px, state.py, nx, ny);
+            state.facing = faceForMove(state.px, state.py, nx, ny, state.facing);
             state.path = [{ tx: nx, ty: ny }];
             state.tapPath = false;
             state.moving = true;
@@ -581,9 +582,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
           state.px = target.tx; state.py = target.ty;
           state.path.shift();
           if (state.path.length === 0) { state.moving = false; state.tapPath = false; }
-          else state.facing = faceForMove(state.fx, state.fy, state.path[0].tx, state.path[0].ty);
+          else state.facing = faceForMove(state.fx, state.fy, state.path[0].tx, state.path[0].ty, state.facing);
         } else {
-          state.facing = faceForMove(state.fx, state.fy, target.tx, target.ty);
+          state.facing = faceForMove(state.fx, state.fy, target.tx, target.ty, state.facing);
           state.fx += (dx / dist) * speed;
           state.fy += (dy / dist) * speed;
         }

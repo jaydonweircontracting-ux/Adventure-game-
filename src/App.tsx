@@ -5,7 +5,7 @@ import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality } from './game/villageLife';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Backpack, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
+import { Backpack, BookOpen, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
 import { type ChangeEvent, type PointerEvent, type ReactNode, type TouchEvent } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -8372,12 +8372,7 @@ if (active) {
           )}
           <button className="hud-bag-button" onClick={onOpenInventory} aria-label="Open menu" title="Menu" data-testid="button-open-inventory"><Backpack size={17} /></button>
         </div>
-        <div className="touch-controls" aria-label="Touch movement controls">
-           <button className="touch-control up" aria-label="Move north" data-testid="button-move-up" onTouchStart={(event) => pressDirection('up', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('up', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('up', event)} onPointerUp={(event) => mouseReleaseDirection('up', event)} onPointerLeave={(event) => mouseReleaseDirection('up', event)}><ChevronUp size={18} /></button>
-           <button className="touch-control left" aria-label="Move west" data-testid="button-move-left" onTouchStart={(event) => pressDirection('left', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('left', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('left', event)} onPointerUp={(event) => mouseReleaseDirection('left', event)} onPointerLeave={(event) => mouseReleaseDirection('left', event)}><ChevronLeft size={18} /></button>
-           <button className="touch-control down" aria-label="Move south" data-testid="button-move-down" onTouchStart={(event) => pressDirection('down', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('down', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('down', event)} onPointerUp={(event) => mouseReleaseDirection('down', event)} onPointerLeave={(event) => mouseReleaseDirection('down', event)}><ChevronDown size={18} /></button>
-           <button className="touch-control right" aria-label="Move east" data-testid="button-move-right" onTouchStart={(event) => pressDirection('right', touchIdentifierOf(event))} onTouchEnd={(event) => releaseDirection('right', touchIdentifierOf(event))} onPointerDown={(event) => mousePressDirection('right', event)} onPointerUp={(event) => mouseReleaseDirection('right', event)} onPointerLeave={(event) => mouseReleaseDirection('right', event)}><ChevronRight size={18} /></button>
-        </div>
+
          {logOpen && (
            <section id="field-log-drawer" className="field-log-drawer" aria-label="Field log" data-testid="panel-field-log">
              <div className="field-log-heading">
