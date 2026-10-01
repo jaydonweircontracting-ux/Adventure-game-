@@ -52,8 +52,8 @@ export const BARB_FRAMES: Record<string, Record<string, Record<string, string[]>
     right: { idle: ['barbarian/bare_right_idle_0.png'], walk: ['barbarian/bare_right_walk_0.png', 'barbarian/bare_right_walk_1.png'], attack: ['barbarian/bare_side_attack_0.png', 'barbarian/bare_side_attack_1.png'] },
     left: { idle: ['barbarian/bare_left_idle_0.png'], walk: ['barbarian/bare_left_walk_0.png', 'barbarian/bare_left_walk_1.png'], attack: ['barbarian/bare_side_attack_0.png', 'barbarian/bare_side_attack_1.png'] },
     up: { idle: ['barbarian/bare_up_idle_0.png'], walk: ['barbarian/bare_up_walk_0.png', 'barbarian/bare_up_walk_1.png', 'barbarian/bare_up_walk_2.png', 'barbarian/bare_up_walk_3.png', 'barbarian/bare_up_walk_4.png', 'barbarian/bare_up_walk_5.png', 'barbarian/bare_up_walk_6.png', 'barbarian/bare_up_walk_7.png', 'barbarian/bare_up_walk_8.png'], attack: ['barbarian/bare_up_attack_0.png', 'barbarian/bare_up_attack_1.png'] },
-    upright: { idle: ['barbarian/bare_up_idle_0.png'], walk: ['barbarian/bare_up_walk_0.png', 'barbarian/bare_up_walk_1.png', 'barbarian/bare_up_walk_2.png', 'barbarian/bare_up_walk_3.png', 'barbarian/bare_up_walk_4.png', 'barbarian/bare_up_walk_5.png', 'barbarian/bare_up_walk_6.png', 'barbarian/bare_up_walk_7.png', 'barbarian/bare_up_walk_8.png'], attack: ['barbarian/bare_up_attack_0.png', 'barbarian/bare_up_attack_1.png'] },
-    upleft: { idle: ['barbarian/bare_up_idle_0.png'], walk: ['barbarian/bare_upleft_walk_0.png', 'barbarian/bare_upleft_walk_1.png', 'barbarian/bare_upleft_walk_2.png', 'barbarian/bare_upleft_walk_3.png', 'barbarian/bare_upleft_walk_4.png', 'barbarian/bare_upleft_walk_5.png', 'barbarian/bare_upleft_walk_6.png', 'barbarian/bare_upleft_walk_7.png', 'barbarian/bare_upleft_walk_8.png'], attack: ['barbarian/bare_up_attack_0.png', 'barbarian/bare_up_attack_1.png'] },
+    upright: { idle: ['barbarian/bare_upright_idle_0.png'], walk: ['barbarian/bare_upright_walk_0.png', 'barbarian/bare_upright_walk_1.png', 'barbarian/bare_upright_walk_2.png', 'barbarian/bare_upright_walk_3.png', 'barbarian/bare_upright_walk_4.png', 'barbarian/bare_upright_walk_5.png', 'barbarian/bare_upright_walk_6.png', 'barbarian/bare_upright_walk_7.png', 'barbarian/bare_upright_walk_8.png'], attack: ['barbarian/bare_up_attack_0.png', 'barbarian/bare_up_attack_1.png'] },
+    upleft: { idle: ['barbarian/bare_upleft_idle_0.png'], walk: ['barbarian/bare_upleft_walk_0.png', 'barbarian/bare_upleft_walk_1.png', 'barbarian/bare_upleft_walk_2.png', 'barbarian/bare_upleft_walk_3.png', 'barbarian/bare_upleft_walk_4.png', 'barbarian/bare_upleft_walk_5.png', 'barbarian/bare_upleft_walk_6.png', 'barbarian/bare_upleft_walk_7.png', 'barbarian/bare_upleft_walk_8.png'], attack: ['barbarian/bare_up_attack_0.png', 'barbarian/bare_up_attack_1.png'] },
   },
   blue: {
     down: { idle: ['barbarian/blue_down_idle_0.png'], walk: ['barbarian/blue_down_walk_0.png', 'barbarian/blue_down_walk_1.png'], attack: ['barbarian/blue_down_attack_0.png', 'barbarian/blue_down_attack_1.png'] },
@@ -61,8 +61,8 @@ export const BARB_FRAMES: Record<string, Record<string, Record<string, string[]>
     right: { idle: ['barbarian/blue_right_idle_0.png'], walk: ['barbarian/blue_right_walk_0.png', 'barbarian/blue_right_walk_1.png'], attack: ['barbarian/blue_right_attack_0.png', 'barbarian/blue_right_attack_1.png'] },
     left: { idle: ['barbarian/blue_left_idle_0.png'], walk: ['barbarian/blue_left_walk_0.png', 'barbarian/blue_left_walk_1.png'], attack: ['barbarian/blue_left_attack_0.png', 'barbarian/blue_left_attack_1.png'] },
     up: { idle: ['barbarian/blue_up_idle_0.png'], walk: ['barbarian/blue_up_walk_0.png', 'barbarian/blue_up_walk_1.png', 'barbarian/blue_up_walk_2.png', 'barbarian/blue_up_walk_3.png', 'barbarian/blue_up_walk_4.png', 'barbarian/blue_up_walk_5.png', 'barbarian/blue_up_walk_6.png', 'barbarian/blue_up_walk_7.png', 'barbarian/blue_up_walk_8.png'], attack: ['barbarian/blue_up_attack_0.png', 'barbarian/blue_up_attack_1.png'] },
-    upright: { idle: ['barbarian/blue_up_idle_0.png'], walk: ['barbarian/blue_up_walk_0.png', 'barbarian/blue_up_walk_1.png', 'barbarian/blue_up_walk_2.png', 'barbarian/blue_up_walk_3.png', 'barbarian/blue_up_walk_4.png', 'barbarian/blue_up_walk_5.png', 'barbarian/blue_up_walk_6.png', 'barbarian/blue_up_walk_7.png', 'barbarian/blue_up_walk_8.png'], attack: ['barbarian/blue_up_attack_0.png', 'barbarian/blue_up_attack_1.png'] },
-    upleft: { idle: ['barbarian/blue_up_idle_0.png'], walk: ['barbarian/blue_upleft_walk_0.png', 'barbarian/blue_upleft_walk_1.png', 'barbarian/blue_upleft_walk_2.png', 'barbarian/blue_upleft_walk_3.png', 'barbarian/blue_upleft_walk_4.png', 'barbarian/blue_upleft_walk_5.png', 'barbarian/blue_upleft_walk_6.png', 'barbarian/blue_upleft_walk_7.png', 'barbarian/blue_upleft_walk_8.png'], attack: ['barbarian/blue_up_attack_0.png', 'barbarian/blue_up_attack_1.png'] },
+    upright: { idle: ['barbarian/blue_upright_idle_0.png'], walk: ['barbarian/blue_upright_walk_0.png', 'barbarian/blue_upright_walk_1.png', 'barbarian/blue_upright_walk_2.png', 'barbarian/blue_upright_walk_3.png', 'barbarian/blue_upright_walk_4.png', 'barbarian/blue_upright_walk_5.png', 'barbarian/blue_upright_walk_6.png', 'barbarian/blue_upright_walk_7.png', 'barbarian/blue_upright_walk_8.png'], attack: ['barbarian/blue_up_attack_0.png', 'barbarian/blue_up_attack_1.png'] },
+    upleft: { idle: ['barbarian/blue_upleft_idle_0.png'], walk: ['barbarian/blue_upleft_walk_0.png', 'barbarian/blue_upleft_walk_1.png', 'barbarian/blue_upleft_walk_2.png', 'barbarian/blue_upleft_walk_3.png', 'barbarian/blue_upleft_walk_4.png', 'barbarian/blue_upleft_walk_5.png', 'barbarian/blue_upleft_walk_6.png', 'barbarian/blue_upleft_walk_7.png', 'barbarian/blue_upleft_walk_8.png'], attack: ['barbarian/blue_up_attack_0.png', 'barbarian/blue_up_attack_1.png'] },
   },
   sword: {
     down: { idle: ['barbarian/sword_down_idle_0.png'], walk: ['barbarian/sword_down_walk_0.png', 'barbarian/sword_down_walk_1.png'], attack: ['barbarian/sword_down_attack_0.png', 'barbarian/sword_down_attack_1.png', 'barbarian/sword_down_attack_2.png'] },
@@ -77,8 +77,8 @@ export const BARB_FRAMES: Record<string, Record<string, Record<string, string[]>
     right: { idle: ['barbarian/bow_right_idle_0.png'], walk: ['barbarian/bow_right_walk_0.png', 'barbarian/bow_right_walk_1.png'], attack: ['barbarian/bow_right_attack_0.png', 'barbarian/bow_right_attack_1.png', 'barbarian/bow_right_attack_2.png'] },
     left: { idle: ['barbarian/bow_left_idle_0.png'], walk: ['barbarian/bow_left_walk_0.png', 'barbarian/bow_left_walk_1.png'], attack: ['barbarian/bow_left_attack_0.png', 'barbarian/bow_left_attack_1.png', 'barbarian/bow_left_attack_2.png'] },
     up: { idle: ['barbarian/bow_up_idle_0.png'], walk: ['barbarian/bow_up_walk_0.png', 'barbarian/bow_up_walk_1.png', 'barbarian/bow_up_walk_2.png', 'barbarian/bow_up_walk_3.png', 'barbarian/bow_up_walk_4.png', 'barbarian/bow_up_walk_5.png', 'barbarian/bow_up_walk_6.png', 'barbarian/bow_up_walk_7.png', 'barbarian/bow_up_walk_8.png'], attack: ['barbarian/bow_up_attack_0.png', 'barbarian/bow_up_attack_1.png', 'barbarian/bow_up_attack_2.png'] },
-    upright: { idle: ['barbarian/bow_up_idle_0.png'], walk: ['barbarian/bow_up_walk_0.png', 'barbarian/bow_up_walk_1.png', 'barbarian/bow_up_walk_2.png', 'barbarian/bow_up_walk_3.png', 'barbarian/bow_up_walk_4.png', 'barbarian/bow_up_walk_5.png', 'barbarian/bow_up_walk_6.png', 'barbarian/bow_up_walk_7.png', 'barbarian/bow_up_walk_8.png'], attack: ['barbarian/bow_up_attack_0.png', 'barbarian/bow_up_attack_1.png', 'barbarian/bow_up_attack_2.png'] },
-    upleft: { idle: ['barbarian/bow_up_idle_0.png'], walk: ['barbarian/bow_upleft_walk_0.png', 'barbarian/bow_upleft_walk_1.png', 'barbarian/bow_upleft_walk_2.png', 'barbarian/bow_upleft_walk_3.png', 'barbarian/bow_upleft_walk_4.png', 'barbarian/bow_upleft_walk_5.png', 'barbarian/bow_upleft_walk_6.png', 'barbarian/bow_upleft_walk_7.png', 'barbarian/bow_upleft_walk_8.png'], attack: ['barbarian/bow_up_attack_0.png', 'barbarian/bow_up_attack_1.png', 'barbarian/bow_up_attack_2.png'] },
+    upright: { idle: ['barbarian/bow_upright_idle_0.png'], walk: ['barbarian/bow_upright_walk_0.png', 'barbarian/bow_upright_walk_1.png', 'barbarian/bow_upright_walk_2.png', 'barbarian/bow_upright_walk_3.png', 'barbarian/bow_upright_walk_4.png', 'barbarian/bow_upright_walk_5.png', 'barbarian/bow_upright_walk_6.png', 'barbarian/bow_upright_walk_7.png', 'barbarian/bow_upright_walk_8.png'], attack: ['barbarian/bow_up_attack_0.png', 'barbarian/bow_up_attack_1.png', 'barbarian/bow_up_attack_2.png'] },
+    upleft: { idle: ['barbarian/bow_upleft_idle_0.png'], walk: ['barbarian/bow_upleft_walk_0.png', 'barbarian/bow_upleft_walk_1.png', 'barbarian/bow_upleft_walk_2.png', 'barbarian/bow_upleft_walk_3.png', 'barbarian/bow_upleft_walk_4.png', 'barbarian/bow_upleft_walk_5.png', 'barbarian/bow_upleft_walk_6.png', 'barbarian/bow_upleft_walk_7.png', 'barbarian/bow_upleft_walk_8.png'], attack: ['barbarian/bow_up_attack_0.png', 'barbarian/bow_up_attack_1.png', 'barbarian/bow_up_attack_2.png'] },
   },
 };
 export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[number,number];idleH:number}>> = {
@@ -88,8 +88,8 @@ export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[nu
     right: { w: 195, h: 195, head: [95, 9], idleH: 186 },
     left: { w: 195, h: 195, head: [94, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [98, 2], idleH: 193 },
-    upright: { w: 195, h: 195, head: [98, 2], idleH: 193 },  // BUILD 415: true N art
-    upleft: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 415: mirrored N art
+    upright: { w: 195, h: 195, head: [101, 2], idleH: 193 },  // BUILD 416: true NE art
+    upleft: { w: 195, h: 195, head: [93, 3], idleH: 193 },  // BUILD 416: true NW art
   },
   blue: {
     down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
@@ -97,8 +97,8 @@ export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[nu
     right: { w: 195, h: 195, head: [95, 9], idleH: 186 },
     left: { w: 195, h: 195, head: [94, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [98, 2], idleH: 193 },
-    upright: { w: 195, h: 195, head: [98, 2], idleH: 193 },  // BUILD 415: true N art
-    upleft: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 415: mirrored N art
+    upright: { w: 195, h: 195, head: [101, 2], idleH: 193 },  // BUILD 416: true NE art
+    upleft: { w: 195, h: 195, head: [93, 3], idleH: 193 },  // BUILD 416: true NW art
   },
   sword: {
     down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
@@ -113,8 +113,8 @@ export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[nu
     right: { w: 195, h: 195, head: [95, 9], idleH: 186 },
     left: { w: 195, h: 195, head: [94, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [98, 2], idleH: 193 },
-    upright: { w: 195, h: 195, head: [98, 2], idleH: 193 },  // BUILD 415: true N art
-    upleft: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 415: mirrored N art
+    upright: { w: 195, h: 195, head: [101, 2], idleH: 193 },  // BUILD 416: true NE art
+    upleft: { w: 195, h: 195, head: [93, 3], idleH: 193 },  // BUILD 416: true NW art
   },
 };
 export interface BarbHairInfo { file: string; rel: [number, number]; baseH: number }

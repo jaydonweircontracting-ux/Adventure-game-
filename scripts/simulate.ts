@@ -3213,11 +3213,11 @@ import { inflateSync } from 'node:zlib';
     readPngRgba(`public/barbarian/${file}`); // must exist and decode
   }
   // BUILD 414: dedicated up-right/up-left diagonal art. bare/blue/bow gain
-  // upright + upleft views: upright walk reuses the up walk frames (sheet 1,
-  // original), upleft walk is the mirrored set (sheet 2); idle/attack share
-  // the up frames. The renderer selects them per-anim with fallback to up;
-  // sword has no diagonal art and must fall back to its up frames.
-  // The up-left frames must be exact horizontal mirrors of the up frames.
+  // BUILD 416: true diagonal art from the user's sheets. bare/blue/bow gain
+  // dedicated upright (NE, back-3/4) + upleft (NW, back-3/4) views, each with
+  // 9 walk frames + 1 idle; attacks still share the up frames (no diagonal
+  // attack sheets provided). The renderer selects them per-anim with fallback
+  // to up; sword has no diagonal art and must fall back to its up frames.
   {
     const { BARB_FRAMES, BARB_BOX } = await import('../src/game/iso/barbarian');
     for (const v of ['bare', 'blue', 'bow']) {
@@ -3225,18 +3225,21 @@ import { inflateSync } from 'node:zlib';
       const ur = BARB_FRAMES[v]?.['upright'];
       const ul = BARB_FRAMES[v]?.['upleft'];
       assert(ur && ul, `${v} must have upright/upleft views`);
-      assert(JSON.stringify(ur['walk']) === JSON.stringify(up['walk']),
-        `${v} upright walk must be sheet 1 (same frames as up walk)`);
+      assert(ur['walk'].length === 9 && ur['walk'].every((f) => f.includes(`${v}_upright_walk_`)),
+        `${v} upright walk must be the 9 dedicated NE frames`);
       assert(ul['walk'].length === 9 && ul['walk'].every((f) => f.includes(`${v}_upleft_walk_`)),
-        `${v} upleft walk must be the 9 mirrored frames`);
-      assert(JSON.stringify(ur['idle']) === JSON.stringify(up['idle'])
-        && JSON.stringify(ul['idle']) === JSON.stringify(up['idle']),
-        `${v} upright/upleft idle must share the up idle`);
+        `${v} upleft walk must be the 9 dedicated NW frames`);
+      assert(JSON.stringify(ur['idle']) === JSON.stringify([`barbarian/${v}_upright_idle_0.png`]),
+        `${v} upright idle must be the dedicated NE idle`);
+      assert(JSON.stringify(ul['idle']) === JSON.stringify([`barbarian/${v}_upleft_idle_0.png`]),
+        `${v} upleft idle must be the dedicated NW idle`);
       assert(JSON.stringify(ur['attack']) === JSON.stringify(up['attack'])
         && JSON.stringify(ul['attack']) === JSON.stringify(up['attack']),
         `${v} upright/upleft attack must share the up attack`);
       assert(BARB_BOX[v]?.['upright'] && BARB_BOX[v]?.['upleft'],
         `${v} must have upright/upleft layout boxes`);
+      for (const f of [...ur['walk'], ...ul['walk'], ...ur['idle'], ...ul['idle']])
+        readPngRgba(`public/${f}`);
     }
     assert(!BARB_FRAMES['sword']?.['upright'] && !BARB_FRAMES['sword']?.['upleft'],
       'sword has no diagonal art — it must fall back to the up view');
@@ -3246,20 +3249,6 @@ import { inflateSync } from 'node:zlib';
       'drawBarbarian must select the dedicated up-left frame set when facing=upleft');
     assert(/fview = \(uf && uf\.length > 0\) \? 'upright' : 'up'/.test(barbSrc),
       'drawBarbarian must fall back to the up view when a variant lacks up-right art');
-    // Pixel lock: each upleft frame is the horizontal mirror of the matching up frame.
-    for (const v of ['bare', 'blue', 'bow']) {
-      for (let i = 0; i < 9; i++) {
-        const a = readPngRgba(`public/barbarian/${v}_up_walk_${i}.png`);
-        const b = readPngRgba(`public/barbarian/${v}_upleft_walk_${i}.png`);
-        assert(a.w === b.w && a.h === b.h, `${v}_upleft_walk_${i}.png size mismatch`);
-        let bad = 0;
-        for (let y = 0; y < a.h && bad < 5; y++) for (let x = 0; x < a.w; x++) {
-          const ia = (y * a.w + x) * 4, ib = (y * b.w + (b.w - 1 - x)) * 4;
-          for (let k = 0; k < 4; k++) if (a.px[ia + k] !== b.px[ib + k]) { bad++; break; }
-        }
-        assert(bad === 0, `${v}_upleft_walk_${i}.png is not the mirror of ${v}_up_walk_${i}.png`);
-      }
-    }
   }
   // BUILD 409: the sword variant's up/right/left sets are the user's real
   // sword art (9-frame walks sampled from the 36-frame sheets, neutral-frame
