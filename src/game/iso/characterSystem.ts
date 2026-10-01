@@ -12,8 +12,8 @@
 //   timing       — walk-cycle rate is driven by each character's measured
 //                  ground speed (fast attack / slow release, so the 120ms
 //                  NPC sim ticks don't make the animation stutter)
-//   assets       — chibi LPC paper-doll layers (body + legs + torso + hair
-//                  + hat) with per-layer fallbacks: requested sheet ->
+//   assets       — chibi LPC paper-doll layers (body + head + legs + torso
+//                  + hair + hat) with per-layer fallbacks: requested sheet ->
 //                  player's sheet for that layer -> vector placeholder.
 //                  Missing assets warn once, never per frame.
 //   draw         — one canvas draw: shadow, feet-anchored paper-doll layers,

@@ -1276,10 +1276,12 @@ for (const kind of EXPECTED_KINDS) {
   assert(before === after, 'monster-sprites.gen.css was out of sync with JSON defs (regenerated — re-run sim)');
 }
 
-// ---- BUILD 380: iso paper-doll character sprites (chibi LPC pack) ----
+// ---- BUILD 381: iso paper-doll character sprites (chibi LPC pack + head) ----
 // The character art moved from Mana Seed to the chibi LPC paper-doll pack
 // (public/lpc/, built offline by work/build-lpc-pack.py): body (5 skin
-// tones x idle/walk/slash/hurt) + legs/torso/hat (walk only) + hair (walk
+// tones x idle/walk/slash/hurt) + head (5 skin tones x idle/walk/slash/hurt;
+// the child body sheet is headless — the head is a separate generator layer
+// that also carries the face) + legs/torso/hat (walk only) + hair (walk
 // only, classic-layout sheets). Layers missing an animation hold walk
 // frame 0 for that state.
 {
@@ -1287,15 +1289,17 @@ for (const kind of EXPECTED_KINDS) {
     await import('../src/game/iso/isoSprites');
   assert(LPC_FEET_ROW > 0 && LPC_FEET_ROW < LPC_CELL, `LPC_FEET_ROW ${LPC_FEET_ROW} out of range`);
   const layers = lpcLayerKeys(PLAYER_LOOK);
-  assert(layers.length === 4, `player look needs body+legs+torso+hair, got ${layers.length}`);
-  assert(layers[0].layer === 'body' && layers[1].layer === 'legs' && layers[2].layer === 'torso',
-    'paper-doll draw order must be body -> legs -> torso -> hair');
-  assert(layers[0].key === 'body-ivory' && layers[3].key === 'hair-messy-brown',
+  assert(layers.length === 5, `player look needs body+head+legs+torso+hair, got ${layers.length}`);
+  assert(layers[0].layer === 'body' && layers[1].layer === 'head' && layers[2].layer === 'legs' && layers[3].layer === 'torso',
+    'paper-doll draw order must be body -> head -> legs -> torso -> hair');
+  assert(layers[0].key === 'body-ivory' && layers[1].key === 'head-ivory' && layers[4].key === 'hair-messy-brown',
     `unexpected player layer keys: ${layers.map((l) => l.key).join(',')}`);
   // Every packed file must exist on disk with the expected dimensions.
   const expectedDims: Record<string, [number, number]> = {
     'body-ivory-walk': [576, 256], 'body-ivory-idle': [128, 256],
     'body-ivory-slash': [384, 256], 'body-ivory-hurt': [384, 64],
+    'head-ivory-walk': [576, 256], 'head-ivory-idle': [128, 256],
+    'head-ivory-slash': [384, 256], 'head-ivory-hurt': [384, 64],
   };
   for (const [file, [w, h]] of Object.entries(expectedDims)) {
     const p = `public/lpc/${file}.png`;
@@ -1331,6 +1335,13 @@ for (const kind of EXPECTED_KINDS) {
   const walkDown = lpcClip('body', 'body-tan', 'walk', 'down');
   assert(walkDown.file === 'body-tan-walk' && walkDown.row === 2 && walkDown.frames === 9,
     `body walk down clip wrong: ${JSON.stringify(walkDown)}`);
+  // Head resolves exactly like the body (per-animation sheets, single-row hurt).
+  const headWalk = lpcClip('head', 'head-bronze', 'walk', 'left');
+  assert(headWalk.file === 'head-bronze-walk' && headWalk.row === 1 && headWalk.frames === 9,
+    `head walk left clip wrong: ${JSON.stringify(headWalk)}`);
+  const headHurt = lpcClip('head', 'head-ivory', 'hurt', 'down');
+  assert(headHurt.file === 'head-ivory-hurt' && headHurt.row === 0 && headHurt.frames === 6,
+    `head hurt must be row 0 / 6 frames: ${JSON.stringify(headHurt)}`);
   // Body hurt is direction-agnostic (single row), 6 frames.
   for (const f of ['up', 'left', 'down', 'right'] as const) {
     const hurt = lpcClip('body', 'body-ivory', 'hurt', f);

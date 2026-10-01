@@ -6,6 +6,8 @@
 // in-demo Info page for full credits), packed offline by
 // work/build-lpc-pack.py into public/lpc/:
 //   body  — child base, 5 skin tones x 4 animations (idle/walk/slash/hurt)
+//   head  — child head + face, 5 skin tones x 4 animations (the child body
+//           sheet is headless; the head is a separate generator layer)
 //   legs  — child pants, 9 colors (walk cycle only)
 //   torso — child shirt, 8 colors (walk cycle only)
 //   hair  — child messy/braid, 5 colors each (walk cycle only)
@@ -35,10 +37,10 @@ export const PLAYER_LOOK: LpcLook = {
   hair: 'messy-brown',
 };
 
-/** Paper-doll layers, in draw order: body -> legs -> torso -> hair -> hat. */
-export type LpcLayer = 'body' | 'legs' | 'torso' | 'hair' | 'hat';
+/** Paper-doll layers, in draw order: body -> head -> legs -> torso -> hair -> hat. */
+export type LpcLayer = 'body' | 'head' | 'legs' | 'torso' | 'hair' | 'hat';
 
-/** Per-animation sprite files. Only the body drew every animation; the
+/** Per-animation sprite files. Only the body and head drew every animation; the
  *  other layers only drew the walk cycle (verified against the packed PNGs:
  *  child hair sheets are 768x1344 canvases with only rows 8-11 painted). */
 export type LpcAnim = 'idle' | 'walk' | 'slash' | 'hurt';
@@ -73,6 +75,7 @@ export const LPC_HAIR_POOL: string[] = [
 export function lpcLayerKeys(look: LpcLook): { key: string; layer: LpcLayer }[] {
   const layers: { key: string; layer: LpcLayer }[] = [
     { key: `body-${look.body}`, layer: 'body' },
+    { key: `head-${look.body}`, layer: 'head' },
     { key: `pants-${look.legs}`, layer: 'legs' },
     { key: `shirt-${look.torso}`, layer: 'torso' },
   ];
@@ -92,11 +95,11 @@ export interface LpcClip {
  * Resolve (layer, animation, facing) to a concrete sprite region.
  * Clothes/hair/hat only drew walk cycles, so non-walk states reuse walk
  * frame 0 for those layers (static while the body plays its real clip).
- * The body hurt sheet is a single direction-agnostic row.
+ * The body and head hurt sheets are single direction-agnostic rows.
  */
 export function lpcClip(layer: LpcLayer, key: string, anim: LpcAnim, face: Face4): LpcClip {
   const d = LPC_DIR_ROW[face];
-  if (layer === 'body') {
+  if (layer === 'body' || layer === 'head') {
     return { file: `${key}-${anim}`, row: anim === 'hurt' ? 0 : d, frames: LPC_FRAMES[anim] };
   }
   if (layer === 'hair') {
@@ -108,6 +111,7 @@ export function lpcClip(layer: LpcLayer, key: string, anim: LpcAnim, face: Face4
 // Every packed file, for the preload list.
 const LPC_FILES: string[] = [
   ...LPC_BODY_TONES.flatMap((t) => (Object.keys(LPC_FRAMES) as LpcAnim[]).map((a) => `body-${t}-${a}`)),
+  ...LPC_BODY_TONES.flatMap((t) => (Object.keys(LPC_FRAMES) as LpcAnim[]).map((a) => `head-${t}-${a}`)),
   ...LPC_SHIRTS.map((c) => `shirt-${c}-walk`),
   ...LPC_PANTS.map((c) => `pants-${c}-walk`),
   ...LPC_HAIR_STYLES.flatMap((s) => LPC_HAIR_COLORS.map((c) => `hair-${s}-${c}`)),

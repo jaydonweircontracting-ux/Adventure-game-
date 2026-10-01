@@ -67,6 +67,17 @@ def main():
         for tone, target in TONES.items():
             save(recolor_body(base_im, target), f'body-{tone}-{anim}.png')
 
+    # 1b. Head: the child body is headless; the head is a separate layer
+    # (human/child) that also carries the face (eyes). Same 4 animations,
+    # same sheet layout as the body (hurt is a single direction-agnostic
+    # row), same skin-tone recolor.
+    for anim in BODY_ANIMS:
+        src = ROOT + f'spritesheets/head/heads/human/child/{anim}.png'
+        base_im = Image.open(z.open(src))
+        print(f'head {anim}: {base_im.size} mode={base_im.mode}')
+        for tone, target in TONES.items():
+            save(recolor_body(base_im, target), f'head-{tone}-{anim}.png')
+
     # 2. Shirts / pants (walk only)
     for color in SHIRT_COLORS:
         src = ROOT + f'spritesheets/torso/clothes/shirt/child/walk/{color}.png'
