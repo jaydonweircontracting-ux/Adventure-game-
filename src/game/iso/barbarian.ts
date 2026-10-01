@@ -88,8 +88,8 @@ export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[nu
     right: { w: 195, h: 195, head: [95, 9], idleH: 186 },
     left: { w: 195, h: 195, head: [94, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [98, 2], idleH: 193 },
-    upright: { w: 195, h: 195, head: [93, 2], idleH: 193 },  // BUILD 418: NE mirrors NW art
-    upleft: { w: 195, h: 195, head: [101, 2], idleH: 193 },  // BUILD 416: true NW art
+    upright: { w: 195, h: 195, head: [101, 2], idleH: 193 },  // BUILD 419: NE art (was NW)
+    upleft: { w: 195, h: 195, head: [93, 2], idleH: 193 },  // BUILD 419: NW art (was NE mirror)
   },
   blue: {
     down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
@@ -97,8 +97,8 @@ export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[nu
     right: { w: 195, h: 195, head: [95, 9], idleH: 186 },
     left: { w: 195, h: 195, head: [94, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [98, 2], idleH: 193 },
-    upright: { w: 195, h: 195, head: [93, 2], idleH: 193 },  // BUILD 418: NE mirrors NW art
-    upleft: { w: 195, h: 195, head: [101, 2], idleH: 193 },  // BUILD 416: true NW art
+    upright: { w: 195, h: 195, head: [101, 2], idleH: 193 },  // BUILD 419: NE art (was NW)
+    upleft: { w: 195, h: 195, head: [93, 2], idleH: 193 },  // BUILD 419: NW art (was NE mirror)
   },
   sword: {
     down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
@@ -113,8 +113,8 @@ export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[nu
     right: { w: 195, h: 195, head: [95, 9], idleH: 186 },
     left: { w: 195, h: 195, head: [94, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [98, 2], idleH: 193 },
-    upright: { w: 195, h: 195, head: [93, 2], idleH: 193 },  // BUILD 418: NE mirrors NW art
-    upleft: { w: 195, h: 195, head: [101, 2], idleH: 193 },  // BUILD 416: true NW art
+    upright: { w: 195, h: 195, head: [101, 2], idleH: 193 },  // BUILD 419: NE art (was NW)
+    upleft: { w: 195, h: 195, head: [93, 2], idleH: 193 },  // BUILD 419: NW art (was NE mirror)
   },
 };
 export interface BarbHairInfo { file: string; rel: [number, number]; baseH: number }
