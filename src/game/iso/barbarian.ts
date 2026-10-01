@@ -1,13 +1,15 @@
 /**
  * BUILD 390: barbarian player sprite system.
  *
- * The player (look === 0) renders from the user-supplied barbarian sheets:
+ * The player (look === 0) renders from the user-supplied barbarian model
+ * sheets (bald barbarian in brown shorts, one model for every direction):
  *  - bare (brown shorts) and blue (crafted shirt) body variants
  *  - sword and bow weapon variants (weapon art baked into the sheets)
  *  - 17 hairstyles x 3 views, composited as overlays ('bald' = none)
  * Every view (down/side/up) has idle + walk + attack frames. The bare variant
- * also has a dedicated right-facing idle/walk set; left mirrors side. NPCs
- * keep the LPC paper-doll path — this is player-only.
+ * also has dedicated right-facing AND left-facing idle/walk sets; other
+ * variants fall back per-anim to the shared right-facing side set, mirrored
+ * when facing left. NPCs keep the LPC paper-doll path — this is player-only.
  */
 import type { Face4 } from './isoSprites';
 
@@ -47,6 +49,7 @@ export const BARB_FRAMES: Record<string, Record<string, Record<string, string[]>
     down: { idle: ['barbarian/bare_down_idle_0.png'], walk: ['barbarian/bare_down_walk_0.png', 'barbarian/bare_down_walk_1.png'], attack: ['barbarian/bare_down_attack_0.png', 'barbarian/bare_down_attack_1.png'] },
     side: { idle: ['barbarian/bare_side_idle_0.png'], walk: ['barbarian/bare_side_walk_0.png', 'barbarian/bare_side_walk_1.png'], attack: ['barbarian/bare_side_attack_0.png', 'barbarian/bare_side_attack_1.png'] },
     right: { idle: ['barbarian/bare_right_idle_0.png'], walk: ['barbarian/bare_right_walk_0.png', 'barbarian/bare_right_walk_1.png'], attack: ['barbarian/bare_side_attack_0.png', 'barbarian/bare_side_attack_1.png'] },
+    left: { idle: ['barbarian/bare_left_idle_0.png'], walk: ['barbarian/bare_left_walk_0.png', 'barbarian/bare_left_walk_1.png'], attack: ['barbarian/bare_side_attack_0.png', 'barbarian/bare_side_attack_1.png'] },
     up: { idle: ['barbarian/bare_up_idle_0.png'], walk: ['barbarian/bare_up_walk_0.png', 'barbarian/bare_up_walk_1.png'], attack: ['barbarian/bare_up_attack_0.png', 'barbarian/bare_up_attack_1.png'] },
   },
   blue: {
@@ -68,24 +71,25 @@ export const BARB_FRAMES: Record<string, Record<string, Record<string, string[]>
 export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[number,number];idleH:number}>> = {
   bare: {
     down: { w: 195, h: 195, head: [97, 4], idleH: 188 },
-    side: { w: 195, h: 195, head: [73, 9], idleH: 186 },
-    right: { w: 195, h: 195, head: [74, 9], idleH: 186 },
-    up: { w: 195, h: 195, head: [97, 0], idleH: 193 },
+    side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
+    right: { w: 195, h: 195, head: [104, 9], idleH: 186 },
+    left: { w: 195, h: 195, head: [93, 9], idleH: 186 },
+    up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
   },
   blue: {
     down: { w: 153, h: 188, head: [69, 3], idleH: 180 },
-    side: { w: 153, h: 188, head: [72, 5], idleH: 174 },
-    up: { w: 153, h: 188, head: [70, 4], idleH: 172 },
+    side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
+    up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
   },
   sword: {
     down: { w: 195, h: 194, head: [92, 8], idleH: 177 },
-    side: { w: 195, h: 185, head: [110, 9], idleH: 174 },
-    up: { w: 195, h: 190, head: [108, 9], idleH: 179 },
+    side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
+    up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
   },
   bow: {
     down: { w: 181, h: 214, head: [81, 15], idleH: 164 },
-    side: { w: 195, h: 202, head: [108, 2], idleH: 176 },
-    up: { w: 181, h: 214, head: [59, 14], idleH: 171 },
+    side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
+    up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
   },
 };
 export interface BarbHairInfo { file: string; rel: [number, number]; baseH: number }
@@ -250,10 +254,11 @@ export function drawBarbarian(o: BarbarianDrawOptions): boolean {
   const g = o.g;
   const variant = barbarianVariant(o.outfit ?? 'bare', o.weapon ?? 'none');
   const view = viewOf(o.facing);
-  // BUILD 398: the bare variant has dedicated right-facing idle/walk art. Use
-  // it when facing right, falling back per-anim to the shared side set (e.g.
-  // attacks still use side art). Left keeps mirroring the side set, which
-  // reproduces the user's original left-facing sheet.
+  // BUILD 400: the bare variant has dedicated left- AND right-facing idle/walk
+  // art from the user's model sheets. Use the dedicated set when facing that
+  // way, falling back per-anim to the shared side set (e.g. attacks still use
+  // side art). Other variants have no dedicated sets and fall back to the
+  // shared right-facing side art, mirrored when facing left.
   const anim: BarbarianAnim =
     o.attackT !== undefined && o.attackT >= 0 && o.attackT < BARBARIAN_ATTACK_MS
       ? 'attack'
@@ -262,10 +267,14 @@ export function drawBarbarian(o: BarbarianDrawOptions): boolean {
   if (o.facing === 'right') {
     const rf = BARB_FRAMES[variant]?.['right']?.[anim];
     if (rf && rf.length > 0) fview = 'right';
+  } else if (o.facing === 'left') {
+    const lf = BARB_FRAMES[variant]?.['left']?.[anim];
+    if (lf && lf.length > 0) fview = 'left';
   }
-  // Shared side art natively faces screen-right; mirror when facing left.
-  // The dedicated right set natively faces right and is never mirrored.
-  const flip = o.facing === 'left';
+  // Shared side art natively faces screen-right; mirror it when facing left.
+  // Dedicated left/right sets natively face their direction and are never
+  // mirrored.
+  const flip = o.facing === 'left' && fview !== 'left';
   const size = o.size ?? 60;
   const box = BARB_BOX[variant]?.[fview];
   if (!box) return false;
@@ -296,14 +305,24 @@ export function drawBarbarian(o: BarbarianDrawOptions): boolean {
   const s = g.imageSmoothingEnabled;
   g.imageSmoothingEnabled = false;
   try {
-    // Hair overlays only exist for down/side/up; the dedicated right set reuses
-    // the side hair art with the right set's head anchor.
-    const hairView: BarbarianView = fview === 'right' ? 'side' : view;
+    // Hair overlays only exist for down/side/up. The dedicated right set reuses
+    // the side hair art with the right set's head anchor; the dedicated left
+    // set reuses the side hair art mirrored, with the left set's head anchor.
+    const hairView: BarbarianView = (fview === 'right' || fview === 'left') ? 'side' : view;
+    // Side hair art natively faces right; mirror it whenever the body faces left.
+    const hairFlip = o.facing === 'left';
     if (flip) {
       g.save();
       g.translate(o.x, 0);
       g.scale(-1, 1);
       g.drawImage(body, -dw / 2, dy, dw, dh);
+      drawHair(g, o, hairView, box, k, -dw / 2, dy);
+      g.restore();
+    } else if (hairFlip) {
+      g.drawImage(body, dx, dy, dw, dh);
+      g.save();
+      g.translate(o.x, 0);
+      g.scale(-1, 1);
       drawHair(g, o, hairView, box, k, -dw / 2, dy);
       g.restore();
     } else {

@@ -34,7 +34,7 @@ import { mulberry32, shadeColor, mixColor, hexToRgb, GROUND_PX_PER_UNIT } from '
 import { FIELD_SIZE, DEFAULT_GAME_ZOOM, zoomTranslatePct, cameraFrac, playerScreenPct, screenPxToFieldUnits, fieldPct } from '../src/game/fieldCamera';
 import { PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP, collisionBoxesOverlap, isPositionOccupiedByGoat, separateGoatFromPlayer } from '../src/game/fieldCollision';
 import { ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset, isoViewportCovered, isoVisibleTileRange } from '../src/game/iso/isoChunks';
-import { barbarianRegistryStats, barbarianVariant, barbarianHairLabel, BARBARIAN_HAIRSTYLES, BARBARIAN_ATTACK_MS } from '../src/game/iso/barbarian';
+import { barbarianRegistryStats, barbarianVariant, barbarianHairLabel, BARBARIAN_HAIRSTYLES, BARBARIAN_ATTACK_MS, BARB_FRAMES } from '../src/game/iso/barbarian';
 
 let passed = 0;
 let failed = 0;
@@ -2925,7 +2925,12 @@ console.log('Testing examine system...');
   assert(stats.variants.length === 4 && ['bare', 'blue', 'sword', 'bow'].every((v) => stats.variants.includes(v)),
     `barbarian registry must have bare/blue/sword/bow variants, got ${stats.variants.join(',')}`);
   assert(stats.views.length === 3 && ['down', 'side', 'up'].every((v) => stats.views.includes(v)),
-    'barbarian registry must expose down/side/up views (right mirrors side)');
+    'barbarian registry must expose down/side/up views (dedicated left/right sets are per-anim extras)');
+  // BUILD 400: the bare variant's dedicated left set must be complete for
+  // idle + walk (attacks fall back per-anim to the side set).
+  assert(BARB_FRAMES.bare?.['left']?.['idle']?.length === 1 &&
+    BARB_FRAMES.bare?.['left']?.['walk']?.length === 2,
+    'bare dedicated left set must have idle + 2 walk frames');
   assert(stats.anims.length === 3 && ['idle', 'walk', 'attack'].every((a) => stats.anims.includes(a)),
     'barbarian registry must expose idle/walk/attack animations');
   assert(stats.missingFrames.length === 0,
@@ -3036,21 +3041,46 @@ import { inflateSync } from 'node:zlib';
   }
   // BUILD 393: the renderer must mirror the (right-facing) side art exactly
   // when facing=left — this is the condition that was backwards.
+  // BUILD 400: the bare variant gained a dedicated left-facing idle/walk set,
+  // which is never mirrored; only the shared side art is mirrored.
   const barbSrc = readFileSyncSprites('src/game/iso/barbarian.ts', 'utf8');
-  assert(/const flip = o\.facing === 'left'/.test(barbSrc),
-    'drawBarbarian must mirror side art when facing=left (art natively faces right)');
+  assert(/const flip = o\.facing === 'left' && fview !== 'left'/.test(barbSrc),
+    'drawBarbarian must mirror shared side art when facing=left (dedicated left set is never mirrored)');
   // BUILD 398: the bare variant's dedicated right-facing idle/walk set must be
   // selected when facing=right (per-anim, falling back to the side set).
   assert(/\?\.\['right'\]\?\.\[anim\]/.test(barbSrc),
     'drawBarbarian must select the dedicated right frame set when facing=right');
-  // BUILD 392: frameViews locks the visually-audited view (up/side/down/right) of
+  // BUILD 400: the bare variant's dedicated left-facing idle/walk set must be
+  // selected when facing=left (per-anim, falling back to the side set).
+  assert(/\?\.\['left'\]\?\.\[anim\]/.test(barbSrc),
+    'drawBarbarian must select the dedicated left frame set when facing=left');
+  // BUILD 400: the dedicated left frames face screen-left (the pack's new
+  // convention for the left set); lock the audited facing and the centroid
+  // signature so a reversed/mislabeled left frame fails.
+  const leftSigs = barbManifest._conventions?.leftCentroidX as Record<string, number> | undefined;
+  assert(leftSigs && Object.keys(leftSigs).length >= 3,
+    'barbarian manifest must record left-view facing signatures for the dedicated left set');
+  for (const [file, recorded] of Object.entries(leftSigs)) {
+    const { w, h, px } = readPngRgba(`public/barbarian/${file}`);
+    const cx = sideCentroidX(px, w, h);
+    assert(Math.abs(cx - recorded) < 0.015,
+      `${file}: left facing signature drifted (recorded ${recorded}, now ${cx.toFixed(4)})`);
+  }
+  const leftFacing = barbManifest._conventions?.leftFacing as Record<string, string> | undefined;
+  assert(leftFacing && Object.keys(leftFacing).length >= 3,
+    'barbarian manifest must record the audited facing of every dedicated left frame');
+  for (const file of Object.keys(leftSigs)) {
+    assert(leftFacing[file] === 'left',
+      `${file}: audited left facing must be "left" (pack convention)`);
+  }
+  // BUILD 392: frameViews locks the visually-audited view (up/side/down/right/left) of
   // every idle/walk frame, so a mislabeled crop (e.g. a front view saved as
   // *_up_walk_*) fails even if its pixels never change again.
   const frameViews = barbManifest._conventions?.frameViews as Record<string, string> | undefined;
   assert(frameViews && Object.keys(frameViews).length >= 30,
     'barbarian manifest must record audited views for every idle/walk frame');
   for (const [file, view] of Object.entries(frameViews)) {
-    const m = /^(bare|blue|sword|bow)_(down|side|up|right)_(idle|walk)_\d+\.png$/.exec(file);
+    const m = /^(bare|blue|sword|bow)_(down|side|up|right|left)_(idle|walk)_\d+\.png$/.exec(file);
     assert(m, `${file}: unexpected frameViews key`);
     assert(m[2] === view,
       `${file}: audited view is "${view}" but the filename says "${m[2]}" — frame is mislabeled`);

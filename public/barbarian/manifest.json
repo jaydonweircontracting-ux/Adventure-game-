@@ -27,7 +27,7 @@
         "w": 195,
         "h": 195,
         "head": [
-          73,
+          104,
           9
         ],
         "idleH": 186
@@ -50,7 +50,7 @@
         "h": 195,
         "head": [
           97,
-          0
+          2
         ],
         "idleH": 193
       },
@@ -71,7 +71,7 @@
         "w": 195,
         "h": 195,
         "head": [
-          74,
+          104,
           9
         ],
         "idleH": 186
@@ -82,6 +82,28 @@
       "walk": [
         "bare_right_walk_0.png",
         "bare_right_walk_1.png"
+      ],
+      "attack": [
+        "bare_side_attack_0.png",
+        "bare_side_attack_1.png"
+      ]
+    },
+    "left": {
+      "_box": {
+        "w": 195,
+        "h": 195,
+        "head": [
+          93,
+          9
+        ],
+        "idleH": 186
+      },
+      "idle": [
+        "bare_left_idle_0.png"
+      ],
+      "walk": [
+        "bare_left_walk_0.png",
+        "bare_left_walk_1.png"
       ],
       "attack": [
         "bare_side_attack_0.png",
@@ -114,13 +136,13 @@
     },
     "side": {
       "_box": {
-        "w": 153,
-        "h": 188,
+        "w": 195,
+        "h": 195,
         "head": [
-          72,
-          5
+          104,
+          9
         ],
-        "idleH": 174
+        "idleH": 186
       },
       "idle": [
         "blue_side_idle_0.png"
@@ -136,13 +158,13 @@
     },
     "up": {
       "_box": {
-        "w": 153,
-        "h": 188,
+        "w": 195,
+        "h": 195,
         "head": [
-          70,
-          4
+          97,
+          2
         ],
-        "idleH": 172
+        "idleH": 193
       },
       "idle": [
         "blue_up_idle_0.png"
@@ -184,12 +206,12 @@
     "side": {
       "_box": {
         "w": 195,
-        "h": 185,
+        "h": 195,
         "head": [
-          110,
+          104,
           9
         ],
-        "idleH": 174
+        "idleH": 186
       },
       "idle": [
         "sword_side_idle_0.png"
@@ -207,12 +229,12 @@
     "up": {
       "_box": {
         "w": 195,
-        "h": 190,
+        "h": 195,
         "head": [
-          108,
-          9
+          97,
+          2
         ],
-        "idleH": 179
+        "idleH": 193
       },
       "idle": [
         "sword_up_idle_0.png"
@@ -254,12 +276,12 @@
     "side": {
       "_box": {
         "w": 195,
-        "h": 202,
+        "h": 195,
         "head": [
-          108,
-          2
+          104,
+          9
         ],
-        "idleH": 176
+        "idleH": 186
       },
       "idle": [
         "bow_side_idle_0.png"
@@ -275,13 +297,13 @@
     },
     "up": {
       "_box": {
-        "w": 181,
-        "h": 214,
+        "w": 195,
+        "h": 195,
         "head": [
-          59,
-          14
+          97,
+          2
         ],
-        "idleH": 171
+        "idleH": 193
       },
       "idle": [
         "bow_up_idle_0.png"
@@ -299,30 +321,30 @@
   "_conventions": {
     "side": "All side-view frames face screen-RIGHT (visually audited per frame in sideFacing). The renderer (drawBarbarian in src/game/iso/barbarian.ts) mirrors the side art when facing=left. BUILD 393: fixed reversed left/right \u2014 the art natively faced right but the renderer only mirrored when facing=right, so walking left showed right-facing art. Also re-mirrored the 5 bow side frames (BUILD 391 had normalized them face-left) and sword_side_walk_1 (BUILD 392 had mirrored it face-left) back to the face-right pack convention. BUILD 397: bare side idle/walk re-cut per user direction from the user-supplied left-facing sheet (mirrored to the face-right pack convention; the renderer mirrors for left, so left movement shows the user's original left-facing art).",
     "sideCentroidX": {
-      "bare_side_attack_0.png": 0.5025,
-      "bare_side_attack_1.png": 0.5158,
-      "bare_side_idle_0.png": 0.504,
-      "bare_side_walk_0.png": 0.6727,
-      "bare_side_walk_1.png": 0.5459,
-      "blue_side_attack_0.png": 0.4445,
-      "blue_side_attack_1.png": 0.4562,
-      "blue_side_idle_0.png": 0.4551,
-      "blue_side_walk_0.png": 0.454,
-      "blue_side_walk_1.png": 0.4509,
-      "bow_side_attack_0.png": 0.517,
-      "bow_side_attack_1.png": 0.4749,
-      "bow_side_attack_2.png": 0.517,
-      "bow_side_idle_0.png": 0.5018,
-      "bow_side_walk_0.png": 0.5018,
-      "sword_side_attack_0.png": 0.4931,
-      "sword_side_attack_1.png": 0.4231,
-      "sword_side_attack_2.png": 0.4855,
-      "sword_side_idle_0.png": 0.4907,
-      "sword_side_walk_0.png": 0.4907,
-      "sword_side_walk_1.png": 0.4527,
-      "bare_right_idle_0.png": 0.4985,
-      "bare_right_walk_0.png": 0.4787,
-      "bare_right_walk_1.png": 0.5507
+      "bare_side_attack_0.png": 0.5046,
+      "bare_side_attack_1.png": 0.5046,
+      "bare_side_idle_0.png": 0.5046,
+      "bare_side_walk_0.png": 0.4845,
+      "bare_side_walk_1.png": 0.4955,
+      "blue_side_attack_0.png": 0.5046,
+      "blue_side_attack_1.png": 0.5046,
+      "blue_side_idle_0.png": 0.5046,
+      "blue_side_walk_0.png": 0.4845,
+      "blue_side_walk_1.png": 0.4955,
+      "bow_side_attack_0.png": 0.5046,
+      "bow_side_attack_1.png": 0.5046,
+      "bow_side_attack_2.png": 0.5046,
+      "bow_side_idle_0.png": 0.5046,
+      "bow_side_walk_0.png": 0.4845,
+      "sword_side_attack_0.png": 0.5046,
+      "sword_side_attack_1.png": 0.5046,
+      "sword_side_attack_2.png": 0.5046,
+      "sword_side_idle_0.png": 0.5046,
+      "sword_side_walk_0.png": 0.4845,
+      "sword_side_walk_1.png": 0.4955,
+      "bare_right_idle_0.png": 0.5046,
+      "bare_right_walk_0.png": 0.4845,
+      "bare_right_walk_1.png": 0.4955
     },
     "playerLayering": "IsoFieldView draws the player in a final pass above all depth-sorted drawables (BUILD 391): grass/decor/trees/buildings never cover the player.",
     "frameViews": {
@@ -361,7 +383,10 @@
       "sword_up_walk_0.png": "up",
       "bare_right_idle_0.png": "right",
       "bare_right_walk_0.png": "right",
-      "bare_right_walk_1.png": "right"
+      "bare_right_walk_1.png": "right",
+      "bare_left_idle_0.png": "left",
+      "bare_left_walk_0.png": "left",
+      "bare_left_walk_1.png": "left"
     },
     "sideFacing": {
       "bare_side_attack_0.png": "right",
@@ -391,6 +416,16 @@
     },
     "down": "BUILD 394: bare down idle re-cut from the user-supplied front-facing sheet. BUILD 395: bare down walk replaced per user direction with the two user-supplied 3/4-view walk/run frames. BUILD 396: bare down idle replaced per user direction ('this is down idle') with the user-supplied 3/4-view standing frame, matching the walk set style. Side frames unchanged.",
     "right": "BUILD 398: the bare variant has dedicated right-facing idle/walk art (3/4 view, user-supplied). The renderer uses the 'right' frame set when facing=right and falls back per-anim to the shared side set (attacks still use side art). Left movement keeps the side set mirrored, which reproduces the user's original left-facing sheet.",
-    "up": "BUILD 399: bare up idle/walk replaced per user direction with the user-supplied back-view art (standing idle + two opposite-stride run frames). No code changes needed \u2014 the up view is a single set."
+    "up": "BUILD 399: bare up idle/walk replaced per user direction with the user-supplied back-view art (standing idle + two opposite-stride run frames). No code changes needed \u2014 the up view is a single set.",
+    "leftCentroidX": {
+      "bare_left_idle_0.png": 0.5094,
+      "bare_left_walk_0.png": 0.4873,
+      "bare_left_walk_1.png": 0.5039
+    },
+    "leftFacing": {
+      "bare_left_idle_0.png": "left",
+      "bare_left_walk_0.png": "left",
+      "bare_left_walk_1.png": "left"
+    }
   }
 }
