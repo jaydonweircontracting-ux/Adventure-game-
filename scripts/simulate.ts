@@ -3213,11 +3213,12 @@ import { inflateSync } from 'node:zlib';
     readPngRgba(`public/barbarian/${file}`); // must exist and decode
   }
   // BUILD 414: dedicated up-right/up-left diagonal art. bare/blue/bow gain
-  // BUILD 416: true diagonal art from the user's sheets. bare/blue/bow gain
-  // dedicated upright (NE, back-3/4) + upleft (NW, back-3/4) views, each with
-  // 9 walk frames + 1 idle; attacks still share the up frames (no diagonal
-  // attack sheets provided). The renderer selects them per-anim with fallback
-  // to up; sword has no diagonal art and must fall back to its up frames.
+  // BUILD 418: diagonal art. bare/blue/bow have a dedicated NW (upleft,
+  // back-3/4) view from the user's sheet (9 walk + 1 idle); NE (upright) is
+  // the exact horizontal mirror of NW (same convention as left/right).
+  // Attacks share the up frames (no diagonal attack sheets provided).
+  // The renderer selects them per-anim with fallback to up; sword has no
+  // diagonal art and must fall back to its up frames.
   {
     const { BARB_FRAMES, BARB_BOX } = await import('../src/game/iso/barbarian');
     for (const v of ['bare', 'blue', 'bow']) {
@@ -3240,6 +3241,18 @@ import { inflateSync } from 'node:zlib';
         `${v} must have upright/upleft layout boxes`);
       for (const f of [...ur['walk'], ...ul['walk'], ...ur['idle'], ...ul['idle']])
         readPngRgba(`public/${f}`);
+      // Pixel lock: NE frames are the horizontal mirror of the NW frames.
+      for (let i = 0; i < 9; i++) {
+        const a = readPngRgba(`public/barbarian/${v}_upleft_walk_${i}.png`);
+        const b = readPngRgba(`public/barbarian/${v}_upright_walk_${i}.png`);
+        assert(a.w === b.w && a.h === b.h, `${v}_upright_walk_${i}.png size mismatch`);
+        let bad = 0;
+        for (let y = 0; y < a.h && bad < 5; y++) for (let x = 0; x < a.w; x++) {
+          const ia = (y * a.w + x) * 4, ib = (y * b.w + (b.w - 1 - x)) * 4;
+          for (let k = 0; k < 4; k++) if (a.px[ia + k] !== b.px[ib + k]) { bad++; break; }
+        }
+        assert(bad === 0, `${v}_upright_walk_${i}.png is not the mirror of ${v}_upleft_walk_${i}.png`);
+      }
     }
     assert(!BARB_FRAMES['sword']?.['upright'] && !BARB_FRAMES['sword']?.['upleft'],
       'sword has no diagonal art — it must fall back to the up view');
