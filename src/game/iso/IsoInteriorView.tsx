@@ -14,6 +14,7 @@ import {
 } from './projection';
 import {
   preloadLpcSprites,
+  tileFaceForDelta,
   type Face4,
 } from './isoSprites';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
@@ -133,10 +134,11 @@ function furnitureFor(roomType: IsoRoomType): Furniture[] {
 }
 
 function faceForMove(ax: number, ay: number, bx: number, by: number): Face4 {
-  const a = isoToScreen(ax, ay), b = isoToScreen(bx, by);
-  const dx = b.x - a.x, dy = b.y - a.y;
-  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left';
-  return dy > 0 ? 'down' : 'up';
+  // BUILD 387: tile-space facing, same as the iso field outside (BUILD 384).
+  // The old screen-space projection mapped every axis-aligned step to
+  // left/right, so walking forward/back inside showed the side sprite while
+  // outside showed the back/front sprite.
+  return tileFaceForDelta(bx - ax, by - ay);
 }
 
 export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir }: IsoInteriorViewProps): React.JSX.Element {
