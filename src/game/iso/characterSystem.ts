@@ -27,6 +27,7 @@ import {
   LPC_CELL, LPC_FEET_ROW, LPC_FRAMES,
   lpcLayerKeys, lpcClip, lpcReady, lpcSprite,
   LPC_BODY_TONES, LPC_SHIRTS, LPC_PANTS, LPC_HAIR_POOL, LPC_HATS,
+  BRUTE_CELL, BRUTE_COLS, BRUTE_FRAMES, bruteFlip, bruteReady, bruteSprite,
 } from './isoSprites';
 
 // ---------------------------------------------------------------------------
@@ -275,11 +276,58 @@ function drawVectorPlaceholder(
 }
 
 /**
+ * BUILD 389: draw the player (look === 0) from the user-supplied "brute"
+ * sheet instead of the LPC paper doll. Feet-anchored at the bottom of the
+ * 195px cell; the right facing mirrors the side cells. Falls back to the LPC
+ * path while the sheet is still loading.
+ */
+function drawBruteCharacter(o: DrawCharacterOptions): boolean {
+  const im = bruteSprite();
+  if (!im) return false;
+  const g = o.g;
+  const size = o.size ?? 60;
+  const walking = o.animator.state === 'walk';
+  const anim = CHAR_CLIPS[o.animator.state].anim;
+  const frames = BRUTE_FRAMES[anim] ?? 1;
+  const frame = frames <= 1 ? 0 : Math.floor(o.animator.phase) % frames;
+  const cols = BRUTE_COLS[o.animator.facing];
+  const col = cols[frame % cols.length];
+  const flip = bruteFlip(o.animator.facing);
+  const lift = walking ? Math.abs(Math.sin(o.nowMs / 130)) * 2 : 0;
+  const breathe = walking ? 0 : Math.sin(o.nowMs / 1100); // ±1px idle breath
+  if (o.shadow !== false) {
+    g.fillStyle = 'rgba(0,0,0,0.22)';
+    g.beginPath(); g.ellipse(o.x, o.y + 3, 13, 5, 0, 0, 7); g.fill();
+  }
+  const dy = o.y - size - lift + breathe;
+  const s = g.imageSmoothingEnabled;
+  g.imageSmoothingEnabled = false;
+  try {
+    if (flip) {
+      g.save();
+      g.translate(o.x, 0);
+      g.scale(-1, 1);
+      g.drawImage(im, col * BRUTE_CELL, 0, BRUTE_CELL, BRUTE_CELL, -size / 2, dy, size, size);
+      g.restore();
+    } else {
+      g.drawImage(im, col * BRUTE_CELL, 0, BRUTE_CELL, BRUTE_CELL, o.x - size / 2, dy, size, size);
+    }
+  } finally {
+    g.imageSmoothingEnabled = s;
+  }
+  return true;
+}
+
+/**
  * Draw one character. Feet-anchored: LPC_FEET_ROW of the sprite cell lands on
  * (x, y); the root never moves between frames — only the body animates.
  * Walking adds a small step bob; idling adds a subtle ±1px breath.
  */
 export function drawIsoCharacter(o: DrawCharacterOptions): void {
+  // BUILD 389: the player uses the brute sprite pack when it's loaded.
+  if (o.look === 0 && bruteReady()) {
+    if (drawBruteCharacter(o)) return;
+  }
   const g = o.g;
   const size = o.size ?? 52;
   const L = resolveLook(o.look);

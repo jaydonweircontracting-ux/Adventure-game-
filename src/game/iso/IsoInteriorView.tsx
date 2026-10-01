@@ -16,6 +16,7 @@ import {
   preloadLpcSprites,
   tileFaceForDelta,
   type Face4,
+  preloadBruteSprite,
 } from './isoSprites';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
 import {
@@ -158,7 +159,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
   const heldDirRef = useRef(getHeldDir);
   heldDirRef.current = getHeldDir;
 
-  useEffect(() => { preloadLpcSprites(); preloadDungeonKit(); }, []);
+  useEffect(() => { preloadLpcSprites(); preloadBruteSprite(); preloadDungeonKit(); }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;

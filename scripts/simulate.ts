@@ -1407,6 +1407,57 @@ for (const kind of EXPECTED_KINDS) {
   assert(chestPanelFor(8, 6) === chestPanelFor(8, 6), 'chest panel must be deterministic');
 }
 
+// ---- BUILD 389: landscape tiles, ambient critters, brute player sprite ----
+{
+  const { GROUND_TILES, DECOR_TILES, groundTileFor, decorTileFor } = await import('../src/game/iso/isoTiles');
+  for (const [terr, list] of Object.entries(GROUND_TILES)) {
+    const a = groundTileFor(terr, 3, 5, 0, 0);
+    assert(list.includes(a), terr + ' tile must come from its own list');
+    assert(groundTileFor(terr, 3, 5, 0, 0) === a, 'ground tile must be deterministic');
+    assert(groundTileFor(terr, -4, -9, -1, 2) >= 0, 'ground tile must handle negative coords');
+  }
+  const fb = groundTileFor('bog', 1, 1, 0, 0);
+  assert(GROUND_TILES.meadow.includes(fb), 'unknown terrain must fall back to meadow');
+  assert(decorTileFor('ocean', 1, 1, 0, 0) === -1, 'ocean must have no decor');
+  assert(decorTileFor('road', 1, 1, 0, 0) === -1, 'road must have no decor');
+  let seen = 0;
+  for (let x = 0; x < 40; x++) for (let y = 0; y < 40; y++) {
+    const d = decorTileFor('meadow', x, y, 0, 0);
+    assert(d === -1 || DECOR_TILES.meadow.includes(d), 'decor must be -1 or from the meadow list');
+    if (d >= 0) seen++;
+  }
+  assert(seen > 0 && seen < 1600, 'decor must be sparse but present, got ' + seen);
+}
+{
+  const { critterDirFor, critterFile, CRITTER_CELLS, crittersForChunk, critterPose } = await import('../src/game/iso/critters');
+  assert(critterDirFor(1, 0) === 'SE', 'tile-east velocity must face SE');
+  assert(critterDirFor(-1, 0) === 'NW', 'tile-west velocity must face NW');
+  assert(critterDirFor(0, -1) === 'NE', 'tile-north velocity must face NE');
+  assert(critterDirFor(0, 1) === 'SW', 'tile-south velocity must face SW');
+  for (const s of ['badger', 'stag', 'boar']) for (const d of ['NE', 'NW', 'SE', 'SW']) for (const a of ['idle', 'walk']) {
+    const f = critterFile(s as 'badger', d as 'NE', a as 'idle');
+    assert(CRITTER_CELLS[f] && CRITTER_CELLS[f].frames > 0, 'missing strip metadata for ' + f);
+  }
+  const isLand = () => true;
+  const c1 = crittersForChunk(3, 7, 70, isLand);
+  const c2 = crittersForChunk(3, 7, 70, isLand);
+  assert(JSON.stringify(c1) === JSON.stringify(c2), 'chunk critters must be deterministic');
+  assert(c1.length <= 2, 'at most 2 critters per chunk');
+  for (const c of c1) {
+    assert(c.homeX >= 6 && c.homeY >= 6, 'critter home must respect the edge margin');
+    const p = critterPose(c, 12345);
+    assert(['NE', 'NW', 'SE', 'SW'].includes(p.dir), 'pose dir must be valid');
+  }
+}
+{
+  const { BRUTE_COLS, BRUTE_FRAMES, bruteFlip } = await import('../src/game/iso/isoSprites');
+  assert(BRUTE_COLS.down[0] === 0 && BRUTE_COLS.down[1] === 1, 'down must use front cells 0,1');
+  assert(BRUTE_COLS.up[0] === 4 && BRUTE_COLS.up[1] === 5, 'up must use back cells 4,5');
+  assert(BRUTE_COLS.left[0] === 2 && BRUTE_COLS.right[0] === 2, 'sides must share cells 2,3');
+  assert(bruteFlip('right') && !bruteFlip('left'), 'only the right facing mirrors');
+  assert(BRUTE_FRAMES.walk === 2 && BRUTE_FRAMES.idle === 1, 'brute walk=2 frames, idle=1');
+}
+
 // ---- BUILD 317: monster sprite fallback hierarchy ----
 {
   clearMonsterSpriteCaches();

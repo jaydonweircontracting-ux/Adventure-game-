@@ -14,8 +14,18 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import {
   preloadLpcSprites, tileFaceForDelta, type Face4,
+  preloadBruteSprite,
 } from './isoSprites';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
+// BUILD 389: user-supplied landscape tileset + ambient critters.
+import {
+  preloadIsoTiles, isoTilesReady, drawGroundTile, drawDecor,
+  groundTileFor, decorTileFor,
+} from './isoTiles';
+import {
+  preloadCritters, crittersReady, crittersForChunk, critterPose, drawCritter,
+  type AmbientCritter,
+} from './critters';
 import {
   buildingDoorwaysFor, fieldTreesFor, mapTileFor, fieldPalettes, FIELD_SIZE,
   type Point, type Doorway, type FieldTree, type MapTile,
@@ -105,6 +115,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
 
   useEffect(() => {
     preloadLpcSprites();
+    preloadBruteSprite(); // BUILD 389: user-supplied player sprite
+    preloadIsoTiles(); // BUILD 389: landscape tileset
+    preloadCritters(); // BUILD 389: ambient critters
     const canvas = canvasRef.current!;
     const wrap = wrapRef.current!;
     const g = canvas.getContext('2d')!;
@@ -217,7 +230,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
 
       // ground — per-tile chunk lookup into the scene grid
       // BUILD 376: tile detail is sub-pixel when zoomed out, so skip it there.
+      // BUILD 389: user-supplied landscape tileset replaces the procedural
+      // diamond fill (falls back to it while tiles load).
       const showDetail = zm > 0.45;
+      const tilesOn = isoTilesReady();
       for (let ty = y0; ty <= y1; ty++) {
         for (let tx = x0; tx <= x1; tx++) {
           const { ox, oy, lx, ly } = isoTileChunkOffset(tx, ty, N);
@@ -231,14 +247,27 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
           g.closePath();
           const isOcean = terr === 'ocean';
           const roadHere = isOcean ? false : isRoadTileFor(sc, lx, ly);
-          let col = sc.palette.field;
-          if (roadHere) col = sc.palette.path;
           // BUILD 369 (Phase 2b): authoritative rivers/lakes; road crossings draw as bridges.
+          let wet = false;
           if (!isOcean) {
             const wq = waterGridAt(sc.water, (chunk.x + sc.ox) * FIELD_SIZE + lx + 0.5, (chunk.y + sc.oy) * FIELD_SIZE + ly + 0.5);
-            if (wq.depth > 0.25) {
+            wet = wq.depth > 0.25;
+          }
+          let tileDrawn = false;
+          if (tilesOn) {
+            let tn: number;
+            if (isOcean || wet) tn = groundTileFor('ocean', lx, ly, sc.ox, sc.oy);
+            else if (roadHere) tn = groundTileFor('road', lx, ly, sc.ox, sc.oy);
+            else tn = groundTileFor(terr, lx, ly, sc.ox, sc.oy);
+            tileDrawn = drawGroundTile(g, tn, p.x, p.y);
+          }
+          if (!tileDrawn) {
+            let col = sc.palette.field;
+            if (roadHere) col = sc.palette.path;
+            if (wet) {
               if (roadHere) col = '#8a6a44'; // bridge planks
               else {
+                const wq = waterGridAt(sc.water, (chunk.x + sc.ox) * FIELD_SIZE + lx + 0.5, (chunk.y + sc.oy) * FIELD_SIZE + ly + 0.5);
                 const t = Math.min(1, wq.depth);
                 const deep = wq.kind === 2 ? '#2a64b0' : '#2f6cb8';
                 const shal = wq.kind === 2 ? '#5aa3de' : '#55a0dd';
@@ -250,49 +279,20 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
                 col = '#' + ((1 << 24) + (r << 16) + (gg << 8) + b).toString(16).slice(1);
               }
             }
+            g.fillStyle = col;
+            g.fill();
           }
-          g.fillStyle = col;
-          g.fill();
           // BUILD 366: deterministic per-tile detail (chunk-gen video techniques).
           // (chunk offset mixed into the hash so neighbor chunks don't repeat
           // the home chunk's pattern; home chunk hash is unchanged.)
-          if (showDetail && !isOcean && !roadHere) {
-            const h = (lx * 73856093) ^ (ly * 19349663) ^ (terr.length * 83492791) ^ ((sc.ox * 31 + sc.oy * 57) * 2654435761);
-            const hh2 = ((h ^ (h >>> 13)) * 1274126177) >>> 0;
-            const r1 = (hh2 % 1000) / 1000;
-            const r2 = (((hh2 >>> 10) ^ hh2) % 1000) / 1000;
+          // BUILD 389: tileset decor sprites replace the rect-based bits.
+          if (showDetail && !isOcean && !roadHere && !wet) {
             if ((lx + ly) % 2 === 1) {
               g.fillStyle = 'rgba(0,0,0,0.05)';
               g.fill();
             }
-            if (r1 < 0.10) {
-              // sparse grass tuft
-              g.fillStyle = 'rgba(0,0,0,0.10)';
-              g.fillRect(p.x - 1, p.y - 3, 2, 5);
-            } else if (terr === 'forest' && r1 < 0.14) {
-              // mushroom
-              g.fillStyle = '#c23b2e';
-              g.fillRect(p.x - 2, p.y - 4, 5, 3);
-              g.fillStyle = '#f5f0e0';
-              g.fillRect(p.x - 1, p.y - 3, 1, 1);
-              g.fillRect(p.x + 1, p.y - 3, 1, 1);
-              g.fillStyle = '#e8dcc0';
-              g.fillRect(p.x - 1, p.y - 1, 2, 2);
-            } else if ((terr === 'desert' || terr === 'shore') && r1 < 0.16) {
-              // pebble / shell
-              g.fillStyle = terr === 'shore' ? '#f2e4d8' : '#b9a67f';
-              g.fillRect(p.x - 2, p.y - 1, 4, 2);
-              g.fillStyle = 'rgba(255,255,255,0.5)';
-              g.fillRect(p.x - 1, p.y - 1, 1, 1);
-            } else if (terr === 'rock' && r1 < 0.15) {
-              // stone chip
-              g.fillStyle = 'rgba(0,0,0,0.12)';
-              g.fillRect(p.x - 2, p.y - 2, 4, 3);
-            } else if (r2 < 0.06) {
-              // flower dot (meadow)
-              g.fillStyle = r2 < 0.02 ? '#f2d06b' : r2 < 0.04 ? '#e07856' : '#f5f4e6';
-              g.fillRect(p.x - 1, p.y - 2, 2, 2);
-            }
+            const dn = decorTileFor(terr, lx, ly, sc.ox, sc.oy);
+            if (dn >= 0) drawDecor(g, dn, p.x, p.y);
           }
         }
       }
@@ -407,6 +407,24 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
           },
         });
         } // end neighbor-chunk tree loop
+      }
+
+      // BUILD 389: ambient critters (badger/stag/boar) — deterministic home-
+      // chunk residents, visual only. Homes are filtered to dry land.
+      if (crittersReady()) {
+        const isLand = (lx: number, ly: number): boolean => {
+          if (homeScene.tile.terrain === 'ocean') return false;
+          if (isRoadTileFor(homeScene, lx, ly)) return false;
+          const wq = waterGridAt(homeScene.water, chunk.x * FIELD_SIZE + lx + 0.5, chunk.y * FIELD_SIZE + ly + 0.5);
+          return wq.depth <= 0.25;
+        };
+        for (const c of crittersForChunk(chunk.x, chunk.y, N, isLand)) {
+          const pose = critterPose(c, nowMs);
+          drawables.push({
+            depth: pose.x + pose.y + 0.005,
+            draw: (g2) => { drawCritter(g2, c, nowMs, isoToScreen); },
+          });
+        }
       }
 
       // townsfolk: the live NPC simulation, right where the 2D game has them.
