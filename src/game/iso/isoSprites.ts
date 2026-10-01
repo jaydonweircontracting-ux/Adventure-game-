@@ -130,18 +130,16 @@ export function isoScreenSpeedScale(ux: number, uy: number): number {
 }
 
 /**
- * BUILD 408/410: screen-space player facing with a northward preference. The
- * tile delta is projected into true screen space (2:1 dimetric) and the
- * dominant screen axis picks the art — except near-vertical northward travel
- * shows the back/up sprite: anything within 30 degrees of straight screen-up
- * faces up, so angling a tap slightly left or right of straight-up (drift,
- * collision slide) never flips to a side asset. True north-east / north-west
- * diagonal travel (beyond 30 degrees from vertical) shows the side sprite for
- * the travel direction — in this projection screen-right is world north-east
- * and screen-up is world north-west, so a north-east walk must face right,
- * never the north-west-facing back sprite (BUILD 410). Near-horizontal
- * northward drift still shows the side sprite. Southward keeps the
- * dominant-axis mapping (down-right -> right, down-left -> left,
+ * BUILD 408/410/411: screen-space player facing with a northward preference.
+ * The tile delta is projected into true screen space (2:1 dimetric) and the
+ * dominant screen axis picks the art — except northward travel within 45
+ * degrees of straight screen-up shows the back/up sprite (BUILD 411): going
+ * up, and walking the north-east / north-west diagonals, all face the back
+ * view, so angling a tap left or right of straight-up (drift, collision
+ * slide) never flips to a side asset. Near-horizontal northward travel still
+ * shows the side sprite for the travel direction (BUILD 410: eastward travel
+ * with a northward tilt must face east, never the back sprite). Southward
+ * keeps the dominant-axis mapping (down-right -> right, down-left -> left,
  * mostly-down -> down/front). `current` is only the zero-movement fallback.
  */
 export function isoPlayerFaceForScreenDelta(dx: number, dy: number, current: Face4): Face4 {
@@ -150,9 +148,9 @@ export function isoPlayerFaceForScreenDelta(dx: number, dy: number, current: Fac
   const sy = (dx + dy) / 2; // screen y of the tile delta
   const ax = Math.abs(sx), ay = Math.abs(sy);
   if (sy < 0) {
-    // northward: back sprite only near straight-up (within 30deg); diagonal
-    // north-east / north-west travel faces the side of travel.
-    if (ay >= ax * 1.7321) return 'up'; // tan(60deg): within 30deg of straight-up
+    // northward: back sprite within 45deg of straight-up (up + NE/NW
+    // diagonals); beyond that the side sprite for the travel direction.
+    if (ay >= ax) return 'up';
     return sx > 0 ? 'right' : 'left';
   }
   if (ax >= ay) return sx > 0 ? 'right' : 'left';
