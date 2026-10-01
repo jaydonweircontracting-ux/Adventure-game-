@@ -3291,9 +3291,9 @@ body {
 .simulated-adventurer[data-facing='up'] .simulated-adventurer-sprite,
 .town-npc[data-facing='up'] .npc-sprite { --npc-row: 2; --npc-walk-row: 5; }
 .simulated-adventurer[data-facing='left'] .simulated-adventurer-sprite,
-.town-npc[data-facing='left'] .npc-sprite { --npc-row: 1; --npc-walk-row: 4; transform: scaleX(-1); }
+.town-npc[data-facing='left'] .npc-sprite { --npc-row: 1; --npc-walk-row: 4; transform: var(--npc-appearance-transform, none) scaleX(-1); }
 .simulated-adventurer[data-facing='right'] .simulated-adventurer-sprite,
-.town-npc[data-facing='right'] .npc-sprite { --npc-row: 1; --npc-walk-row: 4; transform: none; }
+.town-npc[data-facing='right'] .npc-sprite { --npc-row: 1; --npc-walk-row: 4; }
 /* NPC walk system: idle row <-> walk row 2-frame cycle via sprite-sheet rows. */
 .town-npc .npc-sprite {
   --npc-x: 0px;
