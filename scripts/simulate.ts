@@ -1429,21 +1429,24 @@ for (const kind of EXPECTED_KINDS) {
   assert(isoScreenSpeedScale(0, 0) === 1, 'zero vector is safe (scale 1)');
 }
 
-// BUILD 407/408: isoPlayerFaceForScreenDelta — screen-space facing for the
-// 2:1 dimetric projection. BUILD 408: northward travel (up, up-right,
-// up-left — anything within 67.5deg of straight screen-up) shows the back
-// sprite; near-horizontal northward drift still shows the side sprite.
-// Southward keeps the dominant-axis mapping. Zero delta keeps current facing.
+// BUILD 407/408/410: isoPlayerFaceForScreenDelta — screen-space facing for
+// the 2:1 dimetric projection. BUILD 408: near-vertical northward travel
+// (within 30deg of straight screen-up) shows the back sprite so drift never
+// flips to a side asset. BUILD 410: true north-east / north-west diagonal
+// travel (beyond 30deg from vertical) faces the side of travel — screen-right
+// is world north-east, so a north-east walk faces right, never the
+// north-west-facing back sprite. Southward keeps the dominant-axis mapping.
+// Zero delta keeps current facing.
 {
   const { isoPlayerFaceForScreenDelta } = await import('../src/game/iso/isoSprites');
   assert(isoPlayerFaceForScreenDelta(-1, -1, 'down') === 'up', 'straight screen-up faces up');
   assert(isoPlayerFaceForScreenDelta(1, 1, 'up') === 'down', 'straight screen-down faces down');
   assert(isoPlayerFaceForScreenDelta(1, -1, 'up') === 'right', 'screen-right travel faces right');
   assert(isoPlayerFaceForScreenDelta(-1, 1, 'up') === 'left', 'screen-left travel faces left');
-  assert(isoPlayerFaceForScreenDelta(-1, -3, 'right') === 'up', 'right-north screen diagonal faces up (back sprite)');
-  assert(isoPlayerFaceForScreenDelta(-0.5, -2, 'left') === 'up', 'right-north off-diagonal faces up');
-  assert(isoPlayerFaceForScreenDelta(-3, -1, 'right') === 'up', 'left-north screen diagonal faces up (back sprite)');
-  assert(isoPlayerFaceForScreenDelta(-2, -0.5, 'right') === 'up', 'left-north off-diagonal faces up');
+  assert(isoPlayerFaceForScreenDelta(-1, -3, 'up') === 'right', 'north-east screen diagonal faces right (not the back sprite)');
+  assert(isoPlayerFaceForScreenDelta(-0.5, -2, 'up') === 'right', 'north-east off-diagonal faces right');
+  assert(isoPlayerFaceForScreenDelta(-3, -1, 'up') === 'left', 'north-west screen diagonal faces left');
+  assert(isoPlayerFaceForScreenDelta(-2, -0.5, 'up') === 'left', 'north-west off-diagonal faces left');
   assert(isoPlayerFaceForScreenDelta(-0.7, -0.75, 'up') === 'up', 'minor drift walking up keeps the back sprite');
   assert(isoPlayerFaceForScreenDelta(-0.5, -0.9, 'up') === 'up', 'larger drift walking up keeps the back sprite');
   assert(isoPlayerFaceForScreenDelta(1, -1.2, 'up') === 'right', 'near-horizontal northward travel faces right');
