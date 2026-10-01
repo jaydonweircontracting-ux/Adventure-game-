@@ -60,6 +60,12 @@ export const CHAR_STATES = Object.keys(CHAR_CLIPS) as CharAnimState[];
 // stopped => no cycling, faster => faster cycling, always smooth.
 export const WALK_FPS_MIN = 2;
 export const WALK_FPS_MAX = 12;
+/**
+ * BUILD 386: the up/down (back/front) walk rows read as a slow foot-shuffle
+ * next to the side rows at the same ground speed, so the feet cycle faster on
+ * those facings to match the stride visually.
+ */
+export const WALK_FPS_UPDOWN_MULT = 1.5;
 
 /** Walk-cycle frames/sec for a measured ground speed (field units/sec). */
 export function walkFpsForSpeed(unitsPerSec: number): number {
@@ -175,7 +181,11 @@ export class CharacterAnimator {
     this.facing = u.facing;
     if (u.moving) {
       this.state = 'walk';
-      this.phase = (this.phase + (dt / 1000) * walkFpsForSpeed(this.speed)) % LPC_FRAMES.walk;
+      // BUILD 386: faster feet on up/down facings (back/front rows shuffle
+      // slowly at the side-row rate).
+      const upDown = this.facing === 'up' || this.facing === 'down';
+      const rate = walkFpsForSpeed(this.speed) * (upDown ? WALK_FPS_UPDOWN_MULT : 1);
+      this.phase = (this.phase + (dt / 1000) * rate) % LPC_FRAMES.walk;
     } else {
       this.state = 'idle';
     }

@@ -2785,6 +2785,26 @@ console.log('Testing examine system...');
   assert(fr1 >= 0 && fr1 < 9 && fr2 >= 0 && fr2 < 9, 'walkFrameAt must stay in [0,9)');
   assert(fr2 !== fr1, 'walkFrameAt must advance over 500ms at walk speed');
 
+  // BUILD 386: up/down facings cycle the feet faster than left/right at the
+  // same ground speed (the back/front rows shuffle slowly at the side rate).
+  assert(cs.WALK_FPS_UPDOWN_MULT > 1, 'up/down walk multiplier must exceed 1');
+  const phaseAfter = (facing: 'up' | 'down' | 'left' | 'right'): number => {
+    const a = new cs.CharacterAnimator('rate-probe');
+    a.phase = 0;
+    // prime, then two steady 500ms steps at 4 units/sec (no phase wrap)
+    a.update({ x: 0, y: 0, moving: true, facing, nowMs: 0 });
+    a.update({ x: 2, y: 0, moving: true, facing, nowMs: 500 });
+    a.update({ x: 4, y: 0, moving: true, facing, nowMs: 1000 });
+    return a.phase;
+  };
+  const upPhase = phaseAfter('up'), downPhase = phaseAfter('down');
+  const leftPhase = phaseAfter('left'), rightPhase = phaseAfter('right');
+  assert(Math.abs(upPhase - downPhase) < 1e-9, 'up and down must cycle at the same rate');
+  assert(Math.abs(leftPhase - rightPhase) < 1e-9, 'left and right must cycle at the same rate');
+  assert(upPhase > leftPhase, 'up/down feet must cycle faster than left/right');
+  assert(Math.abs(upPhase / leftPhase - cs.WALK_FPS_UPDOWN_MULT) < 1e-9,
+    `up/down rate must be exactly the multiplier over left/right, got ${upPhase / leftPhase}`);
+
   // CharacterAnimator: sim stays authoritative for moving/facing.
   const anim = new cs.CharacterAnimator('townsfolk-3');
   assert(anim.state === 'idle' && anim.facing === 'down', 'animator must start idle facing down');
