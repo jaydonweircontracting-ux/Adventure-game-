@@ -1,625 +1,697 @@
 {
-  "bare": {
-    "down": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          97,
-          7
-        ],
-        "idleH": 188
-      },
-      "idle": [
-        "bare_down_idle_0.png"
-      ],
-      "walk": [
-        "bare_down_walk_0.png",
-        "bare_down_walk_1.png"
-      ],
-      "attack": [
-        "bare_down_attack_0.png",
-        "bare_down_attack_1.png"
-      ]
-    },
-    "side": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          104,
-          9
-        ],
-        "idleH": 186
-      },
-      "idle": [
-        "bare_side_idle_0.png"
-      ],
-      "walk": [
-        "bare_side_walk_0.png",
-        "bare_side_walk_1.png"
-      ],
-      "attack": [
-        "bare_side_attack_0.png",
-        "bare_side_attack_1.png"
-      ]
-    },
-    "up": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          97,
-          2
-        ],
-        "idleH": 193
-      },
-      "idle": [
-        "bare_up_idle_0.png"
-      ],
-      "walk": [
-        "bare_up_walk_0.png",
-        "bare_up_walk_1.png"
-      ],
-      "attack": [
-        "bare_up_attack_0.png",
-        "bare_up_attack_1.png"
-      ]
-    },
-    "right": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          104,
-          9
-        ],
-        "idleH": 186
-      },
-      "idle": [
-        "bare_right_idle_0.png"
-      ],
-      "walk": [
-        "bare_right_walk_0.png",
-        "bare_right_walk_1.png"
-      ],
-      "attack": [
-        "bare_side_attack_0.png",
-        "bare_side_attack_1.png"
-      ]
-    },
-    "left": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          93,
-          9
-        ],
-        "idleH": 186
-      },
-      "idle": [
-        "bare_left_idle_0.png"
-      ],
-      "walk": [
-        "bare_left_walk_0.png",
-        "bare_left_walk_1.png"
-      ],
-      "attack": [
-        "bare_side_attack_0.png",
-        "bare_side_attack_1.png"
-      ]
-    }
+ "bare": {
+  "down": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     97,
+     7
+    ],
+    "idleH": 188
+   },
+   "idle": [
+    "bare_down_idle_0.png"
+   ],
+   "walk": [
+    "bare_down_walk_0.png",
+    "bare_down_walk_1.png"
+   ],
+   "attack": [
+    "bare_down_attack_0.png",
+    "bare_down_attack_1.png"
+   ]
   },
-  "blue": {
-    "down": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          97,
-          7
-        ],
-        "idleH": 188
-      },
-      "idle": [
-        "blue_down_idle_0.png"
-      ],
-      "walk": [
-        "blue_down_walk_0.png",
-        "blue_down_walk_1.png"
-      ],
-      "attack": [
-        "blue_down_attack_0.png",
-        "blue_down_attack_1.png"
-      ]
-    },
-    "side": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          104,
-          9
-        ],
-        "idleH": 186
-      },
-      "idle": [
-        "blue_side_idle_0.png"
-      ],
-      "walk": [
-        "blue_side_walk_0.png",
-        "blue_side_walk_1.png"
-      ],
-      "attack": [
-        "blue_side_attack_0.png",
-        "blue_side_attack_1.png"
-      ]
-    },
-    "up": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          97,
-          2
-        ],
-        "idleH": 193
-      },
-      "idle": [
-        "blue_up_idle_0.png"
-      ],
-      "walk": [
-        "blue_up_walk_0.png",
-        "blue_up_walk_1.png"
-      ],
-      "attack": [
-        "blue_up_attack_0.png",
-        "blue_up_attack_1.png"
-      ]
-    },
-    "left": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          93,
-          9
-        ],
-        "idleH": 186
-      },
-      "idle": [
-        "blue_left_idle_0.png"
-      ],
-      "walk": [
-        "blue_left_walk_0.png",
-        "blue_left_walk_1.png"
-      ],
-      "attack": [
-        "blue_left_attack_0.png",
-        "blue_left_attack_1.png"
-      ]
-    },
-    "right": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          104,
-          9
-        ],
-        "idleH": 186
-      },
-      "idle": [
-        "blue_right_idle_0.png"
-      ],
-      "walk": [
-        "blue_right_walk_0.png",
-        "blue_right_walk_1.png"
-      ],
-      "attack": [
-        "blue_right_attack_0.png",
-        "blue_right_attack_1.png"
-      ]
-    }
+  "side": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     104,
+     9
+    ],
+    "idleH": 186
+   },
+   "idle": [
+    "bare_side_idle_0.png"
+   ],
+   "walk": [
+    "bare_side_walk_0.png",
+    "bare_side_walk_1.png"
+   ],
+   "attack": [
+    "bare_side_attack_0.png",
+    "bare_side_attack_1.png"
+   ]
   },
-  "sword": {
-    "down": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          97,
-          7
-        ],
-        "idleH": 188
-      },
-      "idle": [
-        "sword_down_idle_0.png"
-      ],
-      "walk": [
-        "sword_down_walk_0.png",
-        "sword_down_walk_1.png"
-      ],
-      "attack": [
-        "sword_down_attack_0.png",
-        "sword_down_attack_1.png",
-        "sword_down_attack_2.png"
-      ]
-    },
-    "side": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          104,
-          9
-        ],
-        "idleH": 186
-      },
-      "idle": [
-        "sword_side_idle_0.png"
-      ],
-      "walk": [
-        "sword_side_walk_0.png",
-        "sword_side_walk_1.png"
-      ],
-      "attack": [
-        "sword_side_attack_0.png",
-        "sword_side_attack_1.png",
-        "sword_side_attack_2.png"
-      ]
-    },
-    "up": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          97,
-          2
-        ],
-        "idleH": 193
-      },
-      "idle": [
-        "sword_up_idle_0.png"
-      ],
-      "walk": [
-        "sword_up_walk_0.png"
-      ],
-      "attack": [
-        "sword_up_attack_0.png",
-        "sword_up_attack_1.png",
-        "sword_up_attack_2.png"
-      ]
-    },
-    "left": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          93,
-          9
-        ],
-        "idleH": 186
-      },
-      "idle": [
-        "sword_left_idle_0.png"
-      ],
-      "walk": [
-        "sword_left_walk_0.png",
-        "sword_left_walk_1.png"
-      ],
-      "attack": [
-        "sword_left_attack_0.png",
-        "sword_left_attack_1.png",
-        "sword_left_attack_2.png"
-      ]
-    },
-    "right": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          104,
-          9
-        ],
-        "idleH": 186
-      },
-      "idle": [
-        "sword_right_idle_0.png"
-      ],
-      "walk": [
-        "sword_right_walk_0.png",
-        "sword_right_walk_1.png"
-      ],
-      "attack": [
-        "sword_right_attack_0.png",
-        "sword_right_attack_1.png",
-        "sword_right_attack_2.png"
-      ]
-    }
+  "up": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     97,
+     2
+    ],
+    "idleH": 193
+   },
+   "idle": [
+    "bare_up_idle_0.png"
+   ],
+   "walk": [
+    "bare_up_walk_0.png",
+    "bare_up_walk_1.png"
+   ],
+   "attack": [
+    "bare_up_attack_0.png",
+    "bare_up_attack_1.png"
+   ]
   },
-  "bow": {
-    "down": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          97,
-          7
-        ],
-        "idleH": 188
-      },
-      "idle": [
-        "bow_down_idle_0.png"
-      ],
-      "walk": [
-        "bow_down_walk_0.png",
-        "bow_down_walk_1.png"
-      ],
-      "attack": [
-        "bow_down_attack_0.png",
-        "bow_down_attack_1.png",
-        "bow_down_attack_2.png"
-      ]
-    },
-    "side": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          104,
-          9
-        ],
-        "idleH": 186
-      },
-      "idle": [
-        "bow_side_idle_0.png"
-      ],
-      "walk": [
-        "bow_side_walk_0.png"
-      ],
-      "attack": [
-        "bow_side_attack_0.png",
-        "bow_side_attack_1.png",
-        "bow_side_attack_2.png"
-      ]
-    },
-    "up": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          97,
-          2
-        ],
-        "idleH": 193
-      },
-      "idle": [
-        "bow_up_idle_0.png"
-      ],
-      "walk": [
-        "bow_up_walk_0.png"
-      ],
-      "attack": [
-        "bow_up_attack_0.png",
-        "bow_up_attack_1.png",
-        "bow_up_attack_2.png"
-      ]
-    },
-    "left": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          93,
-          9
-        ],
-        "idleH": 186
-      },
-      "idle": [
-        "bow_left_idle_0.png"
-      ],
-      "walk": [
-        "bow_left_walk_0.png",
-        "bow_left_walk_1.png"
-      ],
-      "attack": [
-        "bow_left_attack_0.png",
-        "bow_left_attack_1.png",
-        "bow_left_attack_2.png"
-      ]
-    },
-    "right": {
-      "_box": {
-        "w": 195,
-        "h": 195,
-        "head": [
-          104,
-          9
-        ],
-        "idleH": 186
-      },
-      "idle": [
-        "bow_right_idle_0.png"
-      ],
-      "walk": [
-        "bow_right_walk_0.png",
-        "bow_right_walk_1.png"
-      ],
-      "attack": [
-        "bow_right_attack_0.png",
-        "bow_right_attack_1.png",
-        "bow_right_attack_2.png"
-      ]
-    }
+  "right": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     104,
+     9
+    ],
+    "idleH": 186
+   },
+   "idle": [
+    "bare_right_idle_0.png"
+   ],
+   "walk": [
+    "bare_right_walk_0.png",
+    "bare_right_walk_1.png"
+   ],
+   "attack": [
+    "bare_side_attack_0.png",
+    "bare_side_attack_1.png"
+   ]
   },
-  "_conventions": {
-    "side": "All side-view frames face screen-RIGHT (visually audited per frame in sideFacing). The renderer (drawBarbarian in src/game/iso/barbarian.ts) mirrors the side art when facing=left. BUILD 393: fixed reversed left/right \u2014 the art natively faced right but the renderer only mirrored when facing=right, so walking left showed right-facing art. Also re-mirrored the 5 bow side frames (BUILD 391 had normalized them face-left) and sword_side_walk_1 (BUILD 392 had mirrored it face-left) back to the face-right pack convention. BUILD 397: bare side idle/walk re-cut per user direction from the user-supplied left-facing sheet (mirrored to the face-right pack convention; the renderer mirrors for left, so left movement shows the user's original left-facing art).",
-    "sideCentroidX": {
-      "bare_side_attack_0.png": 0.5046,
-      "bare_side_attack_1.png": 0.5046,
-      "bare_side_idle_0.png": 0.5046,
-      "bare_side_walk_0.png": 0.4845,
-      "bare_side_walk_1.png": 0.4955,
-      "blue_side_attack_0.png": 0.5046,
-      "blue_side_attack_1.png": 0.5046,
-      "blue_side_idle_0.png": 0.5046,
-      "blue_side_walk_0.png": 0.4845,
-      "blue_side_walk_1.png": 0.4955,
-      "bow_side_attack_0.png": 0.5046,
-      "bow_side_attack_1.png": 0.5046,
-      "bow_side_attack_2.png": 0.5046,
-      "bow_side_idle_0.png": 0.5046,
-      "bow_side_walk_0.png": 0.4845,
-      "sword_side_attack_0.png": 0.5046,
-      "sword_side_attack_1.png": 0.5046,
-      "sword_side_attack_2.png": 0.5046,
-      "sword_side_idle_0.png": 0.5046,
-      "sword_side_walk_0.png": 0.4845,
-      "sword_side_walk_1.png": 0.4955,
-      "bare_right_idle_0.png": 0.5046,
-      "bare_right_walk_0.png": 0.4845,
-      "bare_right_walk_1.png": 0.4955
-    },
-    "playerLayering": "IsoFieldView draws the player in a final pass above all depth-sorted drawables (BUILD 391): grass/decor/trees/buildings never cover the player.",
-    "frameViews": {
-      "bare_down_idle_0.png": "down",
-      "bare_down_walk_0.png": "down",
-      "bare_down_walk_1.png": "down",
-      "bare_side_idle_0.png": "side",
-      "bare_side_walk_0.png": "side",
-      "bare_side_walk_1.png": "side",
-      "bare_up_idle_0.png": "up",
-      "bare_up_walk_0.png": "up",
-      "bare_up_walk_1.png": "up",
-      "blue_down_idle_0.png": "down",
-      "blue_down_walk_0.png": "down",
-      "blue_down_walk_1.png": "down",
-      "blue_side_idle_0.png": "side",
-      "blue_side_walk_0.png": "side",
-      "blue_side_walk_1.png": "side",
-      "blue_up_idle_0.png": "up",
-      "blue_up_walk_0.png": "up",
-      "blue_up_walk_1.png": "up",
-      "bow_down_idle_0.png": "down",
-      "bow_down_walk_0.png": "down",
-      "bow_down_walk_1.png": "down",
-      "bow_side_idle_0.png": "side",
-      "bow_side_walk_0.png": "side",
-      "bow_up_idle_0.png": "up",
-      "bow_up_walk_0.png": "up",
-      "sword_down_idle_0.png": "down",
-      "sword_down_walk_0.png": "down",
-      "sword_down_walk_1.png": "down",
-      "sword_side_idle_0.png": "side",
-      "sword_side_walk_0.png": "side",
-      "sword_side_walk_1.png": "side",
-      "sword_up_idle_0.png": "up",
-      "sword_up_walk_0.png": "up",
-      "bare_right_idle_0.png": "right",
-      "bare_right_walk_0.png": "right",
-      "bare_right_walk_1.png": "right",
-      "bare_left_idle_0.png": "left",
-      "bare_left_walk_0.png": "left",
-      "bare_left_walk_1.png": "left",
-      "blue_left_idle_0.png": "left",
-      "blue_left_walk_0.png": "left",
-      "blue_left_walk_1.png": "left",
-      "sword_left_idle_0.png": "left",
-      "sword_left_walk_0.png": "left",
-      "sword_left_walk_1.png": "left",
-      "bow_left_idle_0.png": "left",
-      "bow_left_walk_0.png": "left",
-      "bow_left_walk_1.png": "left",
-      "blue_right_idle_0.png": "right",
-      "blue_right_walk_0.png": "right",
-      "blue_right_walk_1.png": "right",
-      "sword_right_idle_0.png": "right",
-      "sword_right_walk_0.png": "right",
-      "sword_right_walk_1.png": "right",
-      "bow_right_idle_0.png": "right",
-      "bow_right_walk_0.png": "right",
-      "bow_right_walk_1.png": "right"
-    },
-    "sideFacing": {
-      "bare_side_attack_0.png": "right",
-      "bare_side_attack_1.png": "right",
-      "bare_side_idle_0.png": "right",
-      "bare_side_walk_0.png": "right",
-      "bare_side_walk_1.png": "right",
-      "blue_side_attack_0.png": "right",
-      "blue_side_attack_1.png": "right",
-      "blue_side_idle_0.png": "right",
-      "blue_side_walk_0.png": "right",
-      "blue_side_walk_1.png": "right",
-      "bow_side_attack_0.png": "right",
-      "bow_side_attack_1.png": "right",
-      "bow_side_attack_2.png": "right",
-      "bow_side_idle_0.png": "right",
-      "bow_side_walk_0.png": "right",
-      "sword_side_attack_0.png": "right",
-      "sword_side_attack_1.png": "right",
-      "sword_side_attack_2.png": "right",
-      "sword_side_idle_0.png": "right",
-      "sword_side_walk_0.png": "right",
-      "sword_side_walk_1.png": "right",
-      "bare_right_idle_0.png": "right",
-      "bare_right_walk_0.png": "right",
-      "bare_right_walk_1.png": "right"
-    },
-    "down": "BUILD 394: bare down idle re-cut from the user-supplied front-facing sheet. BUILD 395: bare down walk replaced per user direction with the two user-supplied 3/4-view walk/run frames. BUILD 396: bare down idle replaced per user direction ('this is down idle') with the user-supplied 3/4-view standing frame, matching the walk set style. Side frames unchanged.",
-    "right": "BUILD 398: the bare variant has dedicated right-facing idle/walk art (3/4 view, user-supplied). The renderer uses the 'right' frame set when facing=right and falls back per-anim to the shared side set (attacks still use side art). Left movement keeps the side set mirrored, which reproduces the user's original left-facing sheet.",
-    "up": "BUILD 399: bare up idle/walk replaced per user direction with the user-supplied back-view art (standing idle + two opposite-stride run frames). No code changes needed \u2014 the up view is a single set.",
-    "leftCentroidX": {
-      "bare_left_idle_0.png": 0.5094,
-      "bare_left_walk_0.png": 0.4873,
-      "bare_left_walk_1.png": 0.5039,
-      "blue_left_idle_0.png": 0.5094,
-      "blue_left_walk_0.png": 0.4873,
-      "blue_left_walk_1.png": 0.5039,
-      "sword_left_idle_0.png": 0.5094,
-      "sword_left_walk_0.png": 0.4873,
-      "sword_left_walk_1.png": 0.5039,
-      "bow_left_idle_0.png": 0.5094,
-      "bow_left_walk_0.png": 0.4873,
-      "bow_left_walk_1.png": 0.5039
-    },
-    "leftFacing": {
-      "bare_left_idle_0.png": "left",
-      "bare_left_walk_0.png": "left",
-      "bare_left_walk_1.png": "left",
-      "blue_left_idle_0.png": "left",
-      "blue_left_walk_0.png": "left",
-      "blue_left_walk_1.png": "left",
-      "sword_left_idle_0.png": "left",
-      "sword_left_walk_0.png": "left",
-      "sword_left_walk_1.png": "left",
-      "bow_left_idle_0.png": "left",
-      "bow_left_walk_0.png": "left",
-      "bow_left_walk_1.png": "left"
-    },
-    "rightCentroidX": {
-      "blue_right_idle_0.png": 0.5046,
-      "blue_right_walk_0.png": 0.4845,
-      "blue_right_walk_1.png": 0.4955,
-      "sword_right_idle_0.png": 0.5046,
-      "sword_right_walk_0.png": 0.4845,
-      "sword_right_walk_1.png": 0.4955,
-      "bow_right_idle_0.png": 0.5046,
-      "bow_right_walk_0.png": 0.4845,
-      "bow_right_walk_1.png": 0.4955
-    },
-    "rightFacing": {
-      "blue_right_idle_0.png": "right",
-      "blue_right_walk_0.png": "right",
-      "blue_right_walk_1.png": "right",
-      "sword_right_idle_0.png": "right",
-      "sword_right_walk_0.png": "right",
-      "sword_right_walk_1.png": "right",
-      "bow_right_idle_0.png": "right",
-      "bow_right_walk_0.png": "right",
-      "bow_right_walk_1.png": "right"
-    }
+  "left": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     93,
+     9
+    ],
+    "idleH": 186
+   },
+   "idle": [
+    "bare_left_idle_0.png"
+   ],
+   "walk": [
+    "bare_left_walk_0.png",
+    "bare_left_walk_1.png"
+   ],
+   "attack": [
+    "bare_side_attack_0.png",
+    "bare_side_attack_1.png"
+   ]
   }
+ },
+ "blue": {
+  "down": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     97,
+     7
+    ],
+    "idleH": 188
+   },
+   "idle": [
+    "blue_down_idle_0.png"
+   ],
+   "walk": [
+    "blue_down_walk_0.png",
+    "blue_down_walk_1.png"
+   ],
+   "attack": [
+    "blue_down_attack_0.png",
+    "blue_down_attack_1.png"
+   ]
+  },
+  "side": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     104,
+     9
+    ],
+    "idleH": 186
+   },
+   "idle": [
+    "blue_side_idle_0.png"
+   ],
+   "walk": [
+    "blue_side_walk_0.png",
+    "blue_side_walk_1.png"
+   ],
+   "attack": [
+    "blue_side_attack_0.png",
+    "blue_side_attack_1.png"
+   ]
+  },
+  "up": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     97,
+     2
+    ],
+    "idleH": 193
+   },
+   "idle": [
+    "blue_up_idle_0.png"
+   ],
+   "walk": [
+    "blue_up_walk_0.png",
+    "blue_up_walk_1.png"
+   ],
+   "attack": [
+    "blue_up_attack_0.png",
+    "blue_up_attack_1.png"
+   ]
+  },
+  "left": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     93,
+     9
+    ],
+    "idleH": 186
+   },
+   "idle": [
+    "blue_left_idle_0.png"
+   ],
+   "walk": [
+    "blue_left_walk_0.png",
+    "blue_left_walk_1.png"
+   ],
+   "attack": [
+    "blue_left_attack_0.png",
+    "blue_left_attack_1.png"
+   ]
+  },
+  "right": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     104,
+     9
+    ],
+    "idleH": 186
+   },
+   "idle": [
+    "blue_right_idle_0.png"
+   ],
+   "walk": [
+    "blue_right_walk_0.png",
+    "blue_right_walk_1.png"
+   ],
+   "attack": [
+    "blue_right_attack_0.png",
+    "blue_right_attack_1.png"
+   ]
+  }
+ },
+ "sword": {
+  "down": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     97,
+     7
+    ],
+    "idleH": 188
+   },
+   "idle": [
+    "sword_down_idle_0.png"
+   ],
+   "walk": [
+    "sword_down_walk_0.png",
+    "sword_down_walk_1.png"
+   ],
+   "attack": [
+    "sword_down_attack_0.png",
+    "sword_down_attack_1.png",
+    "sword_down_attack_2.png"
+   ]
+  },
+  "side": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     104,
+     9
+    ],
+    "idleH": 186
+   },
+   "idle": [
+    "sword_side_idle_0.png"
+   ],
+   "walk": [
+    "sword_side_walk_0.png",
+    "sword_side_walk_1.png"
+   ],
+   "attack": [
+    "sword_side_attack_0.png",
+    "sword_side_attack_1.png",
+    "sword_side_attack_2.png"
+   ]
+  },
+  "up": {
+   "_box": {
+    "w": 118,
+    "h": 212,
+    "head": [
+     59,
+     21
+    ],
+    "idleH": 103
+   },
+   "idle": [
+    "sword_up_idle_0.png"
+   ],
+   "walk": [
+    "sword_up_walk_0.png",
+    "sword_up_walk_1.png",
+    "sword_up_walk_2.png",
+    "sword_up_walk_3.png",
+    "sword_up_walk_4.png",
+    "sword_up_walk_5.png",
+    "sword_up_walk_6.png",
+    "sword_up_walk_7.png",
+    "sword_up_walk_8.png"
+   ],
+   "attack": [
+    "sword_up_attack_0.png",
+    "sword_up_attack_1.png",
+    "sword_up_attack_2.png"
+   ]
+  },
+  "left": {
+   "_box": {
+    "w": 116,
+    "h": 214,
+    "head": [
+     58,
+     25
+    ],
+    "idleH": 99
+   },
+   "idle": [
+    "sword_left_idle_0.png"
+   ],
+   "walk": [
+    "sword_left_walk_0.png",
+    "sword_left_walk_1.png",
+    "sword_left_walk_2.png",
+    "sword_left_walk_3.png",
+    "sword_left_walk_4.png",
+    "sword_left_walk_5.png",
+    "sword_left_walk_6.png",
+    "sword_left_walk_7.png",
+    "sword_left_walk_8.png"
+   ],
+   "attack": [
+    "sword_left_attack_0.png",
+    "sword_left_attack_1.png",
+    "sword_left_attack_2.png"
+   ]
+  },
+  "right": {
+   "_box": {
+    "w": 118,
+    "h": 215,
+    "head": [
+     59,
+     19
+    ],
+    "idleH": 99
+   },
+   "idle": [
+    "sword_right_idle_0.png"
+   ],
+   "walk": [
+    "sword_right_walk_0.png",
+    "sword_right_walk_1.png",
+    "sword_right_walk_2.png",
+    "sword_right_walk_3.png",
+    "sword_right_walk_4.png",
+    "sword_right_walk_5.png",
+    "sword_right_walk_6.png",
+    "sword_right_walk_7.png",
+    "sword_right_walk_8.png"
+   ],
+   "attack": [
+    "sword_right_attack_0.png",
+    "sword_right_attack_1.png",
+    "sword_right_attack_2.png"
+   ]
+  }
+ },
+ "bow": {
+  "down": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     97,
+     7
+    ],
+    "idleH": 188
+   },
+   "idle": [
+    "bow_down_idle_0.png"
+   ],
+   "walk": [
+    "bow_down_walk_0.png",
+    "bow_down_walk_1.png"
+   ],
+   "attack": [
+    "bow_down_attack_0.png",
+    "bow_down_attack_1.png",
+    "bow_down_attack_2.png"
+   ]
+  },
+  "side": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     104,
+     9
+    ],
+    "idleH": 186
+   },
+   "idle": [
+    "bow_side_idle_0.png"
+   ],
+   "walk": [
+    "bow_side_walk_0.png"
+   ],
+   "attack": [
+    "bow_side_attack_0.png",
+    "bow_side_attack_1.png",
+    "bow_side_attack_2.png"
+   ]
+  },
+  "up": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     97,
+     2
+    ],
+    "idleH": 193
+   },
+   "idle": [
+    "bow_up_idle_0.png"
+   ],
+   "walk": [
+    "bow_up_walk_0.png"
+   ],
+   "attack": [
+    "bow_up_attack_0.png",
+    "bow_up_attack_1.png",
+    "bow_up_attack_2.png"
+   ]
+  },
+  "left": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     93,
+     9
+    ],
+    "idleH": 186
+   },
+   "idle": [
+    "bow_left_idle_0.png"
+   ],
+   "walk": [
+    "bow_left_walk_0.png",
+    "bow_left_walk_1.png"
+   ],
+   "attack": [
+    "bow_left_attack_0.png",
+    "bow_left_attack_1.png",
+    "bow_left_attack_2.png"
+   ]
+  },
+  "right": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     104,
+     9
+    ],
+    "idleH": 186
+   },
+   "idle": [
+    "bow_right_idle_0.png"
+   ],
+   "walk": [
+    "bow_right_walk_0.png",
+    "bow_right_walk_1.png"
+   ],
+   "attack": [
+    "bow_right_attack_0.png",
+    "bow_right_attack_1.png",
+    "bow_right_attack_2.png"
+   ]
+  }
+ },
+ "_conventions": {
+  "side": "All side-view frames face screen-RIGHT (visually audited per frame in sideFacing). The renderer (drawBarbarian in src/game/iso/barbarian.ts) mirrors the side art when facing=left. BUILD 393: fixed reversed left/right \u2014 the art natively faced right but the renderer only mirrored when facing=right, so walking left showed right-facing art. Also re-mirrored the 5 bow side frames (BUILD 391 had normalized them face-left) and sword_side_walk_1 (BUILD 392 had mirrored it face-left) back to the face-right pack convention. BUILD 397: bare side idle/walk re-cut per user direction from the user-supplied left-facing sheet (mirrored to the face-right pack convention; the renderer mirrors for left, so left movement shows the user's original left-facing art).",
+  "sideCentroidX": {
+   "bare_side_attack_0.png": 0.5046,
+   "bare_side_attack_1.png": 0.5046,
+   "bare_side_idle_0.png": 0.5046,
+   "bare_side_walk_0.png": 0.4845,
+   "bare_side_walk_1.png": 0.4955,
+   "blue_side_attack_0.png": 0.5046,
+   "blue_side_attack_1.png": 0.5046,
+   "blue_side_idle_0.png": 0.5046,
+   "blue_side_walk_0.png": 0.4845,
+   "blue_side_walk_1.png": 0.4955,
+   "bow_side_attack_0.png": 0.5046,
+   "bow_side_attack_1.png": 0.5046,
+   "bow_side_attack_2.png": 0.5046,
+   "bow_side_idle_0.png": 0.5046,
+   "bow_side_walk_0.png": 0.4845,
+   "sword_side_attack_0.png": 0.5046,
+   "sword_side_attack_1.png": 0.5046,
+   "sword_side_attack_2.png": 0.5046,
+   "sword_side_idle_0.png": 0.5046,
+   "sword_side_walk_0.png": 0.4845,
+   "sword_side_walk_1.png": 0.4955,
+   "bare_right_idle_0.png": 0.5046,
+   "bare_right_walk_0.png": 0.4845,
+   "bare_right_walk_1.png": 0.4955
+  },
+  "playerLayering": "IsoFieldView draws the player in a final pass above all depth-sorted drawables (BUILD 391): grass/decor/trees/buildings never cover the player.",
+  "frameViews": {
+   "bare_down_idle_0.png": "down",
+   "bare_down_walk_0.png": "down",
+   "bare_down_walk_1.png": "down",
+   "bare_side_idle_0.png": "side",
+   "bare_side_walk_0.png": "side",
+   "bare_side_walk_1.png": "side",
+   "bare_up_idle_0.png": "up",
+   "bare_up_walk_0.png": "up",
+   "bare_up_walk_1.png": "up",
+   "blue_down_idle_0.png": "down",
+   "blue_down_walk_0.png": "down",
+   "blue_down_walk_1.png": "down",
+   "blue_side_idle_0.png": "side",
+   "blue_side_walk_0.png": "side",
+   "blue_side_walk_1.png": "side",
+   "blue_up_idle_0.png": "up",
+   "blue_up_walk_0.png": "up",
+   "blue_up_walk_1.png": "up",
+   "bow_down_idle_0.png": "down",
+   "bow_down_walk_0.png": "down",
+   "bow_down_walk_1.png": "down",
+   "bow_side_idle_0.png": "side",
+   "bow_side_walk_0.png": "side",
+   "bow_up_idle_0.png": "up",
+   "bow_up_walk_0.png": "up",
+   "sword_down_idle_0.png": "down",
+   "sword_down_walk_0.png": "down",
+   "sword_down_walk_1.png": "down",
+   "sword_side_idle_0.png": "side",
+   "sword_side_walk_0.png": "side",
+   "sword_side_walk_1.png": "side",
+   "sword_up_idle_0.png": "up",
+   "sword_up_walk_0.png": "up",
+   "bare_right_idle_0.png": "right",
+   "bare_right_walk_0.png": "right",
+   "bare_right_walk_1.png": "right",
+   "bare_left_idle_0.png": "left",
+   "bare_left_walk_0.png": "left",
+   "bare_left_walk_1.png": "left",
+   "blue_left_idle_0.png": "left",
+   "blue_left_walk_0.png": "left",
+   "blue_left_walk_1.png": "left",
+   "sword_left_idle_0.png": "left",
+   "sword_left_walk_0.png": "left",
+   "sword_left_walk_1.png": "left",
+   "bow_left_idle_0.png": "left",
+   "bow_left_walk_0.png": "left",
+   "bow_left_walk_1.png": "left",
+   "blue_right_idle_0.png": "right",
+   "blue_right_walk_0.png": "right",
+   "blue_right_walk_1.png": "right",
+   "sword_right_idle_0.png": "right",
+   "sword_right_walk_0.png": "right",
+   "sword_right_walk_1.png": "right",
+   "bow_right_idle_0.png": "right",
+   "bow_right_walk_0.png": "right",
+   "bow_right_walk_1.png": "right",
+   "sword_up_walk_1.png": "up",
+   "sword_up_walk_2.png": "up",
+   "sword_up_walk_3.png": "up",
+   "sword_up_walk_4.png": "up",
+   "sword_up_walk_5.png": "up",
+   "sword_up_walk_6.png": "up",
+   "sword_up_walk_7.png": "up",
+   "sword_up_walk_8.png": "up",
+   "sword_right_walk_2.png": "right",
+   "sword_right_walk_3.png": "right",
+   "sword_right_walk_4.png": "right",
+   "sword_right_walk_5.png": "right",
+   "sword_right_walk_6.png": "right",
+   "sword_right_walk_7.png": "right",
+   "sword_right_walk_8.png": "right",
+   "sword_left_walk_2.png": "left",
+   "sword_left_walk_3.png": "left",
+   "sword_left_walk_4.png": "left",
+   "sword_left_walk_5.png": "left",
+   "sword_left_walk_6.png": "left",
+   "sword_left_walk_7.png": "left",
+   "sword_left_walk_8.png": "left"
+  },
+  "sideFacing": {
+   "bare_side_attack_0.png": "right",
+   "bare_side_attack_1.png": "right",
+   "bare_side_idle_0.png": "right",
+   "bare_side_walk_0.png": "right",
+   "bare_side_walk_1.png": "right",
+   "blue_side_attack_0.png": "right",
+   "blue_side_attack_1.png": "right",
+   "blue_side_idle_0.png": "right",
+   "blue_side_walk_0.png": "right",
+   "blue_side_walk_1.png": "right",
+   "bow_side_attack_0.png": "right",
+   "bow_side_attack_1.png": "right",
+   "bow_side_attack_2.png": "right",
+   "bow_side_idle_0.png": "right",
+   "bow_side_walk_0.png": "right",
+   "sword_side_attack_0.png": "right",
+   "sword_side_attack_1.png": "right",
+   "sword_side_attack_2.png": "right",
+   "sword_side_idle_0.png": "right",
+   "sword_side_walk_0.png": "right",
+   "sword_side_walk_1.png": "right",
+   "bare_right_idle_0.png": "right",
+   "bare_right_walk_0.png": "right",
+   "bare_right_walk_1.png": "right"
+  },
+  "down": "BUILD 394: bare down idle re-cut from the user-supplied front-facing sheet. BUILD 395: bare down walk replaced per user direction with the two user-supplied 3/4-view walk/run frames. BUILD 396: bare down idle replaced per user direction ('this is down idle') with the user-supplied 3/4-view standing frame, matching the walk set style. Side frames unchanged.",
+  "right": "BUILD 398: the bare variant has dedicated right-facing idle/walk art (3/4 view, user-supplied). The renderer uses the 'right' frame set when facing=right and falls back per-anim to the shared side set (attacks still use side art). Left movement keeps the side set mirrored, which reproduces the user's original left-facing sheet.",
+  "up": "BUILD 399: bare up idle/walk replaced per user direction with the user-supplied back-view art (standing idle + two opposite-stride run frames). No code changes needed \u2014 the up view is a single set.",
+  "leftCentroidX": {
+   "bare_left_idle_0.png": 0.5094,
+   "bare_left_walk_0.png": 0.4873,
+   "bare_left_walk_1.png": 0.5039,
+   "blue_left_idle_0.png": 0.5094,
+   "blue_left_walk_0.png": 0.4873,
+   "blue_left_walk_1.png": 0.5039,
+   "sword_left_idle_0.png": 0.4821,
+   "sword_left_walk_0.png": 0.5086,
+   "sword_left_walk_1.png": 0.4979,
+   "bow_left_idle_0.png": 0.5094,
+   "bow_left_walk_0.png": 0.4873,
+   "bow_left_walk_1.png": 0.5039,
+   "sword_left_walk_2.png": 0.4981,
+   "sword_left_walk_3.png": 0.4744,
+   "sword_left_walk_4.png": 0.4727,
+   "sword_left_walk_5.png": 0.4761,
+   "sword_left_walk_6.png": 0.4828,
+   "sword_left_walk_7.png": 0.4834,
+   "sword_left_walk_8.png": 0.5065
+  },
+  "leftFacing": {
+   "bare_left_idle_0.png": "left",
+   "bare_left_walk_0.png": "left",
+   "bare_left_walk_1.png": "left",
+   "blue_left_idle_0.png": "left",
+   "blue_left_walk_0.png": "left",
+   "blue_left_walk_1.png": "left",
+   "sword_left_idle_0.png": "left",
+   "sword_left_walk_0.png": "left",
+   "sword_left_walk_1.png": "left",
+   "bow_left_idle_0.png": "left",
+   "bow_left_walk_0.png": "left",
+   "bow_left_walk_1.png": "left",
+   "sword_left_walk_2.png": "left",
+   "sword_left_walk_3.png": "left",
+   "sword_left_walk_4.png": "left",
+   "sword_left_walk_5.png": "left",
+   "sword_left_walk_6.png": "left",
+   "sword_left_walk_7.png": "left",
+   "sword_left_walk_8.png": "left"
+  },
+  "rightCentroidX": {
+   "blue_right_idle_0.png": 0.5046,
+   "blue_right_walk_0.png": 0.4845,
+   "blue_right_walk_1.png": 0.4955,
+   "sword_right_idle_0.png": 0.5215,
+   "sword_right_walk_0.png": 0.4992,
+   "sword_right_walk_1.png": 0.523,
+   "bow_right_idle_0.png": 0.5046,
+   "bow_right_walk_0.png": 0.4845,
+   "bow_right_walk_1.png": 0.4955,
+   "sword_right_walk_2.png": 0.5038,
+   "sword_right_walk_3.png": 0.5262,
+   "sword_right_walk_4.png": 0.5299,
+   "sword_right_walk_5.png": 0.4911,
+   "sword_right_walk_6.png": 0.5247,
+   "sword_right_walk_7.png": 0.4984,
+   "sword_right_walk_8.png": 0.5174
+  },
+  "rightFacing": {
+   "blue_right_idle_0.png": "right",
+   "blue_right_walk_0.png": "right",
+   "blue_right_walk_1.png": "right",
+   "sword_right_idle_0.png": "right",
+   "sword_right_walk_0.png": "right",
+   "sword_right_walk_1.png": "right",
+   "bow_right_idle_0.png": "right",
+   "bow_right_walk_0.png": "right",
+   "bow_right_walk_1.png": "right",
+   "sword_right_walk_2.png": "right",
+   "sword_right_walk_3.png": "right",
+   "sword_right_walk_4.png": "right",
+   "sword_right_walk_5.png": "right",
+   "sword_right_walk_6.png": "right",
+   "sword_right_walk_7.png": "right",
+   "sword_right_walk_8.png": "right"
+  }
+ }
 }

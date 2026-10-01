@@ -3007,20 +3007,24 @@ console.log('Testing examine system...');
   // BUILD 404: every variant's dedicated left set must be complete for
   // idle + walk + attack (blue/sword/bow attacks use dedicated per-variant
   // left art; bare's left attacks reuse the side set, mirrored).
+  // BUILD 409: the sword variant's left/right walks are 9 frames (sampled
+  // from the user's 36-frame sheets to fill the LPC walk phase cycle).
   for (const v of ['bare', 'blue', 'sword', 'bow'] as const) {
+    const wantWalk = v === 'sword' ? 9 : 2;
     assert(BARB_FRAMES[v]?.['left']?.['idle']?.length === 1 &&
-      BARB_FRAMES[v]?.['left']?.['walk']?.length === 2 &&
+      BARB_FRAMES[v]?.['left']?.['walk']?.length === wantWalk &&
       (BARB_FRAMES[v]?.['left']?.['attack']?.length ?? 0) >= 2,
-      `${v} dedicated left set must have idle + 2 walk + attack frames`);
+      `${v} dedicated left set must have idle + ${wantWalk} walk + attack frames`);
   }
   // BUILD 404: every variant's dedicated right set must be complete for
   // idle + walk + attack (blue/sword/bow attacks use dedicated per-variant
   // right art; bare's right attacks reuse the side set).
   for (const v of ['bare', 'blue', 'sword', 'bow'] as const) {
+    const wantWalk = v === 'sword' ? 9 : 2;
     assert(BARB_FRAMES[v]?.['right']?.['idle']?.length === 1 &&
-      BARB_FRAMES[v]?.['right']?.['walk']?.length === 2 &&
+      BARB_FRAMES[v]?.['right']?.['walk']?.length === wantWalk &&
       (BARB_FRAMES[v]?.['right']?.['attack']?.length ?? 0) >= 2,
-      `${v} dedicated right set must have idle + 2 walk + attack frames`);
+      `${v} dedicated right set must have idle + ${wantWalk} walk + attack frames`);
   }
   assert(stats.anims.length === 3 && ['idle', 'walk', 'attack'].every((a) => stats.anims.includes(a)),
     'barbarian registry must expose idle/walk/attack animations');
@@ -3195,6 +3199,22 @@ import { inflateSync } from 'node:zlib';
     assert(m[2] === view,
       `${file}: audited view is "${view}" but the filename says "${m[2]}" — frame is mislabeled`);
     readPngRgba(`public/barbarian/${file}`); // must exist and decode
+  }
+  // BUILD 409: the sword variant's up/right/left sets are the user's real
+  // sword art (9-frame walks sampled from the 36-frame sheets, neutral-frame
+  // idles so the sword never pops in/out). Lock the wiring: 9 walk frames
+  // each (matches the LPC walk phase cycle), 1 idle frame each, boxes match
+  // the extracted canvas sizes, and every listed file decodes.
+  for (const view of ['up', 'right', 'left']) {
+    const walk = barbManifest.sword[view].walk as string[];
+    const idle = barbManifest.sword[view].idle as string[];
+    assert(walk.length === 9, `sword ${view} walk must have 9 frames (got ${walk.length})`);
+    assert(idle.length === 1, `sword ${view} idle must have 1 frame`);
+    for (const f of [...walk, ...idle]) readPngRgba(`public/barbarian/${f}`);
+    const box = barbManifest.sword[view]._box;
+    const { w, h } = readPngRgba(`public/barbarian/${walk[0]}`);
+    assert(box.w === w && box.h === h,
+      `sword ${view} box ${box.w}x${box.h} must match frame canvas ${w}x${h}`);
   }
   // Player layering invariant: the iso field must draw the player in a final
   // pass after the depth-sorted drawables so grass/decor never covers them.
