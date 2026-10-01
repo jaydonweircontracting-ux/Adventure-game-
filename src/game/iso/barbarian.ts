@@ -6,10 +6,11 @@
  *  - bare (brown shorts) and blue (crafted shirt) body variants
  *  - sword and bow weapon variants (weapon art baked into the sheets)
  *  - 17 hairstyles x 3 views, composited as overlays ('bald' = none)
- * Every view (down/side/up) has idle + walk + attack frames. The bare variant
- * also has dedicated right-facing AND left-facing idle/walk sets; other
- * variants fall back per-anim to the shared right-facing side set, mirrored
- * when facing left. NPCs keep the LPC paper-doll path — this is player-only.
+ * Every view (down/side/up) has idle + walk + attack frames. Every variant
+ * has dedicated right-facing AND left-facing idle/walk sets from the user's
+ * 3/4 model sheets (BUILD 398/400/404); attacks use dedicated per-variant
+ * left/right attack art (copies of the idle frame). NPCs keep the LPC
+ * paper-doll path — this is player-only.
  */
 import type { Face4 } from './isoSprites';
 
@@ -55,16 +56,22 @@ export const BARB_FRAMES: Record<string, Record<string, Record<string, string[]>
   blue: {
     down: { idle: ['barbarian/blue_down_idle_0.png'], walk: ['barbarian/blue_down_walk_0.png', 'barbarian/blue_down_walk_1.png'], attack: ['barbarian/blue_down_attack_0.png', 'barbarian/blue_down_attack_1.png'] },
     side: { idle: ['barbarian/blue_side_idle_0.png'], walk: ['barbarian/blue_side_walk_0.png', 'barbarian/blue_side_walk_1.png'], attack: ['barbarian/blue_side_attack_0.png', 'barbarian/blue_side_attack_1.png'] },
+    right: { idle: ['barbarian/blue_right_idle_0.png'], walk: ['barbarian/blue_right_walk_0.png', 'barbarian/blue_right_walk_1.png'], attack: ['barbarian/blue_right_attack_0.png', 'barbarian/blue_right_attack_1.png'] },
+    left: { idle: ['barbarian/blue_left_idle_0.png'], walk: ['barbarian/blue_left_walk_0.png', 'barbarian/blue_left_walk_1.png'], attack: ['barbarian/blue_left_attack_0.png', 'barbarian/blue_left_attack_1.png'] },
     up: { idle: ['barbarian/blue_up_idle_0.png'], walk: ['barbarian/blue_up_walk_0.png', 'barbarian/blue_up_walk_1.png'], attack: ['barbarian/blue_up_attack_0.png', 'barbarian/blue_up_attack_1.png'] },
   },
   sword: {
     down: { idle: ['barbarian/sword_down_idle_0.png'], walk: ['barbarian/sword_down_walk_0.png', 'barbarian/sword_down_walk_1.png'], attack: ['barbarian/sword_down_attack_0.png', 'barbarian/sword_down_attack_1.png', 'barbarian/sword_down_attack_2.png'] },
     side: { idle: ['barbarian/sword_side_idle_0.png'], walk: ['barbarian/sword_side_walk_0.png', 'barbarian/sword_side_walk_1.png'], attack: ['barbarian/sword_side_attack_0.png', 'barbarian/sword_side_attack_1.png', 'barbarian/sword_side_attack_2.png'] },
+    right: { idle: ['barbarian/sword_right_idle_0.png'], walk: ['barbarian/sword_right_walk_0.png', 'barbarian/sword_right_walk_1.png'], attack: ['barbarian/sword_right_attack_0.png', 'barbarian/sword_right_attack_1.png', 'barbarian/sword_right_attack_2.png'] },
+    left: { idle: ['barbarian/sword_left_idle_0.png'], walk: ['barbarian/sword_left_walk_0.png', 'barbarian/sword_left_walk_1.png'], attack: ['barbarian/sword_left_attack_0.png', 'barbarian/sword_left_attack_1.png', 'barbarian/sword_left_attack_2.png'] },
     up: { idle: ['barbarian/sword_up_idle_0.png'], walk: ['barbarian/sword_up_walk_0.png'], attack: ['barbarian/sword_up_attack_0.png', 'barbarian/sword_up_attack_1.png', 'barbarian/sword_up_attack_2.png'] },
   },
   bow: {
     down: { idle: ['barbarian/bow_down_idle_0.png'], walk: ['barbarian/bow_down_walk_0.png', 'barbarian/bow_down_walk_1.png'], attack: ['barbarian/bow_down_attack_0.png', 'barbarian/bow_down_attack_1.png', 'barbarian/bow_down_attack_2.png'] },
     side: { idle: ['barbarian/bow_side_idle_0.png'], walk: ['barbarian/bow_side_walk_0.png'], attack: ['barbarian/bow_side_attack_0.png', 'barbarian/bow_side_attack_1.png', 'barbarian/bow_side_attack_2.png'] },
+    right: { idle: ['barbarian/bow_right_idle_0.png'], walk: ['barbarian/bow_right_walk_0.png', 'barbarian/bow_right_walk_1.png'], attack: ['barbarian/bow_right_attack_0.png', 'barbarian/bow_right_attack_1.png', 'barbarian/bow_right_attack_2.png'] },
+    left: { idle: ['barbarian/bow_left_idle_0.png'], walk: ['barbarian/bow_left_walk_0.png', 'barbarian/bow_left_walk_1.png'], attack: ['barbarian/bow_left_attack_0.png', 'barbarian/bow_left_attack_1.png', 'barbarian/bow_left_attack_2.png'] },
     up: { idle: ['barbarian/bow_up_idle_0.png'], walk: ['barbarian/bow_up_walk_0.png'], attack: ['barbarian/bow_up_attack_0.png', 'barbarian/bow_up_attack_1.png', 'barbarian/bow_up_attack_2.png'] },
   },
 };
@@ -79,16 +86,22 @@ export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[nu
   blue: {
     down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
     side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
+    right: { w: 195, h: 195, head: [104, 9], idleH: 186 },
+    left: { w: 195, h: 195, head: [93, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
   },
   sword: {
     down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
     side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
+    right: { w: 195, h: 195, head: [104, 9], idleH: 186 },
+    left: { w: 195, h: 195, head: [93, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
   },
   bow: {
     down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
     side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
+    right: { w: 195, h: 195, head: [104, 9], idleH: 186 },
+    left: { w: 195, h: 195, head: [93, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
   },
 };
@@ -254,11 +267,10 @@ export function drawBarbarian(o: BarbarianDrawOptions): boolean {
   const g = o.g;
   const variant = barbarianVariant(o.outfit ?? 'bare', o.weapon ?? 'none');
   const view = viewOf(o.facing);
-  // BUILD 400: the bare variant has dedicated left- AND right-facing idle/walk
-  // art from the user's model sheets. Use the dedicated set when facing that
-  // way, falling back per-anim to the shared side set (e.g. attacks still use
-  // side art). Other variants have no dedicated sets and fall back to the
-  // shared right-facing side art, mirrored when facing left.
+  // BUILD 404: every variant has dedicated left- AND right-facing idle/walk/
+  // attack art from the user's 3/4 model sheets. Use the dedicated set when
+  // facing that way, falling back per-anim to the shared side set as a safety
+  // net for any anim lacking dedicated frames.
   const anim: BarbarianAnim =
     o.attackT !== undefined && o.attackT >= 0 && o.attackT < BARBARIAN_ATTACK_MS
       ? 'attack'

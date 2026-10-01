@@ -2945,11 +2945,24 @@ console.log('Testing examine system...');
     `barbarian registry must have bare/blue/sword/bow variants, got ${stats.variants.join(',')}`);
   assert(stats.views.length === 3 && ['down', 'side', 'up'].every((v) => stats.views.includes(v)),
     'barbarian registry must expose down/side/up views (dedicated left/right sets are per-anim extras)');
-  // BUILD 400: the bare variant's dedicated left set must be complete for
-  // idle + walk (attacks fall back per-anim to the side set).
-  assert(BARB_FRAMES.bare?.['left']?.['idle']?.length === 1 &&
-    BARB_FRAMES.bare?.['left']?.['walk']?.length === 2,
-    'bare dedicated left set must have idle + 2 walk frames');
+  // BUILD 404: every variant's dedicated left set must be complete for
+  // idle + walk + attack (blue/sword/bow attacks use dedicated per-variant
+  // left art; bare's left attacks reuse the side set, mirrored).
+  for (const v of ['bare', 'blue', 'sword', 'bow'] as const) {
+    assert(BARB_FRAMES[v]?.['left']?.['idle']?.length === 1 &&
+      BARB_FRAMES[v]?.['left']?.['walk']?.length === 2 &&
+      (BARB_FRAMES[v]?.['left']?.['attack']?.length ?? 0) >= 2,
+      `${v} dedicated left set must have idle + 2 walk + attack frames`);
+  }
+  // BUILD 404: every variant's dedicated right set must be complete for
+  // idle + walk + attack (blue/sword/bow attacks use dedicated per-variant
+  // right art; bare's right attacks reuse the side set).
+  for (const v of ['bare', 'blue', 'sword', 'bow'] as const) {
+    assert(BARB_FRAMES[v]?.['right']?.['idle']?.length === 1 &&
+      BARB_FRAMES[v]?.['right']?.['walk']?.length === 2 &&
+      (BARB_FRAMES[v]?.['right']?.['attack']?.length ?? 0) >= 2,
+      `${v} dedicated right set must have idle + 2 walk + attack frames`);
+  }
   assert(stats.anims.length === 3 && ['idle', 'walk', 'attack'].every((a) => stats.anims.includes(a)),
     'barbarian registry must expose idle/walk/attack animations');
   assert(stats.missingFrames.length === 0,
@@ -3091,6 +3104,25 @@ import { inflateSync } from 'node:zlib';
   for (const file of Object.keys(leftSigs)) {
     assert(leftFacing[file] === 'left',
       `${file}: audited left facing must be "left" (pack convention)`);
+  }
+  // BUILD 404: the dedicated right frames face screen-right; lock the audited
+  // facing and the centroid signature so a reversed/mislabeled right frame
+  // fails. Mirrors the left-view audit above.
+  const rightSigs = barbManifest._conventions?.rightCentroidX as Record<string, number> | undefined;
+  assert(rightSigs && Object.keys(rightSigs).length >= 9,
+    'barbarian manifest must record right-view facing signatures for the dedicated right set');
+  for (const [file, recorded] of Object.entries(rightSigs)) {
+    const { w, h, px } = readPngRgba(`public/barbarian/${file}`);
+    const cx = sideCentroidX(px, w, h);
+    assert(Math.abs(cx - recorded) < 0.015,
+      `${file}: right facing signature drifted (recorded ${recorded}, now ${cx.toFixed(4)})`);
+  }
+  const rightFacing = barbManifest._conventions?.rightFacing as Record<string, string> | undefined;
+  assert(rightFacing && Object.keys(rightFacing).length >= 9,
+    'barbarian manifest must record the audited facing of every dedicated right frame');
+  for (const file of Object.keys(rightSigs)) {
+    assert(rightFacing[file] === 'right',
+      `${file}: audited right facing must be "right" (pack convention)`);
   }
   // BUILD 392: frameViews locks the visually-audited view (up/side/down/right/left) of
   // every idle/walk frame, so a mislabeled crop (e.g. a front view saved as
