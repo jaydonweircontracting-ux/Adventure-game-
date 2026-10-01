@@ -247,7 +247,8 @@ export function drawBarbarian(o: BarbarianDrawOptions): boolean {
   const g = o.g;
   const variant = barbarianVariant(o.outfit ?? 'bare', o.weapon ?? 'none');
   const view = viewOf(o.facing);
-  const flip = o.facing === 'right';
+  // All side-view art natively faces screen-right; mirror when facing left.
+  const flip = o.facing === 'left';
   const size = o.size ?? 60;
   const box = BARB_BOX[variant]?.[view];
   if (!box) return false;
@@ -317,7 +318,7 @@ function drawHair(
   const hh = himg.naturalHeight * sb * k;
   const hx = dx + (box.head[0] + info.rel[0] * sb) * k;
   const hy = dy + (box.head[1] + info.rel[1] * sb) * k;
-  // NOTE: when the body is flipped (right facing), the caller already applied
+  // NOTE: when the body is flipped (left facing), the caller already applied
   // the mirror transform; the hair uses the same anchor math and mirrors along.
   g.drawImage(himg, hx, hy, hw, hh);
 }

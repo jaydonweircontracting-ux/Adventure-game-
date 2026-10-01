@@ -2950,15 +2950,17 @@ console.log('Testing examine system...');
 }
 
 // ---- BUILD 391: side-view facing convention (pixel regression) ----
-// All barbarian side frames must face screen-left; the renderer mirrors the
-// side art when facing=right. The supplied bow sheet faced right, which made
-// left/right appear reversed with the bow equipped (fixed by re-normalizing
-// the bow side frames). This test re-decodes the PNGs and fails if any side
-// frame drifts from its recorded facing signature.
+// All barbarian side frames natively face screen-right (visually audited,
+// recorded per-frame in the manifest's sideFacing map); the renderer mirrors
+// the side art when facing=left. BUILD 393 fixed reversed left/right: the art
+// always faced right but drawBarbarian only mirrored when facing=right, so
+// walking left showed right-facing art. A pixel heuristic cannot reliably see
+// facing direction, so this test locks the two things that must agree: the
+// audited per-frame facing record, and the renderer's flip condition.
 // BUILD 392: fixed four mislabeled walk/idle frames (sword_side_walk_1 was a
 // front view, blue_up_walk_0 / blue_up_idle_0 were side views, blue_side_idle_0
 // was a front view). frameViews below locks the audited view of every
-// idle/walk frame; the face-left check now uses the head band for idle/walk.
+// idle/walk frame.
 import { inflateSync } from 'node:zlib';
 {
   function readPngRgba(path: string): { w: number; h: number; px: Uint8Array } {
@@ -3013,18 +3015,6 @@ import { inflateSync } from 'node:zlib';
     }
     return n === 0 ? 0.5 : sx / n / w;
   }
-  function headCentroidX(px: Uint8Array, w: number, h: number): number {
-    // Dark-pixel centroid of the head band (top 40%): a left-facing profile
-    // puts the head mass left of frame center. Full-body centroids are thrown
-    // off by props (e.g. the sword trailing right in sword_side_walk_1).
-    let sx = 0, n = 0;
-    const yTop = Math.floor(h * 0.4);
-    for (let y = 0; y < yTop; y += 2) for (let x = 0; x < w; x += 2) {
-      const i = (y * w + x) * 4;
-      if (px[i + 3] > 40 && px[i] + px[i + 1] + px[i + 2] < 380) { sx += x; n++; }
-    }
-    return n === 0 ? 0.5 : sx / n / w;
-  }
   const barbManifest = JSON.parse(readFileSyncSprites('public/barbarian/manifest.json', 'utf8'));
   const sigs = barbManifest._conventions?.sideCentroidX as Record<string, number> | undefined;
   assert(sigs && Object.keys(sigs).length >= 20,
@@ -3034,14 +3024,21 @@ import { inflateSync } from 'node:zlib';
     const cx = sideCentroidX(px, w, h);
     assert(Math.abs(cx - recorded) < 0.015,
       `${file}: facing signature drifted (recorded ${recorded}, now ${cx.toFixed(4)}) — side art may be reversed again`);
-    // BUILD 392: the face-left check uses the head band (idle/walk only —
-    // attack frames are 3/4 action poses, not strict profiles).
-    if (/_side_(idle|walk)_/.test(file)) {
-      const hx = headCentroidX(px, w, h);
-      assert(hx < 0.52,
-        `${file}: side view must face screen-left (head centroid ${hx.toFixed(3)})`);
-    }
   }
+  // BUILD 393: the audited facing record — every side frame must have a
+  // human-verified facing, and it must be "right" (the pack convention).
+  const sideFacing = barbManifest._conventions?.sideFacing as Record<string, string> | undefined;
+  assert(sideFacing && Object.keys(sideFacing).length >= 20,
+    'barbarian manifest must record the audited facing of every side frame');
+  for (const file of Object.keys(sigs)) {
+    assert(sideFacing[file] === 'right',
+      `${file}: audited side facing must be "right" (pack convention)`);
+  }
+  // BUILD 393: the renderer must mirror the (right-facing) side art exactly
+  // when facing=left — this is the condition that was backwards.
+  const barbSrc = readFileSyncSprites('src/game/iso/barbarian.ts', 'utf8');
+  assert(/const flip = o\.facing === 'left'/.test(barbSrc),
+    'drawBarbarian must mirror side art when facing=left (art natively faces right)');
   // BUILD 392: frameViews locks the visually-audited view (up/side/down) of
   // every idle/walk frame, so a mislabeled crop (e.g. a front view saved as
   // *_up_walk_*) fails even if its pixels never change again.
