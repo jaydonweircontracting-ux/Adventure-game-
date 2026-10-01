@@ -14,7 +14,7 @@ import {
 } from './projection';
 import {
   preloadLpcSprites,
-  isoPlayerFaceForScreenDelta,
+  isoPlayerFaceForScreenDeltaSticky,
   type Face4, type Face6,
 } from './isoSprites';
 import { preloadBarbarian } from './barbarian';
@@ -151,7 +151,7 @@ function faceForMove(ax: number, ay: number, bx: number, by: number, current: Fa
   // right/left sprite instead of the back sprite.
   // BUILD 414: the northward diagonal bands now resolve to the dedicated
   // up-right/up-left art, same as the field.
-  return isoPlayerFaceForScreenDelta(bx - ax, by - ay, current);
+  return isoPlayerFaceForScreenDeltaSticky(bx - ax, by - ay, current);
 }
 
 export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair }: IsoInteriorViewProps): React.JSX.Element {

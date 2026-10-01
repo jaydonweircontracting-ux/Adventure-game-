@@ -13,7 +13,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import {
-  preloadLpcSprites, isoPlayerFaceForScreenDelta, type Face4, type Face6,
+  preloadLpcSprites, isoPlayerFaceForScreenDeltaSticky, type Face4, type Face6,
 } from './isoSprites';
 import { preloadBarbarian } from './barbarian';
 import type { BarbarianOutfit, BarbarianWeapon } from './barbarian';
@@ -221,7 +221,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
       // player facing from movement delta
       const mdx = live.px - prevP.x, mdy = live.py - prevP.y;
       const playerMoving = Math.abs(mdx) + Math.abs(mdy) > 0.01;
-      if (playerMoving) playerFace.f = isoPlayerFaceForScreenDelta(mdx, mdy, playerFace.f);
+      if (playerMoving) playerFace.f = isoPlayerFaceForScreenDeltaSticky(mdx, mdy, playerFace.f);
       prevP.x = live.px; prevP.y = live.py;
 
       // camera follows the player

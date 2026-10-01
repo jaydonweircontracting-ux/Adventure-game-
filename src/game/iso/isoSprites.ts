@@ -166,6 +166,28 @@ export function isoPlayerFaceForScreenDelta(dx: number, dy: number, current: Fac
   if (ax >= ay) return sx > 0 ? 'right' : 'left';
   return 'down';
 }
+
+/**
+ * BUILD 420: sticky screen-space facing. isoPlayerFaceForScreenDelta flips
+ * between 'upright' and 'upleft' on tiny sx noise: when the player stops,
+ * the final deceleration frames have small deltas, and a slight negative sx
+ * in one of those frames flips NE to NW — so the character idles facing the
+ * wrong diagonal. The candidate only replaces the current facing when it is
+ * clearly indicated: switching between the two diagonals requires a
+ * significant screen-x (|sx| > 0.03) pointing the new way; other transitions
+ * use the base mapping. Stopping keeps the last facing.
+ */
+export function isoPlayerFaceForScreenDeltaSticky(dx: number, dy: number, current: Face6): Face6 {
+  const next = isoPlayerFaceForScreenDelta(dx, dy, current);
+  if (next === current) return next;
+  if ((current === 'upright' && next === 'upleft') || (current === 'upleft' && next === 'upright')) {
+    const sx = dx - dy;
+    if (Math.abs(sx) <= 0.03) return current;
+    if (next === 'upright' && sx <= 0) return current;
+    if (next === 'upleft' && sx >= 0) return current;
+  }
+  return next;
+}
 export const LPC_FRAMES: Record<LpcAnim, number> = { idle: 2, walk: 9, slash: 6, hurt: 6 };
 
 // ---------------------------------------------------------------------------

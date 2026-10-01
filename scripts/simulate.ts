@@ -1457,6 +1457,27 @@ for (const kind of EXPECTED_KINDS) {
   assert(isoPlayerFaceForScreenDelta(0, 0, 'upleft') === 'upleft', 'zero delta keeps current facing (up-left)');
 }
 
+// ---- BUILD 420: isoPlayerFaceForScreenDeltaSticky — stopping keeps the diagonal ----
+// When the player stops, the final deceleration frames have small deltas; a
+// slight sx sign flip in one of those frames must not flip NE to NW. The
+// sticky wrapper only switches diagonals on a significant screen-x.
+{
+  const { isoPlayerFaceForScreenDeltaSticky } = await import('../src/game/iso/isoSprites');
+  // tiny stopping noise: NE walk with a slight NW-leaning final frame stays NE
+  assert(isoPlayerFaceForScreenDeltaSticky(-0.02, -0.05, 'upright') === 'upright',
+    'stopping noise keeps NE facing');
+  assert(isoPlayerFaceForScreenDeltaSticky(-0.03, -0.05, 'upleft') === 'upleft',
+    'stopping noise keeps NW facing');
+  // a clear deliberate diagonal change still switches
+  assert(isoPlayerFaceForScreenDeltaSticky(-0.5, -1, 'upleft') === 'upright',
+    'deliberate NE move switches from NW to NE');
+  assert(isoPlayerFaceForScreenDeltaSticky(-2, -1, 'upright') === 'upleft',
+    'deliberate NW move switches from NE to NW');
+  // zero delta keeps facing
+  assert(isoPlayerFaceForScreenDeltaSticky(0, 0, 'upright') === 'upright',
+    'zero delta keeps NE facing');
+}
+
 // ---- BUILD 388: dungeon kit panel selectors for cellar/prison interiors ----
 // The kit is purely visual (collision/furniture untouched), so the sim pins
 // the panel metadata: 4 in-bounds panels per strip, correct wall orientation
