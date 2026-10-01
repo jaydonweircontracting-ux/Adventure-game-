@@ -1429,30 +1429,32 @@ for (const kind of EXPECTED_KINDS) {
   assert(isoScreenSpeedScale(0, 0) === 1, 'zero vector is safe (scale 1)');
 }
 
-// BUILD 407/408/410/411: isoPlayerFaceForScreenDelta — screen-space facing
-// for the 2:1 dimetric projection. BUILD 411: northward travel within 45deg
-// of straight screen-up (up + the north-east / north-west diagonals) shows
-// the back sprite; near-horizontal northward travel still shows the side
-// sprite for the travel direction (BUILD 410). Southward keeps the
-// dominant-axis mapping. Zero delta keeps current facing.
+// BUILD 407/408/410/411/414: isoPlayerFaceForScreenDelta — screen-space facing
+// for the 2:1 dimetric projection. BUILD 414: northward travel splits into
+// three bands — within 22.5deg of straight screen-up shows the back sprite;
+// the 22.5-67.5deg diagonal bands show the dedicated up-right/up-left art
+// (the user's walk sheet, original and mirrored); beyond 67.5deg the side
+// sprite for the travel direction. Southward keeps the dominant-axis mapping.
+// Zero delta keeps current facing.
 {
   const { isoPlayerFaceForScreenDelta } = await import('../src/game/iso/isoSprites');
   assert(isoPlayerFaceForScreenDelta(-1, -1, 'down') === 'up', 'straight screen-up faces up');
   assert(isoPlayerFaceForScreenDelta(1, 1, 'up') === 'down', 'straight screen-down faces down');
   assert(isoPlayerFaceForScreenDelta(1, -1, 'up') === 'right', 'screen-right travel faces right');
   assert(isoPlayerFaceForScreenDelta(-1, 1, 'up') === 'left', 'screen-left travel faces left');
-  assert(isoPlayerFaceForScreenDelta(-1, -3, 'up') === 'up', 'north-east screen diagonal faces up (back sprite)');
-  assert(isoPlayerFaceForScreenDelta(-0.5, -2, 'up') === 'right', 'north-east off-diagonal faces right');
-  assert(isoPlayerFaceForScreenDelta(-3, -1, 'up') === 'up', 'north-west screen diagonal faces up (back sprite)');
-  assert(isoPlayerFaceForScreenDelta(-2, -0.5, 'up') === 'left', 'north-west off-diagonal faces left');
+  assert(isoPlayerFaceForScreenDelta(-1, -3, 'up') === 'upright', 'north-east screen diagonal faces up-right');
+  assert(isoPlayerFaceForScreenDelta(-0.5, -2, 'up') === 'upright', 'north-east off-diagonal faces up-right');
+  assert(isoPlayerFaceForScreenDelta(-3, -1, 'up') === 'upleft', 'north-west screen diagonal faces up-left');
+  assert(isoPlayerFaceForScreenDelta(-2, -0.5, 'up') === 'upleft', 'north-west off-diagonal faces up-left');
   assert(isoPlayerFaceForScreenDelta(-0.7, -0.75, 'up') === 'up', 'minor drift walking up keeps the back sprite');
-  assert(isoPlayerFaceForScreenDelta(-0.5, -0.9, 'up') === 'up', 'larger drift walking up keeps the back sprite');
-  assert(isoPlayerFaceForScreenDelta(1, -1.2, 'up') === 'right', 'near-horizontal northward travel faces right');
-  assert(isoPlayerFaceForScreenDelta(-1.2, 1, 'up') === 'left', 'near-horizontal northward travel faces left');
+  assert(isoPlayerFaceForScreenDelta(-0.5, -0.9, 'up') === 'upright', '30deg drift walking up-right faces up-right');
+  assert(isoPlayerFaceForScreenDelta(-0.9, -0.5, 'up') === 'upleft', '30deg drift walking up-left faces up-left');
+  assert(isoPlayerFaceForScreenDelta(2, -3, 'up') === 'right', 'near-horizontal northward travel faces right');
+  assert(isoPlayerFaceForScreenDelta(-2, 3, 'up') === 'left', 'south-west screen diagonal faces left');
   assert(isoPlayerFaceForScreenDelta(3, 1, 'up') === 'right', 'down-right screen diagonal faces right');
   assert(isoPlayerFaceForScreenDelta(-3, 1, 'up') === 'left', 'down-left screen diagonal faces left');
   assert(isoPlayerFaceForScreenDelta(0, 0, 'right') === 'right', 'zero delta keeps current facing');
-  assert(isoPlayerFaceForScreenDelta(0, 0, 'up') === 'up', 'zero delta keeps current facing (up)');
+  assert(isoPlayerFaceForScreenDelta(0, 0, 'upleft') === 'upleft', 'zero delta keeps current facing (up-left)');
 }
 
 // ---- BUILD 388: dungeon kit panel selectors for cellar/prison interiors ----
@@ -3197,18 +3199,67 @@ import { inflateSync } from 'node:zlib';
     assert(rightFacing[file] === 'right',
       `${file}: audited right facing must be "right" (pack convention)`);
   }
-  // BUILD 392: frameViews locks the visually-audited view (up/side/down/right/left) of
+  // BUILD 392: frameViews locks the visually-audited view (up/side/down/right/left/upright/upleft) of
   // every idle/walk frame, so a mislabeled crop (e.g. a front view saved as
   // *_up_walk_*) fails even if its pixels never change again.
   const frameViews = barbManifest._conventions?.frameViews as Record<string, string> | undefined;
   assert(frameViews && Object.keys(frameViews).length >= 30,
     'barbarian manifest must record audited views for every idle/walk frame');
   for (const [file, view] of Object.entries(frameViews)) {
-    const m = /^(bare|blue|sword|bow)_(down|side|up|right|left)_(idle|walk)_\d+\.png$/.exec(file);
+    const m = /^(bare|blue|sword|bow)_(down|side|upright|upleft|up|right|left)_(idle|walk)_\d+\.png$/.exec(file);
     assert(m, `${file}: unexpected frameViews key`);
     assert(m[2] === view,
       `${file}: audited view is "${view}" but the filename says "${m[2]}" — frame is mislabeled`);
     readPngRgba(`public/barbarian/${file}`); // must exist and decode
+  }
+  // BUILD 414: dedicated up-right/up-left diagonal art. bare/blue/bow gain
+  // upright + upleft views: upright walk reuses the up walk frames (sheet 1,
+  // original), upleft walk is the mirrored set (sheet 2); idle/attack share
+  // the up frames. The renderer selects them per-anim with fallback to up;
+  // sword has no diagonal art and must fall back to its up frames.
+  // The up-left frames must be exact horizontal mirrors of the up frames.
+  {
+    const { BARB_FRAMES, BARB_BOX } = await import('../src/game/iso/barbarian');
+    for (const v of ['bare', 'blue', 'bow']) {
+      const up = BARB_FRAMES[v]?.['up'];
+      const ur = BARB_FRAMES[v]?.['upright'];
+      const ul = BARB_FRAMES[v]?.['upleft'];
+      assert(ur && ul, `${v} must have upright/upleft views`);
+      assert(JSON.stringify(ur['walk']) === JSON.stringify(up['walk']),
+        `${v} upright walk must be sheet 1 (same frames as up walk)`);
+      assert(ul['walk'].length === 9 && ul['walk'].every((f) => f.includes(`${v}_upleft_walk_`)),
+        `${v} upleft walk must be the 9 mirrored frames`);
+      assert(JSON.stringify(ur['idle']) === JSON.stringify(up['idle'])
+        && JSON.stringify(ul['idle']) === JSON.stringify(up['idle']),
+        `${v} upright/upleft idle must share the up idle`);
+      assert(JSON.stringify(ur['attack']) === JSON.stringify(up['attack'])
+        && JSON.stringify(ul['attack']) === JSON.stringify(up['attack']),
+        `${v} upright/upleft attack must share the up attack`);
+      assert(BARB_BOX[v]?.['upright'] && BARB_BOX[v]?.['upleft'],
+        `${v} must have upright/upleft layout boxes`);
+    }
+    assert(!BARB_FRAMES['sword']?.['upright'] && !BARB_FRAMES['sword']?.['upleft'],
+      'sword has no diagonal art — it must fall back to the up view');
+    assert(/const uf = BARB_FRAMES\[variant\]\?\.\['upright'\]\?\.\[anim\]/.test(barbSrc),
+      'drawBarbarian must select the dedicated up-right frame set when facing=upright');
+    assert(/const uf = BARB_FRAMES\[variant\]\?\.\['upleft'\]\?\.\[anim\]/.test(barbSrc),
+      'drawBarbarian must select the dedicated up-left frame set when facing=upleft');
+    assert(/fview = \(uf && uf\.length > 0\) \? 'upright' : 'up'/.test(barbSrc),
+      'drawBarbarian must fall back to the up view when a variant lacks up-right art');
+    // Pixel lock: each upleft frame is the horizontal mirror of the matching up frame.
+    for (const v of ['bare', 'blue', 'bow']) {
+      for (let i = 0; i < 9; i++) {
+        const a = readPngRgba(`public/barbarian/${v}_up_walk_${i}.png`);
+        const b = readPngRgba(`public/barbarian/${v}_upleft_walk_${i}.png`);
+        assert(a.w === b.w && a.h === b.h, `${v}_upleft_walk_${i}.png size mismatch`);
+        let bad = 0;
+        for (let y = 0; y < a.h && bad < 5; y++) for (let x = 0; x < a.w; x++) {
+          const ia = (y * a.w + x) * 4, ib = (y * b.w + (b.w - 1 - x)) * 4;
+          for (let k = 0; k < 4; k++) if (a.px[ia + k] !== b.px[ib + k]) { bad++; break; }
+        }
+        assert(bad === 0, `${v}_upleft_walk_${i}.png is not the mirror of ${v}_up_walk_${i}.png`);
+      }
+    }
   }
   // BUILD 409: the sword variant's up/right/left sets are the user's real
   // sword art (9-frame walks sampled from the 36-frame sheets, neutral-frame

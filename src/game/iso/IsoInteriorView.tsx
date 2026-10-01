@@ -15,7 +15,7 @@ import {
 import {
   preloadLpcSprites,
   isoPlayerFaceForScreenDelta,
-  type Face4,
+  type Face4, type Face6,
 } from './isoSprites';
 import { preloadBarbarian } from './barbarian';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
@@ -144,11 +144,13 @@ function furnitureFor(roomType: IsoRoomType): Furniture[] {
   }
 }
 
-function faceForMove(ax: number, ay: number, bx: number, by: number, current: Face4): Face4 {
+function faceForMove(ax: number, ay: number, bx: number, by: number, current: Face6): Face6 {
   // BUILD 407: screen-space facing, same as the iso field outside. The tile
   // delta is projected to true screen space (2:1 dimetric) and the dominant
   // screen axis picks the art, so screen up-right/up-left travel shows the
   // right/left sprite instead of the back sprite.
+  // BUILD 414: the northward diagonal bands now resolve to the dedicated
+  // up-right/up-left art, same as the field.
   return isoPlayerFaceForScreenDelta(bx - ax, by - ay, current);
 }
 
@@ -186,7 +188,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     const state = {
       px: doorTile.tx, py: doorTile.ty - 1,
       fx: doorTile.tx, fy: doorTile.ty - 1,
-      path: [] as TilePoint[], stepT: 0, moving: false, facing: 'up' as Face4,
+      path: [] as TilePoint[], stepT: 0, moving: false, facing: 'up' as Face6,
       tapPath: false,
       zoom: 1, camX: 0, camY: 0, w: 0, h: 0, dpr: 1,
     };
@@ -528,7 +530,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
 
     // Shared character renderer: one animator per character id (pruned per
     // frame); the draw is feet-anchored with speed-tied walk phase.
-    const drawCharacter = (g: CanvasRenderingContext2D, fx: number, fy: number, facing: Face4, moving: boolean, look: LookRef, nowMs: number, animKey: string) => {
+    const drawCharacter = (g: CanvasRenderingContext2D, fx: number, fy: number, facing: Face6, moving: boolean, look: LookRef, nowMs: number, animKey: string) => {
       const c = toScreen(fx, fy);
       const depth = depthKey(Math.round(fx), Math.round(fy));
       let anim = charAnims.get(animKey);

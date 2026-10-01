@@ -23,7 +23,7 @@
 // (pruned per frame) inside its render loop.
 
 import {
-  type Face4, type LpcLook, type LpcLayer, type LpcAnim, PLAYER_LOOK,
+  type Face4, type Face6, type LpcLook, type LpcLayer, type LpcAnim, PLAYER_LOOK,
   LPC_CELL, LPC_FEET_ROW, LPC_FRAMES,
   lpcLayerKeys, lpcClip, lpcReady, lpcSprite,
   LPC_BODY_TONES, LPC_SHIRTS, LPC_PANTS, LPC_HAIR_POOL, LPC_HATS,
@@ -140,7 +140,7 @@ export interface AnimUpdate {
   /** Authoritative from the simulation: is the character moving? */
   moving: boolean;
   /** Authoritative from the simulation: which way is it facing? */
-  facing: Face4;
+  facing: Face6;
   nowMs: number;
 }
 
@@ -152,7 +152,7 @@ export interface AnimUpdate {
  * state — the consumer calls update() once per rendered frame.
  */
 export class CharacterAnimator {
-  facing: Face4 = 'down';
+  facing: Face6 = 'down';
   state: CharAnimState = 'idle';
   /** Measured ground speed, field units/sec (smoothed). */
   speed = 0;
@@ -186,8 +186,10 @@ export class CharacterAnimator {
     if (u.moving) {
       this.state = 'walk';
       // BUILD 386: faster feet on up/down facings (back/front rows shuffle
-      // slowly at the side-row rate).
-      const upDown = this.facing === 'up' || this.facing === 'down';
+      // slowly at the side-row rate). BUILD 414: the up-right/up-left
+      // diagonals use the up art, so they get the up rate too.
+      const upDown = this.facing === 'up' || this.facing === 'down'
+        || this.facing === 'upright' || this.facing === 'upleft';
       const rate = walkFpsForSpeed(this.speed) * (upDown ? WALK_FPS_UPDOWN_MULT : 1);
       this.phase = (this.phase + (dt / 1000) * rate) % LPC_FRAMES.walk;
     } else {
@@ -331,10 +333,14 @@ export function drawIsoCharacter(o: DrawCharacterOptions): void {
   const dx = o.x - size / 2;
   const dy = o.y - (LPC_FEET_ROW / LPC_CELL) * size - lift + breathe;
   let drew = false;
-  const clips = layers.map(({ key, layer }) => ({ layer, clip: lpcClip(layer, key, anim, o.animator.facing) }));
+  // BUILD 414: the LPC paper-doll fallback has no diagonal rows; the
+  // up-right/up-left facings fall back to the up (back) row there.
+  const lpcFace: Face4 = o.animator.facing === 'upright' || o.animator.facing === 'upleft'
+    ? 'up' : o.animator.facing;
+  const clips = layers.map(({ key, layer }) => ({ layer, clip: lpcClip(layer, key, anim, lpcFace) }));
   if (lpcReady(clips.map((c) => c.clip.file))) {
     for (const { layer, clip } of clips) {
-      const im = layerImage(clip.file, layer, L, anim, o.animator.facing);
+      const im = layerImage(clip.file, layer, L, anim, lpcFace);
       if (!im) continue;
       const f = Math.min(frame, clip.frames - 1);
       g.drawImage(im, f * LPC_CELL, clip.row * LPC_CELL, LPC_CELL, LPC_CELL, dx, dy, size, size);

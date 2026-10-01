@@ -12,11 +12,11 @@
  * left/right attack art (copies of the idle frame). NPCs keep the LPC
  * paper-doll path — this is player-only.
  */
-import type { Face4 } from './isoSprites';
+import type { Face4, Face6 } from './isoSprites';
 
 export type BarbarianOutfit = 'bare' | 'blue';
 export type BarbarianWeapon = 'none' | 'sword' | 'bow';
-export type BarbarianView = 'down' | 'side' | 'up';
+export type BarbarianView = 'down' | 'side' | 'up' | 'upright' | 'upleft';
 export type BarbarianAnim = 'idle' | 'walk' | 'attack';
 
 /** Milliseconds an attack swing takes to play once. */
@@ -52,6 +52,8 @@ export const BARB_FRAMES: Record<string, Record<string, Record<string, string[]>
     right: { idle: ['barbarian/bare_right_idle_0.png'], walk: ['barbarian/bare_right_walk_0.png', 'barbarian/bare_right_walk_1.png'], attack: ['barbarian/bare_side_attack_0.png', 'barbarian/bare_side_attack_1.png'] },
     left: { idle: ['barbarian/bare_left_idle_0.png'], walk: ['barbarian/bare_left_walk_0.png', 'barbarian/bare_left_walk_1.png'], attack: ['barbarian/bare_side_attack_0.png', 'barbarian/bare_side_attack_1.png'] },
     up: { idle: ['barbarian/bare_up_idle_0.png'], walk: ['barbarian/bare_up_walk_0.png', 'barbarian/bare_up_walk_1.png', 'barbarian/bare_up_walk_2.png', 'barbarian/bare_up_walk_3.png', 'barbarian/bare_up_walk_4.png', 'barbarian/bare_up_walk_5.png', 'barbarian/bare_up_walk_6.png', 'barbarian/bare_up_walk_7.png', 'barbarian/bare_up_walk_8.png'], attack: ['barbarian/bare_up_attack_0.png', 'barbarian/bare_up_attack_1.png'] },
+    upright: { idle: ['barbarian/bare_up_idle_0.png'], walk: ['barbarian/bare_up_walk_0.png', 'barbarian/bare_up_walk_1.png', 'barbarian/bare_up_walk_2.png', 'barbarian/bare_up_walk_3.png', 'barbarian/bare_up_walk_4.png', 'barbarian/bare_up_walk_5.png', 'barbarian/bare_up_walk_6.png', 'barbarian/bare_up_walk_7.png', 'barbarian/bare_up_walk_8.png'], attack: ['barbarian/bare_up_attack_0.png', 'barbarian/bare_up_attack_1.png'] },
+    upleft: { idle: ['barbarian/bare_up_idle_0.png'], walk: ['barbarian/bare_upleft_walk_0.png', 'barbarian/bare_upleft_walk_1.png', 'barbarian/bare_upleft_walk_2.png', 'barbarian/bare_upleft_walk_3.png', 'barbarian/bare_upleft_walk_4.png', 'barbarian/bare_upleft_walk_5.png', 'barbarian/bare_upleft_walk_6.png', 'barbarian/bare_upleft_walk_7.png', 'barbarian/bare_upleft_walk_8.png'], attack: ['barbarian/bare_up_attack_0.png', 'barbarian/bare_up_attack_1.png'] },
   },
   blue: {
     down: { idle: ['barbarian/blue_down_idle_0.png'], walk: ['barbarian/blue_down_walk_0.png', 'barbarian/blue_down_walk_1.png'], attack: ['barbarian/blue_down_attack_0.png', 'barbarian/blue_down_attack_1.png'] },
@@ -59,6 +61,8 @@ export const BARB_FRAMES: Record<string, Record<string, Record<string, string[]>
     right: { idle: ['barbarian/blue_right_idle_0.png'], walk: ['barbarian/blue_right_walk_0.png', 'barbarian/blue_right_walk_1.png'], attack: ['barbarian/blue_right_attack_0.png', 'barbarian/blue_right_attack_1.png'] },
     left: { idle: ['barbarian/blue_left_idle_0.png'], walk: ['barbarian/blue_left_walk_0.png', 'barbarian/blue_left_walk_1.png'], attack: ['barbarian/blue_left_attack_0.png', 'barbarian/blue_left_attack_1.png'] },
     up: { idle: ['barbarian/blue_up_idle_0.png'], walk: ['barbarian/blue_up_walk_0.png', 'barbarian/blue_up_walk_1.png', 'barbarian/blue_up_walk_2.png', 'barbarian/blue_up_walk_3.png', 'barbarian/blue_up_walk_4.png', 'barbarian/blue_up_walk_5.png', 'barbarian/blue_up_walk_6.png', 'barbarian/blue_up_walk_7.png', 'barbarian/blue_up_walk_8.png'], attack: ['barbarian/blue_up_attack_0.png', 'barbarian/blue_up_attack_1.png'] },
+    upright: { idle: ['barbarian/blue_up_idle_0.png'], walk: ['barbarian/blue_up_walk_0.png', 'barbarian/blue_up_walk_1.png', 'barbarian/blue_up_walk_2.png', 'barbarian/blue_up_walk_3.png', 'barbarian/blue_up_walk_4.png', 'barbarian/blue_up_walk_5.png', 'barbarian/blue_up_walk_6.png', 'barbarian/blue_up_walk_7.png', 'barbarian/blue_up_walk_8.png'], attack: ['barbarian/blue_up_attack_0.png', 'barbarian/blue_up_attack_1.png'] },
+    upleft: { idle: ['barbarian/blue_up_idle_0.png'], walk: ['barbarian/blue_upleft_walk_0.png', 'barbarian/blue_upleft_walk_1.png', 'barbarian/blue_upleft_walk_2.png', 'barbarian/blue_upleft_walk_3.png', 'barbarian/blue_upleft_walk_4.png', 'barbarian/blue_upleft_walk_5.png', 'barbarian/blue_upleft_walk_6.png', 'barbarian/blue_upleft_walk_7.png', 'barbarian/blue_upleft_walk_8.png'], attack: ['barbarian/blue_up_attack_0.png', 'barbarian/blue_up_attack_1.png'] },
   },
   sword: {
     down: { idle: ['barbarian/sword_down_idle_0.png'], walk: ['barbarian/sword_down_walk_0.png', 'barbarian/sword_down_walk_1.png'], attack: ['barbarian/sword_down_attack_0.png', 'barbarian/sword_down_attack_1.png', 'barbarian/sword_down_attack_2.png'] },
@@ -73,6 +77,8 @@ export const BARB_FRAMES: Record<string, Record<string, Record<string, string[]>
     right: { idle: ['barbarian/bow_right_idle_0.png'], walk: ['barbarian/bow_right_walk_0.png', 'barbarian/bow_right_walk_1.png'], attack: ['barbarian/bow_right_attack_0.png', 'barbarian/bow_right_attack_1.png', 'barbarian/bow_right_attack_2.png'] },
     left: { idle: ['barbarian/bow_left_idle_0.png'], walk: ['barbarian/bow_left_walk_0.png', 'barbarian/bow_left_walk_1.png'], attack: ['barbarian/bow_left_attack_0.png', 'barbarian/bow_left_attack_1.png', 'barbarian/bow_left_attack_2.png'] },
     up: { idle: ['barbarian/bow_up_idle_0.png'], walk: ['barbarian/bow_up_walk_0.png', 'barbarian/bow_up_walk_1.png', 'barbarian/bow_up_walk_2.png', 'barbarian/bow_up_walk_3.png', 'barbarian/bow_up_walk_4.png', 'barbarian/bow_up_walk_5.png', 'barbarian/bow_up_walk_6.png', 'barbarian/bow_up_walk_7.png', 'barbarian/bow_up_walk_8.png'], attack: ['barbarian/bow_up_attack_0.png', 'barbarian/bow_up_attack_1.png', 'barbarian/bow_up_attack_2.png'] },
+    upright: { idle: ['barbarian/bow_up_idle_0.png'], walk: ['barbarian/bow_up_walk_0.png', 'barbarian/bow_up_walk_1.png', 'barbarian/bow_up_walk_2.png', 'barbarian/bow_up_walk_3.png', 'barbarian/bow_up_walk_4.png', 'barbarian/bow_up_walk_5.png', 'barbarian/bow_up_walk_6.png', 'barbarian/bow_up_walk_7.png', 'barbarian/bow_up_walk_8.png'], attack: ['barbarian/bow_up_attack_0.png', 'barbarian/bow_up_attack_1.png', 'barbarian/bow_up_attack_2.png'] },
+    upleft: { idle: ['barbarian/bow_up_idle_0.png'], walk: ['barbarian/bow_upleft_walk_0.png', 'barbarian/bow_upleft_walk_1.png', 'barbarian/bow_upleft_walk_2.png', 'barbarian/bow_upleft_walk_3.png', 'barbarian/bow_upleft_walk_4.png', 'barbarian/bow_upleft_walk_5.png', 'barbarian/bow_upleft_walk_6.png', 'barbarian/bow_upleft_walk_7.png', 'barbarian/bow_upleft_walk_8.png'], attack: ['barbarian/bow_up_attack_0.png', 'barbarian/bow_up_attack_1.png', 'barbarian/bow_up_attack_2.png'] },
   },
 };
 export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[number,number];idleH:number}>> = {
@@ -82,6 +88,8 @@ export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[nu
     right: { w: 195, h: 195, head: [104, 9], idleH: 186 },
     left: { w: 195, h: 195, head: [93, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
+    upright: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 414: same figure as up
+    upleft: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 414: same figure as up
   },
   blue: {
     down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
@@ -89,6 +97,8 @@ export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[nu
     right: { w: 195, h: 195, head: [104, 9], idleH: 186 },
     left: { w: 195, h: 195, head: [93, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
+    upright: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 414: same figure as up
+    upleft: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 414: same figure as up
   },
   sword: {
     down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
@@ -103,6 +113,8 @@ export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[nu
     right: { w: 195, h: 195, head: [104, 9], idleH: 186 },
     left: { w: 195, h: 195, head: [93, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
+    upright: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 414: same figure as up
+    upleft: { w: 195, h: 195, head: [97, 2], idleH: 193 },  // BUILD 414: same figure as up
   },
 };
 export interface BarbHairInfo { file: string; rel: [number, number]; baseH: number }
@@ -200,7 +212,7 @@ export interface BarbarianDrawOptions {
   x: number;
   y: number;
   size?: number;
-  facing: Face4;
+  facing: Face6;
   moving: boolean;
   /** ms since the attack swing started; plays attack anim while < ATTACK_MS. */
   attackT?: number;
@@ -255,8 +267,12 @@ export function barbarianReady(): boolean {
   return true;
 }
 
-function viewOf(facing: Face4): BarbarianView {
-  return facing === 'up' ? 'up' : facing === 'down' ? 'down' : 'side';
+function viewOf(facing: Face6): BarbarianView {
+  if (facing === 'up') return 'up';
+  if (facing === 'down') return 'down';
+  if (facing === 'upright') return 'upright';
+  if (facing === 'upleft') return 'upleft';
+  return 'side';
 }
 
 /**
@@ -282,6 +298,16 @@ export function drawBarbarian(o: BarbarianDrawOptions): boolean {
   } else if (o.facing === 'left') {
     const lf = BARB_FRAMES[variant]?.['left']?.[anim];
     if (lf && lf.length > 0) fview = 'left';
+  } else if (o.facing === 'upright') {
+    // BUILD 414: dedicated up-right diagonal art (the user's walk sheet);
+    // variants without it (sword) fall back per-anim to the up view.
+    const uf = BARB_FRAMES[variant]?.['upright']?.[anim];
+    fview = (uf && uf.length > 0) ? 'upright' : 'up';
+  } else if (o.facing === 'upleft') {
+    // BUILD 414: dedicated up-left diagonal art (mirrored walk sheet);
+    // variants without it (sword) fall back per-anim to the up view.
+    const uf = BARB_FRAMES[variant]?.['upleft']?.[anim];
+    fview = (uf && uf.length > 0) ? 'upleft' : 'up';
   }
   // Shared side art natively faces screen-right; mirror it when facing left.
   // Dedicated left/right sets natively face their direction and are never
@@ -320,7 +346,10 @@ export function drawBarbarian(o: BarbarianDrawOptions): boolean {
     // Hair overlays only exist for down/side/up. The dedicated right set reuses
     // the side hair art with the right set's head anchor; the dedicated left
     // set reuses the side hair art mirrored, with the left set's head anchor.
-    const hairView: BarbarianView = (fview === 'right' || fview === 'left') ? 'side' : view;
+    // The dedicated up-right/up-left sets (BUILD 414) reuse the up hair art —
+    // the up-left frames are pre-mirrored, so the hair is never flipped.
+    const hairView: BarbarianView = (fview === 'right' || fview === 'left') ? 'side'
+      : (fview === 'upright' || fview === 'upleft') ? 'up' : view;
     // Side hair art natively faces right; mirror it whenever the body faces left.
     const hairFlip = o.facing === 'left';
     if (flip) {

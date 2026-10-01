@@ -116,6 +116,46 @@
     "bare_side_attack_0.png",
     "bare_side_attack_1.png"
    ]
+  },
+  "upright": {
+   "idle": [
+    "bare_up_idle_0.png"
+   ],
+   "walk": [
+    "bare_up_walk_0.png",
+    "bare_up_walk_1.png",
+    "bare_up_walk_2.png",
+    "bare_up_walk_3.png",
+    "bare_up_walk_4.png",
+    "bare_up_walk_5.png",
+    "bare_up_walk_6.png",
+    "bare_up_walk_7.png",
+    "bare_up_walk_8.png"
+   ],
+   "attack": [
+    "bare_up_attack_0.png",
+    "bare_up_attack_1.png"
+   ]
+  },
+  "upleft": {
+   "idle": [
+    "bare_up_idle_0.png"
+   ],
+   "walk": [
+    "bare_upleft_walk_0.png",
+    "bare_upleft_walk_1.png",
+    "bare_upleft_walk_2.png",
+    "bare_upleft_walk_3.png",
+    "bare_upleft_walk_4.png",
+    "bare_upleft_walk_5.png",
+    "bare_upleft_walk_6.png",
+    "bare_upleft_walk_7.png",
+    "bare_upleft_walk_8.png"
+   ],
+   "attack": [
+    "bare_up_attack_0.png",
+    "bare_up_attack_1.png"
+   ]
   }
  },
  "blue": {
@@ -234,6 +274,46 @@
    "attack": [
     "blue_right_attack_0.png",
     "blue_right_attack_1.png"
+   ]
+  },
+  "upright": {
+   "idle": [
+    "blue_up_idle_0.png"
+   ],
+   "walk": [
+    "blue_up_walk_0.png",
+    "blue_up_walk_1.png",
+    "blue_up_walk_2.png",
+    "blue_up_walk_3.png",
+    "blue_up_walk_4.png",
+    "blue_up_walk_5.png",
+    "blue_up_walk_6.png",
+    "blue_up_walk_7.png",
+    "blue_up_walk_8.png"
+   ],
+   "attack": [
+    "blue_up_attack_0.png",
+    "blue_up_attack_1.png"
+   ]
+  },
+  "upleft": {
+   "idle": [
+    "blue_up_idle_0.png"
+   ],
+   "walk": [
+    "blue_upleft_walk_0.png",
+    "blue_upleft_walk_1.png",
+    "blue_upleft_walk_2.png",
+    "blue_upleft_walk_3.png",
+    "blue_upleft_walk_4.png",
+    "blue_upleft_walk_5.png",
+    "blue_upleft_walk_6.png",
+    "blue_upleft_walk_7.png",
+    "blue_upleft_walk_8.png"
+   ],
+   "attack": [
+    "blue_up_attack_0.png",
+    "blue_up_attack_1.png"
    ]
   }
  },
@@ -496,6 +576,48 @@
     "bow_right_attack_1.png",
     "bow_right_attack_2.png"
    ]
+  },
+  "upright": {
+   "idle": [
+    "bow_up_idle_0.png"
+   ],
+   "walk": [
+    "bow_up_walk_0.png",
+    "bow_up_walk_1.png",
+    "bow_up_walk_2.png",
+    "bow_up_walk_3.png",
+    "bow_up_walk_4.png",
+    "bow_up_walk_5.png",
+    "bow_up_walk_6.png",
+    "bow_up_walk_7.png",
+    "bow_up_walk_8.png"
+   ],
+   "attack": [
+    "bow_up_attack_0.png",
+    "bow_up_attack_1.png",
+    "bow_up_attack_2.png"
+   ]
+  },
+  "upleft": {
+   "idle": [
+    "bow_up_idle_0.png"
+   ],
+   "walk": [
+    "bow_upleft_walk_0.png",
+    "bow_upleft_walk_1.png",
+    "bow_upleft_walk_2.png",
+    "bow_upleft_walk_3.png",
+    "bow_upleft_walk_4.png",
+    "bow_upleft_walk_5.png",
+    "bow_upleft_walk_6.png",
+    "bow_upleft_walk_7.png",
+    "bow_upleft_walk_8.png"
+   ],
+   "attack": [
+    "bow_up_attack_0.png",
+    "bow_up_attack_1.png",
+    "bow_up_attack_2.png"
+   ]
   }
  },
  "_conventions": {
@@ -628,7 +750,34 @@
    "bow_up_walk_1.png": "up",
    "bow_up_walk_6.png": "up",
    "bow_up_walk_7.png": "up",
-   "bow_up_walk_8.png": "up"
+   "bow_up_walk_8.png": "up",
+   "bare_upleft_walk_0.png": "upleft",
+   "bare_upleft_walk_1.png": "upleft",
+   "bare_upleft_walk_2.png": "upleft",
+   "bare_upleft_walk_3.png": "upleft",
+   "bare_upleft_walk_4.png": "upleft",
+   "bare_upleft_walk_5.png": "upleft",
+   "bare_upleft_walk_6.png": "upleft",
+   "bare_upleft_walk_7.png": "upleft",
+   "bare_upleft_walk_8.png": "upleft",
+   "blue_upleft_walk_0.png": "upleft",
+   "blue_upleft_walk_1.png": "upleft",
+   "blue_upleft_walk_2.png": "upleft",
+   "blue_upleft_walk_3.png": "upleft",
+   "blue_upleft_walk_4.png": "upleft",
+   "blue_upleft_walk_5.png": "upleft",
+   "blue_upleft_walk_6.png": "upleft",
+   "blue_upleft_walk_7.png": "upleft",
+   "blue_upleft_walk_8.png": "upleft",
+   "bow_upleft_walk_0.png": "upleft",
+   "bow_upleft_walk_1.png": "upleft",
+   "bow_upleft_walk_2.png": "upleft",
+   "bow_upleft_walk_3.png": "upleft",
+   "bow_upleft_walk_4.png": "upleft",
+   "bow_upleft_walk_5.png": "upleft",
+   "bow_upleft_walk_6.png": "upleft",
+   "bow_upleft_walk_7.png": "upleft",
+   "bow_upleft_walk_8.png": "upleft"
   },
   "sideFacing": {
    "bare_side_attack_0.png": "right",

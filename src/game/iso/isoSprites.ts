@@ -15,6 +15,15 @@
 // Layers that only drew a walk cycle hold walk frame 0 for other states.
 
 export type Face4 = 'up' | 'left' | 'down' | 'right';
+/**
+ * BUILD 414: extended player facing. The barbarian pack has dedicated
+ * up-right and up-left diagonal walk art (the user's walk sheet, original
+ * and mirrored), so the player's screen-space facing gains two values beyond
+ * Face4. NPCs, the LPC paper-doll fallback, and tile-space facing stay on
+ * Face4; only the player-facing pipeline (screen-delta facing, animator,
+ * barbarian renderer, field + interior views) uses Face6.
+ */
+export type Face6 = Face4 | 'upright' | 'upleft';
 
 export interface LpcLook {
   /** Skin tone key, e.g. 'ivory'. */
@@ -130,27 +139,28 @@ export function isoScreenSpeedScale(ux: number, uy: number): number {
 }
 
 /**
- * BUILD 408/410/411: screen-space player facing with a northward preference.
+ * BUILD 408/410/411/414: screen-space player facing with a northward preference.
  * The tile delta is projected into true screen space (2:1 dimetric) and the
- * dominant screen axis picks the art — except northward travel within 45
- * degrees of straight screen-up shows the back/up sprite (BUILD 411): going
- * up, and walking the north-east / north-west diagonals, all face the back
- * view, so angling a tap left or right of straight-up (drift, collision
- * slide) never flips to a side asset. Near-horizontal northward travel still
- * shows the side sprite for the travel direction (BUILD 410: eastward travel
- * with a northward tilt must face east, never the back sprite). Southward
- * keeps the dominant-axis mapping (down-right -> right, down-left -> left,
- * mostly-down -> down/front). `current` is only the zero-movement fallback.
+ * dominant screen axis picks the art — except northward travel is split into
+ * three bands (BUILD 414): within 22.5deg of straight screen-up shows the
+ * back/up sprite; the 22.5-67.5deg diagonal bands show the dedicated
+ * up-right / up-left diagonal art (the user's walk sheet, original and
+ * mirrored); beyond 67.5deg the side sprite for the travel direction.
+ * Southward keeps the dominant-axis mapping (down-right -> right,
+ * down-left -> left, mostly-down -> down/front). `current` is only the
+ * zero-movement fallback.
  */
-export function isoPlayerFaceForScreenDelta(dx: number, dy: number, current: Face4): Face4 {
+export function isoPlayerFaceForScreenDelta(dx: number, dy: number, current: Face6): Face6 {
   if (Math.abs(dx) + Math.abs(dy) < 1e-9) return current; // no movement: keep facing
   const sx = dx - dy; // screen x of the tile delta (2:1 dimetric)
   const sy = (dx + dy) / 2; // screen y of the tile delta
   const ax = Math.abs(sx), ay = Math.abs(sy);
   if (sy < 0) {
-    // northward: back sprite within 45deg of straight-up (up + NE/NW
-    // diagonals); beyond that the side sprite for the travel direction.
-    if (ay >= ax) return 'up';
+    // northward: back sprite within 22.5deg of straight-up; the diagonal
+    // bands (22.5-67.5deg) use the dedicated up-right/up-left art; beyond
+    // that the side sprite for the travel direction.
+    if (ax <= ay * 0.4142) return 'up';
+    if (ax <= ay * 2.4142) return sx > 0 ? 'upright' : 'upleft';
     return sx > 0 ? 'right' : 'left';
   }
   if (ax >= ay) return sx > 0 ? 'right' : 'left';
