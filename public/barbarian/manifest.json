@@ -275,7 +275,7 @@
   }
  },
  "_conventions": {
-  "side": "All side-view frames face screen-left. The renderer mirrors the side art when facing=right. BUILD 391: bow side frames were re-normalized (they faced right in the supplied sheet).",
+  "side": "All side-view frames face screen-left. The renderer mirrors the side art when facing=right. BUILD 391: bow side frames were re-normalized (they faced right in the supplied sheet). BUILD 392: fixed mislabeled walk/idle frames (sword_side_walk_1 was a front view, blue_up_walk_0 was a side view, blue_up_idle_0 was a side view, blue_side_idle_0 was a front view); frameViews locks the audited view of every idle/walk frame.",
   "sideCentroidX": {
    "bare_side_attack_0.png": 0.5025,
    "bare_side_attack_1.png": 0.5158,
@@ -284,7 +284,7 @@
    "bare_side_walk_1.png": 0.5022,
    "blue_side_attack_0.png": 0.4445,
    "blue_side_attack_1.png": 0.4562,
-   "blue_side_idle_0.png": 0.454,
+   "blue_side_idle_0.png": 0.4551,
    "blue_side_walk_0.png": 0.454,
    "blue_side_walk_1.png": 0.4509,
    "bow_side_attack_0.png": 0.4778,
@@ -297,8 +297,43 @@
    "sword_side_attack_2.png": 0.4855,
    "sword_side_idle_0.png": 0.4907,
    "sword_side_walk_0.png": 0.4907,
-   "sword_side_walk_1.png": 0.4654
+   "sword_side_walk_1.png": 0.5422
   },
-  "playerLayering": "IsoFieldView draws the player in a final pass above all depth-sorted drawables (BUILD 391): grass/decor/trees/buildings never cover the player."
+  "playerLayering": "IsoFieldView draws the player in a final pass above all depth-sorted drawables (BUILD 391): grass/decor/trees/buildings never cover the player.",
+  "frameViews": {
+   "bare_down_idle_0.png": "down",
+   "bare_down_walk_0.png": "down",
+   "bare_down_walk_1.png": "down",
+   "bare_side_idle_0.png": "side",
+   "bare_side_walk_0.png": "side",
+   "bare_side_walk_1.png": "side",
+   "bare_up_idle_0.png": "up",
+   "bare_up_walk_0.png": "up",
+   "bare_up_walk_1.png": "up",
+   "blue_down_idle_0.png": "down",
+   "blue_down_walk_0.png": "down",
+   "blue_down_walk_1.png": "down",
+   "blue_side_idle_0.png": "side",
+   "blue_side_walk_0.png": "side",
+   "blue_side_walk_1.png": "side",
+   "blue_up_idle_0.png": "up",
+   "blue_up_walk_0.png": "up",
+   "blue_up_walk_1.png": "up",
+   "bow_down_idle_0.png": "down",
+   "bow_down_walk_0.png": "down",
+   "bow_down_walk_1.png": "down",
+   "bow_side_idle_0.png": "side",
+   "bow_side_walk_0.png": "side",
+   "bow_up_idle_0.png": "up",
+   "bow_up_walk_0.png": "up",
+   "sword_down_idle_0.png": "down",
+   "sword_down_walk_0.png": "down",
+   "sword_down_walk_1.png": "down",
+   "sword_side_idle_0.png": "side",
+   "sword_side_walk_0.png": "side",
+   "sword_side_walk_1.png": "side",
+   "sword_up_idle_0.png": "up",
+   "sword_up_walk_0.png": "up"
+  }
  }
 }

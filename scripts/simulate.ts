@@ -2955,6 +2955,10 @@ console.log('Testing examine system...');
 // left/right appear reversed with the bow equipped (fixed by re-normalizing
 // the bow side frames). This test re-decodes the PNGs and fails if any side
 // frame drifts from its recorded facing signature.
+// BUILD 392: fixed four mislabeled walk/idle frames (sword_side_walk_1 was a
+// front view, blue_up_walk_0 / blue_up_idle_0 were side views, blue_side_idle_0
+// was a front view). frameViews below locks the audited view of every
+// idle/walk frame; the face-left check now uses the head band for idle/walk.
 import { inflateSync } from 'node:zlib';
 {
   function readPngRgba(path: string): { w: number; h: number; px: Uint8Array } {
@@ -3009,6 +3013,18 @@ import { inflateSync } from 'node:zlib';
     }
     return n === 0 ? 0.5 : sx / n / w;
   }
+  function headCentroidX(px: Uint8Array, w: number, h: number): number {
+    // Dark-pixel centroid of the head band (top 40%): a left-facing profile
+    // puts the head mass left of frame center. Full-body centroids are thrown
+    // off by props (e.g. the sword trailing right in sword_side_walk_1).
+    let sx = 0, n = 0;
+    const yTop = Math.floor(h * 0.4);
+    for (let y = 0; y < yTop; y += 2) for (let x = 0; x < w; x += 2) {
+      const i = (y * w + x) * 4;
+      if (px[i + 3] > 40 && px[i] + px[i + 1] + px[i + 2] < 380) { sx += x; n++; }
+    }
+    return n === 0 ? 0.5 : sx / n / w;
+  }
   const barbManifest = JSON.parse(readFileSyncSprites('public/barbarian/manifest.json', 'utf8'));
   const sigs = barbManifest._conventions?.sideCentroidX as Record<string, number> | undefined;
   assert(sigs && Object.keys(sigs).length >= 20,
@@ -3018,8 +3034,26 @@ import { inflateSync } from 'node:zlib';
     const cx = sideCentroidX(px, w, h);
     assert(Math.abs(cx - recorded) < 0.015,
       `${file}: facing signature drifted (recorded ${recorded}, now ${cx.toFixed(4)}) — side art may be reversed again`);
-    assert(cx < 0.52,
-      `${file}: side view must face screen-left (dark-pixel centroid ${cx.toFixed(3)})`);
+    // BUILD 392: the face-left check uses the head band (idle/walk only —
+    // attack frames are 3/4 action poses, not strict profiles).
+    if (/_side_(idle|walk)_/.test(file)) {
+      const hx = headCentroidX(px, w, h);
+      assert(hx < 0.52,
+        `${file}: side view must face screen-left (head centroid ${hx.toFixed(3)})`);
+    }
+  }
+  // BUILD 392: frameViews locks the visually-audited view (up/side/down) of
+  // every idle/walk frame, so a mislabeled crop (e.g. a front view saved as
+  // *_up_walk_*) fails even if its pixels never change again.
+  const frameViews = barbManifest._conventions?.frameViews as Record<string, string> | undefined;
+  assert(frameViews && Object.keys(frameViews).length >= 30,
+    'barbarian manifest must record audited views for every idle/walk frame');
+  for (const [file, view] of Object.entries(frameViews)) {
+    const m = /^(bare|blue|sword|bow)_(down|side|up)_(idle|walk)_\d+\.png$/.exec(file);
+    assert(m, `${file}: unexpected frameViews key`);
+    assert(m[2] === view,
+      `${file}: audited view is "${view}" but the filename says "${m[2]}" — frame is mislabeled`);
+    readPngRgba(`public/barbarian/${file}`); // must exist and decode
   }
   // Player layering invariant: the iso field must draw the player in a final
   // pass after the depth-sorted drawables so grass/decor never covers them.
