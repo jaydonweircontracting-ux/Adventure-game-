@@ -50,6 +50,33 @@ def recolor_body(im, target):
                 px[x, y] = (nr, ng, nb, a)
     return im
 
+def soften_head_band(im):
+    """Soften the generator's hairline shadow stripe on head sheets.
+
+    The human/child head art draws a dark reddish shadow band
+    (#99423c) across the forehead where hair would sit. Under hair it
+    reads as fringe shadow, but on bald characters it looks like a red
+    headband. Remap that band's darkest shadow tone to the softer
+    shadow tone (#cc8665) in the forehead zone of each direction row.
+    Runs in source color space, before tone recoloring. Eyes are
+    cyan/white/dark-outline and are never touched.
+    """
+    im = im.convert('RGBA')
+    px = im.load()
+    w, h = im.size
+    DARK = hx('#99423c')
+    SOFT = hx('#cc8665')
+    rows = h // 64
+    for d in range(rows):
+        for y in range(d * 64 + 30, d * 64 + 37):
+            if y >= h:
+                break
+            for x in range(15, 50):
+                r, g, b, a = px[x, y]
+                if a > 10 and (r, g, b) == DARK:
+                    px[x, y] = (SOFT[0], SOFT[1], SOFT[2], a)
+    return im
+
 def main():
     z = zipfile.ZipFile(ZIP)
     written = []
@@ -75,6 +102,7 @@ def main():
         src = ROOT + f'spritesheets/head/heads/human/child/{anim}.png'
         base_im = Image.open(z.open(src))
         print(f'head {anim}: {base_im.size} mode={base_im.mode}')
+        base_im = soften_head_band(base_im)
         for tone, target in TONES.items():
             save(recolor_body(base_im, target), f'head-{tone}-{anim}.png')
 
