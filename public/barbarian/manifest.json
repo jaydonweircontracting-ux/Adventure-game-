@@ -273,5 +273,32 @@
     "bow_up_attack_2.png"
    ]
   }
+ },
+ "_conventions": {
+  "side": "All side-view frames face screen-left. The renderer mirrors the side art when facing=right. BUILD 391: bow side frames were re-normalized (they faced right in the supplied sheet).",
+  "sideCentroidX": {
+   "bare_side_attack_0.png": 0.5025,
+   "bare_side_attack_1.png": 0.5158,
+   "bare_side_idle_0.png": 0.4924,
+   "bare_side_walk_0.png": 0.4924,
+   "bare_side_walk_1.png": 0.5022,
+   "blue_side_attack_0.png": 0.4445,
+   "blue_side_attack_1.png": 0.4562,
+   "blue_side_idle_0.png": 0.454,
+   "blue_side_walk_0.png": 0.454,
+   "blue_side_walk_1.png": 0.4509,
+   "bow_side_attack_0.png": 0.4778,
+   "bow_side_attack_1.png": 0.52,
+   "bow_side_attack_2.png": 0.4778,
+   "bow_side_idle_0.png": 0.493,
+   "bow_side_walk_0.png": 0.493,
+   "sword_side_attack_0.png": 0.4931,
+   "sword_side_attack_1.png": 0.4231,
+   "sword_side_attack_2.png": 0.4855,
+   "sword_side_idle_0.png": 0.4907,
+   "sword_side_walk_0.png": 0.4907,
+   "sword_side_walk_1.png": 0.4654
+  },
+  "playerLayering": "IsoFieldView draws the player in a final pass above all depth-sorted drawables (BUILD 391): grass/decor/trees/buildings never cover the player."
  }
 }

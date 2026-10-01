@@ -2949,6 +2949,85 @@ console.log('Testing examine system...');
   assert(BARBARIAN_ATTACK_MS === 480, 'barbarian attack clip window must be 480ms');
 }
 
+// ---- BUILD 391: side-view facing convention (pixel regression) ----
+// All barbarian side frames must face screen-left; the renderer mirrors the
+// side art when facing=right. The supplied bow sheet faced right, which made
+// left/right appear reversed with the bow equipped (fixed by re-normalizing
+// the bow side frames). This test re-decodes the PNGs and fails if any side
+// frame drifts from its recorded facing signature.
+import { inflateSync } from 'node:zlib';
+{
+  function readPngRgba(path: string): { w: number; h: number; px: Uint8Array } {
+    const buf: Buffer = readFileSyncSprites(path);
+    let pos = 8, w = 0, h = 0, bitDepth = 0, colorType = 0;
+    const idat: Buffer[] = [];
+    while (pos + 8 <= buf.length) {
+      const len = buf.readUInt32BE(pos);
+      const type = buf.toString('ascii', pos + 4, pos + 8);
+      const data = buf.subarray(pos + 8, pos + 8 + len);
+      if (type === 'IHDR') {
+        w = data.readUInt32BE(0); h = data.readUInt32BE(4);
+        bitDepth = data[8]; colorType = data[9];
+      } else if (type === 'IDAT') idat.push(Buffer.from(data));
+      else if (type === 'IEND') break;
+      pos += 12 + len;
+    }
+    if (bitDepth !== 8 || colorType !== 6) throw new Error(`unsupported PNG ${path}`);
+    const raw = inflateSync(Buffer.concat(idat));
+    const stride = w * 4;
+    const px = new Uint8Array(w * h * 4);
+    const prev = new Uint8Array(stride), cur = new Uint8Array(stride);
+    let p = 0;
+    for (let y = 0; y < h; y++) {
+      const f = raw[p++];
+      for (let x = 0; x < stride; x++) {
+        const v = raw[p++];
+        const left = x >= 4 ? cur[x - 4] : 0;
+        const up = prev[x];
+        const upLeft = x >= 4 ? prev[x - 4] : 0;
+        let r: number;
+        if (f === 0) r = v;
+        else if (f === 1) r = (v + left) & 255;
+        else if (f === 2) r = (v + up) & 255;
+        else if (f === 3) r = (v + ((left + up) >> 1)) & 255;
+        else if (f === 4) {
+          const pa = Math.abs(up - upLeft), pb = Math.abs(left - upLeft), pc = Math.abs(left + up - 2 * upLeft);
+          r = (v + (pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft)) & 255;
+        } else throw new Error(`bad PNG filter ${f} in ${path}`);
+        cur[x] = r;
+      }
+      px.set(cur, y * stride);
+      prev.set(cur);
+    }
+    return { w, h, px };
+  }
+  function sideCentroidX(px: Uint8Array, w: number, h: number): number {
+    let sx = 0, n = 0;
+    for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
+      const i = (y * w + x) * 4;
+      if (px[i + 3] > 40 && px[i] + px[i + 1] + px[i + 2] < 380) { sx += x; n++; }
+    }
+    return n === 0 ? 0.5 : sx / n / w;
+  }
+  const barbManifest = JSON.parse(readFileSyncSprites('public/barbarian/manifest.json', 'utf8'));
+  const sigs = barbManifest._conventions?.sideCentroidX as Record<string, number> | undefined;
+  assert(sigs && Object.keys(sigs).length >= 20,
+    'barbarian manifest must record side-view facing signatures for every side frame');
+  for (const [file, recorded] of Object.entries(sigs)) {
+    const { w, h, px } = readPngRgba(`public/barbarian/${file}`);
+    const cx = sideCentroidX(px, w, h);
+    assert(Math.abs(cx - recorded) < 0.015,
+      `${file}: facing signature drifted (recorded ${recorded}, now ${cx.toFixed(4)}) — side art may be reversed again`);
+    assert(cx < 0.52,
+      `${file}: side view must face screen-left (dark-pixel centroid ${cx.toFixed(3)})`);
+  }
+  // Player layering invariant: the iso field must draw the player in a final
+  // pass after the depth-sorted drawables so grass/decor never covers them.
+  const isoFieldSrc = readFileSyncSprites('src/game/iso/IsoFieldView.tsx', 'utf8');
+  assert(isoFieldSrc.includes('for (const d of playerDrawables) d.draw(g, nowMs);'),
+    'IsoFieldView must draw the player in a final top-most pass (playerDrawables)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

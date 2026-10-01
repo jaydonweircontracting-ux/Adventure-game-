@@ -456,12 +456,16 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
       for (const npc of live.folk) {
         drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id);
       }
-      // player
-      drawPerson(drawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs, 'player', { attackT: playerAttackT });
+      // player — BUILD 391: layered on top of everything. The player is drawn
+      // in a final pass after the depth-sorted world so grass tufts, trees
+      // and buildings never cover them.
+      const playerDrawables: Drawable[] = [];
+      drawPerson(playerDrawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs, 'player', { attackT: playerAttackT });
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
 
       drawables.sort((a, b) => a.depth - b.depth);
       for (const d of drawables) d.draw(g, nowMs);
+      for (const d of playerDrawables) d.draw(g, nowMs);
 
       g.restore();
     };
