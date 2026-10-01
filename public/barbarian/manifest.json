@@ -275,13 +275,13 @@
     }
   },
   "_conventions": {
-    "side": "All side-view frames face screen-RIGHT (visually audited per frame in sideFacing). The renderer (drawBarbarian in src/game/iso/barbarian.ts) mirrors the side art when facing=left. BUILD 393: fixed reversed left/right \u2014 the art natively faced right but the renderer only mirrored when facing=right, so walking left showed right-facing art. Also re-mirrored the 5 bow side frames (BUILD 391 had normalized them face-left) and sword_side_walk_1 (BUILD 392 had mirrored it face-left) back to the face-right pack convention.",
+    "side": "All side-view frames face screen-RIGHT (visually audited per frame in sideFacing). The renderer (drawBarbarian in src/game/iso/barbarian.ts) mirrors the side art when facing=left. BUILD 393: fixed reversed left/right \u2014 the art natively faced right but the renderer only mirrored when facing=right, so walking left showed right-facing art. Also re-mirrored the 5 bow side frames (BUILD 391 had normalized them face-left) and sword_side_walk_1 (BUILD 392 had mirrored it face-left) back to the face-right pack convention. BUILD 397: bare side idle/walk re-cut per user direction from the user-supplied left-facing sheet (mirrored to the face-right pack convention; the renderer mirrors for left, so left movement shows the user's original left-facing art).",
     "sideCentroidX": {
       "bare_side_attack_0.png": 0.5025,
       "bare_side_attack_1.png": 0.5158,
-      "bare_side_idle_0.png": 0.4924,
-      "bare_side_walk_0.png": 0.4924,
-      "bare_side_walk_1.png": 0.5022,
+      "bare_side_idle_0.png": 0.504,
+      "bare_side_walk_0.png": 0.6727,
+      "bare_side_walk_1.png": 0.5459,
       "blue_side_attack_0.png": 0.4445,
       "blue_side_attack_1.png": 0.4562,
       "blue_side_idle_0.png": 0.4551,
