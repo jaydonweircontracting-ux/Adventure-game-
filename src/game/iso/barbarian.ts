@@ -70,24 +70,24 @@ export const BARB_FRAMES: Record<string, Record<string, Record<string, string[]>
 };
 export const BARB_BOX: Record<string, Record<string, {w:number;h:number;head:[number,number];idleH:number}>> = {
   bare: {
-    down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
+    down: { w: 195, h: 195, head: [92, 8], idleH: 186 },
     side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
     right: { w: 195, h: 195, head: [104, 9], idleH: 186 },
     left: { w: 195, h: 195, head: [93, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
   },
   blue: {
-    down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
+    down: { w: 195, h: 195, head: [92, 8], idleH: 186 },
     side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
   },
   sword: {
-    down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
+    down: { w: 195, h: 195, head: [92, 8], idleH: 186 },
     side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
   },
   bow: {
-    down: { w: 195, h: 195, head: [97, 7], idleH: 188 },
+    down: { w: 195, h: 195, head: [92, 8], idleH: 186 },
     side: { w: 195, h: 195, head: [104, 9], idleH: 186 },
     up: { w: 195, h: 195, head: [97, 2], idleH: 193 },
   },
