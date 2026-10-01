@@ -50,6 +50,9 @@ interface IsoInteriorViewProps {
   barbOutfit?: BarbarianOutfit;
   barbWeapon?: BarbarianWeapon;
   barbHair?: string;
+  // BUILD 422: debug direction test — when set, the player shows this facing's
+  // sprite sheet with the walk cycle playing, ignoring movement deltas.
+  debugFacing?: Face6 | null;
 }
 
 const ROOM_W = 12;
@@ -154,7 +157,7 @@ function faceForMove(ax: number, ay: number, bx: number, by: number, current: Fa
   return isoPlayerFaceForScreenDeltaSticky(bx - ax, by - ay, current);
 }
 
-export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair }: IsoInteriorViewProps): React.JSX.Element {
+export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair, debugFacing }: IsoInteriorViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const exitRef = useRef(onExit);
@@ -792,7 +795,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       }
 
       // player
-      drawables.push(drawCharacter(g, state.fx, state.fy, state.facing, state.moving, 0, nowMs, 'player'));
+      // BUILD 422: debug direction test overrides facing + forces walk cycle.
+      const dbgFace = debugFacing ?? null;
+      drawables.push(drawCharacter(g, state.fx, state.fy, dbgFace ?? state.facing, dbgFace ? true : state.moving, 0, nowMs, 'player'));
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
 
       drawables.sort((a, b) => a.depth - b.depth);

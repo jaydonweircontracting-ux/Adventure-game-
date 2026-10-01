@@ -1478,6 +1478,29 @@ for (const kind of EXPECTED_KINDS) {
     'zero delta keeps NE facing');
 }
 
+// ---- BUILD 422: DIR_TEST_TABLE — debug direction-test numbering ----
+// The user's 1-6 numbering must map to the right Face6 art key, arrow, and
+// sprite file key so the red debug arrows show the intended direction.
+{
+  const { DIR_TEST_TABLE } = await import('../src/game/iso/isoSprites');
+  assert(DIR_TEST_TABLE.length === 6, 'dir test table has 6 entries');
+  const expected: [number, string, string, string][] = [
+    [1, 'NW', 'upleft', '↖'],
+    [2, 'N', 'up', '↑'],
+    [3, 'NE', 'upright', '↗'],
+    [4, 'E', 'right', '→'],
+    [5, 'S', 'down', '↓'],
+    [6, 'W', 'left', '←'],
+  ];
+  for (let i = 0; i < 6; i++) {
+    const e = DIR_TEST_TABLE[i];
+    const [num, label, face, arrow] = expected[i];
+    assert(e.num === num && e.label === label && e.face === face && e.arrow === arrow,
+      `dir test entry ${num} is ${label}/${face}/${arrow}`);
+    assert(e.fileKey === face, `dir test entry ${num} fileKey matches face`);
+  }
+}
+
 // ---- BUILD 388: dungeon kit panel selectors for cellar/prison interiors ----
 // The kit is purely visual (collision/furniture untouched), so the sim pins
 // the panel metadata: 4 in-bounds panels per strip, correct wall orientation

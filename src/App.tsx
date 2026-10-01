@@ -2,7 +2,7 @@ import IsoRoomDemo from './game/iso/IsoRoom';
 import IsoFieldView from './game/iso/IsoFieldView';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
 import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
-import { isoScreenSpeedScale } from './game/iso/isoSprites';
+import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/iso/isoSprites';
 import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality } from './game/villageLife';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -3371,6 +3371,10 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
   const [gameZoom, setGameZoom] = useState(DEFAULT_GAME_ZOOM);
   // Debug mover mode (toggleable from options menu). Syncs with module-level moveHouses.
   const [moverMode, setMoverMode] = useState(moveHouses);
+  // BUILD 422: debug direction test — red numbered arrows per movement
+  // direction; tapping one shows that direction's sprite sheet on the player.
+  const [dirTestMode, setDirTestMode] = useState(false);
+  const [dirTestFacing, setDirTestFacing] = useState<DirTestEntry | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const toggleMoverMode = () => {
     const next = !moverMode;
@@ -6156,6 +6160,7 @@ if (active) {
               const npc = townsfolk.find((n) => n.id === npcId);
               if (npc) talkToTownsfolk(npc);
             }}
+            debugFacing={dirTestMode ? (dirTestFacing?.face ?? null) : null}
           />
         ) : <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onEnterCellar={enterCellar} onTavernSleep={tavernSleepUntilMorning} cellarRats={cellarRats} onStrikeCellarRat={strikeCellarRat} questStates={questStates} interiorTownsfolk={interiorTownsfolk} onTalkToTownsfolk={talkToTownsfolk} />) : (
         <div className={'pixel-field world-field has-ground-detail world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
@@ -6849,8 +6854,37 @@ if (active) {
               barbOutfit={equippedShirt ? 'blue' : 'bare'}
               barbWeapon={equippedSword ? 'sword' : equippedBow ? 'bow' : 'none'}
               barbHair={barbHair}
-              barbAttackSequence={attackSequence} />
+              barbAttackSequence={attackSequence}
+              debugFacing={dirTestMode ? (dirTestFacing?.face ?? null) : null} />
           )}
+          {/* BUILD 422: debug direction test — red numbered arrows, one per
+              movement direction. Tapping an arrow shows that direction's sprite
+              sheet on the player with the walk cycle playing. */}
+          {dirTestMode && (() => {
+            const variant = equippedSword ? 'sword' : equippedBow ? 'bow' : (equippedShirt ? 'blue' : 'bare');
+            // Compass layout: row1: 1 2 3, row2: 6 · 4, row3: · 5 ·
+            const layout: (DirTestEntry | null)[] = [
+              DIR_TEST_TABLE[0], DIR_TEST_TABLE[1], DIR_TEST_TABLE[2],
+              DIR_TEST_TABLE[5], null, DIR_TEST_TABLE[3],
+              null, DIR_TEST_TABLE[4], null,
+            ];
+            return (
+              <div className="dirtest-overlay">
+                <div className="dirtest-head">DIR TEST{dirTestFacing ? `: ${dirTestFacing.num} = ${dirTestFacing.label}` : ' — tap a red arrow'}</div>
+                <div className="dirtest-grid">
+                  {layout.map((e, i) => e ? (
+                    <button key={e.num} className={'dirtest-arrow' + (dirTestFacing?.num === e.num ? ' active' : '')}
+                      onClick={() => setDirTestFacing(e)}>
+                      <span className="dirtest-num">{e.num}</span>
+                      <span className="dirtest-glyph">{e.arrow}</span>
+                    </button>
+                  ) : <span key={'s' + i} className="dirtest-spacer" />)}
+                </div>
+                <div className="dirtest-file">{dirTestFacing ? `${variant}_${dirTestFacing.fileKey}_walk_0..8.png` : 'no direction selected'}</div>
+                <button className="dirtest-exit" onClick={() => { setDirTestMode(false); setDirTestFacing(null); }}>Exit Dir Test</button>
+              </div>
+            );
+          })()}
           <div className="field-world-layer" style={isoFieldBeta ? { display: 'none' } : (gameZoom !== 1 ? (() => {
             // BUILD 327: zoom centers the player in the viewport — the layer
             // is scaled around the top-left, then translated so the player's
@@ -8046,6 +8080,10 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMoverMode(); }} data-testid="button-debug-mover">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: World Editor{moverMode ? ' (Exit)' : ''}</strong><small>{moverMode ? 'Return to normal play' : 'Place houses, trees, rocks, roads · flag removals'}</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); setDirTestMode(!dirTestMode); if (dirTestMode) setDirTestFacing(null); }} data-testid="button-debug-dirtest">
+                  <span className="options-action-icon"><Settings size={17} /></span>
+                  <span><strong>Debug: Direction Test{dirTestMode ? ' (Exit)' : ''}</strong><small>{dirTestMode ? 'Return to normal play' : 'Red numbered arrows · check each direction sprite'}</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMapBuilder(); }} data-testid="button-debug-mapbuilder">
                   <span className="options-action-icon"><Settings size={17} /></span>

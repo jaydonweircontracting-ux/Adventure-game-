@@ -56,6 +56,9 @@ interface IsoFieldViewProps {
   barbWeapon?: BarbarianWeapon;
   barbHair?: string;
   barbAttackSequence?: number;
+  // BUILD 422: debug direction test — when set, the player shows this facing's
+  // sprite sheet with the walk cycle playing, ignoring movement deltas.
+  debugFacing?: Face6 | null;
 }
 
 interface Drawable { depth: number; draw: (g: CanvasRenderingContext2D, now: number) => void }
@@ -76,11 +79,11 @@ interface IsoChunkScene {
 const MARGIN = 48; // world-px background margin around the map
 const ROAD_HALF = 5; // road band half-width in tiles
 
-export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTapMove, onTalkTo, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTapMove, onTalkTo, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, barbOutfit, barbWeapon, barbHair, barbAttackSequence });
-  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, barbOutfit, barbWeapon, barbHair, barbAttackSequence };
+  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing });
+  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing };
   // tap callbacks via ref so the canvas listener always calls the latest
   const tapRef = useRef({ onTapMove, onTalkTo });
   tapRef.current = { onTapMove, onTalkTo };
@@ -220,8 +223,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
       const playerAttackT = swingT < BARBARIAN_ATTACK_MS ? swingT : -1;
       // player facing from movement delta
       const mdx = live.px - prevP.x, mdy = live.py - prevP.y;
-      const playerMoving = Math.abs(mdx) + Math.abs(mdy) > 0.01;
-      if (playerMoving) playerFace.f = isoPlayerFaceForScreenDeltaSticky(mdx, mdy, playerFace.f);
+      // BUILD 422: debug direction test overrides facing and forces the walk
+      // cycle so each numbered arrow shows its direction's sprite sheet.
+      const dbgFace = live.debugFacing ?? null;
+      let playerMoving = Math.abs(mdx) + Math.abs(mdy) > 0.01;
+      if (dbgFace) { playerFace.f = dbgFace; playerMoving = true; }
+      else if (playerMoving) playerFace.f = isoPlayerFaceForScreenDeltaSticky(mdx, mdy, playerFace.f);
       prevP.x = live.px; prevP.y = live.py;
 
       // camera follows the player

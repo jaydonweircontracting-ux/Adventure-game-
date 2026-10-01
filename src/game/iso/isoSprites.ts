@@ -188,6 +188,22 @@ export function isoPlayerFaceForScreenDeltaSticky(dx: number, dy: number, curren
   }
   return next;
 }
+
+// ---------------------------------------------------------------------------
+// BUILD 422: debug direction-test table. The user's 1-6 direction numbering:
+// 1=NW, 2=N, 3=NE, 4=E, 5=S, 6=W. Each entry maps to the Face6 art key, the
+// screen-space arrow drawn on the red debug button, and the sprite file key
+// ({variant}_{fileKey}_walk_N.png / {variant}_{fileKey}_idle_0.png).
+// ---------------------------------------------------------------------------
+export interface DirTestEntry { num: number; label: string; face: Face6; arrow: string; fileKey: string }
+export const DIR_TEST_TABLE: DirTestEntry[] = [
+  { num: 1, label: 'NW', face: 'upleft',  arrow: '↖', fileKey: 'upleft' },
+  { num: 2, label: 'N',  face: 'up',      arrow: '↑', fileKey: 'up' },
+  { num: 3, label: 'NE', face: 'upright', arrow: '↗', fileKey: 'upright' },
+  { num: 4, label: 'E',  face: 'right',   arrow: '→', fileKey: 'right' },
+  { num: 5, label: 'S',  face: 'down',    arrow: '↓', fileKey: 'down' },
+  { num: 6, label: 'W',  face: 'left',    arrow: '←', fileKey: 'left' },
+];
 export const LPC_FRAMES: Record<LpcAnim, number> = { idle: 2, walk: 9, slash: 6, hurt: 6 };
 
 // ---------------------------------------------------------------------------
