@@ -1376,6 +1376,25 @@ for (const kind of EXPECTED_KINDS) {
   assert(tileFaceForDelta(-2, -2) === 'up', 'north-west diagonal ties break to up');
 }
 
+// ---- BUILD 402: omni-directional iso player facing ----
+// Axis-aligned moves keep the tile-axis convention (D-pad up = back sprite),
+// but near-diagonal world moves face the SCREEN direction of travel in the
+// 2:1 dimetric projection, so the character visibly faces where it's going.
+{
+  const { isoPlayerFaceForDelta } = await import('../src/game/iso/isoSprites');
+  assert(isoPlayerFaceForDelta(1, -1) === 'right', 'north-east diagonal must face screen-right');
+  assert(isoPlayerFaceForDelta(-1, 1) === 'left', 'south-west diagonal must face screen-left');
+  assert(isoPlayerFaceForDelta(1, 1) === 'down', 'south-east diagonal must face down');
+  assert(isoPlayerFaceForDelta(-1, -1) === 'up', 'north-west diagonal must face up');
+  assert(isoPlayerFaceForDelta(0, -1) === 'up', 'tile north keeps the tile-axis convention');
+  assert(isoPlayerFaceForDelta(0, 1) === 'down', 'tile south keeps the tile-axis convention');
+  assert(isoPlayerFaceForDelta(1, 0) === 'right', 'tile east keeps the tile-axis convention');
+  assert(isoPlayerFaceForDelta(-1, 0) === 'left', 'tile west keeps the tile-axis convention');
+  assert(isoPlayerFaceForDelta(0.3, -2) === 'up', 'mostly-north diagonal keeps tile convention');
+  assert(isoPlayerFaceForDelta(-3, 0.5) === 'left', 'mostly-west diagonal keeps tile convention');
+  assert(isoPlayerFaceForDelta(2, 2) === 'down', 'near-diagonal south-east faces down');
+}
+
 // ---- BUILD 388: dungeon kit panel selectors for cellar/prison interiors ----
 // The kit is purely visual (collision/furniture untouched), so the sim pins
 // the panel metadata: 4 in-bounds panels per strip, correct wall orientation

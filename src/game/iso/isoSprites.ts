@@ -66,6 +66,29 @@ export function tileFaceForDelta(dx: number, dy: number): Face4 {
   if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left';
   return dy > 0 ? 'down' : 'up';
 }
+
+/**
+ * BUILD 402: omni-directional iso PLAYER facing. tileFaceForDelta picks the
+ * dominant TILE axis, which is right for axis-aligned D-pad moves (D-pad up
+ * = tile north = back sprite). But in the 2:1 dimetric projection a
+ * world-diagonal step (e.g. north-east = (1,-1)) travels as a pure
+ * SCREEN-cardinal move (straight right across the screen) while the sprite
+ * would show the back (up) art — the character visibly doesn't face where
+ * it's going. Near-diagonal deltas are therefore projected to screen space
+ * (sx = dx - dy, sy = dx + dy) and the screen-dominant axis picks the art:
+ * the 4 angle sheets cover all 8 movement directions (diagonal up-left/right
+ * use the back sprite, diagonal down-left/right use the front sprite).
+ * Axis-aligned and mostly-axis moves keep the tile-axis convention.
+ */
+export function isoPlayerFaceForDelta(dx: number, dy: number): Face4 {
+  const ax = Math.abs(dx), ay = Math.abs(dy);
+  if (ax > 1e-9 && ay > 1e-9 && Math.max(ax, ay) / Math.min(ax, ay) < 1.5) {
+    const sx = dx - dy, sy = dx + dy; // 2:1 dimetric projection of the delta
+    if (Math.abs(sx) > Math.abs(sy)) return sx > 0 ? 'right' : 'left';
+    return sy > 0 ? 'down' : 'up';
+  }
+  return tileFaceForDelta(dx, dy);
+}
 export const LPC_FRAMES: Record<LpcAnim, number> = { idle: 2, walk: 9, slash: 6, hurt: 6 };
 
 // ---------------------------------------------------------------------------
