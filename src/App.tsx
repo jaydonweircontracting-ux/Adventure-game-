@@ -4043,6 +4043,9 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
   const [interiorPosition, setInteriorPosition] = useState<Point>({ x: 50, y: 78 });
   const keysRef = useRef<Partial<Record<Direction, boolean>>>({});
   // BUILD 325: D-pad touch holds tracked by touch.identifier (see
+  // BUILD 445: generic HP tracker for field NPCs (adventurers, travelers).
+  // Townsfolk use the sim state; these use a simple map.
+  const fieldNpcHpRef = useRef<Map<string, number>>(new Map());
   // src/game/touchInput.ts) — declared beside keysRef since every input-reset
   // path must clear both.
   const touchHoldsRef = useRef<TouchHoldState>(createTouchHoldState());
@@ -5184,13 +5187,29 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
               return dist <= PLAYER_MELEE_REACH + 2;
             })
             .map((npc) => ({ ...npc, entityKind: 'townsfolk' as const }));
-          const attackCandidates: Array<(typeof goatCandidates)[number] | (typeof monsterCandidates)[number] | (typeof cornCandidates)[number] | (typeof ratCandidates)[number] | (typeof npcCandidates)[number]> =
-            [...goatCandidates, ...monsterCandidates, ...cornCandidates, ...ratCandidates, ...npcCandidates]
+          // BUILD 445: field NPCs (adventurers, travelers) can also be attacked.
+          const fieldNpcCandidates = inCellar ? [] : [
+            ...(simulatedAdventurersRef.current as (SimulatedAdventurer & { entityKind?: string })[])
+              .filter((adv) => {
+                if ((adv.location || 'field') !== 'field') return false;
+                const dist = Math.hypot(adv.position.x - attackerPos.x, adv.position.y - attackerPos.y);
+                return dist <= PLAYER_MELEE_REACH + 2;
+              })
+              .map((adv) => ({ ...adv, entityKind: 'adventurer' as const })),
+            ...(travelersRef.current as (Traveler & { entityKind?: string })[])
+              .filter((t) => {
+                const dist = Math.hypot(t.position.x - attackerPos.x, t.position.y - attackerPos.y);
+                return dist <= PLAYER_MELEE_REACH + 2;
+              })
+              .map((t) => ({ ...t, entityKind: 'traveler' as const })),
+          ];
+          const attackCandidates: Array<(typeof goatCandidates)[number] | (typeof monsterCandidates)[number] | (typeof cornCandidates)[number] | (typeof ratCandidates)[number] | (typeof npcCandidates)[number] | (typeof fieldNpcCandidates)[number]> =
+            [...goatCandidates, ...monsterCandidates, ...cornCandidates, ...ratCandidates, ...npcCandidates, ...fieldNpcCandidates]
               .sort((a, b) => goatDistance(a as unknown as GoatState, attackerPos) - goatDistance(b as unknown as GoatState, attackerPos));
           const attackTarget = playerAttack.targetId == null
             ? attackCandidates[0]
             : attackCandidates.find((goat) => goat.id === playerAttack.targetId);
-          if (attackTarget && (attackTarget.entityKind === 'townsfolk' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
+          if (attackTarget && (attackTarget.entityKind === 'townsfolk' || attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
             // Harvesting corn: one swing cuts the stalk, which disappears and
             // drops corn loot. No HP, no combat — it's a crop, not a creature.
             if (attackTarget.entityKind === 'corn') {
@@ -5241,6 +5260,35 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
                   playCombatSound('scream', muted);
                   setLogs((currentLogs) => [{ text: `You hit ${npc.name} for ${Math.round(damage)}! They flee screaming.`, color: 'red' }, ...currentLogs].slice(0, 3));
                 }
+              }
+            } else if (attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler') {
+              // BUILD 445: field NPCs take damage via the generic HP map.
+              const id = attackTarget.id as string;
+              const maxHp = 30;
+              const curHp = fieldNpcHpRef.current.get(id) ?? maxHp;
+              const stats = playerStatsRef.current;
+              const critical = Math.random() < playerCriticalChanceForStats(stats);
+              const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
+              const damage = Math.max(1, playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult);
+              const newHp = curHp - damage;
+              const pos = (attackTarget as { position: { x: number; y: number } }).position;
+              const name = (attackTarget as { name: string }).name || 'NPC';
+              if (newHp <= 0) {
+                fieldNpcHpRef.current.delete(id);
+                spawnCombatText('KILLED', pos, 'critical');
+                playCombatSound('scream', muted);
+                setLogs((currentLogs) => [{ text: `You killed ${name}!`, color: 'red' }, ...currentLogs].slice(0, 3));
+                // Remove the NPC from the field.
+                if (attackTarget.entityKind === 'adventurer') {
+                  const next = simulatedAdventurersRef.current.filter((a) => a.id !== id);
+                  simulatedAdventurersRef.current = next;
+                  setSimulatedAdventurers(next);
+                }
+              } else {
+                fieldNpcHpRef.current.set(id, newHp);
+                spawnCombatText(`-${Math.round(damage)}`, pos, 'damage');
+                playCombatSound('scream', muted);
+                setLogs((currentLogs) => [{ text: `You hit ${name} for ${Math.round(damage)}!`, color: 'red' }, ...currentLogs].slice(0, 3));
               }
             } else {
             const stats = playerStatsRef.current;
@@ -7983,6 +8031,16 @@ if (active) {
                 <small>→ {traveler.destination}</small>
               </span>
               {barks[traveler.id] && <span className="npc-bark" aria-hidden="true">{barks[traveler.id]}</span>}
+              {(() => {
+                const hp = fieldNpcHpRef.current.get(traveler.id);
+                if (hp === undefined) return null;
+                const pct = Math.max(0, (hp / 30) * 100);
+                return (
+                  <span className="npc-healthbar" aria-hidden="true">
+                    <span className="npc-healthbar-fill" style={{ width: pct + '%' }} />
+                  </span>
+                );
+              })()}
               <span className="npc-sprite" aria-hidden="true" />
             </button>
             );
