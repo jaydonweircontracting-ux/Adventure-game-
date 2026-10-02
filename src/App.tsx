@@ -5138,12 +5138,15 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
             .map((stalk) => ({ ...stalk, entityKind: 'corn' as const }));
           // BUILD 436: townsfolk can be attacked — they flee and scream.
           // Only outdoor NPCs (indoor ones are behind walls).
+          // BUILD 443: use generous distance check (not strict melee arc) so
+          // hits connect reliably while chasing.
           const npcCandidates = inCellar ? [] : (townsfolkRef.current as (Townsperson & { entityKind?: string })[])
             .filter((npc) => {
               if (npc.indoors) return false;
               const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
               if (isNpcDead(npc, tick)) return false;
-              return isInMeleeArc(attackerPos, npc.position, playerAttack.direction);
+              const dist = Math.hypot(npc.position.x - attackerPos.x, npc.position.y - attackerPos.y);
+              return dist <= PLAYER_MELEE_REACH + 2;
             })
             .map((npc) => ({ ...npc, entityKind: 'townsfolk' as const }));
           const attackCandidates: Array<(typeof goatCandidates)[number] | (typeof monsterCandidates)[number] | (typeof cornCandidates)[number] | (typeof ratCandidates)[number] | (typeof npcCandidates)[number]> =
@@ -5152,7 +5155,7 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
           const attackTarget = playerAttack.targetId == null
             ? attackCandidates[0]
             : attackCandidates.find((goat) => goat.id === playerAttack.targetId);
-          if (attackTarget && goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction)) {
+          if (attackTarget && (attackTarget.entityKind === 'townsfolk' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
             // Harvesting corn: one swing cuts the stalk, which disappears and
             // drops corn loot. No HP, no combat — it's a crop, not a creature.
             if (attackTarget.entityKind === 'corn') {

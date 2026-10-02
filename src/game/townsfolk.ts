@@ -597,13 +597,13 @@ function advanceOne(
 
   // --- FLEEING (BUILD 436): run away from the attacker, skip schedule. ---
   // Only outdoors — indoor NPCs cower in place (don't path through walls).
-  // BUILD 441: slowed to 1.5x walk (was 3x) so the player can catch them.
+  // BUILD 443: slowed to 0.5x walk (was 1.5x) so the player can catch them.
   if (!npc.indoors && npc.fleeUntilTick !== undefined && npc.fleeFrom) {
     if (clock.tick < npc.fleeUntilTick) {
       const dx = npc.position.x - npc.fleeFrom.x;
       const dy = npc.position.y - npc.fleeFrom.y;
       const dist = Math.hypot(dx, dy) || 1;
-      const fleeStep = step * 1.5;
+      const fleeStep = step * 0.5;
       const nx = dx / dist, ny = dy / dist;
       const facing: TownsfolkFacing = Math.abs(nx) >= Math.abs(ny)
         ? (nx >= 0 ? 'right' : 'left')
