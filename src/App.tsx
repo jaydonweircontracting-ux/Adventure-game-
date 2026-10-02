@@ -31,7 +31,7 @@ import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDispo
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, isNpcDead, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
 import { LANDMARKS } from '@/game/landmarks';
 import {
@@ -8051,6 +8051,17 @@ if (active) {
               </span>
               {barks[npc.id] && <span className="npc-bark" aria-hidden="true">{barks[npc.id]}</span>}
               {targetNpcId === npc.id && <span className="npc-target-marker" aria-hidden="true">🎯</span>}
+              {(() => {
+                const hp = npcHp(npc);
+                const maxHp = npcMaxHp(npc);
+                if (hp >= maxHp) return null;
+                const pct = Math.max(0, (hp / maxHp) * 100);
+                return (
+                  <span className="npc-healthbar" aria-hidden="true">
+                    <span className="npc-healthbar-fill" style={{ width: pct + '%' }} />
+                  </span>
+                );
+              })()}
               <span className="npc-sprite" aria-hidden="true" />
             </button>
             );

@@ -2770,6 +2770,8 @@ body {
 .npc-bark::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: var(--ink); }
 .npc-target-marker { position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); font-size: 16px; z-index: 4; pointer-events: none; animation: target-bob 0.8s ease-in-out infinite; }
 @keyframes target-bob { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-4px); } }
+.npc-healthbar { position: absolute; bottom: calc(100% + 18px); left: 50%; transform: translateX(-50%); width: 36px; height: 5px; background: rgba(0,0,0,0.6); border: 1px solid var(--ink); z-index: 4; pointer-events: none; }
+.npc-healthbar-fill { display: block; height: 100%; background: linear-gradient(to bottom, #7CFC00, #32CD32); transition: width 0.2s; }
 .class-choice {
   display: grid;
   gap: 4px;
