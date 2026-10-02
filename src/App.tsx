@@ -5116,6 +5116,41 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
           // the same number range as interior percents and would false-hit.
           const inCellar = interiorRef.current?.roomType === 'cellar';
           const attackerPos = inCellar ? interiorPositionRef.current : positionRef.current;
+          // BUILD 444: direct hit for targeted NPC — bypass candidate filtering
+          // entirely. If the player is chasing an NPC and in range, the hit
+          // ALWAYS connects. This is the reliable path for NPC combat.
+          const targetedId = targetNpcIdRef.current;
+          if (!inCellar && targetedId) {
+            const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+            const targetNpc = townsfolkRef.current.find((n) => n.id === targetedId);
+            if (targetNpc && !targetNpc.indoors && !isNpcDead(targetNpc, tick)) {
+              const dist = Math.hypot(targetNpc.position.x - attackerPos.x, targetNpc.position.y - attackerPos.y);
+              if (dist <= PLAYER_MELEE_REACH + 3) {
+                const stats = playerStatsRef.current;
+                const critical = Math.random() < playerCriticalChanceForStats(stats);
+                const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
+                const damage = Math.max(1, playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult);
+                const hurt = damageNpc(targetNpc, damage, attackerPos, tick);
+                const nextFolk = townsfolkRef.current.map((n) => n.id === targetNpc.id ? hurt : n);
+                townsfolkRef.current = nextFolk;
+                setTownsfolk(nextFolk);
+                if (hurt.deadUntilTick !== undefined) {
+                  spawnCombatText('KILLED', targetNpc.position, 'critical');
+                  playCombatSound('scream', muted);
+                  setLogs((currentLogs) => [{ text: `You killed ${targetNpc.name}!`, color: 'red' }, ...currentLogs].slice(0, 3));
+                  targetNpcIdRef.current = null;
+                  setTargetNpcId(null);
+                } else {
+                  const scream = screamFor(targetNpc);
+                  barksRef.current[targetNpc.id] = { text: scream, until: Date.now() + 3000 };
+                  setBarks((prev) => ({ ...prev, [targetNpc.id]: scream }));
+                  spawnCombatText(`-${Math.round(damage)}`, targetNpc.position, 'damage');
+                  playCombatSound('scream', muted);
+                }
+                // Skip the normal candidate flow — we already hit the target.
+              }
+            }
+          }
           const ratCandidates = inCellar
             ? cellarRatsRef.current
               .filter((rat) => rat.hp > 0 && goatIsInAttackArc({ position: { x: rat.x, y: rat.y } } as GoatState, attackerPos, playerAttack.direction))
