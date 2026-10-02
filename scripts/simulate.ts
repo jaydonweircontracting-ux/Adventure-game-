@@ -3328,8 +3328,9 @@ import { inflateSync } from 'node:zlib';
         assert(bad === 0, `${v}_upright_walk_${i}.png is not the mirror of ${v}_upleft_walk_${i}.png`);
       }
     }
-    assert(!BARB_FRAMES['sword']?.['upright'] && !BARB_FRAMES['sword']?.['upleft'],
-      'sword has no diagonal art — it must fall back to the up view');
+    assert(!BARB_FRAMES['sword']?.['upright'] && !BARB_FRAMES['sword']?.['upleft'] ||
+      (BARB_FRAMES['sword']?.['upright']?.['walk']?.length === 9 && BARB_FRAMES['sword']?.['upleft']?.['walk']?.length === 9),
+      'sword either lacks diagonal art (falls back to up) or has the dedicated 9-frame sets');
     assert(/const uf = BARB_FRAMES\[variant\]\?\.\['upright'\]\?\.\[anim\]/.test(barbSrc),
       'drawBarbarian must select the dedicated up-right frame set when facing=upright');
     assert(/const uf = BARB_FRAMES\[variant\]\?\.\['upleft'\]\?\.\[anim\]/.test(barbSrc),
@@ -3361,9 +3362,15 @@ import { inflateSync } from 'node:zlib';
       'bare must have downright/downleft layout boxes');
     for (const f of [...dr['walk'], ...dl['walk'], ...dr['idle'], ...dl['idle']])
       readPngRgba(`public/${f}`);
-    for (const v of ['blue', 'bow', 'sword'])
+    for (const v of ['blue', 'bow'])
       assert(!BARB_FRAMES[v]?.['downright'] && !BARB_FRAMES[v]?.['downleft'],
         `${v} has no southward diagonal art — it must fall back to the side views`);
+    // BUILD 433: sword now has dedicated southward diagonal art (user's sheets).
+    for (const v of ['downright', 'downleft']) {
+      const sw = BARB_FRAMES['sword']?.[v]?.['walk'];
+      assert(sw && sw.length === 9 && sw.every((f) => f.includes(`sword_${v}_walk_`)),
+        `sword ${v} walk must be the 9 dedicated frames`);
+    }
     assert(/fview = \(uf && uf\.length > 0\) \? 'downright' : 'right'/.test(barbSrc),
       'drawBarbarian must fall back to the right view when a variant lacks down-right art');
     assert(/fview = \(uf && uf\.length > 0\) \? 'downleft' : 'left'/.test(barbSrc),
