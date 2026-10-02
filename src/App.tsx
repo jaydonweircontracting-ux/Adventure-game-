@@ -2207,7 +2207,10 @@ function townsfolkAnchors(offsets: Record<string, Point>): TownsfolkAnchors {
   points.farm1 = { x: 110, y: 119 };
   return {
     points,
-    plaza: { x: 70, y: 82 },
+    // BUILD 429: plaza moved to the four-way road split (the town square).
+    // Was (70, 82) — a stale pre-BUILD-343 coordinate in the grass. The road
+    // intersection is at (144, 144); NPCs gather on the road now, not in grass.
+    plaza: { x: 144, y: 144 },
     stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
     gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
     patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
