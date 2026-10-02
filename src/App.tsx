@@ -71,7 +71,7 @@ import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, resolveMonsterS
 import { probeMonsterSheets, isMonsterSheetFailed, onMonsterSheetFailure } from './game/monsterSprites/sheetProbe';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
-import { isInMeleeArc } from '@/game/combat';
+import { isInMeleeArc, PLAYER_MELEE_REACH } from '@/game/combat';
 import { renderGroundDetail, type GroundDetailSpec, type GroundHills } from '@/game/groundDetail';
 // BUILD 355: elevation hills/cliffs (CraftPix island kit tiles).
 import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type ElevContext } from '@/game/elevation';
@@ -3719,6 +3719,13 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
       return;
     }
     if (actionId === 'talk' && m.target.kind === 'npc') talkToTownsfolk(m.target.npc);
+    else if (actionId === 'attack' && m.target.kind === 'npc') {
+      // BUILD 442: target the NPC — auto-follow and auto-attack.
+      const npcTarget = m.target;
+      targetNpcIdRef.current = npcTarget.npc.id;
+      setTargetNpcId(npcTarget.npc.id);
+      setLogs((currentLogs) => [{ text: `Targeting ${npcTarget.npc.name} — chasing!`, color: 'red' }, ...currentLogs].slice(0, 3));
+    }
     else if (actionId === 'enter' && m.target.kind === 'door') enterDoorway(m.target.doorway, chunk);
     else if (actionId === 'take' && m.target.kind === 'drop') pickupDrop(m.target.drop);
   };
@@ -4044,6 +4051,9 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
   // point using the normal movement/collision/doorway pipeline. Cleared on
   // arrival or when the player presses a direction/D-pad key.
   const tapMoveTargetRef = useRef<Point | null>(null);
+  // BUILD 442: NPC target system — tap an NPC's Attack action to chase them.
+  const targetNpcIdRef = useRef<string | null>(null);
+  const [targetNpcId, setTargetNpcId] = useState<string | null>(null);
   // BUILD 337: immortal-loop diagnostics. If a frame throws, the message is
   // recorded here and shown as a small on-screen badge (tap to dismiss) so
   // the cause is visible instead of the character silently freezing.
@@ -5031,7 +5041,47 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
       // BUILD 366: tap-to-move steering. Manual input always wins and cancels
       // an in-flight tap target. Otherwise steer toward the tap target using
       // the same movement/collision/doorway pipeline below.
+      // BUILD 442: NPC targeting — auto-follow the targeted NPC. Manual input
+      // cancels the chase.
       let tapSteer = { x: 0, y: 0 };
+      const targetId = targetNpcIdRef.current;
+      if (targetId && (input.x !== 0 || input.y !== 0)) {
+        targetNpcIdRef.current = null;
+        setTargetNpcId(null);
+      } else if (targetId && !inputLocked && !optionsOpen && !waitingRef.current) {
+        const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+        const targetNpc = townsfolkRef.current.find((n) => n.id === targetId);
+        if (!targetNpc || targetNpc.indoors || isNpcDead(targetNpc, tick)) {
+          // Target lost (died, went inside, or gone) — stop chasing.
+          targetNpcIdRef.current = null;
+          setTargetNpcId(null);
+        } else {
+          const dx = targetNpc.position.x - positionRef.current.x;
+          const dy = targetNpc.position.y - positionRef.current.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > PLAYER_MELEE_REACH * 0.8) {
+            // Chase: steer toward the NPC.
+            tapSteer = { x: dx / dist, y: dy / dist };
+          } else {
+            // In range: stop and face the target, auto-attack when ready.
+            const absDx = Math.abs(dx), absDy = Math.abs(dy);
+            const faceDir: Direction = absDx >= absDy ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'down' : 'up');
+            if (facingRef.current !== faceDir) {
+              facingRef.current = faceDir;
+              setFacing(faceDir);
+            }
+            // Auto-attack: swing when cooldown is ready.
+            if (!playerAttackStateRef.current.active && playerAttackCooldownRef.current <= 0) {
+              const inCellar = interiorRef.current?.roomType === 'cellar';
+              if (!inCellar && !interiorRef.current) {
+                playerAttackStateRef.current = { active: true, direction: faceDir, targetId: null, elapsed: 0, hitApplied: false, ranged: false };
+                playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS;
+                setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS);
+              }
+            }
+          }
+        }
+      }
       const tapTarget = tapMoveTargetRef.current;
       if (tapTarget && (input.x !== 0 || input.y !== 0)) tapMoveTargetRef.current = null;
       else if (tapTarget && !inputLocked && !optionsOpen && !waitingRef.current) {
@@ -7997,6 +8047,7 @@ if (active) {
                 <small>{npc.activity}</small>
               </span>
               {barks[npc.id] && <span className="npc-bark" aria-hidden="true">{barks[npc.id]}</span>}
+              {targetNpcId === npc.id && <span className="npc-target-marker" aria-hidden="true">🎯</span>}
               <span className="npc-sprite" aria-hidden="true" />
             </button>
             );

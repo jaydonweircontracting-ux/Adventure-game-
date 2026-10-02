@@ -302,7 +302,7 @@ export function menuActionsFor(ref: ExamineRef): MenuAction[] {
   const { name } = examineEntity(ref);
   const ex: MenuAction = { id: 'examine', label: `Examine ${name}` };
   switch (ref.kind) {
-    case 'npc': return [{ id: 'talk', label: `Talk-to ${name}` }, ex];
+    case 'npc': return [{ id: 'talk', label: `Talk-to ${name}` }, { id: 'attack', label: `Attack ${name}` }, ex];
     case 'door':
     case 'building': return [{ id: 'enter', label: `Enter ${name}` }, ex];
     case 'item': return [{ id: 'take', label: `Take ${name}` }, ex];
