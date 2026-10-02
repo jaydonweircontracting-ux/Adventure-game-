@@ -3393,6 +3393,15 @@ import { inflateSync } from 'node:zlib';
     'IsoFieldView must not use a separate top-most player pass (playerDrawables)');
   assert(/drawPerson\(drawables, live\.px, live\.py/.test(isoFieldSrc),
     'IsoFieldView must draw the player into the depth-sorted drawables');
+  // BUILD 428: doorway carve-out. The building collision rect (plus padding)
+  // extends further south than the door trigger zone — without a gap carved
+  // at the doorway, the player gets stuck in the dead zone and cannot
+  // re-enter houses. Both town buildings and farmhouses must carve it.
+  const appSrc = readFileSyncSprites('src/App.tsx', 'utf8');
+  assert(/carve the doorway out of the collision/.test(appSrc),
+    'isFieldPositionBlocked must carve the doorway out of building collision');
+  assert(/same doorway carve-out as town buildings/.test(appSrc),
+    'isFieldPositionBlocked must carve the doorway out of farmhouse collision');
 }
 
 // ---- Results ----

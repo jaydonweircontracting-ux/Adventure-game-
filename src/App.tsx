@@ -757,6 +757,21 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
         right: rect.right + off.x,
         bottom: rect.bottom + off.y,
       };
+      // BUILD 428: carve the doorway out of the collision. The entry trigger
+      // sits just south of the door, but the solid rect (plus padding) extends
+      // further south — without a gap the player gets stuck in the dead zone
+      // between the collision edge and the trigger, unable to re-enter.
+      if (doorway) {
+        const dx = doorway.position.x + off.x;
+        const dy = doorway.position.y + off.y;
+        const { xTol } = doorwayTriggerDims({
+          left: doorway.rect.left + off.x,
+          right: doorway.rect.right + off.x,
+        });
+        if (Math.abs(position.x - dx) <= xTol && position.y > dy && position.y <= movedRect.bottom + 0.35) {
+          return false; // in the doorway corridor — not blocked
+        }
+      }
       return pointInRect(position, movedRect, 0.35);
     });
     if (blocked) return true;
@@ -764,7 +779,22 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
 
   // Farmhouses are solid enterable buildings too.
   if (!moveHouses && !landmark && ['meadow', 'grassland', 'greenvale'].includes(tile.terrain)) {
-    if (fieldFarmRects(chunk.x, chunk.y).houses.some((rect) => pointInRect(position, rect, 0.35))) return true;
+    const farmDoorways = buildingDoorwaysFor(chunk);
+    const farmBlocked = fieldFarmRects(chunk.x, chunk.y).houses.some((rect, index) => {
+      // BUILD 428: same doorway carve-out as town buildings — the farmhouse
+      // door trigger sits south of the door inside the collision padding.
+      const doorway = farmDoorways[index];
+      if (doorway) {
+        const { xTol } = doorwayTriggerDims(doorway.rect);
+        if (Math.abs(position.x - doorway.position.x) <= xTol
+          && position.y > doorway.position.y
+          && position.y <= rect.bottom + 0.35) {
+          return false;
+        }
+      }
+      return pointInRect(position, rect, 0.35);
+    });
+    if (farmBlocked) return true;
   }
 
   // Mosslight Crossing fountain: decorative only, no collision.
