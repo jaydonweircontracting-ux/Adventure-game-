@@ -31,7 +31,7 @@ import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDispo
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
 import { LANDMARKS } from '@/game/landmarks';
 import {
@@ -5086,8 +5086,13 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
               return dist <= 4.5 || goatIsInAttackArc(stalk as unknown as GoatState, attackerPos, playerAttack.direction);
             })
             .map((stalk) => ({ ...stalk, entityKind: 'corn' as const }));
-          const attackCandidates: Array<(typeof goatCandidates)[number] | (typeof monsterCandidates)[number] | (typeof cornCandidates)[number] | (typeof ratCandidates)[number]> =
-            [...goatCandidates, ...monsterCandidates, ...cornCandidates, ...ratCandidates]
+          // BUILD 436: townsfolk can be attacked — they flee and scream.
+          // Only outdoor NPCs (indoor ones are behind walls).
+          const npcCandidates = inCellar ? [] : (townsfolkRef.current as (Townsperson & { entityKind?: string })[])
+            .filter((npc) => !npc.indoors && isInMeleeArc(attackerPos, npc.position, playerAttack.direction))
+            .map((npc) => ({ ...npc, entityKind: 'townsfolk' as const }));
+          const attackCandidates: Array<(typeof goatCandidates)[number] | (typeof monsterCandidates)[number] | (typeof cornCandidates)[number] | (typeof ratCandidates)[number] | (typeof npcCandidates)[number]> =
+            [...goatCandidates, ...monsterCandidates, ...cornCandidates, ...ratCandidates, ...npcCandidates]
               .sort((a, b) => goatDistance(a as unknown as GoatState, attackerPos) - goatDistance(b as unknown as GoatState, attackerPos));
           const attackTarget = playerAttack.targetId == null
             ? attackCandidates[0]
@@ -5115,6 +5120,24 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
               const damage = playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
               const rat = cellarRatsRef.current.find((r) => r.id === attackTarget.id && r.hp > 0);
               if (rat) applyHitToCellarRat(rat, damage, critical);
+            } else if (attackTarget.entityKind === 'townsfolk') {
+              // BUILD 436: attacking an NPC — they scream and flee. No HP, no
+              // death; the NPC runs away from the player for a few seconds.
+              const npc = townsfolkRef.current.find((n) => n.id === attackTarget.id);
+              if (npc && !npc.indoors) {
+                const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+                const fled = startNpcFlee(npc, attackerPos, tick);
+                const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? fled : n);
+                townsfolkRef.current = nextFolk;
+                setTownsfolk(nextFolk);
+                // Scream!
+                const scream = screamFor(npc);
+                barksRef.current[npc.id] = { text: scream, until: Date.now() + 3000 };
+                setBarks((prev) => ({ ...prev, [npc.id]: scream }));
+                spawnCombatText(scream, npc.position, 'damage');
+                playCombatSound('scream', muted);
+                setLogs((currentLogs) => [{ text: `You attack ${npc.name}! They flee screaming.`, color: 'red' }, ...currentLogs].slice(0, 3));
+              }
             } else {
             const stats = playerStatsRef.current;
             const critical = Math.random() < playerCriticalChanceForStats(stats);

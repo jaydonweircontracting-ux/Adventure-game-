@@ -72,6 +72,11 @@ export type Townsperson = {
   goldDelta?: number;
   /** Bounded event memories (max 12, pruned by importance). */
   memories?: NPCMemory[];
+  // --- Flee state (BUILD 436): set when the player attacks the NPC. ---
+  /** World tick until which the NPC flees (undefined = not fleeing). */
+  fleeUntilTick?: number;
+  /** Position of the threat to run away from. */
+  fleeFrom?: TownsfolkPoint;
 };
 
 /** Named world anchors townsfolk schedules resolve against. */
@@ -424,6 +429,36 @@ export function serializeTownsfolk(folk: Townsperson[]): TownsfolkSave[] {
   }));
 }
 
+/** Ticks an NPC flees after being attacked (~5 seconds at 60 ticks/sec). */
+export const NPC_FLEE_DURATION_TICKS = 300;
+
+/**
+ * Mark an NPC as fleeing from a threat position (BUILD 436). Pure.
+ * The NPC will run away from `from` for NPC_FLEE_DURATION_TICKS.
+ */
+export function startNpcFlee(npc: Townsperson, from: TownsfolkPoint, tick: number): Townsperson {
+  return {
+    ...npc,
+    fleeUntilTick: tick + NPC_FLEE_DURATION_TICKS,
+    fleeFrom: { ...from },
+  };
+}
+
+/** Scream lines when an NPC is attacked (BUILD 436). */
+export const NPC_SCREAMS = [
+  'AHHH!',
+  'Help! Help!',
+  "Don't hurt me!",
+  'Somebody help!',
+  'Ow! Why?!',
+  'Stay back!',
+];
+
+/** Pick a deterministic scream for an NPC. Pure. */
+export function screamFor(npc: Townsperson): string {
+  return NPC_SCREAMS[npc.seed % NPC_SCREAMS.length];
+}
+
 export function isTownsfolkSave(value: unknown): value is TownsfolkSave {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
@@ -510,6 +545,30 @@ function advanceOne(
   step: number,
   resolveTarget: (npc: Townsperson, anchors: TownsfolkAnchors, clock: WorldClockState) => TownsfolkTarget = townsfolkTarget,
 ): Townsperson {
+  // --- FLEEING (BUILD 436): run away from the attacker, skip schedule. ---
+  // Only outdoors — indoor NPCs cower in place (don't path through walls).
+  if (!npc.indoors && npc.fleeUntilTick !== undefined && npc.fleeFrom) {
+    if (clock.tick < npc.fleeUntilTick) {
+      const dx = npc.position.x - npc.fleeFrom.x;
+      const dy = npc.position.y - npc.fleeFrom.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      const fleeStep = step * 3; // Run, don't walk.
+      const nx = dx / dist, ny = dy / dist;
+      const facing: TownsfolkFacing = Math.abs(nx) >= Math.abs(ny)
+        ? (nx >= 0 ? 'right' : 'left')
+        : (ny >= 0 ? 'down' : 'up');
+      return {
+        ...npc,
+        position: { x: npc.position.x + nx * fleeStep, y: npc.position.y + ny * fleeStep },
+        facing,
+        moving: true,
+        activity: 'Fleeing!',
+      };
+    }
+    // Flee expired: clear the state and resume schedule.
+    npc = { ...npc, fleeUntilTick: undefined, fleeFrom: undefined };
+  }
+
   const want = resolveTarget(npc, anchors, clock);
   const wantsSleep = want.indoors && want.activity === 'Sleeping';
   const wantsIndoors = want.indoors;

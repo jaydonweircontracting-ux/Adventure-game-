@@ -6,7 +6,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
 import { npcPersonality, npcAge, npcAgeYears, npcNeeds, villageTarget, npcRelationships, addNPCMemory, npcWage, npcGold, adjustNPCGold, villageEventsForDay, propagateRumors } from '../src/game/villageLife';
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { landscapeSeed, moistureAt, forestDensityAt, rockDensityAt, macroLandformAt, regionForChunk, roadCorridorsFor, pointInCorridors, townInfluenceAt, landUseAt, landscapeSitesFor, checkFieldContinuity, riverChannelAt, riverAt, lakesForChunk, waterAt, bridgeAt } from '../src/game/landscape';
@@ -741,6 +741,34 @@ console.log('Testing townsfolk living-town simulation...');
   assert(guildNpc.home.x === 1 && guildNpc.home.y === 2, 'Re-anchor did not update guild home');
   const unchanged = reanchorTownsfolk(folk, anchors);
   assert(unchanged.every((n, i) => n === folk[i]), 'Re-anchor changed refs without anchor changes');
+  // BUILD 436: flee on attack — NPC runs away from the threat, then resumes.
+  const fleeClock = (tick: number) => ({
+    tick, year: 1, month: 1, week: 1, day: 5, hour: 12,
+    minuteOfDay: 720, second: 0, season: 'spring' as const,
+  });
+  const victim = { ...snapped.find((n) => n.archetype === 'farmer')!, position: { x: 50, y: 50 }, indoors: false, location: 'OUTDOOR' as const };
+  const threat = { x: 48, y: 50 }; // Attacker to the west.
+  const fled = startNpcFlee(victim, threat, 1000);
+  assert(fled.fleeUntilTick === 1000 + NPC_FLEE_DURATION_TICKS, 'Flee duration wrong');
+  assert(fled.fleeFrom!.x === 48 && fled.fleeFrom!.y === 50, 'Flee-from not recorded');
+  // NPC moves east (away from the western threat).
+  const stepped = advanceTownsfolk([fled], anchors, fleeClock(1001), navCtx)[0];
+  assert(stepped.position.x > 50, 'Fleeing NPC did not run away from threat');
+  assert(stepped.activity === 'Fleeing!', 'Fleeing NPC activity not set');
+  assert(stepped.moving, 'Fleeing NPC not marked moving');
+  // After the duration expires, the NPC resumes its schedule.
+  const done = advanceTownsfolk([stepped], anchors, fleeClock(1000 + NPC_FLEE_DURATION_TICKS + 1), navCtx)[0];
+  assert(done.fleeUntilTick === undefined, 'Flee state not cleared after expiry');
+  assert(done.activity !== 'Fleeing!', 'NPC still fleeing after expiry');
+  // Indoor NPCs do not flee (they're behind walls) — the flee branch is
+  // skipped and they follow their normal indoor schedule instead.
+  const indoorVictim = { ...victim, indoors: true, location: 'INTERIOR' as const, activity: 'At home' };
+  const indoorFled = startNpcFlee(indoorVictim, threat, 1000);
+  const indoorStepped = advanceTownsfolk([indoorFled], anchors, fleeClock(1001), navCtx)[0];
+  assert(indoorStepped.activity !== 'Fleeing!', 'Indoor NPC should not flee through walls');
+  // Screams are deterministic per NPC.
+  assert(screamFor(victim) === screamFor(victim), 'Scream not deterministic');
+  assert(typeof screamFor(victim) === 'string' && screamFor(victim).length > 0, 'Scream empty');
 }
 
 console.log('Testing village life layer (BUILD 366)...');
