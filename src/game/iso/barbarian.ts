@@ -242,7 +242,10 @@ let preloadStarted = false;
 
 function assetUrl(path: string): string {
   const base = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
-  return `${base}${path}`;
+  // BUILD 438: cache-bust sprite PNGs with the build number so new art
+  // isn't shadowed by the phone's cache of the old files.
+  const v = (typeof window !== 'undefined' && (window as unknown as { __AG_BUILD?: string }).__AG_BUILD) || '';
+  return `${base}${path}${v ? `?v=${v}` : ''}`;
 }
 
 /** Preload every barbarian body + hair PNG. Safe to call in node (no-op). */
