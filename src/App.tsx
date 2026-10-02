@@ -5298,6 +5298,66 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
             applyPlayerHitToCreature(attackTarget as { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, damage, critical);
             } // end harvest else
           } else {
+            // BUILD 446: FALLBACK — if no creature was hit, check for ANY NPC
+            // in range (townsfolk, adventurers, travelers). This is bulletproof:
+            // nearest NPC within 10 units takes damage, period.
+            if (!inCellar) {
+              const allNpcs: Array<{ id: string; name: string; position: { x: number; y: number }; kind: string }> = [];
+              const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+              for (const n of townsfolkRef.current) {
+                if (!n.indoors && !isNpcDead(n, tick)) allNpcs.push({ id: n.id, name: n.name, position: n.position, kind: 'townsfolk' });
+              }
+              for (const a of simulatedAdventurersRef.current) {
+                if ((a.location || 'field') === 'field') allNpcs.push({ id: a.id, name: a.name, position: a.position, kind: 'adventurer' });
+              }
+              for (const t of travelersRef.current) {
+                allNpcs.push({ id: t.id, name: t.name, position: t.position, kind: 'traveler' });
+              }
+              let nearest: typeof allNpcs[0] | null = null;
+              let nearestDist = 10;
+              for (const n of allNpcs) {
+                const d = Math.hypot(n.position.x - attackerPos.x, n.position.y - attackerPos.y);
+                if (d < nearestDist) { nearestDist = d; nearest = n; }
+              }
+              if (nearest) {
+                const stats = playerStatsRef.current;
+                const damage = Math.max(1, playerDamageForStats(stats) * beerDamageMultiplier(beerBuffUntil) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
+                if (nearest.kind === 'townsfolk') {
+                  const npc = townsfolkRef.current.find((n) => n.id === nearest!.id)!;
+                  const hurt = damageNpc(npc, damage, attackerPos, tick);
+                  const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
+                  townsfolkRef.current = nextFolk;
+                  setTownsfolk(nextFolk);
+                  if (hurt.deadUntilTick !== undefined) {
+                    spawnCombatText('KILLED', npc.position, 'critical');
+                    setLogs((cur) => [{ text: `You killed ${npc.name}!`, color: 'red' }, ...cur].slice(0, 3));
+                  } else {
+                    spawnCombatText(`-${Math.round(damage)}`, npc.position, 'damage');
+                    const scream = screamFor(npc);
+                    barksRef.current[npc.id] = { text: scream, until: Date.now() + 3000 };
+                    setBarks((prev) => ({ ...prev, [npc.id]: scream }));
+                  }
+                } else {
+                  const maxHp = 30;
+                  const curHp = fieldNpcHpRef.current.get(nearest.id) ?? maxHp;
+                  const newHp = curHp - damage;
+                  if (newHp <= 0) {
+                    fieldNpcHpRef.current.delete(nearest.id);
+                    spawnCombatText('KILLED', nearest.position, 'critical');
+                    setLogs((cur) => [{ text: `You killed ${nearest!.name}!`, color: 'red' }, ...cur].slice(0, 3));
+                    if (nearest.kind === 'adventurer') {
+                      const next = simulatedAdventurersRef.current.filter((a) => a.id !== nearest!.id);
+                      simulatedAdventurersRef.current = next;
+                      setSimulatedAdventurers(next);
+                    }
+                  } else {
+                    fieldNpcHpRef.current.set(nearest.id, newHp);
+                    spawnCombatText(`-${Math.round(damage)}`, nearest.position, 'damage');
+                  }
+                }
+                playCombatSound('scream', muted);
+              }
+            }
             // Woodcutting: a melee swing that hits no creature may still chop
             // a tree in the arc. Enough swings fell it into wood pickups and
             // leave a stump that regrows after a few minutes. Never in the
