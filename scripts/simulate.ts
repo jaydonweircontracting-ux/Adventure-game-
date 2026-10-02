@@ -3385,11 +3385,14 @@ import { inflateSync } from 'node:zlib';
     assert(box.w === w && box.h === h,
       `sword ${view} box ${box.w}x${box.h} must match frame canvas ${w}x${h}`);
   }
-  // Player layering invariant: the iso field must draw the player in a final
-  // pass after the depth-sorted drawables so grass/decor never covers them.
+  // Player layering invariant (BUILD 427): the iso field depth-sorts the
+  // player with the world — when behind a house the house covers them, when
+  // in front the player covers the house. No separate top-most pass.
   const isoFieldSrc = readFileSyncSprites('src/game/iso/IsoFieldView.tsx', 'utf8');
-  assert(isoFieldSrc.includes('for (const d of playerDrawables) d.draw(g, nowMs);'),
-    'IsoFieldView must draw the player in a final top-most pass (playerDrawables)');
+  assert(!isoFieldSrc.includes('playerDrawables'),
+    'IsoFieldView must not use a separate top-most player pass (playerDrawables)');
+  assert(/drawPerson\(drawables, live\.px, live\.py/.test(isoFieldSrc),
+    'IsoFieldView must draw the player into the depth-sorted drawables');
 }
 
 // ---- Results ----
