@@ -417,7 +417,13 @@
       "attack": [
         "sword_down_attack_0.png",
         "sword_down_attack_1.png",
-        "sword_down_attack_2.png"
+        "sword_down_attack_2.png",
+        "sword_down_attack_3.png",
+        "sword_down_attack_4.png",
+        "sword_down_attack_5.png",
+        "sword_down_attack_6.png",
+        "sword_down_attack_7.png",
+        "sword_down_attack_8.png"
       ]
     },
     "side": {
@@ -470,7 +476,13 @@
       "attack": [
         "sword_up_attack_0.png",
         "sword_up_attack_1.png",
-        "sword_up_attack_2.png"
+        "sword_up_attack_2.png",
+        "sword_up_attack_3.png",
+        "sword_up_attack_4.png",
+        "sword_up_attack_5.png",
+        "sword_up_attack_6.png",
+        "sword_up_attack_7.png",
+        "sword_up_attack_8.png"
       ]
     },
     "left": {
@@ -557,7 +569,17 @@
       "idle": [
         "sword_upright_idle_0.png"
       ],
-      "attack": []
+      "attack": [
+        "sword_upright_attack_0.png",
+        "sword_upright_attack_1.png",
+        "sword_upright_attack_2.png",
+        "sword_upright_attack_3.png",
+        "sword_upright_attack_4.png",
+        "sword_upright_attack_5.png",
+        "sword_upright_attack_6.png",
+        "sword_upright_attack_7.png",
+        "sword_upright_attack_8.png"
+      ]
     },
     "downright": {
       "_box": {
@@ -583,7 +605,17 @@
       "idle": [
         "sword_downright_idle_0.png"
       ],
-      "attack": []
+      "attack": [
+        "sword_downright_attack_0.png",
+        "sword_downright_attack_1.png",
+        "sword_downright_attack_2.png",
+        "sword_downright_attack_3.png",
+        "sword_downright_attack_4.png",
+        "sword_downright_attack_5.png",
+        "sword_downright_attack_6.png",
+        "sword_downright_attack_7.png",
+        "sword_downright_attack_8.png"
+      ]
     },
     "downleft": {
       "_box": {
@@ -609,7 +641,17 @@
       "idle": [
         "sword_downleft_idle_0.png"
       ],
-      "attack": []
+      "attack": [
+        "sword_downleft_attack_0.png",
+        "sword_downleft_attack_1.png",
+        "sword_downleft_attack_2.png",
+        "sword_downleft_attack_3.png",
+        "sword_downleft_attack_4.png",
+        "sword_downleft_attack_5.png",
+        "sword_downleft_attack_6.png",
+        "sword_downleft_attack_7.png",
+        "sword_downleft_attack_8.png"
+      ]
     },
     "upleft": {
       "_box": {
@@ -635,7 +677,17 @@
       "idle": [
         "sword_upleft_idle_0.png"
       ],
-      "attack": []
+      "attack": [
+        "sword_upleft_attack_0.png",
+        "sword_upleft_attack_1.png",
+        "sword_upleft_attack_2.png",
+        "sword_upleft_attack_3.png",
+        "sword_upleft_attack_4.png",
+        "sword_upleft_attack_5.png",
+        "sword_upleft_attack_6.png",
+        "sword_upleft_attack_7.png",
+        "sword_upleft_attack_8.png"
+      ]
     }
   },
   "bow": {
