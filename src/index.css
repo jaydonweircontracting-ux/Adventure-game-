@@ -2893,6 +2893,13 @@ body {
   font-family: var(--app-font-mono);
   font-size: 16px;
 }
+/* BUILD 430: item sprite images in the inventory (e.g. the sword). */
+.inventory-item-img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
 .fabric-mark { background: #7a668e; }
 .coin-mark { color: var(--sun); background: #705437; }
 .dagger-mark { color: #f4d7ad; background: #72503b; }

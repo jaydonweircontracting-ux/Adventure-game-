@@ -3402,6 +3402,19 @@ import { inflateSync } from 'node:zlib';
     'isFieldPositionBlocked must carve the doorway out of building collision');
   assert(/same doorway carve-out as town buildings/.test(appSrc),
     'isFieldPositionBlocked must carve the doorway out of farmhouse collision');
+  // BUILD 430: tutorial-house sword. Both sprites keyed (RGBA), ground item
+  // wired in the iso interior, pickup grants a sword, inventory uses the art.
+  for (const f of ['public/items/sword-inventory.png', 'public/items/sword-ground.png']) {
+    const img = readPngRgba(f);
+    assert(img.w > 0 && img.h > 0 && img.px.length === img.w * img.h * 4,
+      f + ' must be a valid RGBA PNG (blue keyed out)');
+  }
+  assert(/IsoGroundItem/.test(readFileSyncSprites('src/game/iso/IsoInteriorView.tsx', 'utf8')),
+    'IsoInteriorView must support ground items');
+  assert(/TUTORIAL_SWORD_ITEM/.test(appSrc),
+    'App must define the tutorial-house sword ground item');
+  assert(/sword-inventory\.png/.test(appSrc),
+    'Inventory must use the sword art sprite');
 }
 
 // ---- Results ----

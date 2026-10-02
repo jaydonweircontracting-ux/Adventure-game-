@@ -36,6 +36,26 @@ export interface IsoInteriorNpc {
   look: LookRef;
 }
 
+// BUILD 430: items lying on the floor (e.g. the tutorial-house sword).
+export interface IsoGroundItem {
+  id: string;
+  tx: number; ty: number;
+  sprite: string; // asset path under public/
+  label: string;
+}
+
+const groundItemImgs = new Map<string, HTMLImageElement>();
+function groundItemImg(sprite: string): HTMLImageElement | undefined {
+  let img = groundItemImgs.get(sprite);
+  if (!img) {
+    img = new Image();
+    img.onerror = () => console.warn(`[iso-interior] failed to load ${sprite}`);
+    img.src = sprite.startsWith('/') ? sprite : '/' + sprite;
+    groundItemImgs.set(sprite, img);
+  }
+  return img.complete && img.naturalWidth > 0 ? img : undefined;
+}
+
 interface IsoInteriorViewProps {
   roomId: string;
   roomType: IsoRoomType;
@@ -53,6 +73,9 @@ interface IsoInteriorViewProps {
   // BUILD 422: debug direction test — when set, the player shows this facing's
   // sprite sheet with the walk cycle playing, ignoring movement deltas.
   debugFacing?: Face8 | null;
+  // BUILD 430: items on the floor. Tapping one calls onPickupItem.
+  groundItems?: IsoGroundItem[];
+  onPickupItem?: (id: string) => void;
 }
 
 const ROOM_W = 12;
@@ -157,7 +180,7 @@ function faceForMove(ax: number, ay: number, bx: number, by: number, current: Fa
   return isoPlayerFaceForScreenDeltaSticky(bx - ax, by - ay, current);
 }
 
-export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair, debugFacing }: IsoInteriorViewProps): React.JSX.Element {
+export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair, debugFacing, groundItems, onPickupItem }: IsoInteriorViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const exitRef = useRef(onExit);
@@ -166,6 +189,10 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
   talkRef.current = onTalkTo;
   const npcsRef = useRef(npcs);
   npcsRef.current = npcs;
+  const groundItemsRef = useRef(groundItems ?? []);
+  groundItemsRef.current = groundItems ?? [];
+  const pickupRef = useRef(onPickupItem);
+  pickupRef.current = onPickupItem;
   const heldDirRef = useRef(getHeldDir);
   heldDirRef.current = getHeldDir;
 
@@ -247,6 +274,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       // Tap an NPC -> talk.
       const npc = npcsRef.current.find((n) => Math.round(n.tx) === t.tx && Math.round(n.ty) === t.ty);
       if (npc && talkRef.current) { talkRef.current(npc.id); return; }
+      // BUILD 430: tap a ground item -> pick up.
+      const item = groundItemsRef.current.find((g) => Math.round(g.tx) === t.tx && Math.round(g.ty) === t.ty);
+      if (item && pickupRef.current) { pickupRef.current(item.id); return; }
       if (t.tx >= 0 && t.ty >= 0 && t.tx < ROOM_W && t.ty < ROOM_H && !solidAt(t.tx, t.ty)) {
         goTo(t.tx, t.ty);
       }
@@ -770,6 +800,30 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         drawables.push({
           depth: depthKey(f.tx + f.w - 1, f.ty + f.h - 1) + 0.1,
           draw: (g2) => drawFurniture(g2, f, nowMs, kit),
+        });
+      }
+
+      // BUILD 430: ground items (e.g. the tutorial-house sword).
+      for (const item of groundItemsRef.current) {
+        const img = groundItemImg(item.sprite);
+        if (!img) continue;
+        const c = toScreen(item.tx, item.ty);
+        drawables.push({
+          depth: depthKey(item.tx, item.ty) + 0.05,
+          draw: (g2) => {
+            // Draw lying flat: scale to ~0.9 tiles wide, anchored at tile center.
+            const w = TILE_W * 0.9;
+            const h = w * (img.naturalHeight / img.naturalWidth);
+            g2.drawImage(img, c.x - w / 2, c.y - h / 2, w, h);
+            // Label
+            g2.font = '600 10px system-ui';
+            g2.textAlign = 'center';
+            const lw = g2.measureText(item.label).width;
+            g2.fillStyle = 'rgba(10,14,20,0.65)';
+            g2.fillRect(c.x - lw / 2 - 4, c.y + 12, lw + 8, 15);
+            g2.fillStyle = '#ffe9a8';
+            g2.fillText(item.label, c.x, c.y + 24);
+          },
         });
       }
 

@@ -1380,6 +1380,9 @@ type SaveGameData = {
   equippedSword?: boolean;
   barbHair?: string;
   droppedLoot?: DroppedLoot[];
+  // BUILD 430: IDs of one-time ground items (e.g. tutorial-house sword) the
+  // player has picked up. Persisted so they don't respawn.
+  pickedUpGroundItems?: string[];
   playerHp: number;
   playerXp: number;
   playerLevel: number;
@@ -1548,6 +1551,7 @@ function isSaveGameData(value: unknown): value is SaveGameData {
     && (value.equippedSword === undefined || typeof value.equippedSword === 'boolean')
     && (value.barbHair === undefined || typeof value.barbHair === 'string')
     && (value.droppedLoot === undefined || (Array.isArray(value.droppedLoot) && value.droppedLoot.every(isDroppedLootSave)))
+    && (value.pickedUpGroundItems === undefined || (Array.isArray(value.pickedUpGroundItems) && value.pickedUpGroundItems.every((s) => typeof s === 'string')))
     && isFiniteNumber(value.playerHp)
     && isFiniteNumber(value.playerXp)
     && isFiniteNumber(value.playerLevel)
@@ -3071,7 +3075,7 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow
     { key: 'silk', label: 'Silk', detail: 'Spider silk for bowstrings', mark: '🕸', className: 'silk-mark' },
     { key: 'bow', label: 'Hunting bow', detail: 'Ranged weapon', mark: '🏹', className: 'bow-mark' },
     { key: 'shirts', label: 'Blue shirt', detail: 'Crafted shirt — equip to wear', mark: '👕', className: 'shirt-mark' },
-    { key: 'swords', label: 'Barbarian sword', detail: 'Heavy blade · +35% damage', mark: '🗡', className: 'sword-mark' },
+    { key: 'swords', label: 'Barbarian sword', detail: 'Heavy blade · +35% damage', mark: '🗡', className: 'sword-mark', img: '/items/sword-inventory.png' },
     { key: 'beer', label: 'Beer', detail: '+50% attack for 1 min', mark: '🍺', className: 'beer-mark' },
     { key: 'lockpicks', label: 'Lockpicks', detail: 'For locked chests', mark: '🗝', className: 'lockpick-mark' },
   ].filter((item) => inventory[item.key as keyof GameInventory] > 0);
@@ -3103,7 +3107,7 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow
                 <div className="inventory-item" data-testid="inventory-coins"><span className="inventory-item-mark coin-mark" aria-hidden="true" /><span><strong>Coins</strong><small>Spendable gold</small></span><b>{inventory.coins}</b></div>
                 {visibleItems.map((item) => {
                   const count = inventory[item.key as keyof GameInventory] as number;
-                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className} aria-hidden="true" /><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}{item.key === 'bow' && <button className={'item-action ' + (equippedBow ? 'is-equipped' : '')} onClick={onToggleBow} data-testid="button-toggle-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}{item.key === 'shirts' && <button className={'item-action ' + (equippedShirt ? 'is-equipped' : '')} onClick={onToggleShirt} data-testid="button-toggle-shirt">{equippedShirt ? 'Unequip' : 'Equip'}</button>}{item.key === 'swords' && <button className={'item-action ' + (equippedSword ? 'is-equipped' : '')} onClick={onToggleSword} data-testid="button-toggle-sword">{equippedSword ? 'Unequip' : 'Equip'}</button>}{item.key === 'beer' && <button className="item-action" onClick={onDrinkBeer} data-testid="button-drink-beer">Drink</button>}</div>;
+                  return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className} aria-hidden="true">{(item as { img?: string }).img ? <img src={(item as { img?: string }).img} alt="" className="inventory-item-img" /> : item.mark}</span><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}{item.key === 'bow' && <button className={'item-action ' + (equippedBow ? 'is-equipped' : '')} onClick={onToggleBow} data-testid="button-toggle-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}{item.key === 'shirts' && <button className={'item-action ' + (equippedShirt ? 'is-equipped' : '')} onClick={onToggleShirt} data-testid="button-toggle-shirt">{equippedShirt ? 'Unequip' : 'Equip'}</button>}{item.key === 'swords' && <button className={'item-action ' + (equippedSword ? 'is-equipped' : '')} onClick={onToggleSword} data-testid="button-toggle-sword">{equippedSword ? 'Unequip' : 'Equip'}</button>}{item.key === 'beer' && <button className="item-action" onClick={onDrinkBeer} data-testid="button-drink-beer">Drink</button>}</div>;
                 })}
               </div>
               {itemCount === 0 && <div className="inventory-empty"><Backpack size={30} strokeWidth={1.5} /><strong>Menu is empty</strong></div>}
@@ -4012,6 +4016,10 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
   useEffect(() => { waterLifeRef.current = waterLife; }, [waterLife]);
   const [targetGoatId, setTargetGoatId] = useState<number | null>(null);
   const [droppedLoot, setDroppedLoot] = useState<DroppedLoot[]>([]);
+  // BUILD 430: one-time ground items picked up (tutorial-house sword).
+  const [pickedUpGroundItems, setPickedUpGroundItems] = useState<string[]>([]);
+  const pickedUpGroundItemsRef = useRef<string[]>([]);
+  pickedUpGroundItemsRef.current = pickedUpGroundItems;
   const [attacking, setAttacking] = useState(false);
   const [attackSequence, setAttackSequence] = useState(0);
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
@@ -4080,6 +4088,23 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
   // The chunk the player was in when they entered the current interior, so
   // exit can resolve the same doorway from the same chunk (not hardcoded 4,7).
   const interiorEntryChunkRef = useRef<Point>({ x: 4, y: 7 });
+  // BUILD 430: one-time ground items in interiors. The tutorial-house sword
+  // lies on the floor until picked up (tracked by ID so it never respawns).
+  const TUTORIAL_SWORD_ITEM = 'tutorial-house-sword';
+  const interiorGroundItems = (): Array<{ id: string; tx: number; ty: number; sprite: string; label: string }> => {
+    if (!interior || interior.id !== 'tutorial-house') return [];
+    if (pickedUpGroundItemsRef.current.includes(TUTORIAL_SWORD_ITEM)) return [];
+    return [{ id: TUTORIAL_SWORD_ITEM, tx: 8, ty: 6, sprite: '/items/sword-ground.png', label: 'Old sword' }];
+  };
+  const pickupGroundItem = (id: string) => {
+    if (pickedUpGroundItemsRef.current.includes(id)) return;
+    if (id === TUTORIAL_SWORD_ITEM) {
+      const next = [...pickedUpGroundItemsRef.current, id];
+      pickedUpGroundItemsRef.current = next; setPickedUpGroundItems(next);
+      onLoot({ swords: 1 } as GoatLoot);
+      setLogs((c) => [{ text: 'You pick up the old sword. It feels balanced and true.', color: 'green' }, ...c].slice(0, 5));
+    }
+  };
   // BUILD 366: shared interior-exit path (2D doorway walk-out and the 2.5D
   // IsoInteriorView exit button/tap-door both funnel through here).
   const exitInteriorToField = () => {
@@ -4157,6 +4182,7 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
     equippedSword,
     barbHair,
     droppedLoot,
+    pickedUpGroundItems,
     playerHp,
     playerXp,
     playerLevel,
@@ -4210,6 +4236,7 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
     goatsRef.current = loadState.goats.map((goat) => ({ ...goat, attacking: goat.attacking ?? false, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, hitFlash: false })); setGoats(goatsRef.current);
     targetGoatIdRef.current = null; setTargetGoatId(null);
     droppedLootRef.current = loadState.droppedLoot || []; setDroppedLoot(droppedLootRef.current);
+    pickedUpGroundItemsRef.current = loadState.pickedUpGroundItems || []; setPickedUpGroundItems(pickedUpGroundItemsRef.current);
     droppedLootIdRef.current = droppedLootRef.current.reduce((highest, drop) => Math.max(highest, drop.id), 0) + 1;
     playerHpRef.current = loadState.playerHp; setPlayerHp(loadState.playerHp);
     playerXpRef.current = loadState.playerXp; setPlayerXp(loadState.playerXp);
@@ -6194,6 +6221,8 @@ if (active) {
               if (npc) talkToTownsfolk(npc);
             }}
             debugFacing={dirTestMode ? (dirTestFacing?.face ?? null) : null}
+            groundItems={interiorGroundItems()}
+            onPickupItem={pickupGroundItem}
           />
         ) : <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onEnterCellar={enterCellar} onTavernSleep={tavernSleepUntilMorning} cellarRats={cellarRats} onStrikeCellarRat={strikeCellarRat} questStates={questStates} interiorTownsfolk={interiorTownsfolk} onTalkToTownsfolk={talkToTownsfolk} />) : (
         <div className={'pixel-field world-field has-ground-detail world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
