@@ -15,7 +15,7 @@ import {
 import {
   preloadLpcSprites,
   isoPlayerFaceForScreenDeltaSticky,
-  type Face4, type Face6,
+  type Face4, type Face8,
 } from './isoSprites';
 import { preloadBarbarian } from './barbarian';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
@@ -52,7 +52,7 @@ interface IsoInteriorViewProps {
   barbHair?: string;
   // BUILD 422: debug direction test — when set, the player shows this facing's
   // sprite sheet with the walk cycle playing, ignoring movement deltas.
-  debugFacing?: Face6 | null;
+  debugFacing?: Face8 | null;
 }
 
 const ROOM_W = 12;
@@ -147,7 +147,7 @@ function furnitureFor(roomType: IsoRoomType): Furniture[] {
   }
 }
 
-function faceForMove(ax: number, ay: number, bx: number, by: number, current: Face6): Face6 {
+function faceForMove(ax: number, ay: number, bx: number, by: number, current: Face8): Face8 {
   // BUILD 407: screen-space facing, same as the iso field outside. The tile
   // delta is projected to true screen space (2:1 dimetric) and the dominant
   // screen axis picks the art, so screen up-right/up-left travel shows the
@@ -191,7 +191,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     const state = {
       px: doorTile.tx, py: doorTile.ty - 1,
       fx: doorTile.tx, fy: doorTile.ty - 1,
-      path: [] as TilePoint[], stepT: 0, moving: false, facing: 'up' as Face6,
+      path: [] as TilePoint[], stepT: 0, moving: false, facing: 'up' as Face8,
       tapPath: false,
       zoom: 1, camX: 0, camY: 0, w: 0, h: 0, dpr: 1,
     };
@@ -533,7 +533,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
 
     // Shared character renderer: one animator per character id (pruned per
     // frame); the draw is feet-anchored with speed-tied walk phase.
-    const drawCharacter = (g: CanvasRenderingContext2D, fx: number, fy: number, facing: Face6, moving: boolean, look: LookRef, nowMs: number, animKey: string) => {
+    const drawCharacter = (g: CanvasRenderingContext2D, fx: number, fy: number, facing: Face8, moving: boolean, look: LookRef, nowMs: number, animKey: string) => {
       const c = toScreen(fx, fy);
       const depth = depthKey(Math.round(fx), Math.round(fy));
       let anim = charAnims.get(animKey);

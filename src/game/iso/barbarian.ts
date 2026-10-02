@@ -12,11 +12,11 @@
  * left/right attack art (copies of the idle frame). NPCs keep the LPC
  * paper-doll path — this is player-only.
  */
-import type { Face4, Face6 } from './isoSprites';
+import type { Face4, Face8 } from './isoSprites';
 
 export type BarbarianOutfit = 'bare' | 'blue';
 export type BarbarianWeapon = 'none' | 'sword' | 'bow';
-export type BarbarianView = 'down' | 'side' | 'up' | 'upright' | 'upleft';
+export type BarbarianView = 'down' | 'side' | 'up' | 'upright' | 'upleft' | 'downright' | 'downleft';
 export type BarbarianAnim = 'idle' | 'walk' | 'attack';
 
 /** Milliseconds an attack swing takes to play once. */
@@ -212,7 +212,7 @@ export interface BarbarianDrawOptions {
   x: number;
   y: number;
   size?: number;
-  facing: Face6;
+  facing: Face8;
   moving: boolean;
   /** ms since the attack swing started; plays attack anim while < ATTACK_MS. */
   attackT?: number;
@@ -267,11 +267,13 @@ export function barbarianReady(): boolean {
   return true;
 }
 
-function viewOf(facing: Face6): BarbarianView {
+function viewOf(facing: Face8): BarbarianView {
   if (facing === 'up') return 'up';
   if (facing === 'down') return 'down';
   if (facing === 'upright') return 'upright';
   if (facing === 'upleft') return 'upleft';
+  if (facing === 'downright') return 'downright';
+  if (facing === 'downleft') return 'downleft';
   return 'side';
 }
 
@@ -308,6 +310,17 @@ export function drawBarbarian(o: BarbarianDrawOptions): boolean {
     // variants without it (sword) fall back per-anim to the up view.
     const uf = BARB_FRAMES[variant]?.['upleft']?.[anim];
     fview = (uf && uf.length > 0) ? 'upleft' : 'up';
+  } else if (o.facing === 'downright') {
+    // BUILD 423: dedicated down-right diagonal art (user's sheet, coming);
+    // until it lands, fall back per-anim to the right side view — the same
+    // art the old southward mapping showed for this travel direction.
+    const uf = BARB_FRAMES[variant]?.['downright']?.[anim];
+    fview = (uf && uf.length > 0) ? 'downright' : 'right';
+  } else if (o.facing === 'downleft') {
+    // BUILD 423: dedicated down-left diagonal art (user's sheet, coming);
+    // until it lands, fall back per-anim to the left side view.
+    const uf = BARB_FRAMES[variant]?.['downleft']?.[anim];
+    fview = (uf && uf.length > 0) ? 'downleft' : 'left';
   }
   // Shared side art natively faces screen-right; mirror it when facing left.
   // Dedicated left/right sets natively face their direction and are never
@@ -348,8 +361,11 @@ export function drawBarbarian(o: BarbarianDrawOptions): boolean {
     // set reuses the side hair art mirrored, with the left set's head anchor.
     // The dedicated up-right/up-left sets (BUILD 414) reuse the up hair art —
     // the up-left frames are pre-mirrored, so the hair is never flipped.
+    // The dedicated down-right/down-left sets (BUILD 423) reuse the down
+    // (front) hair art, closest to a 3/4 front-diagonal view.
     const hairView: BarbarianView = (fview === 'right' || fview === 'left') ? 'side'
-      : (fview === 'upright' || fview === 'upleft') ? 'up' : view;
+      : (fview === 'upright' || fview === 'upleft') ? 'up'
+      : (fview === 'downright' || fview === 'downleft') ? 'down' : view;
     // Side hair art natively faces right; mirror it whenever the body faces left.
     const hairFlip = o.facing === 'left';
     if (flip) {

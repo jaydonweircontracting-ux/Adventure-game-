@@ -1451,7 +1451,9 @@ for (const kind of EXPECTED_KINDS) {
   assert(isoPlayerFaceForScreenDelta(-0.9, -0.5, 'up') === 'upleft', '30deg drift walking up-left faces up-left');
   assert(isoPlayerFaceForScreenDelta(2, -3, 'up') === 'right', 'near-horizontal northward travel faces right');
   assert(isoPlayerFaceForScreenDelta(-2, 3, 'up') === 'left', 'south-west screen diagonal faces left');
-  assert(isoPlayerFaceForScreenDelta(3, 1, 'up') === 'right', 'down-right screen diagonal faces right');
+  assert(isoPlayerFaceForScreenDelta(3, 1, 'up') === 'downright', 'down-right screen diagonal faces down-right');
+  assert(isoPlayerFaceForScreenDelta(0.5, 1, 'up') === 'downleft', 'down-left screen diagonal faces down-left');
+  assert(isoPlayerFaceForScreenDelta(2, -0.5, 'up') === 'right', 'near-horizontal southward travel faces right');
   assert(isoPlayerFaceForScreenDelta(-3, 1, 'up') === 'left', 'down-left screen diagonal faces left');
   assert(isoPlayerFaceForScreenDelta(0, 0, 'right') === 'right', 'zero delta keeps current facing');
   assert(isoPlayerFaceForScreenDelta(0, 0, 'upleft') === 'upleft', 'zero delta keeps current facing (up-left)');
@@ -1479,11 +1481,12 @@ for (const kind of EXPECTED_KINDS) {
 }
 
 // ---- BUILD 422: DIR_TEST_TABLE — debug direction-test numbering ----
-// The user's 1-6 numbering must map to the right Face6 art key, arrow, and
-// sprite file key so the red debug arrows show the intended direction.
+// BUILD 423: extended to 8. The user's 1-8 numbering must map to the right
+// Face8 art key, arrow, and sprite file key so the red debug arrows show the
+// intended direction.
 {
   const { DIR_TEST_TABLE } = await import('../src/game/iso/isoSprites');
-  assert(DIR_TEST_TABLE.length === 6, 'dir test table has 6 entries');
+  assert(DIR_TEST_TABLE.length === 8, 'dir test table has 8 entries');
   const expected: [number, string, string, string][] = [
     [1, 'NW', 'upleft', '↖'],
     [2, 'N', 'up', '↑'],
@@ -1491,14 +1494,38 @@ for (const kind of EXPECTED_KINDS) {
     [4, 'E', 'right', '→'],
     [5, 'S', 'down', '↓'],
     [6, 'W', 'left', '←'],
+    [7, 'SE', 'downright', '↘'],
+    [8, 'SW', 'downleft', '↙'],
   ];
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     const e = DIR_TEST_TABLE[i];
     const [num, label, face, arrow] = expected[i];
     assert(e.num === num && e.label === label && e.face === face && e.arrow === arrow,
       `dir test entry ${num} is ${label}/${face}/${arrow}`);
     assert(e.fileKey === face, `dir test entry ${num} fileKey matches face`);
   }
+}
+
+// ---- BUILD 423: southward three-band facing (Face8) ----
+// Southward mirrors northward: near-straight-down -> down; the 22.5-67.5deg
+// diagonal bands -> downright/downleft; beyond -> side sprite.
+{
+  const { isoPlayerFaceForScreenDelta, isoPlayerFaceForScreenDeltaSticky } =
+    await import('../src/game/iso/isoSprites');
+  // straight screen-down: dx=1, dy=1 -> sx=0, sy=1 -> down
+  assert(isoPlayerFaceForScreenDelta(1, 1, 'up') === 'down', 'straight screen-down maps to down');
+  // down-right diagonal: dx=1, dy=0 -> sx=1, sy=0.5 -> downright
+  assert(isoPlayerFaceForScreenDelta(1, 0, 'up') === 'downright', 'down-right diagonal maps to downright');
+  // down-left diagonal: dx=0.5, dy=1 -> sx=-0.5, sy=0.75 -> downleft
+  assert(isoPlayerFaceForScreenDelta(0.5, 1, 'up') === 'downleft', 'down-left diagonal maps to downleft');
+  // sticky: stopping noise keeps the southward diagonal
+  assert(isoPlayerFaceForScreenDeltaSticky(0.01, 0.02, 'downright') === 'downright',
+    'stopping noise keeps SE facing');
+  assert(isoPlayerFaceForScreenDeltaSticky(0.02, 0.01, 'downleft') === 'downleft',
+    'stopping noise keeps SW facing');
+  // deliberate switch SE->SW needs significant screen-x
+  assert(isoPlayerFaceForScreenDeltaSticky(0, 1, 'downright') === 'downleft',
+    'deliberate SW move switches from SE to SW');
 }
 
 // ---- BUILD 388: dungeon kit panel selectors for cellar/prison interiors ----

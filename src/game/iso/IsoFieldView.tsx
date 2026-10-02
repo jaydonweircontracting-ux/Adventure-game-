@@ -13,7 +13,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import {
-  preloadLpcSprites, isoPlayerFaceForScreenDeltaSticky, type Face4, type Face6,
+  preloadLpcSprites, isoPlayerFaceForScreenDeltaSticky, type Face4, type Face8,
 } from './isoSprites';
 import { preloadBarbarian } from './barbarian';
 import type { BarbarianOutfit, BarbarianWeapon } from './barbarian';
@@ -58,7 +58,7 @@ interface IsoFieldViewProps {
   barbAttackSequence?: number;
   // BUILD 422: debug direction test — when set, the player shows this facing's
   // sprite sheet with the walk cycle playing, ignoring movement deltas.
-  debugFacing?: Face6 | null;
+  debugFacing?: Face8 | null;
 }
 
 interface Drawable { depth: number; draw: (g: CanvasRenderingContext2D, now: number) => void }
@@ -152,7 +152,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
       const p = isoToScreen(liveRef.current.px, liveRef.current.py);
       cam.x = p.x; cam.y = p.y - 24; // character body centered, not feet
     }
-    const playerFace = { f: 'down' as Face6 };
+    const playerFace = { f: 'down' as Face8 };
     const prevP = { x: liveRef.current.px, y: liveRef.current.py };
     // Per-character animation controllers (no React state — plain map in the
     // render loop; pruned each frame so removed NPCs don't leak).
@@ -187,7 +187,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
 
     // Shared character renderer: one animator per character id drives facing,
     // walk/idle state and speed-tied walk phase; the draw is feet-anchored.
-    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face6, moving: boolean, look: LookRef, now: number, animKey: string, barb?: { attackT?: number }) => {
+    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, barb?: { attackT?: number }) => {
       const c = isoToScreen(tx, ty);
       let anim = charAnims.get(animKey);
       if (!anim) { anim = new CharacterAnimator(animKey); charAnims.set(animKey, anim); }

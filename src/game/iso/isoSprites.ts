@@ -18,12 +18,12 @@ export type Face4 = 'up' | 'left' | 'down' | 'right';
 /**
  * BUILD 414: extended player facing. The barbarian pack has dedicated
  * up-right and up-left diagonal walk art (the user's walk sheet, original
- * and mirrored), so the player's screen-space facing gains two values beyond
+ * and mirrored), so the player's screen-space facing gains four values beyond
  * Face4. NPCs, the LPC paper-doll fallback, and tile-space facing stay on
  * Face4; only the player-facing pipeline (screen-delta facing, animator,
- * barbarian renderer, field + interior views) uses Face6.
+ * barbarian renderer, field + interior views) uses Face8.
  */
-export type Face6 = Face4 | 'upright' | 'upleft';
+export type Face8 = Face4 | 'upright' | 'upleft' | 'downright' | 'downleft';
 
 export interface LpcLook {
   /** Skin tone key, e.g. 'ivory'. */
@@ -146,11 +146,14 @@ export function isoScreenSpeedScale(ux: number, uy: number): number {
  * back/up sprite; the 22.5-67.5deg diagonal bands show the dedicated
  * up-right / up-left diagonal art (the user's walk sheet, original and
  * mirrored); beyond 67.5deg the side sprite for the travel direction.
- * Southward keeps the dominant-axis mapping (down-right -> right,
- * down-left -> left, mostly-down -> down/front). `current` is only the
+ * BUILD 423: southward mirrors northward — within 22.5deg of straight
+ * screen-down shows the front/down sprite; the 22.5-67.5deg diagonal bands
+ * resolve to the dedicated down-right / down-left art (user's sheets, coming;
+ * the renderer falls back to the side views until they land); beyond 67.5deg
+ * the side sprite for the travel direction. `current` is only the
  * zero-movement fallback.
  */
-export function isoPlayerFaceForScreenDelta(dx: number, dy: number, current: Face6): Face6 {
+export function isoPlayerFaceForScreenDelta(dx: number, dy: number, current: Face8): Face8 {
   if (Math.abs(dx) + Math.abs(dy) < 1e-9) return current; // no movement: keep facing
   const sx = dx - dy; // screen x of the tile delta (2:1 dimetric)
   const sy = (dx + dy) / 2; // screen y of the tile delta
@@ -163,8 +166,12 @@ export function isoPlayerFaceForScreenDelta(dx: number, dy: number, current: Fac
     if (ax <= ay * 2.4142) return sx > 0 ? 'upright' : 'upleft';
     return sx > 0 ? 'right' : 'left';
   }
-  if (ax >= ay) return sx > 0 ? 'right' : 'left';
-  return 'down';
+  // southward: front sprite within 22.5deg of straight-down; the diagonal
+  // bands (22.5-67.5deg) use the dedicated down-right/down-left art; beyond
+  // that the side sprite for the travel direction.
+  if (ax <= ay * 0.4142) return 'down';
+  if (ax <= ay * 2.4142) return sx > 0 ? 'downright' : 'downleft';
+  return sx > 0 ? 'right' : 'left';
 }
 
 /**
@@ -176,33 +183,41 @@ export function isoPlayerFaceForScreenDelta(dx: number, dy: number, current: Fac
  * clearly indicated: switching between the two diagonals requires a
  * significant screen-x (|sx| > 0.03) pointing the new way; other transitions
  * use the base mapping. Stopping keeps the last facing.
+ * BUILD 423: the same stickiness applies to the southward diagonal pair
+ * ('downright' <-> 'downleft').
  */
-export function isoPlayerFaceForScreenDeltaSticky(dx: number, dy: number, current: Face6): Face6 {
+export function isoPlayerFaceForScreenDeltaSticky(dx: number, dy: number, current: Face8): Face8 {
   const next = isoPlayerFaceForScreenDelta(dx, dy, current);
   if (next === current) return next;
-  if ((current === 'upright' && next === 'upleft') || (current === 'upleft' && next === 'upright')) {
+  const isDiagPair =
+    (current === 'upright' && next === 'upleft') || (current === 'upleft' && next === 'upright') ||
+    (current === 'downright' && next === 'downleft') || (current === 'downleft' && next === 'downright');
+  if (isDiagPair) {
     const sx = dx - dy;
     if (Math.abs(sx) <= 0.03) return current;
-    if (next === 'upright' && sx <= 0) return current;
-    if (next === 'upleft' && sx >= 0) return current;
+    if ((next === 'upright' || next === 'downright') && sx <= 0) return current;
+    if ((next === 'upleft' || next === 'downleft') && sx >= 0) return current;
   }
   return next;
 }
 
 // ---------------------------------------------------------------------------
-// BUILD 422: debug direction-test table. The user's 1-6 direction numbering:
-// 1=NW, 2=N, 3=NE, 4=E, 5=S, 6=W. Each entry maps to the Face6 art key, the
-// screen-space arrow drawn on the red debug button, and the sprite file key
-// ({variant}_{fileKey}_walk_N.png / {variant}_{fileKey}_idle_0.png).
+// BUILD 422: debug direction-test table. BUILD 423: extended to 8 directions.
+// The user's numbering: 1=NW, 2=N, 3=NE, 4=E, 5=S, 6=W, 7=SE, 8=SW (1-6 kept
+// stable; the two new southward diagonals appended). Each entry maps to the
+// Face8 art key, the screen-space arrow drawn on the red debug button, and
+// the sprite file key ({variant}_{fileKey}_walk_N.png / {variant}_{fileKey}_idle_0.png).
 // ---------------------------------------------------------------------------
-export interface DirTestEntry { num: number; label: string; face: Face6; arrow: string; fileKey: string }
+export interface DirTestEntry { num: number; label: string; face: Face8; arrow: string; fileKey: string }
 export const DIR_TEST_TABLE: DirTestEntry[] = [
-  { num: 1, label: 'NW', face: 'upleft',  arrow: '↖', fileKey: 'upleft' },
-  { num: 2, label: 'N',  face: 'up',      arrow: '↑', fileKey: 'up' },
-  { num: 3, label: 'NE', face: 'upright', arrow: '↗', fileKey: 'upright' },
-  { num: 4, label: 'E',  face: 'right',   arrow: '→', fileKey: 'right' },
-  { num: 5, label: 'S',  face: 'down',    arrow: '↓', fileKey: 'down' },
-  { num: 6, label: 'W',  face: 'left',    arrow: '←', fileKey: 'left' },
+  { num: 1, label: 'NW', face: 'upleft',    arrow: '↖', fileKey: 'upleft' },
+  { num: 2, label: 'N',  face: 'up',        arrow: '↑', fileKey: 'up' },
+  { num: 3, label: 'NE', face: 'upright',   arrow: '↗', fileKey: 'upright' },
+  { num: 4, label: 'E',  face: 'right',     arrow: '→', fileKey: 'right' },
+  { num: 5, label: 'S',  face: 'down',      arrow: '↓', fileKey: 'down' },
+  { num: 6, label: 'W',  face: 'left',      arrow: '←', fileKey: 'left' },
+  { num: 7, label: 'SE', face: 'downright', arrow: '↘', fileKey: 'downright' },
+  { num: 8, label: 'SW', face: 'downleft',  arrow: '↙', fileKey: 'downleft' },
 ];
 export const LPC_FRAMES: Record<LpcAnim, number> = { idle: 2, walk: 9, slash: 6, hurt: 6 };
 

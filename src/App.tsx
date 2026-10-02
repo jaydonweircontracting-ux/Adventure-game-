@@ -6862,11 +6862,11 @@ if (active) {
               sheet on the player with the walk cycle playing. */}
           {dirTestMode && (() => {
             const variant = equippedSword ? 'sword' : equippedBow ? 'bow' : (equippedShirt ? 'blue' : 'bare');
-            // Compass layout: row1: 1 2 3, row2: 6 · 4, row3: · 5 ·
+            // Compass layout: row1: 1 2 3, row2: 6 · 4, row3: 8 5 7
             const layout: (DirTestEntry | null)[] = [
               DIR_TEST_TABLE[0], DIR_TEST_TABLE[1], DIR_TEST_TABLE[2],
               DIR_TEST_TABLE[5], null, DIR_TEST_TABLE[3],
-              null, DIR_TEST_TABLE[4], null,
+              DIR_TEST_TABLE[7], DIR_TEST_TABLE[4], DIR_TEST_TABLE[6],
             ];
             return (
               <div className="dirtest-overlay">
