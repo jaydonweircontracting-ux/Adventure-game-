@@ -6,7 +6,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, npcHp, npcMaxHp, isNpcDead, NPC_RESPAWN_TICKS, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
 import { npcPersonality, npcAge, npcAgeYears, npcNeeds, villageTarget, npcRelationships, addNPCMemory, npcWage, npcGold, adjustNPCGold, villageEventsForDay, propagateRumors } from '../src/game/villageLife';
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { landscapeSeed, moistureAt, forestDensityAt, rockDensityAt, macroLandformAt, regionForChunk, roadCorridorsFor, pointInCorridors, townInfluenceAt, landUseAt, landscapeSitesFor, checkFieldContinuity, riverChannelAt, riverAt, lakesForChunk, waterAt, bridgeAt } from '../src/game/landscape';
@@ -769,6 +769,27 @@ console.log('Testing townsfolk living-town simulation...');
   // Screams are deterministic per NPC.
   assert(screamFor(victim) === screamFor(victim), 'Scream not deterministic');
   assert(typeof screamFor(victim) === 'string' && screamFor(victim).length > 0, 'Scream empty');
+  // BUILD 441: damage and death — NPCs have HP, die at 0, respawn later.
+  const healthy = { ...victim, hp: undefined, deadUntilTick: undefined };
+  assert(npcHp(healthy) === npcMaxHp(healthy), 'NPC should start at full HP');
+  const guard = { ...victim, archetype: 'guard' as const };
+  assert(npcMaxHp(guard) > npcMaxHp(healthy), 'Guards should be tougher');
+  const wounded = damageNpc(healthy, 10, threat, 2000);
+  assert(npcHp(wounded) === npcMaxHp(healthy) - 10, 'Damage not applied');
+  assert(wounded.fleeUntilTick !== undefined, 'Survivor should flee');
+  assert(wounded.deadUntilTick === undefined, 'Survivor should not be dead');
+  const killed = damageNpc(healthy, 999, threat, 2000);
+  assert(killed.hp === 0, 'Killed NPC HP should be 0');
+  assert(killed.deadUntilTick === 2000 + NPC_RESPAWN_TICKS, 'Death timer not set');
+  assert(isNpcDead(killed, 2001), 'NPC should be dead');
+  assert(!isNpcDead(killed, 2000 + NPC_RESPAWN_TICKS + 1), 'NPC should have respawned');
+  // Dead NPCs don't move or flee.
+  const deadStepped = advanceTownsfolk([killed], anchors, fleeClock(2001), navCtx)[0];
+  assert(deadStepped.position.x === killed.position.x, 'Dead NPC should not move');
+  // Respawned NPC is back home with full HP.
+  const respawned = advanceTownsfolk([killed], anchors, fleeClock(2000 + NPC_RESPAWN_TICKS + 1), navCtx)[0];
+  assert(respawned.deadUntilTick === undefined, 'Respawn did not clear death');
+  assert(npcHp(respawned) === npcMaxHp(respawned), 'Respawn should restore HP');
 }
 
 console.log('Testing village life layer (BUILD 366)...');

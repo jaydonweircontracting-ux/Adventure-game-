@@ -77,6 +77,11 @@ export type Townsperson = {
   fleeUntilTick?: number;
   /** Position of the threat to run away from. */
   fleeFrom?: TownsfolkPoint;
+  // --- Health (BUILD 441): NPCs can be damaged and killed. ---
+  /** Current HP (undefined = full). */
+  hp?: number;
+  /** World tick until which the NPC is dead (undefined = alive). Respawns after. */
+  deadUntilTick?: number;
 };
 
 /** Named world anchors townsfolk schedules resolve against. */
@@ -444,7 +449,45 @@ export function startNpcFlee(npc: Townsperson, from: TownsfolkPoint, tick: numbe
   };
 }
 
-/** Scream lines when an NPC is attacked (BUILD 436). */
+/** Max HP for an NPC (BUILD 441). Guards are tougher. */
+export function npcMaxHp(npc: Townsperson): number {
+  return npc.archetype === 'guard' ? 60 : 30;
+}
+
+/** Current HP (defaults to full). */
+export function npcHp(npc: Townsperson): number {
+  return npc.hp ?? npcMaxHp(npc);
+}
+
+/** Ticks a dead NPC stays dead before respawning (~2 minutes at 60 ticks/sec). */
+export const NPC_RESPAWN_TICKS = 7200;
+
+/**
+ * Apply damage to an NPC (BUILD 441). Returns the updated NPC.
+ * If HP reaches 0, the NPC dies (deadUntilTick set, flee cleared).
+ * Survivors start fleeing from the attacker.
+ */
+export function damageNpc(npc: Townsperson, damage: number, from: TownsfolkPoint, tick: number): Townsperson {
+  const newHp = npcHp(npc) - damage;
+  if (newHp <= 0) {
+    return {
+      ...npc,
+      hp: 0,
+      deadUntilTick: tick + NPC_RESPAWN_TICKS,
+      fleeUntilTick: undefined,
+      fleeFrom: undefined,
+    };
+  }
+  return {
+    ...startNpcFlee(npc, from, tick),
+    hp: newHp,
+  };
+}
+
+/** Whether the NPC is currently dead. */
+export function isNpcDead(npc: Townsperson, tick: number): boolean {
+  return npc.deadUntilTick !== undefined && tick < npc.deadUntilTick;
+}
 export const NPC_SCREAMS = [
   'AHHH!',
   'Help! Help!',
@@ -545,14 +588,22 @@ function advanceOne(
   step: number,
   resolveTarget: (npc: Townsperson, anchors: TownsfolkAnchors, clock: WorldClockState) => TownsfolkTarget = townsfolkTarget,
 ): Townsperson {
+  // --- DEAD (BUILD 441): skip entirely until respawn. ---
+  if (npc.deadUntilTick !== undefined) {
+    if (clock.tick < npc.deadUntilTick) return npc;
+    // Respawn: back home, full HP, clear death.
+    return { ...npc, hp: undefined, deadUntilTick: undefined, position: { ...npc.home }, activity: 'At home' };
+  }
+
   // --- FLEEING (BUILD 436): run away from the attacker, skip schedule. ---
   // Only outdoors — indoor NPCs cower in place (don't path through walls).
+  // BUILD 441: slowed to 1.5x walk (was 3x) so the player can catch them.
   if (!npc.indoors && npc.fleeUntilTick !== undefined && npc.fleeFrom) {
     if (clock.tick < npc.fleeUntilTick) {
       const dx = npc.position.x - npc.fleeFrom.x;
       const dy = npc.position.y - npc.fleeFrom.y;
       const dist = Math.hypot(dx, dy) || 1;
-      const fleeStep = step * 3; // Run, don't walk.
+      const fleeStep = step * 1.5;
       const nx = dx / dist, ny = dy / dist;
       const facing: TownsfolkFacing = Math.abs(nx) >= Math.abs(ny)
         ? (nx >= 0 ? 'right' : 'left')

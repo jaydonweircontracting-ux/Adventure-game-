@@ -31,7 +31,7 @@ import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDispo
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, isNpcDead, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
 import { LANDMARKS } from '@/game/landmarks';
 import {
@@ -5089,7 +5089,12 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
           // BUILD 436: townsfolk can be attacked — they flee and scream.
           // Only outdoor NPCs (indoor ones are behind walls).
           const npcCandidates = inCellar ? [] : (townsfolkRef.current as (Townsperson & { entityKind?: string })[])
-            .filter((npc) => !npc.indoors && isInMeleeArc(attackerPos, npc.position, playerAttack.direction))
+            .filter((npc) => {
+              if (npc.indoors) return false;
+              const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+              if (isNpcDead(npc, tick)) return false;
+              return isInMeleeArc(attackerPos, npc.position, playerAttack.direction);
+            })
             .map((npc) => ({ ...npc, entityKind: 'townsfolk' as const }));
           const attackCandidates: Array<(typeof goatCandidates)[number] | (typeof monsterCandidates)[number] | (typeof cornCandidates)[number] | (typeof ratCandidates)[number] | (typeof npcCandidates)[number]> =
             [...goatCandidates, ...monsterCandidates, ...cornCandidates, ...ratCandidates, ...npcCandidates]
@@ -5121,22 +5126,33 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
               const rat = cellarRatsRef.current.find((r) => r.id === attackTarget.id && r.hp > 0);
               if (rat) applyHitToCellarRat(rat, damage, critical);
             } else if (attackTarget.entityKind === 'townsfolk') {
-              // BUILD 436: attacking an NPC — they scream and flee. No HP, no
-              // death; the NPC runs away from the player for a few seconds.
+              // BUILD 441: attacking an NPC deals damage. Survivors scream and
+              // flee; at 0 HP the NPC dies and respawns later.
               const npc = townsfolkRef.current.find((n) => n.id === attackTarget.id);
               if (npc && !npc.indoors) {
                 const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
-                const fled = startNpcFlee(npc, attackerPos, tick);
-                const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? fled : n);
+                const stats = playerStatsRef.current;
+                const critical = Math.random() < playerCriticalChanceForStats(stats);
+                const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
+                const damage = playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
+                const hurt = damageNpc(npc, damage, attackerPos, tick);
+                const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
                 townsfolkRef.current = nextFolk;
                 setTownsfolk(nextFolk);
-                // Scream!
-                const scream = screamFor(npc);
-                barksRef.current[npc.id] = { text: scream, until: Date.now() + 3000 };
-                setBarks((prev) => ({ ...prev, [npc.id]: scream }));
-                spawnCombatText(scream, npc.position, 'damage');
-                playCombatSound('scream', muted);
-                setLogs((currentLogs) => [{ text: `You attack ${npc.name}! They flee screaming.`, color: 'red' }, ...currentLogs].slice(0, 3));
+                if (hurt.deadUntilTick !== undefined) {
+                  // Killed!
+                  spawnCombatText('KILLED', npc.position, 'critical');
+                  playCombatSound('scream', muted);
+                  setLogs((currentLogs) => [{ text: `You killed ${npc.name}!`, color: 'red' }, ...currentLogs].slice(0, 3));
+                } else {
+                  // Scream and flee.
+                  const scream = screamFor(npc);
+                  barksRef.current[npc.id] = { text: scream, until: Date.now() + 3000 };
+                  setBarks((prev) => ({ ...prev, [npc.id]: scream }));
+                  spawnCombatText(`-${Math.round(damage)}`, npc.position, 'damage');
+                  playCombatSound('scream', muted);
+                  setLogs((currentLogs) => [{ text: `You hit ${npc.name} for ${Math.round(damage)}! They flee screaming.`, color: 'red' }, ...currentLogs].slice(0, 3));
+                }
               }
             } else {
             const stats = playerStatsRef.current;
@@ -7956,7 +7972,11 @@ if (active) {
               <span className="market-stall" style={{ left: fieldPct(82), top: fieldPct(64) }} aria-label="Market stall" />
             </>
           )}
-          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && townsfolk.filter((npc) => !npc.indoors).map((npc) => {
+          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && townsfolk.filter((npc) => {
+            if (npc.indoors) return false;
+            const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+            return !isNpcDead(npc, tick);
+          }).map((npc) => {
             const enter = npcEnterProps(npc.id, npc.position, npc.facing);
             return (
             <button
