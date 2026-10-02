@@ -3084,8 +3084,10 @@ console.log('Testing examine system...');
   // left art; bare's left attacks reuse the side set, mirrored).
   // BUILD 409: the sword variant's left/right walks are 9 frames (sampled
   // from the user's 36-frame sheets to fill the LPC walk phase cycle).
+  // BUILD 425: the bare variant's left/right walks are 9 frames sampled
+  // every 4th from the user's new 36-frame basic left/right sheets.
   for (const v of ['bare', 'blue', 'sword', 'bow'] as const) {
-    const wantWalk = v === 'sword' ? 9 : 2;
+    const wantWalk = v === 'sword' || v === 'bare' ? 9 : 2;
     assert(BARB_FRAMES[v]?.['left']?.['idle']?.length === 1 &&
       BARB_FRAMES[v]?.['left']?.['walk']?.length === wantWalk &&
       (BARB_FRAMES[v]?.['left']?.['attack']?.length ?? 0) >= 2,
@@ -3095,7 +3097,7 @@ console.log('Testing examine system...');
   // idle + walk + attack (blue/sword/bow attacks use dedicated per-variant
   // right art; bare's right attacks reuse the side set).
   for (const v of ['bare', 'blue', 'sword', 'bow'] as const) {
-    const wantWalk = v === 'sword' ? 9 : 2;
+    const wantWalk = v === 'sword' || v === 'bare' ? 9 : 2;
     assert(BARB_FRAMES[v]?.['right']?.['idle']?.length === 1 &&
       BARB_FRAMES[v]?.['right']?.['walk']?.length === wantWalk &&
       (BARB_FRAMES[v]?.['right']?.['attack']?.length ?? 0) >= 2,

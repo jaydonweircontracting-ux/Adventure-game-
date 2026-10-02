@@ -88,7 +88,14 @@
    ],
    "walk": [
     "bare_right_walk_0.png",
-    "bare_right_walk_1.png"
+    "bare_right_walk_1.png",
+    "bare_right_walk_2.png",
+    "bare_right_walk_3.png",
+    "bare_right_walk_4.png",
+    "bare_right_walk_5.png",
+    "bare_right_walk_6.png",
+    "bare_right_walk_7.png",
+    "bare_right_walk_8.png"
    ],
    "attack": [
     "bare_side_attack_0.png",
@@ -110,7 +117,14 @@
    ],
    "walk": [
     "bare_left_walk_0.png",
-    "bare_left_walk_1.png"
+    "bare_left_walk_1.png",
+    "bare_left_walk_2.png",
+    "bare_left_walk_3.png",
+    "bare_left_walk_4.png",
+    "bare_left_walk_5.png",
+    "bare_left_walk_6.png",
+    "bare_left_walk_7.png",
+    "bare_left_walk_8.png"
    ],
    "attack": [
     "bare_side_attack_0.png",
@@ -644,9 +658,16 @@
    "sword_side_idle_0.png": 0.5046,
    "sword_side_walk_0.png": 0.4845,
    "sword_side_walk_1.png": 0.4955,
-   "bare_right_idle_0.png": 0.4923,
-   "bare_right_walk_0.png": 0.5139,
-   "bare_right_walk_1.png": 0.4848
+   "bare_right_idle_0.png": 0.5108,
+   "bare_right_walk_0.png": 0.4902,
+   "bare_right_walk_1.png": 0.5072,
+   "bare_right_walk_2.png": 0.4992,
+   "bare_right_walk_3.png": 0.4789,
+   "bare_right_walk_4.png": 0.5069,
+   "bare_right_walk_5.png": 0.4997,
+   "bare_right_walk_6.png": 0.4825,
+   "bare_right_walk_7.png": 0.5036,
+   "bare_right_walk_8.png": 0.4925
   },
   "playerLayering": "IsoFieldView draws the player in a final pass above all depth-sorted drawables (BUILD 391): grass/decor/trees/buildings never cover the player.",
   "frameViews": {
@@ -807,7 +828,21 @@
    "bow_upright_walk_6.png": "upright",
    "bow_upright_walk_7.png": "upright",
    "bow_upright_walk_8.png": "upright",
-   "bow_upright_idle_0.png": "upright"
+   "bow_upright_idle_0.png": "upright",
+   "bare_right_walk_2.png": "right",
+   "bare_right_walk_3.png": "right",
+   "bare_right_walk_4.png": "right",
+   "bare_right_walk_5.png": "right",
+   "bare_right_walk_6.png": "right",
+   "bare_right_walk_7.png": "right",
+   "bare_right_walk_8.png": "right",
+   "bare_left_walk_2.png": "left",
+   "bare_left_walk_3.png": "left",
+   "bare_left_walk_4.png": "left",
+   "bare_left_walk_5.png": "left",
+   "bare_left_walk_6.png": "left",
+   "bare_left_walk_7.png": "left",
+   "bare_left_walk_8.png": "left"
   },
   "sideFacing": {
    "bare_side_attack_0.png": "right",
@@ -833,15 +868,22 @@
    "sword_side_walk_1.png": "right",
    "bare_right_idle_0.png": "right",
    "bare_right_walk_0.png": "right",
-   "bare_right_walk_1.png": "right"
+   "bare_right_walk_1.png": "right",
+   "bare_right_walk_2.png": "right",
+   "bare_right_walk_3.png": "right",
+   "bare_right_walk_4.png": "right",
+   "bare_right_walk_5.png": "right",
+   "bare_right_walk_6.png": "right",
+   "bare_right_walk_7.png": "right",
+   "bare_right_walk_8.png": "right"
   },
   "down": "BUILD 394: bare down idle re-cut from the user-supplied front-facing sheet. BUILD 395: bare down walk replaced per user direction with the two user-supplied 3/4-view walk/run frames. BUILD 396: bare down idle replaced per user direction ('this is down idle') with the user-supplied 3/4-view standing frame, matching the walk set style. Side frames unchanged.",
   "right": "BUILD 398: the bare variant has dedicated right-facing idle/walk art (3/4 view, user-supplied). The renderer uses the 'right' frame set when facing=right and falls back per-anim to the shared side set (attacks still use side art). Left movement keeps the side set mirrored, which reproduces the user's original left-facing sheet.",
   "up": "BUILD 399: bare up idle/walk replaced per user direction with the user-supplied back-view art (standing idle + two opposite-stride run frames). No code changes needed \u2014 the up view is a single set.",
   "leftCentroidX": {
-   "bare_left_idle_0.png": 0.4809,
-   "bare_left_walk_0.png": 0.5102,
-   "bare_left_walk_1.png": 0.4876,
+   "bare_left_idle_0.png": 0.5166,
+   "bare_left_walk_0.png": 0.4889,
+   "bare_left_walk_1.png": 0.5075,
    "blue_left_idle_0.png": 0.4809,
    "blue_left_walk_0.png": 0.5102,
    "blue_left_walk_1.png": 0.4876,
@@ -857,7 +899,14 @@
    "sword_left_walk_5.png": 0.4761,
    "sword_left_walk_6.png": 0.4828,
    "sword_left_walk_7.png": 0.4834,
-   "sword_left_walk_8.png": 0.5065
+   "sword_left_walk_8.png": 0.5065,
+   "bare_left_walk_2.png": 0.4977,
+   "bare_left_walk_3.png": 0.4824,
+   "bare_left_walk_4.png": 0.5163,
+   "bare_left_walk_5.png": 0.4963,
+   "bare_left_walk_6.png": 0.4909,
+   "bare_left_walk_7.png": 0.5068,
+   "bare_left_walk_8.png": 0.502
   },
   "leftFacing": {
    "bare_left_idle_0.png": "left",
@@ -878,7 +927,14 @@
    "sword_left_walk_5.png": "left",
    "sword_left_walk_6.png": "left",
    "sword_left_walk_7.png": "left",
-   "sword_left_walk_8.png": "left"
+   "sword_left_walk_8.png": "left",
+   "bare_left_walk_2.png": "left",
+   "bare_left_walk_3.png": "left",
+   "bare_left_walk_4.png": "left",
+   "bare_left_walk_5.png": "left",
+   "bare_left_walk_6.png": "left",
+   "bare_left_walk_7.png": "left",
+   "bare_left_walk_8.png": "left"
   },
   "rightCentroidX": {
    "blue_right_idle_0.png": 0.4923,
@@ -896,7 +952,17 @@
    "sword_right_walk_5.png": 0.4911,
    "sword_right_walk_6.png": 0.5247,
    "sword_right_walk_7.png": 0.4984,
-   "sword_right_walk_8.png": 0.5174
+   "sword_right_walk_8.png": 0.5174,
+   "bare_right_walk_0.png": 0.4902,
+   "bare_right_walk_1.png": 0.5072,
+   "bare_right_walk_2.png": 0.4992,
+   "bare_right_walk_3.png": 0.4789,
+   "bare_right_walk_4.png": 0.5069,
+   "bare_right_walk_5.png": 0.4997,
+   "bare_right_walk_6.png": 0.4825,
+   "bare_right_walk_7.png": 0.5036,
+   "bare_right_walk_8.png": 0.4925,
+   "bare_right_idle_0.png": 0.5108
   },
   "rightFacing": {
    "blue_right_idle_0.png": "right",
@@ -914,7 +980,17 @@
    "sword_right_walk_5.png": "right",
    "sword_right_walk_6.png": "right",
    "sword_right_walk_7.png": "right",
-   "sword_right_walk_8.png": "right"
+   "sword_right_walk_8.png": "right",
+   "bare_right_walk_0.png": "right",
+   "bare_right_walk_1.png": "right",
+   "bare_right_walk_2.png": "right",
+   "bare_right_walk_3.png": "right",
+   "bare_right_walk_4.png": "right",
+   "bare_right_walk_5.png": "right",
+   "bare_right_walk_6.png": "right",
+   "bare_right_walk_7.png": "right",
+   "bare_right_walk_8.png": "right",
+   "bare_right_idle_0.png": "right"
   }
  }
 }
