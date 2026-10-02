@@ -170,6 +170,64 @@
     "bare_up_attack_0.png",
     "bare_up_attack_1.png"
    ]
+  },
+  "downright": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     97,
+     23
+    ],
+    "idleH": 168
+   },
+   "idle": [
+    "bare_downright_idle_0.png"
+   ],
+   "walk": [
+    "bare_downright_walk_0.png",
+    "bare_downright_walk_1.png",
+    "bare_downright_walk_2.png",
+    "bare_downright_walk_3.png",
+    "bare_downright_walk_4.png",
+    "bare_downright_walk_5.png",
+    "bare_downright_walk_6.png",
+    "bare_downright_walk_7.png",
+    "bare_downright_walk_8.png"
+   ],
+   "attack": [
+    "bare_down_attack_0.png",
+    "bare_down_attack_1.png"
+   ]
+  },
+  "downleft": {
+   "_box": {
+    "w": 195,
+    "h": 195,
+    "head": [
+     99,
+     19
+    ],
+    "idleH": 175
+   },
+   "idle": [
+    "bare_downleft_idle_0.png"
+   ],
+   "walk": [
+    "bare_downleft_walk_0.png",
+    "bare_downleft_walk_1.png",
+    "bare_downleft_walk_2.png",
+    "bare_downleft_walk_3.png",
+    "bare_downleft_walk_4.png",
+    "bare_downleft_walk_5.png",
+    "bare_downleft_walk_6.png",
+    "bare_downleft_walk_7.png",
+    "bare_downleft_walk_8.png"
+   ],
+   "attack": [
+    "bare_down_attack_0.png",
+    "bare_down_attack_1.png"
+   ]
   }
  },
  "blue": {
@@ -842,7 +900,27 @@
    "bare_left_walk_5.png": "left",
    "bare_left_walk_6.png": "left",
    "bare_left_walk_7.png": "left",
-   "bare_left_walk_8.png": "left"
+   "bare_left_walk_8.png": "left",
+   "bare_downright_walk_0.png": "downright",
+   "bare_downright_walk_1.png": "downright",
+   "bare_downright_walk_2.png": "downright",
+   "bare_downright_walk_3.png": "downright",
+   "bare_downright_walk_4.png": "downright",
+   "bare_downright_walk_5.png": "downright",
+   "bare_downright_walk_6.png": "downright",
+   "bare_downright_walk_7.png": "downright",
+   "bare_downright_walk_8.png": "downright",
+   "bare_downright_idle_0.png": "downright",
+   "bare_downleft_walk_0.png": "downleft",
+   "bare_downleft_walk_1.png": "downleft",
+   "bare_downleft_walk_2.png": "downleft",
+   "bare_downleft_walk_3.png": "downleft",
+   "bare_downleft_walk_4.png": "downleft",
+   "bare_downleft_walk_5.png": "downleft",
+   "bare_downleft_walk_6.png": "downleft",
+   "bare_downleft_walk_7.png": "downleft",
+   "bare_downleft_walk_8.png": "downleft",
+   "bare_downleft_idle_0.png": "downleft"
   },
   "sideFacing": {
    "bare_side_attack_0.png": "right",

@@ -3280,7 +3280,7 @@ import { inflateSync } from 'node:zlib';
   assert(frameViews && Object.keys(frameViews).length >= 30,
     'barbarian manifest must record audited views for every idle/walk frame');
   for (const [file, view] of Object.entries(frameViews)) {
-    const m = /^(bare|blue|sword|bow)_(down|side|upright|upleft|up|right|left)_(idle|walk)_\d+\.png$/.exec(file);
+    const m = /^(bare|blue|sword|bow)_(down|side|upright|upleft|downright|downleft|up|right|left)_(idle|walk)_\d+\.png$/.exec(file);
     assert(m, `${file}: unexpected frameViews key`);
     assert(m[2] === view,
       `${file}: audited view is "${view}" but the filename says "${m[2]}" — frame is mislabeled`);
@@ -3336,6 +3336,38 @@ import { inflateSync } from 'node:zlib';
       'drawBarbarian must select the dedicated up-left frame set when facing=upleft');
     assert(/fview = \(uf && uf\.length > 0\) \? 'upright' : 'up'/.test(barbSrc),
       'drawBarbarian must fall back to the up view when a variant lacks up-right art');
+  }
+  // BUILD 426: southward diagonal art. bare has dedicated SE (downright) and
+  // SW (downleft) views from the user's 36-frame sheets (9 walk sampled every
+  // 4th + 1 idle each); attacks share the down frames. Other variants lack
+  // them and fall back per-anim to the side views. The renderer selects them
+  // per-anim with fallback to right/left.
+  {
+    const { BARB_FRAMES, BARB_BOX } = await import('../src/game/iso/barbarian');
+    const dr = BARB_FRAMES['bare']?.['downright'];
+    const dl = BARB_FRAMES['bare']?.['downleft'];
+    assert(dr && dl, 'bare must have downright/downleft views');
+    assert(dr['walk'].length === 9 && dr['walk'].every((f) => f.includes('bare_downright_walk_')),
+      'bare downright walk must be the 9 dedicated SE frames');
+    assert(dl['walk'].length === 9 && dl['walk'].every((f) => f.includes('bare_downleft_walk_')),
+      'bare downleft walk must be the 9 dedicated SW frames');
+    assert(JSON.stringify(dr['idle']) === JSON.stringify(['barbarian/bare_downright_idle_0.png']),
+      'bare downright idle must be the dedicated SE idle');
+    assert(JSON.stringify(dl['idle']) === JSON.stringify(['barbarian/bare_downleft_idle_0.png']),
+      'bare downleft idle must be the dedicated SW idle');
+    assert(JSON.stringify(dr['attack']) === JSON.stringify(BARB_FRAMES['bare']['down']['attack']),
+      'bare downright attack must share the down attack');
+    assert(BARB_BOX['bare']?.['downright'] && BARB_BOX['bare']?.['downleft'],
+      'bare must have downright/downleft layout boxes');
+    for (const f of [...dr['walk'], ...dl['walk'], ...dr['idle'], ...dl['idle']])
+      readPngRgba(`public/${f}`);
+    for (const v of ['blue', 'bow', 'sword'])
+      assert(!BARB_FRAMES[v]?.['downright'] && !BARB_FRAMES[v]?.['downleft'],
+        `${v} has no southward diagonal art — it must fall back to the side views`);
+    assert(/fview = \(uf && uf\.length > 0\) \? 'downright' : 'right'/.test(barbSrc),
+      'drawBarbarian must fall back to the right view when a variant lacks down-right art');
+    assert(/fview = \(uf && uf\.length > 0\) \? 'downleft' : 'left'/.test(barbSrc),
+      'drawBarbarian must fall back to the left view when a variant lacks down-left art');
   }
   // BUILD 409: the sword variant's up/right/left sets are the user's real
   // sword art (9-frame walks sampled from the 36-frame sheets, neutral-frame
