@@ -814,8 +814,8 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         drawables.push({
           depth: depthKey(item.tx, item.ty) + 0.05,
           draw: (g2) => {
-            // Draw lying flat: scale to ~0.9 tiles wide, anchored at tile center.
-            const w = TILE_W * 0.9;
+            // Draw lying flat: about a third of a tile wide, anchored at tile center.
+            const w = TILE_W * 0.35;
             const h = w * (img.naturalHeight / img.naturalWidth);
             g2.drawImage(img, c.x - w / 2, c.y - h / 2, w, h);
             // Label
