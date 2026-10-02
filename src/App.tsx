@@ -3075,7 +3075,7 @@ function InventorySheet({ inventory, equippedDagger, onToggleDagger, equippedBow
     { key: 'silk', label: 'Silk', detail: 'Spider silk for bowstrings', mark: '🕸', className: 'silk-mark' },
     { key: 'bow', label: 'Hunting bow', detail: 'Ranged weapon', mark: '🏹', className: 'bow-mark' },
     { key: 'shirts', label: 'Blue shirt', detail: 'Crafted shirt — equip to wear', mark: '👕', className: 'shirt-mark' },
-    { key: 'swords', label: 'Barbarian sword', detail: 'Heavy blade · +35% damage', mark: '🗡', className: 'sword-mark', img: '/items/sword-inventory.png' },
+    { key: 'swords', label: 'Barbarian sword', detail: 'Heavy blade · +35% damage', mark: '🗡', className: 'sword-mark', img: (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL + 'items/sword-inventory.png' },
     { key: 'beer', label: 'Beer', detail: '+50% attack for 1 min', mark: '🍺', className: 'beer-mark' },
     { key: 'lockpicks', label: 'Lockpicks', detail: 'For locked chests', mark: '🗝', className: 'lockpick-mark' },
   ].filter((item) => inventory[item.key as keyof GameInventory] > 0);

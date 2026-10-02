@@ -50,7 +50,10 @@ function groundItemImg(sprite: string): HTMLImageElement | undefined {
   if (!img) {
     img = new Image();
     img.onerror = () => console.warn(`[iso-interior] failed to load ${sprite}`);
-    img.src = sprite.startsWith('/') ? sprite : '/' + sprite;
+    // BUILD 430 fix: respect Vite base URL (GitHub Pages serves from /Adventure-game-/).
+    const base = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
+    const path = sprite.startsWith('/') ? sprite.slice(1) : sprite;
+    img.src = `${base}${path}`;
     groundItemImgs.set(sprite, img);
   }
   return img.complete && img.naturalWidth > 0 ? img : undefined;
