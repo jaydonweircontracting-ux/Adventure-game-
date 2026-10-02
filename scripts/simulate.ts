@@ -1481,21 +1481,22 @@ for (const kind of EXPECTED_KINDS) {
 }
 
 // ---- BUILD 422: DIR_TEST_TABLE — debug direction-test numbering ----
-// BUILD 423: extended to 8. The user's 1-8 numbering must map to the right
-// Face8 art key, arrow, and sprite file key so the red debug arrows show the
-// intended direction.
+// BUILD 423: extended to 8. BUILD 424: renumbered to the user's canonical
+// clockwise-from-north compass (1=N, 2=NE, 3=E, 4=SE, 5=S, 6=SW, 7=W, 8=NW).
+// Each entry must map to the right Face8 art key, arrow, and sprite file key
+// so the red debug arrows show the intended direction.
 {
   const { DIR_TEST_TABLE } = await import('../src/game/iso/isoSprites');
   assert(DIR_TEST_TABLE.length === 8, 'dir test table has 8 entries');
   const expected: [number, string, string, string][] = [
-    [1, 'NW', 'upleft', '↖'],
-    [2, 'N', 'up', '↑'],
-    [3, 'NE', 'upright', '↗'],
-    [4, 'E', 'right', '→'],
+    [1, 'N', 'up', '↑'],
+    [2, 'NE', 'upright', '↗'],
+    [3, 'E', 'right', '→'],
+    [4, 'SE', 'downright', '↘'],
     [5, 'S', 'down', '↓'],
-    [6, 'W', 'left', '←'],
-    [7, 'SE', 'downright', '↘'],
-    [8, 'SW', 'downleft', '↙'],
+    [6, 'SW', 'downleft', '↙'],
+    [7, 'W', 'left', '←'],
+    [8, 'NW', 'upleft', '↖'],
   ];
   for (let i = 0; i < 8; i++) {
     const e = DIR_TEST_TABLE[i];

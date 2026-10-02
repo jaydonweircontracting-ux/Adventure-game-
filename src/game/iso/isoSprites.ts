@@ -203,21 +203,23 @@ export function isoPlayerFaceForScreenDeltaSticky(dx: number, dy: number, curren
 
 // ---------------------------------------------------------------------------
 // BUILD 422: debug direction-test table. BUILD 423: extended to 8 directions.
-// The user's numbering: 1=NW, 2=N, 3=NE, 4=E, 5=S, 6=W, 7=SE, 8=SW (1-6 kept
-// stable; the two new southward diagonals appended). Each entry maps to the
-// Face8 art key, the screen-space arrow drawn on the red debug button, and
-// the sprite file key ({variant}_{fileKey}_walk_N.png / {variant}_{fileKey}_idle_0.png).
+// BUILD 424: renumbered to the user's canonical clockwise-from-north compass
+// (see workspace/goals/adventure-game-repo-updates-and-deployment/files/
+// sprite-direction-guide.md): 1=N, 2=NE, 3=E, 4=SE, 5=S, 6=SW, 7=W, 8=NW.
+// Each entry maps to the Face8 art key, the screen-space arrow drawn on the
+// red debug button, and the sprite file key
+// ({variant}_{fileKey}_walk_N.png / {variant}_{fileKey}_idle_0.png).
 // ---------------------------------------------------------------------------
 export interface DirTestEntry { num: number; label: string; face: Face8; arrow: string; fileKey: string }
 export const DIR_TEST_TABLE: DirTestEntry[] = [
-  { num: 1, label: 'NW', face: 'upleft',    arrow: '↖', fileKey: 'upleft' },
-  { num: 2, label: 'N',  face: 'up',        arrow: '↑', fileKey: 'up' },
-  { num: 3, label: 'NE', face: 'upright',   arrow: '↗', fileKey: 'upright' },
-  { num: 4, label: 'E',  face: 'right',     arrow: '→', fileKey: 'right' },
+  { num: 1, label: 'N',  face: 'up',        arrow: '↑', fileKey: 'up' },
+  { num: 2, label: 'NE', face: 'upright',   arrow: '↗', fileKey: 'upright' },
+  { num: 3, label: 'E',  face: 'right',     arrow: '→', fileKey: 'right' },
+  { num: 4, label: 'SE', face: 'downright', arrow: '↘', fileKey: 'downright' },
   { num: 5, label: 'S',  face: 'down',      arrow: '↓', fileKey: 'down' },
-  { num: 6, label: 'W',  face: 'left',      arrow: '←', fileKey: 'left' },
-  { num: 7, label: 'SE', face: 'downright', arrow: '↘', fileKey: 'downright' },
-  { num: 8, label: 'SW', face: 'downleft',  arrow: '↙', fileKey: 'downleft' },
+  { num: 6, label: 'SW', face: 'downleft',  arrow: '↙', fileKey: 'downleft' },
+  { num: 7, label: 'W',  face: 'left',      arrow: '←', fileKey: 'left' },
+  { num: 8, label: 'NW', face: 'upleft',    arrow: '↖', fileKey: 'upleft' },
 ];
 export const LPC_FRAMES: Record<LpcAnim, number> = { idle: 2, walk: 9, slash: 6, hurt: 6 };
 
