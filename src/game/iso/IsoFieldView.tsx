@@ -46,6 +46,7 @@ interface IsoFieldViewProps {
   chunk: Point;
   position: Point; // player, field units (0..FIELD_SIZE)
   townsfolk: Townsperson[];
+  goats?: Array<{ id: number; position: Point; facing: string; disposition: string }>; // BUILD 451: goats in iso view
   onExit: () => void; // back to the 2D field
   onTapMove?: (point: Point) => void; // BUILD 366: tap-to-move target
   onTalkTo?: (npc: Townsperson) => void; // BUILD 366: tap an NPC to talk
@@ -79,11 +80,11 @@ interface IsoChunkScene {
 const MARGIN = 48; // world-px background margin around the map
 const ROAD_HALF = 5; // road band half-width in tiles
 
-export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTapMove, onTalkTo, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing });
-  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing };
+  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing });
+  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing };
   // tap callbacks via ref so the canvas listener always calls the latest
   const tapRef = useRef({ onTapMove, onTalkTo });
   tapRef.current = { onTapMove, onTalkTo };
@@ -462,6 +463,47 @@ export default function IsoFieldView({ chunk, position, townsfolk, onExit, onTap
       seenAnims.clear();
       for (const npc of live.folk) {
         drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id);
+      }
+      // BUILD 451: goats in the iso view — simple canvas goat (body, head,
+      // legs, horns). Depth-sorted with everything else.
+      const liveGoats = (live as { goats?: Array<{ id: number; position: Point; facing: string; disposition: string }> }).goats;
+      if (liveGoats) {
+        for (const goat of liveGoats) {
+          const gx = goat.position.x, gy = goat.position.y;
+          const c = isoToScreen(gx, gy);
+          const sx = c.x, sy = c.y;
+          const s = 24 * zoomRef.current; // approx world-to-screen scale
+          const w = 1.2 * s, h = 0.8 * s;
+          const depth = gx + gy;
+          drawables.push({
+            depth,
+            draw: (g: CanvasRenderingContext2D) => {
+              // shadow
+              g.fillStyle = 'rgba(0,0,0,0.25)';
+              g.beginPath(); g.ellipse(sx, sy, w * 0.5, h * 0.2, 0, 0, Math.PI * 2); g.fill();
+              // body
+              g.fillStyle = goat.disposition === 'aggressive' ? '#8a6f4d' : '#e8e0d0';
+              g.beginPath(); g.ellipse(sx, sy - h * 0.5, w * 0.5, h * 0.35, 0, 0, Math.PI * 2); g.fill();
+              // head
+              const hx = sx + w * 0.4, hy = sy - h * 0.7;
+              g.beginPath(); g.ellipse(hx, hy, w * 0.18, h * 0.22, 0, 0, Math.PI * 2); g.fill();
+              // horns
+              g.strokeStyle = '#5a4a3a'; g.lineWidth = Math.max(1, s * 0.05);
+              g.beginPath(); g.moveTo(hx - w * 0.08, hy - h * 0.18); g.lineTo(hx - w * 0.15, hy - h * 0.35); g.stroke();
+              g.beginPath(); g.moveTo(hx + w * 0.08, hy - h * 0.18); g.lineTo(hx + w * 0.15, hy - h * 0.35); g.stroke();
+              // legs
+              g.strokeStyle = '#6a5a4a'; g.lineWidth = Math.max(1, s * 0.08);
+              for (const lx of [-0.25, 0.25]) {
+                g.beginPath(); g.moveTo(sx + lx * w, sy - h * 0.3); g.lineTo(sx + lx * w, sy); g.stroke();
+              }
+              // aggro marker
+              if (goat.disposition === 'aggressive') {
+                g.fillStyle = '#ff4444'; g.font = `bold ${Math.max(10, s * 0.4)}px sans-serif`;
+                g.textAlign = 'center'; g.fillText('!', sx, sy - h * 1.1);
+              }
+            },
+          });
+        }
       }
       // player — BUILD 427: depth-sorted with the world instead of layered
       // on top. When the player is behind a house (smaller x+y than the
