@@ -5206,8 +5206,12 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
           const attackCandidates: Array<(typeof goatCandidates)[number] | (typeof monsterCandidates)[number] | (typeof cornCandidates)[number] | (typeof ratCandidates)[number] | (typeof npcCandidates)[number] | (typeof fieldNpcCandidates)[number]> =
             [...goatCandidates, ...monsterCandidates, ...cornCandidates, ...ratCandidates, ...npcCandidates, ...fieldNpcCandidates]
               .sort((a, b) => goatDistance(a as unknown as GoatState, attackerPos) - goatDistance(b as unknown as GoatState, attackerPos));
+          // BUILD 447: prioritize NPCs — if any NPC is in range, target the
+          // closest one (not a goat/corn that happens to be nearer).
+          const npcOnly = [...npcCandidates, ...fieldNpcCandidates]
+            .sort((a, b) => goatDistance(a as unknown as GoatState, attackerPos) - goatDistance(b as unknown as GoatState, attackerPos));
           const attackTarget = playerAttack.targetId == null
-            ? attackCandidates[0]
+            ? (npcOnly[0] ?? attackCandidates[0])
             : attackCandidates.find((goat) => goat.id === playerAttack.targetId);
           if (attackTarget && (attackTarget.entityKind === 'townsfolk' || attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
             // Harvesting corn: one swing cuts the stalk, which disappears and
