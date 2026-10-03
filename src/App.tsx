@@ -5107,6 +5107,8 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
         playerAttack.elapsed += elapsed * 1000;
         if (!playerAttack.hitApplied && playerAttack.elapsed >= 100) {
           playerAttack.hitApplied = true;
+          // TRACE: diagnostic logging for NPC damage debugging
+          const traceLog = (msg: string) => setLogs((cur) => [{ text: `[TRACE] ${msg}`, color: 'gold' }, ...cur].slice(0, 5));
           try {
           if (playerAttack.ranged) {
             // Bow equipped: loose an arrow toward the facing (or the selected
@@ -5213,6 +5215,7 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
           const attackTarget = playerAttack.targetId == null
             ? (npcOnly[0] ?? attackCandidates[0])
             : attackCandidates.find((goat) => goat.id === playerAttack.targetId);
+          traceLog(`candidates: ${attackCandidates.length} total, ${npcOnly.length} NPCs, target=${attackTarget ? (attackTarget as {entityKind?: string}).entityKind + ':' + (attackTarget as {name?: string}).name : 'none'}`);
           if (attackTarget && (attackTarget.entityKind === 'townsfolk' || attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
             // Harvesting corn: one swing cuts the stalk, which disappears and
             // drops corn loot. No HP, no combat — it's a crop, not a creature.
@@ -5246,6 +5249,7 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
                 const critical = Math.random() < playerCriticalChanceForStats(stats);
                 const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
                 const damage = playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
+                traceLog(`hitting townsfolk ${npc.name} for ${Math.round(damage)}`);
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
                 townsfolkRef.current = nextFolk;
