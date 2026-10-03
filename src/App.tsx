@@ -5110,6 +5110,46 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
           // TRACE: diagnostic logging for NPC damage debugging
           const traceLog = (msg: string) => setLogs((cur) => [{ text: `[TRACE] ${msg}`, color: 'gold' }, ...cur].slice(0, 5));
           try {
+          // BUILD 450: NPC-FIRST — check for NPCs in range BEFORE anything else.
+          // Simple, direct, no candidate filtering. If an NPC is within 8 units,
+          // they get hit. Period.
+          {
+            const inCellar = interiorRef.current?.roomType === 'cellar';
+            if (!inCellar && !playerAttack.ranged) {
+              const attackerPos = positionRef.current;
+              const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+              let nearestNpc: Townsperson | null = null;
+              let nearestDist = 8;
+              for (const n of townsfolkRef.current) {
+                if (n.indoors) continue;
+                if (isNpcDead(n, tick)) continue;
+                const d = Math.hypot(n.position.x - attackerPos.x, n.position.y - attackerPos.y);
+                if (d < nearestDist) { nearestDist = d; nearestNpc = n; }
+              }
+              traceLog(`NPC-FIRST: ${townsfolkRef.current.length} townsfolk, nearest=${nearestNpc ? nearestNpc.name + ' at ' + nearestDist.toFixed(1) : 'none'}`);
+              if (nearestNpc) {
+                const npc = nearestNpc;
+                const stats = playerStatsRef.current;
+                const damage = Math.max(1, playerDamageForStats(stats) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
+                traceLog(`NPC-FIRST: hitting ${npc.name} for ${Math.round(damage)}`);
+                const hurt = damageNpc(npc, damage, attackerPos, tick);
+                const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
+                townsfolkRef.current = nextFolk;
+                setTownsfolk(nextFolk);
+                if (hurt.deadUntilTick !== undefined) {
+                  spawnCombatText('KILLED', npc.position, 'critical');
+                  setLogs((cur) => [{ text: `You killed ${npc.name}!`, color: 'red' }, ...cur].slice(0, 3));
+                } else {
+                  spawnCombatText(`-${Math.round(damage)}`, npc.position, 'damage');
+                  const scream = screamFor(npc);
+                  barksRef.current[npc.id] = { text: scream, until: Date.now() + 3000 };
+                  setBarks((prev) => ({ ...prev, [npc.id]: scream }));
+                  setLogs((cur) => [{ text: `You hit ${npc.name} for ${Math.round(damage)}!`, color: 'red' }, ...cur].slice(0, 3));
+                }
+                playCombatSound('scream', muted);
+              }
+            }
+          }
           if (playerAttack.ranged) {
             // Bow equipped: loose an arrow toward the facing (or the selected
             // target). Works on foot and on horseback.
