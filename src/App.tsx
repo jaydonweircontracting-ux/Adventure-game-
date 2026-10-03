@@ -1630,7 +1630,33 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
   if (mapTileFor(chunk).terrain === 'ocean') return [];
   // Starting town is a safe zone: no goats wandering through Mosslight Crossing.
   // Goats roam meadows and outskirts (danger 1+), RuneScape-style.
-  if (isTutorialCenter(chunk)) return [];
+  // BUILD 452: except one goat outside the starting house (user request).
+  if (isTutorialCenter(chunk)) {
+    const goatPos = { x: FIELD_SIZE / 2 + 8, y: FIELD_SIZE / 2 + 6 };
+    if (isFieldPositionBlocked(goatPos, chunk)) return [];
+    return [{
+      id: 900,
+      position: goatPos,
+      spawnPosition: { ...goatPos },
+      roamRadius: 6,
+      facing: 'down' as Direction,
+      level: 1,
+      hp: goatMaxHpForLevel(1),
+      maxHp: goatMaxHpForLevel(1),
+      disposition: GOAT_SPAWN_DISPOSITION,
+      attackCooldown: 0,
+      respawnTicks: 0,
+      wanderSeed: 42,
+      moving: false,
+      attacking: false,
+      state: 'idle' as GoatStateName,
+      hurtTimer: 0,
+      attackTimer: 0,
+      attackHitApplied: false,
+      hitFlash: false,
+      nextWanderTick: GOAT_WANDER_MIN_TICKS,
+    }];
+  }
   const positions = Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 20 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % (FIELD_SIZE - 40)), y: 20 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % (FIELD_SIZE - 40)) }));
   const safePositions = positions.filter((position) => !isFieldPositionBlocked(position, chunk));
   return safePositions.map((position, index) => {
