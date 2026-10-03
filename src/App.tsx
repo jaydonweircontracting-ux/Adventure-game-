@@ -3800,8 +3800,14 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
   const [markerMode, setMarkerMode] = useState(debugDoors);
   // BUILD 365: 2.5D isometric field renderer (beta). Pure visual swap — the sim,
   // input, HUD, quests and saves are untouched. Persisted across sessions.
+  // BUILD 453: 2.5D is now the default view. First-time players (no stored
+  // preference) get the isometric renderer; the 2D view is available in
+  // Settings for anyone who prefers it.
   const [isoFieldBeta, setIsoFieldBeta] = useState(() => {
-    try { return localStorage.getItem('ag-iso-field-beta') === '1'; } catch { return false; }
+    try {
+      const stored = localStorage.getItem('ag-iso-field-beta');
+      return stored === null ? true : stored === '1';
+    } catch { return true; }
   });
   const toggleIsoFieldBeta = () => {
     const next = !isoFieldBeta;
@@ -8489,7 +8495,7 @@ if (active) {
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleIsoFieldBeta(); }} data-testid="button-iso-field-beta">
                   <span className="options-action-icon">🏔️</span>
-                  <span><strong>2.5D Field{isoFieldBeta ? ' (On)' : ''}</strong><small>{isoFieldBeta ? 'Return to 2D view' : 'Isometric renderer (beta) · visual only'}</small></span>
+                  <span><strong>{isoFieldBeta ? '2D Field' : '2.5D Field (On)'}</strong><small>{isoFieldBeta ? 'Classic top-down view' : 'Switch to classic 2D view'}</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); onOpenJournal(); }} data-testid="button-options-journal">
                   <span className="options-action-icon"><BookOpen size={17} /></span>
