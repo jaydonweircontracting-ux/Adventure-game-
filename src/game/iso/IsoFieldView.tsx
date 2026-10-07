@@ -465,41 +465,41 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id);
       }
       // BUILD 451: goats in the iso view — simple canvas goat (body, head,
-      // legs, horns). Depth-sorted with everything else.
+      // BUILD 457: deer (stag sprite) replaces the canvas goat. Uses the
+      // provided critter sprites from public/critters/stag/.
       const liveGoats = (live as { goats?: Array<{ id: number; position: Point; facing: string; disposition: string }> }).goats;
-      if (liveGoats) {
+      // Cache the stag sprite image
+      const stagImgKey = 'stag_SE_idle';
+      if (!(window as unknown as { __stagImg?: HTMLImageElement }).__stagImg) {
+        const img = new Image();
+        img.src = `${import.meta.env.BASE_URL}critters/stag/critter_stag_SE_idle.png`;
+        (window as unknown as { __stagImg?: HTMLImageElement }).__stagImg = img;
+      }
+      const stagImg = (window as unknown as { __stagImg?: HTMLImageElement }).__stagImg;
+      if (liveGoats && stagImg && stagImg.complete && stagImg.naturalWidth > 0) {
         for (const goat of liveGoats) {
           const gx = goat.position.x, gy = goat.position.y;
           const c = isoToScreen(gx, gy);
           const sx = c.x, sy = c.y;
-          const s = 36 * zoomRef.current; // BUILD 456: bigger so the goat is easy to spot
-          const w = 1.2 * s, h = 0.8 * s;
+          const s = 36 * zoomRef.current;
           const depth = gx + gy;
+          // Animate through the strip frames (32px wide frames)
+          const frameW = 32, frameH = 41;
+          const frameCount = Math.floor(stagImg.naturalWidth / frameW);
+          const frameIdx = Math.floor(nowMs / 150) % frameCount;
           drawables.push({
             depth,
             draw: (g: CanvasRenderingContext2D) => {
               // shadow
               g.fillStyle = 'rgba(0,0,0,0.25)';
-              g.beginPath(); g.ellipse(sx, sy, w * 0.5, h * 0.2, 0, 0, Math.PI * 2); g.fill();
-              // body
-              g.fillStyle = goat.disposition === 'aggressive' ? '#8a6f4d' : '#e8e0d0';
-              g.beginPath(); g.ellipse(sx, sy - h * 0.5, w * 0.5, h * 0.35, 0, 0, Math.PI * 2); g.fill();
-              // head
-              const hx = sx + w * 0.4, hy = sy - h * 0.7;
-              g.beginPath(); g.ellipse(hx, hy, w * 0.18, h * 0.22, 0, 0, Math.PI * 2); g.fill();
-              // horns
-              g.strokeStyle = '#5a4a3a'; g.lineWidth = Math.max(1, s * 0.05);
-              g.beginPath(); g.moveTo(hx - w * 0.08, hy - h * 0.18); g.lineTo(hx - w * 0.15, hy - h * 0.35); g.stroke();
-              g.beginPath(); g.moveTo(hx + w * 0.08, hy - h * 0.18); g.lineTo(hx + w * 0.15, hy - h * 0.35); g.stroke();
-              // legs
-              g.strokeStyle = '#6a5a4a'; g.lineWidth = Math.max(1, s * 0.08);
-              for (const lx of [-0.25, 0.25]) {
-                g.beginPath(); g.moveTo(sx + lx * w, sy - h * 0.3); g.lineTo(sx + lx * w, sy); g.stroke();
-              }
+              g.beginPath(); g.ellipse(sx, sy, s * 0.6, s * 0.15, 0, 0, Math.PI * 2); g.fill();
+              // deer sprite (feet-anchored)
+              const dw = frameW * (s / 24), dh = frameH * (s / 24);
+              g.drawImage(stagImg, frameIdx * frameW, 0, frameW, frameH, sx - dw / 2, sy - dh, dw, dh);
               // aggro marker
               if (goat.disposition === 'aggressive') {
                 g.fillStyle = '#ff4444'; g.font = `bold ${Math.max(10, s * 0.4)}px sans-serif`;
-                g.textAlign = 'center'; g.fillText('!', sx, sy - h * 1.1);
+                g.textAlign = 'center'; g.fillText('!', sx, sy - dh - 4);
               }
             },
           });
