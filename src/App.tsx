@@ -3813,19 +3813,18 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
   const [markerMode, setMarkerMode] = useState(debugDoors);
   // BUILD 365: 2.5D isometric field renderer (beta). Pure visual swap — the sim,
   // input, HUD, quests and saves are untouched. Persisted across sessions.
-  // BUILD 453: 2.5D is now the default view. First-time players (no stored
-  // preference) get the isometric renderer; the 2D view is available in
-  // Settings for anyone who prefers it.
+  // BUILD 455: 2.5D is the main game. New storage key so old 2D preferences
+  // don't stick — everyone starts in 2.5D. 2D is in Settings.
   const [isoFieldBeta, setIsoFieldBeta] = useState(() => {
     try {
-      const stored = localStorage.getItem('ag-iso-field-beta');
-      return stored === null ? true : stored === '1';
+      const stored = localStorage.getItem('ag-view-mode');
+      return stored === null ? true : stored === '2.5d';
     } catch { return true; }
   });
   const toggleIsoFieldBeta = () => {
     const next = !isoFieldBeta;
     setIsoFieldBeta(next);
-    try { localStorage.setItem('ag-iso-field-beta', next ? '1' : '0'); } catch { /* ignore */ }
+    try { localStorage.setItem('ag-view-mode', next ? '2.5d' : '2d'); } catch { /* ignore */ }
   };
   // BUILD 406: ref mirror of the iso-field flag for the frame loop — its
   // useEffect deps don't include isoFieldBeta, so the loop reads the ref.
@@ -9325,7 +9324,8 @@ function Home() {
             <h1>Adventure Game</h1>
             <p>Follow the roads, learn the first hunt, and choose the path that carries you beyond Mosslight Crossing.</p>
             <div className="main-menu-actions">
-              <button className="main-menu-button" onClick={() => setCreatingCharacter(true)} data-testid="button-new-game">New Game</button>
+              {/* BUILD 455: character creation removed for now — New Game starts directly */}
+              <button className="main-menu-button" onClick={() => { setCreatingCharacter(false); startNewGame(); }} data-testid="button-new-game">New Game</button>
               <button className="main-menu-button" onClick={loadLocalSave} disabled={!hasLocalSave} data-testid="button-load-game-menu">{hasLocalSave ? 'Load Game' : 'Load Game · No Save Yet'}</button>
               <button className="main-menu-button" onClick={openLoadPicker} data-testid="button-load-save-menu">Import Save File</button>
             </div>
