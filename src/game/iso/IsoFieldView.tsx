@@ -10,7 +10,7 @@
 // untouched — only the presentation changes.
 // Beta scope: visual field replacement. DOM interaction overlays (door prompts,
 // talk buttons) stay on the 2D renderer for now.
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import {
   preloadLpcSprites, isoPlayerFaceForScreenDeltaSticky, type Face4, type Face8,
@@ -87,6 +87,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing });
   liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing };
+  // BUILD 460: collision debug selection — tap a critter to select, drag green box to reposition
+  const [selectedCritterId, setSelectedCritterId] = useState<number | null>(null);
+  const greenBoxRef = useRef({ dx: 0, dy: 0, hw: 0.35, hh: 0.4 }); // offset and size in world units
   // tap callbacks via ref so the canvas listener always calls the latest
   const tapRef = useRef({ onTapMove, onTalkTo });
   tapRef.current = { onTapMove, onTalkTo };
@@ -551,6 +554,33 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           });
         }
       }
+      // BUILD 460: green box for selected critter — draggable to propose new position/size
+      if (collisionDebug && selectedCritterId !== null && liveGoats) {
+        const goat = liveGoats.find(g => g.id === selectedCritterId);
+        if (goat) {
+          const gb = greenBoxRef.current;
+          const gx = goat.position.x + gb.dx, gy = goat.position.y + gb.dy;
+          const c = isoToScreen(gx, gy);
+          const s = 36 * zoomRef.current;
+          const w = gb.hw * 2 * (s / 24);
+          const h = gb.hh * 2 * (s / 24);
+          drawables.push({
+            depth: gx + gy + 0.02,
+            draw: (g: CanvasRenderingContext2D) => {
+              g.strokeStyle = '#00ff00';
+              g.lineWidth = 2;
+              g.setLineDash([5, 5]);
+              g.strokeRect(c.x - w / 2, c.y - h / 2, w, h);
+              g.setLineDash([]);
+              // label with offset
+              g.fillStyle = '#00ff00';
+              g.font = '12px sans-serif';
+              g.textAlign = 'center';
+              g.fillText(`dx:${gb.dx.toFixed(1)} dy:${gb.dy.toFixed(1)}`, c.x, c.y - h / 2 - 8);
+            },
+          });
+        }
+      }
       // player — BUILD 427: depth-sorted with the world instead of layered
       // on top. When the player is behind a house (smaller x+y than the
       // house's front corner), the house draws over them; when in front,
@@ -573,6 +603,35 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       if (!tapMove && !talk) return;
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+      // BUILD 460: collision debug — tap a critter to select it (green box).
+      // Player does not move in debug mode.
+      if (collisionDebug) {
+        const zm = zoomRef.current;
+        const wpx = rect.width || 1, hpx = rect.height || 1;
+        let bestId: number | null = null; let bestD = 40;
+        for (const goat of liveRef.current.goats || []) {
+          const w = isoToScreen(goat.position.x, goat.position.y);
+          const px = (w.x - cam.x) * zm + wpx / 2;
+          const py = (w.y - cam.y) * zm + hpx / 2;
+          const d = Math.hypot(px - sx, py - sy);
+          if (d < bestD) { bestD = d; bestId = goat.id; }
+        }
+        if (bestId !== null) {
+          setSelectedCritterId(bestId);
+          // Reset green box to critter's current box
+          const goat = (liveRef.current.goats || []).find(g => g.id === bestId);
+          const kind = goat?.kind || 'deer';
+          const sizes: Record<string, { hw: number; hh: number }> = {
+            deer: { hw: 0.35, hh: 0.4 }, boar: { hw: 0.4, hh: 0.45 },
+            badger: { hw: 0.3, hh: 0.35 }, direwolf: { hw: 0.45, hh: 0.5 },
+          };
+          const sz = sizes[kind] || { hw: 0.5, hh: 0.6 };
+          greenBoxRef.current = { dx: 0, dy: 0, hw: sz.hw, hh: sz.hh };
+        } else {
+          setSelectedCritterId(null);
+        }
+        return; // don't move player in debug mode
+      }
       const zm = zoomRef.current;
       const wpx = rect.width || 1, hpx = rect.height || 1;
       // inverse of the frame()'s translate/scale/translate camera transform
@@ -642,6 +701,34 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           ...btn, width: 'auto', padding: '0 14px', fontSize: 14, fontWeight: 700, height: 40,
         }}>2D view</button>
       </div>
+      {/* BUILD 460: collision debug controls — move/resize the green box */}
+      {collisionDebug && selectedCritterId !== null && (
+        <div style={{
+          position: 'absolute', right: 12, top: 12, zIndex: 6,
+          background: 'rgba(0,0,0,0.8)', borderRadius: 10, padding: 10,
+          display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center',
+        }}>
+          <div style={{ color: '#00ff00', fontSize: 12, fontWeight: 700 }}>Green Box</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 36px)', gap: 4 }}>
+            <div />
+            <button style={btn} onClick={() => { greenBoxRef.current.dy -= 0.1; }}>↑</button>
+            <div />
+            <button style={btn} onClick={() => { greenBoxRef.current.dx -= 0.1; }}>←</button>
+            <button style={btn} onClick={() => { greenBoxRef.current.dx = 0; greenBoxRef.current.dy = 0; }}>•</button>
+            <button style={btn} onClick={() => { greenBoxRef.current.dx += 0.1; }}>→</button>
+            <div />
+            <button style={btn} onClick={() => { greenBoxRef.current.dy += 0.1; }}>↓</button>
+            <div />
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button style={{ ...btn, width: 'auto', padding: '0 8px', fontSize: 12 }} onClick={() => { greenBoxRef.current.hw = Math.max(0.1, greenBoxRef.current.hw - 0.05); }}>W-</button>
+            <button style={{ ...btn, width: 'auto', padding: '0 8px', fontSize: 12 }} onClick={() => { greenBoxRef.current.hw += 0.05; }}>W+</button>
+            <button style={{ ...btn, width: 'auto', padding: '0 8px', fontSize: 12 }} onClick={() => { greenBoxRef.current.hh = Math.max(0.1, greenBoxRef.current.hh - 0.05); }}>H-</button>
+            <button style={{ ...btn, width: 'auto', padding: '0 8px', fontSize: 12 }} onClick={() => { greenBoxRef.current.hh += 0.05; }}>H+</button>
+          </div>
+          <div style={{ color: '#888', fontSize: 10 }}>Values show on canvas</div>
+        </div>
+      )}
     </div>
   );
 }

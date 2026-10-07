@@ -3454,6 +3454,8 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
   const [dirTestMode, setDirTestMode] = useState(false);
   const [dirTestFacing, setDirTestFacing] = useState<DirTestEntry | null>(null);
   const [collisionDebugMode, setCollisionDebugMode] = useState(false); // BUILD 459: collision box debug
+  const collisionDebugRef = useRef(false);
+  useEffect(() => { collisionDebugRef.current = collisionDebugMode; }, [collisionDebugMode]);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const toggleMoverMode = () => {
     const next = !moverMode;
@@ -5085,8 +5087,8 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
       const heldDown = keysRef.current.down === true || isTouchHeld(touchHoldsRef.current, 'down');
       const heldUp = keysRef.current.up === true || isTouchHeld(touchHoldsRef.current, 'up');
       const input = {
-        x: inputLocked || optionsOpen || waitingRef.current ? 0 : (heldRight ? 1 : 0) - (heldLeft ? 1 : 0),
-        y: inputLocked || optionsOpen || waitingRef.current ? 0 : (heldDown ? 1 : 0) - (heldUp ? 1 : 0),
+        x: inputLocked || optionsOpen || waitingRef.current || collisionDebugRef.current ? 0 : (heldRight ? 1 : 0) - (heldLeft ? 1 : 0),
+        y: inputLocked || optionsOpen || waitingRef.current || collisionDebugRef.current ? 0 : (heldDown ? 1 : 0) - (heldUp ? 1 : 0),
       };
       // BUILD 366: tap-to-move steering. Manual input always wins and cancels
       // an in-flight tap target. Otherwise steer toward the tap target using
