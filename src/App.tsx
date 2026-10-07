@@ -1197,6 +1197,7 @@ const felledTreeKeys = new Set<string>();
 const editorDeletedTreeKeys = new Set<string>();
 type GoatState = {
   id: number;
+  kind: string; // BUILD 458: critter kind (deer, boar, badger, direwolf)
   position: Point;
   spawnPosition: Point;
   roamRadius: number;
@@ -1648,6 +1649,7 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
     if (!goatPos) return [];
     return [{
       id: 900,
+      kind: 'deer',
       position: goatPos,
       spawnPosition: { ...goatPos },
       roamRadius: 6,
@@ -1675,6 +1677,7 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
     const wanderSeed = Math.abs(chunk.x * 97 + chunk.y * 193 + index * 53 + 17);
     return {
       id: index,
+      kind: (['deer', 'boar', 'badger', 'direwolf'] as const)[wanderSeed % 4],
       position,
       spawnPosition: { ...position },
       roamRadius: 16 + (wanderSeed % 9),
@@ -7235,7 +7238,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, position: g.position, facing: g.facing, disposition: g.disposition }))} onExit={toggleIsoFieldBeta}
+            <IsoFieldView chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom}
               onTapMove={(point) => { tapMoveTargetRef.current = point; }}
               onTalkTo={(npc) => talkToTownsfolk(npc)}

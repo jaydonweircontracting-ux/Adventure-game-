@@ -46,7 +46,7 @@ interface IsoFieldViewProps {
   chunk: Point;
   position: Point; // player, field units (0..FIELD_SIZE)
   townsfolk: Townsperson[];
-  goats?: Array<{ id: number; position: Point; facing: string; disposition: string }>; // BUILD 451: goats in iso view
+  goats?: Array<{ id: number; kind: string; position: Point; facing: string; disposition: string }>; // BUILD 458: critter kinds
   onExit: () => void; // back to the 2D field
   onTapMove?: (point: Point) => void; // BUILD 366: tap-to-move target
   onTalkTo?: (npc: Townsperson) => void; // BUILD 366: tap an NPC to talk
@@ -467,35 +467,53 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // BUILD 451: goats in the iso view — simple canvas goat (body, head,
       // BUILD 457: deer (stag sprite) replaces the canvas goat. Uses the
       // provided critter sprites from public/critters/stag/.
-      const liveGoats = (live as { goats?: Array<{ id: number; position: Point; facing: string; disposition: string }> }).goats;
-      // Cache the stag sprite image
-      const stagImgKey = 'stag_SE_idle';
-      if (!(window as unknown as { __stagImg?: HTMLImageElement }).__stagImg) {
-        const img = new Image();
-        img.src = `${import.meta.env.BASE_URL}critters/stag/critter_stag_SE_idle.png`;
-        (window as unknown as { __stagImg?: HTMLImageElement }).__stagImg = img;
+      const liveGoats = (live as { goats?: Array<{ id: number; kind: string; position: Point; facing: string; disposition: string }> }).goats;
+      // BUILD 458: critter sprites per kind. Cache images.
+      const critterImgs = (window as unknown as { __critterImgs?: Record<string, HTMLImageElement> }).__critterImgs || {};
+      const critterSrc: Record<string, string> = {
+        deer: 'critters/stag/critter_stag_SE_idle.png',
+        boar: 'critters/boar/boar_SE_idle_strip.png',
+        badger: 'critters/badger/critter_badger_SE_idle.png',
+        direwolf: 'critters/wolf/wolf-idle.png',
+      };
+      for (const [kind, src] of Object.entries(critterSrc)) {
+        if (!critterImgs[kind]) {
+          const img = new Image();
+          img.src = `${import.meta.env.BASE_URL}${src}`;
+          critterImgs[kind] = img;
+        }
       }
-      const stagImg = (window as unknown as { __stagImg?: HTMLImageElement }).__stagImg;
-      if (liveGoats && stagImg && stagImg.complete && stagImg.naturalWidth > 0) {
+      (window as unknown as { __critterImgs?: Record<string, HTMLImageElement> }).__critterImgs = critterImgs;
+      if (liveGoats) {
         for (const goat of liveGoats) {
+          const kind = goat.kind || 'deer';
+          const img = critterImgs[kind];
+          if (!img || !img.complete || img.naturalWidth === 0) continue;
           const gx = goat.position.x, gy = goat.position.y;
           const c = isoToScreen(gx, gy);
           const sx = c.x, sy = c.y;
           const s = 36 * zoomRef.current;
           const depth = gx + gy;
-          // Animate through the strip frames (32px wide frames)
-          const frameW = 32, frameH = 41;
-          const frameCount = Math.floor(stagImg.naturalWidth / frameW);
-          const frameIdx = Math.floor(nowMs / 150) % frameCount;
+          // Sprite dimensions per kind (strips animate, wolf is a single image)
+          let frameW = 32, frameH = 41, isStrip = true;
+          if (kind === 'direwolf') { frameW = img.naturalWidth; frameH = img.naturalHeight; isStrip = false; }
+          else if (kind === 'boar') { frameW = 32; frameH = 25; }
+          else if (kind === 'badger') { frameW = 33; frameH = 32; }
+          const frameCount = isStrip ? Math.max(1, Math.floor(img.naturalWidth / frameW)) : 1;
+          const frameIdx = isStrip ? Math.floor(nowMs / 150) % frameCount : 0;
           drawables.push({
             depth,
             draw: (g: CanvasRenderingContext2D) => {
               // shadow
               g.fillStyle = 'rgba(0,0,0,0.25)';
               g.beginPath(); g.ellipse(sx, sy, s * 0.6, s * 0.15, 0, 0, Math.PI * 2); g.fill();
-              // deer sprite (feet-anchored)
+              // critter sprite (feet-anchored)
               const dw = frameW * (s / 24), dh = frameH * (s / 24);
-              g.drawImage(stagImg, frameIdx * frameW, 0, frameW, frameH, sx - dw / 2, sy - dh, dw, dh);
+              if (isStrip) {
+                g.drawImage(img, frameIdx * frameW, 0, frameW, frameH, sx - dw / 2, sy - dh, dw, dh);
+              } else {
+                g.drawImage(img, sx - dw / 2, sy - dh, dw, dh);
+              }
               // aggro marker
               if (goat.disposition === 'aggressive') {
                 g.fillStyle = '#ff4444'; g.font = `bold ${Math.max(10, s * 0.4)}px sans-serif`;
