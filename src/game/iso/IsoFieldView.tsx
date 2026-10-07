@@ -472,7 +472,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           const gx = goat.position.x, gy = goat.position.y;
           const c = isoToScreen(gx, gy);
           const sx = c.x, sy = c.y;
-          const s = 24 * zoomRef.current; // approx world-to-screen scale
+          const s = 36 * zoomRef.current; // BUILD 456: bigger so the goat is easy to spot
           const w = 1.2 * s, h = 0.8 * s;
           const depth = gx + gy;
           drawables.push({

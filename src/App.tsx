@@ -1632,18 +1632,17 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
   // Goats roam meadows and outskirts (danger 1+), RuneScape-style.
   // BUILD 452: except one goat outside the starting house (user request).
   if (isTutorialCenter(chunk)) {
-    // BUILD 454: try several spots around the starting house until one is
-    // unblocked — the goat must actually spawn.
-    const cx = FIELD_SIZE / 2, cy = FIELD_SIZE / 2;
+    // BUILD 456: place the goat directly outside the tutorial house door.
+    const door = buildingDoorwaysFor(chunk).find((d) => d.id === 'tutorial-house-door');
+    const doorPos = door ? door.position : { x: FIELD_SIZE / 2, y: FIELD_SIZE / 2 };
+    // Try spots in front of the door (south side) until one is unblocked.
     const candidates = [
-      { x: cx + 8, y: cy + 6 },
-      { x: cx - 8, y: cy + 6 },
-      { x: cx + 8, y: cy - 6 },
-      { x: cx - 8, y: cy - 6 },
-      { x: cx + 12, y: cy },
-      { x: cx - 12, y: cy },
-      { x: cx, y: cy + 12 },
-      { x: cx, y: cy - 12 },
+      { x: doorPos.x, y: doorPos.y + 4 },
+      { x: doorPos.x + 3, y: doorPos.y + 4 },
+      { x: doorPos.x - 3, y: doorPos.y + 4 },
+      { x: doorPos.x, y: doorPos.y + 7 },
+      { x: doorPos.x + 5, y: doorPos.y + 5 },
+      { x: doorPos.x - 5, y: doorPos.y + 5 },
     ];
     const goatPos = candidates.find((p) => !isFieldPositionBlocked(p, chunk));
     if (!goatPos) return [];
