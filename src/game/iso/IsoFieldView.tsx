@@ -60,6 +60,8 @@ interface IsoFieldViewProps {
   // BUILD 422: debug direction test — when set, the player shows this facing's
   // sprite sheet with the walk cycle playing, ignoring movement deltas.
   debugFacing?: Face8 | null;
+  // BUILD 459: collision box debug — red = current box, green = draggable proposed box
+  collisionDebug?: boolean;
 }
 
 interface Drawable { depth: number; draw: (g: CanvasRenderingContext2D, now: number) => void }
@@ -80,7 +82,7 @@ interface IsoChunkScene {
 const MARGIN = 48; // world-px background margin around the map
 const ROAD_HALF = 5; // road band half-width in tiles
 
-export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing });
@@ -108,7 +110,17 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           water: waterGridForChunk(cp.x, cp.y, 70),
           palette: fieldPalettes[tile.terrain] || fieldPalettes.meadow,
           road: tile.road,
-        });
+        }
+          drawables.push({
+            depth,
+            draw: (g: CanvasRenderingContext2D) => {
+              g.strokeStyle = '#ff0000';
+              g.lineWidth = 2;
+              g.strokeRect(c.x - w / 2, c.y - h / 2, w, h);
+            },
+          });
+        }
+      });
       }
     }
     return list;
@@ -519,6 +531,32 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
                 g.fillStyle = '#ff4444'; g.font = `bold ${Math.max(10, s * 0.4)}px sans-serif`;
                 g.textAlign = 'center'; g.fillText('!', sx, sy - dh - 4);
               }
+            },
+          });
+        }
+      }
+      // BUILD 459: collision box debug — red rectangles show current boxes
+      if (collisionDebug && liveGoats) {
+        const boxSizes: Record<string, { hw: number; hh: number }> = {
+          deer: { hw: 0.35, hh: 0.4 },
+          boar: { hw: 0.4, hh: 0.45 },
+          badger: { hw: 0.3, hh: 0.35 },
+          direwolf: { hw: 0.45, hh: 0.5 },
+        };
+        for (const goat of liveGoats) {
+          const kind = goat.kind || 'deer';
+          const box = boxSizes[kind] || { hw: 0.5, hh: 0.6 };
+          const gx = goat.position.x, gy = goat.position.y;
+          const c = isoToScreen(gx, gy);
+          const s = 36 * zoomRef.current;
+          const w = box.hw * 2 * (s / 24);
+          const h = box.hh * 2 * (s / 24);
+          drawables.push({
+            depth: gx + gy + 0.01,
+            draw: (g: CanvasRenderingContext2D) => {
+              g.strokeStyle = '#ff0000';
+              g.lineWidth = 2;
+              g.strokeRect(c.x - w / 2, c.y - h / 2, w, h);
             },
           });
         }

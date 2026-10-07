@@ -3453,6 +3453,7 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
   // direction; tapping one shows that direction's sprite sheet on the player.
   const [dirTestMode, setDirTestMode] = useState(false);
   const [dirTestFacing, setDirTestFacing] = useState<DirTestEntry | null>(null);
+  const [collisionDebugMode, setCollisionDebugMode] = useState(false); // BUILD 459: collision box debug
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const toggleMoverMode = () => {
     const next = !moverMode;
@@ -5514,7 +5515,7 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
           const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, threatLevel: playerLevelRef.current }, currentPlayer, facingRef.current, currentGoats, elapsed * 1000);
           let next = result.goat;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: goat.position, moving: false };
-          const separatedPosition = separateGoatFromPlayer(next.position, currentPlayer);
+          const separatedPosition = separateGoatFromPlayer(next.position, currentPlayer, next.kind);
           if (separatedPosition) {
             next = !isFieldPositionBlocked(separatedPosition, currentChunk)
               ? { ...next, position: separatedPosition, moving: false }
@@ -7238,7 +7239,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} onExit={toggleIsoFieldBeta}
+            <IsoFieldView chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom}
               onTapMove={(point) => { tapMoveTargetRef.current = point; }}
               onTalkTo={(npc) => talkToTownsfolk(npc)}
@@ -8502,6 +8503,10 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); setDirTestMode(!dirTestMode); if (dirTestMode) setDirTestFacing(null); }} data-testid="button-debug-dirtest">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: Direction Test{dirTestMode ? ' (Exit)' : ''}</strong><small>{dirTestMode ? 'Return to normal play' : 'Red numbered arrows · check each direction sprite'}</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); setCollisionDebugMode(!collisionDebugMode); }} data-testid="button-debug-collision">
+                  <span className="options-action-icon"><Settings size={17} /></span>
+                  <span><strong>Debug: Collision Boxes{collisionDebugMode ? ' (On)' : ''}</strong><small>{collisionDebugMode ? 'Tap to hide boxes' : 'Red = current box · tap critter, drag green to propose move'}</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMapBuilder(); }} data-testid="button-debug-mapbuilder">
                   <span className="options-action-icon"><Settings size={17} /></span>
