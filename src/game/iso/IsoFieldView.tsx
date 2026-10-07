@@ -110,17 +110,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           water: waterGridForChunk(cp.x, cp.y, 70),
           palette: fieldPalettes[tile.terrain] || fieldPalettes.meadow,
           road: tile.road,
-        }
-          drawables.push({
-            depth,
-            draw: (g: CanvasRenderingContext2D) => {
-              g.strokeStyle = '#ff0000';
-              g.lineWidth = 2;
-              g.strokeRect(c.x - w / 2, c.y - h / 2, w, h);
-            },
-          });
-        }
-      });
+        });
       }
     }
     return list;
