@@ -3456,6 +3456,15 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
   const [collisionDebugMode, setCollisionDebugMode] = useState(false); // BUILD 459: collision box debug
   const collisionDebugRef = useRef(false);
   useEffect(() => { collisionDebugRef.current = collisionDebugMode; }, [collisionDebugMode]);
+  // BUILD 461: D-pad (arrow keys) toggle — persisted
+  const [showDpad, setShowDpad] = useState(() => {
+    try { return localStorage.getItem('ag-show-dpad') !== '0'; } catch { return true; }
+  });
+  const toggleDpad = () => {
+    const next = !showDpad;
+    setShowDpad(next);
+    try { localStorage.setItem('ag-show-dpad', next ? '1' : '0'); } catch { /* ignore */ }
+  };
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const toggleMoverMode = () => {
     const next = !moverMode;
@@ -8498,6 +8507,10 @@ if (active) {
                   <span className="options-action-icon"><Upload size={17} /></span>
                   <span><strong>Load Save File</strong><small>Import a downloaded JSON save</small></span>
                 </button>
+                <button className="options-action" onClick={() => { toggleDpad(); }} data-testid="button-toggle-dpad">
+                  <span className="options-action-icon">🎮</span>
+                  <span><strong>Arrow Keys{showDpad ? ' (On)' : ' (Off)'}</strong><small>{showDpad ? 'Tap to hide the D-pad' : 'Tap to show the D-pad'}</small></span>
+                </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMoverMode(); }} data-testid="button-debug-mover">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: World Editor{moverMode ? ' (Exit)' : ''}</strong><small>{moverMode ? 'Return to normal play' : 'Place houses, trees, rocks, roads · flag removals'}</small></span>
@@ -8865,6 +8878,43 @@ if (active) {
              <span className="equipped-weapon-icon" aria-hidden="true">{equippedSword ? '🗡' : equippedBow ? '🏹' : equippedDagger ? '†' : '✊'}</span>
              <span className="equipped-weapon-label">{equippedSword ? 'Sword' : equippedBow ? 'Bow' : equippedDagger ? 'Dagger' : 'Fists'}</span>
            </div>
+           {/* BUILD 461: D-pad (arrow keys) — toggle in options */}
+           {showDpad && !interior && !optionsOpen && (
+             <div className="field-dpad" style={{
+               position: 'absolute', left: 12, bottom: 12, zIndex: 10,
+               display: 'grid', gridTemplateColumns: 'repeat(3, 52px)', gridTemplateRows: 'repeat(3, 52px)', gap: 4,
+             }}>
+               <div />
+               <button className="dpad-btn" data-dir="up"
+                 onPointerDown={(e) => { e.preventDefault(); pressDirection('up', e.pointerType === 'mouse' ? undefined : 1); }}
+                 onPointerUp={() => releaseDirection('up', 1)}
+                 onPointerLeave={() => releaseDirection('up', 1)}
+                 onPointerCancel={() => releaseDirection('up', 1)}
+                 aria-label="Move up">▲</button>
+               <div />
+               <button className="dpad-btn" data-dir="left"
+                 onPointerDown={(e) => { e.preventDefault(); pressDirection('left', e.pointerType === 'mouse' ? undefined : 1); }}
+                 onPointerUp={() => releaseDirection('left', 1)}
+                 onPointerLeave={() => releaseDirection('left', 1)}
+                 onPointerCancel={() => releaseDirection('left', 1)}
+                 aria-label="Move left">◀</button>
+               <div />
+               <button className="dpad-btn" data-dir="right"
+                 onPointerDown={(e) => { e.preventDefault(); pressDirection('right', e.pointerType === 'mouse' ? undefined : 1); }}
+                 onPointerUp={() => releaseDirection('right', 1)}
+                 onPointerLeave={() => releaseDirection('right', 1)}
+                 onPointerCancel={() => releaseDirection('right', 1)}
+                 aria-label="Move right">▶</button>
+               <div />
+               <button className="dpad-btn" data-dir="down"
+                 onPointerDown={(e) => { e.preventDefault(); pressDirection('down', e.pointerType === 'mouse' ? undefined : 1); }}
+                 onPointerUp={() => releaseDirection('down', 1)}
+                 onPointerLeave={() => releaseDirection('down', 1)}
+                 onPointerCancel={() => releaseDirection('down', 1)}
+                 aria-label="Move down">▼</button>
+               <div />
+             </div>
+           )}
            {talkTarget && (
              <button className="icon-button field-talk-button" onClick={() => talkTarget.talk()} aria-label={'Talk to ' + talkTarget.name} title={'Talk to ' + talkTarget.name} data-testid="button-talk"><MessageCircle size={16} /></button>
            )}

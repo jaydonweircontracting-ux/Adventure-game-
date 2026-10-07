@@ -2435,6 +2435,16 @@ body {
 .target-bar { margin-top: 5px; height: 5px; background: rgba(44, 28, 28, .8); }
 .target-health { background: linear-gradient(90deg, #d05b48, #f0a05b); }
 .field-attack-button { color: #fff0cf; background: rgba(131, 67, 55, .9); border-color: rgba(238, 185, 133, .72); }
+/* BUILD 461: D-pad buttons */
+.dpad-btn {
+  width: 52px; height: 52px; border-radius: 12px;
+  border: 2px solid rgba(255,255,255,0.25);
+  background: rgba(20,30,38,0.7); color: #fff;
+  font-size: 20px; font-weight: bold;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.dpad-btn:active { background: rgba(50,70,90,0.9); }
 .field-attack-button:hover, .field-attack-button:focus-visible { background: rgba(172, 78, 60, .98); }
 .combat-flash { position: absolute; z-index: 14; top: max(72px, calc(env(safe-area-inset-top) + 56px)); left: 50%; width: max-content; max-width: calc(100% - 32px); padding: 7px 11px; color: #fff4d5; border: 1px solid rgba(255, 221, 150, .74); background: rgba(101, 52, 42, .9); box-shadow: 3px 3px 0 rgba(48, 42, 32, .25); font-family: var(--app-font-mono); font-size: 9px; transform: translateX(-50%); animation: combat-pop .2s ease both; pointer-events: none; }
 /* BUILD 337: frame-error badge — only rendered when the loop catches an error. */
@@ -3029,6 +3039,8 @@ body {
 }
 .options-card {
   width: min(430px, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
   padding: clamp(20px, 5vw, 30px);
   border: 1px solid rgba(235, 206, 139, .62);
   background: #f3ebd5;
