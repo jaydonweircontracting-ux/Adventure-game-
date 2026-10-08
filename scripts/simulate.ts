@@ -29,6 +29,7 @@ import { startTaming, updateTaming, tamingBehaviorForSpecies, TAMING_DEFAULTS } 
 import { generateQuestForLandmark, generateQuestsForLandmarks } from '../src/game/questGen';
 import { generateCave, resourcesForTier, dangerForTier } from '../src/game/caves';
 import { examineLandmark, examineCaveTier, examineCompanionSpecies, examineDiscovery } from '../src/game/examineGen';
+import { historyForLandmark } from '../src/game/worldHistory';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
@@ -4152,6 +4153,28 @@ import { inflateSync } from 'node:zlib';
   assert(disc1.includes('Discovered'), 'Examine: first visit announces discovery');
   const disc2 = examineDiscovery('Test Ruin', 'ruin', false);
   assert(!disc2.includes('Discovered'), 'Examine: return visit no announcement');
+}
+
+// BUILD 490: World history generation.
+{
+  const landmarks = getLandmarksForRegion(0, 0, 847291583);
+  const lm = landmarks[0];
+
+  const h1 = historyForLandmark(lm, 847291583);
+  assert(h1.landmarkId === lm.id, 'History: must reference landmark');
+  assert(h1.history.length > 0, 'History: must have history');
+  assert(h1.rumor.includes(lm.name), 'History: rumor must mention name');
+
+  // Deterministic.
+  const h2 = historyForLandmark(lm, 847291583);
+  assert(JSON.stringify(h1) === JSON.stringify(h2), 'History: must be deterministic');
+
+  // Different landmarks → different histories (usually).
+  if (landmarks.length > 1) {
+    const h3 = historyForLandmark(landmarks[1], 847291583);
+    // May share template but different details.
+    assert(h3.landmarkId !== h1.landmarkId, 'History: different landmarks');
+  }
 }
 
 // ---- Results ----
