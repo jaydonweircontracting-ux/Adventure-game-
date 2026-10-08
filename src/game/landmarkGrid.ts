@@ -84,8 +84,20 @@ export function getLandmarksForRegion(
 
   for (let i = 0; i < count; i++) {
     // Position within region (chunk coords).
-    const cx = rx * LANDMARK_REGION_SIZE + Math.floor(rng() * LANDMARK_REGION_SIZE);
-    const cy = ry * LANDMARK_REGION_SIZE + Math.floor(rng() * LANDMARK_REGION_SIZE);
+    // BUILD 512: Enforce minimum spacing. If this is the second landmark,
+    // ensure it's at least 2 chunks away (Manhattan) from the first.
+    let cx: number, cy: number;
+    let attempts = 0;
+    do {
+      cx = rx * LANDMARK_REGION_SIZE + Math.floor(rng() * LANDMARK_REGION_SIZE);
+      cy = ry * LANDMARK_REGION_SIZE + Math.floor(rng() * LANDMARK_REGION_SIZE);
+      attempts++;
+      // Give up after 10 tries (small region, may be impossible).
+      if (attempts >= 10) break;
+    } while (
+      i > 0 &&
+      landmarks.some((lm) => Math.abs(lm.chunk.x - cx) + Math.abs(lm.chunk.y - cy) < 2)
+    );
 
     // Kind selection (weighted).
     const roll = rng();

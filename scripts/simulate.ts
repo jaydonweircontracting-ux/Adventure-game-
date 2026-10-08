@@ -4962,6 +4962,35 @@ import { inflateSync } from 'node:zlib';
   }
 }
 
+// BUILD 512: Landmark spacing validation.
+{
+  // Check spacing across many regions.
+  let totalPairs = 0;
+  let violations = 0;
+  for (let rx = 0; rx < 10; rx++) {
+    for (let ry = 0; ry < 10; ry++) {
+      const lms = getLandmarksForRegion(rx, ry, 847291583);
+      // Check all pairs.
+      for (let i = 0; i < lms.length; i++) {
+        for (let j = i + 1; j < lms.length; j++) {
+          totalPairs++;
+          const dist = Math.abs(lms[i].chunk.x - lms[j].chunk.x) +
+                       Math.abs(lms[i].chunk.y - lms[j].chunk.y);
+          if (dist < 2) violations++;
+        }
+      }
+    }
+  }
+  // Should have very few violations (only when region too small).
+  // 4x4 region with 2 landmarks: always possible to space them.
+  assert(violations === 0, 'Landmark: no spacing violations (got ' + violations + '/' + totalPairs + ')');
+
+  // Deterministic still.
+  const a = getLandmarksForRegion(3, 7, 847291583);
+  const b = getLandmarksForRegion(3, 7, 847291583);
+  assert(JSON.stringify(a) === JSON.stringify(b), 'Landmark: still deterministic');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
