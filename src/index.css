@@ -1515,7 +1515,8 @@
   left: -3px;
   top: -7px;
   width: calc(100% + 6px);
-  height: 10px;
+  height: 35%;
+  min-height: 10px;
   background: #944839;
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
@@ -1537,7 +1538,8 @@
 }
 .field-house.new-house::before {
   background: #3a3a4a;
-  height: 12px;
+  height: 35%;
+  min-height: 12px;
   top: -9px;
 }
 .field-house.new-house::after {
