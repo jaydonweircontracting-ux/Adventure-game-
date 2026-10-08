@@ -37,6 +37,7 @@ import { relationshipsFor, predatorsOf, preyOf, predatorPressureFor } from '../s
 import { emptyMetrics, checkBudgets, DEFAULT_BUDGETS } from '../src/game/profiler';
 import { createWorkQueue, enqueueWork, processWorkQueue, queueDepth } from '../src/game/workQueue';
 import { initResource, harvestResource, simulateResourceDay, simulateResourceDays, paramsForResource } from '../src/game/resources';
+import { migrationPressure, simulateMigration } from '../src/game/migration';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4394,6 +4395,40 @@ import { inflateSync } from 'node:zlib';
   // Trees grow slower than grass.
   assert(paramsForResource('trees').growthRate < paramsForResource('grass').growthRate,
     'Resource: trees slower than grass');
+}
+
+// BUILD 498: Population migration.
+{
+  const params = paramsForSpecies('deer')!;
+  const pop = initPopulation('deer', 0, 0, 847291583)!;
+
+  // Low pressure when conditions good.
+  const good = { ...pop, foodAvailability: 0.9, predatorPressure: 0.1 };
+  const p1 = migrationPressure(good, params);
+  assert(p1 < 0.3, 'Migration: low pressure when good (got ' + p1.toFixed(2) + ')');
+
+  // High pressure when starving.
+  const bad = { ...pop, foodAvailability: 0.1, predatorPressure: 0.8, population: 45 };
+  const p2 = migrationPressure(bad, params);
+  assert(p2 > 0.5, 'Migration: high pressure when bad (got ' + p2.toFixed(2) + ')');
+
+  // No migration when pressure low.
+  const m1 = simulateMigration(good, params, [{ dx: 1, dy: 0, suitability: 0.9 }]);
+  assert(m1 === null, 'Migration: none when happy');
+
+  // Migration when stressed and better neighbor exists.
+  const m2 = simulateMigration(bad, params, [
+    { dx: 1, dy: 0, suitability: 0.9 },
+    { dx: 0, dy: 1, suitability: 0.3 },
+  ]);
+  assert(m2 !== null, 'Migration: occurs when stressed');
+  assert(m2!.migrated > 0, 'Migration: some migrate');
+  assert(m2!.source.population === bad.population - m2!.migrated, 'Migration: population conserved');
+  assert(m2!.direction.dx === 1, 'Migration: goes to best neighbor');
+
+  // No migration if no better neighbor.
+  const m3 = simulateMigration(bad, params, [{ dx: 1, dy: 0, suitability: 0.2 }]);
+  assert(m3 === null, 'Migration: none if nowhere better');
 }
 
 // ---- Results ----
