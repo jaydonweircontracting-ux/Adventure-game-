@@ -3529,14 +3529,21 @@ import { inflateSync } from 'node:zlib';
 // BUILD 463: WFC world biome layer.
 {
   const btiles = worldBiomeTileSet();
-  assert(btiles.tiles.length === 7, 'WFC world: biome tile set must have 7 tiles');
+  assert(btiles.tiles.length === 10, 'WFC world: biome tile set must have 10 tiles (7 biomes + 3 transition)');
   const ids = new Set(btiles.tiles.map((t) => t.id));
-  for (const b of ['ocean', 'shore', 'meadow', 'forest', 'desert', 'tundra', 'rock']) {
+  for (const b of ['ocean', 'shore', 'meadow', 'forest', 'desert', 'tundra', 'rock', 'hills', 'highlands', 'crag']) {
     assert(ids.has(b), 'WFC world: tile set must include ' + b);
   }
-  assert(!btiles.compatible!('ocean', 'meadow'), 'WFC world: ocean must not accept meadow');
-  assert(btiles.compatible!('ocean', 'shore'), 'WFC world: ocean must accept shore');
-  assert(btiles.compatible!('meadow', 'forest'), 'WFC world: meadow must accept forest');
+  assert(!btiles.compatible!('ocean:0', 'meadow:1'), 'WFC world: ocean must not accept meadow');
+  assert(btiles.compatible!('ocean:0', 'shore:1'), 'WFC world: ocean must accept shore');
+  assert(btiles.compatible!('meadow:1', 'forest:2'), 'WFC world: meadow must accept forest');
+  // BUILD 464: elevation sockets — no vertical walls without transition tiles.
+  assert(!btiles.compatible!('meadow:1', 'rock:5'), 'WFC world: meadow must not directly accept rock (elev step 4)');
+  assert(btiles.compatible!('meadow:1', 'hills:2'), 'WFC world: meadow must accept hills (elev step 1)');
+  assert(btiles.compatible!('hills:2', 'highlands:3'), 'WFC world: hills must accept highlands');
+  assert(btiles.compatible!('highlands:3', 'crag:4'), 'WFC world: highlands must accept crag');
+  assert(btiles.compatible!('crag:4', 'rock:5'), 'WFC world: crag must accept rock');
+  assert(!btiles.compatible!('meadow:1', 'crag:4'), 'WFC world: meadow must not accept crag (elev step 3)');
 
   const bgrid = generateChunkBiomes(999, 4, 7, 8);
   assert(bgrid !== null && bgrid.length === 8 && bgrid[0].length === 8,

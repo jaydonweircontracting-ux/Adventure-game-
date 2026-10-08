@@ -1,50 +1,79 @@
-// WFC world-generation profiles (BUILD 463 — Phase 1).
+// WFC world-generation profiles (BUILD 464 — Phase 2).
 //
 // The "world-generation grammar": tile/socket libraries and rules for each
 // environment, all speaking the same constraint language (see wfc.ts).
 //
-// Phase 1 scope (per the master prompt's incremental directive):
-// - Biome tile set derived from the EXISTING worldMap.ts ALLOWED_NEIGHBORS,
-//   so behavior stays compatible with the current generator.
-// - Socket semantics: terrain socket per side (biome id). A tile's north
-//   socket must be compatible with the neighbor's south socket, etc.
-// - The solver is exposed for chunk-level generation; wiring into the live
-//   chunk pipeline is Phase 2 (after validation).
+// Phase 1 (BUILD 463): biome tile set from worldMap.ts ALLOWED_NEIGHBORS.
+// Phase 2 (this change):
+// - Elevation sockets (§3, §9): every tile carries an elevation band.
+//   Adjacent tiles may differ by at most 1 elevation level — no more
+//   "flat grass suddenly becoming a vertical mountain wall" (§4).
+// - Transition tiles (§11): hills, highlands, crag bridge the gaps so
+//   elevation changes flow PLAINS → HILLS → FOOTHILLS → MOUNTAIN.
+// - The biome compatibility rules from Phase 1 are preserved.
 //
 // Later phases (not in this change):
-// - Elevation sockets, river/road infrastructure sockets, transition tiles,
-//   settlement profiles, dungeon profiles, multi-scale hierarchy.
+// - River/road infrastructure sockets, settlement profiles, dungeon
+//   profiles, multi-scale hierarchy, live chunk-pipeline wiring.
 
 import { WfcTileSet, WfcTile, WfcSeededRng, WfcSolver, wfcSeedFor } from './wfc';
 
+// Elevation bands (§3): 0=water, 1=low, 2=flat, 3=hill, 4=high, 5=mountain.
+// Mirrors worldMap.ts elevationLevelFor (0=ocean … 5=peak).
+export type WfcElevation = 0 | 1 | 2 | 3 | 4 | 5;
+
 // Mirror of worldMap.ts biomes + neighbor rules, expressed as WFC tiles.
 // Weights: common terrain is heavy, rare terrain is light (§18).
-const BIOME_TILES: Array<{ id: string; weight: number; neighbors: string[] }> = [
-  { id: 'ocean',  weight: 14, neighbors: ['ocean', 'shore'] },
-  { id: 'shore',  weight: 6,  neighbors: ['ocean', 'shore', 'meadow'] },
-  { id: 'meadow', weight: 30, neighbors: ['shore', 'meadow', 'forest', 'desert', 'tundra', 'rock'] },
-  { id: 'forest', weight: 20, neighbors: ['meadow', 'forest', 'tundra', 'rock'] },
-  { id: 'desert', weight: 8,  neighbors: ['meadow', 'forest', 'desert', 'shore', 'rock'] },
-  { id: 'tundra', weight: 8,  neighbors: ['meadow', 'forest', 'tundra', 'rock'] },
-  { id: 'rock',   weight: 10, neighbors: ['meadow', 'forest', 'desert', 'tundra', 'rock'] },
+// elevation: the band this tile sits in. Transition tiles (§11) sit between.
+const BIOME_TILES: Array<{
+  id: string; weight: number; neighbors: string[]; elevation: WfcElevation;
+}> = [
+  { id: 'ocean',  weight: 14, neighbors: ['ocean', 'shore'], elevation: 0 },
+  { id: 'shore',  weight: 6,  neighbors: ['ocean', 'shore', 'meadow'], elevation: 1 },
+  { id: 'meadow', weight: 30, neighbors: ['shore', 'meadow', 'forest', 'desert', 'tundra', 'hills'], elevation: 1 },
+  // Transition tiles (§11): bridge elevation gaps so terrain flows.
+  { id: 'hills',     weight: 12, neighbors: ['meadow', 'forest', 'hills', 'highlands', 'desert'], elevation: 2 },
+  { id: 'highlands', weight: 8,  neighbors: ['hills', 'forest', 'tundra', 'highlands', 'crag'], elevation: 3 },
+  { id: 'crag',      weight: 5,  neighbors: ['highlands', 'rock', 'crag', 'tundra'], elevation: 4 },
+  { id: 'forest', weight: 20, neighbors: ['meadow', 'forest', 'tundra', 'hills', 'highlands', 'desert'], elevation: 2 },
+  { id: 'desert', weight: 8,  neighbors: ['meadow', 'forest', 'desert', 'shore', 'hills', 'rock'], elevation: 1 },
+  { id: 'tundra', weight: 8,  neighbors: ['meadow', 'forest', 'tundra', 'highlands', 'crag'], elevation: 3 },
+  { id: 'rock',   weight: 10, neighbors: ['crag', 'highlands', 'tundra', 'rock', 'desert'], elevation: 5 },
 ];
+
+/** Max allowed elevation step between adjacent tiles (§4, §9). */
+export const WFC_MAX_ELEVATION_STEP = 1;
 
 function biomeTileSet(): WfcTileSet {
   const ids = new Set(BIOME_TILES.map((t) => t.id));
+  const byId = new Map(BIOME_TILES.map((t) => [t.id, t]));
   const tiles: WfcTile[] = BIOME_TILES.map((t) => ({
     id: t.id,
     weight: t.weight,
-    sockets: { north: t.id, south: t.id, east: t.id, west: t.id },
+    // Socket encodes biome + elevation: "meadow:1". The compatible()
+    // predicate parses both (§3 — terrain + elevation sockets).
+    sockets: {
+      north: `${t.id}:${t.elevation}`, south: `${t.id}:${t.elevation}`,
+      east: `${t.id}:${t.elevation}`, west: `${t.id}:${t.elevation}`,
+    },
   }));
   return {
     tiles,
-    // Socket `a` (this tile's biome) is compatible with socket `b`
-    // (neighbor's biome) when `b` is in `a`'s allowed-neighbor list.
-    // Falls back to exact match for unknown ids.
     compatible: (a, b) => {
-      const rule = BIOME_TILES.find((t) => t.id === a);
-      if (!rule) return a === b;
-      return rule.neighbors.includes(b) && ids.has(b);
+      const [biomeA, elevAStr] = a.split(':');
+      const [biomeB, elevBStr] = b.split(':');
+      const ruleA = byId.get(biomeA);
+      const ruleB = byId.get(biomeB);
+      if (!ruleA || !ruleB || !ids.has(biomeB)) return a === b;
+      // Biome adjacency (Phase 1 rules, extended with transition tiles).
+      // Must be SYMMETRIC for WFC: if A accepts B then B must accept A.
+      if (!ruleA.neighbors.includes(biomeB)) return false;
+      if (!ruleB.neighbors.includes(biomeA)) return false;
+      // Elevation step (§9): at most 1 level. This is what prevents
+      // PLAINS → MOUNTAIN cliffs without a transition tile between.
+      const elevA = parseInt(elevAStr, 10);
+      const elevB = parseInt(elevBStr, 10);
+      return Math.abs(elevA - elevB) <= WFC_MAX_ELEVATION_STEP;
     },
   };
 }
@@ -106,6 +135,8 @@ export function generateChunkBiomes(
 export function validateBiomeGrid(grid: string[][]): Array<{ x: number; y: number; dir: string; a: string; b: string }> {
   const tiles = worldBiomeTileSet();
   const compat = tiles.compatible!;
+  // Map tile id -> socket string (sockets now encode biome:elevation).
+  const socketFor = new Map(tiles.tiles.map((t) => [t.id, t.sockets.north]));
   const violations: Array<{ x: number; y: number; dir: string; a: string; b: string }> = [];
   const h = grid.length;
   if (h === 0) return violations;
@@ -120,7 +151,8 @@ export function validateBiomeGrid(grid: string[][]): Array<{ x: number; y: numbe
         const nx = x + dx, ny = y + dy;
         if (nx >= w || ny >= h) continue;
         const a = grid[y][x], b = grid[ny][nx];
-        if (!compat(a, b)) violations.push({ x, y, dir, a, b });
+        const sa = socketFor.get(a) ?? a, sb = socketFor.get(b) ?? b;
+        if (!compat(sa, sb)) violations.push({ x, y, dir, a, b });
       }
     }
   }
