@@ -17,6 +17,7 @@ import { WfcSolver, WfcSeededRng, wfcSeedFor } from '../src/game/wfc';
 import { worldBiomeTileSet, generateChunkBiomes, validateBiomeGrid } from '../src/game/wfcWorld';
 import { SpatialHash, updateSeparation, createSeparationState } from '../src/game/spatialHash';
 import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats } from '../src/game/items';
+import { EntityPool, type PoolableEntity } from '../src/game/entityPool';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds } from '../src/game/touchInput';
@@ -3703,6 +3704,56 @@ import { inflateSync } from 'node:zlib';
   const cheap = generateItem(new ItemRng(5), 5, 'common', 'dagger');
   const pricey = generateItem(new ItemRng(5), 5, 'epic', 'dagger');
   assert(pricey.value > cheap.value, 'Items: epic must be worth more than common');
+}
+
+// BUILD 469: Entity pooling — reuse, reset, lifecycle.
+{
+  let nextId = 0;
+  class TestEntity implements PoolableEntity {
+    poolId: number;
+    lifecycle: 'active' | 'dying' | 'pooled' = 'pooled';
+    hp = 100;
+    aiState = 'idle';
+    constructor() { this.poolId = nextId++; }
+    reset() { this.hp = 100; this.aiState = 'idle'; this.lifecycle = 'pooled'; }
+  }
+  const pool = new EntityPool<TestEntity>({ factory: () => new TestEntity(), initialSize: 5, maxSize: 10 });
+  assert(pool.pooled === 5, 'Pool: must preallocate 5');
+  assert(pool.active === 0, 'Pool: must start with 0 active');
+
+  // Acquire reuses.
+  const e1 = pool.acquire();
+  assert(pool.pooled === 4 && pool.active === 1, 'Pool: acquire must move from pooled to active');
+  assert(e1.lifecycle === 'active', 'Pool: acquired must be active');
+  assert(e1.hp === 100 && e1.aiState === 'idle', 'Pool: acquired must be reset');
+
+  // Mutate, release, re-acquire — no stale state.
+  e1.hp = 10;
+  e1.aiState = 'attacking';
+  pool.release(e1);
+  assert(pool.pooled === 5 && pool.active === 0, 'Pool: release must return to pooled');
+  const e2 = pool.acquire();
+  assert(e2.poolId === e1.poolId, 'Pool: must reuse the same object');
+  assert(e2.hp === 100 && e2.aiState === 'idle', 'Pool: reused must have no stale state (§7)');
+
+  // Exhaust pool → creates new.
+  const entities: TestEntity[] = [e2];
+  for (let i = 0; i < 10; i++) entities.push(pool.acquire());
+  assert(pool.created === 11, 'Pool: must create new when exhausted (got ' + pool.created + ')');
+  assert(pool.active === 11, 'Pool: must track 11 active');
+
+  // Release all.
+  pool.releaseAll(entities);
+  assert(pool.active === 0, 'Pool: releaseAll must clear active');
+  // Max size is 10, so 1 was dropped.
+  assert(pool.pooled === 10, 'Pool: must respect maxSize (got ' + pool.pooled + ')');
+
+  // Double-release is safe.
+  pool.release(e2);
+  assert(pool.pooled === 10, 'Pool: double-release must be safe');
+
+  // Metrics.
+  assert(pool.spawns > 0 && pool.recycles > 0, 'Pool: must track spawns and recycles');
 }
 
 // ---- Results ----
