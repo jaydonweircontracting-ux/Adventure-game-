@@ -41,6 +41,7 @@ import { migrationPressure, simulateMigration } from '../src/game/migration';
 import { generateTraits, inheritTraits, traitsValid } from '../src/game/traits';
 import { behaviorForSpecies, selectBehavior, initialBehaviorState, BehaviorContext } from '../src/game/behaviors';
 import { createRegionalHistory, recordEcoEvent, detectEcoEvents, historyNarrative } from '../src/game/ecoHistory';
+import { createRegionalImpact, recordPlayerAction, calculateEcologicalModifiers, impactDescription } from '../src/game/playerImpact';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4560,6 +4561,54 @@ import { inflateSync } from 'node:zlib';
   assert(narrative.includes('deer'), 'History: narrative mentions species');
   const empty = historyNarrative(createRegionalHistory(0, 0));
   assert(empty.includes('Nothing unusual'), 'History: empty narrative');
+}
+
+// BUILD 502: Player ecological impact.
+{
+  const impact = createRegionalImpact(1, 2);
+  assert(Object.keys(impact.actions).length === 0, 'Impact: empty initially');
+
+  // Record actions.
+  const i2 = recordPlayerAction(impact, 'killed_deer', 5);
+  const i3 = recordPlayerAction(i2, 'killed_deer', 5);
+  assert(i3.actions.killed_deer === 2, 'Impact: counts actions');
+
+  // Modifiers.
+  const mod1 = calculateEcologicalModifiers(impact);
+  assert(mod1.deerModifier === 1, 'Impact: no effect when no kills');
+
+  const mod2 = calculateEcologicalModifiers(i3);
+  assert(mod2.deerModifier < 1, 'Impact: deer reduced after kills');
+  assert(mod2.deerModifier >= 0.3, 'Impact: modifier floored');
+
+  // Heavy hunting.
+  let heavy = impact;
+  for (let i = 0; i < 20; i++) {
+    heavy = recordPlayerAction(heavy, 'killed_deer', 10);
+  }
+  const mod3 = calculateEcologicalModifiers(heavy);
+  assert(mod3.deerModifier === 0.3, 'Impact: floor at 0.3');
+
+  // Wolves.
+  const w1 = recordPlayerAction(impact, 'killed_wolf', 5);
+  const mod4 = calculateEcologicalModifiers(w1);
+  assert(mod4.wolfModifier < 1, 'Impact: wolves reduced');
+
+  // Forest clearing.
+  const f1 = recordPlayerAction(impact, 'cleared_forest', 5);
+  const mod5 = calculateEcologicalModifiers(f1);
+  assert(mod5.vegetationModifier < 1, 'Impact: vegetation reduced');
+
+  // Description.
+  const desc1 = impactDescription(impact);
+  assert(desc1.includes('undisturbed'), 'Impact: pristine description');
+
+  let hunted = impact;
+  for (let i = 0; i < 10; i++) {
+    hunted = recordPlayerAction(hunted, 'killed_deer', 10);
+  }
+  const desc2 = impactDescription(hunted);
+  assert(desc2.includes('deer'), 'Impact: mentions deer hunting');
 }
 
 // ---- Results ----
