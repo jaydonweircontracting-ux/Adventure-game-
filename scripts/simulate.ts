@@ -13,6 +13,8 @@ import { landscapeSeed, moistureAt, forestDensityAt, rockDensityAt, macroLandfor
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText, EDITOR_LOG_MAX } from '../src/game/worldEditor';
 import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE } from '../src/game/mapBuilder';
 import { organicTownSpecs } from '../src/game/organicTowns';
+import { WfcSolver, WfcSeededRng, wfcSeedFor } from '../src/game/wfc';
+import { worldBiomeTileSet, generateChunkBiomes, validateBiomeGrid } from '../src/game/wfcWorld';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds } from '../src/game/touchInput';
@@ -3471,6 +3473,88 @@ import { inflateSync } from 'node:zlib';
     'App must define the tutorial-house sword ground item');
   assert(/sword-inventory\.png/.test(appSrc),
     'Inventory must use the sword art sprite');
+}
+
+
+// BUILD 463: WFC core engine — constraint-based world generation framework.
+{
+  // 1. Basic collapse: 4x4 grid with 2 compatible tiles always succeeds.
+  const wfcTiles = {
+    tiles: [
+      { id: 'a', weight: 1, sockets: { north: 'x', south: 'x', east: 'x', west: 'x' } },
+      { id: 'b', weight: 1, sockets: { north: 'x', south: 'x', east: 'x', west: 'x' } },
+    ],
+  };
+  const solver = new WfcSolver({ width: 4, height: 4, tiles: wfcTiles, rng: new WfcSeededRng(1) });
+  const grid = solver.collapse();
+  assert(grid !== null && grid.length === 4 && grid[0].length === 4,
+    'WFC: 4x4 collapse with compatible tiles must succeed');
+  assert(grid!.flat().every((id) => id === 'a' || id === 'b'),
+    'WFC: collapsed tiles must be from the tile set');
+
+  // 2. Determinism: same seed = same output.
+  const mk = () => new WfcSolver({ width: 6, height: 6, tiles: wfcTiles, rng: new WfcSeededRng(42) }).collapse();
+  const g1 = JSON.stringify(mk()), g2 = JSON.stringify(mk());
+  assert(g1 === g2, 'WFC: same seed must produce identical output');
+
+  // 3. Incompatible tiles: solver must respect socket constraints.
+  const strict = {
+    tiles: [
+      { id: 'grass', weight: 1, sockets: { north: 'G', south: 'G', east: 'G', west: 'G' } },
+      { id: 'water', weight: 1, sockets: { north: 'W', south: 'W', east: 'W', west: 'W' } },
+    ],
+  };
+  const s2 = new WfcSolver({ width: 5, height: 5, tiles: strict, rng: new WfcSeededRng(7) });
+  const g3 = s2.collapse();
+  assert(g3 !== null && g3.flat().every((id) => id === g3[0][0]),
+    'WFC: incompatible tiles must produce a uniform grid');
+
+  // 4. Boundary locking: setTile constrains the result.
+  const s3 = new WfcSolver({ width: 3, height: 3, tiles: strict, rng: new WfcSeededRng(9) });
+  assert(s3.setTile(1, 1, 'water'), 'WFC: setTile must succeed');
+  const g4 = s3.collapse();
+  assert(g4 !== null && g4[1][1] === 'water',
+    'WFC: locked tile must survive collapse');
+  assert(g4!.flat().every((id) => id === 'water'),
+    'WFC: water lock must propagate to the whole grid');
+
+  // 5. Seed derivation is region-isolated.
+  const sa = wfcSeedFor(123, 4, 7, 'wfc-biome');
+  const sb = wfcSeedFor(123, 4, 8, 'wfc-biome');
+  const sc = wfcSeedFor(123, 4, 7, 'wfc-biome');
+  assert(sa !== sb, 'WFC: different chunks must get different seeds');
+  assert(sa === sc, 'WFC: same inputs must give same seed');
+}
+
+// BUILD 463: WFC world biome layer.
+{
+  const btiles = worldBiomeTileSet();
+  assert(btiles.tiles.length === 7, 'WFC world: biome tile set must have 7 tiles');
+  const ids = new Set(btiles.tiles.map((t) => t.id));
+  for (const b of ['ocean', 'shore', 'meadow', 'forest', 'desert', 'tundra', 'rock']) {
+    assert(ids.has(b), 'WFC world: tile set must include ' + b);
+  }
+  assert(!btiles.compatible!('ocean', 'meadow'), 'WFC world: ocean must not accept meadow');
+  assert(btiles.compatible!('ocean', 'shore'), 'WFC world: ocean must accept shore');
+  assert(btiles.compatible!('meadow', 'forest'), 'WFC world: meadow must accept forest');
+
+  const bgrid = generateChunkBiomes(999, 4, 7, 8);
+  assert(bgrid !== null && bgrid.length === 8 && bgrid[0].length === 8,
+    'WFC world: chunk biome generation must succeed');
+  const violations = validateBiomeGrid(bgrid!);
+  assert(violations.length === 0,
+    'WFC world: generated grid must have zero adjacency violations (got ' + violations.length + ')');
+
+  const northEdge = Array(8).fill('forest');
+  const g2 = generateChunkBiomes(999, 4, 7, 8, { north: northEdge });
+  assert(g2 !== null && g2[0].every((id) => id === 'forest'),
+    'WFC world: north boundary lock must be honored');
+  assert(validateBiomeGrid(g2!).length === 0,
+    'WFC world: boundary-constrained grid must still validate');
+
+  const ga = JSON.stringify(generateChunkBiomes(555, 1, 2, 6));
+  const gb = JSON.stringify(generateChunkBiomes(555, 1, 2, 6));
+  assert(ga === gb, 'WFC world: chunk generation must be deterministic');
 }
 
 // ---- Results ----
