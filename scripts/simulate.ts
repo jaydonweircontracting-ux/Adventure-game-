@@ -23,6 +23,7 @@ import { FlowField, FlowFieldCache, sampleFlowSmoothed } from '../src/game/flowF
 import { riverTileSetCached, roadTileSetCached } from '../src/game/wfcInfra';
 import { dungeonTileSetCached, generateDungeon } from '../src/game/wfcDungeon';
 import { simTierForDistance, shouldUpdate, SIM_TIER_INTERVAL } from '../src/game/simLod';
+import { dangerForBiome, accumulateDanger, BIOME_DANGERS } from '../src/game/environmentalDanger';
 import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } from '../src/game/landmarkGrid';
 import { elementalMultiplier, elementalInteraction, strongAgainst, ELEMENTS } from '../src/game/elements';
 import { COMPANION_SPECIES, companionStatsForLevel, companionXpForLevel } from '../src/game/companions';
@@ -4989,6 +4990,28 @@ import { inflateSync } from 'node:zlib';
   const a = getLandmarksForRegion(3, 7, 847291583);
   const b = getLandmarksForRegion(3, 7, 847291583);
   assert(JSON.stringify(a) === JSON.stringify(b), 'Landmark: still deterministic');
+}
+
+// BUILD 518: Environmental danger.
+{
+  assert(dangerForBiome('desert')?.label === 'Heat', 'Danger: desert is Heat');
+  assert(dangerForBiome('tundra')?.label === 'Cold', 'Danger: tundra is Cold');
+  assert(dangerForBiome('meadow') === null, 'Danger: meadow is safe');
+  assert(dangerForBiome('forest') === null, 'Danger: forest is safe');
+  assert(dangerForBiome('ocean') === null, 'Danger: ocean is safe (impassable)');
+
+  const desert = BIOME_DANGERS.desert;
+  // 5 seconds elapsed, 0 carried: no tick yet (10s interval).
+  let r = accumulateDanger(5000, 0, desert);
+  assert(r.damage === 0, 'Danger: no damage before tick interval');
+  assert(r.remainingMs === 5000, 'Danger: carries remaining ms');
+  // 6 more seconds: 1 tick, 1 damage, 1000ms carried.
+  r = accumulateDanger(6000, r.remainingMs, desert);
+  assert(r.damage === 1, 'Danger: 1 damage after 11s total');
+  assert(r.remainingMs === 1000, 'Danger: 1000ms carried after tick');
+  // 25 seconds: 2 ticks (20s), 2 damage, 6000ms carried (1000+25000=26000).
+  r = accumulateDanger(25000, r.remainingMs, desert);
+  assert(r.damage === 2, 'Danger: 2 damage after 26s total');
 }
 
 // ---- Results ----

@@ -120,6 +120,7 @@ import {
   PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP,
   collisionBoxesOverlap, isPositionOccupiedByGoat, separateGoatFromPlayer,
 } from './game/fieldCollision';
+import { dangerForBiome, accumulateDanger, type BiomeDanger } from './game/environmentalDanger';
 export {
   PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP,
   collisionBoxesOverlap, isPositionOccupiedByGoat, separateGoatFromPlayer,
@@ -4005,6 +4006,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [time, setTime] = useState('6:00 AM · Day 1 · Y1');
   const [playerHp, setPlayerHp] = useState(playerMaxHpForStats(initialPlayerStats));
   const [gameOver, setGameOver] = useState(false);
+  // BUILD 518: Current environmental danger (null when safe).
+  const [biomeDanger, setBiomeDanger] = useState<BiomeDanger | null>(null);
   const [playerXp, setPlayerXp] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
   const [playerClass, setPlayerClass] = useState<PlayerClass>('Beginner');
@@ -4927,6 +4930,39 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // Regrow stumps back into trees after a few minutes.
   useEffect(() => {
     const timer = window.setInterval(purgeRegrownTrees, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // BUILD 518: Environmental danger — desert heat and tundra cold damage over time.
+  useEffect(() => {
+    let carriedMs = 0;
+    let lastTick = Date.now();
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      const elapsed = now - lastTick;
+      lastTick = now;
+      // Skip if in interior, dead, or game not active.
+      if (interiorRef.current || playerHpRef.current <= 0) {
+        carriedMs = 0;
+        return;
+      }
+      const tile = mapTileFor(chunkRef.current);
+      const danger = dangerForBiome(tile.biome);
+      if (!danger) {
+        carriedMs = 0;
+        setBiomeDanger(null);
+        return;
+      }
+      setBiomeDanger(danger);
+      const result = accumulateDanger(elapsed, carriedMs, danger);
+      carriedMs = result.remainingMs;
+      if (result.damage > 0) {
+        const nextHp = Math.max(0, playerHpRef.current - result.damage);
+        playerHpRef.current = nextHp;
+        setPlayerHp(nextHp);
+        spawnCombatText('-' + result.damage + ' ' + danger.label, positionRef.current, 'damage');
+      }
+    }, 1000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -8937,6 +8973,9 @@ if (active) {
             <span className="hud-clock" data-testid="text-hud-time">{time}</span>
             {Date.now() < beerBuffUntil && (
               <span className="hud-buff-chip" role="status" aria-label="Beer buff: +50% attack" title="Beer: +50% attack" data-testid="hud-beer-buff">🍺</span>
+            )}
+            {biomeDanger && (
+              <span className="hud-buff-chip hud-danger-chip" role="status" aria-label={biomeDanger.label + ' danger'} title={biomeDanger.label + ': taking damage over time'} data-testid="hud-biome-danger">{biomeDanger.icon} {biomeDanger.label}</span>
             )}
             <div className="hud-quick-actions">
               <button className="hud-quick-button" onClick={() => setHpBoxHidden(true)} aria-label="Hide HP box" title="Hide HP box" data-testid="button-hide-hp-box"><EyeOff size={15} /></button>
