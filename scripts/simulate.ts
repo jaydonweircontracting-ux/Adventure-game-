@@ -17,6 +17,7 @@ import { WfcSolver, WfcSeededRng, wfcSeedFor } from '../src/game/wfc';
 import { worldBiomeTileSet, generateChunkBiomes, validateBiomeGrid } from '../src/game/wfcWorld';
 import { SpatialHash, updateSeparation, createSeparationState } from '../src/game/spatialHash';
 import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats, equipItem, unequipItem } from '../src/game/items';
+import { BURROWING_BEAST, TWO_HEADED_SERPENT, phaseForHealth, allBosses } from '../src/game/bosses';
 import { EntityPool, type PoolableEntity } from '../src/game/entityPool';
 import { FlowField, FlowFieldCache, sampleFlowSmoothed } from '../src/game/flowField';
 import { riverTileSetCached, roadTileSetCached } from '../src/game/wfcInfra';
@@ -4922,6 +4923,43 @@ import { inflateSync } from 'node:zlib';
   const unchanged = equipItem([item1], 'nonexistent');
   assert(unchanged.length === 1 && unchanged[0].equipped === false,
     'Equip: nonexistent ID no-op');
+}
+
+// BUILD 511: Boss mechanics framework.
+{
+  // Boss definitions.
+  assert(BURROWING_BEAST.phases.length === 2, 'Boss: burrowing beast 2 phases');
+  assert(TWO_HEADED_SERPENT.phases.length === 2, 'Boss: serpent 2 phases');
+
+  const bosses = allBosses();
+  assert(bosses.length === 2, 'Boss: 2 bosses defined');
+
+  // Phase detection.
+  const p1 = phaseForHealth(BURROWING_BEAST, 100);
+  assert(p1.phase === 1, 'Boss: full HP = phase 1');
+
+  const p2 = phaseForHealth(BURROWING_BEAST, 75);
+  assert(p2.phase === 1, 'Boss: 75% = phase 1');
+
+  const p3 = phaseForHealth(BURROWING_BEAST, 50);
+  assert(p3.phase === 2, 'Boss: 50% = phase 2');
+
+  const p4 = phaseForHealth(BURROWING_BEAST, 10);
+  assert(p4.phase === 2, 'Boss: 10% = phase 2');
+
+  // Phase 2 has more attacks.
+  assert(p3.attacks.length > p1.attacks.length, 'Boss: phase 2 more attacks');
+
+  // Phase text.
+  assert(p1.phaseText.length > 0, 'Boss: phase has text');
+  assert(p3.phaseText.includes('enraged') || p3.phaseText.includes('burrows'),
+    'Boss: phase 2 text descriptive');
+
+  // Attacks have telegraphs.
+  for (const attack of p3.attacks) {
+    assert(attack.telegraphTicks > 0, 'Boss: attacks have telegraph');
+    assert(attack.cooldownTicks > 0, 'Boss: attacks have cooldown');
+  }
 }
 
 // ---- Results ----
