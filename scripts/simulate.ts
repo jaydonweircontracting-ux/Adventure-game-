@@ -23,6 +23,7 @@ import { riverTileSetCached, roadTileSetCached } from '../src/game/wfcInfra';
 import { dungeonTileSetCached, generateDungeon } from '../src/game/wfcDungeon';
 import { simTierForDistance, shouldUpdate, SIM_TIER_INTERVAL } from '../src/game/simLod';
 import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } from '../src/game/landmarkGrid';
+import { elementalMultiplier, elementalInteraction, strongAgainst, ELEMENTS } from '../src/game/elements';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
@@ -3939,6 +3940,33 @@ import { inflateSync } from 'node:zlib';
     const ry = Math.floor(lm.chunk.y / LANDMARK_REGION_SIZE);
     assert(Math.abs(rx - 1) <= 1 && Math.abs(ry - 1) <= 1, 'Landmark: must be within radius');
   }
+}
+
+// BUILD 484: Elemental system.
+{
+  assert(ELEMENTS.length === 8, 'Element: must have 8 elements');
+
+  // Fire strong vs nature, weak vs water.
+  assert(elementalMultiplier('fire', 'nature') === 2.0, 'Element: fire > nature');
+  assert(elementalMultiplier('fire', 'water') === 0.5, 'Element: fire < water');
+  assert(elementalMultiplier('fire', 'fire') === 0.5, 'Element: fire resists fire');
+
+  // Water strong vs fire.
+  assert(elementalMultiplier('water', 'fire') === 2.0, 'Element: water > fire');
+
+  // Neutral.
+  assert(elementalMultiplier('fire', 'lightning') === 1.0, 'Element: neutral = 1.0');
+  assert(elementalMultiplier('none', 'fire') === 1.0, 'Element: none = neutral');
+
+  // Environmental.
+  const burn = elementalInteraction('fire', 'vegetation');
+  assert(burn !== null && burn.includes('Burns'), 'Element: fire burns vegetation');
+  assert(elementalInteraction('fire', 'rock') === null, 'Element: no interaction = null');
+
+  // Strong against.
+  const vsFire = strongAgainst('fire');
+  assert(vsFire.includes('water'), 'Element: water strong vs fire');
+  assert(!vsFire.includes('fire'), 'Element: fire not strong vs fire');
 }
 
 // ---- Results ----
