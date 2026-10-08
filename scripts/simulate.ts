@@ -32,6 +32,7 @@ import { examineLandmark, examineCaveTier, examineCompanionSpecies, examineDisco
 import { historyForLandmark } from '../src/game/worldHistory';
 import { eventForChunk } from '../src/game/worldEvents';
 import { townTileSetCached, townSizeFor } from '../src/game/wfcTown';
+import { initPopulation, simulatePopulationDay, simulatePopulationDays, paramsForSpecies } from '../src/game/populations';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4240,6 +4241,46 @@ import { inflateSync } from 'node:zlib';
   const flat = grid!.flat();
   assert(flat.some(id => id.includes('road')), 'Town: must have roads');
   assert(flat.includes('house'), 'Town: must have houses');
+}
+
+// BUILD 493: A-life population system.
+{
+  const params = paramsForSpecies('deer')!;
+  assert(params.carryingCapacity === 50, 'Pop: deer capacity 50');
+  assert(paramsForSpecies('unknown') === null, 'Pop: unknown species null');
+
+  // Init is deterministic.
+  const p1 = initPopulation('deer', 0, 0, 847291583)!;
+  const p2 = initPopulation('deer', 0, 0, 847291583)!;
+  assert(p1.population === p2.population, 'Pop: init deterministic');
+  assert(p1.population > 0, 'Pop: initial population > 0');
+  assert(p1.population <= 50, 'Pop: within capacity');
+
+  // Simulation: population changes.
+  const p3 = simulatePopulationDay(p1, params);
+  assert(p3.lastSimDay === 1, 'Pop: day advances');
+  // Population stays within bounds.
+  assert(p3.population >= 0 && p3.population <= 50, 'Pop: within bounds');
+
+  // Cannot go negative.
+  const pLow = { ...p1, population: 1, foodAvailability: 0.1, predatorPressure: 0.9 };
+  const p4 = simulatePopulationDay(pLow, params);
+  assert(p4.population >= 0, 'Pop: never negative');
+
+  // Cannot exceed capacity.
+  const pHigh = { ...p1, population: 50, foodAvailability: 1.0, predatorPressure: 0 };
+  const p5 = simulatePopulationDay(pHigh, params);
+  assert(p5.population <= 50, 'Pop: never exceeds capacity');
+
+  // Multi-day: stable-ish.
+  const p6 = simulatePopulationDays(p1, params, 30);
+  assert(p6.lastSimDay === 30, 'Pop: 30 days simulated');
+  assert(p6.population >= 0, 'Pop: survives 30 days');
+
+  // Rabbits reproduce faster than wolves.
+  const rabbitParams = paramsForSpecies('rabbit')!;
+  const wolfParams = paramsForSpecies('wolf')!;
+  assert(rabbitParams.birthRate > wolfParams.birthRate, 'Pop: rabbits breed faster');
 }
 
 // ---- Results ----
