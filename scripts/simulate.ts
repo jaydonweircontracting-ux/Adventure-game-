@@ -46,6 +46,7 @@ import { modifiersForSeason, seasonForDay, seasonalDescription } from '../src/ga
 import { createNpcKnowledge, npcLearn, decayKnowledge, knowledgeDialogue, knowledgeQuestHint } from '../src/game/npcKnowledge';
 import { questFromEcoEvent } from '../src/game/ecoQuests';
 import { initEcosystemRegion, simulateEcosystemDay } from '../src/game/ecosystem';
+import { saveEcosystemRegion, loadEcosystemRegion } from '../src/game/ecoSave';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4773,6 +4774,47 @@ import { inflateSync } from 'node:zlib';
 
   // History accumulates.
   assert(r.history.events.length >= 0, 'Eco: history tracked');
+}
+
+// BUILD 507: Ecosystem save/load.
+{
+  const region = initEcosystemRegion(
+    0, 0, 847291583,
+    ['deer', 'wolf'],
+    ['grass']
+  );
+  const landmarks = getLandmarksForRegion(0, 0, 847291583);
+
+  // Simulate 5 days.
+  let r = region;
+  for (let day = 1; day <= 5; day++) {
+    r = simulateEcosystemDay(r, 847291583, day, landmarks).region;
+  }
+
+  // Save.
+  const saved = saveEcosystemRegion(r);
+  assert(saved.day === 5, 'Save: day preserved');
+  assert(Object.keys(saved.pops).length === 2, 'Save: populations saved');
+  assert('grass' in saved.resources, 'Save: resources saved');
+
+  // Load into fresh region.
+  const fresh = initEcosystemRegion(0, 0, 847291583, ['deer', 'wolf'], ['grass']);
+  const loaded = loadEcosystemRegion(saved, fresh);
+
+  assert(loaded.lastSimDay === 5, 'Load: day restored');
+  assert(loaded.populations.get('deer')!.population === r.populations.get('deer')!.population,
+    'Load: deer population restored');
+  assert(loaded.populations.get('wolf')!.population === r.populations.get('wolf')!.population,
+    'Load: wolf population restored');
+
+  // Resources.
+  const origGrass = r.resources.get('grass')!.density;
+  const loadedGrass = loaded.resources.get('grass')!.density;
+  assert(Math.abs(origGrass - loadedGrass) < 0.01, 'Load: grass density restored');
+
+  // Round-trip preserves simulation continuity.
+  const { region: r2 } = simulateEcosystemDay(loaded, 847291583, 6, landmarks);
+  assert(r2.lastSimDay === 6, 'Load: simulation continues');
 }
 
 // ---- Results ----
