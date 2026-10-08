@@ -28,14 +28,21 @@ export function collisionBoxesOverlap(a: Vec, aBox: CollisionBox, b: Vec, bBox: 
 type GoatLike = { position: Vec; disposition: string; kind?: string };
 
 export function isPositionOccupiedByGoat(position: Vec, goats: GoatLike[]): boolean {
-  return goats.some((goat) => goat.disposition !== 'defeated' && collisionBoxesOverlap(position, PLAYER_COLLISION_BOX, goat.position, critterCollisionBox(goat.kind || 'deer')));
+  // BUILD 514: Use a smaller effective box for peaceful critters so they don't
+  // feel like they have a huge collision box. The player box is large (3.6/2.7),
+  // so we scale it down for critter interaction to feel natural.
+  const smallPlayerBox: CollisionBox = { halfWidth: 1.5, halfHeight: 1.2 };
+  return goats.some((goat) => goat.disposition !== 'defeated' && collisionBoxesOverlap(position, smallPlayerBox, goat.position, critterCollisionBox(goat.kind || 'deer')));
 }
 
 /** Push-apart resolution for a goat overlapping the player; null when clear. */
 export function separateGoatFromPlayer(goatPosition: Vec, playerPosition: Vec, kind?: string): Vec | null {
   const box = critterCollisionBox(kind || 'deer');
-  const minimumX = PLAYER_COLLISION_BOX.halfWidth + box.halfWidth + COLLISION_GAP;
-  const minimumY = PLAYER_COLLISION_BOX.halfHeight + box.halfHeight + COLLISION_GAP;
+  // BUILD 514: Use smaller player box for critter separation (matches isPositionOccupiedByGoat).
+  const smallPlayerHalfWidth = 1.5;
+  const smallPlayerHalfHeight = 1.2;
+  const minimumX = smallPlayerHalfWidth + box.halfWidth + COLLISION_GAP;
+  const minimumY = smallPlayerHalfHeight + box.halfHeight + COLLISION_GAP;
   const dx = goatPosition.x - playerPosition.x;
   const dy = goatPosition.y - playerPosition.y;
   const overlapX = minimumX - Math.abs(dx);
