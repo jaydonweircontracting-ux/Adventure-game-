@@ -43,6 +43,7 @@ import { behaviorForSpecies, selectBehavior, initialBehaviorState, BehaviorConte
 import { createRegionalHistory, recordEcoEvent, detectEcoEvents, historyNarrative } from '../src/game/ecoHistory';
 import { createRegionalImpact, recordPlayerAction, calculateEcologicalModifiers, impactDescription } from '../src/game/playerImpact';
 import { modifiersForSeason, seasonForDay, seasonalDescription } from '../src/game/seasons';
+import { createNpcKnowledge, npcLearn, decayKnowledge, knowledgeDialogue, knowledgeQuestHint } from '../src/game/npcKnowledge';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4638,6 +4639,52 @@ import { inflateSync } from 'node:zlib';
 
   // Descriptions.
   assert(seasonalDescription('winter').includes('scarce'), 'Season: winter description');
+}
+
+// BUILD 504: NPC ecological knowledge.
+{
+  const npc = createNpcKnowledge('hunter_1');
+  assert(npc.knowledge.length === 0, 'Knowledge: empty initially');
+
+  // Learn.
+  const n2 = npcLearn(npc, 'species_scarce', 'deer', 1, 2, 10);
+  assert(n2.knowledge.length === 1, 'Knowledge: learned');
+  assert(n2.knowledge[0].confidence === 1.0, 'Knowledge: full confidence');
+
+  // Duplicate refreshes.
+  const n3 = npcLearn(n2, 'species_scarce', 'deer', 1, 2, 15);
+  assert(n3.knowledge.length === 1, 'Knowledge: no duplicate');
+
+  // Cap at 10.
+  let n4 = npc;
+  for (let i = 0; i < 15; i++) {
+    n4 = npcLearn(n4, 'saw_species', `species_${i}`, 0, 0, i);
+  }
+  assert(n4.knowledge.length === 10, 'Knowledge: capped at 10');
+
+  // Decay.
+  const n5 = decayKnowledge(n2, 15); // 5 days later, decay 0.25
+  assert(n5.knowledge.length === 1, 'Knowledge: still remembered');
+  assert(n5.knowledge[0].confidence < 1.0, 'Knowledge: decays');
+
+  // Forget when too old.
+  const n6 = decayKnowledge(n2, 100);
+  assert(n6.knowledge.length === 0, 'Knowledge: forgotten when ancient');
+
+  // Dialogue.
+  const line = knowledgeDialogue(n2);
+  assert(line !== null && line.includes('deer'), 'Knowledge: dialogue mentions species');
+
+  const noLine = knowledgeDialogue(npc);
+  assert(noLine === null, 'Knowledge: no dialogue when empty');
+
+  // Quest hint.
+  const hint = knowledgeQuestHint(n2);
+  assert(hint !== null, 'Knowledge: scarcity suggests quest');
+  assert(hint!.speciesId === 'deer', 'Knowledge: quest for deer');
+
+  const noHint = knowledgeQuestHint(npc);
+  assert(noHint === null, 'Knowledge: no hint when empty');
 }
 
 // ---- Results ----
