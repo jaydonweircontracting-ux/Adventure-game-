@@ -27,7 +27,7 @@ import { findTalkTarget } from './game/talkTarget';
 import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cellarRats';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds, type TouchHoldState, type TouchEventKind } from './game/touchInput';
 import { npcAppearanceStyle } from './game/npcAppearance';
-import { generateItem, ItemRng, type GeneratedItem } from './game/items';
+import { generateItem, ItemRng, totalEquipmentStats, type GeneratedItem } from './game/items';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, type DialogueTopicId } from './game/dialogue';
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
@@ -1359,8 +1359,8 @@ const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, dag
 function playerMaxHpForStats(stats: PlayerStats) {
   return PLAYER_MAX_HP + stats.int * 3;
 }
-function playerDamageForStats(stats: PlayerStats) {
-  return PLAYER_BASE_ATTACK_DAMAGE + stats.str;
+function playerDamageForStats(stats: PlayerStats, equipmentBonus: number = 0) {
+  return PLAYER_BASE_ATTACK_DAMAGE + stats.str + equipmentBonus;
 }
 function playerCriticalChanceForStats(stats: PlayerStats) {
   return Math.min(0.35, stats.luk * 0.01);
@@ -3435,6 +3435,8 @@ function questGiverFaceRole(name: string): string {
 }
 
 function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[] } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
+  // BUILD 476: equipment damage bonus from found items.
+  const equipmentDamageBonus = totalEquipmentStats(equipment).damage ?? 0;
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
   // Debug tap marks (?debugDoors=1): user taps to mark where they think the
   // invisible exit/entrance is; rendered as lime green dots with coordinates.
@@ -5010,7 +5012,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const origin = { ...positionRef.current };
     const stats = playerStatsRef.current;
     const critical = Math.random() < playerCriticalChanceForStats(stats);
-    const damage = Math.round(playerDamageForStats(stats) * (critical ? 2 : 1) * BOW_ARROW_DAMAGE_MULT * beerDamageMultiplier(beerBuffUntil));
+    const damage = Math.round(playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * BOW_ARROW_DAMAGE_MULT * beerDamageMultiplier(beerBuffUntil));
     let dx = 0; let dy = 0;
     const target = targetId == null ? null : [...goatsRef.current, ...monstersRef.current].find((c) => c.id === targetId && c.disposition !== 'defeated');
     if (target && Math.hypot(target.position.x - origin.x, target.position.y - origin.y) <= ARROW_RANGE) {
@@ -5225,7 +5227,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               if (nearestNpc) {
                 const npc = nearestNpc;
                 const stats = playerStatsRef.current;
-                const damage = Math.max(1, playerDamageForStats(stats) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
+                const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
                 traceLog(`NPC-FIRST: hitting ${npc.name} for ${Math.round(damage)}`);
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
@@ -5269,7 +5271,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 const stats = playerStatsRef.current;
                 const critical = Math.random() < playerCriticalChanceForStats(stats);
                 const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
-                const damage = Math.max(1, playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult);
+                const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult);
                 const hurt = damageNpc(targetNpc, damage, attackerPos, tick);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === targetNpc.id ? hurt : n);
                 townsfolkRef.current = nextFolk;
@@ -5371,7 +5373,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const stats = playerStatsRef.current;
               const critical = Math.random() < playerCriticalChanceForStats(stats);
               const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
-              const damage = playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
+              const damage = playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
               const rat = cellarRatsRef.current.find((r) => r.id === attackTarget.id && r.hp > 0);
               if (rat) applyHitToCellarRat(rat, damage, critical);
             } else if (attackTarget.entityKind === 'townsfolk') {
@@ -5383,7 +5385,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 const stats = playerStatsRef.current;
                 const critical = Math.random() < playerCriticalChanceForStats(stats);
                 const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
-                const damage = playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
+                const damage = playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
                 traceLog(`hitting townsfolk ${npc.name} for ${Math.round(damage)}`);
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
@@ -5412,7 +5414,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const stats = playerStatsRef.current;
               const critical = Math.random() < playerCriticalChanceForStats(stats);
               const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
-              const damage = Math.max(1, playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult);
+              const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult);
               const newHp = curHp - damage;
               const pos = (attackTarget as { position: { x: number; y: number } }).position;
               const name = (attackTarget as { name: string }).name || 'NPC';
@@ -5437,7 +5439,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             const stats = playerStatsRef.current;
             const critical = Math.random() < playerCriticalChanceForStats(stats);
             const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
-            const damage = playerDamageForStats(stats) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
+            const damage = playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
             applyPlayerHitToCreature(attackTarget as { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, damage, critical);
             } // end harvest else
           } else {
@@ -5464,7 +5466,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               }
               if (nearest) {
                 const stats = playerStatsRef.current;
-                const damage = Math.max(1, playerDamageForStats(stats) * beerDamageMultiplier(beerBuffUntil) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
+                const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * beerDamageMultiplier(beerBuffUntil) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
                 if (nearest.kind === 'townsfolk') {
                   const npc = townsfolkRef.current.find((n) => n.id === nearest!.id)!;
                   const hurt = damageNpc(npc, damage, attackerPos, tick);
