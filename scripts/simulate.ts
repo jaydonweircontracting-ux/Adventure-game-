@@ -27,6 +27,7 @@ import { elementalMultiplier, elementalInteraction, strongAgainst, ELEMENTS } fr
 import { COMPANION_SPECIES, companionStatsForLevel, companionXpForLevel } from '../src/game/companions';
 import { startTaming, updateTaming, tamingBehaviorForSpecies, TAMING_DEFAULTS } from '../src/game/taming';
 import { generateQuestForLandmark, generateQuestsForLandmarks } from '../src/game/questGen';
+import { generateCave, resourcesForTier, dangerForTier } from '../src/game/caves';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
@@ -4081,6 +4082,53 @@ import { inflateSync } from 'node:zlib';
   const batch = generateQuestsForLandmarks(landmarks, 847291583, 3);
   assert(batch.length <= 3, 'Quest: batch must respect max');
   assert(batch.length > 0, 'Quest: batch must generate some');
+}
+
+// BUILD 488: Procedural cave generation.
+{
+  // Generate a cave — retry if null (small regions).
+  let cave = null;
+  for (let i = 0; i < 10 && !cave; i++) {
+    cave = generateCave(847291583, i, 0, 40, 40);
+  }
+  assert(cave !== null, 'Cave: must generate within 10 tries');
+
+  // Entrance and deep point are floor.
+  assert(!cave!.grid[cave!.entrance.y][cave!.entrance.x].solid, 'Cave: entrance must be floor');
+  assert(!cave!.grid[cave!.deepPoint.y][cave!.deepPoint.x].solid, 'Cave: deep point must be floor');
+
+  // Entrance is north of deep point (or same).
+  assert(cave!.entrance.y <= cave!.deepPoint.y, 'Cave: entrance north of deep');
+
+  // Has all three tiers (in a 40x40 cave).
+  const tiers = new Set<string>();
+  for (let y = 0; y < cave!.height; y++) {
+    for (let x = 0; x < cave!.width; x++) {
+      if (!cave!.grid[y][x].solid) {
+        tiers.add(cave!.grid[y][x].tier);
+      }
+    }
+  }
+  assert(tiers.has('surface'), 'Cave: must have surface tier');
+
+  // Deterministic.
+  const c2 = generateCave(847291583, 0, 0, 40, 40);
+  assert(c2 !== null, 'Cave: retry must work');
+  // Same seed → same entrance.
+  const c3 = generateCave(847291583, 0, 0, 40, 40);
+  if (c2 && c3) {
+    assert(c2.entrance.x === c3.entrance.x && c2.entrance.y === c3.entrance.y,
+      'Cave: must be deterministic');
+  }
+
+  // Resources by tier.
+  assert(resourcesForTier('surface').includes('stone'), 'Cave: surface has stone');
+  assert(resourcesForTier('deep').includes('gold'), 'Cave: deep has gold');
+  assert(!resourcesForTier('surface').includes('gold'), 'Cave: surface no gold');
+
+  // Danger scales.
+  assert(dangerForTier('surface') < dangerForTier('mid'), 'Cave: danger increases');
+  assert(dangerForTier('mid') < dangerForTier('deep'), 'Cave: danger increases');
 }
 
 // ---- Results ----
