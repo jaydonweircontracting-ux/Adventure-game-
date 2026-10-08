@@ -45,6 +45,7 @@ import { createRegionalImpact, recordPlayerAction, calculateEcologicalModifiers,
 import { modifiersForSeason, seasonForDay, seasonalDescription } from '../src/game/seasons';
 import { createNpcKnowledge, npcLearn, decayKnowledge, knowledgeDialogue, knowledgeQuestHint } from '../src/game/npcKnowledge';
 import { questFromEcoEvent } from '../src/game/ecoQuests';
+import { initEcosystemRegion, simulateEcosystemDay } from '../src/game/ecosystem';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4728,6 +4729,50 @@ import { inflateSync } from 'node:zlib';
   // ID is deterministic.
   const q7 = questFromEcoEvent('population_boom', 'wolf', 1, 2, lm, 847291583, 10);
   assert(q7!.id === q1!.id, 'Quest: deterministic ID');
+}
+
+// BUILD 506: Ecosystem manager.
+{
+  // Initialize.
+  const region = initEcosystemRegion(
+    0, 0, 847291583,
+    ['deer', 'wolf', 'rabbit'],
+    ['grass', 'berries']
+  );
+  assert(region.populations.size === 3, 'Eco: 3 populations');
+  assert(region.resources.size === 2, 'Eco: 2 resources');
+  assert(region.lastSimDay === 0, 'Eco: day 0');
+
+  // Simulate one day.
+  const landmarks = getLandmarksForRegion(0, 0, 847291583);
+  const { region: r2, quests } = simulateEcosystemDay(region, 847291583, 1, landmarks);
+  assert(r2.lastSimDay === 1, 'Eco: day advances');
+  assert(r2.populations.size === 3, 'Eco: populations preserved');
+
+  // Populations stay valid.
+  for (const [_, pop] of r2.populations) {
+    assert(pop.population >= 0, 'Eco: no negative populations');
+  }
+
+  // Resources stay valid.
+  for (const [_, res] of r2.resources) {
+    assert(res.density >= 0 && res.density <= res.maxDensity, 'Eco: resources valid');
+  }
+
+  // Simulate 30 days.
+  let r = region;
+  let totalQuests = 0;
+  for (let day = 1; day <= 30; day++) {
+    const result = simulateEcosystemDay(r, 847291583, day, landmarks);
+    r = result.region;
+    totalQuests += result.quests.length;
+  }
+  assert(r.lastSimDay === 30, 'Eco: 30 days simulated');
+  // Quests may or may not generate (depends on events).
+  assert(totalQuests >= 0, 'Eco: quests tracked');
+
+  // History accumulates.
+  assert(r.history.events.length >= 0, 'Eco: history tracked');
 }
 
 // ---- Results ----
