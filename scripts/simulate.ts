@@ -44,6 +44,7 @@ import { createRegionalHistory, recordEcoEvent, detectEcoEvents, historyNarrativ
 import { createRegionalImpact, recordPlayerAction, calculateEcologicalModifiers, impactDescription } from '../src/game/playerImpact';
 import { modifiersForSeason, seasonForDay, seasonalDescription } from '../src/game/seasons';
 import { createNpcKnowledge, npcLearn, decayKnowledge, knowledgeDialogue, knowledgeQuestHint } from '../src/game/npcKnowledge';
+import { questFromEcoEvent } from '../src/game/ecoQuests';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4685,6 +4686,48 @@ import { inflateSync } from 'node:zlib';
 
   const noHint = knowledgeQuestHint(npc);
   assert(noHint === null, 'Knowledge: no hint when empty');
+}
+
+// BUILD 505: Emergent eco-quests.
+{
+  const landmarks = getLandmarksForRegion(0, 0, 847291583);
+  const lm = landmarks[0] || null;
+
+  // Wolf boom → cull quest.
+  const q1 = questFromEcoEvent('population_boom', 'wolf', 1, 2, lm, 847291583, 10);
+  assert(q1 !== null, 'Quest: wolf boom → quest');
+  assert(q1!.kind === 'cull_predators', 'Quest: cull kind');
+  assert(q1!.title.includes('Wolves'), 'Quest: title mentions wolves');
+  assert(q1!.rewardGold > 0, 'Quest: has reward');
+
+  // Deer boom → no quest (not a predator).
+  const q2 = questFromEcoEvent('population_boom', 'deer', 1, 2, lm, 847291583, 10);
+  assert(q2 === null, 'Quest: deer boom → no cull quest');
+
+  // Crash → investigate.
+  const q3 = questFromEcoEvent('population_crash', 'deer', 1, 2, lm, 847291583, 10);
+  assert(q3 !== null && q3.kind === 'investigate_decline', 'Quest: crash → investigate');
+
+  // Extinction → investigate.
+  const q4 = questFromEcoEvent('species_extinct_local', 'rabbit', 1, 2, lm, 847291583, 10);
+  assert(q4 !== null, 'Quest: extinction → quest');
+
+  // Migration → find.
+  const q5 = questFromEcoEvent('migration_out', 'deer', 1, 2, lm, 847291583, 10);
+  assert(q5 !== null && q5.kind === 'find_migration', 'Quest: migration → find');
+
+  // Return → rare sighting.
+  const q6 = questFromEcoEvent('species_returned', 'wolf', 1, 2, lm, 847291583, 10);
+  assert(q6 !== null && q6.kind === 'rare_sighting', 'Quest: return → sighting');
+
+  // Location from landmark.
+  if (lm) {
+    assert(q1!.locationName.includes(lm.name), 'Quest: uses real landmark');
+  }
+
+  // ID is deterministic.
+  const q7 = questFromEcoEvent('population_boom', 'wolf', 1, 2, lm, 847291583, 10);
+  assert(q7!.id === q1!.id, 'Quest: deterministic ID');
 }
 
 // ---- Results ----
