@@ -28,6 +28,7 @@ import { COMPANION_SPECIES, companionStatsForLevel, companionXpForLevel } from '
 import { startTaming, updateTaming, tamingBehaviorForSpecies, TAMING_DEFAULTS } from '../src/game/taming';
 import { generateQuestForLandmark, generateQuestsForLandmarks } from '../src/game/questGen';
 import { generateCave, resourcesForTier, dangerForTier } from '../src/game/caves';
+import { examineLandmark, examineCaveTier, examineCompanionSpecies, examineDiscovery } from '../src/game/examineGen';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
@@ -4129,6 +4130,28 @@ import { inflateSync } from 'node:zlib';
   // Danger scales.
   assert(dangerForTier('surface') < dangerForTier('mid'), 'Cave: danger increases');
   assert(dangerForTier('mid') < dangerForTier('deep'), 'Cave: danger increases');
+}
+
+// BUILD 489: Examine text generators.
+{
+  const landmarks = getLandmarksForRegion(0, 0, 847291583);
+  const lm = landmarks[0];
+  const text = examineLandmark(lm);
+  assert(text.includes(lm.name), 'Examine: must include name');
+  assert(text.length > 20, 'Examine: must be descriptive');
+
+  assert(examineCaveTier('surface').includes('stone'), 'Examine: surface mentions stone');
+  assert(examineCaveTier('deep').includes('Gold'), 'Examine: deep mentions gold');
+
+  const fox = COMPANION_SPECIES.find(s => s.id === 'ember_fox')!;
+  const foxText = examineCompanionSpecies(fox);
+  assert(foxText.includes('Ember Fox'), 'Examine: must include species name');
+  assert(foxText.includes('fire'), 'Examine: must include element');
+
+  const disc1 = examineDiscovery('Test Ruin', 'ruin', true);
+  assert(disc1.includes('Discovered'), 'Examine: first visit announces discovery');
+  const disc2 = examineDiscovery('Test Ruin', 'ruin', false);
+  assert(!disc2.includes('Discovered'), 'Examine: return visit no announcement');
 }
 
 // ---- Results ----
