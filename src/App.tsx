@@ -457,12 +457,12 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
   // Positions hardcoded from the user's 2026-09-30 mover screenshot
   // ("Move them here"): tutorial 41.2,53.2 / crafting 94.3,54.3 /
   // chapel 40.3,85.1 / fourth 88.1,85.5 — true field coordinates.
-  // Each house is 7 x 4.8 field units.
+  // Each house is 7 x 4.8 field units (BUILD 515: fixed double-size rects).
   return [
-    { left: 82.4, top: 106.4, right: 96.4, bottom: 116.0 },   // tutorial house
-    { left: 188.6, top: 108.6, right: 202.6, bottom: 118.2 },  // wayfarer guild
-    { left: 80.6, top: 170.2, right: 94.6, bottom: 179.8 },   // rootbound chapel
-    { left: 176.2, top: 171.0, right: 190.2, bottom: 180.6 },   // stone house
+    { left: 85.9, top: 108.8, right: 92.9, bottom: 113.6 },   // tutorial house
+    { left: 192.1, top: 111.0, right: 199.1, bottom: 115.8 },  // wayfarer guild
+    { left: 84.1, top: 172.6, right: 91.1, bottom: 177.4 },   // rootbound chapel
+    { left: 179.7, top: 173.4, right: 186.7, bottom: 178.2 },   // stone house
     // BUILD 311: residential cottages (housing registry) — 2 beds each.
     // BUILD 343: scaled 2x for 280-unit chunks (was 0..140).
     { left: 28, top: 124, right: 40, bottom: 133 },   // cottage 1 (west)
