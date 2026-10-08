@@ -18,6 +18,7 @@ import { worldBiomeTileSet, generateChunkBiomes, validateBiomeGrid } from '../sr
 import { SpatialHash, updateSeparation, createSeparationState } from '../src/game/spatialHash';
 import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats } from '../src/game/items';
 import { EntityPool, type PoolableEntity } from '../src/game/entityPool';
+import { FlowField, FlowFieldCache, sampleFlowSmoothed } from '../src/game/flowField';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds } from '../src/game/touchInput';
@@ -3754,6 +3755,56 @@ import { inflateSync } from 'node:zlib';
 
   // Metrics.
   assert(pool.spawns > 0 && pool.recycles > 0, 'Pool: must track spawns and recycles');
+}
+
+// BUILD 470: Flow field navigation — one field, many samplers.
+{
+  // Simple open field: all cells should point toward goal.
+  const costAt = () => 1;
+  const field = new FlowField({ width: 5, height: 5, costAt }, 2, 2, 0);
+  // Goal cell has zero vector.
+  const gv = field.sample(2, 2);
+  assert(gv.dx === 0 && gv.dy === 0, 'Flow: goal must have zero vector');
+  // Cell to the east of goal should point west.
+  const ev = field.sample(3, 2);
+  assert(ev.dx === -1 && ev.dy === 0, 'Flow: east of goal must point west (got ' + ev.dx + ',' + ev.dy + ')');
+  // Cell to the north should point south.
+  const nv = field.sample(2, 1);
+  assert(nv.dx === 0 && nv.dy === 1, 'Flow: north of goal must point south');
+  // All cells reachable in open field.
+  for (let y = 0; y < 5; y++) {
+    for (let x = 0; x < 5; x++) {
+      assert(field.isReachable(x, y), 'Flow: open field must be fully reachable');
+    }
+  }
+
+  // Blocked cells: wall across the middle.
+  const costWithWall = (x: number, y: number) => (y === 2 ? Infinity : 1);
+  const field2 = new FlowField({ width: 5, height: 5, costAt: costWithWall }, 2, 4, 0);
+  // Cell above wall (2,0) cannot reach goal (2,4) — wall blocks.
+  assert(!field2.isReachable(2, 0), 'Flow: cell above wall must be unreachable');
+  // Cell below wall can reach.
+  assert(field2.isReachable(2, 3), 'Flow: cell below wall must be reachable');
+
+  // Cache: reuses when goal hasn't moved much.
+  const cache = new FlowFieldCache({ width: 5, height: 5, costAt, goalMoveThreshold: 2, ttlTicks: 100 });
+  const f1 = cache.get(2, 2, 0);
+  const f2 = cache.get(2, 2, 10); // same goal, not expired
+  assert(f1 === f2, 'Flow cache: must reuse when goal stationary');
+  assert(cache.hits === 1, 'Flow cache: must count hits');
+  const f3 = cache.get(4, 4, 20); // goal moved beyond threshold
+  assert(f3 !== f1, 'Flow cache: must rebuild when goal moves far');
+  assert(cache.rebuilds === 2, 'Flow cache: must count rebuilds');
+
+  // Smoothing: velocity lerps toward desired.
+  const mover = { vx: 0, vy: 0 };
+  const f4 = new FlowField({ width: 3, height: 3, costAt }, 1, 1, 0);
+  // Sample from (2,1) — should want to go west (-x).
+  const v1 = sampleFlowSmoothed(f4, mover, 2, 1, 1.0, 0.5);
+  assert(v1.vx < 0, 'Flow smooth: must move west toward goal (got vx=' + v1.vx + ')');
+  // Second sample continues smoothing.
+  const v2 = sampleFlowSmoothed(f4, mover, 2, 1, 1.0, 0.5);
+  assert(v2.vx < v1.vx, 'Flow smooth: must converge toward desired velocity');
 }
 
 // ---- Results ----
