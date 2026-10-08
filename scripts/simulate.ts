@@ -39,6 +39,7 @@ import { createWorkQueue, enqueueWork, processWorkQueue, queueDepth } from '../s
 import { initResource, harvestResource, simulateResourceDay, simulateResourceDays, paramsForResource } from '../src/game/resources';
 import { migrationPressure, simulateMigration } from '../src/game/migration';
 import { generateTraits, inheritTraits, traitsValid } from '../src/game/traits';
+import { behaviorForSpecies, selectBehavior, initialBehaviorState, BehaviorContext } from '../src/game/behaviors';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4462,6 +4463,55 @@ import { inflateSync } from 'node:zlib';
     const c = inheritTraits(parentA, parentB, i);
     assert(traitsValid(c), 'Traits: always bounded (iter ' + i + ')');
   }
+}
+
+// BUILD 500: Creature behavior primitives.
+{
+  const deer = behaviorForSpecies('deer')!;
+  assert(deer.speciesId === 'deer', 'Behavior: deer config');
+  assert(!deer.isPredator, 'Behavior: deer not predator');
+  assert(behaviorForSpecies('unknown') === null, 'Behavior: unknown null');
+
+  const wolf = behaviorForSpecies('wolf')!;
+  assert(wolf.isPredator, 'Behavior: wolf is predator');
+
+  const state = initialBehaviorState();
+  assert(state.current === 'wander', 'Behavior: starts wandering');
+
+  // Flee when danger.
+  const dangerCtx: BehaviorContext = {
+    predatorNearby: true, preyNearby: false,
+    hunger: 0.2, thirst: 0.2, energy: 0.8,
+    isNight: false, danger: false, foodAvailable: 0.8,
+  };
+  assert(selectBehavior(deer, dangerCtx, state) === 'flee', 'Behavior: flees from predator');
+
+  // Hunt when predator, hungry, prey nearby.
+  const huntCtx: BehaviorContext = {
+    predatorNearby: false, preyNearby: true,
+    hunger: 0.8, thirst: 0.2, energy: 0.8,
+    isNight: true, danger: false, foodAvailable: 0.5,
+  };
+  assert(selectBehavior(wolf, huntCtx, state) === 'hunt', 'Behavior: wolf hunts');
+
+  // Deer doesn't hunt.
+  assert(selectBehavior(deer, huntCtx, state) !== 'hunt', 'Behavior: deer never hunts');
+
+  // Drink when thirsty.
+  const thirstyCtx: BehaviorContext = {
+    predatorNearby: false, preyNearby: false,
+    hunger: 0.2, thirst: 0.9, energy: 0.8,
+    isNight: false, danger: false, foodAvailable: 0.8,
+  };
+  assert(selectBehavior(deer, thirstyCtx, state) === 'drink', 'Behavior: drinks when thirsty');
+
+  // Sleep at night when tired (diurnal).
+  const sleepyCtx: BehaviorContext = {
+    predatorNearby: false, preyNearby: false,
+    hunger: 0.2, thirst: 0.2, energy: 0.2,
+    isNight: true, danger: false, foodAvailable: 0.8,
+  };
+  assert(selectBehavior(deer, sleepyCtx, state) === 'sleep', 'Behavior: sleeps at night');
 }
 
 // ---- Results ----
