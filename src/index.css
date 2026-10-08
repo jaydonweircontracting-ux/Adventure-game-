@@ -2881,6 +2881,14 @@ body {
 .equipment-slot small { color: var(--ink-soft); font: 8px var(--app-font-mono); letter-spacing: .08em; text-transform: uppercase; }
 .equipment-slot strong { color: var(--ink); font-size: 13px; }
 .equipment-hint { margin: 0; color: var(--ink-soft); font-size: 10px; line-height: 1.5; }
+/* BUILD 474: Found ARPG items */
+.found-items { margin-top: 16px; }
+.found-items h4 { margin: 0 0 8px; font-size: 13px; }
+.found-item { border-left: 3px solid #9a9a9a; padding: 8px 10px; margin-bottom: 8px; background: rgba(0,0,0,0.03); border-radius: 0 6px 6px 0; }
+.found-item strong { display: block; font-size: 13px; }
+.found-item small { color: var(--ink-soft); font-size: 11px; }
+.found-item-stats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.found-item-stats span { font-size: 11px; background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 4px; }
 .inventory-grid {
   display: grid;
   gap: 8px;
