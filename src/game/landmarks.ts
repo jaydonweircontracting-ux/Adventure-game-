@@ -6,7 +6,7 @@
 //
 // Civilization modules (settlements, trade routes, caravans) must reconcile
 // their names against THIS table — never rename or duplicate these locations.
-export type LandmarkKind = 'village' | 'town' | 'dungeon' | 'ruin';
+export type LandmarkKind = 'village' | 'town' | 'dungeon' | 'ruin' | 'cave';
 
 export type Landmark = {
   name: string;
@@ -45,6 +45,9 @@ export const LANDMARKS: Record<string, Landmark> = {
   '136,-12': { name: 'Sunken Crypt', kind: 'dungeon' },
   '188,20': { name: 'Ember Ruins', kind: 'ruin' },
   '150,6': { name: 'Whispering Stones', kind: 'ruin' },
+  // BUILD 516: Enterable caves (World Systems prompt — caves as separate spaces).
+  '2,9': { name: 'Mossback Cave', kind: 'cave' },
+  '7,5': { name: 'Echo Hollow', kind: 'cave' },
 };
 
 /** Landmarks as a list with parsed chunk coordinates, in table order. */
