@@ -2191,6 +2191,10 @@ body {
 /* Independent goat wildlife and light combat. */
 .field-goats { position: absolute; z-index: 5; inset: 0; pointer-events: none; }
 .goat { position: absolute; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; font: inherit; cursor: crosshair; transform: translate(-50%, -50%); transition: none; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .2)); pointer-events: auto; }
+/* BUILD 523: Lootable NPC bodies. */
+.field-bodies { position: absolute; inset: 0; pointer-events: none; }
+.field-body { position: absolute; width: 28px; height: 28px; padding: 0; border: 0; background: rgba(0,0,0,0.35); border-radius: 50%; cursor: pointer; transform: translate(-50%, -50%); pointer-events: auto; }
+.field-body .body-icon { font-size: 18px; line-height: 28px; }
 /* Hostile monsters: goblins and bandits. */
 .field-monsters { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 .monster { position: absolute; width: 24px; height: 28px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: crosshair; transform: translate(-50%, -50%); filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, .25)); pointer-events: auto; }

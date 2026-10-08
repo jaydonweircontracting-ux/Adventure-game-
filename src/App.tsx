@@ -7606,6 +7606,35 @@ if (active) {
               <span className="starting-flower flower-southeast" />
             </div>
           )}
+                    {/* BUILD 523: Lootable NPC bodies. */}
+                    <div className="field-bodies" aria-label="Bodies in the field">
+                      {bodies.filter((b) => !b.looted && b.chunk.x === chunk.x && b.chunk.y === chunk.y).map((body) => (
+                        <button
+                          key={body.id}
+                          type="button"
+                          className="field-body"
+                          style={{ left: fieldPct(body.position.x), top: fieldPct(body.position.y) }}
+                          aria-label={'Loot ' + body.npcName + "'s body"}
+                          onClick={() => {
+                            if (inputLocked || optionsOpen || waitingRef.current) return;
+                            // Open loot UI: transfer loot to inventory via onLoot.
+                            const { loot: taken, updatedBody } = lootBody(body);
+                            const nextBodies = bodiesRef.current.map((x) => x.id === body.id ? updatedBody : x);
+                            bodiesRef.current = nextBodies;
+                            setBodies(nextBodies);
+                            // Add to inventory via the loot callback.
+                            const loot: Record<string, number> = {};
+                            if (taken.gold > 0) loot.gold = taken.gold;
+                            if (taken.potions > 0) loot.potions = taken.potions;
+                            onLoot(loot as GoatLoot);
+                            setLogs((cur) => [{ text: `Looted ${body.npcName}'s body.`, color: 'gold' }, ...cur].slice(0, 3));
+                            spawnCombatText('LOOTED', body.position, 'reward');
+                          }}
+                        >
+                          <span className="body-icon" aria-hidden="true">💀</span>
+                        </button>
+                      ))}
+                    </div>
                     <div className="field-goats" aria-label="Goats in the field">
             {goats.filter((goat) => goat.disposition !== 'defeated').map((goat) => (
               <button
