@@ -17,6 +17,7 @@
 import type { WorldClockState } from './worldCore';
 import type { NPCWorldLocation, NavPath, NavPoint, DoorwayLink, ObstacleRect } from './npcNavigation';
 import { pathTo, pathToDoor, stepAlongPath, findPath, trackStep, straightFallbackPath, validateDestination, REPLAN_HYSTERESIS, REPLAN_COOLDOWN_TICKS } from './npcNavigation';
+import { SpatialHash } from './spatialHash';
 import type { HousingRegistry } from './housing';
 import { bedFor, buildHousingRegistry, assignBeds } from './housing';
 
@@ -939,38 +940,52 @@ export function advanceTownsfolk(
  * - NPCs far apart keep object identity so the renderer's change check works.
  */
 export function separateCrowd(folk: Townsperson[], radius = 1.1, push = 0.14): Townsperson[] {
-  const positions = folk.map((n) => ({ ...n.position }));
-  const displaced = new Array<boolean>(folk.length).fill(false);
+  // BUILD 467: spatial-hash separation (replaces O(n²) all-pairs).
+  // Same behavior as before, but O(n) average via grid buckets.
   const eligible = (n: Townsperson) =>
     !n.indoors && n.location !== 'SLEEPING' && n.location !== 'INTERIOR';
+  // Build hash of eligible, moving-or-near-moving NPCs.
+  // We include all eligible NPCs (not just moving) because a stationary NPC
+  // can still be pushed by a moving one, and vice versa.
+  type HashEntry = { id: number; x: number; y: number; index: number; moving: boolean };
+  const hash = new SpatialHash<HashEntry>({ cellSize: 4 });
+  const entries: HashEntry[] = [];
   for (let i = 0; i < folk.length; i++) {
     if (!eligible(folk[i])) continue;
-    for (let j = i + 1; j < folk.length; j++) {
-      if (!eligible(folk[j])) continue;
-      const iMoving = folk[i].moving;
-      const jMoving = folk[j].moving;
-      if (!iMoving && !jMoving) continue;
-      const dx = positions[j].x - positions[i].x;
-      const dy = positions[j].y - positions[i].y;
-      const dist = Math.hypot(dx, dy);
-      if (dist >= radius) continue;
+    const e: HashEntry = { id: i, x: folk[i].position.x, y: folk[i].position.y, index: i, moving: folk[i].moving };
+    entries.push(e);
+    hash.add(e);
+  }
+  if (entries.length < 2) return folk;
+
+  const positions = folk.map((n) => ({ ...n.position }));
+  const displaced = new Array<boolean>(folk.length).fill(false);
+  const radiusSq = radius * radius;
+  // For each entry, check neighbors via hash (avoids O(n²)).
+  // To avoid double-processing pairs, only handle pairs where neighbor.id > entry.id.
+  for (const e of entries) {
+    hash.forEachNeighbor(e.x, e.y, radius, (other, dx, dy, distSq) => {
+      if (other.id <= e.id) return; // each pair once
+      if (!e.moving && !other.moving) return;
+      if (distSq >= radiusSq) return;
+      const dist = Math.sqrt(distSq); // one sqrt per close pair (rare)
       const nx = dist < 1e-6 ? 1 : dx / dist;
       const ny = dist < 1e-6 ? 0 : dy / dist;
       const overlap = (radius - Math.max(dist, 1e-6)) / radius;
       const px = nx * push * overlap;
       const py = ny * push * overlap;
       // Push the moving member(s); settled NPCs hold their ground.
-      if (iMoving) {
-        positions[i].x -= px;
-        positions[i].y -= py;
-        displaced[i] = true;
+      if (e.moving) {
+        positions[e.index].x -= px;
+        positions[e.index].y -= py;
+        displaced[e.index] = true;
       }
-      if (jMoving) {
-        positions[j].x += px;
-        positions[j].y += py;
-        displaced[j] = true;
+      if (other.moving) {
+        positions[other.index].x += px;
+        positions[other.index].y += py;
+        displaced[other.index] = true;
       }
-    }
+    }, e.id);
   }
   if (!displaced.some(Boolean)) return folk;
   return folk.map((n, i) => (displaced[i] ? { ...n, position: positions[i] } : n));
