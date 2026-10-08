@@ -26,6 +26,8 @@ import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } fr
 import { elementalMultiplier, elementalInteraction, strongAgainst, ELEMENTS } from '../src/game/elements';
 import { COMPANION_SPECIES, companionStatsForLevel, companionXpForLevel } from '../src/game/companions';
 import { startTaming, updateTaming, tamingBehaviorForSpecies, TAMING_DEFAULTS } from '../src/game/taming';
+import { generateQuestForLandmark, generateQuestsForLandmarks } from '../src/game/questGen';
+import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
@@ -4041,6 +4043,44 @@ import { inflateSync } from 'node:zlib';
   assert(tamingBehaviorForSpecies('spark_rat') === 'erratic', 'Taming: rat erratic');
   assert(tamingBehaviorForSpecies('thorn_boar') === 'charge_stop', 'Taming: boar charges');
   assert(tamingBehaviorForSpecies('gale_hawk') === 'circle', 'Taming: hawk circles');
+}
+
+// BUILD 487: Procedural quest generation.
+{
+  const landmarks = getLandmarksForRegion(0, 0, 847291583);
+  assert(landmarks.length > 0, 'Quest: need landmarks for test');
+
+  // Generate quest for a landmark.
+  const q1 = generateQuestForLandmark(landmarks[0], 12345);
+  assert(q1 !== null, 'Quest: must generate');
+  assert(q1!.id.includes(landmarks[0].id), 'Quest: ID must reference landmark');
+  assert(q1!.target.id === landmarks[0].id, 'Quest: target must be the landmark');
+  assert(q1!.title.length > 0, 'Quest: must have title');
+  assert(q1!.rewardGold > 0, 'Quest: must have gold reward');
+
+  // Deterministic.
+  const q2 = generateQuestForLandmark(landmarks[0], 12345);
+  assert(JSON.stringify(q1) === JSON.stringify(q2), 'Quest: must be deterministic');
+
+  // Different seeds → different quests (usually).
+  const q3 = generateQuestForLandmark(landmarks[0], 99999);
+  // May be same type but different rewards, or different type.
+  assert(q3!.id !== q1!.id, 'Quest: different seeds → different IDs');
+
+  // Hunt quests have targets.
+  const townLm = landmarks.find(l => l.kind === 'town' || l.kind === 'village');
+  if (townLm) {
+    const hq = generateQuestForLandmark(townLm, 555);
+    if (hq!.type === 'hunt') {
+      assert(hq!.targetSpecies !== undefined, 'Quest: hunt must have species');
+      assert(hq!.targetCount !== undefined && hq!.targetCount > 0, 'Quest: hunt must have count');
+    }
+  }
+
+  // Batch generation.
+  const batch = generateQuestsForLandmarks(landmarks, 847291583, 3);
+  assert(batch.length <= 3, 'Quest: batch must respect max');
+  assert(batch.length > 0, 'Quest: batch must generate some');
 }
 
 // ---- Results ----
