@@ -30,6 +30,7 @@ import { generateQuestForLandmark, generateQuestsForLandmarks } from '../src/gam
 import { generateCave, resourcesForTier, dangerForTier } from '../src/game/caves';
 import { examineLandmark, examineCaveTier, examineCompanionSpecies, examineDiscovery } from '../src/game/examineGen';
 import { historyForLandmark } from '../src/game/worldHistory';
+import { eventForChunk } from '../src/game/worldEvents';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
@@ -4175,6 +4176,37 @@ import { inflateSync } from 'node:zlib';
     // May share template but different details.
     assert(h3.landmarkId !== h1.landmarkId, 'History: different landmarks');
   }
+}
+
+// BUILD 491: World events.
+{
+  // Deterministic.
+  const e1 = eventForChunk(4, 7, 847291583, 1);
+  const e2 = eventForChunk(4, 7, 847291583, 1);
+  assert(JSON.stringify(e1) === JSON.stringify(e2), 'Event: must be deterministic');
+
+  // Different days → different (or null).
+  const e3 = eventForChunk(4, 7, 847291583, 2);
+  // May be same or different, but ID differs if both exist.
+  if (e1 && e3) {
+    assert(e1.id !== e3.id, 'Event: different days → different IDs');
+  }
+
+  // Event has valid structure.
+  if (e1) {
+    assert(e1.description.length > 0, 'Event: must have description');
+    assert(e1.expiresIn > 0, 'Event: must have expiry');
+  }
+
+  // Many chunks, some have events (15% rate).
+  let eventCount = 0;
+  for (let x = 0; x < 20; x++) {
+    for (let y = 0; y < 20; y++) {
+      if (eventForChunk(x, y, 847291583, 1)) eventCount++;
+    }
+  }
+  // 400 chunks * 15% = ~60 expected. Allow wide range.
+  assert(eventCount > 20 && eventCount < 120, 'Event: rate ~15% (got ' + eventCount + '/400)');
 }
 
 // ---- Results ----
