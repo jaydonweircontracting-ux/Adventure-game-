@@ -31,6 +31,8 @@ import { generateCave, resourcesForTier, dangerForTier } from '../src/game/caves
 import { examineLandmark, examineCaveTier, examineCompanionSpecies, examineDiscovery } from '../src/game/examineGen';
 import { historyForLandmark } from '../src/game/worldHistory';
 import { eventForChunk } from '../src/game/worldEvents';
+import { townTileSetCached, townSizeFor } from '../src/game/wfcTown';
+import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
@@ -4207,6 +4209,37 @@ import { inflateSync } from 'node:zlib';
   }
   // 400 chunks * 15% = ~60 expected. Allow wide range.
   assert(eventCount > 20 && eventCount < 120, 'Event: rate ~15% (got ' + eventCount + '/400)');
+}
+
+// BUILD 492: WFC town generation.
+{
+  const tiles = townTileSetCached();
+  assert(tiles.tiles.length === 10, 'Town: must have 10 tiles');
+
+  // Compatibility.
+  assert(tiles.compatible!('ROAD', 'ROAD'), 'Town: ROAD-ROAD ok');
+  assert(tiles.compatible!('ROAD', 'PATH'), 'Town: ROAD-PATH ok');
+  assert(!tiles.compatible!('ROAD', 'FIELD'), 'Town: ROAD-FIELD no');
+  assert(tiles.compatible!('PATH', 'ROAD'), 'Town: PATH-ROAD ok');
+
+  // Sizes.
+  assert(townSizeFor('hamlet').width === 8, 'Town: hamlet 8x8');
+  assert(townSizeFor('city').width === 24, 'Town: city 24x24');
+
+  // Generate a hamlet.
+  const { width, height } = townSizeFor('hamlet');
+  const solver = new WfcSolver({
+    width, height,
+    tiles,
+    rng: new WfcSeededRng(42),
+  });
+  const grid = solver.collapse();
+  assert(grid !== null, 'Town: must generate');
+
+  // Has roads and houses.
+  const flat = grid!.flat();
+  assert(flat.some(id => id.includes('road')), 'Town: must have roads');
+  assert(flat.includes('house'), 'Town: must have houses');
 }
 
 // ---- Results ----
