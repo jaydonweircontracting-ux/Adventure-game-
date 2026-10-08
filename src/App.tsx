@@ -1422,6 +1422,8 @@ type SaveGameData = {
   logs: Array<{ text: string; color: string }>;
   time: string;
   brainState: RpgGameState | null;
+  // BUILD 520: Persisted fog-of-war visited chunks.
+  visitedChunks?: string[];
 };
 
 const SAVE_FILE_VERSION = CURRENT_SAVE_VERSION;
@@ -4947,7 +4949,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         return;
       }
       const tile = mapTileFor(chunkRef.current);
-      const danger = dangerForBiome(tile.biome);
+      const danger = dangerForBiome(tile.worldBiome);
       if (!danger) {
         carriedMs = 0;
         setBiomeDanger(null);
@@ -9377,6 +9379,10 @@ function Home() {
 
   const applyLoadedSave = (parsed: SaveGameData, notice: string) => {
     setLoadedSave(parsed);
+    // BUILD 520: Restore fog-of-war visited chunks.
+    if (parsed.visitedChunks && Array.isArray(parsed.visitedChunks)) {
+      setVisitedChunks(new Set(parsed.visitedChunks));
+    }
     const savedEquippedDagger = Boolean(parsed.equippedDagger);
     const savedEquippedBow = Boolean(parsed.equippedBow);
     const savedEquippedShirt = Boolean(parsed.equippedShirt);
@@ -9429,6 +9435,8 @@ function Home() {
   const saveGame = () => {
     const save = saveStateRef.current?.();
     if (!save) { setSaveNotice('Start a game before saving.'); return; }
+    // BUILD 520: Persist fog-of-war visited chunks.
+    save.visitedChunks = Array.from(visitedChunks);
     try {
       window.localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(save));
       setHasLocalSave(true);
