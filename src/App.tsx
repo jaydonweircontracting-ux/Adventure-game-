@@ -1388,6 +1388,8 @@ type SaveGameData = {
   // player has picked up. Persisted so they don't respawn.
   pickedUpGroundItems?: string[];
   playerHp: number;
+  // BUILD 479: ARPG equipment (found items).
+  equipment?: GeneratedItem[];
   playerXp: number;
   playerLevel: number;
   playerClass: PlayerClass;
@@ -4294,6 +4296,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     droppedLoot,
     pickedUpGroundItems,
     playerHp,
+    equipment,
     playerXp,
     playerLevel,
     playerClass,
@@ -9302,6 +9305,8 @@ function Home() {
     setEquippedShirt(savedEquippedShirt);
     setEquippedSword(savedEquippedSword);
     setBarbHair((BARBARIAN_HAIRSTYLES as readonly string[]).includes(parsed.barbHair as string) ? (parsed.barbHair as string) : 'bald');
+    // BUILD 479: restore ARPG equipment.
+    setEquipment(Array.isArray(parsed.equipment) ? parsed.equipment : []);
     setChunk(parsed.chunk);
     // Restore the custom character sprite when the save has one.
     const savedCharacter = sanitizeCharacterChoices(parsed.characterChoices);
