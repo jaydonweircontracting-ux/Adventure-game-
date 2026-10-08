@@ -27,6 +27,7 @@ import { dangerForBiome, accumulateDanger, BIOME_DANGERS } from '../src/game/env
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance, CRIME_SEVERITY } from '../src/game/crime';
 import { createBody, generateBodyLoot, lootBody } from '../src/game/lootableBodies';
 import { bountyForCrime, addCrimeToBounty, wantedLevel, emptyBounty } from '../src/game/bounty';
+import { pickpocketChance, resolvePickpocket } from '../src/game/pickpocket';
 import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } from '../src/game/landmarkGrid';
 import { elementalMultiplier, elementalInteraction, strongAgainst, ELEMENTS } from '../src/game/elements';
 import { COMPANION_SPECIES, companionStatsForLevel, companionXpForLevel } from '../src/game/companions';
@@ -5099,6 +5100,49 @@ import { inflateSync } from 'node:zlib';
   // Unwitnessed crime doesn't add bounty.
   const b2 = addCrimeToBounty(emptyBounty(), 'c2', 5, 0, 10);
   assert(b2.amount === 0, 'Bounty: unwitnessed murder = no bounty');
+}
+
+// BUILD 525: Pickpocketing.
+{
+  const base = { isBehind: false, npcAwareness: 0.5, npcBusy: false, hour: 12, itemValue: 10, targetDifficulty: 0 };
+  const baseChance = pickpocketChance(base);
+  assert(baseChance > 0.05 && baseChance < 0.95, 'Pickpocket: base chance in range');
+
+  // Behind is better.
+  const behind = pickpocketChance({ ...base, isBehind: true });
+  assert(behind > baseChance, 'Pickpocket: behind increases chance');
+
+  // High awareness is worse.
+  const alert = pickpocketChance({ ...base, npcAwareness: 1 });
+  assert(alert < baseChance, 'Pickpocket: alert NPC harder');
+
+  // Busy is easier.
+  const busy = pickpocketChance({ ...base, npcBusy: true });
+  assert(busy > baseChance, 'Pickpocket: busy NPC easier');
+
+  // Night is easier.
+  const night = pickpocketChance({ ...base, hour: 23 });
+  assert(night > baseChance, 'Pickpocket: night easier');
+
+  // High value harder.
+  const valuable = pickpocketChance({ ...base, itemValue: 500 });
+  assert(valuable < baseChance, 'Pickpocket: valuable item harder');
+
+  // Resolve: critical (roll 0.01, chance 0.5 → critical threshold 0.025).
+  let r = resolvePickpocket(0.5, 0.01);
+  assert(r.outcome === 'critical', 'Pickpocket: low roll = critical');
+
+  // Success.
+  r = resolvePickpocket(0.5, 0.3);
+  assert(r.outcome === 'success', 'Pickpocket: roll < chance = success');
+
+  // Partial (roll 0.55, chance 0.5 → within 0.1 above).
+  r = resolvePickpocket(0.5, 0.55);
+  assert(r.outcome === 'partial', 'Pickpocket: near-miss = partial');
+
+  // Failure.
+  r = resolvePickpocket(0.5, 0.8);
+  assert(r.outcome === 'failure', 'Pickpocket: high roll = failure');
 }
 
 // ---- Results ----
