@@ -24,6 +24,7 @@ import { riverTileSetCached, roadTileSetCached } from '../src/game/wfcInfra';
 import { dungeonTileSetCached, generateDungeon } from '../src/game/wfcDungeon';
 import { simTierForDistance, shouldUpdate, SIM_TIER_INTERVAL } from '../src/game/simLod';
 import { dangerForBiome, accumulateDanger, BIOME_DANGERS } from '../src/game/environmentalDanger';
+import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance, CRIME_SEVERITY } from '../src/game/crime';
 import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } from '../src/game/landmarkGrid';
 import { elementalMultiplier, elementalInteraction, strongAgainst, ELEMENTS } from '../src/game/elements';
 import { COMPANION_SPECIES, companionStatsForLevel, companionXpForLevel } from '../src/game/companions';
@@ -5012,6 +5013,38 @@ import { inflateSync } from 'node:zlib';
   // 25 seconds: 2 ticks (20s), 2 damage, 6000ms carried (1000+25000=26000).
   r = accumulateDanger(25000, r.remainingMs, desert);
   assert(r.damage === 2, 'Danger: 2 damage after 26s total');
+}
+
+// BUILD 521: Crime and witness system.
+{
+  assert(CRIME_SEVERITY.murder === 5, 'Crime: murder severity 5');
+  assert(CRIME_SEVERITY.pickpocket === 2, 'Crime: pickpocket severity 2');
+  assert(CRIME_SEVERITY.trespass === 1, 'Crime: trespass severity 1');
+
+  const crime = createCrime('c1', 'murder', { x: 4, y: 7 }, { x: 100, y: 100 }, 5, 'npc-1');
+  assert(crime.severity === 5, 'Crime: severity from type');
+  assert(crimeMemoryEvent(crime) === 'PLAYER_KILLED_SOMEONE', 'Crime: memory event for murder');
+  assert(crimeMemoryImportance(crime) === 3, 'Crime: murder importance 3');
+
+  const theft = createCrime('c2', 'theft', { x: 4, y: 7 }, { x: 50, y: 50 }, 5);
+  assert(crimeMemoryEvent(theft) === 'PLAYER_STOLE_FROM_ME', 'Crime: memory event for theft');
+  assert(crimeMemoryImportance(theft) === 2, 'Crime: theft importance 2');
+
+  // Witnesses: NPC in radius sees it, far NPC doesn't.
+  const witnesses = findWitnesses(
+    { position: { x: 100, y: 100 } },
+    [
+      { id: 'near', position: { x: 105, y: 105 } },
+      { id: 'far', position: { x: 200, y: 200 } },
+    ]
+  );
+  assert(witnesses.length === 1, 'Crime: only nearby NPC witnesses');
+  assert(witnesses[0].npcId === 'near', 'Crime: correct witness ID');
+  assert(witnesses[0].confidence > 0.3 && witnesses[0].confidence <= 1, 'Crime: confidence in range');
+
+  // No witnesses when no NPCs nearby.
+  const none = findWitnesses({ position: { x: 0, y: 0 } }, []);
+  assert(none.length === 0, 'Crime: no witnesses when alone');
 }
 
 // ---- Results ----

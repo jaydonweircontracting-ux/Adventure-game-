@@ -4,6 +4,7 @@ import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/i
 import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/iso/isoSprites';
 import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality } from './game/villageLife';
+import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Backpack, BookOpen, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
@@ -5315,6 +5316,37 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 if (hurt.deadUntilTick !== undefined) {
                   spawnCombatText('KILLED', npc.position, 'critical');
                   setLogs((cur) => [{ text: `You killed ${npc.name}!`, color: 'red' }, ...cur].slice(0, 3));
+                  // BUILD 521: Record murder crime, notify witnesses via NPC memory.
+                  // Witnesses will propagate via the existing gossip system.
+                  try {
+                    const clock = brainRef.current?.worldCore.getClock();
+                    const day = clock ? clock.day : 1;
+                    const crime = createCrime(
+                      'crime-' + Date.now().toString(36),
+                      'murder',
+                      chunkRef.current,
+                      { x: npc.position.x, y: npc.position.y },
+                      day,
+                      npc.id
+                    );
+                    const witnesses = findWitnesses(
+                      { position: { x: npc.position.x, y: npc.position.y } },
+                      townsfolkRef.current
+                        .filter((w) => w.id !== npc.id && !isNpcDead(w, tick))
+                        .map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } }))
+                    );
+                    if (witnesses.length > 0) {
+                      const memEvent = crimeMemoryEvent(crime);
+                      const importance = crimeMemoryImportance(crime);
+                      const updated = townsfolkRef.current.map((w) => {
+                        const wit = witnesses.find((x) => x.npcId === w.id);
+                        return wit ? addNPCMemory(w, memEvent, day, importance) : w;
+                      });
+                      townsfolkRef.current = updated;
+                      setTownsfolk(updated);
+                      setLogs((cur) => [{ text: `${witnesses.length} witness${witnesses.length > 1 ? 'es' : ''} saw it!`, color: 'orange' }, ...cur].slice(0, 3));
+                    }
+                  } catch { /* crime recording is best-effort */ }
                 } else {
                   spawnCombatText(`-${Math.round(damage)}`, npc.position, 'damage');
                   const scream = screamFor(npc);
