@@ -293,7 +293,7 @@ export function examineEntity(ref: ExamineRef): { name: string; text: string; lo
 // ---------------------------------------------------------------------------
 
 export interface MenuAction {
-  id: 'examine' | 'talk' | 'enter' | 'take' | 'attack' | 'walk';
+  id: 'examine' | 'talk' | 'enter' | 'take' | 'attack' | 'walk' | 'pickpocket';
   label: string;
 }
 
@@ -302,7 +302,7 @@ export function menuActionsFor(ref: ExamineRef): MenuAction[] {
   const { name } = examineEntity(ref);
   const ex: MenuAction = { id: 'examine', label: `Examine ${name}` };
   switch (ref.kind) {
-    case 'npc': return [{ id: 'talk', label: `Talk-to ${name}` }, { id: 'attack', label: `Attack ${name}` }, ex];
+    case 'npc': return [{ id: 'talk', label: `Talk-to ${name}` }, { id: 'attack', label: `Attack ${name}` }, { id: 'pickpocket', label: `Pickpocket ${name}` }, ex];
     case 'door':
     case 'building': return [{ id: 'enter', label: `Enter ${name}` }, ex];
     case 'item': return [{ id: 'take', label: `Take ${name}` }, ex];

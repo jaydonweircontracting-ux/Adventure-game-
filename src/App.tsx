@@ -7,6 +7,7 @@ import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propa
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
 import { createBody, lootBody, type LootableBody } from './game/lootableBodies';
 import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
+import { pickpocketChance, resolvePickpocket } from './game/pickpocket';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Backpack, BookOpen, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
@@ -201,7 +202,7 @@ function regionStyleFor(point: Point): RegionStyle {
   return tile ? regionStyleForWorldBiome(tile.biome) : 'ocean';
 }
 
-type SettlementKind = 'village' | 'town' | 'dungeon' | 'ruin';
+type SettlementKind = 'village' | 'town' | 'dungeon' | 'ruin' | 'cave';
 export type MapTile = {
   x: number;
   y: number;
@@ -3841,6 +3842,66 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       targetNpcIdRef.current = npcTarget.npc.id;
       setTargetNpcId(npcTarget.npc.id);
       setLogs((currentLogs) => [{ text: `Targeting ${npcTarget.npc.name} — chasing!`, color: 'red' }, ...currentLogs].slice(0, 3));
+    }
+    else if (actionId === 'pickpocket' && m.target.kind === 'npc') {
+      // BUILD 526: Pickpocket attempt — uses pickpocket.ts logic, feeds crime system.
+      const npc = m.target.npc;
+      const playerPos = positionRef.current;
+      const dx = playerPos.x - npc.position.x;
+      const dy = playerPos.y - npc.position.y;
+      // Behind check: player is behind NPC based on NPC facing.
+      // Facing: assume npc.facing is a direction; simplify to distance-based for now.
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 8) {
+        setLogs((cur) => [{ text: 'Too far to pickpocket.', color: 'orange' }, ...cur].slice(0, 3));
+      } else {
+        const clock = brainRef.current?.worldCore.getClock();
+        const hour = clock ? clock.hour : 12;
+        const day = clock ? clock.day : 1;
+        const chance = pickpocketChance({
+          isBehind: false, // TODO: facing check
+          npcAwareness: 0.5,
+          npcBusy: false,
+          hour,
+          itemValue: 20,
+          targetDifficulty: 0.2,
+        });
+        const roll = Math.random();
+        const result = resolvePickpocket(chance, roll);
+        if (result.outcome === 'success' || result.outcome === 'critical') {
+          const gold = result.outcome === 'critical' ? 30 + Math.floor(Math.random() * 20) : 10 + Math.floor(Math.random() * 15);
+          onLoot({ gold } as GoatLoot);
+          setLogs((cur) => [{ text: `Pickpocketed ${gold} gold from ${npc.name}!`, color: 'gold' }, ...cur].slice(0, 3));
+          spawnCombatText('+' + gold + 'g', npc.position, 'reward');
+        } else if (result.outcome === 'partial') {
+          setLogs((cur) => [{ text: `${npc.name} notices something suspicious...`, color: 'orange' }, ...cur].slice(0, 3));
+          // Add suspicious memory.
+          const updated = townsfolkRef.current.map((w) => w.id === npc.id ? addNPCMemory(w, 'PLAYER_SUSPICIOUS', day, 1) : w);
+          townsfolkRef.current = updated;
+          setTownsfolk(updated);
+        } else {
+          // Failure: caught! Record crime.
+          setLogs((cur) => [{ text: `${npc.name} catches you pickpocketing!`, color: 'red' }, ...cur].slice(0, 3));
+          try {
+            const crime = createCrime('crime-' + Date.now().toString(36), 'pickpocket', chunkRef.current, { x: npc.position.x, y: npc.position.y }, day, npc.id);
+            const tickNow = brainRef.current?.worldCore.getClock().tick ?? 0;
+            const witnesses = findWitnesses(
+              { position: { x: npc.position.x, y: npc.position.y } },
+              townsfolkRef.current.filter((w) => !isNpcDead(w, tickNow)).map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } }))
+            );
+            const memEvent = crimeMemoryEvent(crime);
+            const importance = crimeMemoryImportance(crime);
+            const updated = townsfolkRef.current.map((w) => {
+              const isVictim = w.id === npc.id;
+              const isWitness = witnesses.find((x) => x.npcId === w.id);
+              return (isVictim || isWitness) ? addNPCMemory(w, memEvent, day, importance) : w;
+            });
+            townsfolkRef.current = updated;
+            setTownsfolk(updated);
+            onCrimeCommitted(crime.id, crime.severity, witnesses.length, day);
+          } catch { /* best-effort */ }
+        }
+      }
     }
     else if (actionId === 'enter' && m.target.kind === 'door') enterDoorway(m.target.doorway, chunk);
     else if (actionId === 'take' && m.target.kind === 'drop') pickupDrop(m.target.drop);
