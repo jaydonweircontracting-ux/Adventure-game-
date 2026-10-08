@@ -38,6 +38,7 @@ import { emptyMetrics, checkBudgets, DEFAULT_BUDGETS } from '../src/game/profile
 import { createWorkQueue, enqueueWork, processWorkQueue, queueDepth } from '../src/game/workQueue';
 import { initResource, harvestResource, simulateResourceDay, simulateResourceDays, paramsForResource } from '../src/game/resources';
 import { migrationPressure, simulateMigration } from '../src/game/migration';
+import { generateTraits, inheritTraits, traitsValid } from '../src/game/traits';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4429,6 +4430,38 @@ import { inflateSync } from 'node:zlib';
   // No migration if no better neighbor.
   const m3 = simulateMigration(bad, params, [{ dx: 1, dy: 0, suitability: 0.2 }]);
   assert(m3 === null, 'Migration: none if nowhere better');
+}
+
+// BUILD 499: Individual trait variation.
+{
+  // Generate traits.
+  const t1 = generateTraits(12345);
+  assert(traitsValid(t1), 'Traits: generated traits valid');
+  assert(t1.speed >= 0.9 && t1.speed <= 1.1, 'Traits: speed in range');
+
+  // Deterministic.
+  const t2 = generateTraits(12345);
+  assert(JSON.stringify(t1) === JSON.stringify(t2), 'Traits: deterministic');
+
+  // Different seeds → different traits.
+  const t3 = generateTraits(99999);
+  assert(JSON.stringify(t1) !== JSON.stringify(t3), 'Traits: varied');
+
+  // Inheritance.
+  const parentA = generateTraits(111);
+  const parentB = generateTraits(222);
+  const child = inheritTraits(parentA, parentB, 333);
+  assert(traitsValid(child), 'Traits: child traits valid');
+
+  // Child is roughly average of parents.
+  const expectedSpeed = (parentA.speed + parentB.speed) / 2;
+  assert(Math.abs(child.speed - expectedSpeed) < 0.05, 'Traits: child near parent avg');
+
+  // Mutation stays bounded.
+  for (let i = 0; i < 100; i++) {
+    const c = inheritTraits(parentA, parentB, i);
+    assert(traitsValid(c), 'Traits: always bounded (iter ' + i + ')');
+  }
 }
 
 // ---- Results ----
