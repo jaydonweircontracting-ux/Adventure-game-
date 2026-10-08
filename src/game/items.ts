@@ -190,6 +190,27 @@ export const AFFIXES: AffixDef[] = [
   { id: 'of_swiftness', name: 'of Swiftness', isPrefix: false, stats: { moveSpeed: 0.1, attackSpeed: 0.08 }, tags: ['utility', 'ranged'], weight: 10, minLevel: 7 },
   { id: 'of_the_turtle', name: 'of the Turtle', isPrefix: false, stats: { armor: 12, maxHealth: 25 }, tags: ['defense'], weight: 12, minLevel: 5 },
   { id: 'of_resistance', name: 'of Resistance', isPrefix: false, stats: { poisonResist: 0.15, lightningResist: 0.1 }, tags: ['defense', 'utility'], weight: 10, minLevel: 6 },
+  // BUILD 482: expanded affixes (40 total)
+  { id: 'vicious', name: 'Vicious', isPrefix: true, stats: { damage: 14, critChance: 0.04 }, tags: ['melee'], weight: 10, minLevel: 12 },
+  { id: 'savage', name: 'Savage', isPrefix: true, stats: { damage: 22, critDamage: 0.3 }, tags: ['melee'], weight: 6, minLevel: 18 },
+  { id: 'thunderforged', name: 'Thunderforged', isPrefix: true, stats: { lightningDamage: 15 }, tags: ['melee', 'ranged'], weight: 8, minLevel: 14 },
+  { id: 'venomous', name: 'Venomous', isPrefix: true, stats: { poisonDamage: 12 }, tags: ['melee', 'ranged'], weight: 8, minLevel: 12 },
+  { id: 'hunter', name: "Hunter's", isPrefix: true, stats: { damage: 12, dexterity: 4 }, tags: ['ranged'], weight: 10, minLevel: 10 },
+  { id: 'sniper', name: "Sniper's", isPrefix: true, stats: { critChance: 0.08, critDamage: 0.25 }, tags: ['ranged'], weight: 6, minLevel: 15 },
+  { id: 'elder', name: 'Elder', isPrefix: true, stats: { maxMana: 75, intelligence: 8 }, tags: ['magic'], weight: 6, minLevel: 14 },
+  { id: 'runed', name: 'Runed', isPrefix: true, stats: { intelligence: 6, manaRegen: 2 }, tags: ['magic'], weight: 8, minLevel: 10 },
+  { id: 'impenetrable', name: 'Impenetrable', isPrefix: true, stats: { armor: 25 }, tags: ['defense'], weight: 6, minLevel: 14 },
+  { id: 'guardian', name: "Guardian's", isPrefix: true, stats: { armor: 18, maxHealth: 40 }, tags: ['defense'], weight: 8, minLevel: 12 },
+  { id: 'of_the_wolf', name: 'of the Wolf', isPrefix: false, stats: { strength: 5, dexterity: 5, moveSpeed: 0.08 }, tags: ['melee', 'ranged', 'utility'], weight: 10, minLevel: 8 },
+  { id: 'of_the_titan', name: 'of the Titan', isPrefix: false, stats: { strength: 10, maxHealth: 50 }, tags: ['melee', 'defense'], weight: 6, minLevel: 15 },
+  { id: 'of_the_phoenix', name: 'of the Phoenix', isPrefix: false, stats: { fireResist: 0.2, maxHealth: 35 }, tags: ['defense', 'utility'], weight: 8, minLevel: 12 },
+  { id: 'of_the_serpent', name: 'of the Serpent', isPrefix: false, stats: { poisonDamage: 10, poisonResist: 0.15 }, tags: ['melee', 'ranged'], weight: 8, minLevel: 10 },
+  { id: 'of_vampirism', name: 'of Vampirism', isPrefix: false, stats: { lifeSteal: 0.08 }, tags: ['melee', 'ranged'], weight: 5, minLevel: 16 },
+  { id: 'of_the_storm', name: 'of the Storm', isPrefix: false, stats: { lightningDamage: 12, attackSpeed: 0.1 }, tags: ['melee', 'ranged', 'magic'], weight: 7, minLevel: 14 },
+  { id: 'of_the_sage', name: 'of the Sage', isPrefix: false, stats: { intelligence: 8, maxMana: 40 }, tags: ['magic', 'utility'], weight: 8, minLevel: 12 },
+  { id: 'of_iron', name: 'of Iron', isPrefix: false, stats: { armor: 18, strength: 4 }, tags: ['defense', 'melee'], weight: 10, minLevel: 10 },
+  { id: 'of_shadows', name: 'of Shadows', isPrefix: false, stats: { dexterity: 7, critChance: 0.05 }, tags: ['ranged', 'utility'], weight: 8, minLevel: 12 },
+  { id: 'of_the_ancients', name: 'of the Ancients', isPrefix: false, stats: { strength: 6, dexterity: 6, intelligence: 6, vitality: 6 }, tags: ['utility'], weight: 4, minLevel: 20 },
 ];
 
 // ---------------------------------------------------------------------------
