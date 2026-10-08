@@ -35,6 +35,7 @@ import { townTileSetCached, townSizeFor } from '../src/game/wfcTown';
 import { initPopulation, simulatePopulationDay, simulatePopulationDays, paramsForSpecies } from '../src/game/populations';
 import { relationshipsFor, predatorsOf, preyOf, predatorPressureFor } from '../src/game/foodWeb';
 import { emptyMetrics, checkBudgets, DEFAULT_BUDGETS } from '../src/game/profiler';
+import { createWorkQueue, enqueueWork, processWorkQueue, queueDepth } from '../src/game/workQueue';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4328,6 +4329,35 @@ import { inflateSync } from 'node:zlib';
   const v2 = checkBudgets(bad, DEFAULT_BUDGETS);
   assert(v2.length === 4, 'Profiler: 4 violations when bad (got ' + v2.length + ')');
   assert(v2[0].includes('Frame time'), 'Profiler: frame time violation');
+}
+
+// BUILD 496: Work queue system.
+{
+  const q = createWorkQueue(100); // generous budget for test
+  assert(queueDepth(q) === 0, 'Queue: empty initially');
+
+  const id1 = enqueueWork(q, 'generate_chunk', 5, { x: 1, y: 2 });
+  const id2 = enqueueWork(q, 'calculate_path', 10, { from: 'a', to: 'b' });
+  assert(queueDepth(q) === 2, 'Queue: 2 items');
+
+  // Higher priority first.
+  assert(q.items[0].id === id2, 'Queue: priority sorted');
+
+  // Process.
+  const processed: string[] = [];
+  const count = processWorkQueue(q, (item) => {
+    processed.push(item.id);
+    return true; // complete
+  });
+  assert(count === 2, 'Queue: processed 2');
+  assert(processed[0] === id2, 'Queue: high priority first');
+  assert(queueDepth(q) === 0, 'Queue: empty after');
+
+  // Budget respected (0ms = none processed).
+  const q2 = createWorkQueue(0);
+  enqueueWork(q2, 'generate_chunk', 5, {});
+  const c2 = processWorkQueue(q2, () => true);
+  assert(c2 === 0, 'Queue: respects zero budget');
 }
 
 // ---- Results ----
