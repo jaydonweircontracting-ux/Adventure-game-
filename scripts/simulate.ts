@@ -33,6 +33,7 @@ import { historyForLandmark } from '../src/game/worldHistory';
 import { eventForChunk } from '../src/game/worldEvents';
 import { townTileSetCached, townSizeFor } from '../src/game/wfcTown';
 import { initPopulation, simulatePopulationDay, simulatePopulationDays, paramsForSpecies } from '../src/game/populations';
+import { relationshipsFor, predatorsOf, preyOf, predatorPressureFor } from '../src/game/foodWeb';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4281,6 +4282,33 @@ import { inflateSync } from 'node:zlib';
   const rabbitParams = paramsForSpecies('rabbit')!;
   const wolfParams = paramsForSpecies('wolf')!;
   assert(rabbitParams.birthRate > wolfParams.birthRate, 'Pop: rabbits breed faster');
+}
+
+// BUILD 494: Food web relationships.
+{
+  // Wolves prey on deer.
+  const wolfPrey = preyOf('wolf');
+  assert(wolfPrey.some(r => r.to === 'deer'), 'Food: wolves prey on deer');
+
+  // Deer avoid wolves.
+  const deerRels = relationshipsFor('deer');
+  assert(deerRels.some(r => r.to === 'wolf' && r.kind === 'avoids'), 'Food: deer avoid wolves');
+
+  // Predators of rabbit.
+  const rabbitPreds = predatorsOf('rabbit');
+  assert(rabbitPreds.length > 0, 'Food: rabbits have predators');
+
+  // Predator pressure calculation.
+  const pressure1 = predatorPressureFor('deer', { wolf: 10 });
+  assert(pressure1 > 0, 'Food: pressure > 0 with wolves');
+  const pressure2 = predatorPressureFor('deer', { wolf: 0 });
+  assert(pressure2 === 0, 'Food: no pressure without predators');
+  const pressure3 = predatorPressureFor('deer', { wolf: 100 });
+  assert(pressure3 <= 1, 'Food: pressure capped at 1');
+
+  // More wolves → more pressure.
+  assert(predatorPressureFor('deer', { wolf: 20 }) > predatorPressureFor('deer', { wolf: 5 }),
+    'Food: pressure scales with population');
 }
 
 // ---- Results ----
