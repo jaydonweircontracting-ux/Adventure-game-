@@ -15,6 +15,7 @@ import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_T
 import { organicTownSpecs } from '../src/game/organicTowns';
 import { WfcSolver, WfcSeededRng, wfcSeedFor } from '../src/game/wfc';
 import { worldBiomeTileSet, generateChunkBiomes, validateBiomeGrid } from '../src/game/wfcWorld';
+import { SpatialHash, updateSeparation, createSeparationState } from '../src/game/spatialHash';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds } from '../src/game/touchInput';
@@ -3562,6 +3563,77 @@ import { inflateSync } from 'node:zlib';
   const ga = JSON.stringify(generateChunkBiomes(555, 1, 2, 6));
   const gb = JSON.stringify(generateChunkBiomes(555, 1, 2, 6));
   assert(ga === gb, 'WFC world: chunk generation must be deterministic');
+}
+
+// BUILD 465: Spatial hash — O(1) neighbor queries replace O(n²).
+{
+  const hash = new SpatialHash<{ id: number; x: number; y: number }>({ cellSize: 4 });
+  // 100 entities in a 10x10 grid, 1 unit apart.
+  const entities: Array<{ id: number; x: number; y: number }> = [];
+  for (let i = 0; i < 100; i++) {
+    entities.push({ id: i, x: (i % 10) * 1.0, y: Math.floor(i / 10) * 1.0 });
+  }
+  hash.rebuild(entities);
+  assert(hash.size === 100, 'SpatialHash: must register 100 entities');
+  // Center entity (id 55 at 5,5) with radius 1.5 should find 8 neighbors (not itself).
+  let count = 0;
+  hash.forEachNeighbor(5, 5, 1.5, () => { count++; }, 55);
+  assert(count === 8, 'SpatialHash: center entity must find 8 neighbors (got ' + count + ')');
+  // Corner entity (id 0 at 0,0) with radius 1.5 should find 3 neighbors.
+  count = 0;
+  hash.forEachNeighbor(0, 0, 1.5, () => { count++; }, 0);
+  assert(count === 3, 'SpatialHash: corner entity must find 3 neighbors (got ' + count + ')');
+  // Update moves entity between cells only when crossing boundary.
+  const e = { id: 1000, x: 1, y: 1 };
+  hash.add(e);
+  const cellsBefore = hash.cellCount;
+  hash.update(1000, 2, 2); // same cell (0,0)
+  assert(hash.cellCount === cellsBefore, 'SpatialHash: same-cell update must not create new cells');
+  hash.update(1000, 5, 5); // different cell
+  count = 0;
+  hash.forEachNeighbor(5, 5, 0.5, () => { count++; }, 55);
+  assert(count >= 1, 'SpatialHash: moved entity must be findable in new cell');
+  // Remove works.
+  assert(hash.remove(1000), 'SpatialHash: remove must succeed');
+  assert(hash.size === 100, 'SpatialHash: size must drop after remove');
+  // Squared distance: entity at exactly radius must be included, beyond excluded.
+  const h2 = new SpatialHash<{ id: number; x: number; y: number }>({ cellSize: 4 });
+  h2.add({ id: 1, x: 0, y: 0 });
+  h2.add({ id: 2, x: 3, y: 4 }); // distSq = 25
+  let found = 0;
+  h2.forEachNeighbor(0, 0, 5, () => { found++; }, 1); // radiusSq = 25, inclusive
+  assert(found === 1, 'SpatialHash: entity at exactly radius must be found');
+  found = 0;
+  h2.forEachNeighbor(0, 0, 4.99, () => { found++; }, 1);
+  assert(found === 0, 'SpatialHash: entity beyond radius must not be found');
+}
+
+// BUILD 465: Lightweight separation — throttled, distributed, no jitter.
+{
+  const hash = new SpatialHash<{ id: number; x: number; y: number }>({ cellSize: 4 });
+  // Two entities overlapping.
+  hash.add({ id: 1, x: 0, y: 0 });
+  hash.add({ id: 2, x: 0.5, y: 0 });
+  const s1 = createSeparationState();
+  const e1 = { id: 1, x: 0, y: 0 };
+  // Tick 0: entity 1's group ((0+1)%20 !== 0), so retains zero vector.
+  updateSeparation(hash, e1, s1, 0, { radius: 1.1, push: 0.14, interval: 20 });
+  // Force computation by using a tick where (tick+id)%interval === 0.
+  const s2 = createSeparationState();
+  updateSeparation(hash, e1, s2, 19, { radius: 1.1, push: 0.14, interval: 20 }); // (19+1)%20===0
+  assert(s2.sx < 0, 'Separation: overlapping entity must be pushed away (sx<0, got ' + s2.sx + ')');
+  assert(s2.lastTick === 19, 'Separation: must record computation tick');
+  // Next tick retains (does not recompute).
+  const sxBefore = s2.sx;
+  updateSeparation(hash, e1, s2, 20, { radius: 1.1, push: 0.14, interval: 20 }); // (20+1)%20!==0
+  assert(s2.sx === sxBefore && s2.lastTick === 19, 'Separation: must retain vector between intervals');
+  // Isolated entity gets zero vector.
+  const h3 = new SpatialHash<{ id: number; x: number; y: number }>({ cellSize: 4 });
+  h3.add({ id: 99, x: 100, y: 100 });
+  const s3 = createSeparationState();
+  updateSeparation(hash, { id: 99, x: 100, y: 100 }, s3, 19, { interval: 20 });
+  // Note: hash is empty at (100,100), so no neighbors — vector stays ~0.
+  assert(Math.abs(s3.sx) < 1e-9 && Math.abs(s3.sy) < 1e-9, 'Separation: isolated entity must have zero vector');
 }
 
 // ---- Results ----
