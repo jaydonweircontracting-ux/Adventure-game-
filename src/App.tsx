@@ -27,6 +27,7 @@ import { findTalkTarget } from './game/talkTarget';
 import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cellarRats';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds, type TouchHoldState, type TouchEventKind } from './game/touchInput';
 import { npcAppearanceStyle } from './game/npcAppearance';
+import { generateItem, ItemRng, type GeneratedItem } from './game/items';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, type DialogueTopicId } from './game/dialogue';
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
@@ -4056,6 +4057,8 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
   const [simulatedAdventurers, setSimulatedAdventurers] = useState(initialSimulatedAdventurers);
   const [selectedAdventurerId, setSelectedAdventurerId] = useState<string | null>(null);
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }, 1));
+  // BUILD 468: ARPG equipment inventory (found items).
+  const [equipment, setEquipment] = useState<GeneratedItem[]>([]);
   const [monsters, setMonsters] = useState<MonsterState[]>(() => monstersForChunk({ x: 4, y: 7 }, 1));
   const [cornStalks, setCornStalks] = useState<CornStalk[]>(() => {
     const startChunk = { x: 4, y: 7 };
@@ -4925,6 +4928,14 @@ function GameField({ inventory, equippedDagger, equippedBow, equippedShirt, equi
         const loot: GoatLoot = { [lootType]: lootAmount };
         const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot };
         droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
+        // BUILD 468: ARPG item drop (25% chance, level-scaled).
+        if (Math.random() < 0.25) {
+          const itemRng = new ItemRng(Date.now() ^ Math.floor(Math.random() * 0xffffffff));
+          const itemLevel = Math.max(1, playerLevelRef.current);
+          const item = generateItem(itemRng, itemLevel);
+          setEquipment((prev) => [...prev, item]);
+          setLogs((currentLogs) => [{ text: `You found: ${item.name}!`, color: 'gold' }, ...currentLogs].slice(0, 3));
+        }
         const xpReward = goatExperienceReward(attackTarget, playerLevelRef.current, playerStatsRef.current);
         const nextXp = playerXpRef.current + xpReward; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
         playerXpRef.current = nextXp; setPlayerXp(nextXp);
