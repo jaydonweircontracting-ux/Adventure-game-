@@ -42,6 +42,7 @@ import { generateTraits, inheritTraits, traitsValid } from '../src/game/traits';
 import { behaviorForSpecies, selectBehavior, initialBehaviorState, BehaviorContext } from '../src/game/behaviors';
 import { createRegionalHistory, recordEcoEvent, detectEcoEvents, historyNarrative } from '../src/game/ecoHistory';
 import { createRegionalImpact, recordPlayerAction, calculateEcologicalModifiers, impactDescription } from '../src/game/playerImpact';
+import { modifiersForSeason, seasonForDay, seasonalDescription } from '../src/game/seasons';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4609,6 +4610,34 @@ import { inflateSync } from 'node:zlib';
   }
   const desc2 = impactDescription(hunted);
   assert(desc2.includes('deer'), 'Impact: mentions deer hunting');
+}
+
+// BUILD 503: Seasonal ecology.
+{
+  // Season from day.
+  assert(seasonForDay(0) === 'spring', 'Season: day 0 = spring');
+  assert(seasonForDay(100) === 'summer', 'Season: day 100 = summer');
+  assert(seasonForDay(200) === 'autumn', 'Season: day 200 = autumn');
+  assert(seasonForDay(300) === 'winter', 'Season: day 300 = winter');
+  assert(seasonForDay(365) === 'spring', 'Season: wraps');
+
+  // Modifiers.
+  const spring = modifiersForSeason('spring');
+  const winter = modifiersForSeason('winter');
+  assert(spring.birthMultiplier > winter.birthMultiplier, 'Season: spring more births');
+  assert(spring.foodMultiplier > winter.foodMultiplier, 'Season: spring more food');
+  assert(spring.growthMultiplier > winter.growthMultiplier, 'Season: spring more growth');
+
+  // Autumn has highest migration.
+  const autumn = modifiersForSeason('autumn');
+  assert(autumn.migrationMultiplier > spring.migrationMultiplier, 'Season: autumn migration peak');
+
+  // Summer most food.
+  const summer = modifiersForSeason('summer');
+  assert(summer.foodMultiplier >= spring.foodMultiplier, 'Season: summer abundant');
+
+  // Descriptions.
+  assert(seasonalDescription('winter').includes('scarce'), 'Season: winter description');
 }
 
 // ---- Results ----
