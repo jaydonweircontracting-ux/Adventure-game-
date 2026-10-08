@@ -24,6 +24,7 @@ import { dungeonTileSetCached, generateDungeon } from '../src/game/wfcDungeon';
 import { simTierForDistance, shouldUpdate, SIM_TIER_INTERVAL } from '../src/game/simLod';
 import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } from '../src/game/landmarkGrid';
 import { elementalMultiplier, elementalInteraction, strongAgainst, ELEMENTS } from '../src/game/elements';
+import { COMPANION_SPECIES, companionStatsForLevel, companionXpForLevel } from '../src/game/companions';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
@@ -3967,6 +3968,33 @@ import { inflateSync } from 'node:zlib';
   const vsFire = strongAgainst('fire');
   assert(vsFire.includes('water'), 'Element: water strong vs fire');
   assert(!vsFire.includes('fire'), 'Element: fire not strong vs fire');
+}
+
+// BUILD 485: Companion species data.
+{
+  assert(COMPANION_SPECIES.length === 8, 'Companion: must have 8 species');
+
+  const fox = COMPANION_SPECIES.find(s => s.id === 'ember_fox')!;
+  assert(fox.element === 'fire', 'Companion: fox must be fire');
+  assert(fox.role === 'ranged', 'Companion: fox must be ranged');
+
+  // Stats scale with level.
+  const lvl1 = companionStatsForLevel(fox, 1);
+  const lvl5 = companionStatsForLevel(fox, 5);
+  assert(lvl5.hp > lvl1.hp, 'Companion: HP must grow with level');
+  assert(lvl5.damage > lvl1.damage, 'Companion: damage must grow with level');
+  assert(lvl1.hp === 40, 'Companion: fox base HP must be 40');
+
+  // XP curve.
+  assert(companionXpForLevel(1) === 50, 'Companion: level 1 XP must be 50');
+  assert(companionXpForLevel(2) > companionXpForLevel(1), 'Companion: XP must increase');
+
+  // All species have valid data.
+  for (const s of COMPANION_SPECIES) {
+    assert(s.tameDifficulty >= 1 && s.tameDifficulty <= 10, 'Companion: difficulty 1-10');
+    assert(s.habitats.length > 0, 'Companion: must have habitats');
+    assert(s.description.length > 0, 'Companion: must have description');
+  }
 }
 
 // ---- Results ----
