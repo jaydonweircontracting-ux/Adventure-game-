@@ -20,6 +20,7 @@ import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats,
 import { EntityPool, type PoolableEntity } from '../src/game/entityPool';
 import { FlowField, FlowFieldCache, sampleFlowSmoothed } from '../src/game/flowField';
 import { riverTileSetCached, roadTileSetCached } from '../src/game/wfcInfra';
+import { dungeonTileSetCached, generateDungeon } from '../src/game/wfcDungeon';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
@@ -3846,6 +3847,32 @@ import { inflateSync } from 'node:zlib';
   assert(rgrid !== null, 'Infra: road generation must succeed');
   const roadCount = rgrid!.flat().filter((id) => id.startsWith('road_')).length;
   assert(roadCount > 1, 'Infra: road must extend beyond seed (got ' + roadCount + ')');
+}
+
+// BUILD 472: WFC dungeon generator — rooms, corridors, connectivity.
+{
+  const dtiles = dungeonTileSetCached();
+  assert(dtiles.tiles.length === 18, 'Dungeon: must have 18 tiles');
+  assert(dtiles.compatible!('WALL', 'WALL'), 'Dungeon: WALL must accept WALL');
+  assert(!dtiles.compatible!('WALL', 'FLOOR'), 'Dungeon: WALL must not accept FLOOR');
+  assert(dtiles.compatible!('FLOOR', 'DOOR'), 'Dungeon: FLOOR must accept DOOR');
+
+  // Generate a dungeon — retry a few seeds (some may fail connectivity).
+  let dungeon = null;
+  for (let seed = 1; seed <= 10 && !dungeon; seed++) {
+    dungeon = generateDungeon(seed * 1000, 12, 12, 'crypt');
+  }
+  assert(dungeon !== null, 'Dungeon: must generate within 10 seeds');
+  assert(dungeon!.entrance.x !== dungeon!.exit.x || dungeon!.entrance.y !== dungeon!.exit.y,
+    'Dungeon: entrance and exit must differ');
+  // Borders are walls.
+  for (let x = 0; x < 12; x++) {
+    assert(dungeon!.grid[0][x] === 'wall', 'Dungeon: north border must be wall');
+    assert(dungeon!.grid[11][x] === 'wall', 'Dungeon: south border must be wall');
+  }
+  // Has walkable area.
+  const walkableCount = dungeon!.grid.flat().filter((id) => id !== 'wall').length;
+  assert(walkableCount > 10, 'Dungeon: must have walkable area (got ' + walkableCount + ')');
 }
 
 // ---- Results ----
