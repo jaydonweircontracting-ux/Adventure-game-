@@ -26,6 +26,7 @@ import { simTierForDistance, shouldUpdate, SIM_TIER_INTERVAL } from '../src/game
 import { dangerForBiome, accumulateDanger, BIOME_DANGERS } from '../src/game/environmentalDanger';
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance, CRIME_SEVERITY } from '../src/game/crime';
 import { createBody, generateBodyLoot, lootBody } from '../src/game/lootableBodies';
+import { bountyForCrime, addCrimeToBounty, wantedLevel, emptyBounty } from '../src/game/bounty';
 import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } from '../src/game/landmarkGrid';
 import { elementalMultiplier, elementalInteraction, strongAgainst, ELEMENTS } from '../src/game/elements';
 import { COMPANION_SPECIES, companionStatsForLevel, companionXpForLevel } from '../src/game/companions';
@@ -5073,6 +5074,31 @@ import { inflateSync } from 'node:zlib';
   assert(taken.gold === body.loot.gold, 'Body: loot transfers gold');
   assert(updatedBody.looted, 'Body: marked looted');
   assert(updatedBody.loot.gold === 0, 'Body: loot emptied');
+}
+
+// BUILD 524: Bounty system.
+{
+  assert(bountyForCrime(5, 1) === 313, 'Bounty: murder with 1 witness');
+  assert(bountyForCrime(5, 0) === 0, 'Bounty: no witnesses = no bounty');
+  assert(bountyForCrime(1, 3) === 18, 'Bounty: minor crime scales with witnesses');
+
+  let b = emptyBounty();
+  assert(b.amount === 0, 'Bounty: starts at 0');
+  assert(wantedLevel(0) === 0, 'Bounty: 0 = clean');
+
+  b = addCrimeToBounty(b, 'c1', 5, 2, 10);
+  assert(b.amount > 0, 'Bounty: increases after witnessed murder');
+  assert(b.crimeIds.includes('c1'), 'Bounty: tracks crime IDs');
+  assert(b.lastCrimeDay === 10, 'Bounty: tracks day');
+
+  assert(wantedLevel(49) === 0, 'Bounty: <50 = clean');
+  assert(wantedLevel(50) === 1, 'Bounty: 50+ = suspicious');
+  assert(wantedLevel(200) === 2, 'Bounty: 200+ = wanted');
+  assert(wantedLevel(500) === 3, 'Bounty: 500+ = dangerous');
+
+  // Unwitnessed crime doesn't add bounty.
+  const b2 = addCrimeToBounty(emptyBounty(), 'c2', 5, 0, 10);
+  assert(b2.amount === 0, 'Bounty: unwitnessed murder = no bounty');
 }
 
 // ---- Results ----

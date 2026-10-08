@@ -6,6 +6,7 @@ import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/i
 import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality } from './game/villageLife';
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
 import { createBody, lootBody, type LootableBody } from './game/lootableBodies';
+import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Backpack, BookOpen, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
@@ -1428,6 +1429,8 @@ type SaveGameData = {
   visitedChunks?: string[];
   // BUILD 522: Lootable NPC bodies.
   bodies?: LootableBody[];
+  // BUILD 524: Bounty/wanted state.
+  bounty?: BountyState;
 };
 
 const SAVE_FILE_VERSION = CURRENT_SAVE_VERSION;
@@ -3467,7 +3470,7 @@ function questGiverFaceRole(name: string): string {
   return interior[lowered] ?? 'guide';
 }
 
-function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
+function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, bounty, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
   // BUILD 476: equipment damage bonus from found items.
   const equipmentDamageBonus = totalEquipmentStats(equipment).damage ?? 0;
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
@@ -5358,6 +5361,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                       townsfolkRef.current = updated;
                       setTownsfolk(updated);
                       setLogs((cur) => [{ text: `${witnesses.length} witness${witnesses.length > 1 ? 'es' : ''} saw it!`, color: 'orange' }, ...cur].slice(0, 3));
+                      // BUILD 524: Update bounty for witnessed murder.
+                      onCrimeCommitted(crime.id, crime.severity, witnesses.length, day);
                     }
                   } catch { /* crime recording is best-effort */ }
                   // BUILD 522: Create lootable body.
@@ -9071,6 +9076,10 @@ if (active) {
             {biomeDanger && (
               <span className="hud-buff-chip hud-danger-chip" role="status" aria-label={biomeDanger.label + ' danger'} title={biomeDanger.label + ': taking damage over time'} data-testid="hud-biome-danger">{biomeDanger.icon} {biomeDanger.label}</span>
             )}
+            {/* BUILD 524: Wanted indicator. */}
+            {wantedLevel(bounty.amount) > 0 && (
+              <span className="hud-buff-chip hud-wanted-chip" role="status" aria-label={'Wanted: ' + bounty.amount + ' gold bounty'} title={'Bounty: ' + bounty.amount + ' gold'} data-testid="hud-wanted">🚨 {bounty.amount}g</span>
+            )}
             <div className="hud-quick-actions">
               <button className="hud-quick-button" onClick={() => setHpBoxHidden(true)} aria-label="Hide HP box" title="Hide HP box" data-testid="button-hide-hp-box"><EyeOff size={15} /></button>
               <button className="hud-quick-button" onClick={onOpenMap} aria-label="Open world map" title="World map" data-testid="button-open-map"><MapIcon size={15} /></button>
@@ -9178,6 +9187,11 @@ function Home() {
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
   // BUILD 517: Map reveal (fog of war) — track visited chunks.
   const [visitedChunks, setVisitedChunks] = useState<Set<string>>(new Set(['4,7']));
+  // BUILD 524: Bounty/wanted system.
+  const [bounty, setBounty] = useState<BountyState>(emptyBounty());
+  const handleCrimeCommitted = (crimeId: string, severity: number, witnessCount: number, day: number) => {
+    setBounty((prev) => addCrimeToBounty(prev, crimeId, severity, witnessCount, day));
+  };
   const handleChunkChange = (c: { x: number; y: number }) => {
     setChunk(c);
     setVisitedChunks((prev) => {
@@ -9475,6 +9489,10 @@ function Home() {
     if (parsed.visitedChunks && Array.isArray(parsed.visitedChunks)) {
       setVisitedChunks(new Set(parsed.visitedChunks));
     }
+    // BUILD 524: Restore bounty.
+    if (parsed.bounty) {
+      setBounty(parsed.bounty);
+    }
     const savedEquippedDagger = Boolean(parsed.equippedDagger);
     const savedEquippedBow = Boolean(parsed.equippedBow);
     const savedEquippedShirt = Boolean(parsed.equippedShirt);
@@ -9529,6 +9547,8 @@ function Home() {
     if (!save) { setSaveNotice('Start a game before saving.'); return; }
     // BUILD 520: Persist fog-of-war visited chunks.
     save.visitedChunks = Array.from(visitedChunks);
+    // BUILD 524: Persist bounty.
+    save.bounty = bounty;
     try {
       window.localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(save));
       setHasLocalSave(true);
@@ -9656,7 +9676,7 @@ function Home() {
         <>
           <div className="game-layout">
             <GameCrashBoundary chunk={chunk}>
-            <GameField inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
+            <GameField inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
             </GameCrashBoundary>
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
