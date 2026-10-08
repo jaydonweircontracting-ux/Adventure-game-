@@ -1518,7 +1518,8 @@
   height: 35%;
   min-height: 10px;
   background: #944839;
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  /* BUILD 519: Removed clip-path triangle (fails on iOS Safari, renders as broken diamond).
+     Using simple roof band instead — robust across browsers. */
 }
 .field-house::after {
   content: '';
@@ -1541,6 +1542,7 @@
   height: 35%;
   min-height: 12px;
   top: -9px;
+  /* BUILD 519: Removed clip-path (iOS Safari failure). Simple roof band. */
 }
 .field-house.new-house::after {
   /* Prominent door: centered, with frame */
