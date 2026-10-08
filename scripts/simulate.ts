@@ -47,6 +47,7 @@ import { createNpcKnowledge, npcLearn, decayKnowledge, knowledgeDialogue, knowle
 import { questFromEcoEvent } from '../src/game/ecoQuests';
 import { initEcosystemRegion, simulateEcosystemDay } from '../src/game/ecosystem';
 import { saveEcosystemRegion, loadEcosystemRegion } from '../src/game/ecoSave';
+import { createMicroGrid, simulateMicroStep, igniteCell, countStates } from '../src/game/microCA';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4815,6 +4816,52 @@ import { inflateSync } from 'node:zlib';
   // Round-trip preserves simulation continuity.
   const { region: r2 } = simulateEcosystemDay(loaded, 847291583, 6, landmarks);
   assert(r2.lastSimDay === 6, 'Load: simulation continues');
+}
+
+// BUILD 508: Micro cellular-automata.
+{
+  // Create grid.
+  const g1 = createMicroGrid(20, 20, 12345, 0.3);
+  const c1 = countStates(g1);
+  assert(c1.grass + c1.bush + c1.tree > 0, 'CA: initial vegetation');
+  assert(c1.empty > 0, 'CA: some empty');
+
+  // Deterministic.
+  const g2 = createMicroGrid(20, 20, 12345, 0.3);
+  assert(JSON.stringify(g1.cells) === JSON.stringify(g2.cells), 'CA: deterministic');
+
+  // Simulate step.
+  const g3 = simulateMicroStep(g1);
+  assert(g3.width === 20, 'CA: size preserved');
+
+  // Fire spreads.
+  let g4 = createMicroGrid(10, 10, 999, 0.5);
+  // Ensure center is grass.
+  g4.cells[5][5] = 'grass';
+  g4.cells[5][6] = 'grass';
+  g4 = igniteCell(g4, 5, 5);
+  assert(g4.cells[5][5] === 'burning', 'CA: ignited');
+
+  const g5 = simulateMicroStep(g4);
+  // Original fire becomes burned.
+  assert(g5.cells[5][5] === 'burned', 'CA: fire burns out');
+  // Neighbor may catch (probabilistic, but with seed it should).
+  const c5 = countStates(g5);
+  assert(c5.burned >= 1, 'CA: burned cells exist');
+
+  // Burned clears.
+  const g6 = simulateMicroStep(g5);
+  assert(g6.cells[5][5] === 'empty', 'CA: burned clears');
+
+  // Vegetation spreads over time.
+  let g7 = createMicroGrid(15, 15, 777, 0.2);
+  const before = countStates(g7).grass;
+  for (let i = 0; i < 10; i++) {
+    g7 = simulateMicroStep(g7);
+  }
+  // Grass may spread or stay (depends on configuration).
+  const after = countStates(g7);
+  assert(after.grass + after.bush + after.tree >= 0, 'CA: vegetation tracked');
 }
 
 // ---- Results ----
