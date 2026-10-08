@@ -232,6 +232,8 @@ export interface GeneratedItem {
   level: number;
   /** Sell value in gold. */
   value: number;
+  /** Whether this item is currently equipped. Only equipped items grant stats. */
+  equipped: boolean;
 }
 
 let itemInstanceCounter = 0;
@@ -359,10 +361,33 @@ export function generateItem(
     affixIds,
     level,
     value,
+    equipped: false, // New items start unequipped. Player must equip them.
   };
 }
 
-/** Total stats from a set of equipped items. */
+/** Total stats from equipped items only. Unequipped items grant nothing. */
 export function totalEquipmentStats(items: GeneratedItem[]): ItemStats {
-  return mergeStats(...items.map((i) => i.stats));
+  return mergeStats(...items.filter((i) => i.equipped).map((i) => i.stats));
+}
+
+/**
+ * Equip an item. Unequips any other item in the same slot.
+ * Returns updated array.
+ */
+export function equipItem(items: GeneratedItem[], instanceId: string): GeneratedItem[] {
+  const target = items.find((i) => i.instanceId === instanceId);
+  if (!target) return items;
+  return items.map((i) => ({
+    ...i,
+    equipped: i.instanceId === instanceId ? true : (i.slot === target.slot ? false : i.equipped),
+  }));
+}
+
+/**
+ * Unequip an item. Returns updated array.
+ */
+export function unequipItem(items: GeneratedItem[], instanceId: string): GeneratedItem[] {
+  return items.map((i) =>
+    i.instanceId === instanceId ? { ...i, equipped: false } : i
+  );
 }

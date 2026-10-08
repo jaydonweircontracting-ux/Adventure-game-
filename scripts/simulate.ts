@@ -16,7 +16,7 @@ import { organicTownSpecs } from '../src/game/organicTowns';
 import { WfcSolver, WfcSeededRng, wfcSeedFor } from '../src/game/wfc';
 import { worldBiomeTileSet, generateChunkBiomes, validateBiomeGrid } from '../src/game/wfcWorld';
 import { SpatialHash, updateSeparation, createSeparationState } from '../src/game/spatialHash';
-import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats } from '../src/game/items';
+import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats, equipItem, unequipItem } from '../src/game/items';
 import { EntityPool, type PoolableEntity } from '../src/game/entityPool';
 import { FlowField, FlowFieldCache, sampleFlowSmoothed } from '../src/game/flowField';
 import { riverTileSetCached, roadTileSetCached } from '../src/game/wfcInfra';
@@ -3726,10 +3726,17 @@ import { inflateSync } from 'node:zlib';
   const merged = mergeStats({ damage: 10 }, { damage: 5, armor: 3 });
   assert(merged.damage === 15 && merged.armor === 3, 'Items: mergeStats must add values');
 
-  // Equipment totals.
+  // Equipment totals (only equipped items count).
   const sword = generateItem(new ItemRng(1), 10, 'common', 'iron_sword');
   const shield = generateItem(new ItemRng(2), 10, 'common', 'wooden_shield');
-  const total = totalEquipmentStats([sword, shield]);
+  // Unequipped → no stats.
+  const totalUnequipped = totalEquipmentStats([sword, shield]);
+  assert(Object.keys(totalUnequipped).length === 0,
+    'Items: unequipped items grant no stats');
+  // Equip both → stats combine.
+  const equippedSword = { ...sword, equipped: true };
+  const equippedShield = { ...shield, equipped: true };
+  const total = totalEquipmentStats([equippedSword, equippedShield]);
   assert((total.damage ?? 0) > 0 && (total.armor ?? 0) > 0,
     'Items: equipment totals must combine damage and armor');
 
@@ -4862,6 +4869,59 @@ import { inflateSync } from 'node:zlib';
   // Grass may spread or stay (depends on configuration).
   const after = countStates(g7);
   assert(after.grass + after.bush + after.tree >= 0, 'CA: vegetation tracked');
+}
+
+// BUILD 510: Equip/unequip system.
+{
+  const rng = new ItemRng(12345);
+  const item1 = generateItem(rng, 1);
+  const item2 = generateItem(rng, 1);
+
+  // New items start unequipped.
+  assert(item1.equipped === false, 'Equip: new items unequipped');
+
+  // totalEquipmentStats only counts equipped.
+  const stats1 = totalEquipmentStats([item1, item2]);
+  // Should be empty/zero since none equipped.
+  assert(Object.keys(stats1).length === 0 || Object.values(stats1).every(v => v === 0),
+    'Equip: unequipped grant no stats');
+
+  // Equip one.
+  const equipped = equipItem([item1, item2], item1.instanceId);
+  assert(equipped.find(i => i.instanceId === item1.instanceId)!.equipped === true,
+    'Equip: item equipped');
+  assert(equipped.find(i => i.instanceId === item2.instanceId)!.equipped === false,
+    'Equip: other not equipped');
+
+  // Stats now count.
+  const stats2 = totalEquipmentStats(equipped);
+  // Should have some stats (item1 has stats).
+  assert(Object.values(stats2).some(v => typeof v === 'number' && v !== 0),
+    'Equip: equipped grants stats');
+
+  // Equip same slot → unequips other.
+  // Force same slot by creating items and checking.
+  const item3 = generateItem(rng, 1);
+  // Manually set same slot for test.
+  const testItems = [
+    { ...item1, slot: item1.slot, equipped: true },
+    { ...item3, slot: item1.slot, equipped: false },
+  ];
+  const reEquipped = equipItem(testItems, item3.instanceId);
+  assert(reEquipped.find(i => i.instanceId === item3.instanceId)!.equipped === true,
+    'Equip: new item equipped');
+  assert(reEquipped.find(i => i.instanceId === item1.instanceId)!.equipped === false,
+    'Equip: old item in same slot unequipped');
+
+  // Unequip.
+  const unequipped = unequipItem(equipped, item1.instanceId);
+  assert(unequipped.find(i => i.instanceId === item1.instanceId)!.equipped === false,
+    'Equip: unequipped');
+
+  // Equip non-existent → unchanged.
+  const unchanged = equipItem([item1], 'nonexistent');
+  assert(unchanged.length === 1 && unchanged[0].equipped === false,
+    'Equip: nonexistent ID no-op');
 }
 
 // ---- Results ----

@@ -27,7 +27,7 @@ import { findTalkTarget } from './game/talkTarget';
 import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cellarRats';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds, type TouchHoldState, type TouchEventKind } from './game/touchInput';
 import { npcAppearanceStyle } from './game/npcAppearance';
-import { generateItem, ItemRng, totalEquipmentStats, type GeneratedItem } from './game/items';
+import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, type GeneratedItem } from './game/items';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, type DialogueTopicId } from './game/dialogue';
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
@@ -3117,7 +3117,7 @@ function WorldMap({ chunk, onClose, kingdomLabels, tradeRoutes }: { chunk: Point
     </div>
   );
 }
-function InventorySheet({ inventory, equipment, onDrinkPotion, equippedDagger, onToggleDagger, equippedBow, onToggleBow, equippedShirt, onToggleShirt, equippedSword, onToggleSword, barbHair, onCycleHair, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, questPlayerLevel, onAcceptQuest, onWeaveBowstring }: { inventory: GameInventory; equipment: GeneratedItem[]; onDrinkPotion: () => void; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; equippedShirt: boolean; onToggleShirt: () => void; equippedSword: boolean; onToggleSword: () => void; barbHair: string; onCycleHair: (dir: 1 | -1) => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onWeaveBowstring: () => void }) {
+function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion, equippedDagger, onToggleDagger, equippedBow, onToggleBow, equippedShirt, onToggleShirt, equippedSword, onToggleSword, barbHair, onCycleHair, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, questPlayerLevel, onAcceptQuest, onWeaveBowstring }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; onDrinkPotion: () => void; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; equippedShirt: boolean; onToggleShirt: () => void; equippedSword: boolean; onToggleSword: () => void; barbHair: string; onCycleHair: (dir: 1 | -1) => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onWeaveBowstring: () => void }) {
   const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats' | 'quests'>('inventory');
   const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn + inventory.wood + inventory.silk + inventory.bow + inventory.beer + inventory.healthPotion + inventory.lockpicks + inventory.shirts + inventory.swords;
   const visibleItems = [
@@ -3179,12 +3179,19 @@ function InventorySheet({ inventory, equipment, onDrinkPotion, equippedDagger, o
               {equipment.map((item) => (
                 <div key={item.instanceId} className="found-item" style={{ borderLeftColor: item.quality === 'unique' ? '#c9a24a' : item.quality === 'epic' ? '#9a4ac9' : item.quality === 'rare' ? '#4a7ec9' : item.quality === 'uncommon' ? '#4a9e4a' : '#9a9a9a' }}>
                   <strong>{item.name}</strong>
-                  <small>{item.slot} · Lv {item.level} · {item.quality}</small>
+                  <small>{item.slot} · Lv {item.level} · {item.quality}{item.equipped ? ' · EQUIPPED' : ''}</small>
                   <div className="found-item-stats">
                     {Object.entries(item.stats).map(([k, v]) => (
                       <span key={k}>{k}: {typeof v === 'number' && v < 1 && v > 0 ? Math.round(v * 100) + '%' : v}</span>
                     ))}
                   </div>
+                  <button
+                    className="item-action"
+                    onClick={() => onEquipmentChange((prev) => item.equipped ? unequipItem(prev, item.instanceId) : equipItem(prev, item.instanceId))}
+                    data-testid={'button-equip-' + item.instanceId}
+                  >
+                    {item.equipped ? 'Unequip' : 'Equip'}
+                  </button>
                 </div>
               ))}
             </div>
@@ -9322,7 +9329,8 @@ function Home() {
     setEquippedSword(savedEquippedSword);
     setBarbHair((BARBARIAN_HAIRSTYLES as readonly string[]).includes(parsed.barbHair as string) ? (parsed.barbHair as string) : 'bald');
     // BUILD 479: restore ARPG equipment.
-    setEquipment(Array.isArray(parsed.equipment) ? parsed.equipment : []);
+    // BUILD 510: ensure equipped flag exists (old saves default to unequipped).
+    setEquipment(Array.isArray(parsed.equipment) ? parsed.equipment.map((item: GeneratedItem) => ({ ...item, equipped: item.equipped ?? false })) : []);
     setChunk(parsed.chunk);
     // Restore the custom character sprite when the save has one.
     const savedCharacter = sanitizeCharacterChoices(parsed.characterChoices);
@@ -9493,7 +9501,7 @@ function Home() {
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} kingdomLabels={menuBridgeRef.current?.getKingdomLabels() ?? []} tradeRoutes={menuBridgeRef.current?.getTradeRoutes() ?? []} />}
           {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1' && <DebugOverlay chunk={chunk} />}
-          {inventoryOpen && <InventorySheet inventory={inventory} equipment={equipment} onDrinkPotion={drinkPotion} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onWeaveBowstring={weaveBowstring} />}
+          {inventoryOpen && <InventorySheet inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} onDrinkPotion={drinkPotion} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onWeaveBowstring={weaveBowstring} />}
           {journalOpen && (
             <div className="sheet journal-sheet" role="dialog" aria-label="Adventure journal" data-testid="journal-sheet">
               <div className="sheet-header">
