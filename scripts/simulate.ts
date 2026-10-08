@@ -34,6 +34,7 @@ import { eventForChunk } from '../src/game/worldEvents';
 import { townTileSetCached, townSizeFor } from '../src/game/wfcTown';
 import { initPopulation, simulatePopulationDay, simulatePopulationDays, paramsForSpecies } from '../src/game/populations';
 import { relationshipsFor, predatorsOf, preyOf, predatorPressureFor } from '../src/game/foodWeb';
+import { emptyMetrics, checkBudgets, DEFAULT_BUDGETS } from '../src/game/profiler';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4309,6 +4310,24 @@ import { inflateSync } from 'node:zlib';
   // More wolves → more pressure.
   assert(predatorPressureFor('deer', { wolf: 20 }) > predatorPressureFor('deer', { wolf: 5 }),
     'Food: pressure scales with population');
+}
+
+// BUILD 495: Performance profiler.
+{
+  const m = emptyMetrics();
+  assert(m.fps === 0, 'Profiler: empty metrics zero');
+  assert(m.activeEntities === 0, 'Profiler: no entities initially');
+
+  // No violations when within budget.
+  const good = { ...m, frameTimeMs: 10, activeEntities: 100, pathfindingCallsPerSec: 50, collisionChecksPerSec: 5000 };
+  const v1 = checkBudgets(good, DEFAULT_BUDGETS);
+  assert(v1.length === 0, 'Profiler: no violations when good');
+
+  // Violations detected.
+  const bad = { ...m, frameTimeMs: 30, activeEntities: 1000, pathfindingCallsPerSec: 200, collisionChecksPerSec: 20000 };
+  const v2 = checkBudgets(bad, DEFAULT_BUDGETS);
+  assert(v2.length === 4, 'Profiler: 4 violations when bad (got ' + v2.length + ')');
+  assert(v2[0].includes('Frame time'), 'Profiler: frame time violation');
 }
 
 // ---- Results ----
