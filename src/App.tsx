@@ -6440,7 +6440,7 @@ if (active) {
     window.setTimeout(() => setAttackFlash(null), 1100);
   };
   // Guild smith (Bram) talk flow: Talk -> Crafting / Sell / Rumours.
-  const [smithTab, setSmithTab] = useState<'talk' | 'craft' | 'sell' | 'rumors'>('talk');
+  const [smithTab, setSmithTab] = useState<'talk' | 'craft' | 'sell' | 'buy' | 'rumors'>('talk');
   const [smithRumor, setSmithRumor] = useState<string | null>(null);
   const talkToSmith = () => {
     setSmithTab('talk');
@@ -6461,6 +6461,12 @@ if (active) {
     if ((inventory[key] || 0) < 1) return;
     onLoot({ [key]: -1, coins: price } as GoatLoot);
     setLogs((currentLogs) => [{ text: `Sold ${label} for ${price} gold.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
+  // BUILD 480: buy health potion from Bram (10 gold).
+  const buyPotion = () => {
+    if (inventory.coins < 10) return;
+    onLoot({ coins: -10, healthPotion: 1 } as GoatLoot);
+    setLogs((currentLogs) => [{ text: 'Bought a health potion for 10 gold.', color: 'blue' }, ...currentLogs].slice(0, 3));
   };
   const askSmithRumor = () => {
     const rumor = WORLD_RUMORS[Math.floor(Math.random() * WORLD_RUMORS.length)];
@@ -8628,11 +8634,13 @@ if (active) {
                       {smithTab === 'talk' && 'Bram wipes his hands on his apron. "Need gear, coin, or gossip, traveler?"'}
                       {smithTab === 'craft' && '"Bring me horns and fabric and I\'ll hammer them into something useful."'}
                       {smithTab === 'sell' && '"Got monster bits to unload? I pay fair coin."'}
+                      {smithTab === 'buy' && '"Potions, salves, remedies — everything an adventurer needs."'}
                       {smithTab === 'rumors' && '"Heard anything on the roads? I\'ve heard plenty."'}
                     </p>
                     <div className="dialogue-options" role="group" aria-label="Talk options">
                       <button type="button" className={'dialogue-option' + (smithTab === 'craft' ? ' is-active' : '')} onClick={() => setSmithTab('craft')} data-testid="button-smith-craft">Crafting</button>
                       <button type="button" className={'dialogue-option' + (smithTab === 'sell' ? ' is-active' : '')} onClick={() => setSmithTab('sell')} data-testid="button-smith-sell">Sell</button>
+                      <button type="button" className={'dialogue-option' + (smithTab === 'buy' ? ' is-active' : '')} onClick={() => setSmithTab('buy')} data-testid="button-smith-buy">Buy</button>
                       <button type="button" className={'dialogue-option' + (smithTab === 'rumors' ? ' is-active' : '')} onClick={() => setSmithTab('rumors')} data-testid="button-smith-rumors">Rumours</button>
                     </div>
                     {smithTab === 'craft' && (
@@ -8657,6 +8665,14 @@ if (active) {
                             <em>+{price} gold</em>
                           </button>
                         ))}
+                      </div>
+                    )}
+                    {smithTab === 'buy' && (
+                      <div className="buy-options" data-testid="smith-buy-options">
+                        <button className="craft-button buy-button" onClick={buyPotion} disabled={inventory.coins < 10} data-testid="button-buy-potion">
+                          <span><b>🧪 Health Potion</b><small>Restores 50% HP · You have {inventory.healthPotion}</small></span>
+                          <em>10 gold</em>
+                        </button>
                       </div>
                     )}
                     {smithTab === 'rumors' && (
