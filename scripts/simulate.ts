@@ -19,6 +19,8 @@ import { SpatialHash, updateSeparation, createSeparationState } from '../src/gam
 import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats } from '../src/game/items';
 import { EntityPool, type PoolableEntity } from '../src/game/entityPool';
 import { FlowField, FlowFieldCache, sampleFlowSmoothed } from '../src/game/flowField';
+import { riverTileSetCached, roadTileSetCached } from '../src/game/wfcInfra';
+import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds } from '../src/game/touchInput';
@@ -3805,6 +3807,45 @@ import { inflateSync } from 'node:zlib';
   // Second sample continues smoothing.
   const v2 = sampleFlowSmoothed(f4, mover, 2, 1, 1.0, 0.5);
   assert(v2.vx < v1.vx, 'Flow smooth: must converge toward desired velocity');
+}
+
+// BUILD 471: WFC infrastructure — rivers and roads with directional sockets.
+{
+  const rivers = riverTileSetCached();
+  assert(rivers.tiles.length === 16, 'Infra: river set must have 16 tiles (15 patterns + land)');
+  // WATER must connect to WATER.
+  assert(rivers.compatible!('WATER', 'WATER'), 'Infra: WATER must accept WATER');
+  assert(!rivers.compatible!('WATER', 'LAND'), 'Infra: WATER must not accept LAND');
+  assert(!rivers.compatible!('WATER', 'BANK'), 'Infra: WATER must not accept BANK');
+  // BANK is transitional.
+  assert(rivers.compatible!('BANK', 'LAND'), 'Infra: BANK must accept LAND');
+  assert(rivers.compatible!('BANK', 'WATER'), 'Infra: BANK must accept WATER');
+
+  // Generate a river grid — should have connected water.
+  const solver = new WfcSolver({ width: 8, height: 8, tiles: rivers, rng: new WfcSeededRng(42) });
+  // Force a river start in the middle.
+  solver.setTile(4, 4, 'river_ns');
+  const grid = solver.collapse();
+  assert(grid !== null, 'Infra: river generation must succeed');
+  // Count water tiles — should be >1 (river extends).
+  const waterCount = grid!.flat().filter((id) => id.startsWith('river_')).length;
+  assert(waterCount > 1, 'Infra: river must extend beyond seed (got ' + waterCount + ')');
+
+  const roads = roadTileSetCached();
+  assert(roads.tiles.length === 18, 'Infra: road set must have 18 tiles (15 patterns + land + 2 bridges)');
+  assert(roads.compatible!('ROAD', 'ROAD'), 'Infra: ROAD must accept ROAD');
+  assert(!roads.compatible!('ROAD', 'LAND'), 'Infra: ROAD must not accept LAND');
+  // Bridges have ROAD on two sides.
+  const bridge = roads.tiles.find((t) => t.id === 'bridge_ns')!;
+  assert(bridge.sockets.north === 'ROAD' && bridge.sockets.south === 'ROAD', 'Infra: bridge_ns must have ROAD N/S');
+
+  // Generate a road grid.
+  const rsolver = new WfcSolver({ width: 8, height: 8, tiles: roads, rng: new WfcSeededRng(99) });
+  rsolver.setTile(4, 4, 'road_ew');
+  const rgrid = rsolver.collapse();
+  assert(rgrid !== null, 'Infra: road generation must succeed');
+  const roadCount = rgrid!.flat().filter((id) => id.startsWith('road_')).length;
+  assert(roadCount > 1, 'Infra: road must extend beyond seed (got ' + roadCount + ')');
 }
 
 // ---- Results ----
