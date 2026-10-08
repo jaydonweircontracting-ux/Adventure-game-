@@ -16,6 +16,7 @@ import { organicTownSpecs } from '../src/game/organicTowns';
 import { WfcSolver, WfcSeededRng, wfcSeedFor } from '../src/game/wfc';
 import { worldBiomeTileSet, generateChunkBiomes, validateBiomeGrid } from '../src/game/wfcWorld';
 import { SpatialHash, updateSeparation, createSeparationState } from '../src/game/spatialHash';
+import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats } from '../src/game/items';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds } from '../src/game/touchInput';
@@ -3634,6 +3635,74 @@ import { inflateSync } from 'node:zlib';
   updateSeparation(hash, { id: 99, x: 100, y: 100 }, s3, 19, { interval: 20 });
   // Note: hash is empty at (100,100), so no neighbors — vector stays ~0.
   assert(Math.abs(s3.sx) < 1e-9 && Math.abs(s3.sy) < 1e-9, 'Separation: isolated entity must have zero vector');
+}
+
+// BUILD 466: ARPG item system — stats, quality, affixes.
+{
+  // Quality definitions are sane.
+  assert(ITEM_QUALITIES.common.maxAffixes === 0, 'Items: common must have 0 affixes');
+  assert(ITEM_QUALITIES.unique.maxAffixes === 4, 'Items: unique must have 4 affixes');
+  assert(ITEM_QUALITIES.common.weight > ITEM_QUALITIES.unique.weight, 'Items: common must be more common than unique');
+
+  // Deterministic generation.
+  const rng1 = new ItemRng(12345);
+  const rng2 = new ItemRng(12345);
+  const item1 = generateItem(rng1, 10);
+  const item2 = generateItem(rng2, 10);
+  assert(item1.name === item2.name && item1.quality === item2.quality,
+    'Items: same seed must produce same item');
+
+  // Forced quality works.
+  const rng3 = new ItemRng(999);
+  const commonItem = generateItem(rng3, 10, 'common', 'iron_sword');
+  assert(commonItem.quality === 'common' && commonItem.affixIds.length === 0,
+    'Items: forced common must have 0 affixes');
+  assert(commonItem.name === 'Iron Sword', 'Items: common name must be base name (got ' + commonItem.name + ')');
+  assert(commonItem.slot === 'weapon', 'Items: iron sword must be a weapon');
+
+  const uniqueItem = generateItem(new ItemRng(999), 20, 'unique', 'iron_sword');
+  assert(uniqueItem.affixIds.length > 0 && uniqueItem.affixIds.length <= 4,
+    'Items: unique must have 1-4 affixes (got ' + uniqueItem.affixIds.length + ')');
+  assert(uniqueItem.name.includes('Iron Sword'), 'Items: unique name must include base name');
+
+  // Stats: unique > common (quality multiplier).
+  assert((uniqueItem.stats.damage ?? 0) > (commonItem.stats.damage ?? 0),
+    'Items: unique must have more damage than common');
+
+  // Affix tags are respected: melee weapon must only get melee-compatible affixes.
+  for (let i = 0; i < 50; i++) {
+    const it = generateItem(new ItemRng(i * 7919), 15, 'rare', 'iron_sword');
+    for (const aid of it.affixIds) {
+      const affix = AFFIXES.find((a) => a.id === aid)!;
+      assert(affix.tags.includes('melee'),
+        'Items: iron sword affix must include melee tag (got ' + affix.id + ' with ' + affix.tags.join(',') + ')');
+    }
+  }
+
+  // Level gating: low-level item should not have high-level affixes.
+  for (let i = 0; i < 30; i++) {
+    const it = generateItem(new ItemRng(i * 104729), 1, 'epic', 'iron_sword');
+    for (const aid of it.affixIds) {
+      const affix = AFFIXES.find((a) => a.id === aid)!;
+      assert(affix.minLevel <= 1, 'Items: level 1 item must not have minLevel>1 affix (got ' + affix.id + ')');
+    }
+  }
+
+  // Stat merging.
+  const merged = mergeStats({ damage: 10 }, { damage: 5, armor: 3 });
+  assert(merged.damage === 15 && merged.armor === 3, 'Items: mergeStats must add values');
+
+  // Equipment totals.
+  const sword = generateItem(new ItemRng(1), 10, 'common', 'iron_sword');
+  const shield = generateItem(new ItemRng(2), 10, 'common', 'wooden_shield');
+  const total = totalEquipmentStats([sword, shield]);
+  assert((total.damage ?? 0) > 0 && (total.armor ?? 0) > 0,
+    'Items: equipment totals must combine damage and armor');
+
+  // Value scales with quality.
+  const cheap = generateItem(new ItemRng(5), 5, 'common', 'dagger');
+  const pricey = generateItem(new ItemRng(5), 5, 'epic', 'dagger');
+  assert(pricey.value > cheap.value, 'Items: epic must be worth more than common');
 }
 
 // ---- Results ----
