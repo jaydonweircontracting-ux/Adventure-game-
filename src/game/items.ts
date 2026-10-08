@@ -32,6 +32,7 @@ export interface ItemStats {
   fireDamage?: number;
   iceDamage?: number;
   lightningDamage?: number;
+  poisonDamage?: number;
   fireResist?: number;     // 0-1
   iceResist?: number;
   lightningResist?: number;

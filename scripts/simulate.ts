@@ -22,6 +22,7 @@ import { FlowField, FlowFieldCache, sampleFlowSmoothed } from '../src/game/flowF
 import { riverTileSetCached, roadTileSetCached } from '../src/game/wfcInfra';
 import { dungeonTileSetCached, generateDungeon } from '../src/game/wfcDungeon';
 import { simTierForDistance, shouldUpdate, SIM_TIER_INTERVAL } from '../src/game/simLod';
+import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
@@ -3904,6 +3905,40 @@ import { inflateSync } from 'node:zlib';
 
   assert(SIM_TIER_INTERVAL[0] === 1, 'LOD: tier 0 interval must be 1');
   assert(SIM_TIER_INTERVAL[3] === 64, 'LOD: tier 3 interval must be 64');
+}
+
+// BUILD 483: Deterministic landmark grid.
+{
+  const seed = 847291583;
+  // Same region, same seed → same landmarks (deterministic).
+  const r1 = getLandmarksForRegion(0, 0, seed);
+  const r2 = getLandmarksForRegion(0, 0, seed);
+  assert(JSON.stringify(r1) === JSON.stringify(r2), 'Landmark: must be deterministic');
+
+  // Different regions → different landmarks (usually).
+  const r3 = getLandmarksForRegion(5, 5, seed);
+  assert(JSON.stringify(r1) !== JSON.stringify(r3), 'Landmark: different regions should differ');
+
+  // Different seeds → different landmarks.
+  const r4 = getLandmarksForRegion(0, 0, 12345);
+  assert(JSON.stringify(r1) !== JSON.stringify(r4), 'Landmark: different seeds should differ');
+
+  // Landmarks have valid structure.
+  for (const lm of r1) {
+    assert(lm.id.startsWith('lm_'), 'Landmark: ID must start with lm_');
+    assert(lm.chunk.x >= 0 && lm.chunk.x < LANDMARK_REGION_SIZE, 'Landmark: chunk X in region');
+    assert(lm.name.length > 0, 'Landmark: must have name');
+  }
+
+  // Near-chunk query returns landmarks.
+  const near = getLandmarksNearChunk(4, 7, seed, 1);
+  assert(near.length > 0, 'Landmark: near-chunk query must return landmarks');
+  // All within radius.
+  for (const lm of near) {
+    const rx = Math.floor(lm.chunk.x / LANDMARK_REGION_SIZE);
+    const ry = Math.floor(lm.chunk.y / LANDMARK_REGION_SIZE);
+    assert(Math.abs(rx - 1) <= 1 && Math.abs(ry - 1) <= 1, 'Landmark: must be within radius');
+  }
 }
 
 // ---- Results ----
