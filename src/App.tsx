@@ -2961,7 +2961,7 @@ function DebugOverlay({ chunk }: { chunk: Point }) {
   );
 }
 
-function WorldMap({ chunk, onClose, kingdomLabels, tradeRoutes }: { chunk: Point; onClose: () => void; kingdomLabels: { text: string; x: number; y: number }[]; tradeRoutes: { id: string; name: string; points: { x: number; y: number }[] }[] }) {
+function WorldMap({ chunk, onClose, kingdomLabels, tradeRoutes, visitedChunks }: { chunk: Point; onClose: () => void; kingdomLabels: { text: string; x: number; y: number }[]; tradeRoutes: { id: string; name: string; points: { x: number; y: number }[] }[]; visitedChunks: Set<string> }) {
   // Lock body scroll while the map is open so touch swipes pan the map
   // instead of scrolling the page behind it (iOS Safari).
   useEffect(() => {
@@ -2992,7 +2992,17 @@ function WorldMap({ chunk, onClose, kingdomLabels, tradeRoutes }: { chunk: Point
     ctx.clearRect(0, 0, target.width, target.height);
     ctx.drawImage(atlas.canvas, 0, 0);
     ctx.drawImage(renderMapOverlay(atlas.tiles, atlas.cols, atlas.rows, tierForZoom(zoom), mapDebug, kingdomLabels, tradeRoutes), 0, 0);
-  }, [atlas, zoom, mapDebug]);
+    // BUILD 517: Fog of war — darken unvisited chunks.
+    ctx.fillStyle = 'rgba(10, 10, 20, 0.75)';
+    for (const tile of atlas.tiles) {
+      const key = tile.world.x + ',' + tile.world.y;
+      if (!visitedChunks.has(key)) {
+        const px = (tile.world.x - worldMapBounds.minX) * MAP_TILE_PX;
+        const py = (tile.world.y - worldMapBounds.minY) * MAP_TILE_PX;
+        ctx.fillRect(px, py, MAP_TILE_PX, MAP_TILE_PX);
+      }
+    }
+  }, [atlas, zoom, mapDebug, visitedChunks]);
 
   const clampPan = (x: number, y: number, scale: number) => {
     const stage = stageRef.current;
@@ -9033,6 +9043,18 @@ function Home() {
   const menuBridgeRef = useRef<{ openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null>(null);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
+  // BUILD 517: Map reveal (fog of war) — track visited chunks.
+  const [visitedChunks, setVisitedChunks] = useState<Set<string>>(new Set(['4,7']));
+  const handleChunkChange = (c: { x: number; y: number }) => {
+    setChunk(c);
+    setVisitedChunks((prev) => {
+      const key = c.x + ',' + c.y;
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+  };
   const [inventory, setInventory] = useState<GameInventory>(initialInventory);
   // BUILD 474: ARPG equipment (lifted from GameField for InventorySheet access).
   const [equipment, setEquipment] = useState<GeneratedItem[]>([]);
@@ -9495,11 +9517,11 @@ function Home() {
         <>
           <div className="game-layout">
             <GameCrashBoundary chunk={chunk}>
-            <GameField inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={setChunk} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
+            <GameField inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
             </GameCrashBoundary>
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
-          {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} kingdomLabels={menuBridgeRef.current?.getKingdomLabels() ?? []} tradeRoutes={menuBridgeRef.current?.getTradeRoutes() ?? []} />}
+          {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} kingdomLabels={menuBridgeRef.current?.getKingdomLabels() ?? []} tradeRoutes={menuBridgeRef.current?.getTradeRoutes() ?? []} visitedChunks={visitedChunks} />}
           {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1' && <DebugOverlay chunk={chunk} />}
           {inventoryOpen && <InventorySheet inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} onDrinkPotion={drinkPotion} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onWeaveBowstring={weaveBowstring} />}
           {journalOpen && (
