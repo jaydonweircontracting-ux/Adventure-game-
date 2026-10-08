@@ -1219,6 +1219,7 @@ type GoatState = {
   hitFlash: boolean;
   nextWanderTick?: number;
   isElite?: boolean; // BUILD 475: elite/champion (more HP, better loot)
+  isBoss?: boolean; // BUILD 477: boss (named, 10x HP, epic+ loot)
 };
 // Hostile mobs: goblins and bandits. Reuse the goat combat AI shape.
 type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'snake' | 'spider' | 'dragon' | 'orc' | 'soldier' | 'wolf' | 'slime' | 'bat' | 'rat';
@@ -1686,7 +1687,12 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
       facing: (['up', 'right', 'down', 'left'] as Direction[])[wanderSeed % 4],
       level: monsterLevelForChunk(chunk, index, playerLevel),
       // BUILD 475: 10% elite chance — 3x HP, guaranteed item drop
-      ...(wanderSeed % 10 === 0 ? (() => {
+      // BUILD 477: 1% boss chance (direwolf only) — 10x HP, named, epic+ loot
+      ...(wanderSeed % 100 === 0 ? (() => {
+        const lvl = monsterLevelForChunk(chunk, index, playerLevel);
+        const bossHp = goatMaxHpForLevel(lvl) * 10;
+        return { hp: bossHp, maxHp: bossHp, isElite: true as const, isBoss: true as const, kind: 'direwolf' as const };
+      })() : wanderSeed % 10 === 0 ? (() => {
         const lvl = monsterLevelForChunk(chunk, index, playerLevel);
         const eliteHp = goatMaxHpForLevel(lvl) * 3;
         return { hp: eliteHp, maxHp: eliteHp, isElite: true as const };
@@ -4954,15 +4960,18 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
         // BUILD 468: ARPG item drop (25% chance, level-scaled).
         // BUILD 475: elites always drop, with better quality floor.
+        // BUILD 477: bosses always drop epic+.
         const isElite = (attackTarget as GoatState).isElite === true;
-        if (isElite || Math.random() < 0.25) {
+        const isBoss = (attackTarget as GoatState).isBoss === true;
+        if (isElite || isBoss || Math.random() < 0.25) {
           const itemRng = new ItemRng(Date.now() ^ Math.floor(Math.random() * 0xffffffff));
           const itemLevel = Math.max(1, playerLevelRef.current);
-          // Elites get at least rare quality.
-          const forcedQuality = isElite && Math.random() < 0.5 ? 'rare' : undefined;
+          // Elites get at least rare; bosses get epic or unique.
+          const forcedQuality = isBoss ? (Math.random() < 0.3 ? 'unique' : 'epic') : isElite && Math.random() < 0.5 ? 'rare' : undefined;
           const item = generateItem(itemRng, itemLevel, forcedQuality);
           onEquipmentChange((prev) => [...prev, item]);
-          setLogs((currentLogs) => [{ text: `${isElite ? 'Elite slain! ' : ''}You found: ${item.name}!`, color: 'gold' }, ...currentLogs].slice(0, 3));
+          const prefix = isBoss ? 'BOSS SLAIN! Alpha Direwolf defeated! ' : isElite ? 'Elite slain! ' : '';
+          setLogs((currentLogs) => [{ text: `${prefix}You found: ${item.name}!`, color: 'gold' }, ...currentLogs].slice(0, 3));
         }
         const xpReward = goatExperienceReward(attackTarget, playerLevelRef.current, playerStatsRef.current);
         const nextXp = playerXpRef.current + xpReward; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
