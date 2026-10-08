@@ -5,6 +5,7 @@ import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/iso/isoSprites';
 import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality } from './game/villageLife';
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
+import { createBody, lootBody, type LootableBody } from './game/lootableBodies';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Backpack, BookOpen, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
@@ -1425,6 +1426,8 @@ type SaveGameData = {
   brainState: RpgGameState | null;
   // BUILD 520: Persisted fog-of-war visited chunks.
   visitedChunks?: string[];
+  // BUILD 522: Lootable NPC bodies.
+  bodies?: LootableBody[];
 };
 
 const SAVE_FILE_VERSION = CURRENT_SAVE_VERSION;
@@ -4116,6 +4119,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [selectedAdventurerId, setSelectedAdventurerId] = useState<string | null>(null);
   const [goats, setGoats] = useState<GoatState[]>(() => goatsForChunk({ x: 4, y: 7 }, 1));
   const [monsters, setMonsters] = useState<MonsterState[]>(() => monstersForChunk({ x: 4, y: 7 }, 1));
+  // BUILD 522: Lootable NPC bodies.
+  const [bodies, setBodies] = useState<LootableBody[]>([]);
+  const bodiesRef = useRef<LootableBody[]>([]);
   const [cornStalks, setCornStalks] = useState<CornStalk[]>(() => {
     const startChunk = { x: 4, y: 7 };
     const all = cornStalksForChunk(startChunk, mapTileFor(startChunk).terrain, (pos) => isFieldPositionBlocked(pos, startChunk));
@@ -4330,6 +4336,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     simulatedAdventurers,
     townsfolk: serializeTownsfolk(townsfolkRef.current),
     goats,
+    // BUILD 522: Lootable bodies.
+    bodies: bodiesRef.current,
     interiorId: interior?.id || null,
     interiorPosition,
     inPrison,
@@ -4370,6 +4378,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     horseRef.current = loadState.horse; setHorse(loadState.horse);
     horseIdleAnchorRef.current = loadState.horse.position;
     goatsRef.current = loadState.goats.map((goat) => ({ ...goat, attacking: goat.attacking ?? false, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, hitFlash: false })); setGoats(goatsRef.current);
+    // BUILD 522: Restore lootable bodies.
+    if (loadState.bodies && Array.isArray(loadState.bodies)) {
+      bodiesRef.current = loadState.bodies; setBodies(loadState.bodies);
+    }
     targetGoatIdRef.current = null; setTargetGoatId(null);
     droppedLootRef.current = loadState.droppedLoot || []; setDroppedLoot(droppedLootRef.current);
     pickedUpGroundItemsRef.current = loadState.pickedUpGroundItems || []; setPickedUpGroundItems(pickedUpGroundItemsRef.current);
@@ -4500,6 +4512,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   useEffect(() => { mountedRef.current = mounted; }, [mounted]);
   useEffect(() => { horseRef.current = horse; }, [horse]);
   useEffect(() => { goatsRef.current = goats; }, [goats]);
+  useEffect(() => { bodiesRef.current = bodies; }, [bodies]);
   useEffect(() => { cornStalksRef.current = cornStalks; }, [cornStalks]);
   useEffect(() => { targetGoatIdRef.current = targetGoatId; }, [targetGoatId]);
   useEffect(() => { droppedLootRef.current = droppedLoot; }, [droppedLoot]);
@@ -5347,6 +5360,24 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                       setLogs((cur) => [{ text: `${witnesses.length} witness${witnesses.length > 1 ? 'es' : ''} saw it!`, color: 'orange' }, ...cur].slice(0, 3));
                     }
                   } catch { /* crime recording is best-effort */ }
+                  // BUILD 522: Create lootable body.
+                  try {
+                    const clock = brainRef.current?.worldCore.getClock();
+                    const day = clock ? clock.day : 1;
+                    const body = createBody(
+                      'body-' + npc.id + '-' + Date.now().toString(36),
+                      npc.id,
+                      npc.name,
+                      npc.role || 'citizen',
+                      chunkRef.current,
+                      { x: npc.position.x, y: npc.position.y },
+                      day,
+                      Math.abs(npc.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0))
+                    );
+                    const nextBodies = [...bodiesRef.current, body];
+                    bodiesRef.current = nextBodies;
+                    setBodies(nextBodies);
+                  } catch { /* body creation is best-effort */ }
                 } else {
                   spawnCombatText(`-${Math.round(damage)}`, npc.position, 'damage');
                   const scream = screamFor(npc);

@@ -25,6 +25,7 @@ import { dungeonTileSetCached, generateDungeon } from '../src/game/wfcDungeon';
 import { simTierForDistance, shouldUpdate, SIM_TIER_INTERVAL } from '../src/game/simLod';
 import { dangerForBiome, accumulateDanger, BIOME_DANGERS } from '../src/game/environmentalDanger';
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance, CRIME_SEVERITY } from '../src/game/crime';
+import { createBody, generateBodyLoot, lootBody } from '../src/game/lootableBodies';
 import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } from '../src/game/landmarkGrid';
 import { elementalMultiplier, elementalInteraction, strongAgainst, ELEMENTS } from '../src/game/elements';
 import { COMPANION_SPECIES, companionStatsForLevel, companionXpForLevel } from '../src/game/companions';
@@ -5045,6 +5046,33 @@ import { inflateSync } from 'node:zlib';
   // No witnesses when no NPCs nearby.
   const none = findWitnesses({ position: { x: 0, y: 0 } }, []);
   assert(none.length === 0, 'Crime: no witnesses when alone');
+}
+
+// BUILD 522: Lootable bodies.
+{
+  const loot = generateBodyLoot('merchant', 12345);
+  assert(loot.gold >= 30, 'Body: merchant has base 30+ gold');
+  assert(loot.potions >= 0 && loot.potions <= 1, 'Body: potions 0-1');
+
+  const guardLoot = generateBodyLoot('guard', 999);
+  assert(guardLoot.gold >= 20, 'Body: guard has base 20+ gold');
+
+  const genericLoot = generateBodyLoot('citizen', 1);
+  assert(genericLoot.gold >= 10, 'Body: generic has base 10+ gold');
+
+  // Deterministic.
+  const a = generateBodyLoot('merchant', 42);
+  const b = generateBodyLoot('merchant', 42);
+  assert(JSON.stringify(a) === JSON.stringify(b), 'Body: loot deterministic');
+
+  const body = createBody('b1', 'npc-1', 'Bob', 'merchant', { x: 4, y: 7 }, { x: 100, y: 100 }, 5, 42);
+  assert(!body.looted, 'Body: starts unlooted');
+  assert(body.loot.gold > 0, 'Body: has gold');
+
+  const { loot: taken, updatedBody } = lootBody(body);
+  assert(taken.gold === body.loot.gold, 'Body: loot transfers gold');
+  assert(updatedBody.looted, 'Body: marked looted');
+  assert(updatedBody.loot.gold === 0, 'Body: loot emptied');
 }
 
 // ---- Results ----
