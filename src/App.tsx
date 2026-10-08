@@ -3,7 +3,7 @@ import IsoFieldView from './game/iso/IsoFieldView';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
 import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/iso/isoSprites';
-import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality } from './game/villageLife';
+import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality, npcGold } from './game/villageLife';
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
 import { createBody, lootBody, type LootableBody } from './game/lootableBodies';
 import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
@@ -3858,21 +3858,56 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         const clock = brainRef.current?.worldCore.getClock();
         const hour = clock ? clock.hour : 12;
         const day = clock ? clock.day : 1;
+        // BUILD 527: Real pickpocket factors — no more hardcoded inputs.
+        // Behind: player is behind NPC based on NPC facing direction.
+        const facing = npc.facing; // 'up' | 'down' | 'left' | 'right'
+        let isBehind = false;
+        if (facing === 'up') isBehind = dy > 0; // NPC faces north (-y), behind is south (+y)
+        else if (facing === 'down') isBehind = dy < 0; // NPC faces south (+y), behind is north (-y)
+        else if (facing === 'left') isBehind = dx > 0; // NPC faces west (-x), behind is east (+x)
+        else if (facing === 'right') isBehind = dx < 0; // NPC faces east (+x), behind is west (-x)
+        // Awareness: patrolling guards are alert, sleepers are oblivious.
+        const act = npc.activity || '';
+        let npcAwareness = 0.5;
+        if (act === 'Patrolling') npcAwareness = 0.8;
+        else if (act === 'Sleeping') npcAwareness = 0.1;
+        else if (act === 'Minding the stall' || act === 'Tending crops') npcAwareness = 0.4;
+        else if (act === 'Off duty' || act === 'At home') npcAwareness = 0.3;
+        // Busy: working/eating NPCs are distracted.
+        const npcBusy = act === 'Minding the stall' || act === 'Tending crops' || act === 'Having lunch' || act === 'Evening at the Tankard';
+        // Real purse value via npcGold (deterministic + goldDelta).
+        const purse = clock ? npcGold(npc, clock) : 20;
+        // Difficulty by archetype: guards hard, children easy.
+        const arch = npc.archetype || 'commoner';
+        let targetDifficulty = 0.2;
+        if (arch === 'guard') targetDifficulty = 0.8;
+        else if (arch === 'merchant') targetDifficulty = 0.4;
+        else if (arch === 'child') targetDifficulty = 0.1;
         const chance = pickpocketChance({
-          isBehind: false, // TODO: facing check
-          npcAwareness: 0.5,
-          npcBusy: false,
+          isBehind,
+          npcAwareness,
+          npcBusy,
           hour,
-          itemValue: 20,
-          targetDifficulty: 0.2,
+          itemValue: purse,
+          targetDifficulty,
         });
         const roll = Math.random();
         const result = resolvePickpocket(chance, roll);
         if (result.outcome === 'success' || result.outcome === 'critical') {
-          const gold = result.outcome === 'critical' ? 30 + Math.floor(Math.random() * 20) : 10 + Math.floor(Math.random() * 15);
-          onLoot({ gold } as GoatLoot);
-          setLogs((cur) => [{ text: `Pickpocketed ${gold} gold from ${npc.name}!`, color: 'gold' }, ...cur].slice(0, 3));
-          spawnCombatText('+' + gold + 'g', npc.position, 'reward');
+          // Steal from the victim's actual purse — don't mint gold.
+          const maxSteal = Math.max(1, Math.floor(purse * (result.outcome === 'critical' ? 0.5 : 0.25)));
+          const gold = Math.min(maxSteal, purse);
+          if (gold > 0) {
+            // Deduct from victim's purse via goldDelta (persisted).
+            const updated = townsfolkRef.current.map((w) => w.id === npc.id ? { ...w, goldDelta: (w.goldDelta ?? 0) - gold } : w);
+            townsfolkRef.current = updated;
+            setTownsfolk(updated);
+            onLoot({ gold } as GoatLoot);
+            setLogs((cur) => [{ text: `Pickpocketed ${gold} gold from ${npc.name}!`, color: 'gold' }, ...cur].slice(0, 3));
+            spawnCombatText('+' + gold + 'g', npc.position, 'reward');
+          } else {
+            setLogs((cur) => [{ text: `${npc.name} has no gold to steal.`, color: 'orange' }, ...cur].slice(0, 3));
+          }
         } else if (result.outcome === 'partial') {
           setLogs((cur) => [{ text: `${npc.name} notices something suspicious...`, color: 'orange' }, ...cur].slice(0, 3));
           // Add suspicious memory.
