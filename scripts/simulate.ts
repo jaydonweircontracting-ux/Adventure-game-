@@ -36,6 +36,7 @@ import { initPopulation, simulatePopulationDay, simulatePopulationDays, paramsFo
 import { relationshipsFor, predatorsOf, preyOf, predatorPressureFor } from '../src/game/foodWeb';
 import { emptyMetrics, checkBudgets, DEFAULT_BUDGETS } from '../src/game/profiler';
 import { createWorkQueue, enqueueWork, processWorkQueue, queueDepth } from '../src/game/workQueue';
+import { initResource, harvestResource, simulateResourceDay, simulateResourceDays, paramsForResource } from '../src/game/resources';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4358,6 +4359,41 @@ import { inflateSync } from 'node:zlib';
   enqueueWork(q2, 'generate_chunk', 5, {});
   const c2 = processWorkQueue(q2, () => true);
   assert(c2 === 0, 'Queue: respects zero budget');
+}
+
+// BUILD 497: Resource populations.
+{
+  const params = paramsForResource('berries');
+  assert(params.growthRate === 0.08, 'Resource: berry growth rate');
+
+  // Init deterministic.
+  const r1 = initResource('berries', 0, 0, 847291583);
+  const r2 = initResource('berries', 0, 0, 847291583);
+  assert(r1.density === r2.density, 'Resource: init deterministic');
+  assert(r1.density > 0, 'Resource: initial density > 0');
+
+  // Harvest reduces density.
+  const { resource: r3, harvested } = harvestResource(r1, 0.3);
+  assert(harvested > 0, 'Resource: harvest yields');
+  assert(r3.density < r1.density, 'Resource: density drops after harvest');
+
+  // Cannot harvest more than available.
+  const rLow = { ...r1, density: 0.1 };
+  const { harvested: h2 } = harvestResource(rLow, 0.5);
+  assert(h2 <= 0.1, 'Resource: cannot over-harvest');
+
+  // Regrowth.
+  const r4 = simulateResourceDay(r3);
+  assert(r4.density > r3.density, 'Resource: regrows');
+  assert(r4.density <= r4.maxDensity, 'Resource: capped at max');
+
+  // Full recovery over time.
+  const r5 = simulateResourceDays(r3, 30);
+  assert(r5.density > r3.density, 'Resource: recovers over 30 days');
+
+  // Trees grow slower than grass.
+  assert(paramsForResource('trees').growthRate < paramsForResource('grass').growthRate,
+    'Resource: trees slower than grass');
 }
 
 // ---- Results ----
