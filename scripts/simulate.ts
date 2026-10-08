@@ -40,6 +40,7 @@ import { initResource, harvestResource, simulateResourceDay, simulateResourceDay
 import { migrationPressure, simulateMigration } from '../src/game/migration';
 import { generateTraits, inheritTraits, traitsValid } from '../src/game/traits';
 import { behaviorForSpecies, selectBehavior, initialBehaviorState, BehaviorContext } from '../src/game/behaviors';
+import { createRegionalHistory, recordEcoEvent, detectEcoEvents, historyNarrative } from '../src/game/ecoHistory';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { getLandmarksForRegion } from '../src/game/landmarkGrid';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
@@ -4512,6 +4513,53 @@ import { inflateSync } from 'node:zlib';
     isNight: true, danger: false, foodAvailable: 0.8,
   };
   assert(selectBehavior(deer, sleepyCtx, state) === 'sleep', 'Behavior: sleeps at night');
+}
+
+// BUILD 501: Ecosystem history.
+{
+  const h = createRegionalHistory(2, 3);
+  assert(h.events.length === 0, 'History: empty initially');
+  assert(h.regionX === 2, 'History: region coords');
+
+  // Record events.
+  const h2 = recordEcoEvent(h, 'population_boom', 'deer', 10);
+  assert(h2.events.length === 1, 'History: event recorded');
+  assert(h2.events[0].summary.includes('deer'), 'History: summary mentions species');
+  assert(h2.lastUpdateDay === 10, 'History: day updated');
+
+  // Cap at 20.
+  let h3 = h;
+  for (let i = 0; i < 25; i++) {
+    h3 = recordEcoEvent(h3, 'population_boom', 'deer', i);
+  }
+  assert(h3.events.length === 20, 'History: capped at 20');
+
+  // Detect boom.
+  const e1 = detectEcoEvents('deer', 0, 0, 10, 20, 1, 2);
+  assert(e1.includes('population_boom'), 'History: detects boom');
+
+  // Detect crash.
+  const e2 = detectEcoEvents('deer', 0, 0, 20, 5, 1, 2);
+  assert(e2.includes('population_crash'), 'History: detects crash');
+
+  // Detect extinction.
+  const e3 = detectEcoEvents('wolf', 0, 0, 5, 0, 1, 2);
+  assert(e3.includes('species_extinct_local'), 'History: detects extinction');
+
+  // Detect return.
+  const e4 = detectEcoEvents('wolf', 0, 0, 0, 3, 1, 2);
+  assert(e4.includes('species_returned'), 'History: detects return');
+
+  // No event for small change.
+  const e5 = detectEcoEvents('deer', 0, 0, 10, 11, 1, 2);
+  assert(e5.length === 0, 'History: no event for small change');
+
+  // Narrative.
+  const h4 = recordEcoEvent(createRegionalHistory(0, 0), 'population_crash', 'deer', 5);
+  const narrative = historyNarrative(h4);
+  assert(narrative.includes('deer'), 'History: narrative mentions species');
+  const empty = historyNarrative(createRegionalHistory(0, 0));
+  assert(empty.includes('Nothing unusual'), 'History: empty narrative');
 }
 
 // ---- Results ----
