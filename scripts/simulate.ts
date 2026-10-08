@@ -21,6 +21,7 @@ import { EntityPool, type PoolableEntity } from '../src/game/entityPool';
 import { FlowField, FlowFieldCache, sampleFlowSmoothed } from '../src/game/flowField';
 import { riverTileSetCached, roadTileSetCached } from '../src/game/wfcInfra';
 import { dungeonTileSetCached, generateDungeon } from '../src/game/wfcDungeon';
+import { simTierForDistance, shouldUpdate, SIM_TIER_INTERVAL } from '../src/game/simLod';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
@@ -3873,6 +3874,36 @@ import { inflateSync } from 'node:zlib';
   // Has walkable area.
   const walkableCount = dungeon!.grid.flat().filter((id) => id !== 'wall').length;
   assert(walkableCount > 10, 'Dungeon: must have walkable area (got ' + walkableCount + ')');
+}
+
+// BUILD 473: Simulation LOD tiers.
+{
+  assert(simTierForDistance(0, 0) === 0, 'LOD: origin must be tier 0');
+  assert(simTierForDistance(1, 1) === 0, 'LOD: 1 chunk must be tier 0');
+  assert(simTierForDistance(2, 0) === 1, 'LOD: 2 chunks must be tier 1');
+  assert(simTierForDistance(3, 3) === 1, 'LOD: 3 chunks must be tier 1');
+  assert(simTierForDistance(5, 0) === 2, 'LOD: 5 chunks must be tier 2');
+  assert(simTierForDistance(8, 8) === 2, 'LOD: 8 chunks must be tier 2');
+  assert(simTierForDistance(9, 0) === 3, 'LOD: 9 chunks must be tier 3');
+  assert(simTierForDistance(100, 100) === 3, 'LOD: far must be tier 3');
+
+  // Tier 0 always updates.
+  assert(shouldUpdate(0, 123, 456), 'LOD: tier 0 must always update');
+  // Tier 1 updates every 4 ticks, distributed.
+  let tier1Count = 0;
+  for (let tick = 0; tick < 16; tick++) {
+    if (shouldUpdate(1, tick, 0)) tier1Count++;
+  }
+  assert(tier1Count === 4, 'LOD: tier 1 must update 4/16 ticks (got ' + tier1Count + ')');
+  // Distribution: different ids update on different ticks.
+  const tick0Ids: number[] = [];
+  for (let id = 0; id < 8; id++) {
+    if (shouldUpdate(1, 0, id)) tick0Ids.push(id);
+  }
+  assert(tick0Ids.length === 2, 'LOD: tier 1 must distribute (2/8 on tick 0, got ' + tick0Ids.length + ')');
+
+  assert(SIM_TIER_INTERVAL[0] === 1, 'LOD: tier 0 interval must be 1');
+  assert(SIM_TIER_INTERVAL[3] === 64, 'LOD: tier 3 interval must be 64');
 }
 
 // ---- Results ----
