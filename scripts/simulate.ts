@@ -25,6 +25,7 @@ import { simTierForDistance, shouldUpdate, SIM_TIER_INTERVAL } from '../src/game
 import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } from '../src/game/landmarkGrid';
 import { elementalMultiplier, elementalInteraction, strongAgainst, ELEMENTS } from '../src/game/elements';
 import { COMPANION_SPECIES, companionStatsForLevel, companionXpForLevel } from '../src/game/companions';
+import { startTaming, updateTaming, tamingBehaviorForSpecies, TAMING_DEFAULTS } from '../src/game/taming';
 import { WfcSolver, WfcSeededRng } from '../src/game/wfc';
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
@@ -3995,6 +3996,51 @@ import { inflateSync } from 'node:zlib';
     assert(s.habitats.length > 0, 'Companion: must have habitats');
     assert(s.description.length > 0, 'Companion: must have description');
   }
+}
+
+// BUILD 486: Taming mechanic state machine.
+{
+  // Start taming.
+  const t0 = startTaming(123, 'ember_fox');
+  assert(t0.phase === 'tracking', 'Taming: must start in tracking');
+  assert(t0.trust === 0, 'Taming: trust starts at 0');
+  assert(t0.targetId === 123, 'Taming: must store target ID');
+
+  // Trust builds in range.
+  let t1 = updateTaming(t0, true, 5, 1);
+  assert(t1.trust > 0, 'Taming: trust must build in range');
+  assert(t1.phase === 'tracking', 'Taming: still tracking');
+
+  // Trust lost out of range.
+  let t2 = { ...t1, trust: 50 };
+  t2 = updateTaming(t2, false, 20, 0);
+  assert(t2.trust < 50, 'Taming: trust must decay out of range');
+
+  // Success at 100 trust.
+  let t3 = { ...t0, trust: 99.9 };
+  t3 = updateTaming(t3, true, 5, 1);
+  assert(t3.phase === 'success', 'Taming: must succeed at 100 trust');
+
+  // Fail if out of range too long.
+  let t4 = { ...t0, ticksOutOfRange: TAMING_DEFAULTS.maxOutOfRangeTicks };
+  t4 = updateTaming(t4, false, 20, 0);
+  assert(t4.phase === 'failed', 'Taming: must fail after max out-of-range');
+
+  // Escape on max pressure.
+  let t5 = { ...t0, pressure: TAMING_DEFAULTS.maxPressure - 1 };
+  t5 = updateTaming(t5, true, 1, 5); // very close, fast
+  assert(t5.phase === 'escaped', 'Taming: must escape on max pressure');
+
+  // Pressure decays.
+  let t6 = { ...t0, pressure: 50 };
+  t6 = updateTaming(t6, true, 10, 0); // in range, not close, not fast
+  assert(t6.pressure < 50, 'Taming: pressure must decay');
+
+  // Species behaviors.
+  assert(tamingBehaviorForSpecies('ember_fox') === 'wander', 'Taming: fox wanders');
+  assert(tamingBehaviorForSpecies('spark_rat') === 'erratic', 'Taming: rat erratic');
+  assert(tamingBehaviorForSpecies('thorn_boar') === 'charge_stop', 'Taming: boar charges');
+  assert(tamingBehaviorForSpecies('gale_hawk') === 'circle', 'Taming: hawk circles');
 }
 
 // ---- Results ----
