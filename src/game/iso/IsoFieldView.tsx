@@ -501,8 +501,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           const depth = gx + gy;
           // Sprite dimensions per kind (strips animate, wolf is a single image)
           let frameW = 32, frameH = 41, isStrip = true;
-          if (kind === 'direwolf') { frameW = img.naturalWidth; frameH = img.naturalHeight; isStrip = false; }
-          else if (kind === 'boar') { frameW = 32; frameH = 25; }
+          if (kind === 'direwolf') { frameW = 32; frameH = 32; isStrip = false; }
+          else if (kind === 'boar') { frameW = 41; frameH = 25; }
           else if (kind === 'badger') { frameW = 33; frameH = 32; }
           const frameCount = isStrip ? Math.max(1, Math.floor(img.naturalWidth / frameW)) : 1;
           const frameIdx = isStrip ? Math.floor(nowMs / 150) % frameCount : 0;
