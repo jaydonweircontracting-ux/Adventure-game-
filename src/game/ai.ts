@@ -54,6 +54,31 @@ export function moveTowards(from: CombatPoint, to: CombatPoint, speed: number, d
   return { x: from.x + dx / distance * Math.min(step, distance), y: from.y + dy / distance * Math.min(step, distance) };
 }
 
+// Caller-supplied movement options for updateGoat. The AI stays pure: it never
+// imports world collision itself. The caller (App) passes its authoritative
+// blocker query so enemies respect water/trees/buildings instead of walking
+// through them.
+export type UpdateGoatOpts = {
+  /** Return true when the field position is solid. When supplied, desired
+   *  moves are validated: blocked destinations slide along the obstacle
+   *  (axis-separated) instead of entering it, and fully blocked moves stay
+   *  in place. When omitted, movement behaves exactly as before. */
+  isBlocked?: (pos: CombatPoint) => boolean;
+};
+
+// Resolve a desired move against solid geometry. Tries the full move first,
+// then axis-separated slides (wall sliding), then staying put. Never returns
+// a blocked position unless the starting position itself was already blocked.
+function resolveCollisionMove(from: CombatPoint, desired: CombatPoint, isBlocked?: (pos: CombatPoint) => boolean): { position: CombatPoint; moved: boolean } {
+  if (!isBlocked) return { position: desired, moved: true };
+  if (!isBlocked(desired)) return { position: desired, moved: true };
+  const xOnly = { x: desired.x, y: from.y };
+  if ((xOnly.x !== from.x || xOnly.y !== from.y) && !isBlocked(xOnly)) return { position: xOnly, moved: true };
+  const yOnly = { x: from.x, y: desired.y };
+  if ((yOnly.x !== from.x || yOnly.y !== from.y) && !isBlocked(yOnly)) return { position: yOnly, moved: true };
+  return { position: from, moved: false };
+}
+
 function moveAwayFrom(from: CombatPoint, threat: CombatPoint, speed: number, deltaMs: number) {
   const dx = from.x - threat.x;
   const dy = from.y - threat.y;
@@ -104,7 +129,7 @@ function keepMeleeDistance(position: CombatPoint, player: CombatPoint, playerFac
   return { x: player.x + dx * scale, y: player.y + dy * scale };
 }
 
-export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint, playerFacing: CombatDirection, goats: GoatAIEntity[], deltaMs: number): { goat: T; attackHit: boolean } {
+export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint, playerFacing: CombatDirection, goats: GoatAIEntity[], deltaMs: number, opts?: UpdateGoatOpts): { goat: T; attackHit: boolean } {
   const cooldown = Math.max(0, goat.attackCooldown - deltaMs);
   const hurtTimer = Math.max(0, goat.hurtTimer - deltaMs);
   if (goat.hp <= 0 || goat.disposition === 'defeated') return { goat: { ...goat, disposition: 'defeated', state: 'die', moving: false, attacking: false, attackCooldown: cooldown, hurtTimer, attackTimer: 0, attackHitApplied: false }, attackHit: false };
@@ -127,8 +152,9 @@ export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint,
   const lowHealth = goat.hp / Math.max(1, goat.maxHp) <= GOAT_FLEE_HP_RATIO;
   if (lowHealth) {
     const fled = moveAwayFrom(goat.position, player, GOAT_FLEE_SPEED, deltaMs);
-    const position = clampToHomeRange(fled, goat.spawnPosition, goat.roamRadius);
-    return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(player, position), moving: true, attacking: false }, attackHit: false };
+    const clamped = clampToHomeRange(fled, goat.spawnPosition, goat.roamRadius);
+    const { position, moved } = resolveCollisionMove(goat.position, clamped, opts?.isBlocked);
+    return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(player, position), moving: moved, attacking: false }, attackHit: false };
   }
   if (goat.state === 'attack') {
     const attackTimer = goat.attackTimer - deltaMs;
@@ -144,8 +170,9 @@ export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint,
     // Give up the chase when the player lures the goat out of its territory.
     if (shouldReturnHome(goat, player) && goat.spawnPosition) {
       const homePosition = moveTowards(goat.position, goat.spawnPosition, GOAT_CHASE_SPEED, deltaMs);
-      const position = clampToHomeRange(homePosition, goat.spawnPosition, goat.roamRadius);
-      return { goat: { ...goat, position, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(position, goat.spawnPosition), moving: true, attacking: false }, attackHit: false };
+      const clamped = clampToHomeRange(homePosition, goat.spawnPosition, goat.roamRadius);
+      const { position, moved } = resolveCollisionMove(goat.position, clamped, opts?.isBlocked);
+      return { goat: { ...goat, position, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(position, goat.spawnPosition), moving: moved, attacking: false }, attackHit: false };
     }
     const separation = goats.reduce((force, other) => {
       if (other === goat) return force;
@@ -156,8 +183,9 @@ export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint,
     }, { x: 0, y: 0 });
     const chasedPosition = moveTowards(goat.position, player, GOAT_CHASE_SPEED, deltaMs, separation);
     const rangedPosition = clampToHomeRange(chasedPosition, goat.spawnPosition, goat.roamRadius);
-    const position = keepMeleeDistance(rangedPosition, player, playerFacing);
-    return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(position, player), moving: true, attacking: false }, attackHit: false };
+    const desired = keepMeleeDistance(rangedPosition, player, playerFacing);
+    const { position, moved } = resolveCollisionMove(goat.position, desired, opts?.isBlocked);
+    return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(position, player), moving: moved, attacking: false }, attackHit: false };
   }
   return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false }, attackHit: false };
 }

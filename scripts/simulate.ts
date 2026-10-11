@@ -1,7 +1,8 @@
 // Simulation play-test: 10,000 iterations across world gen, AI, and spawn rules.
 // Run with: npx tsx scripts/simulate.ts
 import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLevelFor } from '../src/game/worldMap';
-import { updateGoat, type GoatAIEntity } from '../src/game/ai';
+import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai';
+import { traceLineBlocked } from '../src/game/combat';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
@@ -181,6 +182,107 @@ for (let i = 0; i < 5000; i++) {
   const result = updateGoat(goat, player, 'right', [goat], 500);
   const distFromHome = Math.hypot(result.goat.position.x - spawnPosition.x, result.goat.position.y - spawnPosition.y);
   assert(distFromHome <= roamRadius + 0.01, `Fleeing goat escaped range: ${distFromHome.toFixed(2)} > ${roamRadius} (iter ${i})`);
+}
+
+// ---- 5b. Goat AI collision: enemies respect solid geometry (BUILD 531) ----
+// updateGoat accepts an optional isBlocked callback (caller-owned blocker
+// policy, FOnline-style). Movement must never enter a blocked position; when
+// the direct path is blocked the enemy slides along the obstacle
+// (axis-separated) instead of freezing or tunneling through.
+console.log('Testing goat collision callback...');
+{
+  // Wall sits between goat and player; player stays within GOAT_CHASE_RANGE
+  // (24) so the chase actually runs — otherwise the test would pass vacuously.
+  const wallX0 = 20, wallX1 = 28;
+  const isBlocked = (pos: { x: number; y: number }) => pos.x >= wallX0 && pos.x <= wallX1;
+  const mkGoat = (x: number, y: number): GoatAIEntity => ({
+    position: { x, y },
+    facing: 'right',
+    state: 'chase',
+    disposition: 'aggressive',
+    hp: 100, maxHp: 100,
+    attackCooldown: 0, attackTimer: 0, attackHitApplied: false,
+    hurtTimer: 0, moving: false, attacking: false,
+    spawnPosition: { x, y }, roamRadius: 200,
+  });
+
+  // 1. Chase never enters the wall, never exceeds speed, parks stably.
+  let goat = mkGoat(10, 50);
+  const player = { x: 32, y: 50 }; // dist 22 < GOAT_CHASE_RANGE
+  let maxStep = 0;
+  let prev = { ...goat.position };
+  for (let i = 0; i < 2000; i++) {
+    const res = updateGoat(goat, player, 'left', [goat], 100, { isBlocked });
+    goat = res.goat;
+    assert(!(goat.position.x >= wallX0 && goat.position.x <= wallX1),
+      `Goat entered wall at x=${goat.position.x.toFixed(2)} (tick ${i})`);
+    assert(Number.isFinite(goat.position.x) && Number.isFinite(goat.position.y),
+      `Goat position went non-finite (tick ${i})`);
+    const step = Math.hypot(goat.position.x - prev.x, goat.position.y - prev.y);
+    if (step > maxStep) maxStep = step;
+    prev = { ...goat.position };
+  }
+  assert(goat.position.x > 11, `Goat never chased (x=${goat.position.x.toFixed(2)}) — test would be vacuous`);
+  assert(goat.position.x < wallX0, `Goat should park before the wall, x=${goat.position.x.toFixed(2)}`);
+  assert(maxStep <= GOAT_CHASE_SPEED * 0.1 + 1e-9, `Goat exceeded speed: step ${maxStep.toFixed(4)}`);
+  // Parks stably against the wall instead of oscillating.
+  const parked = { ...goat.position };
+  for (let i = 0; i < 100; i++) {
+    goat = updateGoat(goat, player, 'left', [goat], 100, { isBlocked }).goat;
+  }
+  assert(Math.hypot(goat.position.x - parked.x, goat.position.y - parked.y) < 1e-9,
+    `Goat oscillated against wall: drifted ${Math.hypot(goat.position.x - parked.x, goat.position.y - parked.y)}`);
+
+  // 2. Wall sliding: diagonal chase slides along the wall toward the player.
+  goat = mkGoat(10, 50);
+  const diagPlayer = { x: 30, y: 58 }; // dist ~21.5 < GOAT_CHASE_RANGE
+  const startDy = Math.abs(goat.position.y - diagPlayer.y);
+  for (let i = 0; i < 2000; i++) {
+    goat = updateGoat(goat, diagPlayer, 'left', [goat], 100, { isBlocked }).goat;
+    assert(goat.position.x < wallX0, `Sliding goat entered wall at x=${goat.position.x.toFixed(2)} (tick ${i})`);
+  }
+  const endDy = Math.abs(goat.position.y - diagPlayer.y);
+  assert(endDy < startDy - 1, `Goat did not slide along wall: dy ${startDy.toFixed(1)} -> ${endDy.toFixed(1)}`);
+
+  // 3. Fleeing goat also respects the wall.
+  const hWall = (pos: { x: number; y: number }) => pos.y >= 60 && pos.y <= 80;
+  let fleer = mkGoat(50, 50);
+  fleer = { ...fleer, hp: 10 }; // low HP triggers flee
+  const threat = { x: 50, y: 40 }; // threat below, goat flees upward into the wall
+  for (let i = 0; i < 1000; i++) {
+    fleer = updateGoat(fleer, threat, 'left', [fleer], 100, { isBlocked: hWall }).goat;
+    assert(!(fleer.position.y >= 60 && fleer.position.y <= 80),
+      `Fleeing goat entered wall at y=${fleer.position.y.toFixed(2)} (tick ${i})`);
+  }
+  assert(fleer.position.y < 60, `Fleeing goat should stop before the wall, y=${fleer.position.y.toFixed(2)}`);
+
+  // 4. Without the callback, movement is unchanged (backward compatibility).
+  const g = mkGoat(10, 50);
+  const withCb = updateGoat(g, player, 'left', [g], 100, { isBlocked: () => false });
+  const withoutCb = updateGoat(g, player, 'left', [g], 100);
+  assert(withCb.goat.position.x === withoutCb.goat.position.x && withCb.goat.position.y === withoutCb.goat.position.y,
+    'isBlocked: () => false must match no-callback behavior');
+}
+
+// ---- 5c. Line-of-sight trace (BUILD 531) ----
+console.log('Testing traceLineBlocked...');
+{
+  const neverBlocked = () => false;
+  const wallAt = (x0: number, x1: number) => (pos: { x: number; y: number }) => pos.x >= x0 && pos.x <= x1;
+  // Clear line: no blockers.
+  assert(!traceLineBlocked({ x: 0, y: 0 }, { x: 10, y: 0 }, neverBlocked), 'clear line reported blocked');
+  // Wall squarely in the middle blocks.
+  assert(traceLineBlocked({ x: 0, y: 0 }, { x: 10, y: 0 }, wallAt(4, 6)), 'wall in middle not detected');
+  // Diagonal line through wall blocks.
+  assert(traceLineBlocked({ x: 0, y: 0 }, { x: 10, y: 10 }, wallAt(4, 6)), 'diagonal through wall not detected');
+  // Wall offset in y: the horizontal line at y=0 misses it entirely.
+  const highWall = (pos: { x: number; y: number }) => pos.x >= 4 && pos.x <= 6 && pos.y >= 4 && pos.y <= 6;
+  assert(!traceLineBlocked({ x: 0, y: 0 }, { x: 10, y: 0 }, highWall), 'line missing wall reported blocked');
+  // Endpoints are excluded: a wall strictly beyond the target doesn't block.
+  const wallBeyondTarget = (pos: { x: number; y: number }) => pos.x > 10;
+  assert(!traceLineBlocked({ x: 0, y: 0 }, { x: 10, y: 0 }, wallBeyondTarget), 'endpoint exclusion failed');
+  // Zero-length line never blocks.
+  assert(!traceLineBlocked({ x: 5, y: 5 }, { x: 5, y: 5 }, wallAt(0, 10)), 'zero-length line reported blocked');
 }
 
 // ---- 6. Elevation level function ----

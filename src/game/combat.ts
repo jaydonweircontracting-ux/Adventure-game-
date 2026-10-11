@@ -56,3 +56,21 @@ export function isInMeleeArc(attacker: CombatPoint, target: CombatPoint, facing:
   const forward = facing === 'right' ? dx : facing === 'left' ? -dx : facing === 'down' ? dy : -dy;
   return forward >= -PLAYER_MELEE_BEHIND_TOLERANCE;
 }
+
+// Line-of-sight trace (FOnline-style TraceLine): does solid geometry block
+// the straight line from `from` to `to`? Samples interior points along the
+// segment and returns true if any sample is blocked. Endpoints are excluded:
+// the attacker's and target's own positions are validated separately, so a
+// target standing against a wall is still hittable.
+export function traceLineBlocked(from: CombatPoint, to: CombatPoint, isBlocked: (pos: CombatPoint) => boolean, step = 0.5): boolean {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist === 0) return false;
+  const steps = Math.max(1, Math.ceil(dist / step));
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    if (isBlocked({ x: from.x + dx * t, y: from.y + dy * t })) return true;
+  }
+  return false;
+}

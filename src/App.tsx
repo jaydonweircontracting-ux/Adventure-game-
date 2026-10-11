@@ -76,7 +76,7 @@ import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, resolveMonsterS
 import { probeMonsterSheets, isMonsterSheetFailed, onMonsterSheetFailure } from './game/monsterSprites/sheetProbe';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
-import { isInMeleeArc, PLAYER_MELEE_REACH } from '@/game/combat';
+import { isInMeleeArc, traceLineBlocked, PLAYER_MELEE_REACH } from '@/game/combat';
 import { renderGroundDetail, type GroundDetailSpec, type GroundHills } from '@/game/groundDetail';
 // BUILD 355: elevation hills/cliffs (CraftPix island kit tiles).
 import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type ElevContext } from '@/game/elevation';
@@ -5361,31 +5361,41 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         playerAttack.elapsed += elapsed * 1000;
         if (!playerAttack.hitApplied && playerAttack.elapsed >= 100) {
           playerAttack.hitApplied = true;
-          // TRACE: diagnostic logging for NPC damage debugging
-          const traceLog = (msg: string) => setLogs((cur) => [{ text: `[TRACE] ${msg}`, color: 'gold' }, ...cur].slice(0, 5));
+          // BUILD 531: exactly-once damage per swing. Multiple historical
+          // fallbacks (NPC-FIRST, targeted, candidates, fallback) can all
+          // match the same swing; without this flag one swing could damage
+          // two targets or the same target twice.
+          let swingDamageDealt = false;
           try {
           // BUILD 450: NPC-FIRST — check for NPCs in range BEFORE anything else.
           // Simple, direct, no candidate filtering. If an NPC is within 8 units,
           // they get hit. Period.
+          // BUILD 531: respect attack geometry. The NPC must be inside the
+          // swing arc (facing + reach), not just within a radius — a sword
+          // swing cannot hit someone standing behind the player. Keeps the
+          // generous PLAYER_MELEE_REACH + 2 range so chasing still connects.
           {
             const inCellar = interiorRef.current?.roomType === 'cellar';
             if (!inCellar && !playerAttack.ranged) {
               const attackerPos = positionRef.current;
               const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
               let nearestNpc: Townsperson | null = null;
-              let nearestDist = 8;
+              let nearestDist = PLAYER_MELEE_REACH + 2;
+              const losBlocked = (pos: Point) => isFieldPositionBlocked(pos, chunkRef.current);
               for (const n of townsfolkRef.current) {
                 if (n.indoors) continue;
                 if (isNpcDead(n, tick)) continue;
+                if (!isInMeleeArc(attackerPos, n.position, playerAttack.direction, PLAYER_MELEE_REACH + 2)) continue;
+                // BUILD 531: solid geometry blocks the swing — cannot hit
+                // through walls/buildings.
+                if (traceLineBlocked(attackerPos, n.position, losBlocked)) continue;
                 const d = Math.hypot(n.position.x - attackerPos.x, n.position.y - attackerPos.y);
                 if (d < nearestDist) { nearestDist = d; nearestNpc = n; }
               }
-              traceLog(`NPC-FIRST: ${townsfolkRef.current.length} townsfolk, nearest=${nearestNpc ? nearestNpc.name + ' at ' + nearestDist.toFixed(1) : 'none'}`);
               if (nearestNpc) {
                 const npc = nearestNpc;
                 const stats = playerStatsRef.current;
                 const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
-                traceLog(`NPC-FIRST: hitting ${npc.name} for ${Math.round(damage)}`);
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
                 townsfolkRef.current = nextFolk;
@@ -5452,6 +5462,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                   setLogs((cur) => [{ text: `You hit ${npc.name} for ${Math.round(damage)}!`, color: 'red' }, ...cur].slice(0, 3));
                 }
                 playCombatSound('scream', muted);
+                swingDamageDealt = true;
               }
             }
           }
@@ -5470,12 +5481,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           // entirely. If the player is chasing an NPC and in range, the hit
           // ALWAYS connects. This is the reliable path for NPC combat.
           const targetedId = targetNpcIdRef.current;
-          if (!inCellar && targetedId) {
+          if (!inCellar && targetedId && !swingDamageDealt) {
             const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
             const targetNpc = townsfolkRef.current.find((n) => n.id === targetedId);
             if (targetNpc && !targetNpc.indoors && !isNpcDead(targetNpc, tick)) {
               const dist = Math.hypot(targetNpc.position.x - attackerPos.x, targetNpc.position.y - attackerPos.y);
               if (dist <= PLAYER_MELEE_REACH + 3) {
+                swingDamageDealt = true;
                 const stats = playerStatsRef.current;
                 const critical = Math.random() < playerCriticalChanceForStats(stats);
                 const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
@@ -5560,8 +5572,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const attackTarget = playerAttack.targetId == null
             ? (npcOnly[0] ?? attackCandidates[0])
             : attackCandidates.find((goat) => goat.id === playerAttack.targetId);
-          traceLog(`candidates: ${attackCandidates.length} total, ${npcOnly.length} NPCs, target=${attackTarget ? (attackTarget as {entityKind?: string}).entityKind + ':' + (attackTarget as {name?: string}).name : 'none'}`);
-          if (attackTarget && (attackTarget.entityKind === 'townsfolk' || attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
+          if (!swingDamageDealt && attackTarget && (attackTarget.entityKind === 'townsfolk' || attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
+            swingDamageDealt = true;
             // Harvesting corn: one swing cuts the stalk, which disappears and
             // drops corn loot. No HP, no combat — it's a crop, not a creature.
             if (attackTarget.entityKind === 'corn') {
@@ -5594,7 +5606,6 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 const critical = Math.random() < playerCriticalChanceForStats(stats);
                 const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
                 const damage = playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
-                traceLog(`hitting townsfolk ${npc.name} for ${Math.round(damage)}`);
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
                 townsfolkRef.current = nextFolk;
@@ -5650,10 +5661,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             const damage = playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
             applyPlayerHitToCreature(attackTarget as { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, damage, critical);
             } // end harvest else
-          } else {
+          } else if (!swingDamageDealt) {
             // BUILD 446: FALLBACK — if no creature was hit, check for ANY NPC
             // in range (townsfolk, adventurers, travelers). This is bulletproof:
             // nearest NPC within 10 units takes damage, period.
+            swingDamageDealt = true;
             if (!inCellar) {
               const allNpcs: Array<{ id: string; name: string; position: { x: number; y: number }; kind: string }> = [];
               const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
@@ -5770,7 +5782,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             if (respawnTicks >= GOAT_RESPAWN_TICKS) return resetGoatAfterRespawn(goat);
             return { ...goat, moving: false, attacking: false, respawnTicks };
           }
-          const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, threatLevel: playerLevelRef.current }, currentPlayer, facingRef.current, currentGoats, elapsed * 1000);
+          const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, threatLevel: playerLevelRef.current }, currentPlayer, facingRef.current, currentGoats, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk) });
           let next = result.goat;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: goat.position, moving: false };
           const separatedPosition = separateGoatFromPlayer(next.position, currentPlayer, next.kind);
@@ -5800,7 +5812,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           if (monster.disposition === 'defeated') {
             return { ...monster, moving: false, attacking: false };
           }
-          const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false, threatLevel: playerLevelRef.current }, currentPlayer, facingRef.current, currentMonsters, elapsed * 1000);
+          const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false, threatLevel: playerLevelRef.current }, currentPlayer, facingRef.current, currentMonsters, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk) });
           let next = { ...result.goat, kind: monster.kind, id: monster.id, variant: monster.variant, ranged: monster.ranged, spawnPosition: monster.spawnPosition, roamRadius: monster.roamRadius, level: monster.level, maxHp: monster.maxHp, wanderSeed: monster.wanderSeed, hitFlash: monster.hitFlash, respawnTicks: monster.respawnTicks } as MonsterState;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: monster.position, moving: false };
           if (result.attackHit) {
