@@ -4310,6 +4310,27 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   };
   // BUILD 366: shared interior-exit path (2D doorway walk-out and the 2.5D
   // IsoInteriorView exit button/tap-door both funnel through here).
+  // BUILD 533: test hooks for automated real-game verification (Phase 3).
+  // Only active with ?testmode=1. Exposes read-only game state via
+  // window.__gameTest. Never enabled in normal production play.
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      if (!window.location.search.includes('testmode=1')) return;
+      (window as unknown as { __gameTest: unknown }).__gameTest = {
+        getBuild: () => BUILD_NUMBER,
+        getPlayerPos: () => ({ ...positionRef.current }),
+        getChunk: () => ({ ...chunkRef.current }),
+        getPlayerHp: () => playerHpRef.current,
+        isBlocked: (x: number, y: number) => isFieldPositionBlocked({ x, y }, chunkRef.current),
+        getGoats: () => goatsRef.current.map((g) => ({
+          id: String((g as unknown as { id?: number | string }).id ?? 'goat'),
+          x: g.position.x, y: g.position.y,
+          hp: g.hp, disposition: g.disposition, state: g.state,
+        })),
+      };
+    } catch { /* test hooks are best-effort */ }
+  }, []);
   const exitInteriorToField = () => {
     const currentInterior = interiorRef.current;
     if (!currentInterior) return;
