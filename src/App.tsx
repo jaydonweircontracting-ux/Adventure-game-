@@ -4331,6 +4331,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // BUILD 534: interior state for real-game movement testing.
         isInInterior: () => interiorRef.current !== null,
         getInteriorPos: () => ({ ...interiorPositionRef.current }),
+        // BUILD 535: full movement validation (collision + cliffs + goats).
+        // Returns true if the player could move from current pos by (dx, dy).
+        canMove: (dx: number, dy: number) => {
+          const current = positionRef.current;
+          const chunk = chunkRef.current;
+          const result = resolveFieldMovement(
+            current, { x: dx, y: dy }, chunk,
+            goatsRef.current, houseOffsetsRef.current
+          );
+          return result !== null;
+        },
       };
     } catch { /* test hooks are best-effort */ }
   }, []);
