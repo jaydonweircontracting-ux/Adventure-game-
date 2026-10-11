@@ -7,3 +7,6 @@ world_state.json
 
 # BUILD 375: incremental tsc cache
 *.tsbuildinfo
+
+# Real-game test artifacts
+tests/real-game/*-screenshot.png
