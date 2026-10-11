@@ -347,8 +347,16 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         const wallH = 64;
         const top = (p: { x: number; y: number }) => ({ x: p.x, y: p.y - wallH });
         const t00 = top(p00), t10 = top(p10), t11 = top(p11), t01 = top(p01);
+        // BUILD 530: Fix depth sorting — when the player is south of (in front of)
+        // the building, the building must draw BEHIND the player, not over them.
+        // The old single depth (right+bottom) was larger than the player's x+y
+        // when standing at the door, so the wall covered the sprite.
+        // Use a small tolerance so players standing in the doorway (at the
+        // south edge) also get the building drawn behind them.
+        const playerSouthOfBuilding = live.py > r.bottom - 1;
+        const buildingDepth = playerSouthOfBuilding ? (r.left + r.top - 10) : (r.right + r.bottom);
         drawables.push({
-          depth: r.right + r.bottom, draw: (g2) => {
+          depth: buildingDepth, draw: (g2) => {
             // shadow
             g2.fillStyle = 'rgba(0,0,0,0.18)';
             g2.beginPath();
