@@ -4439,7 +4439,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     mountedRef.current = loadState.mounted; setMounted(loadState.mounted);
     horseRef.current = loadState.horse; setHorse(loadState.horse);
     horseIdleAnchorRef.current = loadState.horse.position;
-    goatsRef.current = loadState.goats.map((goat) => ({ ...goat, attacking: goat.attacking ?? false, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, hitFlash: false })); setGoats(goatsRef.current);
+    // BUILD 529: Filter out the removed tutorial-house deer (id 900) from old saves.
+    const restoredGoats = loadState.goats.filter((goat) => goat.id !== 900);
+    goatsRef.current = restoredGoats.map((goat) => ({ ...goat, attacking: goat.attacking ?? false, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, hitFlash: false })); setGoats(goatsRef.current);
     // BUILD 522: Restore lootable bodies.
     if (loadState.bodies && Array.isArray(loadState.bodies)) {
       bodiesRef.current = loadState.bodies; setBodies(loadState.bodies);
