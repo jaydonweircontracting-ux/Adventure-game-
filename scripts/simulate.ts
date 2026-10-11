@@ -3,6 +3,7 @@
 import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLevelFor } from '../src/game/worldMap';
 import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai';
 import { traceLineBlocked } from '../src/game/combat';
+import { createAgent, stepAgent, AGENT_MOVE_SPEED, type AgentWorld } from '../src/game/gameplayAgent';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
@@ -283,6 +284,49 @@ console.log('Testing traceLineBlocked...');
   assert(!traceLineBlocked({ x: 0, y: 0 }, { x: 10, y: 0 }, wallBeyondTarget), 'endpoint exclusion failed');
   // Zero-length line never blocks.
   assert(!traceLineBlocked({ x: 5, y: 5 }, { x: 5, y: 5 }, wallAt(0, 10)), 'zero-length line reported blocked');
+}
+
+// ---- 5d. Gameplay agent invariants (BUILD 532) ----
+// The automated player must never teleport or bypass collision. Every move
+// goes through world.tryMove(); speed is capped; stuck is detected.
+console.log('Testing gameplay agent invariants...');
+{
+  const walls = [{ x0: 40, y0: 40, x1: 60, y1: 60 }];
+  const world: AgentWorld = {
+    playerPos: { x: 10, y: 10 },
+    isBlocked: (p) => p.x < 0 || p.x > 100 || p.y < 0 || p.y > 100 ||
+      walls.some((w) => p.x >= w.x0 && p.x <= w.x1 && p.y >= w.y0 && p.y <= w.y1),
+    getObstacles: () => walls.map((w) => ({ x: w.x0, y: w.y0, width: w.x1 - w.x0, height: w.y1 - w.y0 })),
+    getPlayerPos() { return { ...this.playerPos }; },
+    tryMove(to) {
+      if (this.isBlocked(to)) return false;
+      (this as { playerPos: { x: number; y: number } }).playerPos = { ...to };
+      return true;
+    },
+    getEnemies: () => [],
+    attackEnemy: () => ({ hit: false, damage: 0, killed: false }),
+    getItems: () => [],
+    collectItem: () => false,
+    getNpcs: () => [],
+    getBounds: () => ({ minX: 0, maxX: 100, minY: 0, maxY: 100 }),
+  };
+  const agent = createAgent({ x: 10, y: 10 }, 100);
+  let maxStep = 0;
+  let prev = { x: 10, y: 10 };
+  for (let tick = 0; tick < 500; tick++) {
+    stepAgent(world, agent, tick, 100);
+    const p = world.getPlayerPos();
+    // Never inside a wall
+    assert(!world.isBlocked(p), `Agent entered blocked position (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) at tick ${tick}`);
+    // Speed limit (no teleport)
+    const step = Math.hypot(p.x - prev.x, p.y - prev.y);
+    if (step > maxStep) maxStep = step;
+    prev = { ...p };
+    // Position finite
+    assert(Number.isFinite(p.x) && Number.isFinite(p.y), `Agent position non-finite at tick ${tick}`);
+  }
+  assert(maxStep <= AGENT_MOVE_SPEED * 0.1 + 1e-9, `Agent exceeded speed: ${maxStep.toFixed(3)}`);
+  assert(agent.visited.size > 1, 'Agent did not explore');
 }
 
 // ---- 6. Elevation level function ----
