@@ -4328,6 +4328,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           x: g.position.x, y: g.position.y,
           hp: g.hp, disposition: g.disposition, state: g.state,
         })),
+        // BUILD 534: interior state for real-game movement testing.
+        isInInterior: () => interiorRef.current !== null,
+        getInteriorPos: () => ({ ...interiorPositionRef.current }),
       };
     } catch { /* test hooks are best-effort */ }
   }, []);
