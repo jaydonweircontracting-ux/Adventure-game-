@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '645': 'save includes issue tracker state',
   '644': 'report issues + zoom under minimap',
   '643': 'swap banner colors',
   '642': 'bigger zoom buttons under HP',
@@ -1502,6 +1503,9 @@ type SaveGameData = {
   equippedSword?: boolean;
   barbHair?: string;
   droppedLoot?: DroppedLoot[];
+  // BUILD 645: Issue tracker state — saved so the save captures which boxes the user checked.
+  issueStatuses?: Record<string, string>;
+  userIssues?: Issue[];
   // BUILD 430: IDs of one-time ground items (e.g. tutorial-house sword) the
   // player has picked up. Persisted so they don't respawn.
   pickedUpGroundItems?: string[];
@@ -10644,6 +10648,15 @@ function Home() {
     if (parsed.bounty) {
       setBounty(parsed.bounty);
     }
+    // BUILD 645: Restore issue tracker state from save.
+    try {
+      if (parsed.issueStatuses) {
+        window.localStorage.setItem('ag-issue-statuses-v2', JSON.stringify(parsed.issueStatuses));
+      }
+      if (parsed.userIssues) {
+        window.localStorage.setItem('ag-user-issues', JSON.stringify(parsed.userIssues));
+      }
+    } catch { /* issue state optional */ }
     const savedEquippedDagger = Boolean(parsed.equippedDagger);
     const savedEquippedBow = Boolean(parsed.equippedBow);
     const savedEquippedShirt = Boolean(parsed.equippedShirt);
@@ -10700,6 +10713,14 @@ function Home() {
     save.visitedChunks = Array.from(visitedChunks);
     // BUILD 524: Persist bounty.
     save.bounty = bounty;
+    // BUILD 645: Persist issue tracker state (statuses + user-reported issues)
+    // so the save captures which boxes the user checked.
+    try {
+      const issueStatuses = window.localStorage.getItem('ag-issue-statuses-v2');
+      if (issueStatuses) save.issueStatuses = JSON.parse(issueStatuses);
+      const userIssues = window.localStorage.getItem('ag-user-issues');
+      if (userIssues) save.userIssues = JSON.parse(userIssues);
+    } catch { /* issue state optional */ }
     try {
       window.localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(save));
       setHasLocalSave(true);

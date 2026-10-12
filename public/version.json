@@ -1,6 +1,6 @@
 {
-  "build": "644",
-  "note": "report issues + zoom under minimap",
-  "timestamp": "2026-10-12T21:04:52.503Z",
-  "cacheBuster": "mv5qqcd3"
+  "build": "645",
+  "note": "save includes issue tracker state",
+  "timestamp": "2026-10-12T21:09:21.894Z",
+  "cacheBuster": "mv5qw486"
 }
