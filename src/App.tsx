@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '639': 'update in progress banner',
   '638': 'fix issues 5 and 6',
   '637': 'finish fixing issues',
   '636': 'auto-verify issue colors',
@@ -10188,7 +10189,7 @@ function Home() {
   // BUILD 633: Real-time — polls every 10s, banner updates live while on menu.
   // BUILD 634: Backoff on failures — doubles interval up to 5min to avoid flooding GitHub.
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
-  const [updateStatus, setUpdateStatus] = useState<'checking' | 'available' | 'current' | 'error'>('checking');
+  const [updateStatus, setUpdateStatus] = useState<'checking' | 'available' | 'in-progress' | 'current' | 'error'>('checking');
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const backoffRef = useRef(10000);
   useEffect(() => {
@@ -10196,24 +10197,39 @@ function Home() {
     const checkForUpdate = async () => {
       try {
         const base = import.meta.env.BASE_URL;
+        // Check 1: version.json for deployed build.
         const res = await fetch(`${base}version.json?t=${Date.now()}`);
         setLastChecked(new Date());
         if (!res.ok) throw new Error('bad response');
         const data = await res.json();
         const runningBuild = BUILD_NUMBER;
-        // Reset backoff on success.
         backoffRef.current = 10000;
         if (data.build && Number(data.build) > Number(runningBuild)) {
           setUpdateAvailable(data.build);
           setUpdateStatus('available');
         } else {
+          // Check 2: GitHub API for pushed (but not yet deployed) builds.
+          // This signals "update in progress" earlier.
+          try {
+            const ghRes = await fetch('https://api.github.com/repos/jaydonweircontracting-ux/Adventure-game-/commits/main?per_page=1');
+            if (ghRes.ok) {
+              const ghData = await ghRes.json();
+              const msg = ghData.commit?.message || '';
+              const match = msg.match(/BUILD (\d+)/);
+              if (match && Number(match[1]) > Number(runningBuild)) {
+                setUpdateAvailable(match[1]);
+                setUpdateStatus('in-progress');
+                timeout = setTimeout(checkForUpdate, backoffRef.current);
+                return;
+              }
+            }
+          } catch { /* GitHub API unavailable — fall through to current */ }
           setUpdateAvailable(null);
           setUpdateStatus('current');
         }
       } catch {
         setUpdateStatus('error');
         setLastChecked(new Date());
-        // Exponential backoff: 10s → 20s → 40s → ... max 5min.
         backoffRef.current = Math.min(backoffRef.current * 2, 300000);
       }
       timeout = setTimeout(checkForUpdate, backoffRef.current);
@@ -10701,6 +10717,12 @@ function Home() {
                 <button onClick={() => window.location.href = `${import.meta.env.BASE_URL}?v=${updateAvailable}`} style={{ background: '#fff', color: '#27ae60', border: 'none', borderRadius: 4, padding: '4px 12px', fontWeight: 'bold', cursor: 'pointer' }}>
                   Update
                 </button>
+              </div>
+            )}
+            {updateStatus === 'in-progress' && updateAvailable && (
+              <div style={{ background: '#f39c12', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
+                ⏳ BUILD {updateAvailable} deploying… check back soon
+                {lastChecked && <div style={{ fontSize: 10, fontWeight: 'normal', opacity: 0.8 }}>Checked {lastChecked.toLocaleTimeString()} · live</div>}
               </div>
             )}
             {updateStatus === 'current' && (
