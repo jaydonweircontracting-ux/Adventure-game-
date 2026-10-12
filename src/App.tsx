@@ -5741,7 +5741,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const attackTarget = playerAttack.targetId == null
             ? (npcOnly[0] ?? attackCandidates[0])
             : attackCandidates.find((goat) => goat.id === playerAttack.targetId);
-          if (!swingDamageDealt && attackTarget && (attackTarget.entityKind === 'townsfolk' || attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
+          if (!swingDamageDealt && attackTarget && (attackTarget.entityKind === 'townsfolk' || attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler' || attackTarget.entityKind === 'cellar-rat' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
             swingDamageDealt = true;
             // Harvesting corn: one swing cuts the stalk, which disappears and
             // drops corn loot. No HP, no combat — it's a crop, not a creature.
@@ -6207,9 +6207,12 @@ if (active) {
     const currentPlayer = positionRef.current;
     const currentFacing = facingRef.current;
     const targetId = preferredTargetId ?? targetGoatIdRef.current;
+    // BUILD 574: rats are in cellarRatsRef, not goatsRef. Check both.
     const target = targetId == null
       ? null
-      : goatsRef.current.find((goat) => goat.id === targetId && goat.disposition !== 'defeated');
+      : (inCellar
+          ? cellarRatsRef.current.find((rat) => rat.id === targetId && rat.hp > 0)
+          : goatsRef.current.find((goat) => goat.id === targetId && goat.disposition !== 'defeated'));
     playerAttackStateRef.current = { active: true, direction: currentFacing, targetId: target?.id ?? null, elapsed: 0, hitApplied: false, ranged: inCellar ? false : bowEquipped };
     playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS;
     setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS);
