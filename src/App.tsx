@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '628': 'clean HUD reorganization',
   '626': 'build notes + changelog',
   '625': 'invisible wall behind houses fixed',
   '624': 'sprite preload (no flash)',
@@ -3184,7 +3185,7 @@ function WorldMap({ chunk, onClose, kingdomLabels, tradeRoutes, visitedChunks }:
     </div>
   );
 }
-function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion, equippedDagger, onToggleDagger, equippedBow, onToggleBow, equippedShirt, onToggleShirt, equippedSword, onToggleSword, barbHair, onCycleHair, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, questPlayerLevel, onAcceptQuest, onWeaveBowstring }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; onDrinkPotion: () => void; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; equippedShirt: boolean; onToggleShirt: () => void; equippedSword: boolean; onToggleSword: () => void; barbHair: string; onCycleHair: (dir: 1 | -1) => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onWeaveBowstring: () => void }) {
+function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion, equippedDagger, onToggleDagger, equippedBow, onToggleBow, equippedShirt, onToggleShirt, equippedSword, onToggleSword, barbHair, onCycleHair, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, questPlayerLevel, onAcceptQuest, onWeaveBowstring, onOpenSkills }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; onDrinkPotion: () => void; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; equippedShirt: boolean; onToggleShirt: () => void; equippedSword: boolean; onToggleSword: () => void; barbHair: string; onCycleHair: (dir: 1 | -1) => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onWeaveBowstring: () => void; onOpenSkills?: () => void }) {
   const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats' | 'quests'>('inventory');
   const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn + inventory.wood + inventory.silk + inventory.bow + inventory.beer + inventory.healthPotion + inventory.lockpicks + inventory.shirts + inventory.swords;
   const visibleItems = [
@@ -3215,6 +3216,10 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
             <span className="menu-build" data-testid="text-build-number">BUILD {BUILD_NUMBER}</span>
           </div>
           <div className="menu-heading-actions">
+            {/* BUILD 628: Skills moved inside backpack menu. */}
+            {onOpenSkills && (
+              <button className="map-close" onClick={() => { onClose(); onOpenSkills(); }} aria-label="Open skills" title="Skills" data-testid="button-open-skills-from-backpack">🎯</button>
+            )}
             <button className="map-close" onClick={() => { onClose(); onOpenOptions(); }} aria-label="Open options" title="Options" data-testid="button-open-options"><Settings size={18} /></button>
             <button className="map-close" onClick={onClose} aria-label="Close menu" data-testid="button-close-inventory"><X size={19} /></button>
           </div>
@@ -3604,7 +3609,7 @@ function MiniMap({ chunk, position }: { chunk: Point; position: Point }) {
   );
 }
 
-function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, bounty, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
+function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, bounty, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
   // BUILD 476: equipment damage bonus from found items.
   const equipmentDamageBonus = totalEquipmentStats(equipment).damage ?? 0;
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
@@ -4410,7 +4415,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const maxHp = playerMaxHpForStats(playerStatsRef.current);
       setPlayerHp((current) => Math.min(maxHp, current + amount));
     };
-    menuBridgeRef.current = { openOptions: () => setOptionsOpen(true), getTime: () => time, acceptQuest, emitQuestEvent, getKingdomLabels: () => kingdomLabelPoints(ensureCiv()), getTradeRoutes: () => tradeRoutePolylines(ensureCiv()), healPlayer };
+    menuBridgeRef.current = { openOptions: () => setOptionsOpen(true), openSkills: () => setSkillsOpen(true), getTime: () => time, acceptQuest, emitQuestEvent, getKingdomLabels: () => kingdomLabelPoints(ensureCiv()), getTradeRoutes: () => tradeRoutePolylines(ensureCiv()), healPlayer };
   });
   const wildlifeRef = useRef<WildlifeState[]>(wildlife);
   useEffect(() => { waterLifeRef.current = waterLife; }, [waterLife]);
@@ -8216,29 +8221,7 @@ if (active) {
               </div>
             </div>
           )}
-          {!interior && (
-            <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', zIndex: 60, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={() => isoFieldBeta ? setIsoZoom((z) => Math.min(2.5, Math.round(z * 1.2 * 100) / 100)) : setGameZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
-                style={{ width: '44px', height: '44px', fontSize: '20px', background: 'rgba(0,0,0,0.75)', color: '#fff', border: '1px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
-                aria-label="Zoom in"
-              >
-                +
-              </button>
-              <div style={{ textAlign: 'center', fontSize: '11px', color: '#fff', background: 'rgba(0,0,0,0.75)', borderRadius: '4px', padding: '2px 4px' }}>
-                {Math.round((isoFieldBeta ? isoZoom : gameZoom) * 100)}%
-              </div>
-              <button
-                type="button"
-                onClick={() => isoFieldBeta ? setIsoZoom((z) => Math.max(0.15, Math.round(z / 1.2 * 100) / 100)) : setGameZoom((z) => Math.max(1, Math.round((z - 0.25) * 100) / 100))}
-                style={{ width: '44px', height: '44px', fontSize: '20px', background: 'rgba(0,0,0,0.75)', color: '#fff', border: '1px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
-                aria-label="Zoom out"
-              >
-                −
-              </button>
-            </div>
-          )}
+          {/* BUILD 628: Zoom moved under HP HUD (left side) — right-side controls removed. */}
           {/* BUILD 365: 2.5D isometric field (beta). Covers the DOM field with a
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
@@ -9916,10 +9899,29 @@ if (active) {
           ) : (
             <button className="hud-quick-button hud-card-restore" onClick={() => setHpBoxHidden(false)} aria-label="Show HP box" title="Show HP box" data-testid="button-show-hp-box"><Eye size={15} /></button>
           )}
-          {/* BUILD 621: Backpack + Skills under HP card (left side), not under minimap. */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          {/* BUILD 628: Compact HUD — backpack in HP area, zoom below, skills inside backpack. */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
             <button className="hud-bag-button" onClick={onOpenInventory} aria-label="Open menu" title="Menu" data-testid="button-open-inventory"><Backpack size={17} /></button>
-            <button className="hud-bag-button" onClick={() => setSkillsOpen(true)} aria-label="Open skills" title="Skills" data-testid="button-open-skills">🎯</button>
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <button
+              type="button"
+              onClick={() => isoFieldBeta ? setIsoZoom((z) => Math.max(0.15, Math.round(z / 1.2 * 100) / 100)) : setGameZoom((z) => Math.max(1, Math.round((z - 0.25) * 100) / 100))}
+              style={{ width: '32px', height: '32px', fontSize: '16px', background: 'rgba(0,0,0,0.75)', color: '#fff', border: '1px solid #fff', borderRadius: '6px', cursor: 'pointer' }}
+              aria-label="Zoom out"
+              data-testid="button-zoom-out-hud"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              onClick={() => isoFieldBeta ? setIsoZoom((z) => Math.min(2.5, Math.round(z * 1.2 * 100) / 100)) : setGameZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
+              style={{ width: '32px', height: '32px', fontSize: '16px', background: 'rgba(0,0,0,0.75)', color: '#fff', border: '1px solid #fff', borderRadius: '6px', cursor: 'pointer' }}
+              aria-label="Zoom in"
+              data-testid="button-zoom-in-hud"
+            >
+              +
+            </button>
           </div>
         </div>
 
@@ -10030,7 +10032,7 @@ function Home() {
   const [inventoryOpen, setInventoryOpen] = useState(false);
   // BUILD 626: Changelog panel visibility.
   const [changelogOpen, setChangelogOpen] = useState(false);
-  const menuBridgeRef = useRef<{ openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null>(null);
+  const menuBridgeRef = useRef<{ openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null>(null);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
   // BUILD 517: Map reveal (fog of war) — track visited chunks.
@@ -10543,7 +10545,7 @@ function Home() {
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} kingdomLabels={menuBridgeRef.current?.getKingdomLabels() ?? []} tradeRoutes={menuBridgeRef.current?.getTradeRoutes() ?? []} visitedChunks={visitedChunks} />}
           {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1' && <DebugOverlay chunk={chunk} />}
-          {inventoryOpen && <InventorySheet inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} onDrinkPotion={drinkPotion} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onWeaveBowstring={weaveBowstring} />}
+          {inventoryOpen && <InventorySheet inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} onDrinkPotion={drinkPotion} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onOpenSkills={() => menuBridgeRef.current?.openSkills()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onWeaveBowstring={weaveBowstring} />}
           {journalOpen && (
             <div className="sheet journal-sheet" role="dialog" aria-label="Adventure journal" data-testid="journal-sheet">
               <div className="sheet-header">
