@@ -193,45 +193,6 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       return ew || ns;
     };
 
-    // BUILD 618: New 8-direction character sprites (better character design).
-    // Maps Face8 to the generated char-*.png sprites.
-    const newCharImgs = (window as unknown as { __newCharImgs?: Record<string, HTMLImageElement> }).__newCharImgs || {};
-    const newCharSrc: Record<string, string> = {
-      'up': 'char/char-north.png',
-      'down': 'char/char-south.png',
-      'left': 'char/char-west.png',
-      'right': 'char/char-east.png',
-      'upright': 'char/char-ne.png',
-      'upleft': 'char/char-nw.png',
-      'downright': 'char/char-se.png',
-      'downleft': 'char/char-sw.png',
-    };
-    for (const [dir, src] of Object.entries(newCharSrc)) {
-      if (!newCharImgs[dir]) {
-        const img = new Image();
-        img.src = `${import.meta.env.BASE_URL}${src}`;
-        newCharImgs[dir] = img;
-      }
-    }
-    (window as unknown as { __newCharImgs?: Record<string, HTMLImageElement> }).__newCharImgs = newCharImgs;
-    const drawNewPlayer = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, now: number) => {
-      const c = isoToScreen(tx, ty);
-      const img = newCharImgs[facing] || newCharImgs['down'];
-      d.push({
-        depth: tx + ty + 0.01, draw: (g2) => {
-          if (!img || !img.complete || img.naturalWidth === 0) return;
-          // Scale to reasonable character size (~48px tall)
-          const targetH = 56;
-          const scale = targetH / img.naturalHeight;
-          const sw = img.naturalWidth * scale;
-          const sh = targetH;
-          // Simple walk bob when moving
-          const bob = moving ? Math.sin(now / 150) * 2 : 0;
-          g2.drawImage(img, c.x - sw / 2, c.y - sh + bob, sw, sh);
-        },
-      });
-    };
-
     // Shared character renderer: one animator per character id drives facing,
     // walk/idle state and speed-tied walk phase; the draw is feet-anchored.
     const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, barb?: { attackT?: number }) => {
@@ -950,8 +911,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // on top. When the player is behind a house (smaller x+y than the
       // house's front corner), the house draws over them; when in front,
       // the player draws over the house.
-      // BUILD 618: use new 8-direction sprites for player.
-      drawNewPlayer(drawables, live.px, live.py, playerFace.f, playerMoving, nowMs);
+      drawPerson(drawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs, 'player', { attackT: playerAttackT });
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
 
       drawables.sort((a, b) => a.depth - b.depth);
