@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '632': 'save button in menu',
   '631': 'tri-color update banner',
   '630': 'update checker + deploy guard',
   '629': 'bug tracker + project memory',
@@ -10683,6 +10684,8 @@ function Home() {
               <button className="main-menu-button" onClick={() => { setCreatingCharacter(false); startNewGame(); }} data-testid="button-new-game">New Game</button>
               <button className="main-menu-button" onClick={loadLocalSave} disabled={!hasLocalSave} data-testid="button-load-game-menu">{hasLocalSave ? 'Load Game' : 'Load Game · No Save Yet'}</button>
               <button className="main-menu-button" onClick={openLoadPicker} data-testid="button-load-save-menu">Import Save File</button>
+              {/* BUILD 632: Save button in main menu. */}
+              <button className="main-menu-button" onClick={saveGame} data-testid="button-save-menu">💾 Save Game</button>
               {/* BUILD 626: Changelog — verify updates are live. */}
               <button className="main-menu-button" onClick={() => setChangelogOpen((v) => !v)} data-testid="button-changelog">📋 Changelog</button>
             </div>
