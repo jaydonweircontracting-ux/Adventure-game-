@@ -6,18 +6,18 @@ The worker reads this at startup, updates it after each cycle, and resumes from 
 ## Worker Status
 - **State:** `running` (emergency directive — executing)
 - **Started:** 2026-10-11 (BUILD 548)
-- **Last cycle:** 10 (complete — consistency auditor)
-- **Last known-good commit:** `d3e0477`
-- **Last known-good build:** 556
+- **Last cycle:** 11 (complete — quest tests)
+- **Last known-good commit:** `ac3f790`
+- **Last known-good build:** 557
 
 ## Current Cycle
-- **Cycle:** 10
+- **Cycle:** 11
 - **Phase:** `complete`
-- **Task:** Build consistency auditor (5/5 checks)
+- **Task:** Quest playthrough tests (12/12) + auditor 7/7
 - **Started:** 2026-10-11
-- **Files changed:** [scripts/consistency-audit.mjs]
-- **Tests run:** [consistency 5/5, smoke 7/7, live NPC verification]
-- **Result:** `verified` — Auditor catches duplicate names, broken quest refs. Bryn/Mira verified distinct in live game.
+- **Files changed:** [tests/quest-playthrough.mts, scripts/consistency-audit.mjs]
+- **Tests run:** [quest 12/12, consistency 7/7, smoke 7/7]
+- **Result:** `verified` — Rat quest playthrough works, failure cases handled, save/restore works.
 
 ## Retry History
 - (empty)
