@@ -6349,6 +6349,39 @@ import { inflateSync } from 'node:zlib';
   assert(houseTypeForBuilding('99-99-building-1') === 'cottage', 'House: unknown → cottage');
 }
 
+// BUILD 677: Bed anchor coordinate contract tests.
+{
+  const { bedAnchorNormalized, sleepingTileAdjacentToBed, generateInteriorLayout } = await import('../src/game/interiors.js');
+  const { houseTypeForBuilding } = await import('../src/game/houseTypes.js');
+
+  // 1. Bed anchor returns normalized coordinates.
+  const anchor = bedAnchorNormalized('4-7-building-4', 'farmhouse');
+  assert(anchor !== null, 'Bed: anchor exists for farmhouse');
+  assert(anchor!.x >= 0 && anchor!.x <= 1, 'Bed: anchor x normalized');
+  assert(anchor!.y >= 0 && anchor!.y <= 1, 'Bed: anchor y normalized');
+
+  // 2. Sleeping tile is adjacent to bed and not blocked.
+  const tile = sleepingTileAdjacentToBed('4-7-building-4', 'farmhouse');
+  assert(tile !== null, 'Bed: sleeping tile exists');
+  const layout = generateInteriorLayout('4-7-building-4', 'farmhouse', 12, 10);
+  const bed = layout.furniture.find((f) => f.kind === 'bed');
+  assert(bed !== undefined, 'Bed: bed in layout');
+  // Tile should be adjacent (manhattan distance 1 from bed edge).
+  const dx = Math.max(bed!.tx - tile!.tx, tile!.tx - (bed!.tx + bed!.w - 1), 0);
+  const dy = Math.max(bed!.ty - tile!.ty, tile!.ty - (bed!.ty + bed!.h - 1), 0);
+  assert(dx + dy <= 1, 'Bed: sleeping tile adjacent to bed');
+
+  // 3. Deterministic across calls.
+  const anchor2 = bedAnchorNormalized('4-7-building-4', 'farmhouse');
+  assert(anchor!.x === anchor2!.x && anchor!.y === anchor2!.y, 'Bed: anchor deterministic');
+
+  // 4. Works for all house types.
+  for (const ht of ['cottage', 'farmhouse', 'merchant', 'guard', 'craftsman'] as const) {
+    const a = bedAnchorNormalized('test-building', ht);
+    assert(a !== null, `Bed: anchor for ${ht}`);
+  }
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

@@ -233,3 +233,53 @@ export function validateInteriorLayout(layout: InteriorLayout): string[] {
 
   return errors;
 }
+
+/**
+ * BUILD 677: Shared coordinate contract for bed anchors.
+ *
+ * Converts a layout's bed tile position to a normalized position (0-1)
+ * within the room. This can be mapped to any renderer-specific coordinate
+ * system (field coords via cottageRectFor, screen percentages, etc.).
+ */
+export function bedAnchorNormalized(
+  buildingId: string,
+  houseType: HouseType,
+): { x: number; y: number } | null {
+  const layout = generateInteriorLayout(buildingId, houseType, 12, 10);
+  if (!layout.bedPosition) return null;
+  // Center of bed in normalized room coordinates (0-1).
+  const bed = layout.furniture.find((f) => f.kind === 'bed');
+  if (!bed) return null;
+  return {
+    x: (bed.tx + bed.w / 2) / layout.width,
+    y: (bed.ty + bed.h / 2) / layout.height,
+  };
+}
+
+/**
+ * Get a valid NPC sleeping position adjacent to the bed.
+ * Returns tile coordinates for a walkable tile next to the bed.
+ */
+export function sleepingTileAdjacentToBed(
+  buildingId: string,
+  houseType: HouseType,
+): { tx: number; ty: number } | null {
+  const layout = generateInteriorLayout(buildingId, houseType, 12, 10);
+  if (!layout.bedPosition) return null;
+  const bed = layout.furniture.find((f) => f.kind === 'bed');
+  if (!bed) return null;
+  // Try tiles adjacent to bed (below, left, right, above).
+  const candidates = [
+    { tx: bed.tx, ty: bed.ty + bed.h }, // below
+    { tx: bed.tx - 1, ty: bed.ty },     // left
+    { tx: bed.tx + bed.w, ty: bed.ty }, // right
+    { tx: bed.tx, ty: bed.ty - 1 },     // above
+  ];
+  for (const c of candidates) {
+    if (c.tx >= 0 && c.ty >= 0 && c.tx < layout.width && c.ty < layout.height &&
+        !isTileBlocked(layout, c.tx, c.ty)) {
+      return c;
+    }
+  }
+  return null;
+}

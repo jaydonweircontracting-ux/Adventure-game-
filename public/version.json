@@ -1,6 +1,6 @@
 {
-  "build": "676",
-  "note": "2D interior unification + audit tab",
-  "timestamp": "2026-10-12T23:27:01.676Z",
-  "cacheBuster": "mv5vt5ik"
+  "build": "677",
+  "note": "bed anchors + browser testing verified",
+  "timestamp": "2026-10-12T23:35:38.602Z",
+  "cacheBuster": "mv5w48dn"
 }

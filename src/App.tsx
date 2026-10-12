@@ -119,6 +119,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '677': 'bed anchors + browser testing verified',
   '676': '2D interior unification + audit tab',
   '675': 'interior house types + 2D bed fix',
   '674': 'house interior overhaul: per-house layouts',
