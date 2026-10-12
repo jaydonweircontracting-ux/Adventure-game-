@@ -311,6 +311,11 @@
   background: var(--field);
   box-shadow: 8px 8px 0 rgba(25, 56, 47, .13);
   isolation: isolate;
+  /* BUILD 598: Prevent page scroll/zoom gestures on the game field. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  overscroll-behavior: none;
 }
 .pixel-field {
   position: absolute;

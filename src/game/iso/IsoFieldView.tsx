@@ -716,7 +716,40 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       }
     };
     canvas.addEventListener('pointerdown', onTap);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); canvas.removeEventListener('pointerdown', onTap); };
+    // BUILD 598: Hold-to-move — while finger is held down and moving on the
+    // field, continuously update the move target. Quick taps (no drag) use
+    // the existing tap logic above; drags steer the character.
+    let holdActive = false;
+    let holdLastX = 0, holdLastY = 0;
+    const onHoldMove = (e: PointerEvent) => {
+      if (!holdActive) return;
+      const rect = canvas.getBoundingClientRect();
+      const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+      // Only update if finger moved significantly (avoid jitter).
+      if (Math.hypot(sx - holdLastX, sy - holdLastY) < 8) return;
+      holdLastX = sx; holdLastY = sy;
+      const { onTapMove: tapMove } = tapRef.current;
+      if (!tapMove) return;
+      const zm = zoomRef.current;
+      const wpx = rect.width || 1, hpx = rect.height || 1;
+      const wx = (sx - wpx / 2) / zm + cam.x;
+      const wy = (sy - hpx / 2) / zm + cam.y;
+      const t = screenToTile(wx, wy);
+      const tx = Math.min(N - 1, Math.max(0, t.tx));
+      const ty = Math.min(N - 1, Math.max(0, t.ty));
+      tapMove({ x: tx, y: ty });
+    };
+    const onHoldStart = (e: PointerEvent) => {
+      holdActive = true;
+      const rect = canvas.getBoundingClientRect();
+      holdLastX = e.clientX - rect.left; holdLastY = e.clientY - rect.top;
+    };
+    const onHoldEnd = () => { holdActive = false; };
+    canvas.addEventListener('pointerdown', onHoldStart);
+    canvas.addEventListener('pointermove', onHoldMove);
+    canvas.addEventListener('pointerup', onHoldEnd);
+    canvas.addEventListener('pointercancel', onHoldEnd);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); canvas.removeEventListener('pointerdown', onTap); canvas.removeEventListener('pointerdown', onHoldStart); canvas.removeEventListener('pointermove', onHoldMove); canvas.removeEventListener('pointerup', onHoldEnd); canvas.removeEventListener('pointercancel', onHoldEnd); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenes]);
 
