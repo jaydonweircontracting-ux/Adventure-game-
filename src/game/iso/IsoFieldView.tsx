@@ -30,6 +30,7 @@ import {
 } from './critters';
 import {
   buildingDoorwaysFor, fieldTreesFor, mapTileFor, fieldPalettes, FIELD_SIZE,
+  isStartingArea,
   type Point, type Doorway, type FieldTree, type MapTile,
 } from '../../App';
 import type { Townsperson } from '../townsfolk';
@@ -404,27 +405,27 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             // Horizontal beam at top of walls
             g2.lineWidth = 4;
             g2.beginPath(); g2.moveTo(t10.x, t10.y); g2.lineTo(t11.x, t11.y); g2.lineTo(t01.x, t01.y); g2.stroke();
-            // pitched roof: dark brown thatch/tiles (not red)
+            // pitched roof: blue slate (Exiled Kingdoms style)
             const ridge = 34;
             const r0 = { x: (t00.x + t10.x) / 2, y: (t00.y + t10.y) / 2 - ridge };
             const r1 = { x: (t01.x + t11.x) / 2, y: (t01.y + t11.y) / 2 - ridge };
-            // back slopes first (darker brown)
-            g2.fillStyle = '#5c4033';
+            // back slopes first (darker slate blue)
+            g2.fillStyle = '#2e3d4d';
             g2.beginPath();
             g2.moveTo(t00.x, t00.y); g2.lineTo(t10.x, t10.y);
             g2.lineTo(r0.x, r0.y); g2.closePath(); g2.fill();
-            g2.fillStyle = '#4a3328';
+            g2.fillStyle = '#25303d';
             g2.beginPath();
             g2.moveTo(t01.x, t01.y); g2.lineTo(t00.x, t00.y);
             g2.lineTo(r0.x, r0.y); g2.lineTo(r1.x, r1.y);
             g2.closePath(); g2.fill();
-            // front slopes (slightly lighter brown)
-            g2.fillStyle = '#6b4a3a';
+            // front slopes (slate blue)
+            g2.fillStyle = '#3a4a5c';
             g2.beginPath();
             g2.moveTo(t10.x, t10.y); g2.lineTo(t11.x, t11.y);
             g2.lineTo(r1.x, r1.y); g2.lineTo(r0.x, r0.y);
             g2.closePath(); g2.fill();
-            g2.fillStyle = '#75543f';
+            g2.fillStyle = '#44566a';
             g2.beginPath();
             g2.moveTo(t11.x, t11.y); g2.lineTo(t01.x, t01.y);
             g2.lineTo(r1.x, r1.y); g2.closePath(); g2.fill();
@@ -448,6 +449,55 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           },
         });
         } // end neighbor-chunk building loop
+      }
+
+      // BUILD 600: Town walls — stone perimeter with gates (Exiled Kingdoms style).
+      // Only in starting area. Wall segments with gaps for N/S/E/W gates.
+      if (isStartingArea(chunk)) {
+        const wallH = 28;
+        const wallColor = '#8a7a6a', wallDark = '#6e5f52';
+        // Wall bounds (field units)
+        const wx0 = 20, wx1 = 256, wy0 = 36, wy1 = 237;
+        const gateHalf = 8; // gate opening half-width
+        const cx = 144; // town center x
+        const cy = 144; // town center y
+        // Helper to draw a wall segment
+        const drawWall = (x0: number, y0: number, x1: number, y1: number) => {
+          const a = isoToScreen(x0, y0), b = isoToScreen(x1, y1);
+          // Simple wall: draw as a thick line with stone texture
+          drawables.push({
+            depth: (x0 + x1) / 2 + (y0 + y1) / 2,
+            draw: (g2) => {
+              g2.strokeStyle = wallColor;
+              g2.lineWidth = 10;
+              g2.beginPath(); g2.moveTo(a.x, a.y - wallH); g2.lineTo(b.x, b.y - wallH); g2.stroke();
+              g2.strokeStyle = wallDark;
+              g2.lineWidth = 10;
+              g2.beginPath(); g2.moveTo(a.x, a.y - wallH + 5); g2.lineTo(b.x, b.y - wallH + 5); g2.stroke();
+              // Crenellations (battlements)
+              g2.fillStyle = wallColor;
+              const len = Math.hypot(b.x - a.x, b.y - a.y);
+              const steps = Math.floor(len / 16);
+              for (let i = 0; i <= steps; i++) {
+                const t = i / Math.max(1, steps);
+                const px = a.x + (b.x - a.x) * t, py = a.y + (b.y - a.y) * t - wallH - 6;
+                g2.fillRect(px - 4, py, 8, 8);
+              }
+            },
+          });
+        };
+        // North wall (two segments with gate gap)
+        drawWall(wx0, wy0, cx - gateHalf, wy0);
+        drawWall(cx + gateHalf, wy0, wx1, wy0);
+        // South wall
+        drawWall(wx0, wy1, cx - gateHalf, wy1);
+        drawWall(cx + gateHalf, wy1, wx1, wy1);
+        // West wall
+        drawWall(wx0, wy0, wx0, cy - gateHalf);
+        drawWall(wx0, cy + gateHalf, wx0, wy1);
+        // East wall
+        drawWall(wx1, wy0, wx1, cy - gateHalf);
+        drawWall(wx1, cy + gateHalf, wx1, wy1);
       }
 
       // trees: real positions — BUILD 376: every chunk in the scene grid,
