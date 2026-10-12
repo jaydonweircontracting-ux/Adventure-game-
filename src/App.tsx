@@ -478,20 +478,21 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
     { left: 152, top: 44, right: 164, bottom: 53 },   // cottage 5 (north)
     { left: 180, top: 44, right: 192, bottom: 53 },   // cottage 6 (north)
     // BUILD 599: Proper town street grid — all houses 12x9, aligned in rows.
+    // BUILD 602: Moved 3 houses that overlapped original buildings.
     // Northern terrace (straight row, y=100-109):
     { left: 60, top: 100, right: 72, bottom: 109 },
-    { left: 80, top: 100, right: 92, bottom: 109 },
-    { left: 100, top: 100, right: 112, bottom: 109 },
+    { left: 100, top: 100, right: 112, bottom: 109 },  // moved from 80 (was overlapping tutorial)
+    { left: 120, top: 100, right: 132, bottom: 109 },  // moved from 100
     { left: 160, top: 100, right: 172, bottom: 109 },
     { left: 180, top: 100, right: 192, bottom: 109 },
     { left: 200, top: 100, right: 212, bottom: 109 },
     // Southern terrace (straight row, y=170-179):
     { left: 60, top: 170, right: 72, bottom: 179 },
-    { left: 80, top: 170, right: 92, bottom: 179 },
-    { left: 100, top: 170, right: 112, bottom: 179 },
+    { left: 100, top: 170, right: 112, bottom: 179 },  // moved from 80 (was overlapping chapel)
+    { left: 120, top: 170, right: 132, bottom: 179 },  // moved from 100
     { left: 160, top: 170, right: 172, bottom: 179 },
-    { left: 180, top: 170, right: 192, bottom: 179 },
-    { left: 200, top: 170, right: 212, bottom: 179 },
+    { left: 200, top: 170, right: 212, bottom: 179 },  // moved from 180 (was overlapping stone house)
+    { left: 220, top: 170, right: 232, bottom: 179 },  // moved from 200
     // Eastern avenue (column, x=230-242):
     { left: 230, top: 80, right: 242, bottom: 89 },
     { left: 230, top: 100, right: 242, bottom: 109 },

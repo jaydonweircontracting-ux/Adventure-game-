@@ -359,19 +359,21 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         }
       }
       (window as unknown as { __bldImgs?: Record<string, HTMLImageElement> }).__bldImgs = bldImgs;
-      // Assign building sprites by index: variety across the town.
-      const bldKindForIndex = (idx: number): string => {
-        if (idx === 0) return 'tavern'; // tutorial house
-        if (idx === 1) return 'blue-house'; // guild
-        if (idx === 2) return 'red-shop'; // chapel
-        if (idx === 3) return 'blue-cottage'; // stone house
+      // BUILD 602: Stable sprite assignment by world coordinates (not loop index).
+      // Loop index changes as chunks load/unload, causing flicker.
+      const bldKindForRect = (wx: number, wy: number): string => {
+        // Special buildings by known world positions (starting area)
+        if (Math.abs(wx - 85.9) < 1 && Math.abs(wy - 108.8) < 1) return 'tavern'; // tutorial
+        if (Math.abs(wx - 192.1) < 1 && Math.abs(wy - 111.0) < 1) return 'blue-house'; // guild
+        if (Math.abs(wx - 84.1) < 1 && Math.abs(wy - 172.6) < 1) return 'red-shop'; // chapel
+        if (Math.abs(wx - 179.7) < 1 && Math.abs(wy - 173.4) < 1) return 'blue-cottage'; // stone house
+        // Stable hash of coordinates for all others
+        const h = Math.abs(Math.sin(wx * 12.9898 + wy * 78.233) * 43758.5453) % 1;
         const kinds = ['blue-cottage', 'red-cottage', 'blue-house', 'red-shop'];
-        return kinds[idx % kinds.length];
+        return kinds[Math.floor(h * kinds.length)];
       };
       for (const sc of scenes) {
         const bx = sc.ox * N, by = sc.oy * N;
-        // Track building index for sprite assignment
-        let bldIdx = 0;
         for (const b of sc.buildings) {
           const r = { left: b.rect.left + bx, top: b.rect.top + by, right: b.rect.right + bx, bottom: b.rect.bottom + by };
           const bpos = { x: b.position.x + bx, y: b.position.y + by };
@@ -396,23 +398,22 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         const buildingDepth = playerSouthOfBuilding ? (r.left + r.top - 10) : (r.right + r.bottom);
         drawables.push({
           depth: buildingDepth, draw: (g2) => {
-            // BUILD 601: Use sprite if available, fallback to procedural.
-            const kind = bldKindForIndex(bldIdx);
+            // BUILD 602: Use sprite if available, fallback to procedural.
+            // Stable assignment by world coords (r.left, r.top are world coords).
+            const kind = bldKindForRect(r.left, r.top);
             const sprite = bldImgs[kind];
             if (sprite && sprite.complete && sprite.naturalWidth > 0) {
               // Draw sprite anchored at building base center
               const cx = (p00.x + p11.x) / 2;
               const baseY = Math.max(p00.y, p10.y, p11.y, p01.y);
-              // Scale sprite to building size (buildings are ~12x9 tiles)
-              const targetW = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 1.2;
+              // BUILD 602: Scale to fit building footprint (was 1.2x, caused overlap)
+              const targetW = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 0.95;
               const scale = targetW / sprite.naturalWidth;
               const sw = sprite.naturalWidth * scale;
               const sh = sprite.naturalHeight * scale;
               g2.drawImage(sprite, cx - sw / 2, baseY - sh, sw, sh);
-              bldIdx++;
               return;
             }
-            bldIdx++;
             // shadow (fallback procedural)
             g2.fillStyle = 'rgba(0,0,0,0.18)';
             g2.beginPath();
