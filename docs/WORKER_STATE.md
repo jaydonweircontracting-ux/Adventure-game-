@@ -58,3 +58,11 @@ Move from 'does the code build' to 'does the game play well'. Track:
 - Does the world feel alive? (visible NPC activity density over time)
 Measure these in real-game tests, not just unit tests. This is how the worker
 evolves from autonomous coding toward autonomous game development + playtesting.
+
+SAFEGUARD (user directive 2026-10-11): metrics inform design judgment, they do not
+replace it. Never optimize a number at the cost of believability — e.g. clustering
+all NPCs beside the player would inflate encounter counts while making the town feel
+artificial. Each metric needs: defined measurement method, baseline, repeatable test.
+Distinguish automated simulation results from actual browser-playtest results; never
+mistake one for the other. Feedback loop: observe real gameplay → identify friction →
+rank → implement → replay same tests → compare → preserve improvement → repeat.
