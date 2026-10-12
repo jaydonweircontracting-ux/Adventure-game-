@@ -104,3 +104,21 @@
 - **Checkpoint:** 2026-10-11 — Created with 4 entries (loot verification, safe-run fix, combat kill, session resumption). Each has task/expected/files/tests/result/defects/cause/fix/regression/lesson.
 - **Evidence:** docs/LEARNING_LOOP.md exists with structured entries
 - **Commit:** (BUILD 540)
+
+### TASK-010: Player journey test
+- **Status:** `done`
+- **Priority:** P1
+- **Objective:** Reusable automated test for new-player journey (start → move → exit → explore)
+- **Files:** `tests/real-game/journey.mjs` (new)
+- **Checkpoint:** 2026-10-11 — 6/6 pass. Exit in 2.3s, 0 move failures, 8.8s total. Screenshots captured.
+- **Evidence:** journey.mjs 6/6, journey-interior.png, journey-exterior.png
+- **Commit:** (BUILD 541)
+
+### TASK-011: Human Experience Brain
+- **Status:** `done`
+- **Priority:** P1
+- **Objective:** Evaluation system separating automated facts from AI hypotheses from human findings
+- **Files:** `docs/HUMAN_EXPERIENCE_BRAIN.md` (new)
+- **Checkpoint:** 2026-10-11 — Created with 5-dimension framework (Clarity, Responsiveness, Discovery, Feedback, Reward). 3 evaluations: doorway, journey, combat. Clear evidence categories.
+- **Evidence:** docs/HUMAN_EXPERIENCE_BRAIN.md exists with structured evaluations
+- **Commit:** (BUILD 541)

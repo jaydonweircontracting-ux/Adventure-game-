@@ -140,3 +140,63 @@ Each entry records:
 **Regression:** N/A (new test)
 
 **Lesson:** For markdown parsing, split on headers rather than complex regex. Test validation scripts on clean state.
+
+---
+
+## 2026-10-11 — Player Journey Test (BUILD 541)
+
+**Task:** Build reusable test for new-player journey (start → move → exit → explore)
+
+**Expected:** Automated test completes full journey, measures usability
+
+**Files:**
+- `tests/real-game/journey.mjs` (new)
+
+**Tests:**
+- `node tests/real-game/journey.mjs`
+
+**Result:**
+- Before: No journey test existed
+- After: 6/6 pass. Exit in 2.3s, 0 move failures, 8.8s total
+
+**Defects:**
+1. Exterior movement failed initially (player didn't move on ArrowUp)
+
+**Cause:** Player exited at south side of house. ArrowUp walked into house collision (blocked). Test design issue, not game bug.
+
+**Fix:** Changed to ArrowDown (away from house). Added fallback to try alternative direction.
+
+**Regression:** smoke.mjs 7/7, combat.mjs 10/10 still pass
+
+**Lesson:** When testing movement after a transition, consider where the player is relative to obstacles. Test the game, not just the input.
+
+---
+
+## 2026-10-11 — Doorway Discoverability Analysis (BUILD 541)
+
+**Task:** Investigate TASK-003 (doorway discoverability 3/5)
+
+**Expected:** Determine if doorway is actually hard to find
+
+**Files inspected:**
+- `src/App.tsx` (exit trigger: y>91 AND |x-50|<=width)
+- `src/game/iso/IsoInteriorView.tsx:868` (renders "🚪 tap the door to exit")
+
+**Tests:**
+- `node tests/real-game/journey.mjs` (exit timing)
+- Screenshot analysis
+
+**Result:**
+- Visual hint EXISTS in iso view ("🚪 tap the door to exit")
+- Automated exit: 2.3 seconds via systematic search
+- HUMAN_EXPERIENCE.md 3/5 score was based on 2D view (no hint observed)
+
+**Defects:** None in game. Documentation was outdated.
+
+**Cause:** The 3/5 score predated verification of the iso hint. The hint exists but human verification still needed.
+
+**Fix:** Created docs/HUMAN_EXPERIENCE_BRAIN.md with proper evidence categories (Automated Fact / AI Hypothesis / Human Finding)
+
+**Regression:** N/A (analysis only)
+
+**Lesson:** Separate what tests prove from what humans need to verify. A 2.3s automated exit doesn't prove human discoverability. Label evidence clearly.
