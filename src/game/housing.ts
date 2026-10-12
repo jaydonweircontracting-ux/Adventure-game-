@@ -6,6 +6,7 @@
 // sleeps in the same bed.
 
 import type { NavPoint } from './npcNavigation';
+import { generateHamletLayout } from './settlements';
 
 export type Bed = {
   id: string;
@@ -91,12 +92,11 @@ export function bedFor(registry: HousingRegistry, npcId: string): { home: Home; 
  * Six small cottages in open ground west and north of the four main
  * buildings — 2 beds each = 12 beds for the 12 townsfolk. */
 export function mosslightCottages(): { left: number; top: number; right: number; bottom: number }[] {
-  return [
-    { left: 14, top: 62, right: 20, bottom: 66.5 },   // cottage 1 (west)
-    { left: 14, top: 74, right: 20, bottom: 78.5 },   // cottage 2 (west)
-    { left: 14, top: 86, right: 20, bottom: 90.5 },   // cottage 3 (west)
-    { left: 62, top: 22, right: 68, bottom: 26.5 },   // cottage 4 (north)
-    { left: 76, top: 22, right: 82, bottom: 26.5 },   // cottage 5 (north)
-    { left: 90, top: 22, right: 96, bottom: 26.5 },   // cottage 6 (north)
-  ];
+  // BUILD 680: Use settlement generator for hamlet clusters.
+  // Must match cottageDoorways() in townsfolk.ts.
+  const westCenter = { x: 17, y: 76 };
+  const northCenter = { x: 79, y: 24 };
+  const westSlots = generateHamletLayout(westCenter, 0x1a2b3c, ['cottage-1', 'cottage-2', 'cottage-3']);
+  const northSlots = generateHamletLayout(northCenter, 0x4d5e6f, ['cottage-4', 'cottage-5', 'cottage-6']);
+  return [...westSlots, ...northSlots].map((s) => s.rect);
 }

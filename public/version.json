@@ -1,6 +1,6 @@
 {
-  "build": "679",
-  "note": "bed-field integration for NPC placement",
-  "timestamp": "2026-10-12T23:44:49.663Z",
-  "cacheBuster": "mv5wg1kv"
+  "build": "680",
+  "note": "procedural hamlet settlement generator",
+  "timestamp": "2026-10-12T23:50:09.251Z",
+  "cacheBuster": "mv5wmw6b"
 }

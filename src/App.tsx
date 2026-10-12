@@ -119,6 +119,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '680': 'procedural hamlet settlement generator',
   '679': 'bed-field integration for NPC placement',
   '678': 'hex toolkit + bed-field mapping',
   '677': 'bed anchors + browser testing verified',

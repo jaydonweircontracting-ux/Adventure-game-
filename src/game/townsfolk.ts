@@ -23,6 +23,8 @@ import { bedFor, buildHousingRegistry, assignBeds } from './housing';
 // BUILD 679: Bed-to-field mapping for visual alignment.
 import { layoutBedToField } from './interiors';
 import { houseTypeForBuilding } from './houseTypes';
+// BUILD 680: Settlement layout for believable hamlet.
+import { generateHamletLayout } from './settlements';
 
 export type TownsfolkFacing = 'up' | 'down' | 'left' | 'right';
 export type TownsfolkArchetype = 'farmer' | 'merchant' | 'guard' | 'priest' | 'smith' | 'commoner' | 'child';
@@ -248,14 +250,13 @@ const ROSTER: TownsfolkDef[] = [
 
 /** Build DoorwayLinks for the 6 Mosslight cottages (pure, no App dependency). */
 export function cottageDoorways(): DoorwayLink[] {
-  const rects = [
-    { left: 14, top: 62, right: 20, bottom: 66.5 },
-    { left: 14, top: 74, right: 20, bottom: 78.5 },
-    { left: 14, top: 86, right: 20, bottom: 90.5 },
-    { left: 62, top: 22, right: 68, bottom: 26.5 },
-    { left: 76, top: 22, right: 82, bottom: 26.5 },
-    { left: 90, top: 22, right: 96, bottom: 26.5 },
-  ];
+  // BUILD 680: Cottages arranged as two hamlet clusters (west and north)
+  // around village greens, not in straight lines. Deterministic.
+  const westCenter = { x: 17, y: 76 };
+  const northCenter = { x: 79, y: 24 };
+  const westSlots = generateHamletLayout(westCenter, 0x1a2b3c, ['cottage-1', 'cottage-2', 'cottage-3']);
+  const northSlots = generateHamletLayout(northCenter, 0x4d5e6f, ['cottage-4', 'cottage-5', 'cottage-6']);
+  const rects = [...westSlots, ...northSlots].map((s) => s.rect);
   return rects.map((rect, i) => {
     const doorX = rect.left + (rect.right - rect.left) * 0.51;
     return {

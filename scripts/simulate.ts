@@ -6497,6 +6497,42 @@ import { inflateSync } from 'node:zlib';
   }
 }
 
+// BUILD 680: Settlement layout tests.
+{
+  const { generateHamletLayout, validateSettlementLayout } = await import('../src/game/settlements.js');
+
+  // 1. Generates correct number of slots.
+  const slots = generateHamletLayout({ x: 50, y: 50 }, 12345, ['cottage-1', 'cottage-2', 'cottage-3']);
+  assert(slots.length === 3, 'Settlement: 3 slots generated');
+
+  // 2. Deterministic.
+  const slots2 = generateHamletLayout({ x: 50, y: 50 }, 12345, ['cottage-1', 'cottage-2', 'cottage-3']);
+  assert(slots[0].rect.left === slots2[0].rect.left, 'Settlement: deterministic');
+
+  // 3. Different seeds give different layouts.
+  const slots3 = generateHamletLayout({ x: 50, y: 50 }, 99999, ['cottage-1', 'cottage-2', 'cottage-3']);
+  assert(slots[0].rect.left !== slots3[0].rect.left, 'Settlement: seed variation');
+
+  // 4. Valid layout (no overlaps, in bounds).
+  const errors = validateSettlementLayout(slots);
+  assert(errors.length === 0, `Settlement: valid layout (${errors.join(', ')})`);
+
+  // 5. Cottages are clustered around center (not in a line).
+  // Check that angles are spread around the circle.
+  const angles = slots.map((s) => s.angleFromCenter);
+  const angleSpread = Math.max(...angles) - Math.min(...angles);
+  assert(angleSpread > 1.0, 'Settlement: cottages spread around center');
+
+  // 6. Mosslight cottages use the new layout.
+  const { cottageDoorways } = await import('../src/game/townsfolk.js');
+  const doorways = cottageDoorways();
+  assert(doorways.length === 6, 'Settlement: 6 cottage doorways');
+  // Verify they're not in the old straight-line positions.
+  const rects = doorways.map((d) => d.buildingRect!);
+  // Old positions had x=14 for first three; new should differ.
+  assert(Math.abs(rects[0].left - 14) > 0.1 || Math.abs(rects[0].top - 62) > 0.1, 'Settlement: positions changed from old layout');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
