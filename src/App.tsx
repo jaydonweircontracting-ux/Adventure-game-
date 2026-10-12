@@ -112,6 +112,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '662': 'world fingerprint + lore',
   '661': 'NPC farmer production',
   '660': 'causal NPC mood engine',
   '659': 'NPC personality archetypes',

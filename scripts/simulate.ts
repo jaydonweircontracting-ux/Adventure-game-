@@ -5921,6 +5921,112 @@ import { inflateSync } from 'node:zlib';
   assert(result === civNoMoss, 'Production: no mosslight = no-op');
 }
 
+// BUILD 662: World fingerprint and lore registry tests.
+{
+  const { computeWorldFingerprint, compareFingerprints } = await import('../src/game/worldFingerprint.js');
+  const {
+    createLoreRegistry, addLoreEntry, loreByCategory, loreForLocation,
+    serializeLoreRegistry, deserializeLoreRegistry, seedEstablishedLore,
+  } = await import('../src/game/worldLore.js');
+
+  const makeInput = () => ({
+    chunks: [
+      { x: 4, y: 7, terrain: 'grassland', road: 'nsew', landmarkName: 'Mosslight Crossing' },
+      { x: 4, y: 6, terrain: 'meadow', road: 'ns', landmarkName: null },
+    ],
+    buildings: [
+      { id: 'b1', x: 100, y: 100, kind: 'house' },
+    ],
+    npcs: [
+      { id: 'aldric', name: 'Aldric', archetype: 'farmer' },
+      { id: 'brenna', name: 'Brenna', archetype: 'farmer' },
+    ],
+    worldSeed: 12345,
+  });
+
+  // 1. Fingerprint is deterministic.
+  const fp1 = computeWorldFingerprint(makeInput());
+  const fp2 = computeWorldFingerprint(makeInput());
+  assert(fp1 === fp2, 'Fingerprint: deterministic');
+
+  // 2. Order-independent (sorted).
+  const reordered = makeInput();
+  reordered.chunks.reverse();
+  reordered.npcs.reverse();
+  const fp3 = computeWorldFingerprint(reordered);
+  assert(fp1 === fp3, 'Fingerprint: order-independent');
+
+  // 3. Detects terrain change.
+  const changed = makeInput();
+  changed.chunks[0].terrain = 'desert';
+  const fp4 = computeWorldFingerprint(changed);
+  assert(fp1 !== fp4, 'Fingerprint: detects terrain change');
+
+  // 4. Detects NPC removal.
+  const npcRemoved = makeInput();
+  npcRemoved.npcs.pop();
+  const fp5 = computeWorldFingerprint(npcRemoved);
+  assert(fp1 !== fp5, 'Fingerprint: detects NPC removal');
+
+  // 5. Compare function.
+  const cmp = compareFingerprints(fp1, fp1);
+  assert(!cmp.changed, 'Fingerprint: identical = not changed');
+  const cmp2 = compareFingerprints(fp1, fp4);
+  assert(cmp2.changed, 'Fingerprint: different = changed');
+
+  // 6. Lore registry: create and add.
+  let reg = createLoreRegistry();
+  assert(reg.entries.length === 0, 'Lore: empty registry');
+  reg = addLoreEntry(reg, {
+    id: 'test-1', category: 'established', type: 'settlement',
+    title: 'Test Town', description: 'A test.',
+    locationIds: ['town1'], entityIds: [],
+    source: 'authored', provenance: 'Test', discovered: true,
+  });
+  assert(reg.entries.length === 1, 'Lore: entry added');
+
+  // 7. Deduplication.
+  reg = addLoreEntry(reg, {
+    id: 'test-1', category: 'established', type: 'settlement',
+    title: 'Duplicate', description: 'Should not add.',
+    locationIds: [], entityIds: [],
+    source: 'authored', provenance: 'Test', discovered: false,
+  });
+  assert(reg.entries.length === 1, 'Lore: duplicate ID not added');
+  assert(reg.entries[0].title === 'Test Town', 'Lore: original preserved');
+
+  // 8. Category filter.
+  reg = addLoreEntry(reg, {
+    id: 'test-2', category: 'rumored', type: 'rumor',
+    title: 'Rumor', description: 'Unverified.',
+    locationIds: [], entityIds: [],
+    source: 'unverified', provenance: 'Test', discovered: false,
+  });
+  const established = loreByCategory(reg, 'established');
+  const rumored = loreByCategory(reg, 'rumored');
+  assert(established.length === 1, 'Lore: category filter (established)');
+  assert(rumored.length === 1, 'Lore: category filter (rumored)');
+
+  // 9. Location filter.
+  const forTown = loreForLocation(reg, 'town1');
+  assert(forTown.length === 1 && forTown[0].id === 'test-1', 'Lore: location filter');
+
+  // 10. Serialization round-trip.
+  const json = serializeLoreRegistry(reg);
+  const restored = deserializeLoreRegistry(json);
+  assert(restored.entries.length === 2, 'Lore: serialize/deserialize preserves entries');
+
+  // 11. Invalid JSON handled.
+  const invalid = deserializeLoreRegistry('not json {{{');
+  assert(invalid.entries.length === 0, 'Lore: invalid JSON returns empty');
+
+  // 12. Seeded established lore.
+  const seeded = seedEstablishedLore();
+  assert(seeded.entries.length >= 2, 'Lore: seeded with verified entries');
+  const mosslight = seeded.entries.find((e) => e.id === 'lore-mosslight-crossing');
+  assert(mosslight?.category === 'established', 'Lore: mosslight is established');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
