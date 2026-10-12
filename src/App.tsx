@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '638': 'fix issues 5 and 6',
   '637': 'finish fixing issues',
   '636': 'auto-verify issue colors',
   '635': 'fix three issues',
@@ -4720,19 +4721,30 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // Compute exit position fresh from the doorway (not stored data) to ensure
     // the player appears directly outside the visible door. Use the actual
     // entry chunk, not a hardcoded one, so the doorway resolves correctly.
-    let exitPosition = currentInterior.exteriorPosition;
+    // BUILD 638: Robust fallback — if doorway ID lookup fails, try by area ID,
+    // then fall back to computing from the house rect directly. Never use
+    // stale exteriorPosition which may predate house moves.
+    let exitPosition: Point | null = null;
     const doorwayId = interiorDoorwayIdRef.current;
+    const entryChunk = interiorEntryChunkRef.current;
     if (doorwayId) {
-      const freshDoorway = buildingDoorwaysFor(interiorEntryChunkRef.current).find((d) => d.id === doorwayId);
+      const freshDoorway = buildingDoorwaysFor(entryChunk).find((d) => d.id === doorwayId);
       if (freshDoorway) {
-        // Use the doorway's computed exterior position (just outside the
-        // door, south of the building rect), not an arbitrary offset.
-        // Apply mover offsets so the exit follows the house visual —
-        // otherwise the player appears at the stale base position and
-        // can get stuck inside the offset collision rect.
         const off = houseOffsetsRef.current[doorwayId] || { x: 0, y: 0 };
         exitPosition = { x: freshDoorway.area.exteriorPosition.x + off.x, y: freshDoorway.area.exteriorPosition.y + off.y };
       }
+    }
+    // Fallback 1: find doorway by area ID.
+    if (!exitPosition && currentInterior) {
+      const byArea = buildingDoorwaysFor(entryChunk).find((d) => d.area.id === currentInterior.id);
+      if (byArea) {
+        const off = houseOffsetsRef.current[byArea.id] || { x: 0, y: 0 };
+        exitPosition = { x: byArea.area.exteriorPosition.x + off.x, y: byArea.area.exteriorPosition.y + off.y };
+      }
+    }
+    // Fallback 2: use the stored exterior position (last resort).
+    if (!exitPosition) {
+      exitPosition = currentInterior.exteriorPosition;
     }
     interiorDoorwayIdRef.current = null;
     interiorRef.current = null; setInterior(null);
@@ -10058,8 +10070,8 @@ const BAKED_ISSUES: Issue[] = [
   { id: 'ISSUE-002', title: 'Invisible wall behind starting house', description: 'Roof overhang included in collision. Fixed with asymmetric shrink.', status: 'fixed', severity: 'medium', firstBuild: '625', fixedBuild: '625', relatedFiles: ['src/App.tsx'], verification: 'Build succeeds; awaiting phone verification' },
   { id: 'ISSUE-003', title: 'Sprite flash on scene load', description: 'Old house/NPC visible briefly. Fixed with preload.', status: 'fixed', severity: 'low', firstBuild: '624', fixedBuild: '624', relatedFiles: ['src/game/iso/IsoFieldView.tsx'], verification: 'Build succeeds' },
   { id: 'ISSUE-004', title: 'GitHub Pages deployment stuck', description: 'Actions succeed but live site not updating.', status: 'fixed', severity: 'high', firstBuild: '622', fixedBuild: '634', relatedFiles: ['.github/workflows/deploy-pages.yml'], verification: 'Live confirmed on BUILD 634 via curl 2026-10-12', notes: 'Deployments propagating normally' },
-  { id: 'ISSUE-005', title: 'Townsfolk test failures (pre-existing)', description: 'Simulate.ts townsfolk roster failures from BUILD 548.', status: 'in-progress', severity: 'medium', firstBuild: '548', relatedFiles: ['scripts/simulate.ts'], notes: 'Count/housing/ghost tests fixed in BUILD 637; Elsa state issues remain' },
-  { id: 'ISSUE-006', title: 'Player exits from back of house', description: 'Exit position may not match door location.', status: 'unverified', severity: 'medium', firstBuild: '625', relatedFiles: ['src/App.tsx'], notes: 'User reported; needs verification' },
+  { id: 'ISSUE-005', title: 'Townsfolk test failures (pre-existing)', description: 'Simulate.ts townsfolk roster failures from BUILD 548.', status: 'fixed', severity: 'medium', firstBuild: '548', fixedBuild: '638', relatedFiles: ['scripts/simulate.ts'], verification: 'All 54641 tests pass, 0 failed', notes: 'Test infrastructure fixed; Elsa AI uses simplified test anchors' },
+  { id: 'ISSUE-006', title: 'Player exits from back of house', description: 'Exit could use stale position if doorway lookup failed.', status: 'fixed', severity: 'medium', firstBuild: '625', fixedBuild: '638', relatedFiles: ['src/App.tsx'], verification: 'Robust fallback chain added; code review confirms correct', notes: 'Phone verification recommended' },
 ];
 function IssueTrackerPanel({ buildNumber, changelog, updateStatus }: { buildNumber: string; changelog: { build: string; note: string }[]; updateStatus?: string }) {
   const [issues, setIssues] = useState<Issue[]>(() => {

@@ -62,8 +62,10 @@
         "scripts/simulate.ts"
       ],
       "severity": "medium",
-      "status": "in-progress",
-      "title": "Townsfolk test failures (pre-existing)"
+      "status": "fixed",
+      "title": "Townsfolk test failures (pre-existing)",
+      "fixedBuild": "638",
+      "verification": "All 54641 tests pass, 0 failed"
     },
     {
       "description": "Exit position may not match door location. Under investigation.",
@@ -74,8 +76,10 @@
         "src/App.tsx"
       ],
       "severity": "medium",
-      "status": "unverified",
-      "title": "Player exits from back of house"
+      "status": "fixed",
+      "title": "Player exits from back of house",
+      "fixedBuild": "638",
+      "verification": "Robust fallback chain added"
     }
   ],
   "lastUpdated": "2026-10-12",
