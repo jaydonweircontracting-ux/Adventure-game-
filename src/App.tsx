@@ -4424,6 +4424,31 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             }));
           } catch { return []; }
         },
+        // BUILD 564: interior NPCs for quest interaction testing.
+        // LOCALHOST ONLY. Returns NPCs in current interior with tile coords.
+        getInteriorNPCs: () => {
+          if (typeof window === 'undefined') return [];
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return [];
+          try {
+            const interior = interiorRef.current;
+            if (!interior) return [];
+            const out = [];
+            // Bartender Mira (tavern only)
+            if (interior.roomType === 'tavern') {
+              out.push({ id: 'tavern-bartender-mira', name: 'Mira', tx: 6, ty: 2 });
+              out.push({ id: 'tavern-cellar-hatch', name: 'Cellar Hatch', tx: 9, ty: 2 });
+            }
+            // Townsfolk in interior
+            for (const npc of townsfolk) {
+              if (!npc.indoors || !npc.buildingId) continue;
+              if (npc.location !== 'INTERIOR' && npc.location !== 'SLEEPING') continue;
+              // Simplified: include all interior townsfolk
+              out.push({ id: npc.id, name: npc.name, tx: 5, ty: 4 });
+            }
+            return out;
+          } catch { return []; }
+        },
       };
     } catch { /* test hooks are best-effort */ }
   }, []);
@@ -6920,14 +6945,38 @@ if (active) {
           <IsoInteriorView
             roomId={interior.id}
             roomType={interior.roomType as IsoRoomType}
-            npcs={interiorTownsfolk.map(({ npc, xPct, yPct }): IsoInteriorNpc => ({
-              id: npc.id,
-              name: npc.name,
-              tx: Math.min(11, Math.max(0, Math.round((xPct / 100) * 11))),
-              ty: Math.min(8, Math.max(0, Math.round((yPct / 100) * 9))),
-              facing: 'down',
-              look: npc.id,
-            }))}
+            npcs={[
+              ...interiorTownsfolk.map(({ npc, xPct, yPct }): IsoInteriorNpc => ({
+                id: npc.id,
+                name: npc.name,
+                tx: Math.min(11, Math.max(0, Math.round((xPct / 100) * 11))),
+                ty: Math.min(8, Math.max(0, Math.round((yPct / 100) * 9))),
+                facing: 'down',
+                look: npc.id,
+              })),
+              // BUILD 564: Bartender Mira must be interactable in iso mode.
+              // She is the quest giver for "Rats in the Cellar" but was only
+              // rendered in the 2D fallback, making the quest inaccessible
+              // in the default iso view.
+              ...(interior.roomType === 'tavern' ? [{
+                id: 'tavern-bartender-mira',
+                name: 'Mira',
+                tx: 6,
+                ty: 2,
+                facing: 'down' as const,
+                look: 'tavern-bartender',
+              }, {
+                // BUILD 564: Cellar hatch must be accessible in iso mode.
+                // The "Rats in the Cellar" quest requires descending through
+                // the hatch behind the bar, but it was only in the 2D fallback.
+                id: 'tavern-cellar-hatch',
+                name: 'Cellar Hatch',
+                tx: 9,
+                ty: 2,
+                facing: 'down' as const,
+                look: 'cellar-hatch',
+              }] : []),
+            ]}
             onExit={exitInteriorToField}
             barbOutfit={equippedShirt ? 'blue' : 'bare'}
             barbWeapon={equippedSword ? 'sword' : equippedBow ? 'bow' : 'none'}
@@ -6940,6 +6989,16 @@ if (active) {
               return { x: (r ? 1 : 0) - (l ? 1 : 0), y: (d ? 1 : 0) - (u ? 1 : 0) };
             }}
             onTalkTo={(npcId) => {
+              // BUILD 564: Bartender Mira (quest giver) handling
+              if (npcId === 'tavern-bartender-mira') {
+                talkToBartender();
+                return;
+              }
+              // BUILD 564: Cellar hatch handling
+              if (npcId === 'tavern-cellar-hatch') {
+                enterCellar();
+                return;
+              }
               const npc = townsfolk.find((n) => n.id === npcId);
               if (npc) talkToTownsfolk(npc);
             }}
