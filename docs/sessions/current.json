@@ -2,15 +2,11 @@
   "id": "session-1791781531735",
   "sequence": 2,
   "started": "2026-10-12T05:05:31.735Z",
-  "updated": "2026-10-12T05:19:16.452Z",
+  "updated": "2026-10-12T06:26:50.091Z",
   "startCommit": "e210225ec6cf5bcecd65cb680880492322bf197a",
   "currentCommit": "e210225ec6cf5bcecd65cb680880492322bf197a",
   "activeTask": null,
   "completedTasks": [
-    {
-      "id": "test-task-1",
-      "completedAt": "2026-10-12T05:05:34.866Z"
-    },
     {
       "id": "rat-combat-no-damage",
       "completedAt": "2026-10-12T05:19:16.440Z"
@@ -29,5 +25,5 @@
   "commits": [],
   "nextAction": "Select next task from queue",
   "iterationBudget": 10,
-  "iterationsUsed": 3
+  "iterationsUsed": 4
 }

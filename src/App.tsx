@@ -3444,6 +3444,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 476: equipment damage bonus from found items.
   const equipmentDamageBonus = totalEquipmentStats(equipment).damage ?? 0;
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
+  // BUILD 589: ref tracking inventory prop for test hooks (gold observation).
+  const inventoryRef = useRef(inventory);
+  useEffect(() => { inventoryRef.current = inventory; }, [inventory]);
   // Debug tap marks (?debugDoors=1): user taps to mark where they think the
   // invisible exit/entrance is; rendered as lime green dots with coordinates.
   const [debugMarks, setDebugMarks] = useState<Point[]>([]);
@@ -4346,6 +4349,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         getQuestState: (questId: string) => {
           const st = questStatesRef.current.find((s) => s.questId === questId);
           return st ? { status: st.status, stageIndex: st.stageIndex, progress: st.progress } : null;
+        },
+        // BUILD 589: expose gold via inventoryRef (no silent fallback).
+        // Returns null if inventory unavailable, so tests can distinguish missing data.
+        getGold: () => {
+          const inv = inventoryRef.current;
+          return inv ? inv.coins : null;
         },
         // BUILD 535: full movement validation (collision + cliffs + goats).
         // Returns true if the player could move from current pos by (dx, dy).
