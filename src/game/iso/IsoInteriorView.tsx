@@ -275,6 +275,12 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       (window as any).__interiorNpcIds = () => npcsRef.current.map((n) => n.id);
       // Direct tile tap: simulates tap at tile center via real handler path
       (window as any).__interiorTapTile = (tx: number, ty: number) => {
+        // BUILD 586: Check door tile first for reliable exit.
+        // Previously the door check was only inside goTo(), but the tap handler
+        // couldn't tell if exit succeeded vs. movement started.
+        if (tx === doorTile.tx && ty === doorTile.ty) {
+          if (exitRef.current) { exitRef.current(); return 'exit'; }
+        }
         const npc = npcsRef.current.find((n) => Math.round(n.tx) === tx && Math.round(n.ty) === ty);
         if (npc && talkRef.current) { talkRef.current(npc.id); return npc.id; }
         const rat = ratsRef.current.find((r) => Math.round(r.tx) === tx && Math.round(r.ty) === ty);
