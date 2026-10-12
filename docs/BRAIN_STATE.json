@@ -8,7 +8,17 @@
     "quest-tests": "HEALTHY",
     "gameplay-agent": "HEALTHY"
   },
-  "taskQueue": [],
+  "taskQueue": [
+    {
+      "id": "rat-combat-no-damage",
+      "priority": "P1",
+      "description": "Cellar rat strikes deal no damage in iso mode",
+      "system": "gameplay-agent",
+      "status": "PROPOSED",
+      "createdAt": "2026-10-12T04:50:04.146Z",
+      "retryCount": 0
+    }
+  ],
   "completedTasks": [],
   "blockedTasks": []
 }

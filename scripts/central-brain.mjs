@@ -130,6 +130,30 @@ function selectTask() {
   return null;
 }
 
+// === Task Queue ===
+function addFailureTask(failure) {
+  const state = loadState();
+  // Deduplicate by failure ID
+  if (state.taskQueue.some(t => t.id === failure.id)) {
+    console.log(`Task ${failure.id} already queued (deduplicated)`);
+    return false;
+  }
+  // Prevent task storm: max 10 pending
+  if (state.taskQueue.length >= 10) {
+    console.log('Task queue full (10), not adding');
+    return false;
+  }
+  state.taskQueue.push({
+    ...failure,
+    status: 'PROPOSED',
+    createdAt: new Date().toISOString(),
+    retryCount: 0,
+  });
+  saveState(state);
+  console.log(`Task queued: ${failure.id}`);
+  return true;
+}
+
 // === Single Cycle ===
 function runCycle() {
   console.log('=== CENTRAL BRAIN CYCLE ===\n');
@@ -173,4 +197,22 @@ else if (cmd === 'registry') {
     console.log(`  Health: ${sys.health()}\n`);
   }
 }
-else console.log('Usage: node scripts/central-brain.mjs <status|cycle|registry>');
+else if (cmd === 'add-failure' && process.argv[3]) {
+  // Usage: node scripts/central-brain.mjs add-failure '<json>'
+  try {
+    const failure = JSON.parse(process.argv[3]);
+    addFailureTask(failure);
+  } catch (e) {
+    console.error('Invalid JSON:', e.message);
+  }
+}
+else if (cmd === 'tasks') {
+  const state = loadState();
+  console.log('=== TASK QUEUE ===\n');
+  if (state.taskQueue.length === 0) console.log('(empty)');
+  state.taskQueue.forEach(t => {
+    console.log(`[${t.priority || 'P?'}] ${t.id}: ${t.description}`);
+    console.log(`  Status: ${t.status}, Created: ${t.createdAt}\n`);
+  });
+}
+else console.log('Usage: node scripts/central-brain.mjs <status|cycle|registry|tasks|add-failure> [json]');
