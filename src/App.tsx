@@ -4345,6 +4345,44 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // BUILD 535: attack state for combat verification.
         isAttacking: () => playerAttackStateRef.current.active,
         getAttackCooldown: () => playerAttackCooldownRef.current,
+        // BUILD 538: test fixture — spawn a goat near the player for combat testing.
+        // LOCALHOST ONLY: refuses to run on the public site. Uses the real
+        // GoatState structure and production combat system. The goat is a real
+        // entity; attacks/damage/death go through production code paths.
+        spawnTestGoat: () => {
+          if (typeof window === 'undefined') return null;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return null;
+          if (interiorRef.current) return null; // field only
+          const p = positionRef.current;
+          const id = 90000 + Math.floor(Math.random() * 8999);
+          const gx = p.x + 3, gy = p.y; // 3 units east — within 5-unit melee reach
+          const goat: GoatState = {
+            id, kind: 'boar',
+            position: { x: gx, y: gy },
+            spawnPosition: { x: gx, y: gy },
+            roamRadius: 0, // stationary for reliable testing
+            facing: 'left', level: 1,
+            hp: 40, maxHp: 40,
+            disposition: 'calm', attackCooldown: 0, respawnTicks: 0,
+            wanderSeed: id, moving: false, attacking: false,
+            state: 'idle', hurtTimer: 0, attackTimer: 0,
+            attackHitApplied: false, hitFlash: false,
+          };
+          const next = [...goatsRef.current, goat];
+          goatsRef.current = next; setGoats(next);
+          return id;
+        },
+        // BUILD 538: remove a test goat by id (cleanup). Localhost only.
+        removeTestGoat: (id: number) => {
+          if (typeof window === 'undefined') return false;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return false;
+          const next = goatsRef.current.filter((g) => g.id !== id);
+          if (next.length === goatsRef.current.length) return false;
+          goatsRef.current = next; setGoats(next);
+          return true;
+        },
       };
     } catch { /* test hooks are best-effort */ }
   }, []);
