@@ -270,6 +270,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     };
     if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
       (window as any).__interiorToScreen = (tx: number, ty: number) => toScreenRef.current?.(tx, ty) ?? null;
+      // BUILD 583: expose NPC IDs for test readiness checks.
+      // Tests wait for Mira's ID to appear before tapping, instead of guessing timing.
+      (window as any).__interiorNpcIds = () => npcsRef.current.map((n) => n.id);
       // Direct tile tap: simulates tap at tile center via real handler path
       (window as any).__interiorTapTile = (tx: number, ty: number) => {
         const npc = npcsRef.current.find((n) => Math.round(n.tx) === tx && Math.round(n.ty) === ty);
