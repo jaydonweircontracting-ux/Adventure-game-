@@ -3527,6 +3527,25 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const ts = new Date().toLocaleTimeString();
     setDebugLog((prev) => [...prev.slice(-99), `[${ts}] ${msg}`]);
   };
+  // BUILD 606: Named chunk saves — { name: { placedObjects, timestamp } }
+  const [chunkSaves, setChunkSaves] = useState<Record<string, { objects: PlacedObject[]; timestamp: number }>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('ag-chunk-saves') || '{}');
+    } catch { return {}; }
+  });
+  const saveNamedChunk = (name: string) => {
+    const data = { objects: placedObjects, timestamp: Date.now() };
+    const next = { ...chunkSaves, [name]: data };
+    setChunkSaves(next);
+    try { localStorage.setItem('ag-chunk-saves', JSON.stringify(next)); } catch { /* ignore */ }
+    logDebug(`Saved chunk "${name}": ${placedObjects.length} objects`);
+  };
+  const loadNamedChunk = (name: string) => {
+    const saved = chunkSaves[name];
+    if (!saved) { logDebug(`Chunk "${name}" not found`); return; }
+    setPlacedObjects(saved.objects);
+    logDebug(`Loaded chunk "${name}": ${saved.objects.length} objects`);
+  };
   const toggleMoverMode = () => {
     const next = !moverMode;
     moveHouses = next;
@@ -7313,28 +7332,77 @@ if (active) {
                 <button type="button" className="editor-btn" onClick={() => {
                   setDebugConsoleOpen(!debugConsoleOpen);
                   if (!debugConsoleOpen) {
-                    logDebug(`=== Building coordinates (chunk ${chunkKey}) ===`);
+                    const worldName = (chunk.x === 50 && chunk.y === 50) ? 'Beta Building Zone' : 'Production World';
+                    logDebug(`WORLD: ${worldName}`);
+                    logDebug(`CHUNK: ${chunkKey}`);
+                    logDebug(`CHUNK NAME: ${worldName} (${chunk.x},${chunk.y})`);
+                    logDebug(`PLAYER WORLD: x=${(chunk.x * 280 + position.x).toFixed(1)}, y=${(chunk.y * 280 + position.y).toFixed(1)}`);
+                    logDebug(`PLAYER GRID: x=${position.x.toFixed(1)}, y=${position.y.toFixed(1)}`);
+                    logDebug(`--- BUILDINGS (${buildingDoorwaysFor(chunk).length}) ---`);
                     buildingDoorwaysFor(chunk).forEach((d) => {
                       const r = d.rect;
-                      logDebug(`${d.area.name}: left=${r.left.toFixed(1)} top=${r.top.toFixed(1)} right=${r.right.toFixed(1)} bottom=${r.bottom.toFixed(1)}`);
+                      logDebug(`OBJECT: ${d.id}`);
+                      logDebug(`  ASSET: building`);
+                      logDebug(`  GRID: x=${r.left.toFixed(1)}, y=${r.top.toFixed(1)}`);
+                      logDebug(`  WORLD: x=${(chunk.x * 280 + r.left).toFixed(1)}, y=${(chunk.y * 280 + r.top).toFixed(1)}`);
+                      logDebug(`  SIZE: ${(r.right - r.left).toFixed(1)}x${(r.bottom - r.top).toFixed(1)}`);
                     });
-                    logDebug(`=== Placed objects (${placedObjects.length}) ===`);
+                    logDebug(`--- PLACED OBJECTS (${placedObjects.length}) ---`);
                     placedObjects.forEach((o) => {
-                      logDebug(`${o.kind} id=${o.id}: x=${o.x.toFixed(1)} y=${o.y.toFixed(1)} rot=${o.rotation || 0}° chunk=${o.chunk}`);
+                      logDebug(`OBJECT: ${o.id}`);
+                      logDebug(`  ASSET: ${o.kind}`);
+                      logDebug(`  GRID: x=${o.x.toFixed(1)}, y=${o.y.toFixed(1)}`);
+                      logDebug(`  ROTATION: ${o.rotation || 0}`);
+                      logDebug(`  CHUNK: ${o.chunk}`);
                     });
                   }
                 }}>
                   {debugConsoleOpen ? '📟 Hide Console' : '📟 Console'}
                 </button>
                 <button type="button" className="editor-btn" onClick={() => {
-                  // Return to spawn: tutorial house exterior
-                  logDebug('Returning to spawn...');
-                  // Teleport to starting position
-                  window.location.hash = '';
-                  logDebug('Use Teleport tool to go to (89, 115) for spawn');
+                  // BUILD 606: Real return-to-spawn teleport.
+                  setChunk({ x: 4, y: 7 });
+                  setPosition({ x: 141, y: 142 });
+                  logDebug('Teleported to spawn: chunk (4,7) pos (141,142)');
                 }}>
                   🏠 Spawn
                 </button>
+                <button type="button" className="editor-btn" onClick={() => {
+                  // BUILD 606: Beta building zone — isolated chunk (50,50).
+                  setChunk({ x: 50, y: 50 });
+                  setPosition({ x: 140, y: 140 });
+                  logDebug('Teleported to BETA ZONE: chunk (50,50) pos (140,140)');
+                  logDebug('Beta zone is isolated from production world.');
+                }}>
+                  🧪 Beta Zone
+                </button>
+                <button type="button" className="editor-btn" onClick={() => {
+                  // BUILD 606: Hangout room — designated area in beta zone.
+                  setChunk({ x: 50, y: 50 });
+                  setPosition({ x: 100, y: 100 });
+                  logDebug('Teleported to HANGOUT: chunk (50,50) pos (100,100)');
+                  logDebug('Build your hangout room here with the editor tools.');
+                }}>
+                  🛋️ Hangout
+                </button>
+                <button type="button" className="editor-btn" onClick={() => {
+                  const name = prompt('Chunk name:', `chunk_${Date.now()}`);
+                  if (name) saveNamedChunk(name);
+                }}>
+                  💾 Save Chunk
+                </button>
+                {Object.keys(chunkSaves).length > 0 && (
+                  <select
+                    className="editor-btn"
+                    onChange={(e) => { if (e.target.value) loadNamedChunk(e.target.value); e.target.value = ''; }}
+                    defaultValue=""
+                  >
+                    <option value="">📂 Load Chunk...</option>
+                    {Object.keys(chunkSaves).map((name) => (
+                      <option key={name} value={name}>{name} ({chunkSaves[name].objects.length} objs)</option>
+                    ))}
+                  </select>
+                )}
               </div>
               <label className="editor-toggle">
                 <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} /> Show coordinate grid
