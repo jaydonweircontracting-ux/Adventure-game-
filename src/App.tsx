@@ -3628,13 +3628,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   useEffect(() => { collisionDebugRef.current = collisionDebugMode; }, [collisionDebugMode]);
   // BUILD 461: D-pad (arrow keys) toggle — persisted
   // BUILD 616: Hidden by default (user request) — turn on in menu.
+  // BUILD 617: Use new key to reset old 'shown' preferences.
   const [showDpad, setShowDpad] = useState(() => {
-    try { return localStorage.getItem('ag-show-dpad') === '1'; } catch { return false; }
+    try { return localStorage.getItem('ag-show-dpad-v2') === '1'; } catch { return false; }
   });
   const toggleDpad = () => {
     const next = !showDpad;
     setShowDpad(next);
-    try { localStorage.setItem('ag-show-dpad', next ? '1' : '0'); } catch { /* ignore */ }
+    try { localStorage.setItem('ag-show-dpad-v2', next ? '1' : '0'); } catch { /* ignore */ }
   };
   const [inspectorOpen, setInspectorOpen] = useState(false);
   // BUILD 605: Debug console — black window with coordinates, copyable.
