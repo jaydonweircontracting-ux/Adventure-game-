@@ -6,18 +6,18 @@ The worker reads this at startup, updates it after each cycle, and resumes from 
 ## Worker Status
 - **State:** `running` (emergency directive — executing)
 - **Started:** 2026-10-11 (BUILD 548)
-- **Last cycle:** 13 (complete — long-distance nav)
-- **Last known-good commit:** `6e0c04b`
-- **Last known-good build:** 559
+- **Last cycle:** 14 (complete — 10/10 entry)
+- **Last known-good commit:** `0e21c0f`
+- **Last known-good build:** 563
 
 ## Current Cycle
-- **Cycle:** 13
+- **Cycle:** 14
 - **Phase:** `complete`
-- **Task:** Long-distance navigation verification (78 units)
+- **Task:** Tavern entry reliability (10/10 PASS)
 - **Started:** 2026-10-11
-- **Files changed:** [tests/real-game/agent.mjs (import guard)]
-- **Tests run:** [nav 78 units: REACHED, 85 actions, 0 stuck]
-- **Result:** `verified` — Greedy navigation handles 78 units, 0 stuck. No pathfinding upgrade needed.
+- **Files changed:** [tests/real-game/agent.mjs (enterBuilding)]
+- **Tests run:** [entry 10/10 PASS, 163-169 actions each]
+- **Result:** `verified` — Geometry-aware entry 10/10 reliable.
 
 ## Retry History
 - (empty)
