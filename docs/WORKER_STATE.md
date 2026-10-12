@@ -4,20 +4,20 @@
 The worker reads this at startup, updates it after each cycle, and resumes from it after interruption.
 
 ## Worker Status
-- **State:** `paused` (budget exhausted)
+- **State:** `running` (emergency directive — executing)
 - **Started:** 2026-10-11 (BUILD 548)
-- **Last cycle:** 5 (complete)
-- **Last known-good commit:** `e5d11fb`
-- **Last known-good build:** 551
+- **Last cycle:** 6 (complete — harness built and run)
+- **Last known-good commit:** `5f228b3`
+- **Last known-good build:** 552
 
 ## Current Cycle
-- **Cycle:** 5
+- **Cycle:** 6
 - **Phase:** `complete`
-- **Task:** DISC-DLG-001 — Unique dialogue for key NPCs
+- **Task:** Build gameplay measurement harness + investigate DISC-NPC-001
 - **Started:** 2026-10-11
-- **Files changed:** [src/game/dialogue.ts]
-- **Tests run:** [smoke 7/7, tsx dialogue verification]
-- **Result:** `verified` — Cedric, Father Aldous, Tom have unique introductions
+- **Files changed:** [tests/real-game/playtest-harness.mjs, docs/PLAYTEST_BASELINE.md]
+- **Tests run:** [harness 3x (5/7, 5/7, 4/7 — consistent), smoke 7/7]
+- **Result:** `verified` — Harness works. Baseline: 5/7. DISC-NPC-001 investigated: NPCs correctly at homes, not a bug. No blind moves made.
 
 ## Retry History
 - (empty)
@@ -28,8 +28,9 @@ The worker reads this at startup, updates it after each cycle, and resumes from 
 ## Blockers
 - TASK-004 (movement speed): needs user approval per BUILD 377. Does not block other work.
 
-## Next Recommended Task (user priority order for next session)
-1. DISC-NPC-001 — Investigate Mosslight Crossing NPC placement. Do NOT blindly move NPCs to plaza. First verify: coordinate systems match, NPCs visible/reachable, distance intentional vs bug, actual town/roads/buildings locations, home/workplace assignments. Smallest safe change for coherent town. Mira's directions must stay accurate.
+## Next Recommended Task
+1. DISC-NPC-001 — CLOSED (investigated 2026-10-11): NPCs at homes correctly. Not a placement bug.
+2. Fix M5 harness (iso canvas tap support) and investigate M6 stuck incidents. Do NOT blindly move NPCs to plaza. First verify: coordinate systems match, NPCs visible/reachable, distance intentional vs bug, actual town/roads/buildings locations, home/workplace assignments. Smallest safe change for coherent town. Mira's directions must stay accurate.
 2. DISC-TEST-001 — Expand gameplay regression tests: NPC spawning/visibility, positions vs intended town, unique dialogue (Mira/Cedric/Aldous/Tom), Mira's directions match world, interaction opens dialogue, collision around NPCs, invalid spawns, duplicates.
 3. Then: one additional player-facing improvement from world simulation (schedules, routines, destinations, animations, merchant interactions, roads, examine descriptions).
 
@@ -47,7 +48,7 @@ If the worker stops unexpectedly:
 - Max cycles per session: 5
 - Max retries per task: 3
 - Max wall time per cycle: 30 minutes
-- Cycles used: 5/5 (budget exhausted — reset for next session)
+- Cycles used: 6 (emergency directive — continued beyond budget)
 
 ## Long-term goal: gameplay quality metrics (user directive 2026-10-11)
 Move from 'does the code build' to 'does the game play well'. Track:
