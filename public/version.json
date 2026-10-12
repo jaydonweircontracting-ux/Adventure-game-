@@ -1,6 +1,6 @@
 {
-  "build": "675",
-  "note": "interior house types + 2D bed fix",
-  "timestamp": "2026-10-12T23:21:54.306Z",
-  "cacheBuster": "mv5vmkci"
+  "build": "676",
+  "note": "2D interior unification + audit tab",
+  "timestamp": "2026-10-12T23:27:01.676Z",
+  "cacheBuster": "mv5vt5ik"
 }

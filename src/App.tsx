@@ -69,6 +69,8 @@ import { createMill, addWheatToMill, advanceMill, takeFlourFromMill, type Mill }
 import { isTextInputActive } from '@/game/textInputGuard';
 import { findPath } from '@/game/npcNavigation';
 import { eightDirectionFromVector, type EightDirection } from '@/game/eightDirection';
+import { generateInteriorLayout } from '@/game/interiors';
+import { houseTypeForBuilding } from '@/game/houseTypes';
 import {
   createHorses,
   deserializeHorses,
@@ -117,6 +119,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '676': '2D interior unification + audit tab',
   '675': 'interior house types + 2D bed fix',
   '674': 'house interior overhaul: per-house layouts',
   '673': 'NPC home spawning + house ownership fix',
@@ -3480,11 +3483,39 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
     if (marker === 'turnin') return <span className="quest-giver-badge is-turnin" aria-hidden="true">?</span>;
     return null;
   };
+  // BUILD 676: Generate 2D furniture from interior layout for 'building' type.
+  // Converts tile coordinates to percentage positions.
+  const renderBuildingFurniture = () => {
+    if (area.roomType !== 'building') return null;
+    const houseType = houseTypeForBuilding(area.id);
+    const layout = generateInteriorLayout(area.id, houseType, 12, 10);
+    return (
+      <>
+        {layout.furniture.map((f, i) => {
+          // Convert tile coords to percentages.
+          const left = (f.tx / 12) * 100;
+          const top = (f.ty / 10) * 100;
+          const width = (f.w / 12) * 100;
+          const height = (f.h / 10) * 100;
+          const className = `interior-${f.kind}`;
+          return (
+            <span
+              key={i}
+              className={className}
+              style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%` }}
+              aria-hidden="true"
+            />
+          );
+        })}
+      </>
+    );
+  };
+
   const furniture = {
     guild: (<><span className="interior-rug" /><span className="interior-workbench" /><span className="interior-forge" aria-hidden="true"><span className="forge-fire"><span className="forge-flame forge-flame-back" /><span className="forge-flame forge-flame-mid" /><span className="forge-flame forge-flame-core" /><span className="forge-sparks"><i /><i /><i /><i /><i /></span></span><span className="forge-logs" /></span><span className="interior-weapon-rack" aria-hidden="true"><span className="rack-weapon" style={{ left: '8%', height: '58%', transform: 'rotate(-6deg)' }} /><span className="rack-weapon" style={{ left: '27%', height: '66%', transform: 'rotate(4deg)' }} /><span className="rack-weapon" style={{ left: '46%', height: '60%', transform: 'rotate(-3deg)' }} /><span className="rack-weapon" style={{ left: '65%', height: '68%', transform: 'rotate(5deg)' }} /><span className="rack-weapon" style={{ left: '82%', height: '56%', transform: 'rotate(-5deg)' }} /></span><span className="interior-quest-board" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     inn: (<><span className="interior-rug" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-bar" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     chapel: (<><span className="interior-rug" /><span className="interior-altar" /><span className="interior-pew pew-left" /><span className="interior-pew pew-right" /><span className="interior-candle candle-left" /><span className="interior-candle candle-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
-    building: (<><span className="interior-rug" /><span className="interior-bed" /><span className="interior-table" /><span className="interior-fireplace" /><span className="interior-shelf shelf-left" /><span className="interior-shelf shelf-right" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
+    building: renderBuildingFurniture(),
     tavern: (<><span className="interior-rug" /><span className="interior-bed" aria-hidden="true" /><span className="interior-bar-counter" aria-hidden="true"><span className="bar-mug mug-1" /><span className="bar-mug mug-2" /><span className="bar-mug mug-3" /></span><span className="interior-stool stool-1" aria-hidden="true" /><span className="interior-stool stool-2" aria-hidden="true" /><span className="interior-stool stool-3" aria-hidden="true" /><span className="interior-round-table table-1" aria-hidden="true"><span className="bar-mug table-mug" /><span className="table-candle" /></span><span className="interior-round-table table-2" aria-hidden="true"><span className="bar-mug table-mug" /><span className="table-candle" /></span><span className="interior-barrel barrel-1" aria-hidden="true" /><span className="interior-barrel barrel-2" aria-hidden="true" /><span className="interior-lantern lantern-left" /><span className="interior-lantern lantern-right" /></>),
     prison: (<><span className="prison-bars" /><span className="prison-straw-bed" /><span className="prison-sewer-grate" /><span className="prison-torch" /><span className="interior-lantern lantern-left" /></>),
     cellar: (<><span className="cellar-barrel cellar-barrel-1" aria-hidden="true" /><span className="cellar-barrel cellar-barrel-2" aria-hidden="true" /><span className="cellar-sacks" aria-hidden="true" /><span className="cellar-crates" aria-hidden="true" /><span className="cellar-cobweb cellar-cobweb-1" aria-hidden="true" /><span className="cellar-cobweb cellar-cobweb-2" aria-hidden="true" /><span className="cellar-ladder" aria-hidden="true" /><span className="interior-lantern lantern-left" /></>),
@@ -3812,7 +3843,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [debugConsoleOpen, setDebugConsoleOpen] = useState(false);
   // BUILD 663: World Simulation Control Center.
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
-  const [controlCenterTab, setControlCenterTab] = useState<'overview' | 'integrity' | 'lore' | 'npcs' | 'market' | 'brain' | 'builder'>('overview');
+  const [controlCenterTab, setControlCenterTab] = useState<'overview' | 'integrity' | 'lore' | 'npcs' | 'market' | 'brain' | 'builder' | 'interiors'>('overview');
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const logDebug = (msg: string) => {
     const ts = new Date().toLocaleTimeString();
@@ -8245,7 +8276,7 @@ if (active) {
               <div style={{ padding: '12px', borderBottom: '1px solid #4a4a6a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '14px', fontWeight: 'bold' }}>🌍 World Simulation Control Center</span>
                 <div>
-                  {(['overview', 'integrity', 'lore', 'npcs', 'market', 'brain', 'builder'] as const).map((tab) => (
+                  {(['overview', 'integrity', 'lore', 'npcs', 'market', 'brain', 'builder', 'interiors'] as const).map((tab) => (
                     <button
                       key={tab}
                       type="button"
@@ -8317,6 +8348,56 @@ if (active) {
                       </div>
                     ))}
                     {townsfolkRef.current.length > 20 && <p><em>...and {townsfolkRef.current.length - 20} more</em></p>}
+                  </div>
+                )}
+                {controlCenterTab === 'interiors' && (
+                  <div>
+                    <h3>Interior Audit (BUILD 676)</h3>
+                    <p>Validates all registered interiors for geometry, furniture, beds, and exits.</p>
+                    {(() => {
+                      // Audit all Mosslight cottage buildings.
+                      const buildings = ['4-7-building-4', '4-7-building-5', '4-7-building-6', '4-7-building-7', '4-7-building-8', '4-7-building-9'];
+                      const results = buildings.map((id) => {
+                        const houseType = houseTypeForBuilding(id);
+                        const layout = generateInteriorLayout(id, houseType, 12, 10);
+                        const issues: string[] = [];
+                        if (layout.furniture.length === 0) issues.push('No furniture');
+                        const bed = layout.furniture.find((f) => f.kind === 'bed');
+                        if (!bed) issues.push('No bed');
+                        // Check for overlaps.
+                        for (let i = 0; i < layout.furniture.length; i++) {
+                          for (let j = i + 1; j < layout.furniture.length; j++) {
+                            const a = layout.furniture[i], b = layout.furniture[j];
+                            if (a.solid && b.solid &&
+                                a.tx < b.tx + b.w && a.tx + a.w > b.tx &&
+                                a.ty < b.ty + b.h && a.ty + a.h > b.ty) {
+                              issues.push(`Overlap: ${a.kind} & ${b.kind}`);
+                            }
+                          }
+                        }
+                        return { id, houseType, furnitureCount: layout.furniture.length, hasBed: !!bed, issues };
+                      });
+                      const totalIssues = results.reduce((sum, r) => sum + r.issues.length, 0);
+                      return (
+                        <div>
+                          <p>
+                            Buildings audited: {results.length} |
+                            Total furniture: {results.reduce((sum, r) => sum + r.furnitureCount, 0)} |
+                            Issues: {totalIssues}
+                          </p>
+                          {results.map((r) => (
+                            <div key={r.id} style={{ padding: '4px', borderBottom: '1px solid #333' }}>
+                              <strong>{r.id}</strong> ({r.houseType}) — {r.furnitureCount} items, {r.hasBed ? 'has bed' : 'NO BED'}
+                              {r.issues.length > 0 && (
+                                <ul style={{ margin: '4px 0', paddingLeft: '20px', color: '#ff8888' }}>
+                                  {r.issues.map((issue, i) => <li key={i}>{issue}</li>)}
+                                </ul>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
                 {controlCenterTab === 'market' && (
