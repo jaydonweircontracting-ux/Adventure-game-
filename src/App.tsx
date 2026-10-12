@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '640': 'fix stuck red statuses',
   '639': 'update in progress banner',
   '638': 'fix issues 5 and 6',
   '637': 'finish fixing issues',
@@ -10077,10 +10078,16 @@ const BAKED_ISSUES: Issue[] = [
 function IssueTrackerPanel({ buildNumber, changelog, updateStatus }: { buildNumber: string; changelog: { build: string; note: string }[]; updateStatus?: string }) {
   const [issues, setIssues] = useState<Issue[]>(() => {
     try {
-      const saved = localStorage.getItem('ag-issue-statuses');
+      // BUILD 640: Version the storage key by build — old overrides don't
+      // block newly-fixed statuses. Baked-in 'fixed' always wins.
+      const saved = localStorage.getItem('ag-issue-statuses-v2');
       if (saved) {
         const overrides = JSON.parse(saved) as Record<string, IssueStatus>;
-        return BAKED_ISSUES.map((i) => ({ ...i, status: overrides[i.id] || i.status }));
+        return BAKED_ISSUES.map((i) => {
+          // Baked-in fixed status takes precedence over old overrides.
+          if (i.status === 'fixed') return i;
+          return { ...i, status: overrides[i.id] || i.status };
+        });
       }
     } catch { /* use baked */ }
     return BAKED_ISSUES;
@@ -10096,7 +10103,7 @@ function IssueTrackerPanel({ buildNumber, changelog, updateStatus }: { buildNumb
         try {
           const overrides: Record<string, IssueStatus> = {};
           next.forEach((i) => { overrides[i.id] = i.status; });
-          localStorage.setItem('ag-issue-statuses', JSON.stringify(overrides));
+          localStorage.setItem('ag-issue-statuses-v2', JSON.stringify(overrides));
         } catch { /* ignore */ }
         return next;
       });
@@ -10115,7 +10122,7 @@ function IssueTrackerPanel({ buildNumber, changelog, updateStatus }: { buildNumb
       try {
         const overrides: Record<string, IssueStatus> = {};
         next.forEach((i) => { overrides[i.id] = i.status; });
-        localStorage.setItem('ag-issue-statuses', JSON.stringify(overrides));
+        localStorage.setItem('ag-issue-statuses-v2', JSON.stringify(overrides));
       } catch { /* storage unavailable */ }
       return next;
     });
