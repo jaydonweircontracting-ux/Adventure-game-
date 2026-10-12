@@ -174,6 +174,40 @@ export class GameplayAgent {
     return null;
   }
 
+  /**
+   * BUILD 561: Enter a building through its doorway.
+   * Doorway triggers are intentionally narrow (~2.7 units) to match the
+   * visual door. This aligns X precisely with the doorway before walking
+   * north into the trigger zone.
+   */
+  async enterBuilding(building, timeoutMs = 60000) {
+    const start = Date.now();
+    // Navigate to south of doorway
+    await this.navigateTo(building.x, building.y + 8, 5, 200);
+    // Precise X alignment
+    for (let i = 0; i < 20 && Date.now() - start < timeoutMs; i++) {
+      const { pos } = await this.observe();
+      const dx = building.x - pos.x;
+      if (Math.abs(dx) < 0.5) break;
+      await this.step(dx > 0 ? 'right' : 'left');
+    }
+    // Walk north into doorway
+    for (let i = 0; i < 15 && Date.now() - start < timeoutMs; i++) {
+      await this.page.keyboard.down('ArrowUp');
+      await this.page.waitForTimeout(400);
+      await this.page.keyboard.up('ArrowUp');
+      this.actions++;
+      const { inInterior } = await this.observe();
+      if (inInterior) {
+        this.log(`entered_building: ${building.name}`);
+        return true;
+      }
+      await this.page.waitForTimeout(100);
+    }
+    this.log(`enter_failed: ${building.name}`);
+    return false;
+  }
+
   getReport() {
     return {
       actions: this.actions,
