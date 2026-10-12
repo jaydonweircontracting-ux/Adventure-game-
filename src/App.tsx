@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '644': 'report issues + zoom under minimap',
   '643': 'swap banner colors',
   '642': 'bigger zoom buttons under HP',
   '641': 'build note in update banner',
@@ -3610,6 +3611,7 @@ function MiniMap({ chunk, position }: { chunk: Point; position: Point }) {
     g.stroke();
   }, [chunk.x, chunk.y, Math.round(position.x / 10), Math.round(position.y / 10)]);
   return (
+    <>
     <canvas
       ref={canvasRef}
       width={size}
@@ -3621,6 +3623,32 @@ function MiniMap({ chunk, position }: { chunk: Point; position: Point }) {
       }}
       aria-label="Minimap"
     />
+    {/* BUILD 644: Zoom buttons under minimap on the right. */}
+    <div style={{ position: 'fixed', top: 140, right: 10, zIndex: 100, display: 'flex', gap: 6 }}>
+      <button
+        type="button"
+        onClick={() => {
+          const el = document.querySelector('[data-testid="button-zoom-out-hud"]') as HTMLButtonElement;
+          if (el) el.click();
+        }}
+        style={{ width: '40px', height: '40px', fontSize: '20px', fontWeight: 'bold', background: 'rgba(0,0,0,0.85)', color: '#fff', border: '2px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
+        aria-label="Zoom out"
+      >
+        −
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const el = document.querySelector('[data-testid="button-zoom-in-hud"]') as HTMLButtonElement;
+          if (el) el.click();
+        }}
+        style={{ width: '40px', height: '40px', fontSize: '20px', fontWeight: 'bold', background: 'rgba(0,0,0,0.85)', color: '#fff', border: '2px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
+        aria-label="Zoom in"
+      >
+        +
+      </button>
+    </div>
+    </>
   );
 }
 
@@ -10085,17 +10113,49 @@ function IssueTrackerPanel({ buildNumber, changelog, updateStatus }: { buildNumb
       // BUILD 640: Version the storage key by build — old overrides don't
       // block newly-fixed statuses. Baked-in 'fixed' always wins.
       const saved = localStorage.getItem('ag-issue-statuses-v2');
+      let base = BAKED_ISSUES;
       if (saved) {
         const overrides = JSON.parse(saved) as Record<string, IssueStatus>;
-        return BAKED_ISSUES.map((i) => {
+        base = BAKED_ISSUES.map((i) => {
           // Baked-in fixed status takes precedence over old overrides.
           if (i.status === 'fixed') return i;
           return { ...i, status: overrides[i.id] || i.status };
         });
       }
+      // BUILD 644: Merge user-reported issues (always start as unresolved).
+      const userReported = localStorage.getItem('ag-user-issues');
+      if (userReported) {
+        const userIssues = JSON.parse(userReported) as Issue[];
+        return [...base, ...userIssues];
+      }
+      return base;
     } catch { /* use baked */ }
     return BAKED_ISSUES;
   });
+  const [showReportForm, setShowReportForm] = useState(false);
+  const [reportTitle, setReportTitle] = useState('');
+  const reportIssue = () => {
+    if (!reportTitle.trim()) return;
+    const newIssue: Issue = {
+      id: `USER-${Date.now()}`,
+      title: reportTitle.trim(),
+      description: 'Reported by user via in-game tracker.',
+      status: 'unresolved',
+      severity: 'medium',
+      firstBuild: buildNumber,
+      relatedFiles: [],
+    };
+    setIssues((prev) => {
+      const updated = [...prev, newIssue];
+      try {
+        const userIssues = updated.filter((i) => i.id.startsWith('USER-'));
+        localStorage.setItem('ag-user-issues', JSON.stringify(userIssues));
+      } catch { /* ignore */ }
+      return updated;
+    });
+    setReportTitle('');
+    setShowReportForm(false);
+  };
   // BUILD 636: Auto-verify — if the update checker confirms we're on the latest
   // build, ISSUE-004 (deployment stuck) is automatically marked fixed.
   useEffect(() => {
@@ -10150,7 +10210,30 @@ function IssueTrackerPanel({ buildNumber, changelog, updateStatus }: { buildNumb
             {f === 'all' ? 'All' : STATUS_LABELS[f]}
           </button>
         ))}
+        <button onClick={() => setShowReportForm(!showReportForm)} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '1px solid #e74c3c', background: '#fff', color: '#e74c3c', cursor: 'pointer', fontWeight: 'bold' }}>
+          + Report Issue
+        </button>
       </div>
+      {showReportForm && (
+        <div style={{ marginBottom: 8, padding: 8, background: '#fef9f9', borderRadius: 6, border: '1px solid #e74c3c' }}>
+          <input
+            type="text"
+            value={reportTitle}
+            onChange={(e) => setReportTitle(e.target.value)}
+            placeholder="Describe the issue..."
+            style={{ width: '100%', padding: '6px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ccc', marginBottom: 6, boxSizing: 'border-box' }}
+            onKeyDown={(e) => { if (e.key === 'Enter') reportIssue(); }}
+          />
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={reportIssue} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 4, border: 'none', background: '#e74c3c', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}>
+              Add as Unresolved
+            </button>
+            <button onClick={() => setShowReportForm(false)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 4, border: '1px solid #ccc', background: '#fff', cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {filtered.map((issue) => (
         <div key={issue.id} style={{ fontSize: 12, padding: '4px 0', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
