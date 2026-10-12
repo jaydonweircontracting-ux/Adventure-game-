@@ -250,7 +250,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // background — BUILD 376: dark neutral fallback. Generated terrain now
       // covers the whole viewport at every zoom, so this should never show;
       // the old light blue is what used to read as "not generated".
-      g.fillStyle = '#0e1713';
+      // BUILD 620: green base when in chunk-LOD mode (max zoom-out), so the
+      // screen isn't black beyond the 3x3 chunk diamonds.
+      const useChunkLOD = zm < 0.35;
+      g.fillStyle = useChunkLOD ? '#3a6a3a' : '#0e1713';
       g.fillRect(0, 0, wpx, hpx);
       g.save();
       g.translate(wpx / 2, hpx / 2);
@@ -272,13 +275,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // BUILD 608: LOD — when max zoomed out, draw per-chunk instead of per-tile.
       const showDetail = zm > 0.45;
       const tilesOn = isoTilesReady();
-      const useChunkLOD = zm < 0.35;
       if (useChunkLOD) {
-        // BUILD 611: Fill entire canvas with base terrain color first.
-        // At max zoom-out the visible area extends beyond the 3x3 chunk grid.
-        g.fillStyle = '#3a6a3a'; // meadow green base
-        g.fillRect(0, 0, wpx, hpx);
         // Draw each visible chunk as a single diamond (9 draw calls vs thousands)
+        // (Background already filled green above.)
         for (const sc of scenes) {
           const cx0 = (chunk.x + sc.ox) * N, cy0 = (chunk.y + sc.oy) * N;
           const p00 = isoToScreen(cx0, cy0);
