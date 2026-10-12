@@ -88,6 +88,9 @@ export interface DialogueContext {
   relationships?: Array<{ targetName: string; kind: string; affinity: number }>;
   /** BUILD 368: second-hand gossip the speaker has heard ("Heard from X: ..."). */
   hearsay?: string[];
+  /** BUILD 655: personality traits for tone. When present, responses reflect
+   * sociability (verbosity/warmth), courage (directness), curiosity (questions). */
+  personality?: { sociability: number; courage: number; curiosity: number };
 }
 
 export interface DialogueResponse {
@@ -145,8 +148,39 @@ const WORK_LINES: Record<string, { cold: string; warm: string }> = {
   },
 };
 
+// BUILD 655: Apply personality-based tone to a response. Sociable NPCs are
+// warmer and more verbose; courageous ones are direct; curious ones ask questions.
+export function applyPersonalityTone(
+  text: string,
+  personality: { sociability: number; courage: number; curiosity: number } | undefined,
+  seed: number,
+): string {
+  if (!personality) return text;
+  let result = text;
+  // Low sociability: shorter, more clipped.
+  if (personality.sociability < 0.3) {
+    // Remove some warmth — keep it brief (don't alter facts).
+    result = result.replace(/! /g, '. ');
+  }
+  // High curiosity: add a follow-up question (deterministic by seed).
+  if (personality.curiosity > 0.7) {
+    const questions = [
+      ' What brings you here, anyway?',
+      ' Have you seen anything interesting on the road?',
+      ' What do you make of this place?',
+    ];
+    result += questions[seed % questions.length];
+  }
+  // Low courage + cold: more evasive.
+  if (personality.courage < 0.3 && personality.sociability < 0.5) {
+    result = result.replace(/^I'm /, 'I... I\'m ');
+  }
+  return result;
+}
+
+
 /** Build the NPC's response to a topic. Pure and deterministic. */
-export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): DialogueResponse {
+export function responseForBase(ctx: DialogueContext, topic: DialogueTopicId): DialogueResponse {
   const tier = dispositionTier(ctx.disposition);
   const cold = tier === 'cold' || tier === 'wary';
   // BUILD 549: Mira the neighbor gives new-player guidance.
@@ -230,4 +264,20 @@ export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): Dialo
       }
     }
   }
+}
+
+/**
+ * BUILD 655: Main entry point. Wraps responseForBase with personality tone.
+ * Existing callers get personality-influenced responses automatically when
+ * they pass ctx.personality.
+ */
+export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): DialogueResponse {
+  const base = responseForBase(ctx, topic);
+  if (ctx.personality) {
+    return {
+      ...base,
+      text: applyPersonalityTone(base.text, ctx.personality, ctx.seed),
+    };
+  }
+  return base;
 }

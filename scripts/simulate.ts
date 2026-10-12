@@ -5528,6 +5528,44 @@ import { inflateSync } from 'node:zlib';
   assert(typeof f1 === 'string' && f1.length > 0, 'Intent: fallback returns text');
 }
 
+// BUILD 655: Personality-influenced dialogue tone tests.
+{
+  const { responseFor, responseForBase, applyPersonalityTone } = await import('../src/game/dialogue.js');
+
+  const baseCtx = {
+    name: 'TestNPC',
+    archetype: 'commoner',
+    activity: 'Standing around',
+    disposition: 50,
+    townReputation: 0,
+    seed: 12345,
+  };
+
+  // Without personality, responseFor == responseForBase.
+  const noPers = responseFor(baseCtx, 'who');
+  const baseResp = responseForBase(baseCtx, 'who');
+  assert(noPers.text === baseResp.text, 'Dialogue: no personality = base response');
+
+  // High curiosity adds a follow-up question.
+  const curious = responseFor({ ...baseCtx, personality: { sociability: 0.8, courage: 0.5, curiosity: 0.9 } }, 'who');
+  assert(curious.text !== baseResp.text, 'Dialogue: curious NPC adds question');
+  assert(curious.text.includes('?'), 'Dialogue: curious follow-up is a question');
+
+  // Low sociability doesn't change facts, just tone.
+  const shy = responseFor({ ...baseCtx, personality: { sociability: 0.1, courage: 0.5, curiosity: 0.2 } }, 'who');
+  assert(shy.text.includes('TestNPC'), 'Dialogue: shy NPC still names themselves');
+
+  // applyPersonalityTone is deterministic.
+  const t1 = applyPersonalityTone('Hello! How are you?', { sociability: 0.8, courage: 0.5, curiosity: 0.9 }, 42);
+  const t2 = applyPersonalityTone('Hello! How are you?', { sociability: 0.8, courage: 0.5, curiosity: 0.9 }, 42);
+  assert(t1 === t2, 'Dialogue: personality tone deterministic');
+
+  // Different personalities produce different responses.
+  const p1 = responseFor({ ...baseCtx, personality: { sociability: 0.9, courage: 0.9, curiosity: 0.9 } }, 'town');
+  const p2 = responseFor({ ...baseCtx, personality: { sociability: 0.1, courage: 0.1, curiosity: 0.1 } }, 'town');
+  assert(p1.text !== p2.text, 'Dialogue: different personalities differ');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

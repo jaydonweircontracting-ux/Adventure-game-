@@ -110,6 +110,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '655': 'personality-driven dialogue tone',
   '654': 'free-text NPC dialogue',
   '653': 'remove duplicate zoom under minimap',
   '652': 'unified chunk templates',
@@ -7104,7 +7105,7 @@ if (active) {
       .filter((m) => m.event.startsWith('Heard from'))
       .map((m) => m.event);
     const resp = responseFor(
-      { name: npc.name, archetype: npc.archetype, activity: npc.activity, disposition: disp, townReputation: reputation.mosslight, seed: npc.seed, relationships: rels, hearsay },
+      { name: npc.name, archetype: npc.archetype, activity: npc.activity, disposition: disp, townReputation: reputation.mosslight, seed: npc.seed, relationships: rels, hearsay, personality: npcPersonality(npc) },
       topic,
     );
     if (resp.rumor) onAddRumor(resp.rumor, npc.name);
@@ -9975,7 +9976,7 @@ if (active) {
         {townsfolkDialogue && (() => {
           const npc = townsfolkDialogue;
           const disp = disposition[npc.id] ?? defaultDisposition();
-          const ctx = { name: npc.name, archetype: npc.archetype, activity: npc.activity, disposition: disp, townReputation: reputation.mosslight, seed: npc.seed };
+          const ctx = { name: npc.name, archetype: npc.archetype, activity: npc.activity, disposition: disp, townReputation: reputation.mosslight, seed: npc.seed, personality: npcPersonality(npc) };
           const resp = dialogueTopic ? responseFor(ctx, dialogueTopic) : null;
           return (
             <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="townsfolk-dialogue-title" data-testid="townsfolk-dialogue">
