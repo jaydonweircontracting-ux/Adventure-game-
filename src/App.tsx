@@ -4391,6 +4391,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           id: d.id, x: d.position.x, y: d.position.y,
           loot: { ...d.loot },
         })),
+        // BUILD 550: townsfolk positions for NPC visibility auditing.
+        getTownsfolk: () => townsfolkRef.current.map((n) => ({
+          name: n.name, x: n.position.x, y: n.position.y,
+          activity: n.activity, archetype: n.archetype,
+        })),
       };
     } catch { /* test hooks are best-effort */ }
   }, []);

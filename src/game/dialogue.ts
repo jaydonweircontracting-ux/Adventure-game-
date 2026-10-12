@@ -155,7 +155,7 @@ export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): Dialo
   switch (topic) {
     case 'who': {
       if (isMira && !cold) {
-        return { text: `I'm Mira — I farm the plot just east of here. You must be the traveler staying in the old cottage. Welcome! If you're heading to town, follow the road northeast to Mosslight Crossing.` };
+        return { text: `I'm Mira — I farm the plot just east of here. You must be the traveler staying in the old cottage. Welcome! If you're heading to town, follow the road northwest to Mosslight Crossing.` };
       }
       if (cold) return { text: `${ctx.name}. That's all you need to know.` };
       const role = ctx.archetype === 'commoner' ? 'a resident of Mosslight' : `the town ${ctx.archetype}`;
@@ -193,9 +193,10 @@ export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): Dialo
       return cold ? { text: lead } : { text: lead + rumor, rumor };
     }
     case 'town': {
-      // BUILD 549: Mira gives practical directions for new players.
+      // BUILD 550: Mira gives practical directions for new players.
+      // Corrected: town NPCs are northwest of Mira (16-93, 23-87), not northeast.
       if (isMira && !cold) {
-        return { text: `Mosslight Crossing is northeast of here — just follow the road. You'll find the tavern, the smith, and the chapel there. The guards patrol the roads, so you should be safe.` };
+        return { text: `Mosslight Crossing is northwest of here — just follow the road. You'll find the tavern, the smith, and the chapel there. The guards patrol the roads, so you should be safe.` };
       }
       const rep = ctx.townReputation;
       const standing = rep >= 10
