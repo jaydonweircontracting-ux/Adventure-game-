@@ -6089,6 +6089,80 @@ import { inflateSync } from 'node:zlib';
   assert(STALLS.length === 2, 'Market: exactly 2 stalls');
 }
 
+// BUILD 665: Wheat fields and mills tests.
+{
+  const {
+    createWheatField, advanceWheatGrowth, harvestWheatCrop,
+    harvestableCrops, countCropsByStage, WHEAT_PER_CROP,
+  } = await import('../src/game/wheatFields.js');
+  const {
+    createMill, addWheatToMill, advanceMill, takeFlourFromMill,
+    WHEAT_PER_BATCH, FLOUR_PER_BATCH,
+  } = await import('../src/game/mills.js');
+
+  // 1. Immature wheat cannot be harvested.
+  let field = createWheatField('test1', 0, 0, 20, 20, 123, 1);
+  const immature = field.crops.find((c) => c.stage !== 3);
+  assert(immature !== undefined, 'Wheat: field has immature crops');
+  const noHarvest = harvestWheatCrop(field, immature!.id, 1);
+  assert(noHarvest.wheatYield === 0, 'Wheat: immature cannot be harvested');
+  assert(noHarvest.field === field, 'Wheat: field unchanged on failed harvest');
+
+  // 2. Mature wheat can be harvested exactly once.
+  const mature = field.crops.find((c) => c.stage === 3);
+  assert(mature !== undefined, 'Wheat: field has mature crops');
+  const harvest1 = harvestWheatCrop(field, mature!.id, 5);
+  assert(harvest1.wheatYield === WHEAT_PER_CROP, 'Wheat: correct yield');
+  const harvest2 = harvestWheatCrop(harvest1.field, mature!.id, 5);
+  assert(harvest2.wheatYield === 0, 'Wheat: cannot harvest twice');
+
+  // 3. Growth advances by days.
+  let youngField = createWheatField('test2', 0, 0, 20, 20, 456, 1);
+  // Force all to stage 0.
+  youngField = {
+    ...youngField,
+    crops: youngField.crops.map((c) => ({ ...c, stage: 0 as const, plantedDay: 1 })),
+  };
+  const grown = advanceWheatGrowth(youngField, 10);
+  const counts = countCropsByStage(grown);
+  assert(counts[3] > 0 || counts[2] > 0, 'Wheat: crops grow over days');
+
+  // 4. Harvestable crops filter.
+  const ready = harvestableCrops(field);
+  assert(ready.every((c) => c.stage === 3), 'Wheat: harvestable are stage 3');
+
+  // 5. Mill consumes wheat, produces flour.
+  let mill = createMill('m1', 'Test Mill', 0, 0, 50);
+  mill = addWheatToMill(mill, 10);
+  assert(mill.wheat === 10, 'Mill: wheat added');
+  mill = advanceMill(mill, 1);
+  assert(mill.isWorking === true, 'Mill: starts working with wheat');
+  mill = advanceMill(mill, 2); // Batch completes, starts new batch (has wheat).
+  assert(mill.wheat === 10 - WHEAT_PER_BATCH, 'Mill: wheat consumed');
+  assert(mill.flour === FLOUR_PER_BATCH, 'Mill: flour produced');
+  // Mill starts new batch immediately if wheat remains (expected behavior).
+  assert(mill.isWorking === true, 'Mill: starts next batch with remaining wheat');
+
+  // 6. Empty mill stops.
+  let emptyMill = createMill('m2', 'Empty', 0, 0, 50);
+  emptyMill = advanceMill(emptyMill, 1);
+  assert(emptyMill.isWorking === false, 'Mill: empty mill idle');
+
+  // 7. Full storage stops production safely.
+  let fullMill = createMill('m3', 'Full', 0, 0, 5);
+  fullMill = addWheatToMill(fullMill, 10);
+  fullMill = { ...fullMill, flour: 5 }; // Fill flour.
+  fullMill = advanceMill(fullMill, 1);
+  assert(fullMill.isWorking === false, 'Mill: full storage stops');
+
+  // 8. Take flour.
+  let flourMill = createMill('m4', 'Flour', 0, 0, 50);
+  flourMill = { ...flourMill, flour: 10 };
+  const { mill: updated, flourRemoved } = takeFlourFromMill(flourMill, 4);
+  assert(flourRemoved === 4, 'Mill: flour removed');
+  assert(updated.flour === 6, 'Mill: flour decremented');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

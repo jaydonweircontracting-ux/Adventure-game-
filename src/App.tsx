@@ -64,6 +64,8 @@ import {
   type WorldEvent,
 } from '@/game/civilization';
 import { applyNPCProduction } from '@/game/townProduction';
+import { createWheatField, advanceWheatGrowth, harvestWheatCrop, harvestableCrops, type WheatField } from '@/game/wheatFields';
+import { createMill, addWheatToMill, advanceMill, takeFlourFromMill, type Mill } from '@/game/mills';
 import {
   createHorses,
   deserializeHorses,
@@ -112,6 +114,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '665': 'wheat fields, mills, flour production',
   '664': 'living market centre',
   '663': 'minimap fix + control center',
   '662': 'world fingerprint + lore',
@@ -4411,6 +4414,25 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (!civRef.current) civRef.current = createCivilization(DEFAULT_WORLD_SEED);
     return civRef.current;
   };
+  // BUILD 665: Wheat fields and mills (persistent refs).
+  const wheatFieldsRef = useRef<WheatField[] | null>(null);
+  const millsRef = useRef<Mill[] | null>(null);
+  const ensureWheatFields = () => {
+    if (!wheatFieldsRef.current) {
+      wheatFieldsRef.current = [
+        createWheatField('field-north', 20, 90, 40, 24, 1001, 1),
+        createWheatField('field-south', 100, 90, 40, 24, 1002, 1),
+      ];
+    }
+    return wheatFieldsRef.current;
+  };
+  const ensureMills = () => {
+    if (!millsRef.current) {
+      // Mill placed near plaza but not on roads/buildings: (170, 110).
+      millsRef.current = [createMill('mill-mosslight-1', 'Mosslight Mill', 170, 110, 50)];
+    }
+    return millsRef.current;
+  };
   // Civ phase 11: world horses (owned by NPCs + wild), created once per world
   // seed from the civilization settlements. Owner profiles regenerate
   // deterministically, so they never need to be saved.
@@ -4443,6 +4465,55 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     advanceCivilization(civ, clock);
     // BUILD 661: NPC-driven production (farmers → grain in settlement storage).
     applyNPCProduction(civ, townsfolkRef.current, clock);
+    // BUILD 665: Wheat fields and mills (wheat → flour production chain).
+    const day = Math.max(1, Math.floor(clock.day));
+    const fields = ensureWheatFields();
+    const mills = ensureMills();
+    // Advance crop growth.
+    for (let i = 0; i < fields.length; i++) {
+      fields[i] = advanceWheatGrowth(fields[i], day);
+    }
+    // Farmers harvest mature wheat (deterministic: each farmer harvests up to 3 crops).
+    let totalWheatHarvested = 0;
+    for (const npc of townsfolkRef.current) {
+      if (npc.archetype !== 'farmer') continue;
+      let harvested = 0;
+      for (const field of fields) {
+        if (harvested >= 3) break;
+        const ready = harvestableCrops(field);
+        for (const crop of ready) {
+          if (harvested >= 3) break;
+          const result = harvestWheatCrop(field, crop.id, day);
+          if (result.wheatYield > 0) {
+            // Update field in place.
+            const fieldIdx = fields.findIndex((f) => f.id === field.id);
+            if (fieldIdx >= 0) fields[fieldIdx] = result.field;
+            totalWheatHarvested += result.wheatYield;
+            harvested++;
+          }
+        }
+      }
+    }
+    // Deliver wheat to mills.
+    if (totalWheatHarvested > 0 && mills.length > 0) {
+      mills[0] = addWheatToMill(mills[0], totalWheatHarvested);
+    }
+    // Advance mills.
+    for (let i = 0; i < mills.length; i++) {
+      mills[i] = advanceMill(mills[i], day);
+    }
+    // Deliver flour to settlement storage.
+    const mosslight = civ.settlements.find((s) => s.id === 'mosslight');
+    if (mosslight && mills.length > 0) {
+      const { mill: updatedMill, flourRemoved } = takeFlourFromMill(mills[0], mills[0].flour);
+      if (flourRemoved > 0) {
+        mills[0] = updatedMill;
+        const cap = 50 + mosslight.population;
+        const storage = mosslight.storage as Record<string, number>;
+        const current = storage['flour'] ?? 0;
+        storage['flour'] = Math.round(Math.min(cap, current + flourRemoved) * 10) / 10;
+      }
+    }
     const count = civ.events.length;
     if (lastEventCountRef.current >= 0 && count > lastEventCountRef.current) {
       const fresh = civ.events.slice(lastEventCountRef.current);
