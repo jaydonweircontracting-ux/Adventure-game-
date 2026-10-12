@@ -4342,6 +4342,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // BUILD 587: expose current interior room type for exit verification.
         // Exiting cellar goes to tavern (both interiors), so isInInterior() stays true.
         getInteriorRoomType: () => interiorRef.current?.roomType || null,
+        // BUILD 588: expose quest state for turn-in verification.
+        getQuestState: (questId: string) => {
+          const st = questStatesRef.current.find((s) => s.questId === questId);
+          return st ? { status: st.status, stageIndex: st.stageIndex, progress: st.progress } : null;
+        },
         // BUILD 535: full movement validation (collision + cliffs + goats).
         // Returns true if the player could move from current pos by (dx, dy).
         canMove: (dx: number, dy: number) => {
