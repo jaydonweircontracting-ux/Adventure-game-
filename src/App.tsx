@@ -4383,6 +4383,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           goatsRef.current = next; setGoats(next);
           return true;
         },
+        // BUILD 540: dropped loot for loot-verification testing.
+        getDroppedLoot: () => droppedLootRef.current.map((d) => ({
+          id: d.id, x: d.position.x, y: d.position.y,
+          loot: { ...d.loot },
+        })),
       };
     } catch { /* test hooks are best-effort */ }
   }, []);

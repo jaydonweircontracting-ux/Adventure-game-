@@ -97,6 +97,49 @@ try {
     finalState === null || finalState.disposition === 'defeated' || finalState.hp <= 0,
     finalState ? `hp=${finalState.hp}, disp=${finalState.disposition}` : 'removed');
 
+  // PRIORITY 1 (BUILD 540): Verify loot drops
+  const drops = await page.evaluate(() => window.__gameTest.getDroppedLoot());
+  console.log(`  Dropped loot: ${drops.length} items`);
+  check('Loot dropped on kill', drops.length > 0,
+    drops.length ? `drop id=${drops[0].id} loot=${JSON.stringify(drops[0].loot)}` : 'no drops');
+
+  // Try to pick up the loot (walk to it and click pickup button)
+  if (drops.length > 0) {
+    const drop = drops[0];
+    console.log(`  Drop at (${drop.x.toFixed(1)}, ${drop.y.toFixed(1)})`);
+
+    // Walk toward the drop (button appears within 16 units)
+    for (let i = 0; i < 30; i++) {
+      const p = await page.evaluate(() => window.__gameTest.getPlayerPos());
+      const d = Math.hypot(drop.x - p.x, drop.y - p.y);
+      console.log(`    Walk ${i}: player at (${p.x.toFixed(1)},${p.y.toFixed(1)}) dist=${d.toFixed(1)}`);
+      if (d < 12) break;
+      const dx = drop.x - p.x, dy = drop.y - p.y;
+      const key = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'ArrowRight' : 'ArrowLeft') : (dy > 0 ? 'ArrowDown' : 'ArrowUp');
+      await page.keyboard.down(key);
+      await page.waitForTimeout(300);
+      await page.keyboard.up(key);
+    }
+
+    // Click the pickup button if visible
+    const pickupBtn = `[data-testid="button-pickup-loot-${drop.id}"]`;
+    const btnCount = await page.locator(pickupBtn).count();
+    console.log(`    Pickup button in DOM: ${btnCount}`);
+    if (btnCount > 0) {
+      // Scroll into view and click via JS (bypasses viewport issues)
+      await page.evaluate((sel) => {
+        const btn = document.querySelector(sel);
+        if (btn) btn.click();
+      }, pickupBtn);
+      await page.waitForTimeout(500);
+      const afterDrops = await page.evaluate(() => window.__gameTest.getDroppedLoot());
+      const stillThere = afterDrops.some(d => String(d.id) === String(drop.id));
+      check('Loot picked up', !stillThere, stillThere ? 'drop still present' : 'drop removed');
+    } else {
+      check('Loot picked up', false, 'pickup button not in DOM');
+    }
+  }
+
   // Cleanup (if goat survived)
   if (finalState) {
     const removed = await page.evaluate((id) => window.__gameTest.removeTestGoat(id), goatId);
