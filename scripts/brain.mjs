@@ -221,6 +221,11 @@ switch (cmd) {
   case 'status': projectState(); break;
   case 'test': selectTests(); break;
   case 'rank': rankTasks(); break;
+  case 'sim':
+    console.log('World-Simulation Laboratory:');
+    console.log('  Run: npx tsx scripts/sim-lab.ts [village|settlement|town] [days]');
+    console.log('  Example: npx tsx scripts/sim-lab.ts village 1');
+    break;
   case 'task':
     if (arg) execSync(`node scripts/task-context.mjs ${arg}`, { stdio: 'inherit' });
     else console.log('Usage: node scripts/brain.mjs task <keyword>');

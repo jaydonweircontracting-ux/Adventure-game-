@@ -347,3 +347,39 @@ Each entry records:
 **Regression:** All tests pass.
 
 **Lesson:** Not every iteration needs a code fix. Validating game health, fixing stale records, and adding systematic probes ARE useful work. Don't manufacture defects to look busy.
+
+---
+
+## 2026-10-11 — World-Simulation Laboratory (BUILD 547)
+
+**Task:** Build headless NPC simulation using production systems
+
+**Expected:** Simulate NPC schedules without rendering, detect violations
+
+**Files:**
+- `scripts/sim-lab.ts` (new, 250 lines)
+
+**Tests:**
+- `npx tsx scripts/sim-lab.ts village 1` → 0.2s, 87 events, 0 violations
+- `npx tsx scripts/sim-lab.ts settlement 2` → 9.8s, 195 events, 0 violations
+- Determinism: two runs → identical fingerprints ✅
+
+**Result:**
+- Uses PRODUCTION `advanceTownsfolk`, `createTownsfolk`, `townsfolkTarget`
+- 9000 ticks/sec (10 NPCs), 331 ticks/sec (12 NPCs with separation)
+- Health checks: valid identity, no duplicates, valid position, in-bounds
+- Event recording: target changes with timestamps
+- Bounded: max 30 days, max 10k events
+
+**Defects found during build:**
+1. Anchors needed full points structure (not just townCenter)
+2. Nav context needs `doors` not `doorways`
+3. Target type has `activity` not `kind`/`label`
+
+**Cause:** Assumed simplified structures; production types are richer.
+
+**Fix:** Inspected actual types, provided complete structures.
+
+**Regression:** N/A (new tool, no production changes)
+
+**Lesson:** Production NPC systems are already deterministic and headless-capable. The `advanceTownsfolk` function is pure — perfect for simulation. Don't build parallel systems when production code is already testable.
