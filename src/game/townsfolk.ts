@@ -20,6 +20,9 @@ import { pathTo, pathToDoor, stepAlongPath, findPath, trackStep, straightFallbac
 import { SpatialHash } from './spatialHash';
 import type { HousingRegistry } from './housing';
 import { bedFor, buildHousingRegistry, assignBeds } from './housing';
+// BUILD 679: Bed-to-field mapping for visual alignment.
+import { layoutBedToField } from './interiors';
+import { houseTypeForBuilding } from './houseTypes';
 
 export type TownsfolkFacing = 'up' | 'down' | 'left' | 'right';
 export type TownsfolkArchetype = 'farmer' | 'merchant' | 'guard' | 'priest' | 'smith' | 'commoner' | 'child';
@@ -363,6 +366,28 @@ export function buildMosslightHousing(npcIds: string[]): HousingRegistry {
       id: `${firstHome.id}-bed-3`,
       position: { x: bx, y: by },
     });
+  }
+  // BUILD 679: Align first bed in each cottage with the interior layout's
+  // visual bed position. This ensures NPCs sleep where the bed is rendered.
+  // Additional beds keep their existing spaced positions (deterministic).
+  const chunk = { x: 4, y: 7 }; // Mosslight cottages are in chunk 4,7.
+  for (let i = 0; i < registry.homes.length; i++) {
+    const home = registry.homes[i];
+    const cottageId = `cottage-${i + 1}`;
+    const rect = doors[i].buildingRect!;
+    const buildingId = `4-7-building-${i + 4}`;
+    const houseType = houseTypeForBuilding(buildingId);
+    const layoutPos = layoutBedToField(cottageId, rect, chunk, houseType);
+    if (layoutPos && home.beds.length > 0) {
+      // Move first bed to layout position; keep others spaced relative to it.
+      const oldFirst = home.beds[0].position;
+      const dx = layoutPos.x - oldFirst.x;
+      const dy = layoutPos.y - oldFirst.y;
+      // Only adjust if the shift is reasonable (within rect).
+      if (Math.abs(dx) < (rect.right - rect.left) && Math.abs(dy) < (rect.bottom - rect.top)) {
+        home.beds[0].position = { ...layoutPos };
+      }
+    }
   }
   return assignBeds(registry, npcIds);
 }

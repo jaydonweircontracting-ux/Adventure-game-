@@ -6459,6 +6459,44 @@ import { inflateSync } from 'node:zlib';
   assert(layoutBedToField('invalid', { left: 0, top: 0, right: 10, bottom: 10 }, chunk, 'cottage') === null, 'Map: invalid cottage null');
 }
 
+// BUILD 679: Bed alignment integration tests.
+{
+  const { buildMosslightHousing, cottageRectFor } = await import('../src/game/townsfolk.js');
+  const { layoutBedToField } = await import('../src/game/interiors.js');
+  const { houseTypeForBuilding } = await import('../src/game/houseTypes.js');
+
+  const npcIds = Array.from({ length: 13 }, (_, i) => `townsfolk-${i}`);
+  const registry = buildMosslightHousing(npcIds);
+
+  // 1. All 13 NPCs have beds.
+  assert(Object.keys(registry.assignments).length === 13, 'Bed679: 13 NPCs assigned');
+
+  // 2. First bed in each cottage aligns with layout.
+  const chunk = { x: 4, y: 7 };
+  for (let i = 0; i < 6; i++) {
+    const home = registry.homes[i];
+    assert(home.beds.length > 0, `Bed679: cottage-${i + 1} has beds`);
+    const cottageId = `cottage-${i + 1}`;
+    const rect = cottageRectFor(cottageId)!;
+    const buildingId = `4-7-building-${i + 4}`;
+    const houseType = houseTypeForBuilding(buildingId);
+    const expected = layoutBedToField(cottageId, rect, chunk, houseType)!;
+    const actual = home.beds[0].position;
+    // Should match within floating-point tolerance.
+    const dist = Math.hypot(actual.x - expected.x, actual.y - expected.y);
+    assert(dist < 0.001, `Bed679: cottage-${i + 1} first bed aligned (dist=${dist.toFixed(4)})`);
+  }
+
+  // 3. No duplicate bed positions (within tolerance).
+  const positions = registry.homes.flatMap((h) => h.beds.map((b) => b.position));
+  for (let i = 0; i < positions.length; i++) {
+    for (let j = i + 1; j < positions.length; j++) {
+      const dist = Math.hypot(positions[i].x - positions[j].x, positions[i].y - positions[j].y);
+      assert(dist > 0.1, `Bed679: beds ${i} and ${j} not overlapping`);
+    }
+  }
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

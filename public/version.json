@@ -1,6 +1,6 @@
 {
-  "build": "678",
-  "note": "hex toolkit + bed-field mapping",
-  "timestamp": "2026-10-12T23:41:57.419Z",
-  "cacheBuster": "mv5wccob"
+  "build": "679",
+  "note": "bed-field integration for NPC placement",
+  "timestamp": "2026-10-12T23:44:49.663Z",
+  "cacheBuster": "mv5wg1kv"
 }
