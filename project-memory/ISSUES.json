@@ -50,19 +50,19 @@
       "severity": "high",
       "status": "fixed",
       "title": "GitHub Pages deployment stuck on 617",
-      "fixedBuild": "633",
-      "verification": "Live site confirmed on BUILD 633 via curl 2026-10-12"
+      "fixedBuild": "634",
+      "verification": "Live confirmed on BUILD 634 via curl 2026-10-12"
     },
     {
       "description": "Simulate.ts has townsfolk roster failures from BUILD 548. Unrelated to recent changes.",
       "firstBuild": "548",
       "id": "ISSUE-005",
-      "notes": "Pre-existing; not caused by builds 609-629",
+      "notes": "Count tests fixed in BUILD 635; housing shortage + Elsa issues remain",
       "relatedFiles": [
         "scripts/simulate.ts"
       ],
       "severity": "medium",
-      "status": "unresolved",
+      "status": "in-progress",
       "title": "Townsfolk test failures (pre-existing)"
     },
     {

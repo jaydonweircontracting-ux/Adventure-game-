@@ -881,9 +881,10 @@ console.log('Testing townsfolk living-town simulation...');
     minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
   });
   const folk = createTownsfolk(anchors, 847291583);
-  assert(folk.length === 12, `Expected 12 townsfolk, got ${folk.length}`);
-  assert(new Set(folk.map((n) => n.id)).size === 12, 'Townsfolk ids not unique');
-  assert(new Set(folk.map((n) => n.name)).size === 12, 'Townsfolk names not unique');
+  // BUILD 635: Roster is 13 (Bryn added in BUILD 548). Test was stale at 12.
+  assert(folk.length === 13, `Expected 13 townsfolk, got ${folk.length}`);
+  assert(new Set(folk.map((n) => n.id)).size === 13, 'Townsfolk ids not unique');
+  assert(new Set(folk.map((n) => n.name)).size === 13, 'Townsfolk names not unique');
   const archetypes = new Set(folk.map((n) => n.archetype));
   for (const a of ['farmer', 'merchant', 'guard', 'priest', 'smith', 'commoner', 'child']) {
     assert(archetypes.has(a as never), `Missing archetype ${a}`);
@@ -1264,8 +1265,8 @@ console.log('Testing NPC physical movement scenarios (BUILD 312)...');
   // TEST 3 — 20 NPCs: no mass teleporting, no trapping.
   {
     const many = [...folk];
-    for (let i = 12; i < 20; i++) {
-      const base = folk[i % 12];
+    for (let i = folk.length; i < 20; i++) {
+      const base = folk[i % folk.length];
       many.push({ ...base, id: `townsfolk-extra-${i}`, seed: base.seed + i * 7919 });
     }
     const bigHousing = buildMosslightHousing(many.map((n) => n.id));
@@ -2362,11 +2363,11 @@ console.log('Testing interior waypoints...');
   // 1. Round-trip: serialize -> restore preserves identity/state, drops paths.
   const live = advanceTownsfolk(snapTownsfolk(folk, anchors, clockAt(10, 0), navCtx), anchors, clockAt(10, 0), navCtx);
   const saved = serializeTownsfolk(live);
-  assert(saved.length === 12, 'should serialize all 12 townsfolk');
+  assert(saved.length === 13, 'should serialize all 13 townsfolk');
   assert(saved.every((s) => !('path' in s)), 'save must not contain nav paths');
   const fresh = createTownsfolk(anchors, 847291583);
   const restored = restoreTownsfolk(fresh, saved);
-  assert(restored.length === 12, 'restore keeps roster size');
+  assert(restored.length === 13, 'restore keeps roster size');
   for (let i = 0; i < 12; i++) {
     assert(restored[i].id === live[i].id, 'ids preserved');
     assert(restored[i].position.x === live[i].position.x && restored[i].position.y === live[i].position.y, 'positions preserved');

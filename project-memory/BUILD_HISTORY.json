@@ -2,10 +2,10 @@
   "builds": [
     {
       "build": "634",
-      "commit": "pending-push",
+      "commit": "afa21c9",
       "date": "2026-10-12",
       "note": "backoff + deploy tests",
-      "pushed": false
+      "pushed": true
     },
     {
       "build": "628",
