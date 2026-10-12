@@ -4408,6 +4408,22 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           tapMoveTargetRef.current = null;
           return true;
         },
+        // BUILD 560: building doorways for quest navigation testing.
+        // LOCALHOST ONLY. Observation only — agent uses this to find
+        // building screen positions for tap-to-enter.
+        getBuildings: () => {
+          if (typeof window === 'undefined') return [];
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return [];
+          try {
+            return buildingDoorwaysFor(chunkRef.current).map(d => ({
+              id: d.id,
+              name: d.area?.name ?? d.id,
+              x: d.position.x,
+              y: d.position.y,
+            }));
+          } catch { return []; }
+        },
       };
     } catch { /* test hooks are best-effort */ }
   }, []);
