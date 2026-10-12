@@ -346,6 +346,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           const bpos = { x: b.position.x + bx, y: b.position.y + by };
         const p00 = isoToScreen(r.left, r.top), p10 = isoToScreen(r.right, r.top);
         const p11 = isoToScreen(r.right, r.bottom), p01 = isoToScreen(r.left, r.bottom);
+        // BUILD 597: Viewport culling — skip buildings entirely outside view.
+        // Visible world rect centered on cam.
+        const vhw = (wpx / 2) / zm, vhh = (hpx / 2) / zm;
+        const minX = Math.min(p00.x, p10.x, p11.x, p01.x), maxX = Math.max(p00.x, p10.x, p11.x, p01.x);
+        const minY = Math.min(p00.y, p10.y, p11.y, p01.y) - 64, maxY = Math.max(p00.y, p10.y, p11.y, p01.y);
+        if (maxX < cam.x - vhw || minX > cam.x + vhw || maxY < cam.y - vhh || minY > cam.y + vhh) continue;
         const wallH = 64;
         const top = (p: { x: number; y: number }) => ({ x: p.x, y: p.y - wallH });
         const t00 = top(p00), t10 = top(p10), t11 = top(p11), t01 = top(p01);
@@ -476,7 +482,11 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // look = npc.id -> deterministic per-NPC variant (same villager, same
       // face, every session).
       seenAnims.clear();
+      // BUILD 597: Viewport culling for NPCs — only draw when in sight.
+      const npcVhw = (wpx / 2) / zm, npcVhh = (hpx / 2) / zm;
       for (const npc of live.folk) {
+        const nc = isoToScreen(npc.position.x, npc.position.y);
+        if (nc.x < cam.x - npcVhw - 50 || nc.x > cam.x + npcVhw + 50 || nc.y < cam.y - npcVhh - 100 || nc.y > cam.y + npcVhh + 50) continue;
         drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id);
       }
       // BUILD 451: goats in the iso view — simple canvas goat (body, head,
@@ -508,6 +518,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           if (!img || !img.complete || img.naturalWidth === 0) continue;
           const gx = goat.position.x, gy = goat.position.y;
           const c = isoToScreen(gx, gy);
+          // BUILD 597: Viewport culling for animals.
+          const vhw = (wpx / 2) / zm, vhh = (hpx / 2) / zm;
+          if (c.x < cam.x - vhw - 50 || c.x > cam.x + vhw + 50 || c.y < cam.y - vhh - 50 || c.y > cam.y + vhh + 50) continue;
           const sx = c.x, sy = c.y;
           const s = 36 * zoomRef.current;
           const depth = gx + gy;

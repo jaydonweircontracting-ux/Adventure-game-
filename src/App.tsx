@@ -491,6 +491,28 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
     // Western infill:
     { left: 60, top: 130, right: 72, bottom: 139 },
     { left: 60, top: 155, right: 72, bottom: 164 },
+    // BUILD 597: Urban expansion — 15 more buildings for city density.
+    // Northern row (east of existing cottages):
+    { left: 208, top: 44, right: 220, bottom: 53 },
+    { left: 236, top: 44, right: 248, bottom: 53 },
+    // Central dense block (around plaza):
+    { left: 100, top: 120, right: 112, bottom: 129 },
+    { left: 118, top: 120, right: 130, bottom: 129 },
+    { left: 100, top: 145, right: 112, bottom: 154 },
+    { left: 118, top: 145, right: 130, bottom: 154 },
+    // Southern row extension:
+    { left: 172, top: 205, right: 184, bottom: 214 },
+    { left: 200, top: 205, right: 212, bottom: 214 },
+    // Eastern outskirts:
+    { left: 210, top: 170, right: 222, bottom: 179 },
+    { left: 228, top: 170, right: 240, bottom: 179 },
+    // Western row:
+    { left: 28, top: 196, right: 40, bottom: 205 },
+    { left: 28, top: 220, right: 40, bottom: 229 },
+    // North-west cluster:
+    { left: 60, top: 60, right: 72, bottom: 69 },
+    { left: 88, top: 60, right: 100, bottom: 69 },
+    { left: 60, top: 85, right: 72, bottom: 94 },
   ];
 }
 
