@@ -6329,6 +6329,26 @@ import { inflateSync } from 'node:zlib';
   assert(Object.keys(FURNITURE_CATALOG).length >= 10, 'Interior: catalog complete');
 }
 
+// BUILD 675: House type mapping tests.
+{
+  const { houseTypeForBuilding } = await import('../src/game/houseTypes.js');
+
+  // 1. Farmhouse for farmers (cottage-1).
+  assert(houseTypeForBuilding('4-7-building-4') === 'farmhouse', 'House: building-4 → farmhouse');
+
+  // 2. Merchant house (cottage-2).
+  assert(houseTypeForBuilding('4-7-building-5') === 'merchant', 'House: building-5 → merchant');
+
+  // 3. Guard house (cottage-3).
+  assert(houseTypeForBuilding('4-7-building-6') === 'guard', 'House: building-6 → guard');
+
+  // 4. Craftsman (cottage-4).
+  assert(houseTypeForBuilding('4-7-building-7') === 'craftsman', 'House: building-7 → craftsman');
+
+  // 5. Default for unknown.
+  assert(houseTypeForBuilding('99-99-building-1') === 'cottage', 'House: unknown → cottage');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

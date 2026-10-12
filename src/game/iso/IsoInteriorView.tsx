@@ -19,7 +19,9 @@ import {
 } from './isoSprites';
 import { preloadBarbarian } from './barbarian';
 // BUILD 674: Per-house interior layouts.
+// BUILD 675: House-type mapping for resident archetypes.
 import { generateInteriorLayout, type HouseType } from '../interiors';
+import { houseTypeForBuilding } from '../houseTypes';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
 import type { BarbarianOutfit, BarbarianWeapon } from './barbarian';
 import {
@@ -120,9 +122,11 @@ function hashStr(s: string): number {
 // Deterministic furniture layouts per room type.
 function furnitureFor(roomType: IsoRoomType, roomId?: string): Furniture[] {
   // BUILD 674: Per-house variation for generic buildings.
+  // BUILD 675: House type based on resident archetype.
   // Uses the interior layout system for deterministic per-building furniture.
   if (roomType === 'building' && roomId) {
-    const layout = generateInteriorLayout(roomId, 'cottage', 12, 10);
+    const houseType = houseTypeForBuilding(roomId);
+    const layout = generateInteriorLayout(roomId, houseType, 12, 10);
     // Convert to iso Furniture format.
     return layout.furniture.map((f) => ({
       kind: f.kind,
