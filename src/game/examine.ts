@@ -207,6 +207,18 @@ function monsterExamine(ref: ExamineRef, rng: () => number): { name: string; tex
   if (/bandit/.test(n)) return { name, text: 'Someone who has chosen the road over honest work.' };
   if (/chicken/.test(n)) return { name, text: 'An exceptionally confident chicken.' };
   if (/rat/.test(n)) return { name, text: 'A rat. It has opinions about your ankles.' };
+  // BUILD 580: goat-specific examine text
+  if (/goat/.test(n)) return { name, text: pick(rng, [
+    'A sturdy mountain goat with curved horns. It eyes you with mild curiosity.',
+    'The goat nibbles at sparse grass, utterly unconcerned by your presence.',
+    'Sure-footed and alert, this goat could climb cliffs you can barely walk on.',
+  ]) };
+  if (/deer|stag/.test(n)) return { name, text: pick(rng, [
+    'A graceful deer, ears twitching at every sound.',
+    'The stag watches you warily, ready to bolt at the slightest movement.',
+  ]) };
+  if (/boar/.test(n)) return { name, text: 'A wild boar, bristling and bad-tempered. Best give it space.' };
+  if (/badger/.test(n)) return { name, text: 'A badger, low to the ground and single-minded about its business.' };
   if (lvl >= 20) return { name, text: 'Whatever this thing is, it has no business being this close to the village.' };
   if (lvl >= 10) return { name, text: pick(rng, ['A dangerous-looking creature. Best not to startle it.', 'Scars and a bad attitude.']) };
   return { name, text: pick(rng, ['A wild creature, minding its own business.', 'It watches you warily.']) };
