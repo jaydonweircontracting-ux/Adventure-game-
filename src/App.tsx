@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '642': 'bigger zoom buttons under HP',
   '641': 'build note in update banner',
   '640': 'fix stuck red statuses',
   '639': 'update in progress banner',
@@ -9927,11 +9928,12 @@ if (active) {
           <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
             <button className="hud-bag-button" onClick={onOpenInventory} aria-label="Open menu" title="Menu" data-testid="button-open-inventory"><Backpack size={17} /></button>
           </div>
-          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: '#fff', opacity: 0.7 }}>Zoom:</span>
             <button
               type="button"
               onClick={() => isoFieldBeta ? setIsoZoom((z) => Math.max(0.15, Math.round(z / 1.2 * 100) / 100)) : setGameZoom((z) => Math.max(1, Math.round((z - 0.25) * 100) / 100))}
-              style={{ width: '32px', height: '32px', fontSize: '16px', background: 'rgba(0,0,0,0.75)', color: '#fff', border: '1px solid #fff', borderRadius: '6px', cursor: 'pointer' }}
+              style={{ width: '40px', height: '40px', fontSize: '20px', fontWeight: 'bold', background: 'rgba(0,0,0,0.85)', color: '#fff', border: '2px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
               aria-label="Zoom out"
               data-testid="button-zoom-out-hud"
             >
@@ -9940,7 +9942,7 @@ if (active) {
             <button
               type="button"
               onClick={() => isoFieldBeta ? setIsoZoom((z) => Math.min(2.5, Math.round(z * 1.2 * 100) / 100)) : setGameZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
-              style={{ width: '32px', height: '32px', fontSize: '16px', background: 'rgba(0,0,0,0.75)', color: '#fff', border: '1px solid #fff', borderRadius: '6px', cursor: 'pointer' }}
+              style={{ width: '40px', height: '40px', fontSize: '20px', fontWeight: 'bold', background: 'rgba(0,0,0,0.85)', color: '#fff', border: '2px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
               aria-label="Zoom in"
               data-testid="button-zoom-in-hud"
             >
