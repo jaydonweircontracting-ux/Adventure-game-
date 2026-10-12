@@ -44,7 +44,8 @@
 - **Priority:** P2
 - **Objective:** Verify new players can find the interior exit without guidance
 - **Checkpoint:** 2026-10-11 — AUTOMATED VERIFICATION COMPLETE. Blind test (no hardcoded coords) found exit in 1 attempt via visible "🚪 Exit" button. Iso view has 3 consistent methods: UI button, tap door tile, walk onto door. BUILD 541 mismatch hypothesis was incorrect (compared iso hint to 2D mechanic).
-- **Evidence:** discoverability.mjs 4/4 pass, 1.0s, 1 attempt
+- **Evidence:** discoverability.mjs 4/4 pass, 1.0s, 1 attempt via "🚪 Exit" button
+- **Commit:** (BUILD 542)
 - **Human value:** Still useful for "feel" but not required for functionality
 - **Related:** `docs/HUMAN_EXPERIENCE_BRAIN.md`
 
