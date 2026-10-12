@@ -117,6 +117,8 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '671': 'polish pass: chunk builder UI',
+  '672': 'world gen: chunk builder + terrain noise + village template',
   '668': '8-dir horse + A* minimap pathfinding',
   '669': 'autonomous improvement engine',
   '670': 'in-game Muse Brain control center',
@@ -3806,7 +3808,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [debugConsoleOpen, setDebugConsoleOpen] = useState(false);
   // BUILD 663: World Simulation Control Center.
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
-  const [controlCenterTab, setControlCenterTab] = useState<'overview' | 'integrity' | 'lore' | 'npcs' | 'market' | 'brain'>('overview');
+  const [controlCenterTab, setControlCenterTab] = useState<'overview' | 'integrity' | 'lore' | 'npcs' | 'market' | 'brain' | 'builder'>('overview');
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const logDebug = (msg: string) => {
     const ts = new Date().toLocaleTimeString();
@@ -8233,7 +8235,7 @@ if (active) {
               <div style={{ padding: '12px', borderBottom: '1px solid #4a4a6a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '14px', fontWeight: 'bold' }}>🌍 World Simulation Control Center</span>
                 <div>
-                  {(['overview', 'integrity', 'lore', 'npcs', 'market', 'brain'] as const).map((tab) => (
+                  {(['overview', 'integrity', 'lore', 'npcs', 'market', 'brain', 'builder'] as const).map((tab) => (
                     <button
                       key={tab}
                       type="button"
@@ -8343,6 +8345,29 @@ if (active) {
                     </ul>
 
                     <p><em>Full details: project-memory/IMPROVEMENT_ENGINE.md</em></p>
+                  </div>
+                )}
+                {controlCenterTab === 'builder' && (
+                  <div>
+                    <h3>🏗️ Chunk Builder (BUILD 672)</h3>
+                    <p><em>Preview and build chunks using reference-matched templates.</em></p>
+
+                    <h4>Village Template (Reference Image 7)</h4>
+                    <p>Central well, windmill, houses around plaza, market stalls, river with bridges.</p>
+                    <ul>
+                      <li>Well: (140, 140)</li>
+                      <li>Windmill: (200, 80)</li>
+                      <li>Houses: 4 around plaza</li>
+                      <li>Market stalls: 2 near plaza</li>
+                      <li>Roads: E-W, N-S through plaza</li>
+                    </ul>
+
+                    <h4>Terrain Noise</h4>
+                    <p>Coherent gradient noise with 4 octaves. Deterministic per seed.</p>
+                    <p>Terrain types: water, grass, forest, rocky, dirt.</p>
+
+                    <p><em>Full API: src/game/chunkBuilder.ts, src/game/terrainNoise.ts</em></p>
+                    <p><strong>Status:</strong> Foundation complete. UI preview coming in next build.</p>
                   </div>
                 )}
               </div>

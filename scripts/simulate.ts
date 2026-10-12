@@ -6225,6 +6225,49 @@ import { inflateSync } from 'node:zlib';
   assert(Math.abs(Math.hypot(nx, ny) - 1.0) < 0.001, '8dir: diagonal normalized');
 }
 
+// BUILD 671/672: Chunk builder and terrain noise tests.
+{
+  const { createVillageTemplate, validateChunkTemplate } = await import('../src/game/chunkBuilder.js');
+  const { gradientNoise, fbm, terrainFromNoise, generateChunkTerrain } = await import('../src/game/terrainNoise.js');
+
+  // 1. Village template creates valid structure.
+  const template = createVillageTemplate(4, 7, 12345);
+  assert(template.chunkX === 4 && template.chunkY === 7, 'Builder: chunk coords');
+  assert(template.buildings.length === 9, 'Builder: 9 buildings (well+mill+4 houses+2 stalls+farmhouse)');
+  assert(template.roads.length === 3, 'Builder: 3 roads');
+
+  // 2. Template validation passes.
+  const errors = validateChunkTemplate(template);
+  assert(errors.length === 0, 'Builder: template valid');
+
+  // 3. Noise is deterministic.
+  const n1 = gradientNoise(1.5, 2.5, 42);
+  const n2 = gradientNoise(1.5, 2.5, 42);
+  assert(n1 === n2, 'Noise: deterministic');
+
+  // 4. Different seeds produce different values.
+  const n3 = gradientNoise(1.5, 2.5, 43);
+  assert(n1 !== n3, 'Noise: seed variation');
+
+  // 5. FBM is normalized 0-1.
+  const f = fbm(10.5, 20.5, 99, 4);
+  assert(f >= 0 && f <= 1, 'Noise: fbm normalized');
+
+  // 6. Terrain classification.
+  assert(terrainFromNoise(0.2, 0.5) === 'water', 'Terrain: low elevation → water');
+  assert(terrainFromNoise(0.8, 0.5) === 'rocky', 'Terrain: high elevation → rocky');
+  assert(terrainFromNoise(0.5, 0.7) === 'forest', 'Terrain: moist mid → forest');
+
+  // 7. Chunk terrain generation.
+  const terrain = generateChunkTerrain(4, 7, 12345);
+  assert(terrain.length === 28, 'Terrain: 28 rows');
+  assert(terrain[0].length === 28, 'Terrain: 28 cols');
+
+  // 8. Same seed → same terrain (deterministic).
+  const t2 = generateChunkTerrain(4, 7, 12345);
+  assert(JSON.stringify(terrain) === JSON.stringify(t2), 'Terrain: deterministic');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
