@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '643': 'swap banner colors',
   '642': 'bigger zoom buttons under HP',
   '641': 'build note in update banner',
   '640': 'fix stuck red statuses',
@@ -10724,9 +10725,9 @@ function Home() {
           <div className="main-menu-card">
             {/* BUILD 631: Tri-color update status banner — always visible above build title. */}
             {updateStatus === 'available' && updateAvailable && (
-              <div style={{ background: '#27ae60', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <div style={{ background: '#f39c12', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
                 <span>🎮 BUILD {updateAvailable}{updateNote ? ` (${updateNote})` : ''} available!</span>
-                <button onClick={() => window.location.href = `${import.meta.env.BASE_URL}?v=${updateAvailable}`} style={{ background: '#fff', color: '#27ae60', border: 'none', borderRadius: 4, padding: '4px 12px', fontWeight: 'bold', cursor: 'pointer' }}>
+                <button onClick={() => window.location.href = `${import.meta.env.BASE_URL}?v=${updateAvailable}`} style={{ background: '#fff', color: '#f39c12', border: 'none', borderRadius: 4, padding: '4px 12px', fontWeight: 'bold', cursor: 'pointer' }}>
                   Update
                 </button>
               </div>
@@ -10738,7 +10739,7 @@ function Home() {
               </div>
             )}
             {updateStatus === 'current' && (
-              <div style={{ background: '#e67e22', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
+              <div style={{ background: '#27ae60', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
                 ✓ No update available — you're on the latest build
                 {lastChecked && <div style={{ fontSize: 10, fontWeight: 'normal', opacity: 0.8 }}>Checked {lastChecked.toLocaleTimeString()} · live</div>}
               </div>
