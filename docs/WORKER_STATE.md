@@ -6,18 +6,18 @@ The worker reads this at startup, updates it after each cycle, and resumes from 
 ## Worker Status
 - **State:** `running` (emergency directive — executing)
 - **Started:** 2026-10-11 (BUILD 548)
-- **Last cycle:** 9 (complete — Bryn rename)
-- **Last known-good commit:** `feee499`
-- **Last known-good build:** 555
+- **Last cycle:** 10 (complete — consistency auditor)
+- **Last known-good commit:** `d3e0477`
+- **Last known-good build:** 556
 
 ## Current Cycle
-- **Cycle:** 9
+- **Cycle:** 10
 - **Phase:** `complete`
-- **Task:** Rename farmer Mira→Bryn (duplicate NPC name fix)
+- **Task:** Build consistency auditor (5/5 checks)
 - **Started:** 2026-10-11
-- **Files changed:** [src/game/townsfolk.ts, src/game/dialogue.ts]
-- **Tests run:** [harness 7/7, smoke 7/7, tsx dialogue]
-- **Result:** `verified` — Bryn rename save-safe, dialogue correct, 7/7 harness.
+- **Files changed:** [scripts/consistency-audit.mjs]
+- **Tests run:** [consistency 5/5, smoke 7/7, live NPC verification]
+- **Result:** `verified` — Auditor catches duplicate names, broken quest refs. Bryn/Mira verified distinct in live game.
 
 ## Retry History
 - (empty)
