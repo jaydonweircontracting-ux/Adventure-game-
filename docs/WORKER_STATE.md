@@ -6,18 +6,18 @@ The worker reads this at startup, updates it after each cycle, and resumes from 
 ## Worker Status
 - **State:** `running` (emergency directive — executing)
 - **Started:** 2026-10-11 (BUILD 548)
-- **Last cycle:** 11 (complete — quest tests)
-- **Last known-good commit:** `ac3f790`
-- **Last known-good build:** 557
+- **Last cycle:** 12 (complete — gameplay agent)
+- **Last known-good commit:** `5d25b36`
+- **Last known-good build:** 558
 
 ## Current Cycle
-- **Cycle:** 11
+- **Cycle:** 12
 - **Phase:** `complete`
-- **Task:** Quest playthrough tests (12/12) + auditor 7/7
+- **Task:** Autonomous gameplay agent (navigate + talk)
 - **Started:** 2026-10-11
-- **Files changed:** [tests/quest-playthrough.mts, scripts/consistency-audit.mjs]
-- **Tests run:** [quest 12/12, consistency 7/7, smoke 7/7]
-- **Result:** `verified` — Rat quest playthrough works, failure cases handled, save/restore works.
+- **Files changed:** [tests/real-game/agent.mjs]
+- **Tests run:** [agent playthrough: found Bryn, navigated, talked, 0 stuck]
+- **Result:** `verified` — Agent plays via real inputs, deterministic, bounded.
 
 ## Retry History
 - (empty)
