@@ -4342,6 +4342,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           );
           return result !== null;
         },
+        // BUILD 535: attack state for combat verification.
+        isAttacking: () => playerAttackStateRef.current.active,
+        getAttackCooldown: () => playerAttackCooldownRef.current,
       };
     } catch { /* test hooks are best-effort */ }
   }, []);
