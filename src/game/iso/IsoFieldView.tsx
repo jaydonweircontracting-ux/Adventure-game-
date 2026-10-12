@@ -390,6 +390,11 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         'red-shop': 'buildings/red-shop.png',
         'tavern': 'buildings/tavern.png',
         'gatehouse': 'buildings/gatehouse.png',
+        // BUILD 614: new varieties
+        'hut-thatched': 'buildings/hut-thatched.png',
+        'shop-awning': 'buildings/shop-awning.png',
+        'house-timber': 'buildings/house-timber.png',
+        'inn-large': 'buildings/inn-large.png',
       };
       for (const [kind, src] of Object.entries(bldSrc)) {
         if (!bldImgs[kind]) {
@@ -413,8 +418,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           if (Math.abs(lx - 179.7) < 1 && Math.abs(ly - 173.4) < 1) return 'blue-cottage';
         }
         // Stable hash: absolute chunk + local coords (both stable)
+        // BUILD 614: expanded to 10 varieties for town diversity.
         const h = Math.abs(Math.sin((absCx * 1000 + lx) * 12.9898 + (absCy * 1000 + ly) * 78.233) * 43758.5453) % 1;
-        const kinds = ['blue-cottage', 'red-cottage', 'blue-house', 'red-shop'];
+        const kinds = ['blue-cottage', 'red-cottage', 'blue-house', 'red-shop', 'hut-thatched', 'shop-awning', 'house-timber', 'inn-large', 'tavern', 'gatehouse'];
         return kinds[Math.floor(h * kinds.length)];
       };
       for (const sc of scenes) {
