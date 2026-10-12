@@ -200,3 +200,45 @@ Each entry records:
 **Regression:** N/A (analysis only)
 
 **Lesson:** Separate what tests prove from what humans need to verify. A 2.3s automated exit doesn't prove human discoverability. Label evidence clearly.
+
+---
+
+## 2026-10-11 — Doorway Mismatch Hypothesis CORRECTED (BUILD 542)
+
+**Task:** Verify BUILD 541 claim that hint ("tap the door") mismatches mechanic ("walk to bottom")
+
+**Expected:** Find evidence of mismatch, fix if confirmed
+
+**Files inspected:**
+- `src/game/iso/IsoInteriorView.tsx:264` (tap door tile → exit)
+- `src/game/iso/IsoInteriorView.tsx:599` (walk onto door → exit)
+- `src/game/iso/IsoInteriorView.tsx:868` ("🚪 tap the door to exit" hint)
+- `src/game/iso/IsoInteriorView.tsx:887` ("🚪 Exit" button, top-right)
+
+**Tests:**
+- `node tests/real-game/discoverability.mjs` (blind, no hardcoded coords)
+
+**Result:**
+- BUILD 541 hypothesis was WRONG. No mismatch in iso view.
+- Iso view has THREE consistent exit methods:
+  1. "🚪 Exit" button (top-right, always visible)
+  2. Tap door tile → exit (matches hint)
+  3. Walk onto door tile → exit
+- Blind test: exit found in 1 attempt (1.0s) via visible "🚪 Exit" button
+- The "walk to y>91" mechanic is for the 2D fallback view, not the default iso view
+
+**Defects:**
+1. BUILD 541 analysis compared iso hint against 2D mechanic (wrong comparison)
+2. Initial blind test didn't check for UI buttons (only canvas clicks)
+
+**Cause:**
+1. Analyzed App.tsx walk mechanic without checking IsoInteriorView's tap handling
+2. Assumed exit was only via canvas interaction
+
+**Fix:**
+1. Corrected analysis: iso view is fully consistent
+2. Updated blind test to check UI buttons first (Strategy 1)
+
+**Regression:** All existing tests pass
+
+**Lesson:** Before claiming a UI/mechanic mismatch, check ALL views (iso AND 2D fallback). The default view (iso) is what most players see. Don't compare hint from one view against mechanic from another.

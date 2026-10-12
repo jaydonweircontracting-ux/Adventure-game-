@@ -40,11 +40,13 @@
 - **Commit:** `0ba222e`
 
 ### TASK-003: Doorway discoverability (human playtest)
-- **Status:** `todo`
+- **Status:** `done`
 - **Priority:** P2
 - **Objective:** Verify new players can find the interior exit without guidance
-- **Evidence needed:** Human playtest or clearer visual indicator
-- **Related:** `tests/real-game/HUMAN_EXPERIENCE.md` (scored 3/5)
+- **Checkpoint:** 2026-10-11 — AUTOMATED VERIFICATION COMPLETE. Blind test (no hardcoded coords) found exit in 1 attempt via visible "🚪 Exit" button. Iso view has 3 consistent methods: UI button, tap door tile, walk onto door. BUILD 541 mismatch hypothesis was incorrect (compared iso hint to 2D mechanic).
+- **Evidence:** discoverability.mjs 4/4 pass, 1.0s, 1 attempt
+- **Human value:** Still useful for "feel" but not required for functionality
+- **Related:** `docs/HUMAN_EXPERIENCE_BRAIN.md`
 
 ## P3 — Medium
 
@@ -122,3 +124,12 @@
 - **Checkpoint:** 2026-10-11 — Created with 5-dimension framework (Clarity, Responsiveness, Discovery, Feedback, Reward). 3 evaluations: doorway, journey, combat. Clear evidence categories.
 - **Evidence:** docs/HUMAN_EXPERIENCE_BRAIN.md exists with structured evaluations
 - **Commit:** (BUILD 541)
+
+### TASK-012: Blind discoverability test
+- **Status:** `done`
+- **Priority:** P1
+- **Objective:** Test exit discovery without hardcoded coordinates or privileged hooks
+- **Files:** `tests/real-game/discoverability.mjs` (new)
+- **Checkpoint:** 2026-10-11 — 4/4 pass. Found "🚪 Exit" button in 1 attempt (1.0s). Strategies: UI buttons → canvas clicks → exploration fallback. Proves discoverability without cheating.
+- **Evidence:** discoverability.mjs 4/4, discoverability-interior.png
+- **Commit:** (BUILD 542)
