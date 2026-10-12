@@ -268,8 +268,25 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // BUILD 376: tile detail is sub-pixel when zoomed out, so skip it there.
       // BUILD 389: user-supplied landscape tileset replaces the procedural
       // diamond fill (falls back to it while tiles load).
+      // BUILD 608: LOD — when max zoomed out, draw per-chunk instead of per-tile.
       const showDetail = zm > 0.45;
       const tilesOn = isoTilesReady();
+      const useChunkLOD = zm < 0.35;
+      if (useChunkLOD) {
+        // Draw each visible chunk as a single diamond (9 draw calls vs thousands)
+        for (const sc of scenes) {
+          const cx0 = (chunk.x + sc.ox) * N, cy0 = (chunk.y + sc.oy) * N;
+          const p00 = isoToScreen(cx0, cy0);
+          const p10 = isoToScreen(cx0 + N, cy0);
+          const p11 = isoToScreen(cx0 + N, cy0 + N);
+          const p01 = isoToScreen(cx0, cy0 + N);
+          g.fillStyle = sc.palette.field;
+          g.beginPath();
+          g.moveTo(p00.x, p00.y); g.lineTo(p10.x, p10.y);
+          g.lineTo(p11.x, p11.y); g.lineTo(p01.x, p01.y);
+          g.closePath(); g.fill();
+        }
+      } else {
       for (let ty = y0; ty <= y1; ty++) {
         for (let tx = x0; tx <= x1; tx++) {
           const { ox, oy, lx, ly } = isoTileChunkOffset(tx, ty, N);
@@ -345,6 +362,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           }
         }
       }
+      } // end useChunkLOD else
 
       const drawables: Drawable[] = [];
 
@@ -611,8 +629,11 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
 
       // trees: real positions — BUILD 376: every chunk in the scene grid,
       // offset into current-chunk-relative tile space.
+      // BUILD 608: skip trees when max zoomed out (sub-pixel, saves draw calls).
+      const skipTrees = zm < 0.35;
       for (const sc of scenes) {
         const bx = sc.ox * N, by = sc.oy * N;
+        if (skipTrees) continue;
         for (const t of sc.trees) {
           const tx2 = t.x + bx, ty2 = t.y + by;
           const c = isoToScreen(tx2, ty2);
