@@ -117,6 +117,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '674': 'house interior overhaul: per-house layouts',
   '673': 'NPC home spawning + house ownership fix',
   '671': 'polish pass: chunk builder UI',
   '672': 'world gen: chunk builder + terrain noise + village template',

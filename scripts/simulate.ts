@@ -6289,6 +6289,46 @@ import { inflateSync } from 'node:zlib';
   assert(typeof placeTownsfolkAtHome === 'function', 'Housing: placeTownsfolkAtHome exists');
 }
 
+// BUILD 674: Interior layout tests.
+{
+  const {
+    generateInteriorLayout, validateInteriorLayout, isTileBlocked,
+    hashBuildingId, FURNITURE_CATALOG,
+  } = await import('../src/game/interiors.js');
+
+  // 1. Deterministic: same ID → same layout.
+  const l1 = generateInteriorLayout('4-7-building-5', 'cottage');
+  const l2 = generateInteriorLayout('4-7-building-5', 'cottage');
+  assert(JSON.stringify(l1) === JSON.stringify(l2), 'Interior: deterministic');
+
+  // 2. Different IDs → different layouts (variation).
+  const l3 = generateInteriorLayout('4-7-building-6', 'cottage');
+  assert(JSON.stringify(l1.furniture) !== JSON.stringify(l3.furniture), 'Interior: per-house variation');
+
+  // 3. Valid layout (no overlaps, in bounds).
+  const errors = validateInteriorLayout(l1);
+  assert(errors.length === 0, 'Interior: valid layout');
+
+  // 4. Has a bed.
+  assert(l1.bedPosition !== null, 'Interior: has bed');
+
+  // 5. Bed tile is blocked.
+  assert(isTileBlocked(l1, l1.bedPosition!.tx, l1.bedPosition!.ty) === true, 'Interior: bed blocks');
+
+  // 6. House types differ.
+  const farm = generateInteriorLayout('test-farm', 'farmhouse');
+  const merch = generateInteriorLayout('test-merch', 'merchant');
+  const farmKinds = farm.furniture.map((f) => f.kind).sort().join(',');
+  const merchKinds = merch.furniture.map((f) => f.kind).sort().join(',');
+  assert(farmKinds !== merchKinds, 'Interior: house types differ');
+
+  // 7. Hash is deterministic.
+  assert(hashBuildingId('test') === hashBuildingId('test'), 'Interior: hash deterministic');
+
+  // 8. Catalog has all kinds.
+  assert(Object.keys(FURNITURE_CATALOG).length >= 10, 'Interior: catalog complete');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

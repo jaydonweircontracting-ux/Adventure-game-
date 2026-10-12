@@ -18,6 +18,8 @@ import {
   type Face4, type Face8,
 } from './isoSprites';
 import { preloadBarbarian } from './barbarian';
+// BUILD 674: Per-house interior layouts.
+import { generateInteriorLayout, type HouseType } from '../interiors';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
 import type { BarbarianOutfit, BarbarianWeapon } from './barbarian';
 import {
@@ -116,7 +118,18 @@ function hashStr(s: string): number {
 }
 
 // Deterministic furniture layouts per room type.
-function furnitureFor(roomType: IsoRoomType): Furniture[] {
+function furnitureFor(roomType: IsoRoomType, roomId?: string): Furniture[] {
+  // BUILD 674: Per-house variation for generic buildings.
+  // Uses the interior layout system for deterministic per-building furniture.
+  if (roomType === 'building' && roomId) {
+    const layout = generateInteriorLayout(roomId, 'cottage', 12, 10);
+    // Convert to iso Furniture format.
+    return layout.furniture.map((f) => ({
+      kind: f.kind,
+      tx: f.tx, ty: f.ty, w: f.w, h: f.h,
+      solid: f.solid,
+    }));
+  }
   switch (roomType) {
     case 'guild':
       return [
@@ -235,7 +248,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const furn = furnitureFor(roomType);
+    const furn = furnitureFor(roomType, roomId);
     // BUILD 388: cellar/prison render the dungeon sprite kit (brick walls,
     // torches, chests, pillars). Collision and furniture data are untouched.
     const isDungeon = roomType === 'cellar' || roomType === 'prison';

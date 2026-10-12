@@ -1,6 +1,6 @@
 {
-  "build": "673",
-  "note": "NPC home spawning + house ownership fix",
-  "timestamp": "2026-10-12T23:11:43.312Z",
-  "cacheBuster": "mv5v9gwg"
+  "build": "674",
+  "note": "house interior overhaul: per-house layouts",
+  "timestamp": "2026-10-12T23:17:05.369Z",
+  "cacheBuster": "mv5vgdeh"
 }
