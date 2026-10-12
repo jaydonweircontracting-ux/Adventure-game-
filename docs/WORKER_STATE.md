@@ -4,20 +4,20 @@
 The worker reads this at startup, updates it after each cycle, and resumes from it after interruption.
 
 ## Worker Status
-- **State:** `running`
+- **State:** `paused` (budget exhausted)
 - **Started:** 2026-10-11 (BUILD 548)
-- **Last cycle:** 4 (complete)
-- **Last known-good commit:** `98b8ab9`
-- **Last known-good build:** 550
+- **Last cycle:** 5 (complete)
+- **Last known-good commit:** `e5d11fb`
+- **Last known-good build:** 551
 
 ## Current Cycle
-- **Cycle:** 4
+- **Cycle:** 5
 - **Phase:** `complete`
-- **Task:** Fix Mira directions + Task Discovery Engine
+- **Task:** DISC-DLG-001 — Unique dialogue for key NPCs
 - **Started:** 2026-10-11
-- **Files changed:** [src/game/dialogue.ts, src/App.tsx, scripts/discover-tasks.mjs]
-- **Tests run:** [smoke 7/7, tsx dialogue verification, NPC position audit]
-- **Result:** `verified` — Mira directions fixed (northeast→northwest). Discovery engine finds 3 tasks.
+- **Files changed:** [src/game/dialogue.ts]
+- **Tests run:** [smoke 7/7, tsx dialogue verification]
+- **Result:** `verified` — Cedric, Father Aldous, Tom have unique introductions
 
 ## Retry History
 - (empty)
@@ -29,7 +29,8 @@ The worker reads this at startup, updates it after each cycle, and resumes from 
 - TASK-004 (movement speed): needs user approval per BUILD 377. Does not block other work.
 
 ## Next Recommended Task
-- Cycle 5: DISC-DLG-001 — Give Cedric (merchant), Father Aldous (priest), Tom (smith) unique dialogue. Low risk, high player value.
+- Cycle 6: DISC-NPC-001 — Town NPCs too far from plaza. Investigate moving plaza or adding visible NPCs near (144,144). Medium risk.
+- Or: DISC-TEST-001 — Expand real-game test coverage for NPC interactions.
 
 ## Resume Instructions
 If the worker stops unexpectedly:
@@ -43,4 +44,4 @@ If the worker stops unexpectedly:
 - Max cycles per session: 5
 - Max retries per task: 3
 - Max wall time per cycle: 30 minutes
-- Cycles used: 4/5
+- Cycles used: 5/5 (budget exhausted — reset for next session)
