@@ -1,6 +1,6 @@
 {
-  "build": "677",
-  "note": "bed anchors + browser testing verified",
-  "timestamp": "2026-10-12T23:35:38.602Z",
-  "cacheBuster": "mv5w48dn"
+  "build": "678",
+  "note": "hex toolkit + bed-field mapping",
+  "timestamp": "2026-10-12T23:41:57.419Z",
+  "cacheBuster": "mv5wccob"
 }

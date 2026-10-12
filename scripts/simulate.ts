@@ -6382,6 +6382,83 @@ import { inflateSync } from 'node:zlib';
   }
 }
 
+// BUILD 678: Hex toolkit tests.
+{
+  const { bytesToHex, hexToBytes, validateHex, intToHex, rgbToHex, rgbaToHex, hexToRgba, diffBuffers, hexPreview, fingerprintStr } = await import('../src/game/dev/hexTools.js');
+
+  // bytesToHex / hexToBytes round-trip.
+  const bytes = new Uint8Array([0, 15, 16, 255]);
+  assert(bytesToHex(bytes) === '000f10ff', 'Hex: bytesToHex');
+  const back = hexToBytes('000f10ff');
+  assert(back.length === 4 && back[3] === 255, 'Hex: hexToBytes round-trip');
+
+  // Invalid hex reports position.
+  let threw = false;
+  try { hexToBytes('00zz'); } catch (e) { threw = /position 2/.test((e as Error).message); }
+  assert(threw, 'Hex: invalid hex reports position');
+  threw = false;
+  try { hexToBytes('0'); } catch (e) { threw = /odd length/.test((e as Error).message); }
+  assert(threw, 'Hex: odd length rejected');
+
+  // validateHex.
+  assert(validateHex('deadBEEF') === null, 'Hex: validateHex valid');
+  assert(validateHex('xyz') !== null, 'Hex: validateHex invalid');
+
+  // intToHex with overflow.
+  assert(intToHex(255, 1) === 'ff', 'Hex: intToHex 1 byte');
+  assert(intToHex(256, 2) === '0100', 'Hex: intToHex 2 bytes');
+  threw = false;
+  try { intToHex(256, 1); } catch (e) { threw = /overflows/.test((e as Error).message); }
+  assert(threw, 'Hex: intToHex overflow throws');
+
+  // RGB/RGBA.
+  assert(rgbToHex(255, 0, 128) === '#ff0080', 'Hex: rgbToHex');
+  assert(rgbaToHex(255, 0, 128, 255) === '#ff0080ff', 'Hex: rgbaToHex');
+  const rgba = hexToRgba('#ff0080');
+  assert(rgba.r === 255 && rgba.g === 0 && rgba.b === 128 && rgba.a === 255, 'Hex: hexToRgba');
+  threw = false;
+  try { hexToRgba('#gggggg'); } catch (e) { threw = true; }
+  assert(threw, 'Hex: hexToRgba invalid throws');
+
+  // diffBuffers.
+  assert(diffBuffers(new Uint8Array([1, 2]), new Uint8Array([1, 2])) === null, 'Hex: diffBuffers equal');
+  const diff = diffBuffers(new Uint8Array([1, 2, 3]), new Uint8Array([1, 9, 3]));
+  assert(diff !== null && diff.index === 1 && diff.a === 2 && diff.b === 9, 'Hex: diffBuffers finds first diff');
+
+  // hexPreview.
+  assert(hexPreview(new Uint8Array([1, 2])) === '0102(2B)', 'Hex: hexPreview short');
+  assert(hexPreview(new Uint8Array(20).fill(0), 16).includes('…(20B)'), 'Hex: hexPreview truncated');
+
+  // fingerprintStr deterministic.
+  assert(fingerprintStr('test') === fingerprintStr('test'), 'Hex: fingerprint deterministic');
+  assert(fingerprintStr('a') !== fingerprintStr('b'), 'Hex: fingerprint differs');
+}
+
+// BUILD 678: Layout-to-field coordinate mapping tests.
+{
+  const { layoutBedToField } = await import('../src/game/interiors.js');
+  const { cottageRectFor } = await import('../src/game/townsfolk.js');
+  const { houseTypeForBuilding } = await import('../src/game/houseTypes.js');
+
+  // Test all 6 Mosslight cottages.
+  const chunk = { x: 4, y: 7 };
+  for (let i = 1; i <= 6; i++) {
+    const cottageId = `cottage-${i}`;
+    const rect = cottageRectFor(cottageId);
+    assert(rect !== null, `Map: rect exists for ${cottageId}`);
+    const buildingId = `4-7-building-${i + 3}`;
+    const houseType = houseTypeForBuilding(buildingId);
+    const pos = layoutBedToField(cottageId, rect!, chunk, houseType);
+    assert(pos !== null, `Map: bed position for ${cottageId}`);
+    // Position should be within rect bounds.
+    assert(pos!.x >= rect!.left && pos!.x <= rect!.right, `Map: ${cottageId} x in bounds`);
+    assert(pos!.y >= rect!.top && pos!.y <= rect!.bottom, `Map: ${cottageId} y in bounds`);
+  }
+
+  // Invalid cottage ID returns null.
+  assert(layoutBedToField('invalid', { left: 0, top: 0, right: 10, bottom: 10 }, chunk, 'cottage') === null, 'Map: invalid cottage null');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

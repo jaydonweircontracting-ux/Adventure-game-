@@ -283,3 +283,37 @@ export function sleepingTileAdjacentToBed(
   }
   return null;
 }
+
+/**
+ * BUILD 678: Map layout bed position to field coordinates.
+ *
+ * Given a cottage ID (e.g., 'cottage-1') and its field rect, returns the
+ * expected bed position in field coordinates based on the deterministic
+ * interior layout. This is the explicit mapping between the interior
+ * layout system and the NPC housing coordinate system.
+ *
+ * @param cottageId - e.g., 'cottage-1'
+ * @param rect - field-coordinate rect from cottageRectFor()
+ * @param chunk - chunk coordinates {x, y} for building ID construction
+ */
+export function layoutBedToField(
+  cottageId: string,
+  rect: { left: number; top: number; right: number; bottom: number },
+  chunk: { x: number; y: number },
+  houseType: HouseType,
+): { x: number; y: number } | null {
+  // Construct building ID: cottage-N in chunk (x,y) -> 'x-y-building-(N+3)'.
+  const m = /^cottage-(\d+)$/.exec(cottageId);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  const buildingId = `${Math.round(chunk.x)}-${Math.round(chunk.y)}-building-${n + 3}`;
+
+  const anchor = bedAnchorNormalized(buildingId, houseType);
+  if (!anchor) return null;
+
+  // Map normalized (0-1) to field coordinates via rect.
+  return {
+    x: rect.left + anchor.x * (rect.right - rect.left),
+    y: rect.top + anchor.y * (rect.bottom - rect.top),
+  };
+}
