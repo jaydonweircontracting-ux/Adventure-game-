@@ -9838,8 +9838,11 @@ if (active) {
           ) : (
             <button className="hud-quick-button hud-card-restore" onClick={() => setHpBoxHidden(false)} aria-label="Show HP box" title="Show HP box" data-testid="button-show-hp-box"><Eye size={15} /></button>
           )}
-          <button className="hud-bag-button" onClick={onOpenInventory} aria-label="Open menu" title="Menu" data-testid="button-open-inventory"><Backpack size={17} /></button>
-          <button className="hud-bag-button" onClick={() => setSkillsOpen(true)} aria-label="Open skills" title="Skills" data-testid="button-open-skills">🎯</button>
+          {/* BUILD 621: Backpack + Skills under HP card (left side), not under minimap. */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button className="hud-bag-button" onClick={onOpenInventory} aria-label="Open menu" title="Menu" data-testid="button-open-inventory"><Backpack size={17} /></button>
+            <button className="hud-bag-button" onClick={() => setSkillsOpen(true)} aria-label="Open skills" title="Skills" data-testid="button-open-skills">🎯</button>
+          </div>
         </div>
 
          {logOpen && (
