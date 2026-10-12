@@ -12,7 +12,7 @@ They persist across sessions and are ranked by player value.
 - **Acceptance:** At least 3 NPCs visible within 30 units of plaza during daytime
 - **Risk:** medium | **Scope:** medium
 - **Needs approval:** No
-- **Status:** pending
+- **Status:** closed (investigated 2026-10-11: NPCs correctly at homes)
 
 ## DISC-DLG-001: Key NPCs have only generic dialogue
 
@@ -32,3 +32,20 @@ They persist across sessions and are ranked by player value.
 - **Needs approval:** No
 - **Status:** pending
 
+## DISC-HARNESS-001: Fix M6 stuck detection flakiness
+
+- **Evidence:** M6 sometimes passes, sometimes fails. Test moves player during measurement, changing canMove conditions.
+- **Files:** tests/real-game/playtest-harness.mjs
+- **Acceptance:** M6 passes consistently across 5 runs, or test resets player position between directions
+- **Risk:** low | **Scope:** small
+- **Needs approval:** No
+- **Status:** pending
+
+## DISC-HARNESS-002: M5 canvas tap needs robustness
+
+- **Evidence:** M5 works but depends on precise projection math. If camera smoothing lags, tap may miss.
+- **Files:** tests/real-game/playtest-harness.mjs
+- **Acceptance:** M5 passes 5/5 runs with NPCs at various distances
+- **Risk:** low | **Scope:** small
+- **Needs approval:** No
+- **Status:** pending

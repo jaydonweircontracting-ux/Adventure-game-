@@ -79,14 +79,21 @@ async function measureM1(page) {
 // M2: Player can move and navigate
 async function measureM2(page) {
   try {
+    // Ensure canvas has focus for keyboard input
+    await page.mouse.click(400, 300);
+    await page.waitForTimeout(500);
     const before = await page.evaluate(() => window.__gameTest.getInteriorPos());
-    // Try moving right 5 times
+    // Try moving right 5 times (using down/wait/up like proven movement.mjs)
     let moved = 0;
+    let lastPos = before;
     for (let i = 0; i < 5; i++) {
-      await page.keyboard.press('ArrowRight');
-      await page.waitForTimeout(300);
+      await page.keyboard.down('ArrowRight');
+      await page.waitForTimeout(700);
+      await page.keyboard.up('ArrowRight');
+      await page.waitForTimeout(200);
       const after = await page.evaluate(() => window.__gameTest.getInteriorPos());
-      if (Math.abs(after.x - before.x) > 0.1 || Math.abs(after.y - before.y) > 0.1) moved++;
+      if (Math.abs(after.x - lastPos.x) > 0.1 || Math.abs(after.y - lastPos.y) > 0.1) moved++;
+      lastPos = after;
     }
     results.metrics.M2 = {
       name: 'Player can move and navigate',
@@ -137,86 +144,170 @@ async function measureM4(page, npcs) {
   };
 }
 
-// M5: NPC interaction/dialogue
+// M5: NPC interaction/dialogue via iso canvas tap
+// Uses the game's actual projection math (see IsoFieldView.tsx onTap).
+// Camera centers on player; NPC screen pos computed from world coords.
 async function measureM5(page) {
   try {
-    // Field NPC buttons use data-testid="npc-<name>"
-    const npcBtn = page.locator('[data-testid^="npc-"]').first();
-    const visible = await npcBtn.isVisible({ timeout: 5000 }).catch(() => false);
-    if (!visible) {
-      results.metrics.M5 = { name: 'NPC interaction', pass: false, detail: 'No clickable NPC button found' };
+    const data = await page.evaluate(() => {
+      const t = window.__gameTest;
+      const player = t.getPlayerPos();
+      const npcs = t.getTownsfolk();
+      // Find closest NPC within 30 units
+      let best = null, bestD = 30;
+      for (const n of npcs) {
+        const d = Math.hypot(n.x - player.x, n.y - player.y);
+        if (d < bestD) { bestD = d; best = n; }
+      }
+      return { player, npc: best };
+    });
+
+    if (!data.npc) {
+      results.metrics.M5 = { name: 'NPC interaction', pass: false, detail: 'No NPC within 30 units', method: 'iso canvas tap' };
       return;
     }
-    await npcBtn.click();
+
+    // Compute screen position using game's projection (TILE_W=64, TILE_H=32)
+    // isoToScreen: x=(tx-ty)*32, y=(tx+ty)*16
+    const pxIso = (data.player.x - data.player.y) * 32;
+    const pyIso = (data.player.x + data.player.y) * 16;
+    const nxIso = (data.npc.x - data.npc.y) * 32;
+    const nyIso = (data.npc.x + data.npc.y) * 16;
+
+    // Get canvas size
+    const canvasBox = await page.locator('canvas').first().boundingBox();
+    if (!canvasBox) {
+      results.metrics.M5 = { name: 'NPC interaction', pass: false, detail: 'No canvas found' };
+      return;
+    }
+
+    // Screen pos: (npcIso - camIso) * zoom + canvasCenter - 24 (sprite center)
+    // Camera ≈ player iso position, zoom = 1 (default)
+    const sx = canvasBox.x + (nxIso - pxIso) * 1 + canvasBox.width / 2;
+    const sy = canvasBox.y + (nyIso - pyIso) * 1 + canvasBox.height / 2 - 24;
+
+    // Tap at computed position
+    await page.mouse.click(sx, sy);
     await page.waitForTimeout(1500);
+
     const dialogue = await page.locator('[data-testid="townsfolk-dialogue"]').isVisible({ timeout: 5000 }).catch(() => false);
+    // Also check dialogue contains the NPC name
+    let correctNpc = false;
+    if (dialogue) {
+      const title = await page.locator('#townsfolk-dialogue-title').textContent().catch(() => '');
+      correctNpc = title.includes(data.npc.name);
+    }
+
     results.metrics.M5 = {
-      name: 'NPC interaction/dialogue completable',
-      pass: dialogue,
-      detail: dialogue ? 'Dialogue overlay opened after clicking NPC' : 'Clicked NPC but no dialogue appeared',
-      method: 'Click NPC button [data-testid^="npc-"], check for dialogue overlay',
+      name: 'NPC interaction/dialogue via canvas tap',
+      pass: dialogue && correctNpc,
+      detail: dialogue
+        ? (correctNpc ? `Tapped ${data.npc.name}, dialogue opened with correct NPC` : `Dialogue opened but wrong NPC (expected ${data.npc.name})`)
+        : `Tapped at (${sx.toFixed(0)}, ${sy.toFixed(0)}) for ${data.npc.name} but no dialogue`,
+      method: 'Compute NPC screen pos via iso projection, mouse.click, verify dialogue',
     };
     if (dialogue) {
       await page.locator('.dialogue-close').click().catch(() => {});
     }
   } catch (e) {
-    results.metrics.M5 = { name: 'NPC interaction', pass: false, detail: e.message.slice(0, 100) };
+    results.metrics.M5 = { name: 'NPC interaction', pass: false, detail: e.message.slice(0, 120) };
   }
 }
 
-// M6: Stuck incidents
+// M6: Stuck incidents — distinguish genuine stuck from legitimate blocking
+// A player is STUCK only if: canMove says YES for a direction, but sustained
+// attempts in that direction produce zero movement. Being blocked by a wall
+// (canMove=false) is correct behavior, not a bug.
 async function measureM6(page) {
   try {
-    const pos = await page.evaluate(() => window.__gameTest.getPlayerPos());
-    // Try moving in 4 directions, check if any succeed
-    const dirs = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
-    let stuckCount = 0;
-    for (const dir of dirs) {
-      const before = await page.evaluate(() => window.__gameTest.getPlayerPos());
-      await page.keyboard.press(dir);
-      await page.waitForTimeout(400);
-      const after = await page.evaluate(() => window.__gameTest.getPlayerPos());
-      const moved = Math.hypot(after.x - before.x, after.y - before.y) > 0.1;
-      // Check if movement was blocked by collision (legitimate) vs stuck (bug)
-      const canMove = await page.evaluate((dx, dy) => {
-        const d = { ArrowRight: [1,0], ArrowLeft: [-1,0], ArrowUp: [0,-1], ArrowDown: [0,1] }[dx];
-        return window.__gameTest.canMove(d[0], d[1]);
-      }, dir);
-      if (!moved && canMove) stuckCount++; // Should have moved but didn't = stuck
+    // Settle: ensure dialogue is closed and keyboard has focus.
+    // Do NOT click mouse here — that would set a tap-move target.
+    const dlgOpen = await page.locator('[data-testid="townsfolk-dialogue"]').isVisible().catch(() => false);
+    if (dlgOpen) {
+      await page.locator('.dialogue-close').click().catch(() => {});
+      await page.waitForTimeout(1000);
     }
+    await page.waitForTimeout(1000);
+
+    const dirs = [
+      { key: 'ArrowUp', dx: 0, dy: -1 },
+      { key: 'ArrowDown', dx: 0, dy: 1 },
+      { key: 'ArrowLeft', dx: -1, dy: 0 },
+      { key: 'ArrowRight', dx: 1, dy: 0 },
+    ];
+    const stuckDirs = [];
+    const blockedDirs = [];
+
+    for (const { key, dx, dy } of dirs) {
+      // Check if game says this direction is walkable
+      const canMove = await page.evaluate(([x, y]) => window.__gameTest.canMove(x, y), [dx, dy]);
+      if (!canMove) {
+        blockedDirs.push(key);
+        continue; // Legitimately blocked — not stuck
+      }
+      // Try 3 sustained attempts (using down/wait/up like proven movement.mjs)
+      let totalMove = 0;
+      for (let i = 0; i < 3; i++) {
+        const before = await page.evaluate(() => window.__gameTest.getPlayerPos());
+        await page.keyboard.down(key);
+        await page.waitForTimeout(700);
+        await page.keyboard.up(key);
+        await page.waitForTimeout(200);
+        const after = await page.evaluate(() => window.__gameTest.getPlayerPos());
+        totalMove += Math.hypot(after.x - before.x, after.y - before.y);
+      }
+      if (totalMove < 0.1) {
+        stuckDirs.push(key); // canMove=true but zero movement = genuinely stuck
+      }
+    }
+
     results.metrics.M6 = {
-      name: 'Stuck incidents',
-      pass: stuckCount === 0,
-      detail: stuckCount === 0 ? 'No stuck incidents: all blocked movement matched collision checks' : `${stuckCount} directions where movement should work but didn't`,
-      method: 'Press each arrow, compare actual movement vs canMove() collision check',
+      name: 'Stuck incidents (genuine)',
+      pass: stuckDirs.length === 0,
+      detail: stuckDirs.length === 0
+        ? `No stuck incidents. ${blockedDirs.length} directions legitimately blocked by collision.`
+        : `STUCK in directions: ${stuckDirs.join(', ')} (canMove=true but no movement)`,
+      method: 'For each walkable direction: 3x sustained keypress, measure total displacement',
     };
   } catch (e) {
-    results.metrics.M6 = { name: 'Stuck check', pass: false, detail: e.message.slice(0, 100) };
+    results.metrics.M6 = { name: 'Stuck check', pass: false, detail: e.message.slice(0, 120) };
   }
 }
 
-// M7: NPC behavior over time
+// M7: NPC behavior and schedule transitions over observation period
+// Tracks: position changes, activity changes (schedule transitions),
+// disappearances. Longer observation than BUILD 552 (30s vs 10s).
 async function measureM7(page) {
   try {
     const start = await page.evaluate(() => window.__gameTest.getTownsfolk());
-    await page.waitForTimeout(10000); // Observe for 10 seconds
+    await page.waitForTimeout(30000); // 30s observation
     const end = await page.evaluate(() => window.__gameTest.getTownsfolk());
+
     let movedCount = 0;
+    let activityChanged = 0;
     let disappeared = 0;
+    const transitions = [];
+
     start.forEach((s, i) => {
-      const e = end[i];
+      const e = end.find(x => x.name === s.name);
       if (!e) { disappeared++; return; }
       if (Math.hypot(e.x - s.x, e.y - s.y) > 0.5) movedCount++;
+      if (e.activity !== s.activity) {
+        activityChanged++;
+        transitions.push(`${s.name}: ${s.activity} → ${e.activity}`);
+      }
     });
+
     results.metrics.M7 = {
-      name: 'NPC visibility/behavior over 10s',
+      name: 'NPC behavior/schedule over 30s',
       pass: disappeared === 0,
-      detail: `${movedCount}/${start.length} NPCs moved, ${disappeared} disappeared. All ${end.length} NPCs still present.`,
-      method: 'Compare NPC positions before/after 10s observation',
-      limitation: '10s is short; full schedule cycles need longer observation',
+      detail: `${movedCount}/${start.length} moved, ${activityChanged} changed activity, ${disappeared} disappeared. ` +
+        (transitions.length > 0 ? `Transitions: ${transitions.slice(0, 3).join('; ')}` : 'No activity transitions in 30s (expected — schedules change over hours)'),
+      method: 'Compare NPC positions + activities before/after 30s browser observation',
+      limitation: '30s cannot capture full day schedules. Use sim-lab for deterministic multi-day simulation (marked as simulation, not browser-playtest).',
     };
   } catch (e) {
-    results.metrics.M7 = { name: 'NPC behavior', pass: false, detail: e.message.slice(0, 100) };
+    results.metrics.M7 = { name: 'NPC behavior', pass: false, detail: e.message.slice(0, 120) };
   }
 }
 
