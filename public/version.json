@@ -1,6 +1,6 @@
 {
-  "build": "657",
-  "note": "benchmark harness + baselines",
-  "timestamp": "2026-10-12T22:09:00.142Z",
-  "cacheBuster": "mv5t0t7z"
+  "build": "658",
+  "note": "collision memoization",
+  "timestamp": "2026-10-12T22:14:42.113Z",
+  "cacheBuster": "mv5t8535"
 }

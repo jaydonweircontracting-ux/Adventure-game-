@@ -111,6 +111,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '658': 'collision memoization',
   '657': 'benchmark harness + baselines',
   '656': 'NPC conversation memory',
   '655': 'personality-driven dialogue tone',
@@ -392,6 +393,33 @@ function worldRoadAt(x: number, y: number): boolean {
     (x === 150 && y >= 0 && y <= 35) || // Oakfield -> Dunmere
     (y === 35 && x >= 144 && x <= 150);
   return horizontalRoad || verticalRoad || outerHorizontalRoad || continentRoad;
+}
+
+// BUILD 658: Memoization for pure world-gen functions called in hot paths.
+// isFieldPositionBlocked() calls these multiple times per frame; they're
+// pure functions of chunk coordinates so caching is safe.
+const _worldGenCache = new Map<string, { gen: number; value: unknown }>();
+let _worldGenCacheGen = 0;
+
+/** Bump when world-gen inputs change (currently never — all inputs are pure). */
+export function invalidateWorldGenCache(): void {
+  _worldGenCacheGen++;
+  _worldGenCache.clear();
+}
+
+function _memoizedWorldGen<T>(key: string, compute: () => T): T {
+  const entry = _worldGenCache.get(key);
+  if (entry && entry.gen === _worldGenCacheGen) {
+    return entry.value as T;
+  }
+  const value = compute();
+  _worldGenCache.set(key, { gen: _worldGenCacheGen, value });
+  // Bound cache size.
+  if (_worldGenCache.size > 100) {
+    const firstKey = _worldGenCache.keys().next().value;
+    if (firstKey) _worldGenCache.delete(firstKey);
+  }
+  return value;
 }
 
 export function mapTileFor(point: Point): MapTile {
@@ -827,10 +855,13 @@ function fieldTreeBaseRect(tree: FieldTree): FieldRect {
 }
 
 function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Record<string, Point>) {
-  const tile = mapTileFor(chunk);
+  // BUILD 658: Memoize pure world-gen calls (was regenerating 5-20x per frame).
+  const chunkKey = `${chunk.x},${chunk.y}`;
+  const tile = _memoizedWorldGen(`tile:${chunkKey}`, () => mapTileFor(chunk));
   if (pointInWater(position, tile)) return true;
 
-  const treeBlocked = fieldTreesFor(chunk).some((tree) => !felledTreeKeys.has(fieldTreeKey(chunk, tree.id)) && !editorDeletedTreeKeys.has(fieldTreeKey(chunk, tree.id)) && pointInRect(position, fieldTreeBaseRect(tree), 0.45));
+  const trees = _memoizedWorldGen(`trees:${chunkKey}`, () => fieldTreesFor(chunk));
+  const treeBlocked = trees.some((tree) => !felledTreeKeys.has(fieldTreeKey(chunk, tree.id)) && !editorDeletedTreeKeys.has(fieldTreeKey(chunk, tree.id)) && pointInRect(position, fieldTreeBaseRect(tree), 0.45));
   if (treeBlocked) return true;
 
   // Rusty Tankard annexes are solid in the starting town.
@@ -867,8 +898,8 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
   // If house offsets are provided (mover mode), collision follows the visual —
   // the solid area is attached to the house, not a stagnant separate position.
   if (!moveHouses && landmark) {
-    const rects = fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17, mapTileFor(chunk).road);
-    const doorways = buildingDoorwaysFor(chunk);
+    const rects = fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17, tile.road);
+    const doorways = _memoizedWorldGen(`doorways:${chunkKey}`, () => buildingDoorwaysFor(chunk));
     const blocked = rects.some((rect, index) => {
       const doorway = doorways[index];
       const off = (doorway && houseOffsets?.[doorway.id]) || { x: 0, y: 0 };
@@ -908,7 +939,7 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
 
   // Farmhouses are solid enterable buildings too.
   if (!moveHouses && !landmark && ['meadow', 'grassland', 'greenvale'].includes(tile.terrain)) {
-    const farmDoorways = buildingDoorwaysFor(chunk);
+    const farmDoorways = _memoizedWorldGen(`doorways:${chunkKey}`, () => buildingDoorwaysFor(chunk));
     const farmBlocked = fieldFarmRects(chunk.x, chunk.y).houses.some((rect, index) => {
       // BUILD 428: same doorway carve-out as town buildings — the farmhouse
       // door trigger sits south of the door inside the collision padding.
