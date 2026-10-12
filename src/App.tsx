@@ -2241,6 +2241,9 @@ function townsfolkAnchors(offsets: Record<string, Point>): TownsfolkAnchors {
   points.tavern = doorstep('fourth-house-door');
   points.farm0 = { x: 30, y: 119 };
   points.farm1 = { x: 110, y: 119 };
+  // BUILD 548: neighbor cottage near tutorial house — visible life at spawn.
+  // Player exits at (89, 114); this puts a friendly NPC in view immediately.
+  points.cottage = { x: 98, y: 118 };
   return {
     points,
     // BUILD 429: plaza moved to the four-way road split (the town square).

@@ -236,6 +236,9 @@ const ROSTER: TownsfolkDef[] = [
   ['Elsa', 'female', 'commoner', 'mage', 'guild'],
   ['Wren', 'female', 'child', 'guide', 'chapel'],
   ['Pip', 'male', 'child', 'rogue', 'tavern'],
+  // BUILD 548: neighbor near tutorial house — visible life at player spawn.
+  // Farmer archetype: wakes up outdoors at home (visible at 6am game start).
+  ['Mira', 'female', 'farmer', 'guide', 'cottage'],
 ];
 
 /** Build DoorwayLinks for the 6 Mosslight cottages (pure, no App dependency). */

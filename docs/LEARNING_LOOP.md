@@ -383,3 +383,36 @@ Each entry records:
 **Regression:** N/A (new tool, no production changes)
 
 **Lesson:** Production NPC systems are already deterministic and headless-capable. The `advanceTownsfolk` function is pure — perfect for simulation. Don't build parallel systems when production code is already testable.
+
+---
+
+## 2026-10-11 — Visible NPC at Spawn (BUILD 548)
+
+**Task:** Make starting area feel alive (user: "not feeling improvements when playing")
+
+**Expected:** Player sees NPC immediately after exiting tutorial house
+
+**Files:**
+- `src/App.tsx` (added `cottage` anchor at 98,118)
+- `src/game/townsfolk.ts` (added Mira to ROSTER)
+
+**Tests:**
+- Screenshot before: empty field, just player
+- Screenshot after: Mira visible at bottom-center
+- `node tests/real-game/smoke.mjs` → 7/7 pass
+
+**Result:**
+- Before: 0 NPCs visible in starting area
+- After: Mira (farmer) visible outside her cottage at (98,118)
+- Player exits at (89,114), Mira is ~10 units away — clearly visible
+
+**Why farmer archetype:** Farmers are "Waking up" outdoors at 6-7am (game starts 6:10am).
+Commoners would be indoors (invisible). Farmer ensures morning visibility.
+
+**Defects:** None
+
+**Regression:** smoke 7/7 pass
+
+**Lesson:** Player-visible improvements beat infrastructure. A single NPC in view
+is worth more than 10 passing tests the player can't see. Audit with screenshots,
+not just assertions.
