@@ -1,6 +1,6 @@
 {
-  "build": "656",
-  "note": "NPC conversation memory",
-  "timestamp": "2026-10-12T22:07:53.274Z",
-  "cacheBuster": "mv5szdmj"
+  "build": "657",
+  "note": "benchmark harness + baselines",
+  "timestamp": "2026-10-12T22:09:00.142Z",
+  "cacheBuster": "mv5t0t7z"
 }

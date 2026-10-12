@@ -111,6 +111,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '657': 'benchmark harness + baselines',
   '656': 'NPC conversation memory',
   '655': 'personality-driven dialogue tone',
   '654': 'free-text NPC dialogue',
