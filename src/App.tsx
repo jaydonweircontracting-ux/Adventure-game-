@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '636': 'auto-verify issue colors',
   '635': 'fix three issues',
   '634': 'backoff + deploy tests',
   '633': 'real-time update banner',
@@ -10059,7 +10060,7 @@ const BAKED_ISSUES: Issue[] = [
   { id: 'ISSUE-005', title: 'Townsfolk test failures (pre-existing)', description: 'Simulate.ts townsfolk roster failures from BUILD 548.', status: 'in-progress', severity: 'medium', firstBuild: '548', relatedFiles: ['scripts/simulate.ts'], notes: 'Count tests fixed in BUILD 635; housing shortage + Elsa issues remain' },
   { id: 'ISSUE-006', title: 'Player exits from back of house', description: 'Exit position may not match door location.', status: 'unverified', severity: 'medium', firstBuild: '625', relatedFiles: ['src/App.tsx'], notes: 'User reported; needs verification' },
 ];
-function IssueTrackerPanel({ buildNumber, changelog }: { buildNumber: string; changelog: { build: string; note: string }[] }) {
+function IssueTrackerPanel({ buildNumber, changelog, updateStatus }: { buildNumber: string; changelog: { build: string; note: string }[]; updateStatus?: string }) {
   const [issues, setIssues] = useState<Issue[]>(() => {
     try {
       const saved = localStorage.getItem('ag-issue-statuses');
@@ -10070,6 +10071,23 @@ function IssueTrackerPanel({ buildNumber, changelog }: { buildNumber: string; ch
     } catch { /* use baked */ }
     return BAKED_ISSUES;
   });
+  // BUILD 636: Auto-verify — if the update checker confirms we're on the latest
+  // build, ISSUE-004 (deployment stuck) is automatically marked fixed.
+  useEffect(() => {
+    if (updateStatus === 'current') {
+      setIssues((prev) => {
+        const issue = prev.find((i) => i.id === 'ISSUE-004');
+        if (!issue || issue.status === 'fixed') return prev;
+        const next = prev.map((i) => i.id === 'ISSUE-004' ? { ...i, status: 'fixed' as IssueStatus, verification: 'Auto-verified: update checker confirms latest build live' } : i);
+        try {
+          const overrides: Record<string, IssueStatus> = {};
+          next.forEach((i) => { overrides[i.id] = i.status; });
+          localStorage.setItem('ag-issue-statuses', JSON.stringify(overrides));
+        } catch { /* ignore */ }
+        return next;
+      });
+    }
+  }, [updateStatus]);
   const [filter, setFilter] = useState<'all' | IssueStatus>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const cycleStatus = (id: string) => {
@@ -10701,7 +10719,7 @@ function Home() {
               <button className="main-menu-button" onClick={() => setChangelogOpen((v) => !v)} data-testid="button-changelog">📋 Changelog</button>
             </div>
             {changelogOpen && (
-              <IssueTrackerPanel buildNumber={BUILD_NUMBER} changelog={CHANGELOG} />
+              <IssueTrackerPanel buildNumber={BUILD_NUMBER} changelog={CHANGELOG} updateStatus={updateStatus} />
             )}
             <p className="main-menu-note">Use Load Game for this browser, or Import Save File for a downloaded backup.</p>
             {saveNotice && <div className="save-notice" role="status">{saveNotice}</div>}
