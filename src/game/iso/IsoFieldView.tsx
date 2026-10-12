@@ -340,8 +340,38 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // buildings: real rects -> iso boxes with pitched roofs. BUILD 376:
       // drawn for every chunk in the scene grid; neighbor rects are offset
       // into current-chunk-relative tile space so they tile seamlessly.
+      // BUILD 601: Building sprites — Exiled Kingdoms style.
+      // Cache building images on window.
+      const bldImgs = (window as unknown as { __bldImgs?: Record<string, HTMLImageElement> }).__bldImgs || {};
+      const bldSrc: Record<string, string> = {
+        'blue-cottage': 'buildings/blue-cottage.png',
+        'red-cottage': 'buildings/red-cottage.png',
+        'blue-house': 'buildings/blue-house.png',
+        'red-shop': 'buildings/red-shop.png',
+        'tavern': 'buildings/tavern.png',
+        'gatehouse': 'buildings/gatehouse.png',
+      };
+      for (const [kind, src] of Object.entries(bldSrc)) {
+        if (!bldImgs[kind]) {
+          const img = new Image();
+          img.src = `${import.meta.env.BASE_URL}${src}`;
+          bldImgs[kind] = img;
+        }
+      }
+      (window as unknown as { __bldImgs?: Record<string, HTMLImageElement> }).__bldImgs = bldImgs;
+      // Assign building sprites by index: variety across the town.
+      const bldKindForIndex = (idx: number): string => {
+        if (idx === 0) return 'tavern'; // tutorial house
+        if (idx === 1) return 'blue-house'; // guild
+        if (idx === 2) return 'red-shop'; // chapel
+        if (idx === 3) return 'blue-cottage'; // stone house
+        const kinds = ['blue-cottage', 'red-cottage', 'blue-house', 'red-shop'];
+        return kinds[idx % kinds.length];
+      };
       for (const sc of scenes) {
         const bx = sc.ox * N, by = sc.oy * N;
+        // Track building index for sprite assignment
+        let bldIdx = 0;
         for (const b of sc.buildings) {
           const r = { left: b.rect.left + bx, top: b.rect.top + by, right: b.rect.right + bx, bottom: b.rect.bottom + by };
           const bpos = { x: b.position.x + bx, y: b.position.y + by };
@@ -366,7 +396,24 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         const buildingDepth = playerSouthOfBuilding ? (r.left + r.top - 10) : (r.right + r.bottom);
         drawables.push({
           depth: buildingDepth, draw: (g2) => {
-            // shadow
+            // BUILD 601: Use sprite if available, fallback to procedural.
+            const kind = bldKindForIndex(bldIdx);
+            const sprite = bldImgs[kind];
+            if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+              // Draw sprite anchored at building base center
+              const cx = (p00.x + p11.x) / 2;
+              const baseY = Math.max(p00.y, p10.y, p11.y, p01.y);
+              // Scale sprite to building size (buildings are ~12x9 tiles)
+              const targetW = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 1.2;
+              const scale = targetW / sprite.naturalWidth;
+              const sw = sprite.naturalWidth * scale;
+              const sh = sprite.naturalHeight * scale;
+              g2.drawImage(sprite, cx - sw / 2, baseY - sh, sw, sh);
+              bldIdx++;
+              return;
+            }
+            bldIdx++;
+            // shadow (fallback procedural)
             g2.fillStyle = 'rgba(0,0,0,0.18)';
             g2.beginPath();
             g2.moveTo(p00.x, p00.y); g2.lineTo(p10.x, p10.y);
