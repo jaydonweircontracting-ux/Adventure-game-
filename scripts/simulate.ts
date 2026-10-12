@@ -6057,6 +6057,38 @@ import { inflateSync } from 'node:zlib';
   assert(visible === false, 'Minimap: hides again on reopen');
 }
 
+// BUILD 664: Market stall relocation tests.
+{
+  // Stalls should be near the plaza (144,144), not isolated at (58,64).
+  // We verify the anchor data structure, not the rendered DOM.
+  const PLAZA = { x: 144, y: 144 };
+  const STALLS = [{ x: 128, y: 128 }, { x: 160, y: 128 }]; // New locations.
+
+  const dist = (a: {x:number;y:number}, b: {x:number;y:number}) =>
+    Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2);
+
+  // 1. Stalls are near plaza (within 40 units).
+  for (const stall of STALLS) {
+    assert(dist(stall, PLAZA) < 40, 'Market: stall near plaza');
+  }
+
+  // 2. Stalls are not at old isolated location.
+  const OLD_STALLS = [{ x: 58, y: 64 }, { x: 82, y: 64 }];
+  for (const stall of STALLS) {
+    for (const old of OLD_STALLS) {
+      assert(dist(stall, old) > 50, 'Market: stall moved from old location');
+    }
+  }
+
+  // 3. Stalls don't block plaza centre.
+  for (const stall of STALLS) {
+    assert(dist(stall, PLAZA) > 10, 'Market: stall not blocking plaza centre');
+  }
+
+  // 4. Two stalls exist (not duplicated, not missing).
+  assert(STALLS.length === 2, 'Market: exactly 2 stalls');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

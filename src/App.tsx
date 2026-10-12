@@ -112,6 +112,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '664': 'living market centre',
   '663': 'minimap fix + control center',
   '662': 'world fingerprint + lore',
   '661': 'NPC farmer production',
@@ -2453,7 +2454,10 @@ function townsfolkAnchors(offsets: Record<string, Point>): TownsfolkAnchors {
     // Was (70, 82) — a stale pre-BUILD-343 coordinate in the grass. The road
     // intersection is at (144, 144); NPCs gather on the road now, not in grass.
     plaza: { x: 144, y: 144 },
-    stalls: [{ x: 58, y: 64 }, { x: 82, y: 64 }],
+    // BUILD 664: Stalls moved near the plaza to create a visible market.
+    // Was (58,64)/(82,64) — isolated northwest, merchant worked alone.
+    // Now at (128,128)/(160,128) — flanking the plaza, visible town centre.
+    stalls: [{ x: 128, y: 128 }, { x: 160, y: 128 }],
     gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
     patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
   };
@@ -3778,7 +3782,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [debugConsoleOpen, setDebugConsoleOpen] = useState(false);
   // BUILD 663: World Simulation Control Center.
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
-  const [controlCenterTab, setControlCenterTab] = useState<'overview' | 'integrity' | 'lore' | 'npcs'>('overview');
+  const [controlCenterTab, setControlCenterTab] = useState<'overview' | 'integrity' | 'lore' | 'npcs' | 'market'>('overview');
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const logDebug = (msg: string) => {
     const ts = new Date().toLocaleTimeString();
@@ -8054,7 +8058,7 @@ if (active) {
               <div style={{ padding: '12px', borderBottom: '1px solid #4a4a6a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '14px', fontWeight: 'bold' }}>🌍 World Simulation Control Center</span>
                 <div>
-                  {(['overview', 'integrity', 'lore', 'npcs'] as const).map((tab) => (
+                  {(['overview', 'integrity', 'lore', 'npcs', 'market'] as const).map((tab) => (
                     <button
                       key={tab}
                       type="button"
@@ -8116,6 +8120,18 @@ if (active) {
                       </div>
                     ))}
                     {townsfolkRef.current.length > 20 && <p><em>...and {townsfolkRef.current.length - 20} more</em></p>}
+                  </div>
+                )}
+                {controlCenterTab === 'market' && (
+                  <div>
+                    <h3>Market Overview (BUILD 664)</h3>
+                    <p>Stall locations: (128, 128), (160, 128) — near plaza (144, 144)</p>
+                    <p>Merchants at stalls: {townsfolkRef.current.filter((n) => n.archetype === 'merchant' && n.activity.includes('stall')).length}</p>
+                    <p>NPCs near plaza: {townsfolkRef.current.filter((n) => {
+                      const dx = n.position.x - 144, dy = n.position.y - 144;
+                      return Math.sqrt(dx*dx + dy*dy) < 40;
+                    }).length}</p>
+                    <p><em>Horses/carts: No sprites available — deferred (not faked).</em></p>
                   </div>
                 )}
               </div>
@@ -9654,8 +9670,9 @@ if (active) {
               {/* Townsfolk workplaces: garden plots + market stalls (decorative, like the fountain) */}
               <span className="farm-field town-garden" style={{ left: fieldPct(18), top: fieldPct(100), width: fieldPct(24), height: fieldPct(16) }} aria-label="Town garden" />
               <span className="farm-field town-garden" style={{ left: fieldPct(98), top: fieldPct(100), width: fieldPct(24), height: fieldPct(16) }} aria-label="Town garden" />
-              <span className="market-stall" style={{ left: fieldPct(58), top: fieldPct(64) }} aria-label="Market stall" />
-              <span className="market-stall" style={{ left: fieldPct(82), top: fieldPct(64) }} aria-label="Market stall" />
+              {/* BUILD 664: Market stalls moved to plaza (was 58,64 / 82,64). */}
+              <span className="market-stall" style={{ left: fieldPct(128), top: fieldPct(128) }} aria-label="Market stall" />
+              <span className="market-stall" style={{ left: fieldPct(160), top: fieldPct(128) }} aria-label="Market stall" />
             </>
           )}
           {currentWorldTile.landmark?.name === 'Mosslight Crossing' && townsfolk.filter((npc) => {
