@@ -276,3 +276,40 @@ Each entry records:
 **Regression:** smoke.mjs 7/7 pass
 
 **Lesson:** Measure before optimizing. The build (11.8s) and manual context loading (~60s) were the real bottlenecks, not the code index (0.9s). Small scripts with big time savings beat large refactors.
+
+---
+
+## 2026-10-11 — Unified Brain Vertical Slice (BUILD 545)
+
+**Task:** Build one integrated brain command (not 10 disconnected frameworks)
+
+**Expected:** Single command for context → investigate → test → verify → learn
+
+**Files:**
+- `scripts/brain.mjs` (new, 200 lines)
+
+**Tests:**
+- `node scripts/brain.mjs status` (0.26s, full project state)
+- `node scripts/brain.mjs test` (predictive test selection)
+- `node scripts/brain.mjs investigate doorway` (causal template)
+
+**Result:**
+- Status: Shows branch, HEAD, remote sync, build marker, task counts, next task, lessons
+- Test selection: Maps changed files → relevant tests (e.g., App.tsx → smoke+combat+journey)
+- Investigate: Structured causal template with auto-suggested code paths
+
+**Real demonstration:**
+- Brain status showed build marker 542, but template said 544
+- Investigated: prebuild hadn't run after template bump
+- Fixed: Ran prebuild manually, verified 544
+- Lesson: Brain caught its own inconsistency
+
+**Defects:** None in brain. Found pre-existing marker drift.
+
+**Cause:** `npm run build` in earlier command didn't update index.html (timing/cache issue)
+
+**Fix:** Manual prebuild run, verified output
+
+**Regression:** N/A (new tool)
+
+**Lesson:** A unified brain command that checks its own consistency is more valuable than 10 separate frameworks. The vertical slice (context→investigate→act→verify→learn) works end-to-end.
