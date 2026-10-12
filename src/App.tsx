@@ -3520,6 +3520,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     try { localStorage.setItem('ag-show-dpad', next ? '1' : '0'); } catch { /* ignore */ }
   };
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  // BUILD 605: Debug console — black window with coordinates, copyable.
+  const [debugConsoleOpen, setDebugConsoleOpen] = useState(false);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const logDebug = (msg: string) => {
+    const ts = new Date().toLocaleTimeString();
+    setDebugLog((prev) => [...prev.slice(-99), `[${ts}] ${msg}`]);
+  };
   const toggleMoverMode = () => {
     const next = !moverMode;
     moveHouses = next;
@@ -3532,7 +3539,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   };
   // Debug world editor (BUILD 274): stamp houses/trees/rocks/roads onto the
   // field, flag generated objects for removal, teleport the player.
-  type EditorTool = 'select' | 'house' | 'tree' | 'pine' | 'rock' | 'roadH' | 'roadV' | 'flag' | 'erase' | 'player' | 'xmark';
+  type EditorTool = 'select' | 'house' | 'tree' | 'pine' | 'rock' | 'roadH' | 'roadV' | 'flag' | 'erase' | 'player' | 'xmark' | 'rotate';
   const [editorTool, setEditorTool] = useState<EditorTool>('select');
   const [showGrid, setShowGrid] = useState(false);
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
@@ -7058,6 +7065,7 @@ if (active) {
     { id: 'rock', label: '🪨 Rock' },
     { id: 'roadH', label: '🛤️ Road ↔' },
     { id: 'roadV', label: '🛤️ Road ↕' },
+    { id: 'rotate', label: '🔄 Rotate' },
     { id: 'flag', label: '🚩 Flag' },
     { id: 'erase', label: '🧹 Erase' },
     { id: 'xmark', label: '❌ Mark' },
@@ -7301,6 +7309,33 @@ if (active) {
                 {(editorTool === 'house' || editorTool === 'tree' || editorTool === 'pine' || editorTool === 'rock' || editorTool === 'roadH' || editorTool === 'roadV') && <>Tap the field to stamp a {editorTool === 'roadH' ? 'horizontal road' : editorTool === 'roadV' ? 'vertical road' : editorTool}.</>}
               </div>
               <div className="editor-readout">You: ({position.x.toFixed(1)}, {position.y.toFixed(1)}) · Placed here: {placedHere.length} · Flagged: {flaggedItems.length}</div>
+              <div className="editor-actions">
+                <button type="button" className="editor-btn" onClick={() => {
+                  setDebugConsoleOpen(!debugConsoleOpen);
+                  if (!debugConsoleOpen) {
+                    logDebug(`=== Building coordinates (chunk ${chunkKey}) ===`);
+                    buildingDoorwaysFor(chunk).forEach((d) => {
+                      const r = d.rect;
+                      logDebug(`${d.area.name}: left=${r.left.toFixed(1)} top=${r.top.toFixed(1)} right=${r.right.toFixed(1)} bottom=${r.bottom.toFixed(1)}`);
+                    });
+                    logDebug(`=== Placed objects (${placedObjects.length}) ===`);
+                    placedObjects.forEach((o) => {
+                      logDebug(`${o.kind} id=${o.id}: x=${o.x.toFixed(1)} y=${o.y.toFixed(1)} rot=${o.rotation || 0}° chunk=${o.chunk}`);
+                    });
+                  }
+                }}>
+                  {debugConsoleOpen ? '📟 Hide Console' : '📟 Console'}
+                </button>
+                <button type="button" className="editor-btn" onClick={() => {
+                  // Return to spawn: tutorial house exterior
+                  logDebug('Returning to spawn...');
+                  // Teleport to starting position
+                  window.location.hash = '';
+                  logDebug('Use Teleport tool to go to (89, 115) for spawn');
+                }}>
+                  🏠 Spawn
+                </button>
+              </div>
               <label className="editor-toggle">
                 <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} /> Show coordinate grid
               </label>
@@ -7393,6 +7428,52 @@ if (active) {
                 </button>
               </div>
               {renderEditorLogPanel()}
+            </div>
+          )}
+          {/* BUILD 605: Debug console — black window, white monospace, scrollable, copyable */}
+          {debugConsoleOpen && (
+            <div style={{
+              position: 'fixed', bottom: 10, left: 10, right: 10, height: '40vh',
+              backgroundColor: '#000', color: '#fff', fontFamily: 'monospace',
+              fontSize: '12px', zIndex: 9999, display: 'flex', flexDirection: 'column',
+              border: '2px solid #333', borderRadius: '8px', overflow: 'hidden',
+            }}>
+              <div style={{ padding: '8px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>📟 Debug Console</span>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const text = debugLog.join('\n');
+                      if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+                    }}
+                    style={{ background: '#333', color: '#fff', border: 'none', padding: '4px 12px', marginRight: '8px', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    📋 Copy All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDebugLog([])}
+                    style={{ background: '#333', color: '#fff', border: 'none', padding: '4px 12px', marginRight: '8px', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    🗑️ Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDebugConsoleOpen(false)}
+                    style={{ background: '#333', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    ✕ Close
+                  </button>
+                </div>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '8px', whiteSpace: 'pre-wrap', userSelect: 'text' }}>
+                {debugLog.length === 0 ? (
+                  <div style={{ color: '#666' }}>Console empty. Open from World Editor → 📟 Console.</div>
+                ) : (
+                  debugLog.map((line, i) => <div key={i}>{line}</div>)
+                )}
+              </div>
             </div>
           )}
           {/* BUILD 341: map-builder overlay + tile palette. The overlay sits
@@ -8473,8 +8554,26 @@ if (active) {
                   }
                   return;
                 }
+                // BUILD 605: Rotate tool — tap a placed object to rotate 90°.
+                if (editorTool === 'rotate') {
+                  const placedHere = placedObjects.filter((o) => o.chunk === chunkKey);
+                  let best: PlacedObject | null = null;
+                  let bestDist = 8;
+                  for (const o of placedHere) {
+                    const d = Math.hypot(o.x - fx, o.y - fy);
+                    if (d < bestDist) { bestDist = d; best = o; }
+                  }
+                  if (best) {
+                    const newRot = ((best.rotation || 0) + 90) % 360;
+                    setPlacedObjects((prev) => prev.map((o) =>
+                      o.id === best!.id ? { ...o, rotation: newRot } : o
+                    ));
+                    logEditorChange('rotate', `rotated to ${newRot}°`, best.x, best.y);
+                  }
+                  return;
+                }
                 // Stamp tools: place a new object at the tap.
-                if (editorTool !== 'select') {
+                if (editorTool !== 'select' && editorTool !== 'rotate') {
                   setPlacedObjects((prev) => editorPlaceObject(prev, editorTool, fx, fy, chunkKey));
                   logEditorChange('stamp', 'stamped ' + editorTool, fx, fy);
                   return;

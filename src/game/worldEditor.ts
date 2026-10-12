@@ -3,7 +3,7 @@
 // unit-test them without importing the React app.
 
 export type EditorPlaceKind = 'house' | 'tree' | 'pine' | 'rock' | 'roadH' | 'roadV';
-export type PlacedObject = { id: string; kind: EditorPlaceKind; x: number; y: number; chunk: string };
+export type PlacedObject = { id: string; kind: EditorPlaceKind; x: number; y: number; chunk: string; rotation?: number };
 // Items flagged for removal: generated trees/houses the user marked, placed
 // objects, and map-builder painted tiles. The removal list is copied to the
 // clipboard for the dev.
