@@ -25,7 +25,7 @@ import { oreNodesForChunk, type OreNode, type OreKind } from '@/game/geology';
 import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem, EditorXMark, EditorLogEntry } from './game/worldEditor';
 export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText } from './game/worldEditor';
-import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE, type MapPaints, type MapPaintTile } from './game/mapBuilder';
+import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE, type MapPaints, type MapPaintTile, type PaintedTile } from './game/mapBuilder';
 import { organicTownSpecs } from './game/organicTowns';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 import { findTalkTarget } from './game/talkTarget';
@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '652': 'unified chunk templates',
   '651': 'noise generator in map builder',
   '650': 'world editor in starting menu',
   '649': 'building facing data foundation',
@@ -3764,23 +3765,33 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     setDebugLog((prev) => [...prev.slice(-99), `[${ts}] ${msg}`]);
   };
   // BUILD 606: Named chunk saves — { name: { placedObjects, timestamp } }
-  const [chunkSaves, setChunkSaves] = useState<Record<string, { objects: PlacedObject[]; timestamp: number }>>(() => {
+  // BUILD 652: Now includes terrain paints (mapPaints) for unified chunk templates.
+  const [chunkSaves, setChunkSaves] = useState<Record<string, { objects: PlacedObject[]; paints: PaintedTile[]; timestamp: number }>>(() => {
     try {
       return JSON.parse(localStorage.getItem('ag-chunk-saves') || '{}');
     } catch { return {}; }
   });
   const saveNamedChunk = (name: string) => {
-    const data = { objects: placedObjects, timestamp: Date.now() };
+    const data = {
+      objects: placedObjects,
+      paints: mapPaints[chunkKey] ?? [],
+      timestamp: Date.now(),
+    };
     const next = { ...chunkSaves, [name]: data };
     setChunkSaves(next);
     try { localStorage.setItem('ag-chunk-saves', JSON.stringify(next)); } catch { /* ignore */ }
-    logDebug(`Saved chunk "${name}": ${placedObjects.length} objects`);
+    logDebug(`Saved chunk "${name}": ${placedObjects.length} objects, ${data.paints.length} painted tiles`);
   };
   const loadNamedChunk = (name: string) => {
     const saved = chunkSaves[name];
     if (!saved) { logDebug(`Chunk "${name}" not found`); return; }
     setPlacedObjects(saved.objects);
-    logDebug(`Loaded chunk "${name}": ${saved.objects.length} objects`);
+    // BUILD 652: Restore terrain paints too.
+    if (saved.paints && saved.paints.length > 0) {
+      pushMapUndo();
+      setMapPaints((prev) => ({ ...prev, [chunkKey]: saved.paints }));
+    }
+    logDebug(`Loaded chunk "${name}": ${saved.objects.length} objects, ${saved.paints?.length ?? 0} painted tiles`);
   };
   const toggleMoverMode = () => {
     const next = !moverMode;
