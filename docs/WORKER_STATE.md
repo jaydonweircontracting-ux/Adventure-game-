@@ -48,3 +48,13 @@ If the worker stops unexpectedly:
 - Max retries per task: 3
 - Max wall time per cycle: 30 minutes
 - Cycles used: 5/5 (budget exhausted — reset for next session)
+
+## Long-term goal: gameplay quality metrics (user directive 2026-10-11)
+Move from 'does the code build' to 'does the game play well'. Track:
+- Can players find the town? (navigation success rate)
+- Can players discover NPCs? (NPC encounter rate in first 10 min)
+- Can players complete interactions? (dialogue/quest completion rate)
+- Can players navigate without getting stuck? (stuck incidents per session)
+- Does the world feel alive? (visible NPC activity density over time)
+Measure these in real-game tests, not just unit tests. This is how the worker
+evolves from autonomous coding toward autonomous game development + playtesting.
