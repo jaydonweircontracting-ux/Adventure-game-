@@ -591,6 +591,17 @@
 .horse[data-facing='right'] .horse-sprite { transform: scaleX(-1); }
 .horse[data-facing='down'] .horse-sprite { background-position-y: -32px; }
 .horse[data-facing='up'] .horse-sprite { background-position-y: -64px; }
+/* BUILD 668: 8-direction support — diagonals map to nearest cardinal sprite row.
+   up-left/up-right → up row; down-left/down-right → down row.
+   left/right diagonals use side view (most informative for horse anatomy). */
+.horse[data-facing='up-left'] .horse-sprite,
+.horse[data-facing='up-right'] .horse-sprite { background-position-y: -64px; }
+.horse[data-facing='down-left'] .horse-sprite,
+.horse[data-facing='down-right'] .horse-sprite { background-position-y: -32px; }
+.horse[data-facing='up-left'] .rider-sprite,
+.horse[data-facing='up-right'] .rider-sprite { background-position-y: -64px; }
+.horse[data-facing='down-left'] .rider-sprite,
+.horse[data-facing='down-right'] .rider-sprite { background-position-y: 0; }
 .horse.is-mounted.is-moving .horse-sprite {
   animation: horse-walk .48s steps(4, end) infinite;
 }

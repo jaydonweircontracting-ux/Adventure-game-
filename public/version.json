@@ -1,6 +1,6 @@
 {
-  "build": "666",
-  "note": "horse riding + touch controls + minimap click-to-move",
-  "timestamp": "2026-10-12T22:51:19.382Z",
-  "cacheBuster": "mv5uj8if"
+  "build": "668",
+  "note": "8-dir horse + A* minimap pathfinding",
+  "timestamp": "2026-10-12T23:01:07.452Z",
+  "cacheBuster": "mv5uvu9o"
 }

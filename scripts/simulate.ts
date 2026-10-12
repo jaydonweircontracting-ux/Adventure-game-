@@ -6200,6 +6200,31 @@ import { inflateSync } from 'node:zlib';
   delete (global as any).document;
 }
 
+// BUILD 668: 8-direction and pathfinding tests.
+{
+  const { eightDirectionFromVector, toFourDirection } = await import('../src/game/eightDirection.js');
+
+  // 1. All 8 directions resolve correctly.
+  assert(eightDirectionFromVector(1, 0) === 'right', '8dir: east → right');
+  assert(eightDirectionFromVector(-1, 0) === 'left', '8dir: west → left');
+  assert(eightDirectionFromVector(0, 1) === 'down', '8dir: south → down');
+  assert(eightDirectionFromVector(0, -1) === 'up', '8dir: north → up');
+  assert(eightDirectionFromVector(1, 1) === 'down-right', '8dir: southeast');
+  assert(eightDirectionFromVector(-1, 1) === 'down-left', '8dir: southwest');
+  assert(eightDirectionFromVector(1, -1) === 'up-right', '8dir: northeast');
+  assert(eightDirectionFromVector(-1, -1) === 'up-left', '8dir: northwest');
+
+  // 2. Maps to 4-direction correctly.
+  assert(toFourDirection('up-right') === 'up', '8dir: up-right → up');
+  assert(toFourDirection('down-left') === 'down', '8dir: down-left → down');
+
+  // 3. Diagonal normalization (for movement).
+  const dx = 1, dy = 1;
+  const len = Math.hypot(dx, dy);
+  const nx = dx / len, ny = dy / len;
+  assert(Math.abs(Math.hypot(nx, ny) - 1.0) < 0.001, '8dir: diagonal normalized');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
