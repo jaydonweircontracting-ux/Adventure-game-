@@ -5731,6 +5731,123 @@ import { inflateSync } from 'node:zlib';
   assert(getArchetype('stoic').name === 'Stoic', 'Archetype: getArchetype works');
 }
 
+// BUILD 660: NPC mood model tests (Alien Psychology Engine, Stage C).
+{
+  const {
+    createDefaultMood, clampMood, applyMoodEvent, advanceMoodTime,
+    moodSummary, isValidMood,
+  } = await import('../src/game/npcMood.js');
+  const { getArchetype } = await import('../src/game/npcArchetypes.js');
+
+  const stoic = getArchetype('stoic');
+  const worrier = getArchetype('worrier');
+  const explorer = getArchetype('curious_explorer');
+  const easygoing = getArchetype('easygoing_wanderer');
+
+  // 1. Default mood values are valid.
+  const def = createDefaultMood();
+  assert(isValidMood(def), 'Mood: default is valid');
+
+  // 2. Every dimension within bounds after extreme events.
+  let m = createDefaultMood();
+  m = applyMoodEvent(m, { id: 'e1', category: 'credible_danger', severity: 1.0, witnessed: true }, worrier);
+  m = applyMoodEvent(m, { id: 'e2', category: 'credible_danger', severity: 1.0, witnessed: true }, worrier);
+  m = applyMoodEvent(m, { id: 'e3', category: 'credible_danger', severity: 1.0, witnessed: true }, worrier);
+  assert(isValidMood(m), 'Mood: bounds held after extreme events');
+  assert(m.fear <= 1 && m.stress <= 1, 'Mood: clamped at 1.0');
+
+  // 3. Invalid inputs cannot create NaN.
+  const bad = clampMood({ ...def, happiness: NaN, stress: Infinity, anger: -5 } as any);
+  assert(isValidMood(bad), 'Mood: NaN/Infinity/out-of-range clamped');
+
+  // 4. Each event produces documented effect.
+  const m2 = applyMoodEvent(createDefaultMood(),
+    { id: 't1', category: 'task_completed', severity: 1.0, witnessed: true }, stoic);
+  assert(m2.happiness > def.happiness, 'Mood: task_completed increases happiness');
+  assert(m2.confidence > def.confidence, 'Mood: task_completed increases confidence');
+
+  const m3 = applyMoodEvent(createDefaultMood(),
+    { id: 'd1', category: 'credible_danger', severity: 1.0, witnessed: true }, worrier);
+  assert(m3.fear > def.fear, 'Mood: credible_danger increases fear');
+  assert(m3.stress > def.stress, 'Mood: credible_danger increases stress');
+
+  // 5. Deterministic — same input = same output.
+  const mkEvent = (id: string) => ({ id, category: 'friendly_conversation' as const, severity: 0.8, witnessed: true });
+  const r1 = applyMoodEvent(createDefaultMood(), mkEvent('x1'), stoic);
+  const r2 = applyMoodEvent(createDefaultMood(), mkEvent('x1'), stoic);
+  assert(JSON.stringify(r1) === JSON.stringify(r2), 'Mood: deterministic');
+
+  // 6. Personality alters responses — stoic vs worrier on danger.
+  const stoicDanger = applyMoodEvent(createDefaultMood(),
+    { id: 's1', category: 'credible_danger', severity: 0.8, witnessed: true }, stoic);
+  const worrierDanger = applyMoodEvent(createDefaultMood(),
+    { id: 'w1', category: 'credible_danger', severity: 0.8, witnessed: true }, worrier);
+  assert(worrierDanger.fear > stoicDanger.fear, 'Mood: worrier more afraid than stoic');
+  assert(worrierDanger.stress > stoicDanger.stress, 'Mood: worrier more stressed than stoic');
+
+  // 7. Stoic still feels emotions (restrained, not emotionless).
+  assert(stoicDanger.fear > def.fear, 'Mood: stoic still experiences fear');
+
+  // 8. Worrier vs easygoing on threat.
+  const easyDanger = applyMoodEvent(createDefaultMood(),
+    { id: 'e1', category: 'credible_danger', severity: 0.8, witnessed: true }, easygoing);
+  assert(worrierDanger.fear > easyDanger.fear, 'Mood: worrier more afraid than easygoing');
+
+  // 9. Explorer reacts to discovery.
+  const exploreDisc = applyMoodEvent(createDefaultMood(),
+    { id: 'disc1', category: 'discovery', severity: 1.0, witnessed: true }, explorer);
+  const stoicDisc = applyMoodEvent(createDefaultMood(),
+    { id: 'disc2', category: 'discovery', severity: 1.0, witnessed: true }, stoic);
+  assert(exploreDisc.curiosity > stoicDisc.curiosity, 'Mood: explorer more curious after discovery');
+
+  // 10. Recovery uses game time, not frames.
+  const angry = applyMoodEvent(createDefaultMood(),
+    { id: 'a1', category: 'task_interrupted', severity: 1.0, witnessed: true }, stoic);
+  const afterHour = advanceMoodTime(angry, 1.0, stoic);
+  const afterTenHours = advanceMoodTime(angry, 10.0, stoic);
+  assert(afterHour.anger < angry.anger, 'Mood: anger fades over time');
+  assert(afterTenHours.anger < afterHour.anger, 'Mood: more time = more recovery');
+  assert(afterTenHours.anger >= 0, 'Mood: anger never negative');
+
+  // 11. Fear persists longer than anger (threat doesn't auto-resolve).
+  const afraid = applyMoodEvent(createDefaultMood(),
+    { id: 'f1', category: 'credible_danger', severity: 1.0, witnessed: true }, worrier);
+  const afraidLater = advanceMoodTime(afraid, 5.0, worrier);
+  const angryLater = advanceMoodTime(angry, 5.0, stoic);
+  // Fear should still be elevated relative to its baseline more than anger.
+  const fearElev = afraidLater.fear - 0.1;
+  const angerElev = angryLater.anger - 0.1;
+  assert(fearElev > angerElev * 0.5, 'Mood: fear persists longer than anger');
+
+  // 12. Duplicate events not processed twice.
+  const dup1 = applyMoodEvent(createDefaultMood(),
+    { id: 'dup', category: 'positive_interaction', severity: 1.0, witnessed: true }, stoic);
+  const dup2 = applyMoodEvent(dup1,
+    { id: 'dup', category: 'positive_interaction', severity: 1.0, witnessed: true }, stoic);
+  assert(JSON.stringify(dup1) === JSON.stringify(dup2), 'Mood: duplicate event ignored');
+
+  // 13. Separate valid events each affect mood.
+  const ev1 = applyMoodEvent(createDefaultMood(),
+    { id: 'sep1', category: 'positive_interaction', severity: 0.5, witnessed: true }, stoic);
+  const ev2 = applyMoodEvent(ev1,
+    { id: 'sep2', category: 'positive_interaction', severity: 0.5, witnessed: true }, stoic);
+  assert(ev2.happiness > ev1.happiness, 'Mood: separate events accumulate');
+
+  // 14. Heard-about has reduced impact vs witnessed.
+  const heard = applyMoodEvent(createDefaultMood(),
+    { id: 'h1', category: 'credible_danger', severity: 1.0, witnessed: false }, worrier);
+  const seen = applyMoodEvent(createDefaultMood(),
+    { id: 's2', category: 'credible_danger', severity: 1.0, witnessed: true }, worrier);
+  assert(seen.fear > heard.fear, 'Mood: witnessed hits harder than heard');
+
+  // 15. Negative time clamped.
+  const negTime = advanceMoodTime(angry, -5.0, stoic);
+  assert(JSON.stringify(negTime) === JSON.stringify(angry), 'Mood: negative time ignored');
+
+  // 16. Summary is a string.
+  assert(typeof moodSummary(def) === 'string' && moodSummary(def).length > 0, 'Mood: summary works');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

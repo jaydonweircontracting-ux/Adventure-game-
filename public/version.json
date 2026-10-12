@@ -1,6 +1,6 @@
 {
-  "build": "659",
-  "note": "NPC personality archetypes",
-  "timestamp": "2026-10-12T22:16:58.625Z",
-  "cacheBuster": "mv5tb2f6"
+  "build": "660",
+  "note": "causal NPC mood engine",
+  "timestamp": "2026-10-12T22:20:21.238Z",
+  "cacheBuster": "mv5tferb"
 }
