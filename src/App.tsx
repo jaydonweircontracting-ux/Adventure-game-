@@ -814,15 +814,16 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
       // BUILD 615: Shrink collision to match visual sprite (not transparent padding).
       // Sprites have ~15-20% transparent padding on each side; the visible building
       // is ~65-70% of the authored rect. Full-rect collision = invisible walls.
+      // BUILD 625: Asymmetric — roof overhangs north, so shrink top more.
       const cx = (rect.left + rect.right) / 2 + off.x;
       const cy = (rect.top + rect.bottom) / 2 + off.y;
       const hw = (rect.right - rect.left) / 2 * 0.68;
-      const hh = (rect.bottom - rect.top) / 2 * 0.68;
+      const hh = (rect.bottom - rect.top) / 2;
       const movedRect = {
         left: cx - hw,
-        top: cy - hh,
+        top: cy - hh * 0.35,  // roof overhang — shrink top aggressively
         right: cx + hw,
-        bottom: cy + hh,
+        bottom: cy + hh * 0.85,
       };
       // BUILD 428: carve the doorway out of the collision. The entry trigger
       // sits just south of the door, but the solid rect (plus padding) extends
