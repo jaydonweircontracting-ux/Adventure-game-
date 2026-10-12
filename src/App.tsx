@@ -477,42 +477,39 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
     { left: 124, top: 44, right: 136, bottom: 53 },   // cottage 4 (north)
     { left: 152, top: 44, right: 164, bottom: 53 },   // cottage 5 (north)
     { left: 180, top: 44, right: 192, bottom: 53 },   // cottage 6 (north)
-    // BUILD 596: City expansion — 10 additional houses for urban density.
-    // Southern residential row:
-    { left: 60, top: 205, right: 72, bottom: 214 },
-    { left: 88, top: 205, right: 100, bottom: 214 },
-    { left: 116, top: 205, right: 128, bottom: 214 },
-    { left: 144, top: 205, right: 156, bottom: 214 },
-    // Eastern block (2x2):
-    { left: 210, top: 120, right: 222, bottom: 129 },
-    { left: 228, top: 120, right: 240, bottom: 129 },
-    { left: 210, top: 145, right: 222, bottom: 154 },
-    { left: 228, top: 145, right: 240, bottom: 154 },
-    // Western infill:
-    { left: 60, top: 130, right: 72, bottom: 139 },
-    { left: 60, top: 155, right: 72, bottom: 164 },
-    // BUILD 597: Urban expansion — 15 more buildings for city density.
-    // Northern row (east of existing cottages):
-    { left: 208, top: 44, right: 220, bottom: 53 },
-    { left: 236, top: 44, right: 248, bottom: 53 },
-    // Central dense block (around plaza):
-    { left: 100, top: 120, right: 112, bottom: 129 },
-    { left: 118, top: 120, right: 130, bottom: 129 },
-    { left: 100, top: 145, right: 112, bottom: 154 },
-    { left: 118, top: 145, right: 130, bottom: 154 },
-    // Southern row extension:
-    { left: 172, top: 205, right: 184, bottom: 214 },
-    { left: 200, top: 205, right: 212, bottom: 214 },
-    // Eastern outskirts:
-    { left: 210, top: 170, right: 222, bottom: 179 },
-    { left: 228, top: 170, right: 240, bottom: 179 },
-    // Western row:
-    { left: 28, top: 196, right: 40, bottom: 205 },
-    { left: 28, top: 220, right: 40, bottom: 229 },
-    // North-west cluster:
-    { left: 60, top: 60, right: 72, bottom: 69 },
-    { left: 88, top: 60, right: 100, bottom: 69 },
-    { left: 60, top: 85, right: 72, bottom: 94 },
+    // BUILD 599: Proper town street grid — all houses 12x9, aligned in rows.
+    // Northern terrace (straight row, y=100-109):
+    { left: 60, top: 100, right: 72, bottom: 109 },
+    { left: 80, top: 100, right: 92, bottom: 109 },
+    { left: 100, top: 100, right: 112, bottom: 109 },
+    { left: 160, top: 100, right: 172, bottom: 109 },
+    { left: 180, top: 100, right: 192, bottom: 109 },
+    { left: 200, top: 100, right: 212, bottom: 109 },
+    // Southern terrace (straight row, y=170-179):
+    { left: 60, top: 170, right: 72, bottom: 179 },
+    { left: 80, top: 170, right: 92, bottom: 179 },
+    { left: 100, top: 170, right: 112, bottom: 179 },
+    { left: 160, top: 170, right: 172, bottom: 179 },
+    { left: 180, top: 170, right: 192, bottom: 179 },
+    { left: 200, top: 170, right: 212, bottom: 179 },
+    // Eastern avenue (column, x=230-242):
+    { left: 230, top: 80, right: 242, bottom: 89 },
+    { left: 230, top: 100, right: 242, bottom: 109 },
+    { left: 230, top: 120, right: 242, bottom: 129 },
+    { left: 230, top: 190, right: 242, bottom: 199 },
+    // Western lane (column, x=50-62):
+    { left: 50, top: 80, right: 62, bottom: 89 },
+    { left: 50, top: 190, right: 62, bottom: 199 },
+    { left: 50, top: 210, right: 62, bottom: 219 },
+    // Market square edges:
+    { left: 120, top: 120, right: 132, bottom: 129 },
+    { left: 156, top: 120, right: 168, bottom: 129 },
+    { left: 120, top: 159, right: 132, bottom: 168 },
+    { left: 156, top: 159, right: 168, bottom: 168 },
+    // Southern expansion row:
+    { left: 80, top: 200, right: 92, bottom: 209 },
+    { left: 100, top: 200, right: 112, bottom: 209 },
+    { left: 120, top: 200, right: 132, bottom: 209 },
   ];
 }
 

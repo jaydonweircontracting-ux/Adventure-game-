@@ -371,39 +371,60 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             g2.moveTo(p00.x, p00.y); g2.lineTo(p10.x, p10.y);
             g2.lineTo(p11.x, p11.y); g2.lineTo(p01.x, p01.y);
             g2.closePath(); g2.fill();
-            // walls: south-east face (lighter) and south-west face (darker)
-            g2.fillStyle = '#8a6a4a';
+            // walls: Tudor half-timbered style — cream plaster with dark timber frame
+            // South-east face (lighter plaster)
+            g2.fillStyle = '#e8dcc0';
             g2.beginPath();
             g2.moveTo(p10.x, p10.y); g2.lineTo(p11.x, p11.y);
             g2.lineTo(t11.x, t11.y); g2.lineTo(t10.x, t10.y);
             g2.closePath(); g2.fill();
-            g2.fillStyle = '#6e5238';
+            // South-west face (slightly darker plaster for depth)
+            g2.fillStyle = '#d8c8a8';
             g2.beginPath();
             g2.moveTo(p11.x, p11.y); g2.lineTo(p01.x, p01.y);
             g2.lineTo(t01.x, t01.y); g2.lineTo(t11.x, t11.y);
             g2.closePath(); g2.fill();
-            // pitched roof: ridge runs tile-north/south; four closed planes so
-            // no terrain shows through. Back slopes darker, front lighter.
+            // Timber framing: dark wooden beams on both faces
+            g2.strokeStyle = '#4a3520';
+            g2.lineWidth = 3;
+            // Vertical beams on SE face
+            for (let i = 1; i < 4; i++) {
+              const t = i / 4;
+              const bx0 = p10.x + (p11.x - p10.x) * t, by0 = p10.y + (p11.y - p10.y) * t;
+              const bx1 = t10.x + (t11.x - t10.x) * t, by1 = t10.y + (t11.y - t10.y) * t;
+              g2.beginPath(); g2.moveTo(bx0, by0); g2.lineTo(bx1, by1); g2.stroke();
+            }
+            // Vertical beams on SW face
+            for (let i = 1; i < 4; i++) {
+              const t = i / 4;
+              const bx0 = p11.x + (p01.x - p11.x) * t, by0 = p11.y + (p01.y - p11.y) * t;
+              const bx1 = t11.x + (t01.x - t11.x) * t, by1 = t11.y + (t01.y - t11.y) * t;
+              g2.beginPath(); g2.moveTo(bx0, by0); g2.lineTo(bx1, by1); g2.stroke();
+            }
+            // Horizontal beam at top of walls
+            g2.lineWidth = 4;
+            g2.beginPath(); g2.moveTo(t10.x, t10.y); g2.lineTo(t11.x, t11.y); g2.lineTo(t01.x, t01.y); g2.stroke();
+            // pitched roof: dark brown thatch/tiles (not red)
             const ridge = 34;
             const r0 = { x: (t00.x + t10.x) / 2, y: (t00.y + t10.y) / 2 - ridge };
             const r1 = { x: (t01.x + t11.x) / 2, y: (t01.y + t11.y) / 2 - ridge };
-            // back slopes first
-            g2.fillStyle = '#93391f';
+            // back slopes first (darker brown)
+            g2.fillStyle = '#5c4033';
             g2.beginPath();
             g2.moveTo(t00.x, t00.y); g2.lineTo(t10.x, t10.y);
             g2.lineTo(r0.x, r0.y); g2.closePath(); g2.fill();
-            g2.fillStyle = '#7c2f22';
+            g2.fillStyle = '#4a3328';
             g2.beginPath();
             g2.moveTo(t01.x, t01.y); g2.lineTo(t00.x, t00.y);
             g2.lineTo(r0.x, r0.y); g2.lineTo(r1.x, r1.y);
             g2.closePath(); g2.fill();
-            // front slopes
-            g2.fillStyle = '#a8442f';
+            // front slopes (slightly lighter brown)
+            g2.fillStyle = '#6b4a3a';
             g2.beginPath();
             g2.moveTo(t10.x, t10.y); g2.lineTo(t11.x, t11.y);
             g2.lineTo(r1.x, r1.y); g2.lineTo(r0.x, r0.y);
             g2.closePath(); g2.fill();
-            g2.fillStyle = '#b05038';
+            g2.fillStyle = '#75543f';
             g2.beginPath();
             g2.moveTo(t11.x, t11.y); g2.lineTo(t01.x, t01.y);
             g2.lineTo(r1.x, r1.y); g2.closePath(); g2.fill();
