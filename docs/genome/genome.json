@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "created": "2026-10-12T05:00:32.272Z",
-  "updated": "2026-10-12T05:19:18.497Z",
+  "updated": "2026-10-12T05:21:59.535Z",
   "sections": {
     "creativeConstitution": [
       {
@@ -190,6 +190,16 @@
         "confidence": "high",
         "status": "active",
         "created": "2026-10-12T05:19:18.497Z"
+      },
+      {
+        "type": "DECISION",
+        "id": "decision-goat-exists",
+        "summary": "Goats now spawn in the world",
+        "details": "Root cause: goat kind was missing from spawn table. Added goat to kinds array (1/5 chance), mapped to deer sprite. Goats spawn in meadows and wild areas. Starting safe zone preserved.",
+        "source": "BUILD 575",
+        "confidence": "high",
+        "status": "active",
+        "created": "2026-10-12T05:21:59.525Z"
       }
     ],
     "knownBugs": [
