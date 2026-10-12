@@ -563,6 +563,52 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         drawWall(wx1, cy + gateHalf, wx1, wy1);
       }
 
+      // BUILD 607: Market props in town plaza — stalls, well, barrels, lamps.
+      // Only in starting chunk (4,7). Plaza at (124-164, 124-164).
+      if (chunk.x === 4 && chunk.y === 7) {
+        const propImgs = (window as unknown as { __propImgs?: Record<string, HTMLImageElement> }).__propImgs || {};
+        const propSrc: Record<string, string> = {
+          'stall': 'props/market-stall.png',
+          'barrel': 'props/barrel.png',
+          'well': 'props/well.png',
+          'lamp': 'props/lamp.png',
+        };
+        for (const [kind, src] of Object.entries(propSrc)) {
+          if (!propImgs[kind]) {
+            const img = new Image();
+            img.src = `${import.meta.env.BASE_URL}${src}`;
+            propImgs[kind] = img;
+          }
+        }
+        (window as unknown as { __propImgs?: Record<string, HTMLImageElement> }).__propImgs = propImgs;
+        // Prop placements: [kind, x, y, scale]
+        const props: [string, number, number, number][] = [
+          ['well', 144, 144, 1.0],      // center fountain/well
+          ['stall', 132, 132, 0.9],     // market stalls
+          ['stall', 156, 132, 0.9],
+          ['stall', 132, 156, 0.9],
+          ['stall', 156, 156, 0.9],
+          ['barrel', 128, 140, 0.7],    // barrels near stalls
+          ['barrel', 160, 140, 0.7],
+          ['barrel', 140, 128, 0.7],
+          ['lamp', 124, 144, 0.8],      // lamps at plaza corners
+          ['lamp', 164, 144, 0.8],
+          ['lamp', 144, 124, 0.8],
+          ['lamp', 144, 164, 0.8],
+        ];
+        for (const [kind, px, py, scale] of props) {
+          const img = propImgs[kind];
+          if (!img || !img.complete || img.naturalWidth === 0) continue;
+          const p = isoToScreen(px, py);
+          const sw = img.naturalWidth * 0.12 * scale;
+          const sh = img.naturalHeight * 0.12 * scale;
+          drawables.push({
+            depth: px + py,
+            draw: (g2) => { g2.drawImage(img, p.x - sw / 2, p.y - sh, sw, sh); },
+          });
+        }
+      }
+
       // trees: real positions — BUILD 376: every chunk in the scene grid,
       // offset into current-chunk-relative tile space.
       for (const sc of scenes) {
