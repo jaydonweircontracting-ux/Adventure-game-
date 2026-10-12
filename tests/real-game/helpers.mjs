@@ -35,6 +35,29 @@ export async function setupGame() {
 }
 
 /**
+ * Create a new page in an existing browser (for test runner reuse).
+ * Much faster than launching a new browser per test (~3s saved each).
+ * BUILD 544: Browser reuse optimization.
+ */
+export async function createTestPage(browser) {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message.slice(0, 200)));
+
+  await page.goto(GAME_URL, { waitUntil: 'networkidle', timeout: 60000 });
+  await page.waitForSelector('[data-testid="button-new-game"]', { timeout: 15000 });
+  await page.click('[data-testid="button-new-game"]');
+  await page.waitForFunction(
+    () => typeof window.__gameTest !== 'undefined',
+    null, { timeout: 30000 }
+  );
+  await page.mouse.click(400, 300);
+  await page.waitForTimeout(1000);
+
+  return { page, errors };
+}
+
+/**
  * Exit the tutorial house interior via the doorway.
  * Returns true if successfully exited.
  */

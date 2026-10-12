@@ -242,3 +242,37 @@ Each entry records:
 **Regression:** All existing tests pass
 
 **Lesson:** Before claiming a UI/mechanic mismatch, check ALL views (iso AND 2D fallback). The default view (iso) is what most players see. Don't compare hint from one view against mechanic from another.
+
+---
+
+## 2026-10-11 — Workflow Speed Optimization (BUILD 544)
+
+**Task:** Optimize development workflow (measure first, then optimize)
+
+**Expected:** Identify bottlenecks, implement highest-impact fixes
+
+**Files:**
+- `scripts/smart-build.mjs` (new)
+- `scripts/task-context.mjs` (new)
+- `docs/PERFORMANCE_DASHBOARD.md` (new)
+- `tests/real-game/helpers.mjs` (added createTestPage)
+
+**Tests:**
+- `node scripts/smart-build.mjs` (0.2s vs 11.8s)
+- `node scripts/task-context.mjs combat` (0.16s vs ~60s manual)
+- `node tests/real-game/smoke.mjs` (7/7, helpers change safe)
+
+**Result:**
+- Smart build: 58x faster for test-only changes (11.6s saved)
+- Task context: 375x faster than manual reading (60s saved)
+- Browser reuse helper implemented but not yet integrated
+
+**Defects:** None
+
+**Cause:** N/A
+
+**Fix:** N/A
+
+**Regression:** smoke.mjs 7/7 pass
+
+**Lesson:** Measure before optimizing. The build (11.8s) and manual context loading (~60s) were the real bottlenecks, not the code index (0.9s). Small scripts with big time savings beat large refactors.
