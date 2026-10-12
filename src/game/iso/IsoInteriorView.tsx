@@ -59,6 +59,19 @@ function groundItemImg(sprite: string): HTMLImageElement | undefined {
   return img.complete && img.naturalWidth > 0 ? img : undefined;
 }
 
+// BUILD 591: Rat sprite sheet (public/mobs/rat_sheet.png).
+// 512x320, 8x5 grid of 64x64 frames. Row 0: facing forward idle, Row 1-2: side walking.
+let ratSpriteImg: HTMLImageElement | null = null;
+function ratSprite(): HTMLImageElement | undefined {
+  if (!ratSpriteImg) {
+    ratSpriteImg = new Image();
+    ratSpriteImg.onerror = () => console.warn('[iso-interior] failed to load rat sprite');
+    const base = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
+    ratSpriteImg.src = `${base}mobs/rat_sheet.png`;
+  }
+  return ratSpriteImg.complete && ratSpriteImg.naturalWidth > 0 ? ratSpriteImg : undefined;
+}
+
 interface IsoInteriorViewProps {
   roomId: string;
   roomType: IsoRoomType;
@@ -904,17 +917,29 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       }
 
       // BUILD 565: Rats (cellar). Simple dark ellipse with HP bar.
+      // BUILD 591: Use actual rat sprite sheet instead of ellipse.
       for (const rat of ratsRef.current) {
         const c = toScreen(rat.tx, rat.ty);
         const z = state.zoom;
         drawables.push({
           depth: (rat.tx + rat.ty) * 10 + 5,
           draw: (g2) => {
-            // Rat body (dark brown ellipse)
-            g2.fillStyle = '#4a3728';
-            g2.beginPath();
-            g2.ellipse(c.x, c.y - 10 * z, 14 * z, 8 * z, 0, 0, Math.PI * 2);
-            g2.fill();
+            const sprite = ratSprite();
+            if (sprite) {
+              // Sprite sheet: 8x5 grid, 64x64 frames.
+              // Use row 1 (side view) with animation based on time.
+              // Frame cycles every 300ms for walking animation.
+              const frame = Math.floor(performance.now() / 300) % 8;
+              const sx = frame * 64, sy = 1 * 64; // Row 1: side walking
+              const dw = 32 * z, dh = 32 * z; // Scaled to ~32px at zoom 1
+              g2.drawImage(sprite, sx, sy, 64, 64, c.x - dw/2, c.y - dh - 8 * z, dw, dh);
+            } else {
+              // Fallback: dark brown ellipse (if sprite not loaded)
+              g2.fillStyle = '#4a3728';
+              g2.beginPath();
+              g2.ellipse(c.x, c.y - 10 * z, 14 * z, 8 * z, 0, 0, Math.PI * 2);
+              g2.fill();
+            }
             // HP bar
             const w = 28 * z;
             g2.fillStyle = 'rgba(0,0,0,0.6)';
