@@ -303,10 +303,16 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           // BUILD 369 (Phase 2b): authoritative rivers/lakes; road crossings draw as bridges.
           let wet = false;
           if (!isOcean) {
-            const wq = waterGridAt(sc.water, (chunk.x + sc.ox) * FIELD_SIZE + lx + 0.5, (chunk.y + sc.oy) * FIELD_SIZE + ly + 0.5);
-            // BUILD 583: require deeper water before overriding land tiles.
-            // Shallow depth (0.25-0.5) was causing false water rendering on meadows.
-            wet = wq.depth > 0.5;
+            // BUILD 610: Never render water in starting town area (chunks 3-5, 6-8).
+            // Town should be dry land; lakes were flooding the town.
+            const inTownArea = (chunk.x + sc.ox) >= 3 && (chunk.x + sc.ox) <= 5 &&
+                               (chunk.y + sc.oy) >= 6 && (chunk.y + sc.oy) <= 8;
+            if (!inTownArea) {
+              const wq = waterGridAt(sc.water, (chunk.x + sc.ox) * FIELD_SIZE + lx + 0.5, (chunk.y + sc.oy) * FIELD_SIZE + ly + 0.5);
+              // BUILD 583: require deeper water before overriding land tiles.
+              // Shallow depth (0.25-0.5) was causing false water rendering on meadows.
+              wet = wq.depth > 0.5;
+            }
           }
           let tileDrawn = false;
           if (tilesOn) {

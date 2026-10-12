@@ -2606,30 +2606,9 @@ function renderTerrainAtlas(tiles: AtlasTile[], cols: number, rows: number): HTM
     if (at(x + 1, y)?.world.biome !== 'ocean') ctx.fillRect(X0 + T - 2, Y0, 2, T);
   }
 
-  // BUILD 369 (Phase 2b): rivers and lakes on the atlas. Sample the
-  // authoritative water at 3x3 sub-points per tile; wet sub-points draw as
-  // blue dots so rivers read as winding lines and lakes as blobs.
-  for (const tile of tiles) {
-    const { x, y, biome } = tile.world;
-    if (biome === 'ocean') continue;
-    const X0 = px(x);
-    const Y0 = py(y);
-    const S = LANDSCAPE_FIELD_SIZE;
-    for (let sy = 0; sy < 3; sy++) {
-      for (let sx = 0; sx < 3; sx++) {
-        const wx = x * S + ((sx + 0.5) / 3) * S;
-        const wy = y * S + ((sy + 0.5) / 3) * S;
-        const w = waterAt(wx, wy);
-        if (w.depth <= 0.3) continue;
-        const dx = X0 + ((sx + 0.5) / 3) * T;
-        const dy = Y0 + ((sy + 0.5) / 3) * T;
-        ctx.fillStyle = w.kind === 'lake' ? 'rgba(58, 130, 200, 0.95)' : 'rgba(70, 140, 210, 0.9)';
-        ctx.beginPath();
-        ctx.arc(dx, dy, w.kind === 'lake' ? 5 : 3.4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  }
+  // BUILD 610: Rivers/lakes dots REMOVED from atlas (user request).
+  // Blue dots on meadow/land looked like water textures on land.
+  // (Original BUILD 369 code drew blue dots for rivers/lakes here.)
 
   // Pass 4: roads as continuous cased paths; bridges over water.
   for (const tile of tiles) {
