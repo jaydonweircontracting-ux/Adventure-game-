@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '646': 'zoom buttons under HP window',
   '645': 'save includes issue tracker state',
   '644': 'report issues + zoom under minimap',
   '643': 'swap banner colors',
@@ -9924,6 +9925,7 @@ if (active) {
           </div>
         )}
         <div className="world-hud">
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', pointerEvents: 'none' }}>
           {!hpBoxHidden ? (
           <div className={'hud-card ' + (playerHp / playerMaxHp <= 0.25 ? 'is-wounded' : '')} data-testid="hud-player">
             <div className="hud-label"><span>Player</span><span data-testid="text-level">LV {playerLevel}</span></div>
@@ -9982,6 +9984,7 @@ if (active) {
               +
             </button>
           </div>
+          </div> {/* Close left column */}
         </div>
 
          {logOpen && (
