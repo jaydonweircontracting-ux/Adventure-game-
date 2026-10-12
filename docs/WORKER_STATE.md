@@ -6,18 +6,18 @@ The worker reads this at startup, updates it after each cycle, and resumes from 
 ## Worker Status
 - **State:** `running` (emergency directive — executing)
 - **Started:** 2026-10-11 (BUILD 548)
-- **Last cycle:** 6 (complete — harness built and run)
-- **Last known-good commit:** `5f228b3`
-- **Last known-good build:** 552
+- **Last cycle:** 7 (complete — harness hardened)
+- **Last known-good commit:** `75730bf`
+- **Last known-good build:** 553
 
 ## Current Cycle
-- **Cycle:** 6
+- **Cycle:** 7
 - **Phase:** `complete`
-- **Task:** Build gameplay measurement harness + investigate DISC-NPC-001
+- **Task:** Harden playtest harness (M5/M6/M7)
 - **Started:** 2026-10-11
-- **Files changed:** [tests/real-game/playtest-harness.mjs, docs/PLAYTEST_BASELINE.md]
-- **Tests run:** [harness 3x (5/7, 5/7, 4/7 — consistent), smoke 7/7]
-- **Result:** `verified` — Harness works. Baseline: 5/7. DISC-NPC-001 investigated: NPCs correctly at homes, not a bug. No blind moves made.
+- **Files changed:** [tests/real-game/playtest-harness.mjs, docs/PLAYTEST_BASELINE.md, docs/DISCOVERED_TASKS.md]
+- **Tests run:** [harness 4x (5/7→6/7), smoke 7/7]
+- **Result:** `verified` — M5 fixed (canvas tap works), M6 improved, M7 30s+transitions. 6/7. No gameplay defect found.
 
 ## Retry History
 - (empty)
@@ -29,8 +29,9 @@ The worker reads this at startup, updates it after each cycle, and resumes from 
 - TASK-004 (movement speed): needs user approval per BUILD 377. Does not block other work.
 
 ## Next Recommended Task
-1. DISC-NPC-001 — CLOSED (investigated 2026-10-11): NPCs at homes correctly. Not a placement bug.
-2. Fix M5 harness (iso canvas tap support) and investigate M6 stuck incidents. Do NOT blindly move NPCs to plaza. First verify: coordinate systems match, NPCs visible/reachable, distance intentional vs bug, actual town/roads/buildings locations, home/workplace assignments. Smallest safe change for coherent town. Mira's directions must stay accurate.
+1. DISC-HARNESS-001 — Fix M6 flakiness (position reset between directions).
+2. DISC-HARNESS-002 — M5 robustness (5/5 runs).
+3. DISC-TEST-001 — Expand coverage (still open). Do NOT blindly move NPCs to plaza. First verify: coordinate systems match, NPCs visible/reachable, distance intentional vs bug, actual town/roads/buildings locations, home/workplace assignments. Smallest safe change for coherent town. Mira's directions must stay accurate.
 2. DISC-TEST-001 — Expand gameplay regression tests: NPC spawning/visibility, positions vs intended town, unique dialogue (Mira/Cedric/Aldous/Tom), Mira's directions match world, interaction opens dialogue, collision around NPCs, invalid spawns, duplicates.
 3. Then: one additional player-facing improvement from world simulation (schedules, routines, destinations, animations, merchant interactions, roads, examine descriptions).
 
