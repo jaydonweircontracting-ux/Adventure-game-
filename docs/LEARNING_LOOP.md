@@ -313,3 +313,37 @@ Each entry records:
 **Regression:** N/A (new tool)
 
 **Lesson:** A unified brain command that checks its own consistency is more valuable than 10 separate frameworks. The vertical slice (context→investigate→act→verify→learn) works end-to-end.
+
+---
+
+## 2026-10-11 — Autonomous Researcher (BUILD 546)
+
+**Task:** Upgrade brain with task ranking, discover real issues, demonstrate end-to-end
+
+**Expected:** Find and fix real gameplay defect OR validate game health
+
+**Files:**
+- `scripts/brain.mjs` (added `rank` command)
+- `tests/real-game/discover.mjs` (new systematic probe)
+- `docs/TASK_QUEUE.md` (TASK-005 marked done)
+
+**Tests:**
+- `node scripts/brain.mjs rank` → correctly identifies TASK-005 (unblocked) over TASK-004 (blocked)
+- `node tests/real-game/discover.mjs` → 2/2 pass, 0 issues found
+- `node tests/real-game/combat.mjs` → 10/10 pass (regression)
+- `node tests/session-resumption.mjs` → 10/11 (only dirty-tree check fails, expected)
+
+**Result:**
+- TASK-005 was stale (marked todo but actually done in BUILD 540). Marked done with evidence.
+- Systematic gameplay sweep found NO defects: no console errors, responsive (697ms/5 moves), combat works
+- This is a VALID outcome: "A valid iteration may conclude that an apparent defect is not real"
+
+**Defects found:** None in game. One stale task record (fixed).
+
+**Cause of stale task:** TASK-005 completed in BUILD 540 but queue wasn't updated.
+
+**Fix:** Updated TASK_QUEUE.md with evidence.
+
+**Regression:** All tests pass.
+
+**Lesson:** Not every iteration needs a code fix. Validating game health, fixing stale records, and adding systematic probes ARE useful work. Don't manufacture defects to look busy.

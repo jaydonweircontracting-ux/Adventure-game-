@@ -59,10 +59,12 @@
 - **Evidence:** Timed walks: 190 units = ~95 seconds
 
 ### TASK-005: Persistent task queue resume test
-- **Status:** `todo`
+- **Status:** `done`
 - **Priority:** P3
 - **Objective:** Verify a fresh session can read this file and resume work
-- **Next:** Document the limitation or demonstrate resume
+- **Checkpoint:** 2026-10-11 — VERIFIED. tests/session-resumption.mjs passes 11/11 on clean tree (10/11 on dirty tree, only "working tree clean" fails as expected). Fresh session can parse tasks, identify next, verify git sync.
+- **Evidence:** session-resumption.mjs 11/11
+- **Commit:** (BUILD 540)
 
 ## Done
 

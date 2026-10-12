@@ -164,10 +164,63 @@ function investigate(keyword) {
   console.log('   _What test proves the fix?_\n');
 }
 
+// === BRAIN 9: Task Ranking by Impact ===
+function rankTasks() {
+  console.log('=== TASK RANKING (by impact) ===\n');
+
+  if (!existsSync('docs/TASK_QUEUE.md')) {
+    console.log('No task queue found.\n');
+    return;
+  }
+
+  const tq = readFileSync('docs/TASK_QUEUE.md', 'utf8');
+  const blocks = tq.split(/^### /m).slice(1);
+
+  const tasks = blocks.map(b => {
+    const id = b.match(/^(TASK-\d+)/)?.[1];
+    const status = b.match(/- \*\*Status:\*\* `(\w+)`/)?.[1];
+    const priority = b.match(/- \*\*Priority:\*\* (\w+)/)?.[1];
+    const title = b.split('\n')[0].replace(/TASK-\d+: /, '').slice(0, 60);
+    const note = b.match(/- \*\*Note:\*\* (.+)/)?.[1] || '';
+    const blocked = /user approval|needs human|blocked/i.test(b);
+    return { id, status, priority, title, blocked, note: note.slice(0, 80) };
+  }).filter(t => t.id && t.status !== 'done');
+
+  if (!tasks.length) {
+    console.log('No actionable tasks — all done.\n');
+    console.log('Recommendation: Discover new issues via gameplay investigation.\n');
+    return;
+  }
+
+  // Rank: P1 > P2 > P3; unblocked > blocked
+  const pRank = { P1: 30, P2: 20, P3: 10 };
+  tasks.forEach(t => {
+    t.score = (pRank[t.priority] || 0) + (t.blocked ? 0 : 5);
+  });
+  tasks.sort((a, b) => b.score - a.score);
+
+  console.log('Ranked by (priority × 10 + unblocked bonus):\n');
+  tasks.forEach((t, i) => {
+    const flag = t.blocked ? ' [BLOCKED]' : '';
+    console.log(`${i + 1}. ${t.priority} ${t.id}: ${t.title}${flag}`);
+    if (t.note) console.log(`   Note: ${t.note}`);
+  });
+  console.log('');
+
+  const top = tasks[0];
+  if (top.blocked) {
+    console.log(`Top task ${top.id} is blocked. Recommendation:`);
+    console.log('  → Discover new gameplay issues instead of waiting.\n');
+  } else {
+    console.log(`Recommended: ${top.id} (score ${top.score})\n`);
+  }
+}
+
 // === Main ===
 switch (cmd) {
   case 'status': projectState(); break;
   case 'test': selectTests(); break;
+  case 'rank': rankTasks(); break;
   case 'task':
     if (arg) execSync(`node scripts/task-context.mjs ${arg}`, { stdio: 'inherit' });
     else console.log('Usage: node scripts/brain.mjs task <keyword>');
