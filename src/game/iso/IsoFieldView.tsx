@@ -359,16 +359,21 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         }
       }
       (window as unknown as { __bldImgs?: Record<string, HTMLImageElement> }).__bldImgs = bldImgs;
-      // BUILD 602: Stable sprite assignment by world coordinates (not loop index).
-      // Loop index changes as chunks load/unload, causing flicker.
-      const bldKindForRect = (wx: number, wy: number): string => {
-        // Special buildings by known world positions (starting area)
-        if (Math.abs(wx - 85.9) < 1 && Math.abs(wy - 108.8) < 1) return 'tavern'; // tutorial
-        if (Math.abs(wx - 192.1) < 1 && Math.abs(wy - 111.0) < 1) return 'blue-house'; // guild
-        if (Math.abs(wx - 84.1) < 1 && Math.abs(wy - 172.6) < 1) return 'red-shop'; // chapel
-        if (Math.abs(wx - 179.7) < 1 && Math.abs(wy - 173.4) < 1) return 'blue-cottage'; // stone house
-        // Stable hash of coordinates for all others
-        const h = Math.abs(Math.sin(wx * 12.9898 + wy * 78.233) * 43758.5453) % 1;
+      // BUILD 603: Stable sprite assignment using absolute chunk + local coords.
+      // Previous BUILD 602 used r.left/r.top which include scene offset that
+      // changes as player moves between chunks → flicker.
+      const bldKindForBuilding = (b: { rect: { left: number; top: number } }, scOx: number, scOy: number): string => {
+        const absCx = chunk.x + scOx, absCy = chunk.y + scOy;
+        const lx = b.rect.left, ly = b.rect.top;
+        // Special buildings: starting chunk (0,0) by local positions
+        if (absCx === 0 && absCy === 0) {
+          if (Math.abs(lx - 85.9) < 1 && Math.abs(ly - 108.8) < 1) return 'tavern';
+          if (Math.abs(lx - 192.1) < 1 && Math.abs(ly - 111.0) < 1) return 'blue-house';
+          if (Math.abs(lx - 84.1) < 1 && Math.abs(ly - 172.6) < 1) return 'red-shop';
+          if (Math.abs(lx - 179.7) < 1 && Math.abs(ly - 173.4) < 1) return 'blue-cottage';
+        }
+        // Stable hash: absolute chunk + local coords (both stable)
+        const h = Math.abs(Math.sin((absCx * 1000 + lx) * 12.9898 + (absCy * 1000 + ly) * 78.233) * 43758.5453) % 1;
         const kinds = ['blue-cottage', 'red-cottage', 'blue-house', 'red-shop'];
         return kinds[Math.floor(h * kinds.length)];
       };
@@ -398,9 +403,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         const buildingDepth = playerSouthOfBuilding ? (r.left + r.top - 10) : (r.right + r.bottom);
         drawables.push({
           depth: buildingDepth, draw: (g2) => {
-            // BUILD 602: Use sprite if available, fallback to procedural.
-            // Stable assignment by world coords (r.left, r.top are world coords).
-            const kind = bldKindForRect(r.left, r.top);
+            // BUILD 603: stable sprite by absolute chunk + local coords.
+            const kind = bldKindForBuilding(b, sc.ox, sc.oy);
             const sprite = bldImgs[kind];
             if (sprite && sprite.complete && sprite.naturalWidth > 0) {
               // Draw sprite anchored at building base center
