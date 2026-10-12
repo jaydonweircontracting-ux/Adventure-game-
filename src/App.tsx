@@ -811,11 +811,18 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
     const blocked = rects.some((rect, index) => {
       const doorway = doorways[index];
       const off = (doorway && houseOffsets?.[doorway.id]) || { x: 0, y: 0 };
+      // BUILD 615: Shrink collision to match visual sprite (not transparent padding).
+      // Sprites have ~15-20% transparent padding on each side; the visible building
+      // is ~65-70% of the authored rect. Full-rect collision = invisible walls.
+      const cx = (rect.left + rect.right) / 2 + off.x;
+      const cy = (rect.top + rect.bottom) / 2 + off.y;
+      const hw = (rect.right - rect.left) / 2 * 0.68;
+      const hh = (rect.bottom - rect.top) / 2 * 0.68;
       const movedRect = {
-        left: rect.left + off.x,
-        top: rect.top + off.y,
-        right: rect.right + off.x,
-        bottom: rect.bottom + off.y,
+        left: cx - hw,
+        top: cy - hh,
+        right: cx + hw,
+        bottom: cy + hh,
       };
       // BUILD 428: carve the doorway out of the collision. The entry trigger
       // sits just south of the door, but the solid rect (plus padding) extends
@@ -852,7 +859,12 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
           return false;
         }
       }
-      return pointInRect(position, rect, 0.35);
+      // BUILD 615: shrink to match visual (see town buildings above).
+      const cx = (rect.left + rect.right) / 2;
+      const cy = (rect.top + rect.bottom) / 2;
+      const hw = (rect.right - rect.left) / 2 * 0.68;
+      const hh = (rect.bottom - rect.top) / 2 * 0.68;
+      return pointInRect(position, { left: cx - hw, top: cy - hh, right: cx + hw, bottom: cy + hh }, 0.35);
     });
     if (farmBlocked) return true;
   }
