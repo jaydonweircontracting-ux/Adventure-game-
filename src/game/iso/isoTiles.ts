@@ -22,6 +22,7 @@ export const GROUND_TILES: Record<string, number[]> = {
   tundra: [104, 105, 106, 107, 108, 109, 110, 111, 112, 113],
   ocean: [86, 87, 88, 89, 90, 91, 92, 93, 94, 95],
   road: [12, 1],
+  cobble: [13, 14, 15, 16], // BUILD 604: cobblestone plaza (stone tiles)
 };
 
 /** Decor tile numbers per terrain (files: iso-tiles/decor/decor_NNN.png). */

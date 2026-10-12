@@ -477,40 +477,21 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
     { left: 124, top: 44, right: 136, bottom: 53 },   // cottage 4 (north)
     { left: 152, top: 44, right: 164, bottom: 53 },   // cottage 5 (north)
     { left: 180, top: 44, right: 192, bottom: 53 },   // cottage 6 (north)
-    // BUILD 599: Proper town street grid — all houses 12x9, aligned in rows.
-    // BUILD 602: Moved 3 houses that overlapped original buildings.
-    // Northern terrace (straight row, y=100-109):
-    { left: 60, top: 100, right: 72, bottom: 109 },
-    { left: 100, top: 100, right: 112, bottom: 109 },  // moved from 80 (was overlapping tutorial)
-    { left: 120, top: 100, right: 132, bottom: 109 },  // moved from 100
-    { left: 160, top: 100, right: 172, bottom: 109 },
-    { left: 180, top: 100, right: 192, bottom: 109 },
-    { left: 200, top: 100, right: 212, bottom: 109 },
-    // Southern terrace (straight row, y=170-179):
-    { left: 60, top: 170, right: 72, bottom: 179 },
-    { left: 100, top: 170, right: 112, bottom: 179 },  // moved from 80 (was overlapping chapel)
-    { left: 120, top: 170, right: 132, bottom: 179 },  // moved from 100
-    { left: 160, top: 170, right: 172, bottom: 179 },
-    { left: 200, top: 170, right: 212, bottom: 179 },  // moved from 180 (was overlapping stone house)
-    { left: 220, top: 170, right: 232, bottom: 179 },  // moved from 200
-    // Eastern avenue (column, x=230-242):
-    { left: 230, top: 80, right: 242, bottom: 89 },
-    { left: 230, top: 100, right: 242, bottom: 109 },
-    { left: 230, top: 120, right: 242, bottom: 129 },
-    { left: 230, top: 190, right: 242, bottom: 199 },
-    // Western lane (column, x=50-62):
-    { left: 50, top: 80, right: 62, bottom: 89 },
-    { left: 50, top: 190, right: 62, bottom: 199 },
-    { left: 50, top: 210, right: 62, bottom: 219 },
-    // Market square edges:
-    { left: 120, top: 120, right: 132, bottom: 129 },
-    { left: 156, top: 120, right: 168, bottom: 129 },
-    { left: 120, top: 159, right: 132, bottom: 168 },
-    { left: 156, top: 159, right: 168, bottom: 168 },
-    // Southern expansion row:
-    { left: 80, top: 200, right: 92, bottom: 209 },
-    { left: 100, top: 200, right: 112, bottom: 209 },
-    { left: 120, top: 200, right: 132, bottom: 209 },
+    // BUILD 604: Compact walled town — buildings clustered around central plaza.
+    // Plaza at (124-164, 124-164) kept clear for market square.
+    // 8 town buildings forming a square around the plaza (like reference).
+    // North side (facing plaza):
+    { left: 120, top: 108, right: 132, bottom: 117 },
+    { left: 156, top: 108, right: 168, bottom: 117 },
+    // South side (facing plaza):
+    { left: 120, top: 171, right: 132, bottom: 180 },
+    { left: 156, top: 171, right: 168, bottom: 180 },
+    // East side (facing plaza):
+    { left: 176, top: 120, right: 188, bottom: 129 },
+    { left: 176, top: 159, right: 188, bottom: 168 },
+    // West side (facing plaza):
+    { left: 100, top: 120, right: 112, bottom: 129 },
+    { left: 100, top: 159, right: 112, bottom: 168 },
   ];
 }
 

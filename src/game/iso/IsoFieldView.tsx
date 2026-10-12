@@ -294,7 +294,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           let tileDrawn = false;
           if (tilesOn) {
             let tn: number;
+            // BUILD 604: Cobblestone plaza in starting town (124-164, 124-164).
+            const absCx = chunk.x + sc.ox, absCy = chunk.y + sc.oy;
+            const wx = lx + absCx * 280, wy = ly + absCy * 280; // world coords
+            const inPlaza = absCx === 0 && absCy === 0 && wx >= 124 && wx < 164 && wy >= 124 && wy < 164;
             if (isOcean || wet) tn = groundTileFor('ocean', lx, ly, sc.ox, sc.oy);
+            else if (inPlaza) tn = groundTileFor('cobble', lx, ly, sc.ox, sc.oy);
             else if (roadHere) tn = groundTileFor('road', lx, ly, sc.ox, sc.oy);
             else tn = groundTileFor(terr, lx, ly, sc.ox, sc.oy);
             tileDrawn = drawGroundTile(g, tn, p.x, p.y);
@@ -302,6 +307,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           if (!tileDrawn) {
             let col = sc.palette.field;
             if (roadHere) col = sc.palette.path;
+            // BUILD 604: plaza fallback color (cobblestone gray)
+            const absCx2 = chunk.x + sc.ox, absCy2 = chunk.y + sc.oy;
+            const wx2 = lx + absCx2 * 280, wy2 = ly + absCy2 * 280;
+            if (absCx2 === 0 && absCy2 === 0 && wx2 >= 124 && wx2 < 164 && wy2 >= 124 && wy2 < 164) {
+              col = '#9a9a9a';
+            }
             if (wet) {
               if (roadHere) col = '#8a6a44'; // bridge planks
               else {
