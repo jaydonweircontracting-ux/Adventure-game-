@@ -6497,40 +6497,65 @@ import { inflateSync } from 'node:zlib';
   }
 }
 
-// BUILD 680: Settlement layout tests.
+// BUILD 681: Settlement layout tests (centre-first adaptive).
 {
-  const { generateHamletLayout, validateSettlementLayout } = await import('../src/game/settlements.js');
+  const { generateSettlementLayout, validateFullSettlement, BUILDING_VARIANTS, PROP_ASSETS } = await import('../src/game/settlements.js');
 
-  // 1. Generates correct number of slots.
-  const slots = generateHamletLayout({ x: 50, y: 50 }, 12345, ['cottage-1', 'cottage-2', 'cottage-3']);
-  assert(slots.length === 3, 'Settlement: 3 slots generated');
+  // 1. Adaptive plaza: 3 buildings -> small plaza (not giant).
+  const hamlet = generateSettlementLayout({
+    center: { x: 50, y: 50 },
+    seed: 12345,
+    buildings: [
+      { id: 'cottage-1', w: 6, h: 4.5 },
+      { id: 'cottage-2', w: 6, h: 4.5 },
+      { id: 'cottage-3', w: 6, h: 4.5 },
+    ],
+  });
+  assert(hamlet.profile === 'hamlet', 'Settlement: 3 buildings -> hamlet');
+  assert(hamlet.plazaRadius < 8, `Settlement: hamlet plaza small (${hamlet.plazaRadius.toFixed(1)})`);
+  assert(hamlet.plazaRadius >= 5, 'Settlement: hamlet plaza not too small');
 
-  // 2. Deterministic.
-  const slots2 = generateHamletLayout({ x: 50, y: 50 }, 12345, ['cottage-1', 'cottage-2', 'cottage-3']);
-  assert(slots[0].rect.left === slots2[0].rect.left, 'Settlement: deterministic');
+  // 2. Larger settlement -> larger plaza.
+  const town = generateSettlementLayout({
+    center: { x: 70, y: 70 },
+    seed: 12345,
+    buildings: Array.from({ length: 15 }, (_, i) => ({ id: `b-${i}`, w: 6, h: 4.5 })),
+  });
+  assert(town.profile === 'market-town', 'Settlement: 15 buildings -> market-town');
+  assert(town.plazaRadius > hamlet.plazaRadius, 'Settlement: plaza scales with size');
 
-  // 3. Different seeds give different layouts.
-  const slots3 = generateHamletLayout({ x: 50, y: 50 }, 99999, ['cottage-1', 'cottage-2', 'cottage-3']);
-  assert(slots[0].rect.left !== slots3[0].rect.left, 'Settlement: seed variation');
+  // 3. Deterministic.
+  const hamlet2 = generateSettlementLayout({
+    center: { x: 50, y: 50 },
+    seed: 12345,
+    buildings: [
+      { id: 'cottage-1', w: 6, h: 4.5 },
+      { id: 'cottage-2', w: 6, h: 4.5 },
+      { id: 'cottage-3', w: 6, h: 4.5 },
+    ],
+  });
+  assert(hamlet.buildings[0].rect.left === hamlet2.buildings[0].rect.left, 'Settlement: deterministic');
 
-  // 4. Valid layout (no overlaps, in bounds).
-  const errors = validateSettlementLayout(slots);
-  assert(errors.length === 0, `Settlement: valid layout (${errors.join(', ')})`);
+  // 4. Full validation passes.
+  const errors = validateFullSettlement(hamlet);
+  assert(errors.length === 0, `Settlement: valid (${errors.join(', ')})`);
 
-  // 5. Cottages are clustered around center (not in a line).
-  // Check that angles are spread around the circle.
-  const angles = slots.map((s) => s.angleFromCenter);
-  const angleSpread = Math.max(...angles) - Math.min(...angles);
-  assert(angleSpread > 1.0, 'Settlement: cottages spread around center');
+  // 5. Well at center for hamlet with 3+ buildings.
+  assert(hamlet.centerFeature === PROP_ASSETS.well, 'Settlement: well at center');
+  assert(hamlet.props.some((p) => p.asset === PROP_ASSETS.well), 'Settlement: well prop placed');
 
-  // 6. Mosslight cottages use the new layout.
-  const { cottageDoorways } = await import('../src/game/townsfolk.js');
-  const doorways = cottageDoorways();
-  assert(doorways.length === 6, 'Settlement: 6 cottage doorways');
-  // Verify they're not in the old straight-line positions.
-  const rects = doorways.map((d) => d.buildingRect!);
-  // Old positions had x=14 for first three; new should differ.
-  assert(Math.abs(rects[0].left - 14) > 0.1 || Math.abs(rects[0].top - 62) > 0.1, 'Settlement: positions changed from old layout');
+  // 6. Sprite variants assigned from real catalogue, no adjacent duplicates.
+  for (let i = 0; i < hamlet.buildings.length; i++) {
+    const v = hamlet.buildings[i].spriteVariant;
+    assert((BUILDING_VARIANTS as readonly string[]).includes(v), `Settlement: variant ${v} in catalogue`);
+    if (i > 0) {
+      assert(v !== hamlet.buildings[i - 1].spriteVariant, 'Settlement: no adjacent duplicate roofs');
+    }
+  }
+
+  // 7. Lanes generated.
+  assert(hamlet.lanes.length === 2, 'Settlement: hamlet has 2 lanes');
+  assert(town.lanes.length === 4, 'Settlement: market-town has 4 lanes');
 }
 
 // ---- Results ----
