@@ -82,6 +82,8 @@ interface IsoInteriorViewProps {
   // BUILD 565: cellar rats. Tapping one calls onStrikeRat.
   rats?: { id: number; tx: number; ty: number; hp: number; maxHp: number }[];
   onStrikeRat?: (id: number) => void;
+  // BUILD 569: sync iso player position to App for combat calculations
+  onPlayerMove?: (tx: number, ty: number) => void;
 }
 
 const ROOM_W = 12;
@@ -186,7 +188,7 @@ function faceForMove(ax: number, ay: number, bx: number, by: number, current: Fa
   return isoPlayerFaceForScreenDeltaSticky(bx - ax, by - ay, current);
 }
 
-export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair, debugFacing, groundItems, onPickupItem, rats, onStrikeRat }: IsoInteriorViewProps): React.JSX.Element {
+export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair, debugFacing, groundItems, onPickupItem, rats, onStrikeRat, onPlayerMove }: IsoInteriorViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // BUILD 565: expose tile->screen for test automation (localhost only)
   const toScreenRef = useRef<((tx: number, ty: number) => { x: number; y: number }) | null>(null);
@@ -206,6 +208,8 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
   ratsRef.current = rats ?? [];
   const strikeRatRef = useRef(onStrikeRat);
   strikeRatRef.current = onStrikeRat;
+  const playerMoveRef = useRef(onPlayerMove);
+  playerMoveRef.current = onPlayerMove;
   const heldDirRef = useRef(getHeldDir);
   heldDirRef.current = getHeldDir;
 
@@ -272,8 +276,14 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         if (npc && talkRef.current) { talkRef.current(npc.id); return npc.id; }
         const rat = ratsRef.current.find((r) => Math.round(r.tx) === tx && Math.round(r.ty) === ty);
         if (rat && strikeRatRef.current) { strikeRatRef.current(rat.id); return 'rat-' + rat.id; }
+        // Empty walkable tile -> move there (via goTo pathfinding)
+        if (tx >= 0 && ty >= 0 && tx < ROOM_W && ty < ROOM_H && !solidAt(tx, ty)) {
+          goTo(tx, ty);
+          return 'move-' + tx + ',' + ty;
+        }
         return null;
       };
+      (window as any).__interiorPlayerPos = () => ({ tx: state.px, ty: state.py });
     }
     const fromScreen = (sx: number, sy: number) => {
       const wx = (sx - state.w / 2) / state.zoom + state.camX;
@@ -645,6 +655,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
           state.fx = target.tx; state.fy = target.ty;
           state.px = target.tx; state.py = target.ty;
           state.path.shift();
+          if (playerMoveRef.current) playerMoveRef.current(state.px, state.py);
           if (state.path.length === 0) { state.moving = false; state.tapPath = false; }
           else state.facing = faceForMove(state.fx, state.fy, state.path[0].tx, state.path[0].ty, state.facing);
         } else {
