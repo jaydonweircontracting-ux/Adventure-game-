@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '633': 'real-time update banner',
   '632': 'save button in menu',
   '631': 'tri-color update banner',
   '630': 'update checker + deploy guard',
@@ -10151,14 +10152,17 @@ function Home() {
   const [changelogOpen, setChangelogOpen] = useState(false);
   // BUILD 630: Update checker — fetches version.json, shows banner if newer build available.
   // BUILD 631: Tri-color status — available (green), current (orange), error (red).
+  // BUILD 633: Real-time — polls every 10s, banner updates live while on menu.
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<'checking' | 'available' | 'current' | 'error'>('checking');
+  const [lastChecked, setLastChecked] = useState<Date | null>(null);
   useEffect(() => {
     const checkForUpdate = async () => {
       try {
         const base = import.meta.env.BASE_URL;
         // Cache-bust the version check itself.
         const res = await fetch(`${base}version.json?t=${Date.now()}`);
+        setLastChecked(new Date());
         if (!res.ok) {
           setUpdateStatus('error');
           return;
@@ -10169,15 +10173,17 @@ function Home() {
           setUpdateAvailable(data.build);
           setUpdateStatus('available');
         } else {
+          setUpdateAvailable(null);
           setUpdateStatus('current');
         }
       } catch {
         setUpdateStatus('error');
+        setLastChecked(new Date());
       }
     };
     checkForUpdate();
-    // Re-check every 60 seconds.
-    const interval = setInterval(checkForUpdate, 60000);
+    // Re-check every 10 seconds for near real-time updates.
+    const interval = setInterval(checkForUpdate, 10000);
     return () => clearInterval(interval);
   }, []);
   const menuBridgeRef = useRef<{ openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null>(null);
@@ -10665,6 +10671,7 @@ function Home() {
             {updateStatus === 'current' && (
               <div style={{ background: '#e67e22', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
                 ✓ No update available — you're on the latest build
+                {lastChecked && <div style={{ fontSize: 10, fontWeight: 'normal', opacity: 0.8 }}>Checked {lastChecked.toLocaleTimeString()} · live</div>}
               </div>
             )}
             {updateStatus === 'error' && (
