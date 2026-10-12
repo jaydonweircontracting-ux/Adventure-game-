@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '631': 'tri-color update banner',
   '630': 'update checker + deploy guard',
   '629': 'bug tracker + project memory',
   '628': 'clean HUD reorganization',
@@ -10148,23 +10149,30 @@ function Home() {
   // BUILD 626: Changelog panel visibility.
   const [changelogOpen, setChangelogOpen] = useState(false);
   // BUILD 630: Update checker — fetches version.json, shows banner if newer build available.
+  // BUILD 631: Tri-color status — available (green), current (orange), error (red).
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<'checking' | 'available' | 'current' | 'error'>('checking');
   useEffect(() => {
     const checkForUpdate = async () => {
       try {
         const base = import.meta.env.BASE_URL;
         // Cache-bust the version check itself.
         const res = await fetch(`${base}version.json?t=${Date.now()}`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          setUpdateStatus('error');
+          return;
+        }
         const data = await res.json();
         const runningBuild = BUILD_NUMBER;
-        if (data.build && data.build !== runningBuild) {
-          // Only notify if the server has a NEWER build.
-          if (Number(data.build) > Number(runningBuild)) {
-            setUpdateAvailable(data.build);
-          }
+        if (data.build && Number(data.build) > Number(runningBuild)) {
+          setUpdateAvailable(data.build);
+          setUpdateStatus('available');
+        } else {
+          setUpdateStatus('current');
         }
-      } catch { /* offline or version.json missing — silent */ }
+      } catch {
+        setUpdateStatus('error');
+      }
     };
     checkForUpdate();
     // Re-check every 60 seconds.
@@ -10643,16 +10651,26 @@ function Home() {
           </section>
       ) : menuOpen ? (
         <section className="main-menu" aria-label="Main menu" data-testid="main-menu">
-          {/* BUILD 630: Update banner — shown when a newer build is available. */}
-          {updateAvailable && (
-            <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 100, background: '#27ae60', color: '#fff', padding: '10px 20px', borderRadius: 8, fontSize: 14, fontWeight: 'bold', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', display: 'flex', gap: 10, alignItems: 'center' }}>
-              <span>🎮 BUILD {updateAvailable} available!</span>
-              <button onClick={() => window.location.href = `${import.meta.env.BASE_URL}?v=${updateAvailable}`} style={{ background: '#fff', color: '#27ae60', border: 'none', borderRadius: 4, padding: '4px 12px', fontWeight: 'bold', cursor: 'pointer' }}>
-                Update
-              </button>
-            </div>
-          )}
           <div className="main-menu-card">
+            {/* BUILD 631: Tri-color update status banner — always visible above build title. */}
+            {updateStatus === 'available' && updateAvailable && (
+              <div style={{ background: '#27ae60', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
+                <span>🎮 BUILD {updateAvailable} available!</span>
+                <button onClick={() => window.location.href = `${import.meta.env.BASE_URL}?v=${updateAvailable}`} style={{ background: '#fff', color: '#27ae60', border: 'none', borderRadius: 4, padding: '4px 12px', fontWeight: 'bold', cursor: 'pointer' }}>
+                  Update
+                </button>
+              </div>
+            )}
+            {updateStatus === 'current' && (
+              <div style={{ background: '#e67e22', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
+                ✓ No update available — you're on the latest build
+              </div>
+            )}
+            {updateStatus === 'error' && (
+              <div style={{ background: '#e74c3c', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
+                ⚠ Update check failed — couldn't reach server
+              </div>
+            )}
             <div className="main-menu-swords" aria-hidden="true">
               <Sword className="menu-sword sword-left" size={44} strokeWidth={1.75} />
               <Sword className="menu-sword sword-right" size={44} strokeWidth={1.75} />
