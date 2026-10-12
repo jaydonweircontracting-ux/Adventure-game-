@@ -106,6 +106,35 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { __AG_BUILD?: string }).__AG_BUILD) || '375';
+// BUILD 626: Build notes + changelog — brief description per build, shown in
+// main menu so the user can verify updates are live.
+const BUILD_NOTES: Record<string, string> = {
+  '626': 'build notes + changelog',
+  '625': 'invisible wall behind houses fixed',
+  '624': 'sprite preload (no flash)',
+  '623': 'menu back to cream',
+  '622': 'pink menu (reverted)',
+  '621': 'buttons moved under HP',
+  '620': 'black screen at max zoom fixed',
+  '619': 'character reverted',
+  '618': 'new 8-dir character (reverted)',
+  '617': 'D-pad hidden for all',
+  '616': 'D-pad hidden by default',
+  '615': 'invisible walls fixed',
+  '614': 'new building varieties',
+  '613': 'market square redesign',
+  '612': 'mining skill',
+  '611': 'black bg at zoom (attempt)',
+  '610': 'water on land fixed',
+  '609': 'circular minimap',
+  '608': 'zoom-out lag fix',
+};
+const buildNoteFor = (n: string): string => BUILD_NOTES[n] || '';
+// Recent changelog for menu display (newest first).
+const CHANGELOG: { build: string; note: string }[] = Object.entries(BUILD_NOTES)
+  .map(([build, note]) => ({ build, note }))
+  .sort((a, b) => Number(b.build) - Number(a.build))
+  .slice(0, 15);
 // Field size in world units. Chunks are FIELD_SIZE x FIELD_SIZE; the camera
 // follows the player with a slight zoom so each area feels large to explore.
 // BUILD 375: camera math extracted to src/game/fieldCamera.ts; re-exported
@@ -9951,6 +9980,8 @@ function SaveIcon() {
 function Home() {
   const [mapOpen, setMapOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
+  // BUILD 626: Changelog panel visibility.
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const menuBridgeRef = useRef<{ openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null>(null);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
@@ -10428,7 +10459,7 @@ function Home() {
               <Sword className="menu-sword sword-left" size={44} strokeWidth={1.75} />
               <Sword className="menu-sword sword-right" size={44} strokeWidth={1.75} />
             </div>
-            <span className="main-menu-kicker">THE FAR MEADOW · BUILD {BUILD_NUMBER}</span>
+            <span className="main-menu-kicker">THE FAR MEADOW · BUILD {BUILD_NUMBER}{buildNoteFor(BUILD_NUMBER) ? ` (${buildNoteFor(BUILD_NUMBER)})` : ''}</span>
             <h1>Adventure Game</h1>
             <p>Follow the roads, learn the first hunt, and choose the path that carries you beyond Mosslight Crossing.</p>
             <div className="main-menu-actions">
@@ -10436,7 +10467,20 @@ function Home() {
               <button className="main-menu-button" onClick={() => { setCreatingCharacter(false); startNewGame(); }} data-testid="button-new-game">New Game</button>
               <button className="main-menu-button" onClick={loadLocalSave} disabled={!hasLocalSave} data-testid="button-load-game-menu">{hasLocalSave ? 'Load Game' : 'Load Game · No Save Yet'}</button>
               <button className="main-menu-button" onClick={openLoadPicker} data-testid="button-load-save-menu">Import Save File</button>
+              {/* BUILD 626: Changelog — verify updates are live. */}
+              <button className="main-menu-button" onClick={() => setChangelogOpen((v) => !v)} data-testid="button-changelog">📋 Changelog</button>
             </div>
+            {changelogOpen && (
+              <div className="main-menu-changelog" data-testid="panel-changelog" style={{ marginTop: 12, textAlign: 'left', maxHeight: 200, overflowY: 'auto', border: '1px solid rgba(0,0,0,0.15)', borderRadius: 8, padding: 10, background: 'rgba(255,255,255,0.5)' }}>
+                <strong style={{ fontSize: 13 }}>Recent updates</strong>
+                {CHANGELOG.map((c) => (
+                  <div key={c.build} style={{ fontSize: 12, padding: '3px 0', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                    <strong>BUILD {c.build}</strong> — {c.note}
+                    {c.build === BUILD_NUMBER && <span style={{ color: '#2a7a2a', marginLeft: 6 }}>✓ live</span>}
+                  </div>
+                ))}
+              </div>
+            )}
             <p className="main-menu-note">Use Load Game for this browser, or Import Save File for a downloaded backup.</p>
             {saveNotice && <div className="save-notice" role="status">{saveNotice}</div>}
           </div>
