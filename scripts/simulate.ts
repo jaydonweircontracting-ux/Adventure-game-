@@ -79,6 +79,7 @@ import { isMonsterSheetFailed, clearSheetProbeState } from '../src/game/monsterS
 import { mulberry32, shadeColor, mixColor, hexToRgb, GROUND_PX_PER_UNIT } from '../src/game/groundDetail';
 import { FIELD_SIZE, DEFAULT_GAME_ZOOM, zoomTranslatePct, cameraFrac, playerScreenPct, screenPxToFieldUnits, fieldPct } from '../src/game/fieldCamera';
 import { PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP, collisionBoxesOverlap, isPositionOccupiedByGoat, separateGoatFromPlayer } from '../src/game/fieldCollision';
+import { oreNodesForChunk, mineralRichness, geoHash, oreKindFor, GEOLOGY_CELL } from '../src/game/geology';
 import { ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset, isoViewportCovered, isoVisibleTileRange } from '../src/game/iso/isoChunks';
 import { barbarianRegistryStats, barbarianVariant, barbarianHairLabel, BARBARIAN_HAIRSTYLES, BARBARIAN_ATTACK_MS, BARB_FRAMES } from '../src/game/iso/barbarian';
 
@@ -5289,6 +5290,77 @@ import { inflateSync } from 'node:zlib';
   // Failure.
   r = resolvePickpocket(0.5, 0.8);
   assert(r.outcome === 'failure', 'Pickpocket: high roll = failure');
+}
+
+// ---- BUILD 594: deterministic geology layer (ore deposits) ----
+{
+  const SEED = 1234567;
+  const CHUNK = 280;
+  // Stub terrain: rock bands so some nodes appear, water/meadow elsewhere.
+  const terrainAt = (wx: number, wy: number): string => {
+    if ((wx + wy) % 7 === 0) return 'water';
+    if (wx % 3 === 0) return 'rock';
+    if (wy % 4 === 0) return 'mountains';
+    return 'meadow';
+  };
+
+  // 1. Determinism: same seed+chunk twice -> identical.
+  const a = oreNodesForChunk(SEED, 2, 3, CHUNK, terrainAt);
+  const b = oreNodesForChunk(SEED, 2, 3, CHUNK, terrainAt);
+  assert(JSON.stringify(a) === JSON.stringify(b), 'Geology: same seed+chunk must be identical');
+
+  // 2. Different seeds may differ (sanity: layer actually varies).
+  const c = oreNodesForChunk(SEED + 1, 2, 3, CHUNK, terrainAt);
+  assert(JSON.stringify(a) !== JSON.stringify(c) || a.length === 0, 'Geology: different seed should vary (or both empty)');
+
+  // 3. Order independence: union of 2x2 chunks identical regardless of generation order.
+  const order1: string[] = [];
+  for (const [cx, cy] of [[0,0],[1,0],[0,1],[1,1]] as const)
+    for (const n of oreNodesForChunk(SEED, cx, cy, CHUNK, terrainAt)) order1.push(n.id);
+  const order2: string[] = [];
+  for (const [cx, cy] of [[1,1],[0,1],[1,0],[0,0]] as const)
+    for (const n of oreNodesForChunk(SEED, cx, cy, CHUNK, terrainAt)) order2.push(n.id);
+  order1.sort(); order2.sort();
+  assert(JSON.stringify(order1) === JSON.stringify(order2), 'Geology: chunk generation order must not change results');
+  assert(new Set(order1).size === order1.length, 'Geology: no duplicate node ids across adjacent chunks');
+
+  // 4. Node ownership: every node lies inside its chunk's world-tile bounds.
+  for (const [cx, cy] of [[0,0],[3,7],[-2,-5]] as const) {
+    for (const n of oreNodesForChunk(SEED, cx, cy, CHUNK, terrainAt)) {
+      assert(n.wx >= cx*CHUNK && n.wx < (cx+1)*CHUNK && n.wy >= cy*CHUNK && n.wy < (cy+1)*CHUNK,
+        `Geology: node ${n.id} outside owning chunk (${cx},${cy})`);
+      assert(n.id === `ore-${n.kind}-${n.wx}-${n.wy}`, 'Geology: stable id format');
+      assert(n.richness >= 1 && n.richness <= 3, 'Geology: richness in 1..3');
+    }
+  }
+
+  // 5. Terrain gating: all-water chunk yields no nodes.
+  const water = oreNodesForChunk(SEED, 0, 0, CHUNK, () => 'water');
+  assert(water.length === 0, 'Geology: no ore nodes on water');
+
+  // 6. Bounded count per chunk.
+  const maxCells = Math.ceil(CHUNK / GEOLOGY_CELL) ** 2;
+  assert(a.length <= maxCells, 'Geology: at most one node per placement cell');
+
+  // 7. mineralRichness is deterministic and in range.
+  const r1 = mineralRichness(SEED, 100, 200);
+  const r2 = mineralRichness(SEED, 100, 200);
+  assert(r1 === r2 && r1 >= 0 && r1 <= 1, 'Geology: mineralRichness deterministic in 0..1');
+
+  // 8. geoHash in [0,1), deterministic.
+  const h1 = geoHash(SEED, 5, 9, 1);
+  assert(h1 === geoHash(SEED, 5, 9, 1) && h1 >= 0 && h1 < 1, 'Geology: geoHash deterministic in [0,1)');
+
+  // 9. oreKindFor tiers.
+  assert(oreKindFor(0.9, 0.1) === 'gold', 'Geology: rich ground can yield gold');
+  assert(oreKindFor(0.9, 0.9) === 'iron', 'Geology: rich ground roll fallback');
+  assert(oreKindFor(0.5, 0.5) === null, 'Geology: poor ground yields nothing');
+  assert(oreKindFor(0.55, 0.1) === 'coal', 'Geology: mid ground yields coal/stone');
+
+  // 10. Negative chunk coords work (world extends in all directions).
+  const neg = oreNodesForChunk(SEED, -3, -4, CHUNK, terrainAt);
+  const neg2 = oreNodesForChunk(SEED, -3, -4, CHUNK, terrainAt);
+  assert(JSON.stringify(neg) === JSON.stringify(neg2), 'Geology: negative chunks deterministic');
 }
 
 // ---- Results ----
