@@ -185,8 +185,9 @@ export class GameplayAgent {
   }
 }
 
-// Standalone runner: new game → exit → explore → find Bryn → talk
-if (import.meta.url.endsWith('agent.mjs')) {
+// Standalone runner: only when executed directly, not on import
+const isMain = process.argv[1]?.endsWith('agent.mjs');
+if (isMain) {
   let browser;
   try {
     browser = await chromium.launch();
