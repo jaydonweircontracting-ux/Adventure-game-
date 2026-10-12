@@ -91,12 +91,30 @@ else if (cmd === 'complete-task' && process.argv[3]) {
   const session = loadSession();
   if (!session) { console.log('No session'); process.exit(1); }
   const taskId = process.argv[3];
-  session.completedTasks.push({ id: taskId, completedAt: new Date().toISOString() });
+  // BUILD 587: Quality gate enforcement.
+  // A task cannot be marked complete without quality gate evidence.
+  // Gates: functional, visual, integration, regression, performance, persistence.
+  // Use --force to override (records override in session).
+  const forceIndex = process.argv.indexOf('--force');
+  const gatesArg = process.argv.find(a => a.startsWith('--gates='));
+  const gates = gatesArg ? gatesArg.split('=')[1].split(',') : [];
+  const requiredGates = ['functional', 'integration', 'regression'];
+  const missing = requiredGates.filter(g => !gates.includes(g));
+  if (missing.length > 0 && forceIndex === -1) {
+    console.log(`✗ Quality gates missing: ${missing.join(', ')}`);
+    console.log('  Required: functional, integration, regression');
+    console.log('  Provide via --gates=functional,integration,regression');
+    console.log('  Or use --force to override (records override)');
+    process.exit(1);
+  }
+  const entry = { id: taskId, completedAt: new Date().toISOString(), gates };
+  if (forceIndex !== -1) entry.forced = true;
+  session.completedTasks.push(entry);
   session.activeTask = null;
   session.iterationsUsed++;
   session.nextAction = 'Select next task from queue';
   saveSession(session);
-  console.log(`✓ Task ${taskId} completed`);
+  console.log(`✓ Task ${taskId} completed (gates: ${gates.join(', ') || 'forced'})`);
 }
 else if (cmd === 'block-task' && process.argv[3]) {
   const session = loadSession();

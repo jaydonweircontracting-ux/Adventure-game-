@@ -4339,6 +4339,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // BUILD 534: interior state for real-game movement testing.
         isInInterior: () => interiorRef.current !== null,
         getInteriorPos: () => ({ ...interiorPositionRef.current }),
+        // BUILD 587: expose current interior room type for exit verification.
+        // Exiting cellar goes to tavern (both interiors), so isInInterior() stays true.
+        getInteriorRoomType: () => interiorRef.current?.roomType || null,
         // BUILD 535: full movement validation (collision + cliffs + goats).
         // Returns true if the player could move from current pos by (dx, dy).
         canMove: (dx: number, dy: number) => {
