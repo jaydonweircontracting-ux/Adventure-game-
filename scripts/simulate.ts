@@ -5665,6 +5665,72 @@ import { inflateSync } from 'node:zlib';
   assert(result4.x === 4, 'Memo: recomputed value returned');
 }
 
+// BUILD 659: NPC archetype tests (Alien Psychology Engine, Stage B).
+{
+  const { NPC_ARCHETYPES, npcArchetype, npcArchetypeTraits, getArchetype } = await import('../src/game/npcArchetypes.js');
+
+  const makeNpc = (seed: number) => ({
+    id: `npc-${seed}`, name: 'Test', gender: 'male' as const, archetype: 'farmer' as const,
+    role: 'farmer', seed, homeKey: 'h1',
+    home: { x: 0, y: 0 }, position: { x: 0, y: 0 },
+    facing: 'south' as const, activity: 'farming', indoors: false, location: 'OUTDOOR' as const,
+  });
+
+  // 1. All 10 archetypes defined.
+  assert(Object.keys(NPC_ARCHETYPES).length === 10, 'Archetype: 10 archetypes defined');
+
+  // 2. Deterministic assignment — same seed = same archetype.
+  const npc1 = makeNpc(12345);
+  const arch1a = npcArchetype(npc1);
+  const arch1b = npcArchetype(npc1);
+  assert(arch1a.id === arch1b.id, 'Archetype: deterministic per NPC');
+
+  // 3. Different seeds can give different archetypes (distribution check).
+  const seen = new Set<string>();
+  for (let s = 1; s <= 50; s++) {
+    seen.add(npcArchetype(makeNpc(s * 7919)).id);
+  }
+  assert(seen.size >= 5, 'Archetype: varied across NPCs');
+
+  // 4. Same archetype, different traits (individual variation).
+  const npcA = makeNpc(100);
+  const npcB = makeNpc(200);
+  // Find two with same archetype.
+  let pair: [any, any] | null = null;
+  for (let s = 1; s <= 100 && !pair; s++) {
+    for (let t = s + 1; t <= 100 && !pair; t++) {
+      const a = makeNpc(s * 131);
+      const b = makeNpc(t * 131);
+      if (npcArchetype(a).id === npcArchetype(b).id) pair = [a, b];
+    }
+  }
+  assert(pair !== null, 'Archetype: found same-archetype pair');
+  if (pair) {
+    const traitsA = npcArchetypeTraits(pair[0]);
+    const traitsB = npcArchetypeTraits(pair[1]);
+    const differ = traitsA.sociability !== traitsB.sociability ||
+      traitsA.courage !== traitsB.courage ||
+      traitsA.curiosity !== traitsB.curiosity;
+    assert(differ, 'Archetype: same archetype has individual variation');
+  }
+
+  // 5. Traits in valid range.
+  const traits = npcArchetypeTraits(npc1);
+  for (const [k, v] of Object.entries(traits)) {
+    assert(v >= 0 && v <= 1, `Archetype: trait ${k} in 0-1 range`);
+  }
+
+  // 6. Psychology params in valid range.
+  const arch = getArchetype('guardian');
+  assert(arch.psychology.riskTolerance > 0.7, 'Archetype: guardian high risk tolerance');
+  const worrier = getArchetype('worrier');
+  assert(worrier.psychology.riskTolerance < 0.3, 'Archetype: worrier low risk tolerance');
+  assert(worrier.psychology.emotionalSensitivity > 0.8, 'Archetype: worrier high sensitivity');
+
+  // 7. getArchetype returns correct.
+  assert(getArchetype('stoic').name === 'Stoic', 'Archetype: getArchetype works');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
