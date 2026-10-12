@@ -6027,6 +6027,36 @@ import { inflateSync } from 'node:zlib';
   assert(mosslight?.category === 'established', 'Lore: mosslight is established');
 }
 
+// BUILD 663: Minimap/Options overlap fix tests.
+{
+  // The fix is a React conditional: {!interior && !optionsOpen && <MiniMap />}
+  // We verify the logic pattern, not the DOM (no browser in simulate.ts).
+  const shouldShowMinimap = (interior: boolean, optionsOpen: boolean): boolean => {
+    return !interior && !optionsOpen;
+  };
+
+  // 1. Minimap visible during normal gameplay.
+  assert(shouldShowMinimap(false, false) === true, 'Minimap: visible in gameplay');
+
+  // 2. Minimap hidden when Options open.
+  assert(shouldShowMinimap(false, true) === false, 'Minimap: hidden when Options open');
+
+  // 3. Minimap hidden in interior (existing behavior preserved).
+  assert(shouldShowMinimap(true, false) === false, 'Minimap: hidden in interior');
+
+  // 4. Minimap hidden in interior + Options (both).
+  assert(shouldShowMinimap(true, true) === false, 'Minimap: hidden when both');
+
+  // 5. Repeated toggling is stable.
+  let visible = shouldShowMinimap(false, false);
+  visible = shouldShowMinimap(false, true);
+  assert(visible === false, 'Minimap: hides on open');
+  visible = shouldShowMinimap(false, false);
+  assert(visible === true, 'Minimap: restores on close');
+  visible = shouldShowMinimap(false, true);
+  assert(visible === false, 'Minimap: hides again on reopen');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

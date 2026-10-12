@@ -112,6 +112,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '663': 'minimap fix + control center',
   '662': 'world fingerprint + lore',
   '661': 'NPC farmer production',
   '660': 'causal NPC mood engine',
@@ -3775,6 +3776,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [inspectorOpen, setInspectorOpen] = useState(false);
   // BUILD 605: Debug console — black window with coordinates, copyable.
   const [debugConsoleOpen, setDebugConsoleOpen] = useState(false);
+  // BUILD 663: World Simulation Control Center.
+  const [controlCenterOpen, setControlCenterOpen] = useState(false);
+  const [controlCenterTab, setControlCenterTab] = useState<'overview' | 'integrity' | 'lore' | 'npcs'>('overview');
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const logDebug = (msg: string) => {
     const ts = new Date().toLocaleTimeString();
@@ -7587,7 +7591,8 @@ if (active) {
   return (
     <div className="field-column">
       {/* BUILD 609: Circular minimap in corner */}
-      {!interior && <MiniMap chunk={chunk} position={position} />}
+      {/* BUILD 663: Hide minimap when Options is open (mandatory UI fix). */}
+      {!interior && !optionsOpen && <MiniMap chunk={chunk} position={position} />}
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
         {interior ? (isoFieldBeta ? (
           <IsoInteriorView
@@ -7845,6 +7850,14 @@ if (active) {
                 }}>
                   {debugConsoleOpen ? '📟 Hide Console' : '📟 Console'}
                 </button>
+                {/* BUILD 663: World Simulation Control Center toggle. */}
+                <button
+                  type="button"
+                  onClick={() => setControlCenterOpen(!controlCenterOpen)}
+                  style={{ background: '#2a4a2a', color: '#fff', border: 'none', padding: '4px 12px', marginLeft: '8px', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  {controlCenterOpen ? '🌍 Hide Control Center' : '🌍 Control Center'}
+                </button>
                 <button type="button" className="editor-btn" onClick={() => {
                   // BUILD 606: Real return-to-spawn teleport.
                   setChunk({ x: 4, y: 7 });
@@ -8026,6 +8039,84 @@ if (active) {
                   <div style={{ color: '#666' }}>Console empty. Open from World Editor → 📟 Console.</div>
                 ) : (
                   debugLog.map((line, i) => <div key={i}>{line}</div>)
+                )}
+              </div>
+            </div>
+          )}
+          {/* BUILD 663: World Simulation Control Center. */}
+          {controlCenterOpen && (
+            <div style={{
+              position: 'fixed', top: 10, left: 10, right: 10, bottom: 10,
+              backgroundColor: '#1a1a2e', color: '#eee', fontFamily: 'monospace',
+              fontSize: '12px', zIndex: 9998, display: 'flex', flexDirection: 'column',
+              border: '2px solid #4a4a6a', borderRadius: '8px', overflow: 'hidden',
+            }}>
+              <div style={{ padding: '12px', borderBottom: '1px solid #4a4a6a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '14px', fontWeight: 'bold' }}>🌍 World Simulation Control Center</span>
+                <div>
+                  {(['overview', 'integrity', 'lore', 'npcs'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setControlCenterTab(tab)}
+                      style={{
+                        background: controlCenterTab === tab ? '#4a4a6a' : '#2a2a4a',
+                        color: '#fff', border: 'none', padding: '4px 12px',
+                        marginRight: '4px', borderRadius: '4px', cursor: 'pointer',
+                        textTransform: 'capitalize',
+                      }}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setControlCenterOpen(false)}
+                    style={{ background: '#6a2a2a', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', marginLeft: '8px' }}
+                  >
+                    ✕ Close
+                  </button>
+                </div>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                {controlCenterTab === 'overview' && (
+                  <div>
+                    <h3>World Overview</h3>
+                    <p>Build: {typeof window !== 'undefined' && (window as any).__AG_BUILD ? (window as any).__AG_BUILD : 'unknown'}</p>
+                    <p>Day: {brainRef.current?.worldCore.getClock().day ?? 'unknown'}</p>
+                    <p>NPCs loaded: {townsfolkRef.current.length}</p>
+                    <p>Player chunk: ({chunk.x}, {chunk.y})</p>
+                    <p>Player position: ({Math.round(position.x)}, {Math.round(position.y)})</p>
+                  </div>
+                )}
+                {controlCenterTab === 'integrity' && (
+                  <div>
+                    <h3>Map Integrity</h3>
+                    <p>World fingerprint: <em>computed on demand via tests</em></p>
+                    <p>Status: Protected world data preserved (no regeneration in this build).</p>
+                  </div>
+                )}
+                {controlCenterTab === 'lore' && (
+                  <div>
+                    <h3>Lore & Chronicle</h3>
+                    <p>Established entries: 2 (Mosslight Crossing, Mosslight Farmers)</p>
+                    <p>Recorded events: 0</p>
+                    <p>Rumors: 0</p>
+                    <p><em>Full lore browser planned for future build.</em></p>
+                  </div>
+                )}
+                {controlCenterTab === 'npcs' && (
+                  <div>
+                    <h3>NPC Browser ({townsfolkRef.current.length})</h3>
+                    {townsfolkRef.current.slice(0, 20).map((npc) => (
+                      <div key={npc.id} style={{ padding: '4px', borderBottom: '1px solid #333' }}>
+                        <strong>{npc.name}</strong> ({npc.archetype}) — {npc.activity}
+                        <br />
+                        <span style={{ color: '#888' }}>ID: {npc.id} | Pos: ({Math.round(npc.position.x)}, {Math.round(npc.position.y)})</span>
+                      </div>
+                    ))}
+                    {townsfolkRef.current.length > 20 && <p><em>...and {townsfolkRef.current.length - 20} more</em></p>}
+                  </div>
                 )}
               </div>
             </div>

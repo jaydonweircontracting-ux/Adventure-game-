@@ -1,6 +1,6 @@
 {
-  "build": "662",
-  "note": "world fingerprint + lore",
-  "timestamp": "2026-10-12T22:30:40.963Z",
-  "cacheBuster": "mv5tsoxw"
+  "build": "663",
+  "note": "minimap fix + control center",
+  "timestamp": "2026-10-12T22:35:30.510Z",
+  "cacheBuster": "mv5tywcu"
 }
