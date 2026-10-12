@@ -2987,7 +2987,7 @@ body {
   width: min(500px, 100%);
   padding: clamp(28px, 7vw, 54px);
   border: 1px solid rgba(235, 206, 139, .48);
-  background: rgba(243, 235, 213, .97);
+  background: rgba(255, 182, 213, .97);
   color: var(--ink);
   box-shadow: 8px 8px 0 rgba(7, 22, 22, .34), 0 24px 70px rgba(5, 18, 18, .28);
   text-align: center;
