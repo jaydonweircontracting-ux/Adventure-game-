@@ -273,6 +273,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       const tilesOn = isoTilesReady();
       const useChunkLOD = zm < 0.35;
       if (useChunkLOD) {
+        // BUILD 611: Fill entire canvas with base terrain color first.
+        // At max zoom-out the visible area extends beyond the 3x3 chunk grid.
+        g.fillStyle = '#3a6a3a'; // meadow green base
+        g.fillRect(0, 0, wpx, hpx);
         // Draw each visible chunk as a single diamond (9 draw calls vs thousands)
         for (const sc of scenes) {
           const cx0 = (chunk.x + sc.ox) * N, cy0 = (chunk.y + sc.oy) * N;
