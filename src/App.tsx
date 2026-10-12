@@ -3458,6 +3458,93 @@ function questGiverFaceRole(name: string): string {
   return interior[lowered] ?? 'guide';
 }
 
+// BUILD 609: Circular minimap — shows nearby terrain, buildings, player.
+function MiniMap({ chunk, position }: { chunk: Point; position: Point }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const size = 120;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const g = canvas.getContext('2d');
+    if (!g) return;
+    const R = size / 2;
+    g.clearRect(0, 0, size, size);
+    // Clip to circle
+    g.save();
+    g.beginPath();
+    g.arc(R, R, R - 2, 0, Math.PI * 2);
+    g.clip();
+    // Background (dark)
+    g.fillStyle = '#1a2a1a';
+    g.fillRect(0, 0, size, size);
+    // Draw nearby terrain (simplified: sample mapTileFor in a grid)
+    const range = 3; // chunks around player
+    const pxPerChunk = size / (range * 2 + 1);
+    for (let ox = -range; ox <= range; ox++) {
+      for (let oy = -range; oy <= range; oy++) {
+        const cp = { x: chunk.x + ox, y: chunk.y + oy };
+        const tile = mapTileFor(cp);
+        const cx = R + ox * pxPerChunk;
+        const cy = R + oy * pxPerChunk;
+        // Terrain color
+        let col = '#3a6a3a'; // meadow green
+        if (tile.terrain === 'forest') col = '#2a5a2a';
+        else if (tile.terrain === 'desert') col = '#c2a86a';
+        else if (tile.terrain === 'ocean') col = '#2a5aaa';
+        else if (tile.terrain === 'rock') col = '#6a6a6a';
+        g.fillStyle = col;
+        g.fillRect(cx - pxPerChunk / 2, cy - pxPerChunk / 2, pxPerChunk, pxPerChunk);
+      }
+    }
+    // Buildings in current chunk (brown dots)
+    try {
+      const buildings = buildingDoorwaysFor(chunk);
+      g.fillStyle = '#8a6a4a';
+      for (const b of buildings) {
+        // Building pos relative to player, scaled to minimap
+        const dx = (b.rect.left + b.rect.right) / 2 - position.x;
+        const dy = (b.rect.top + b.rect.bottom) / 2 - position.y;
+        const scale = size / 280 / 2; // 280 = FIELD_SIZE, show ~2 chunks
+        const mx = R + dx * scale;
+        const my = R + dy * scale;
+        if (Math.hypot(mx - R, my - R) < R - 4) {
+          g.fillRect(mx - 2, my - 2, 4, 4);
+        }
+      }
+    } catch { /* ignore */ }
+    // Player (white dot, center)
+    g.fillStyle = '#fff';
+    g.beginPath();
+    g.arc(R, R, 4, 0, Math.PI * 2);
+    g.fill();
+    // North indicator
+    g.fillStyle = '#fff';
+    g.font = '10px sans-serif';
+    g.textAlign = 'center';
+    g.fillText('N', R, 12);
+    g.restore();
+    // Circle border
+    g.strokeStyle = '#fff';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(R, R, R - 2, 0, Math.PI * 2);
+    g.stroke();
+  }, [chunk.x, chunk.y, Math.round(position.x / 10), Math.round(position.y / 10)]);
+  return (
+    <canvas
+      ref={canvasRef}
+      width={size}
+      height={size}
+      style={{
+        position: 'fixed', top: 10, right: 10, width: size, height: size,
+        borderRadius: '50%', zIndex: 100, pointerEvents: 'none',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+      }}
+      aria-label="Minimap"
+    />
+  );
+}
+
 function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, bounty, muted, onToggleMute, inputLocked, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number }) {
   // BUILD 476: equipment damage bonus from found items.
   const equipmentDamageBonus = totalEquipmentStats(equipment).damage ?? 0;
@@ -7102,6 +7189,8 @@ if (active) {
 
   return (
     <div className="field-column">
+      {/* BUILD 609: Circular minimap in corner */}
+      {!interior && <MiniMap chunk={chunk} position={position} />}
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
         {interior ? (isoFieldBeta ? (
           <IsoInteriorView
