@@ -529,6 +529,26 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
               } else {
                 g.drawImage(img, sx - dw / 2, sy - dh, dw, dh);
               }
+              // BUILD 576: goats get distinctive curved horns (deer sprite is placeholder)
+              if (kind === 'goat') {
+                g.strokeStyle = '#d4c4a8';
+                g.lineWidth = Math.max(1, s * 0.06);
+                g.lineCap = 'round';
+                const hx = sx, hy = sy - dh * 0.95;
+                // Left horn (curved)
+                g.beginPath();
+                g.moveTo(hx - dw * 0.15, hy);
+                g.quadraticCurveTo(hx - dw * 0.25, hy - dh * 0.15, hx - dw * 0.18, hy - dh * 0.25);
+                g.stroke();
+                // Right horn (curved)
+                g.beginPath();
+                g.moveTo(hx + dw * 0.15, hy);
+                g.quadraticCurveTo(hx + dw * 0.25, hy - dh * 0.15, hx + dw * 0.18, hy - dh * 0.25);
+                g.stroke();
+                // White tint to distinguish from brown deer
+                g.fillStyle = 'rgba(255,255,255,0.25)';
+                g.fillRect(sx - dw / 2, sy - dh, dw, dh);
+              }
               // aggro marker
               if (goat.disposition === 'aggressive') {
                 g.fillStyle = '#ff4444'; g.font = `bold ${Math.max(10, s * 0.4)}px sans-serif`;
