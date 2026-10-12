@@ -175,42 +175,64 @@ export class GameplayAgent {
   }
 
   /**
-   * BUILD 561: Enter a building through its doorway.
-   * Doorway triggers are intentionally narrow (~2.7 units) to match the
-   * visual door. This aligns X precisely with the doorway before walking
-   * north into the trigger zone.
+   * BUILD 563: Geometry-aware building entry.
+   * 
+   * Root cause of flakiness: aligning X while adjacent to the building
+   * wall blocks lateral movement. Solution: align X in OPEN TERRAIN
+   * (15 units south, verified clear), THEN walk straight north.
+   * 
+   * Doorway trigger: x-tolerance ~2.7, must approach from south moving up.
    */
-  async enterBuilding(building, timeoutMs = 60000) {
+  async enterBuilding(building, timeoutMs = 300000) {
     const start = Date.now();
-    // Navigate to south of doorway
-    const navOk = await this.navigateTo(building.x, building.y + 8, 5, 200);
+    const safeY = building.y + 15; // Open terrain, verified lateral movement clear
+    
+    // Phase 1: Navigate to safe approach point (aligned X not required yet)
+    // Use tight tolerance to ensure we're actually in the safe zone
+    const navOk = await this.navigateTo(building.x, safeY, 4, 250);
     this.log.push(`enter_nav: ${navOk}`);
     if (!navOk) return false;
-    // Precise X alignment (BUILD 561 fix: doorway trigger is narrow)
-    // If blocked by wall, back south first to go around
+    
+    // Verify we're south enough (not drifted into wall zone)
+    const { pos: navPos } = await this.observe();
+    if (navPos.y < building.y + 10) {
+      this.log.push(`enter_too_far_north: y=${navPos.y.toFixed(1)}`);
+      return false;
+    }
+    
+    // Phase 2: Precise X alignment in OPEN TERRAIN (no walls to block)
+    let aligned = false;
     for (let i = 0; i < 30 && Date.now() - start < timeoutMs; i++) {
       const { pos } = await this.observe();
       const dx = building.x - pos.x;
-      if (Math.abs(dx) < 0.5) break;
-      const before = { ...pos };
-      await this.step(dx > 0 ? 'right' : 'left');
-      const { pos: after } = await this.observe();
-      // If not moving (blocked), back south and try again
-      if (Math.abs(after.x - before.x) < 0.3) {
-        await this.step('down');
-        await this.step('down');
+      // Also ensure we're still in safe zone (not drifted north into wall)
+      if (pos.y < building.y + 10) {
+        this.log.push('enter_reposition_south');
+        await this.navigateTo(building.x, safeY, 5, 50);
+        continue;
       }
+      if (Math.abs(dx) < 0.5) { aligned = true; break; }
+      if (i < 3 || i % 10 === 0) this.log.push(`align_${i}: pos=(${pos.x.toFixed(1)},${pos.y.toFixed(1)}) dx=${dx.toFixed(1)}`);
+      await this.step(dx > 0 ? 'right' : 'left');
     }
-    // Walk north into doorway
-    for (let i = 0; i < 15 && Date.now() - start < timeoutMs; i++) {
+    this.log.push(`enter_aligned: ${aligned}`);
+    if (!aligned) return false;
+    
+    // Phase 3: Walk straight north into doorway (no lateral moves needed)
+    for (let i = 0; i < 20 && Date.now() - start < timeoutMs; i++) {
       await this.page.keyboard.down('ArrowUp');
       await this.page.waitForTimeout(400);
       await this.page.keyboard.up('ArrowUp');
       this.actions++;
-      const { inInterior } = await this.observe();
+      const { pos, inInterior } = await this.observe();
       if (inInterior) {
         this.log.push(`entered_building: ${building.name}`);
         return true;
+      }
+      // Safety: if we drifted X too far, stop (don't wander into wall)
+      if (Math.abs(pos.x - building.x) > 3) {
+        this.log.push('enter_x_drift');
+        return false;
       }
       await this.page.waitForTimeout(100);
     }
