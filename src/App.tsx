@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '649': 'building facing data foundation',
   '648': 'remove zoom label, tighter row',
   '647': 'zoom in line with backpack',
   '646': 'zoom buttons under HP window',
@@ -984,7 +985,8 @@ type EscapeSpawn = {
   position: Point;
   logs: Array<{ text: string; color: string }>;
 };
-export type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number; rect: { left: number; top: number; right: number; bottom: number } };
+export type DoorwayFacing = 'north' | 'south' | 'east' | 'west';
+export type Doorway = { id: string; position: Point; area: InteriorArea; buildingIndex?: number; rect: { left: number; top: number; right: number; bottom: number }; facing: DoorwayFacing };
 // Bram the smith works the Wayfarer Guild in the starting area. Talking to
 // him opens the crafting / sell / rumours flow.
 const GUILD_SMITH: TownNpc = {
@@ -1017,6 +1019,33 @@ export function buildingDoorwaysFor(chunk: Point): Doorway[] {
   // Use the same landmark source as the visual renderer (mapTileFor) so door
   // triggers always align with the visible buildings.
   const landmark = mapTileFor(chunk).landmark;
+  const road = mapTileFor(chunk).road || '';
+  // BUILD 649: Compute building facing from nearest road. The door should
+  // face the street, not always south. This is the data foundation for
+  // paths, lamps, and other street-relative placement.
+  const facingForRect = (rect: { left: number; top: number; right: number; bottom: number }): DoorwayFacing => {
+    const cx = (rect.left + rect.right) / 2;
+    const cy = (rect.top + rect.bottom) / 2;
+    const centerX = FIELD_SIZE / 2;
+    const centerY = FIELD_SIZE / 2;
+    // Vector from building to chunk center (where roads cross).
+    const dx = centerX - cx;
+    const dy = centerY - cy;
+    // Prefer the axis with greater distance, if that road exists.
+    if (Math.abs(dy) > Math.abs(dx)) {
+      if (dy < 0 && road.includes('n')) return 'north';
+      if (dy > 0 && road.includes('s')) return 'south';
+    } else {
+      if (dx < 0 && road.includes('w')) return 'west';
+      if (dx > 0 && road.includes('e')) return 'east';
+    }
+    // Fallback: face any available road, preferring south (legacy behavior).
+    if (road.includes('s')) return 'south';
+    if (road.includes('n')) return 'north';
+    if (road.includes('e')) return 'east';
+    if (road.includes('w')) return 'west';
+    return 'south';
+  };
   // Points of interest have no house doors (the dungeon gets its own entrance).
   if (landmark && (landmark.kind === 'dungeon' || landmark.kind === 'ruin')) return [];
   if (landmark) {
@@ -1048,6 +1077,7 @@ export function buildingDoorwaysFor(chunk: Point): Doorway[] {
         id: stableId,
         position,
         rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+        facing: facingForRect(rect),
         area: {
           id: stableAreaId,
           name: stableName,
@@ -1070,6 +1100,7 @@ export function buildingDoorwaysFor(chunk: Point): Doorway[] {
       id: chunk.x + ',' + chunk.y + '-farm-' + index,
       position,
       rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+      facing: facingForRect(rect),
       area: {
         id: chunk.x + '-' + chunk.y + '-farm-' + index,
         name: 'Farmhouse',
