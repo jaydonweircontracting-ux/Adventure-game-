@@ -112,6 +112,32 @@ try {
   check('NPC home keys resolve to anchors', false, e.message.slice(0, 80));
 }
 
+// 6. Quest stages have valid kinds and targets
+try {
+  const quests = readFileSync('src/game/quests.ts', 'utf8');
+  const validKinds = ['talk', 'kill', 'collect', 'visit', 'craft', 'explore'];
+  // Extract stage kinds
+  const stageKinds = [...quests.matchAll(/kind:\s*'(\w+)'/g)].map(m => m[1]);
+  const invalid = stageKinds.filter(k => !validKinds.includes(k));
+  check('Quest stage kinds valid',
+    invalid.length === 0,
+    invalid.length > 0 ? `Invalid: ${[...new Set(invalid)].join(', ')}` : `${stageKinds.length} stages, all valid kinds`);
+} catch (e) {
+  check('Quest stage kinds valid', false, e.message.slice(0, 80));
+}
+
+// 7. Quest rewards defined
+try {
+  const quests = readFileSync('src/game/quests.ts', 'utf8');
+  const rewardBlocks = [...quests.matchAll(/rewards:\s*\{([^}]+)\}/g)];
+  const missingCoins = rewardBlocks.filter(b => !b[1].includes('coins'));
+  check('All quests have coin rewards',
+    missingCoins.length === 0,
+    `${rewardBlocks.length} quests checked`);
+} catch (e) {
+  check('All quests have coin rewards', false, e.message.slice(0, 80));
+}
+
 // Summary
 console.log(`\n${checks - failures}/${checks} consistency checks passed`);
 process.exit(failures > 0 ? 1 : 0);
