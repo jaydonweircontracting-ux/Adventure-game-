@@ -66,6 +66,7 @@ import {
 import { applyNPCProduction } from '@/game/townProduction';
 import { createWheatField, advanceWheatGrowth, harvestWheatCrop, harvestableCrops, type WheatField } from '@/game/wheatFields';
 import { createMill, addWheatToMill, advanceMill, takeFlourFromMill, type Mill } from '@/game/mills';
+import { isTextInputActive } from '@/game/textInputGuard';
 import {
   createHorses,
   deserializeHorses,
@@ -114,6 +115,8 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '666': 'horse riding + touch controls + minimap click-to-move',
+  '667': 'text input keybind isolation',
   '665': 'wheat fields, mills, flour production',
   '664': 'living market centre',
   '663': 'minimap fix + control center',
@@ -215,7 +218,7 @@ function formatWorldClock(clock: WorldClockState) {
 }
 
 const WALK_SPEED = 16; // Deliberately slow exploration pace (BUILD 377: user asked for a lot slower)
-const HORSE_SPEED = 180;
+const HORSE_SPEED = 28; // BUILD 666: 1.75x walking speed (was 180, far too fast).
 const HORSE_MOUNT_DISTANCE = 4.5;
 const initialHorseState: HorseState = { chunk: { x: 4, y: 7 }, position: { x: 58, y: 52 } };
 
@@ -3631,7 +3634,7 @@ function questGiverFaceRole(name: string): string {
 }
 
 // BUILD 609: Circular minimap — shows nearby terrain, buildings, player.
-function MiniMap({ chunk, position }: { chunk: Point; position: Point }) {
+function MiniMap({ chunk, position, onTap }: { chunk: Point; position: Point; onTap?: (worldPos: Point) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const size = 120;
   useEffect(() => {
@@ -3709,10 +3712,23 @@ function MiniMap({ chunk, position }: { chunk: Point; position: Point }) {
       height={size}
       style={{
         position: 'fixed', top: 10, right: 10, width: size, height: size,
-        borderRadius: '50%', zIndex: 100, pointerEvents: 'none',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+        borderRadius: '50%', zIndex: 100, pointerEvents: onTap ? 'auto' : 'none',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.5)', cursor: onTap ? 'crosshair' : 'default',
       }}
-      aria-label="Minimap"
+      aria-label="Minimap — tap to move"
+      onClick={(e) => {
+        if (!onTap) return;
+        const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
+        const tapX = e.clientX - rect.left;
+        const tapY = e.clientY - rect.top;
+        // Reject taps outside the circle.
+        const dx = tapX - 60, dy = tapY - 60;
+        if (Math.sqrt(dx*dx + dy*dy) > 58) return;
+        // Convert to world coordinates: 0.214 px per field unit (building scale).
+        const worldX = position.x + dx / 0.214;
+        const worldY = position.y + dy / 0.214;
+        onTap({ x: worldX, y: worldY });
+      }}
     />
   );
 }
@@ -4704,6 +4720,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // src/game/touchInput.ts) — declared beside keysRef since every input-reset
   // path must clear both.
   const touchHoldsRef = useRef<TouchHoldState>(createTouchHoldState());
+  // BUILD 666: Track if D-pad pointer is down for slide-to-change-direction.
+  const dpadActiveRef = useRef(false);
   // BUILD 366: tap-to-move target (2.5D iso field). When set and no manual
   // input is held, the game loop steers the player toward this field-unit
   // point using the normal movement/collision/doorway pipeline. Cleared on
@@ -5905,6 +5923,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       setMoving(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
+      // BUILD 667: Don't steal keys while typing in a text field.
+      if (isTextInputActive(event)) return;
       if (inputLocked || optionsOpen || waitingRef.current) return;
       if (event.code === 'Space' || event.code === 'KeyF') { event.preventDefault(); attackGoat(); return; }
       const direction = directionKeys[event.code];
@@ -7050,6 +7070,16 @@ if (active) {
     if (touchId === undefined) keysRef.current[direction] = true;
     else pressTouchHold(touchHoldsRef.current, direction, touchId);
     setMoving(true);
+    // BUILD 666: Mark D-pad as active for slide-to-change-direction.
+    dpadActiveRef.current = true;
+  };
+  // BUILD 666: Slide-to-change-direction: entering a new D-pad button while
+  // a finger is down switches direction without lifting.
+  const slideToDirection = (direction: Direction) => {
+    if (!dpadActiveRef.current) return;
+    if (inputLocked || optionsOpen || waitingRef.current) return;
+    pressTouchHold(touchHoldsRef.current, direction, 1);
+    setMoving(true);
   };
   const releaseDirection = (direction: Direction, touchId?: number) => {
     if (touchId === undefined) {
@@ -7667,7 +7697,19 @@ if (active) {
     <div className="field-column">
       {/* BUILD 609: Circular minimap in corner */}
       {/* BUILD 663: Hide minimap when Options is open (mandatory UI fix). */}
-      {!interior && !optionsOpen && <MiniMap chunk={chunk} position={position} />}
+      {!interior && !optionsOpen && (
+        <MiniMap
+          chunk={chunk}
+          position={position}
+          onTap={(worldPos) => {
+            // BUILD 666: Minimap click-to-move (OSRS-style).
+            // Validate destination isn't blocked.
+            if (!isFieldPositionBlocked(worldPos, chunk, houseOffsets)) {
+              tapMoveTargetRef.current = worldPos;
+            }
+          }}
+        />
+      )}
       <div ref={gameFrameRef} className="game-frame" tabIndex={0} aria-label="Playable Mosslight Crossing field" data-testid="game-field" data-brain-chunk={brainRef.current?.currentChunkId || 'unknown'}>
         {interior ? (isoFieldBeta ? (
           <IsoInteriorView
@@ -10441,30 +10483,34 @@ if (active) {
                <div />
                <button className="dpad-btn" data-dir="up"
                  onPointerDown={(e) => { e.preventDefault(); pressDirection('up', e.pointerType === 'mouse' ? undefined : 1); }}
-                 onPointerUp={() => releaseDirection('up', 1)}
+                 onPointerUp={() => { dpadActiveRef.current = false; releaseDirection('up', 1); }}
                  onPointerLeave={() => releaseDirection('up', 1)}
-                 onPointerCancel={() => releaseDirection('up', 1)}
+                 onPointerCancel={() => { dpadActiveRef.current = false; releaseDirection('up', 1); }}
+                 onPointerEnter={() => slideToDirection('up')}
                  aria-label="Move up">▲</button>
                <div />
                <button className="dpad-btn" data-dir="left"
                  onPointerDown={(e) => { e.preventDefault(); pressDirection('left', e.pointerType === 'mouse' ? undefined : 1); }}
-                 onPointerUp={() => releaseDirection('left', 1)}
+                 onPointerUp={() => { dpadActiveRef.current = false; releaseDirection('left', 1); }}
                  onPointerLeave={() => releaseDirection('left', 1)}
-                 onPointerCancel={() => releaseDirection('left', 1)}
+                 onPointerCancel={() => { dpadActiveRef.current = false; releaseDirection('left', 1); }}
+                 onPointerEnter={() => slideToDirection('left')}
                  aria-label="Move left">◀</button>
                <div />
                <button className="dpad-btn" data-dir="right"
                  onPointerDown={(e) => { e.preventDefault(); pressDirection('right', e.pointerType === 'mouse' ? undefined : 1); }}
-                 onPointerUp={() => releaseDirection('right', 1)}
+                 onPointerUp={() => { dpadActiveRef.current = false; releaseDirection('right', 1); }}
                  onPointerLeave={() => releaseDirection('right', 1)}
-                 onPointerCancel={() => releaseDirection('right', 1)}
+                 onPointerCancel={() => { dpadActiveRef.current = false; releaseDirection('right', 1); }}
+                 onPointerEnter={() => slideToDirection('right')}
                  aria-label="Move right">▶</button>
                <div />
                <button className="dpad-btn" data-dir="down"
                  onPointerDown={(e) => { e.preventDefault(); pressDirection('down', e.pointerType === 'mouse' ? undefined : 1); }}
-                 onPointerUp={() => releaseDirection('down', 1)}
+                 onPointerUp={() => { dpadActiveRef.current = false; releaseDirection('down', 1); }}
                  onPointerLeave={() => releaseDirection('down', 1)}
-                 onPointerCancel={() => releaseDirection('down', 1)}
+                 onPointerCancel={() => { dpadActiveRef.current = false; releaseDirection('down', 1); }}
+                 onPointerEnter={() => slideToDirection('down')}
                  aria-label="Move down">▼</button>
                <div />
              </div>

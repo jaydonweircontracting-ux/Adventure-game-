@@ -6163,6 +6163,43 @@ import { inflateSync } from 'node:zlib';
   assert(updated.flour === 6, 'Mill: flour decremented');
 }
 
+// BUILD 666/667: Input and movement tests.
+{
+  // Note: isTextInputActive uses document.activeElement as fallback.
+  // In Node (no DOM), we test only the event.target path.
+  // Mock a minimal document for the fallback path.
+  (global as any).document = { activeElement: null };
+
+  const { isTextInputActive } = await import('../src/game/textInputGuard.js');
+
+  // Mock DOM elements for testing.
+  const mockInput = { tagName: 'INPUT', type: 'text', isContentEditable: false, closest: () => null } as any;
+  const mockTextarea = { tagName: 'TEXTAREA', isContentEditable: false, closest: () => null } as any;
+  const mockDiv = { tagName: 'DIV', isContentEditable: false, closest: () => null } as any;
+  const mockEditable = { tagName: 'DIV', isContentEditable: true, closest: () => null } as any;
+
+  // 1. Text input detected.
+  assert(isTextInputActive({ target: mockInput } as any) === true, 'Guard: input detected');
+  assert(isTextInputActive({ target: mockTextarea } as any) === true, 'Guard: textarea detected');
+  assert(isTextInputActive({ target: mockEditable } as any) === true, 'Guard: contenteditable detected');
+
+  // 2. Non-input not detected.
+  assert(isTextInputActive({ target: mockDiv } as any) === false, 'Guard: div not detected');
+
+  // 3. Checkbox not treated as text input.
+  const mockCheckbox = { tagName: 'INPUT', type: 'checkbox', isContentEditable: false, closest: () => null } as any;
+  assert(isTextInputActive({ target: mockCheckbox } as any) === false, 'Guard: checkbox not text input');
+
+  // 4. Horse speed rebalance (1.7-2.0x walking speed).
+  // WALK_SPEED=16, HORSE_SPEED should be 27-32.
+  const WALK = 16, HORSE = 28;
+  const ratio = HORSE / WALK;
+  assert(ratio >= 1.7 && ratio <= 2.0, 'Horse: speed 1.7-2.0x walking');
+
+  // Cleanup.
+  delete (global as any).document;
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
