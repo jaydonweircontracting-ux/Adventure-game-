@@ -286,7 +286,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           let wet = false;
           if (!isOcean) {
             const wq = waterGridAt(sc.water, (chunk.x + sc.ox) * FIELD_SIZE + lx + 0.5, (chunk.y + sc.oy) * FIELD_SIZE + ly + 0.5);
-            wet = wq.depth > 0.25;
+            // BUILD 583: require deeper water before overriding land tiles.
+            // Shallow depth (0.25-0.5) was causing false water rendering on meadows.
+            wet = wq.depth > 0.5;
           }
           let tileDrawn = false;
           if (tilesOn) {
