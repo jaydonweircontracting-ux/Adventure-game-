@@ -1,1 +1,83 @@
-{"issues":[{"description":"Deer could not be targeted or damaged. Root cause: wildlife never added to attackCandidates list.","firstBuild":"627","fixedBuild":"627","id":"ISSUE-001","relatedFiles":["src/App.tsx"],"severity":"high","status":"fixed","title":"Deer/wildlife not attackable","verification":"6 wildlife combat assertions pass in simulate.ts"},{"description":"Roof overhang included in collision. Fixed with asymmetric shrink.","firstBuild":"625","fixedBuild":"625","id":"ISSUE-002","relatedFiles":["src/App.tsx"],"severity":"medium","status":"fixed","title":"Invisible wall behind starting house","verification":"Build succeeds; awaiting phone verification"},{"description":"Old house/NPC visible briefly before new sprites load. Fixed with preload.","firstBuild":"624","fixedBuild":"624","id":"ISSUE-003","relatedFiles":["src/game/iso/IsoFieldView.tsx"],"severity":"low","status":"fixed","title":"Sprite flash on scene load","verification":"Build succeeds"},{"description":"Actions succeed but live site not updating. Forced redeploy via workflow_dispatch.","firstBuild":"622","id":"ISSUE-004","notes":"Monitoring deployment propagation","relatedFiles":[".github/workflows/deploy-pages.yml"],"severity":"high","status":"in-progress","title":"GitHub Pages deployment stuck on 617"},{"description":"Simulate.ts has townsfolk roster failures from BUILD 548. Unrelated to recent changes.","firstBuild":"548","id":"ISSUE-005","notes":"Pre-existing; not caused by builds 609-629","relatedFiles":["scripts/simulate.ts"],"severity":"medium","status":"unresolved","title":"Townsfolk test failures (pre-existing)"},{"description":"Exit position may not match door location. Under investigation.","firstBuild":"625","id":"ISSUE-006","notes":"User reported; doorway exteriorPosition needs verification","relatedFiles":["src/App.tsx"],"severity":"medium","status":"unverified","title":"Player exits from back of house"}],"lastUpdated":"2026-10-12","version":1}
+{
+  "issues": [
+    {
+      "description": "Deer could not be targeted or damaged. Root cause: wildlife never added to attackCandidates list.",
+      "firstBuild": "627",
+      "fixedBuild": "627",
+      "id": "ISSUE-001",
+      "relatedFiles": [
+        "src/App.tsx"
+      ],
+      "severity": "high",
+      "status": "fixed",
+      "title": "Deer/wildlife not attackable",
+      "verification": "6 wildlife combat assertions pass in simulate.ts"
+    },
+    {
+      "description": "Roof overhang included in collision. Fixed with asymmetric shrink.",
+      "firstBuild": "625",
+      "fixedBuild": "625",
+      "id": "ISSUE-002",
+      "relatedFiles": [
+        "src/App.tsx"
+      ],
+      "severity": "medium",
+      "status": "fixed",
+      "title": "Invisible wall behind starting house",
+      "verification": "Build succeeds; awaiting phone verification"
+    },
+    {
+      "description": "Old house/NPC visible briefly before new sprites load. Fixed with preload.",
+      "firstBuild": "624",
+      "fixedBuild": "624",
+      "id": "ISSUE-003",
+      "relatedFiles": [
+        "src/game/iso/IsoFieldView.tsx"
+      ],
+      "severity": "low",
+      "status": "fixed",
+      "title": "Sprite flash on scene load",
+      "verification": "Build succeeds"
+    },
+    {
+      "description": "Actions succeed but live site not updating. Forced redeploy via workflow_dispatch.",
+      "firstBuild": "622",
+      "id": "ISSUE-004",
+      "notes": "Monitoring deployment propagation",
+      "relatedFiles": [
+        ".github/workflows/deploy-pages.yml"
+      ],
+      "severity": "high",
+      "status": "fixed",
+      "title": "GitHub Pages deployment stuck on 617",
+      "fixedBuild": "633",
+      "verification": "Live site confirmed on BUILD 633 via curl 2026-10-12"
+    },
+    {
+      "description": "Simulate.ts has townsfolk roster failures from BUILD 548. Unrelated to recent changes.",
+      "firstBuild": "548",
+      "id": "ISSUE-005",
+      "notes": "Pre-existing; not caused by builds 609-629",
+      "relatedFiles": [
+        "scripts/simulate.ts"
+      ],
+      "severity": "medium",
+      "status": "unresolved",
+      "title": "Townsfolk test failures (pre-existing)"
+    },
+    {
+      "description": "Exit position may not match door location. Under investigation.",
+      "firstBuild": "625",
+      "id": "ISSUE-006",
+      "notes": "User reported; doorway exteriorPosition needs verification",
+      "relatedFiles": [
+        "src/App.tsx"
+      ],
+      "severity": "medium",
+      "status": "unverified",
+      "title": "Player exits from back of house"
+    }
+  ],
+  "lastUpdated": "2026-10-12",
+  "version": 1
+}

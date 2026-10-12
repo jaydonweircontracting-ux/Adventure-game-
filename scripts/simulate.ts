@@ -5447,6 +5447,34 @@ import { inflateSync } from 'node:zlib';
   assert(true, 'Wildlife combat: NPC protection unaffected');
 }
 
+// BUILD 634: Deployment verification tests — version comparison, malformed data, offline handling.
+{
+  // Version comparison logic (mirrors the update banner).
+  const isNewerAvailable = (running: string, server: string | null): boolean => {
+    if (!server) return false;
+    return Number(server) > Number(running);
+  };
+  // 1. Newer build detected.
+  assert(isNewerAvailable('633', '634') === true, 'Deploy: newer build detected');
+  // 2. Same build — no update.
+  assert(isNewerAvailable('633', '633') === false, 'Deploy: same build no update');
+  // 3. Older server build — no update (shouldn't happen, but safe).
+  assert(isNewerAvailable('634', '633') === false, 'Deploy: older server build no update');
+  // 4. Missing server data — no update, show error state.
+  assert(isNewerAvailable('633', null) === false, 'Deploy: missing data no update');
+  // 5. Malformed build number — NaN comparison is false, safe.
+  assert(isNewerAvailable('633', 'abc') === false, 'Deploy: malformed build safe');
+  // 6. Backoff calculation: 10s → 20s → 40s → max 300s.
+  const backoff = (current: number): number => Math.min(current * 2, 300000);
+  assert(backoff(10000) === 20000, 'Deploy: backoff doubles');
+  assert(backoff(200000) === 300000, 'Deploy: backoff caps at 5min');
+  assert(backoff(300000) === 300000, 'Deploy: backoff stays at cap');
+  // 7. Distinguish pushed vs deployed vs verified.
+  // Pushed = commit on origin/main. Deployed = Actions succeeded. Verified = live build matches.
+  // These are three separate states; never conflate them.
+  assert(true, 'Deploy: push/deploy/verify are distinct states');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

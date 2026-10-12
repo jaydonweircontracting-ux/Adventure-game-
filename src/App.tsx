@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '634': 'backoff + deploy tests',
   '633': 'real-time update banner',
   '632': 'save button in menu',
   '631': 'tri-color update banner',
@@ -10153,22 +10154,23 @@ function Home() {
   // BUILD 630: Update checker — fetches version.json, shows banner if newer build available.
   // BUILD 631: Tri-color status — available (green), current (orange), error (red).
   // BUILD 633: Real-time — polls every 10s, banner updates live while on menu.
+  // BUILD 634: Backoff on failures — doubles interval up to 5min to avoid flooding GitHub.
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<'checking' | 'available' | 'current' | 'error'>('checking');
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
+  const backoffRef = useRef(10000);
   useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout>;
     const checkForUpdate = async () => {
       try {
         const base = import.meta.env.BASE_URL;
-        // Cache-bust the version check itself.
         const res = await fetch(`${base}version.json?t=${Date.now()}`);
         setLastChecked(new Date());
-        if (!res.ok) {
-          setUpdateStatus('error');
-          return;
-        }
+        if (!res.ok) throw new Error('bad response');
         const data = await res.json();
         const runningBuild = BUILD_NUMBER;
+        // Reset backoff on success.
+        backoffRef.current = 10000;
         if (data.build && Number(data.build) > Number(runningBuild)) {
           setUpdateAvailable(data.build);
           setUpdateStatus('available');
@@ -10179,12 +10181,13 @@ function Home() {
       } catch {
         setUpdateStatus('error');
         setLastChecked(new Date());
+        // Exponential backoff: 10s → 20s → 40s → ... max 5min.
+        backoffRef.current = Math.min(backoffRef.current * 2, 300000);
       }
+      timeout = setTimeout(checkForUpdate, backoffRef.current);
     };
     checkForUpdate();
-    // Re-check every 10 seconds for near real-time updates.
-    const interval = setInterval(checkForUpdate, 10000);
-    return () => clearInterval(interval);
+    return () => clearTimeout(timeout);
   }, []);
   const menuBridgeRef = useRef<{ openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null>(null);
   const [muted, setMuted] = useState(false);

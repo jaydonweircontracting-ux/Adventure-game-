@@ -1,1 +1,54 @@
-{"builds":[{"build":"628","commit":"cf670a4","date":"2026-10-12","note":"clean HUD reorganization","pushed":true},{"build":"627","commit":"39f7249","date":"2026-10-12","note":"deer/wildlife attackable via shared pipeline","pushed":true},{"build":"626","commit":"e71a6c9","date":"2026-10-12","note":"build notes + changelog","pushed":true},{"build":"625","commit":"e613fc9","date":"2026-10-12","note":"invisible wall behind houses fixed","pushed":true},{"build":"624","commit":"254912e","date":"2026-10-12","note":"sprite preload (no flash)","pushed":true},{"build":"623","commit":"0c3ba0d","date":"2026-10-12","note":"menu back to cream","pushed":true}],"lastBuild":"628"}
+{
+  "builds": [
+    {
+      "build": "634",
+      "commit": "pending-push",
+      "date": "2026-10-12",
+      "note": "backoff + deploy tests",
+      "pushed": false
+    },
+    {
+      "build": "628",
+      "commit": "cf670a4",
+      "date": "2026-10-12",
+      "note": "clean HUD reorganization",
+      "pushed": true
+    },
+    {
+      "build": "627",
+      "commit": "39f7249",
+      "date": "2026-10-12",
+      "note": "deer/wildlife attackable via shared pipeline",
+      "pushed": true
+    },
+    {
+      "build": "626",
+      "commit": "e71a6c9",
+      "date": "2026-10-12",
+      "note": "build notes + changelog",
+      "pushed": true
+    },
+    {
+      "build": "625",
+      "commit": "e613fc9",
+      "date": "2026-10-12",
+      "note": "invisible wall behind houses fixed",
+      "pushed": true
+    },
+    {
+      "build": "624",
+      "commit": "254912e",
+      "date": "2026-10-12",
+      "note": "sprite preload (no flash)",
+      "pushed": true
+    },
+    {
+      "build": "623",
+      "commit": "0c3ba0d",
+      "date": "2026-10-12",
+      "note": "menu back to cream",
+      "pushed": true
+    }
+  ],
+  "lastBuild": "634"
+}
