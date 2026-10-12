@@ -25,7 +25,7 @@ import { oreNodesForChunk, type OreNode, type OreKind } from '@/game/geology';
 import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem, EditorXMark, EditorLogEntry } from './game/worldEditor';
 export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText } from './game/worldEditor';
-import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, type MapPaints, type MapPaintTile } from './game/mapBuilder';
+import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE, type MapPaints, type MapPaintTile } from './game/mapBuilder';
 import { organicTownSpecs } from './game/organicTowns';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 import { findTalkTarget } from './game/talkTarget';
@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '651': 'noise generator in map builder',
   '650': 'world editor in starting menu',
   '649': 'building facing data foundation',
   '648': 'remove zoom label, tighter row',
@@ -3966,6 +3967,54 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     return false;
   });
   const [mapBrush, setMapBrush] = useState<MapBrush>('dirt');
+  // BUILD 651: Noise generator state.
+  const [noiseSeed, setNoiseSeed] = useState('1');
+  const [showNoiseGen, setShowNoiseGen] = useState(false);
+  // Simple deterministic hash-based noise (no external dependency).
+  const hashNoise = (x: number, y: number, seed: number): number => {
+    let h = seed + x * 374761393 + y * 668265263;
+    h = (h ^ (h >> 13)) * 1274126177;
+    return ((h ^ (h >> 16)) >>> 0) / 4294967295;
+  };
+  const generateNoiseTerrain = (preset: 'grass' | 'dirtPatches' | 'forest' | 'rocky' | 'sandy') => {
+    const seed = parseInt(noiseSeed, 10) || 1;
+    pushMapUndo();
+    setMapPaints((prev) => {
+      let next = { ...prev };
+      for (let tx = 0; tx < MAP_TILES_PER_SIDE; tx++) {
+        for (let ty = 0; ty < MAP_TILES_PER_SIDE; ty++) {
+          const n = hashNoise(tx, ty, seed);
+          const n2 = hashNoise(tx + 100, ty + 100, seed);
+          let tile: MapPaintTile | null = null;
+          switch (preset) {
+            case 'grass':
+              // Mostly grass with slight variation.
+              tile = n < 0.9 ? 'grass' : (n2 < 0.5 ? 'dirt' : 'grass');
+              break;
+            case 'dirtPatches':
+              // Grass with dirt patches.
+              tile = n < 0.7 ? 'grass' : 'dirt';
+              break;
+            case 'forest':
+              // Forest clusters.
+              tile = n < 0.5 ? 'forest' : (n < 0.8 ? 'grass' : 'dirt');
+              break;
+            case 'rocky':
+              // Rocky terrain (use sand as rocky visual).
+              tile = n < 0.4 ? 'sand' : (n < 0.7 ? 'dirt' : 'grass');
+              break;
+            case 'sandy':
+              // Sandy terrain.
+              tile = n < 0.7 ? 'sand' : (n2 < 0.5 ? 'grass' : 'dirt');
+              break;
+          }
+          if (tile) next = paintTile(next, chunkKey, tx, ty, tile);
+        }
+      }
+      return next;
+    });
+    logEditorChange('noise-generate', `generated ${preset} terrain (seed ${seed})`);
+  };
   const [mapBuilderMin, setMapBuilderMin] = useState(false);
   // BUILD 352: undo stack for the map builder. Each entry snapshots the paint
   // map and placed objects before a stroke/stamp/clear, so ↩️ Undo restores
@@ -7987,7 +8036,37 @@ if (active) {
                 >
                   📋 Change log ({editorLog.length})
                 </button>
+                <button
+                  type="button"
+                  className="map-builder-btn"
+                  onClick={() => setShowNoiseGen((s) => !s)}
+                >
+                  🎲 Noise {showNoiseGen ? '▲' : '▼'}
+                </button>
               </div>
+              {showNoiseGen && (
+                <div style={{ padding: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: '4px' }}>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ fontSize: '12px', color: '#fff' }}>Seed:</label>
+                    <input
+                      type="text"
+                      value={noiseSeed}
+                      onChange={(e) => setNoiseSeed(e.target.value)}
+                      style={{ width: '60px', padding: '4px', fontSize: '12px', borderRadius: '4px', border: '1px solid #666', background: '#222', color: '#fff' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    <button type="button" className="map-builder-btn" onClick={() => generateNoiseTerrain('grass')}>🌱 Grass</button>
+                    <button type="button" className="map-builder-btn" onClick={() => generateNoiseTerrain('dirtPatches')}>🟫 Dirt patches</button>
+                    <button type="button" className="map-builder-btn" onClick={() => generateNoiseTerrain('forest')}>🌲 Forest</button>
+                    <button type="button" className="map-builder-btn" onClick={() => generateNoiseTerrain('rocky')}>🪨 Rocky</button>
+                    <button type="button" className="map-builder-btn" onClick={() => generateNoiseTerrain('sandy')}>🏖️ Sandy</button>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px' }}>
+                    Generates terrain for this chunk. Undo restores previous state.
+                  </div>
+                </div>
+              )}
               <div className="map-builder-hint">
                 {mapBrush === 'house'
                   ? '🏠 Tap the field to stamp a house.'
