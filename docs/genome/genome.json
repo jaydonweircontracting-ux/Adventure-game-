@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "created": "2026-10-12T05:00:32.272Z",
-  "updated": "2026-10-12T05:21:59.535Z",
+  "updated": "2026-10-12T05:32:08.330Z",
   "sections": {
     "creativeConstitution": [
       {
@@ -178,7 +178,18 @@
     "worldSimulation": [],
     "artContent": [],
     "qualityCriteria": [],
-    "testCoverage": [],
+    "testCoverage": [
+      {
+        "type": "TEST_EVIDENCE",
+        "id": "test-goat-discovery-0-3",
+        "summary": "Goat discovery 0/3 in 100-step walks",
+        "details": "3 runs walking north from spawn, 100 steps each. 0 goats discovered. Goats exist in spawn table (1/5) but not encountered. Possible: insufficient distance, wrong direction, or chunk loading issue. Needs investigation.",
+        "source": "Browser gameplay test",
+        "confidence": "high",
+        "status": "open",
+        "created": "2026-10-12T05:32:08.317Z"
+      }
+    ],
     "research": [],
     "decisions": [
       {
