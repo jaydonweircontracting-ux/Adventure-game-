@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '650': 'world editor in starting menu',
   '649': 'building facing data foundation',
   '648': 'remove zoom label, tighter row',
   '647': 'zoom in line with backpack',
@@ -3954,7 +3955,16 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   }, [placedObjects]);
   // BUILD 341: debug map builder (tilemap-style terrain painter).
   type MapBrush = MapPaintTile | 'house' | 'erase';
-  const [mapBuilderMode, setMapBuilderMode] = useState(false);
+  const [mapBuilderMode, setMapBuilderMode] = useState(() => {
+    // BUILD 650: Check if we should start in editor mode (from starting menu).
+    try {
+      if (sessionStorage.getItem('ag-start-in-editor') === '1') {
+        sessionStorage.removeItem('ag-start-in-editor');
+        return true;
+      }
+    } catch {}
+    return false;
+  });
   const [mapBrush, setMapBrush] = useState<MapBrush>('dirt');
   const [mapBuilderMin, setMapBuilderMin] = useState(false);
   // BUILD 352: undo stack for the map builder. Each entry snapshots the paint
@@ -10896,6 +10906,8 @@ function Home() {
             <div className="main-menu-actions">
               {/* BUILD 455: character creation removed for now — New Game starts directly */}
               <button className="main-menu-button" onClick={() => { setCreatingCharacter(false); startNewGame(); }} data-testid="button-new-game">New Game</button>
+              {/* BUILD 650: World Editor in starting menu — opens Map Builder directly. */}
+              <button className="main-menu-button" onClick={() => { try { sessionStorage.setItem('ag-start-in-editor', '1'); } catch {} setCreatingCharacter(false); startNewGame(); }} data-testid="button-world-editor-menu">🗺️ World Editor</button>
               <button className="main-menu-button" onClick={loadLocalSave} disabled={!hasLocalSave} data-testid="button-load-game-menu">{hasLocalSave ? 'Load Game' : 'Load Game · No Save Yet'}</button>
               <button className="main-menu-button" onClick={openLoadPicker} data-testid="button-load-save-menu">Import Save File</button>
               {/* BUILD 632: Save button in main menu. */}
