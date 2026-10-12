@@ -36,7 +36,8 @@ const TRANSIENT = [
 // Patterns indicating hard failures (do not retry)
 const HARD = [
   /permission denied/i, /authentication failed/i, /EACCES/i,
-  /not found$/i, /syntax error/i, /TypeError/i,
+  /not found$/i, /no such file/i, /cannot access/i,
+  /syntax error/i, /TypeError/i, /ReferenceError/i,
 ];
 
 function classify(output) {

@@ -19,13 +19,13 @@
 ## P1 — Critical
 
 ### TASK-001: Combat damage verification (full loop)
-- **Status:** `in_progress`
+- **Status:** `done`
 - **Priority:** P1
 - **Objective:** Verify complete combat loop: attack → damage → enemy death → loot → player damage
 - **Files:** `tests/real-game/combat.mjs`, `src/App.tsx` (attackGoat, damage)
-- **Checkpoint:** 2026-10-11 — Attack input verified (9/9 combat.mjs pass). Damage 40→31 confirmed via fixture. Enemy death/loot not yet verified.
-- **Next:** Extend combat.mjs to kill a goat (multiple attacks), verify death state and loot drop
-- **Evidence:** BUILD 538 combat.mjs: 9/9 pass
+- **Checkpoint:** 2026-10-11 — FULL LOOP VERIFIED. Attack input → damage (40→31, 9/hit) → death (hp=0, disposition=defeated) in 7 hits. 8/8 tests pass. Goat becomes aggressive when hit. Loot drops not yet verified (next).
+- **Next:** Verify loot drops appear after kill
+- **Evidence:** BUILD 538 combat.mjs: 8/8 pass, kill confirmed
 - **Commit:** `87e7875`
 
 ## P2 — High

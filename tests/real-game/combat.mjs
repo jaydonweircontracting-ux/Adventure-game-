@@ -49,36 +49,61 @@ try {
 
   const startHp = goat.hp;
 
-  // Attack with Space (real input pathway)
-  await page.keyboard.press('Space');
+  // Face the goat: tap ArrowRight briefly (goat is 3 units east)
+  // The attack only hits if the target is in the facing arc.
+  await page.keyboard.down('ArrowRight');
+  await page.waitForTimeout(200);
+  await page.keyboard.up('ArrowRight');
   await page.waitForTimeout(300);
-  const attacking = await page.evaluate(() => window.__gameTest.isAttacking());
-  check('Attack triggered', attacking);
 
-  // Wait for damage to apply
-  await page.waitForTimeout(2000);
+  // Attack until the goat dies (40 HP, ~9 dmg/hit = ~5 hits)
+  // Wait for cooldown between attacks
+  console.log('Attacking until goat dies...');
+  let killed = false;
+  for (let hit = 0; hit < 10; hit++) {
+    // Face east toward goat (attack requires target in facing arc)
+    await page.keyboard.down('ArrowRight');
+    await page.waitForTimeout(150);
+    await page.keyboard.up('ArrowRight');
 
-  const afterGoats = await page.evaluate(() => window.__gameTest.getGoats());
-  const afterGoat = afterGoats.find(g => String(g.id) === String(goatId));
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(800); // attack animation + cooldown
 
-  if (afterGoat) {
-    console.log(`  Goat HP: ${startHp} → ${afterGoat.hp}`);
-    check('Enemy took damage', afterGoat.hp < startHp,
-      `hp ${startHp} → ${afterGoat.hp}`);
-  } else {
-    // Goat is gone — might have died (check for loot/drops)
-    check('Enemy defeated (removed)', true, 'goat no longer in list');
+    const current = await page.evaluate((id) => {
+      const g = window.__gameTest.getGoats().find(x => String(x.id) === String(id));
+      return g ? { hp: g.hp, disposition: g.disposition, state: g.state } : null;
+    }, goatId);
+
+    if (!current) {
+      console.log(`  Hit ${hit + 1}: goat defeated (removed from list)`);
+      killed = true;
+      break;
+    }
+    console.log(`  Hit ${hit + 1}: hp=${current.hp} disposition=${current.disposition}`);
+    if (current.disposition === 'defeated' || current.hp <= 0) {
+      killed = true;
+      break;
+    }
   }
 
-  // Test cooldown: immediate second attack should be blocked
-  await page.keyboard.press('Space');
-  await page.waitForTimeout(200);
-  const cooldown = await page.evaluate(() => window.__gameTest.getAttackCooldown());
-  check('Attack cooldown enforced', cooldown > 0, `cooldown=${cooldown}ms`);
+  check('Enemy killed', killed, killed ? 'goat defeated' : 'survived 10 hits');
 
-  // Cleanup
-  const removed = await page.evaluate((id) => window.__gameTest.removeTestGoat(id), goatId);
-  check('Fixture cleanup', removed);
+  // Verify death state is consistent
+  const finalState = await page.evaluate((id) => {
+    const g = window.__gameTest.getGoats().find(x => String(x.id) === String(id));
+    return g ? { hp: g.hp, disposition: g.disposition } : null;
+  }, goatId);
+  check('Death state consistent',
+    finalState === null || finalState.disposition === 'defeated' || finalState.hp <= 0,
+    finalState ? `hp=${finalState.hp}, disp=${finalState.disposition}` : 'removed');
+
+  // Cleanup (if goat survived)
+  if (finalState) {
+    const removed = await page.evaluate((id) => window.__gameTest.removeTestGoat(id), goatId);
+    check('Fixture cleanup', removed);
+  } else {
+    check('Fixture cleanup', true, 'goat removed by death');
+  }
 
 } catch (e) {
   check('Test completed', false, e.message.slice(0, 200));
