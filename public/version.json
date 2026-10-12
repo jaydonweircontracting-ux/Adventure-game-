@@ -1,6 +1,6 @@
 {
-  "build": "653",
-  "note": "remove duplicate zoom under minimap",
-  "timestamp": "2026-10-12T21:51:06.170Z",
-  "cacheBuster": "mv5sdsjf"
+  "build": "654",
+  "note": "free-text NPC dialogue",
+  "timestamp": "2026-10-12T21:57:21.886Z",
+  "cacheBuster": "mv5slufy"
 }

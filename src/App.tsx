@@ -34,6 +34,7 @@ import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, cl
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, type GeneratedItem } from './game/items';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, type DialogueTopicId } from './game/dialogue';
+import { recognizeIntent, fallbackResponse } from './game/dialogueIntent';
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
@@ -109,6 +110,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '654': 'free-text NPC dialogue',
   '653': 'remove duplicate zoom under minimap',
   '652': 'unified chunk templates',
   '651': 'noise generator in map builder',
@@ -4418,6 +4420,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // in the save under the optional `dialogue` field.
   const [townsfolkDialogue, setTownsfolkDialogue] = useState<Townsperson | null>(null);
   const [dialogueTopic, setDialogueTopic] = useState<DialogueTopicId | null>(null);
+  // BUILD 654: Free-text dialogue input.
+  const [dialogueInput, setDialogueInput] = useState('');
+  const [dialogueHistory, setDialogueHistory] = useState<{ speaker: 'player' | 'npc'; text: string }[]>([]);
   const [disposition, setDisposition] = useState<Record<string, number>>({});
   const [wantedMosslight, setWantedMosslight] = useState(0);
   // BUILD 332: ambient barks — floating greetings, one per NPC per ~75s.
@@ -7105,6 +7110,23 @@ if (active) {
     if (resp.rumor) onAddRumor(resp.rumor, npc.name);
     setDialogueTopic(topic);
     setDisposition((d) => ({ ...d, [npc.id]: adjustDisposition(d[npc.id] ?? defaultDisposition(), 1) }));
+  };
+  // BUILD 654: Free-text dialogue — recognize intent, route to existing topic backend.
+  const sendDialogueMessage = (npc: Townsperson) => {
+    const text = dialogueInput.trim();
+    if (!text) return;
+    setDialogueHistory((h) => [...h, { speaker: 'player', text }]);
+    setDialogueInput('');
+    const intent = recognizeIntent(text);
+    if (intent) {
+      // Route through the existing topic system (disposition, rumors, etc. all work).
+      chooseDialogueTopic(npc, intent.topic);
+      // Record NPC response in history after topic is set.
+      // (The response renders via dialogueTopic; history captures the exchange.)
+    } else {
+      // Unknown — in-character fallback, suggest the topic buttons.
+      setDialogueHistory((h) => [...h, { speaker: 'npc', text: fallbackResponse(npc.name) + ' Try asking about me, my work, rumors, or the town.' }]);
+    }
   };
   // Pokémon-style talk: when the player faces an NPC within range, a Talk
   // button appears beside Attack. Covers quest givers, town NPCs and outdoor
@@ -9971,13 +9993,42 @@ if (active) {
                     <span>Wanted: <strong>{wantedLabel(wantedMosslight)}</strong></span>
                   </div>
                   {resp && <p className="dialogue-response">“{resp.text}”</p>}
+                  {/* BUILD 654: Conversation history for free-text exchanges. */}
+                  {dialogueHistory.length > 0 && (
+                    <div className="dialogue-history" style={{ maxHeight: '120px', overflowY: 'auto', marginBottom: '8px', fontSize: '13px' }}>
+                      {dialogueHistory.slice(-6).map((entry, i) => (
+                        <div key={i} style={{ marginBottom: '4px', opacity: entry.speaker === 'player' ? 0.8 : 1 }}>
+                          <strong>{entry.speaker === 'player' ? 'You' : npc.name}:</strong> {entry.text}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="dialogue-topics">
                     {topicsFor(npc.archetype).map((t) => (
                       <button key={t.id} type="button" className={'dialogue-topic' + (dialogueTopic === t.id ? ' is-active' : '')} onClick={() => chooseDialogueTopic(npc, t.id)}>{t.label}</button>
                     ))}
                   </div>
+                  {/* BUILD 654: Free-text input. */}
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                    <input
+                      type="text"
+                      value={dialogueInput}
+                      onChange={(e) => setDialogueInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') sendDialogueMessage(npc); }}
+                      placeholder="Ask anything..."
+                      style={{ flex: 1, padding: '8px', fontSize: '14px', borderRadius: '6px', border: '1px solid #ccc' }}
+                      aria-label="Type a message to NPC"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => sendDialogueMessage(npc)}
+                      style={{ padding: '8px 16px', fontSize: '14px', borderRadius: '6px', border: 'none', background: '#2c3e50', color: '#fff', cursor: 'pointer' }}
+                    >
+                      Send
+                    </button>
+                  </div>
                 </div>
-                <button type="button" className="dialogue-close" onClick={() => { setTownsfolkDialogue(null); setDialogueTopic(null); }} aria-label="Close dialogue">✕</button>
+                <button type="button" className="dialogue-close" onClick={() => { setTownsfolkDialogue(null); setDialogueTopic(null); setDialogueHistory([]); setDialogueInput(''); }} aria-label="Close dialogue">✕</button>
               </div>
             </div>
           );

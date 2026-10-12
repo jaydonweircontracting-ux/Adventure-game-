@@ -5486,6 +5486,48 @@ import { inflateSync } from 'node:zlib';
   assert(true, 'Deploy: push/deploy/verify are distinct states');
 }
 
+// BUILD 654: Dialogue intent recognition tests.
+{
+  const { recognizeIntent, fallbackResponse } = await import('../src/game/dialogueIntent.js');
+
+  // Greetings → 'who'.
+  assert(recognizeIntent('Hello!')?.topic === 'who', 'Intent: greeting maps to who');
+  assert(recognizeIntent('Hi there')?.topic === 'who', 'Intent: hi maps to who');
+  assert(recognizeIntent('Good morning')?.topic === 'who', 'Intent: good morning maps to who');
+
+  // Who questions.
+  assert(recognizeIntent('Who are you?')?.topic === 'who', 'Intent: who are you maps to who');
+  assert(recognizeIntent('What is your name?')?.topic === 'who', 'Intent: name question maps to who');
+
+  // Work questions.
+  assert(recognizeIntent('What do you do?')?.topic === 'work', 'Intent: what do you do maps to work');
+  assert(recognizeIntent('Tell me about your trade')?.topic === 'work', 'Intent: trade maps to work');
+  assert(recognizeIntent('How is the forge?')?.topic === 'work', 'Intent: forge maps to work');
+
+  // Rumors.
+  assert(recognizeIntent('Any rumors?')?.topic === 'rumors', 'Intent: rumors maps to rumors');
+  assert(recognizeIntent('Heard anything strange?')?.topic === 'rumors', 'Intent: heard anything maps to rumors');
+
+  // Town.
+  assert(recognizeIntent('Tell me about this town')?.topic === 'town', 'Intent: town maps to town');
+  assert(recognizeIntent('Where is the road north?')?.topic === 'town', 'Intent: road question maps to town');
+
+  // Bye.
+  assert(recognizeIntent('Goodbye!')?.topic === 'bye', 'Intent: goodbye maps to bye');
+  assert(recognizeIntent('I have to go now')?.topic === 'bye', 'Intent: have to go maps to bye');
+
+  // Unknown → null.
+  assert(recognizeIntent('asdfghjkl') === null, 'Intent: gibberish returns null');
+  assert(recognizeIntent('') === null, 'Intent: empty returns null');
+  assert(recognizeIntent('the') === null, 'Intent: single common word returns null');
+
+  // Fallback is deterministic per NPC.
+  const f1 = fallbackResponse('Bryn');
+  const f2 = fallbackResponse('Bryn');
+  assert(f1 === f2, 'Intent: fallback deterministic per NPC');
+  assert(typeof f1 === 'string' && f1.length > 0, 'Intent: fallback returns text');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
