@@ -57,7 +57,7 @@
       "description": "Simulate.ts has townsfolk roster failures from BUILD 548. Unrelated to recent changes.",
       "firstBuild": "548",
       "id": "ISSUE-005",
-      "notes": "Count tests fixed in BUILD 635; housing shortage + Elsa issues remain",
+      "notes": "Count/housing/ghost tests fixed in BUILD 637; Elsa state issues remain",
       "relatedFiles": [
         "scripts/simulate.ts"
       ],

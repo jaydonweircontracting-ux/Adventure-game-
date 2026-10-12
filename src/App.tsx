@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '637': 'finish fixing issues',
   '636': 'auto-verify issue colors',
   '635': 'fix three issues',
   '634': 'backoff + deploy tests',
@@ -10057,7 +10058,7 @@ const BAKED_ISSUES: Issue[] = [
   { id: 'ISSUE-002', title: 'Invisible wall behind starting house', description: 'Roof overhang included in collision. Fixed with asymmetric shrink.', status: 'fixed', severity: 'medium', firstBuild: '625', fixedBuild: '625', relatedFiles: ['src/App.tsx'], verification: 'Build succeeds; awaiting phone verification' },
   { id: 'ISSUE-003', title: 'Sprite flash on scene load', description: 'Old house/NPC visible briefly. Fixed with preload.', status: 'fixed', severity: 'low', firstBuild: '624', fixedBuild: '624', relatedFiles: ['src/game/iso/IsoFieldView.tsx'], verification: 'Build succeeds' },
   { id: 'ISSUE-004', title: 'GitHub Pages deployment stuck', description: 'Actions succeed but live site not updating.', status: 'fixed', severity: 'high', firstBuild: '622', fixedBuild: '634', relatedFiles: ['.github/workflows/deploy-pages.yml'], verification: 'Live confirmed on BUILD 634 via curl 2026-10-12', notes: 'Deployments propagating normally' },
-  { id: 'ISSUE-005', title: 'Townsfolk test failures (pre-existing)', description: 'Simulate.ts townsfolk roster failures from BUILD 548.', status: 'in-progress', severity: 'medium', firstBuild: '548', relatedFiles: ['scripts/simulate.ts'], notes: 'Count tests fixed in BUILD 635; housing shortage + Elsa issues remain' },
+  { id: 'ISSUE-005', title: 'Townsfolk test failures (pre-existing)', description: 'Simulate.ts townsfolk roster failures from BUILD 548.', status: 'in-progress', severity: 'medium', firstBuild: '548', relatedFiles: ['scripts/simulate.ts'], notes: 'Count/housing/ghost tests fixed in BUILD 637; Elsa state issues remain' },
   { id: 'ISSUE-006', title: 'Player exits from back of house', description: 'Exit position may not match door location.', status: 'unverified', severity: 'medium', firstBuild: '625', relatedFiles: ['src/App.tsx'], notes: 'User reported; needs verification' },
 ];
 function IssueTrackerPanel({ buildNumber, changelog, updateStatus }: { buildNumber: string; changelog: { build: string; note: string }[]; updateStatus?: string }) {
