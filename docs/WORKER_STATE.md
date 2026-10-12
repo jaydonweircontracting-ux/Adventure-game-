@@ -6,18 +6,18 @@ The worker reads this at startup, updates it after each cycle, and resumes from 
 ## Worker Status
 - **State:** `running` (emergency directive — executing)
 - **Started:** 2026-10-11 (BUILD 548)
-- **Last cycle:** 12 (complete — gameplay agent)
-- **Last known-good commit:** `5d25b36`
-- **Last known-good build:** 558
+- **Last cycle:** 13 (complete — long-distance nav)
+- **Last known-good commit:** `6e0c04b`
+- **Last known-good build:** 559
 
 ## Current Cycle
-- **Cycle:** 12
+- **Cycle:** 13
 - **Phase:** `complete`
-- **Task:** Autonomous gameplay agent (navigate + talk)
+- **Task:** Long-distance navigation verification (78 units)
 - **Started:** 2026-10-11
-- **Files changed:** [tests/real-game/agent.mjs]
-- **Tests run:** [agent playthrough: found Bryn, navigated, talked, 0 stuck]
-- **Result:** `verified` — Agent plays via real inputs, deterministic, bounded.
+- **Files changed:** [tests/real-game/agent.mjs (import guard)]
+- **Tests run:** [nav 78 units: REACHED, 85 actions, 0 stuck]
+- **Result:** `verified` — Greedy navigation handles 78 units, 0 stuck. No pathfinding upgrade needed.
 
 ## Retry History
 - (empty)
