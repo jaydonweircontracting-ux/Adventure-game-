@@ -488,6 +488,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         boar: 'critters/boar/boar_SE_idle_strip.png',
         badger: 'critters/badger/critter_badger_SE_idle.png',
         direwolf: 'critters/wolf/wolf-idle.png',
+        // BUILD 575: goat uses deer sprite as placeholder (similar quadruped)
+        goat: 'critters/stag/critter_stag_SE_idle.png',
       };
       for (const [kind, src] of Object.entries(critterSrc)) {
         if (!critterImgs[kind]) {

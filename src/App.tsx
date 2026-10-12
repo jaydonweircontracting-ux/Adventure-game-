@@ -1654,9 +1654,12 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
   const safePositions = positions.filter((position) => !isFieldPositionBlocked(position, chunk));
   return safePositions.map((position, index) => {
     const wanderSeed = Math.abs(chunk.x * 97 + chunk.y * 193 + index * 53 + 17);
+    // BUILD 575: Add 'goat' as a spawnable kind. Previously only
+    // deer/boar/badger/direwolf spawned — no actual goats existed!
+    const kinds = ['goat', 'deer', 'boar', 'badger', 'direwolf'] as const;
     return {
       id: index,
-      kind: (['deer', 'boar', 'badger', 'direwolf'] as const)[wanderSeed % 4],
+      kind: kinds[wanderSeed % kinds.length],
       position,
       spawnPosition: { ...position },
       roamRadius: 16 + (wanderSeed % 9),

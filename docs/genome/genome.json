@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "created": "2026-10-12T05:00:32.272Z",
-  "updated": "2026-10-12T05:00:43.085Z",
+  "updated": "2026-10-12T05:19:18.497Z",
   "sections": {
     "creativeConstitution": [
       {
@@ -180,7 +180,18 @@
     "qualityCriteria": [],
     "testCoverage": [],
     "research": [],
-    "decisions": [],
+    "decisions": [
+      {
+        "type": "DECISION",
+        "id": "decision-rat-combat-fix",
+        "summary": "Fixed rat damage pipeline with tile adjacency",
+        "details": "Root cause: (1) attackGoat looked up rats in goatsRef not cellarRatsRef, (2) damage gate used 0-100 arc check instead of tile adjacency. Fix: check cellarRatsRef in attackGoat, add cellar-rat to damage gate bypass. Verified: HP 12->3 in browser.",
+        "source": "BUILD 574",
+        "confidence": "high",
+        "status": "active",
+        "created": "2026-10-12T05:19:18.497Z"
+      }
+    ],
     "knownBugs": [
       {
         "type": "TEST_EVIDENCE",
