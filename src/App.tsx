@@ -3627,8 +3627,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const collisionDebugRef = useRef(false);
   useEffect(() => { collisionDebugRef.current = collisionDebugMode; }, [collisionDebugMode]);
   // BUILD 461: D-pad (arrow keys) toggle — persisted
+  // BUILD 616: Hidden by default (user request) — turn on in menu.
   const [showDpad, setShowDpad] = useState(() => {
-    try { return localStorage.getItem('ag-show-dpad') !== '0'; } catch { return true; }
+    try { return localStorage.getItem('ag-show-dpad') === '1'; } catch { return false; }
   });
   const toggleDpad = () => {
     const next = !showDpad;
