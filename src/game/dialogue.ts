@@ -149,8 +149,14 @@ const WORK_LINES: Record<string, { cold: string; warm: string }> = {
 export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): DialogueResponse {
   const tier = dispositionTier(ctx.disposition);
   const cold = tier === 'cold' || tier === 'wary';
+  // BUILD 549: Mira the neighbor gives new-player guidance.
+  // She's the first NPC most players meet — her dialogue should orient them.
+  const isMira = ctx.name === 'Mira';
   switch (topic) {
     case 'who': {
+      if (isMira && !cold) {
+        return { text: `I'm Mira — I farm the plot just east of here. You must be the traveler staying in the old cottage. Welcome! If you're heading to town, follow the road northeast to Mosslight Crossing.` };
+      }
       if (cold) return { text: `${ctx.name}. That's all you need to know.` };
       const role = ctx.archetype === 'commoner' ? 'a resident of Mosslight' : `the town ${ctx.archetype}`;
       let text = `I'm ${ctx.name}, ${role}. Right now I'm ${ctx.activity.toLowerCase()}.`;
@@ -187,6 +193,10 @@ export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): Dialo
       return cold ? { text: lead } : { text: lead + rumor, rumor };
     }
     case 'town': {
+      // BUILD 549: Mira gives practical directions for new players.
+      if (isMira && !cold) {
+        return { text: `Mosslight Crossing is northeast of here — just follow the road. You'll find the tavern, the smith, and the chapel there. The guards patrol the roads, so you should be safe.` };
+      }
       const rep = ctx.townReputation;
       const standing = rep >= 10
         ? 'Folk speak well of you here — you\'ve earned it.'
