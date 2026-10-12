@@ -79,6 +79,9 @@ interface IsoInteriorViewProps {
   // BUILD 430: items on the floor. Tapping one calls onPickupItem.
   groundItems?: IsoGroundItem[];
   onPickupItem?: (id: string) => void;
+  // BUILD 565: cellar rats. Tapping one calls onStrikeRat.
+  rats?: { id: number; tx: number; ty: number; hp: number; maxHp: number }[];
+  onStrikeRat?: (id: number) => void;
 }
 
 const ROOM_W = 12;
@@ -183,8 +186,10 @@ function faceForMove(ax: number, ay: number, bx: number, by: number, current: Fa
   return isoPlayerFaceForScreenDeltaSticky(bx - ax, by - ay, current);
 }
 
-export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair, debugFacing, groundItems, onPickupItem }: IsoInteriorViewProps): React.JSX.Element {
+export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair, debugFacing, groundItems, onPickupItem, rats, onStrikeRat }: IsoInteriorViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // BUILD 565: expose tile->screen for test automation (localhost only)
+  const toScreenRef = useRef<((tx: number, ty: number) => { x: number; y: number }) | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const exitRef = useRef(onExit);
   exitRef.current = onExit;
@@ -196,6 +201,11 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
   groundItemsRef.current = groundItems ?? [];
   const pickupRef = useRef(onPickupItem);
   pickupRef.current = onPickupItem;
+  // BUILD 565: rats
+  const ratsRef = useRef(rats ?? []);
+  ratsRef.current = rats ?? [];
+  const strikeRatRef = useRef(onStrikeRat);
+  strikeRatRef.current = onStrikeRat;
   const heldDirRef = useRef(getHeldDir);
   heldDirRef.current = getHeldDir;
 
@@ -248,6 +258,23 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         y: (p.y - state.camY) * state.zoom + state.h / 2,
       };
     };
+    // BUILD 565: expose for test automation
+    toScreenRef.current = (tx: number, ty: number) => {
+      const p = toScreen(tx, ty);
+      const rect = canvas.getBoundingClientRect();
+      return { x: rect.left + p.x, y: rect.top + p.y };
+    };
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      (window as any).__interiorToScreen = (tx: number, ty: number) => toScreenRef.current?.(tx, ty) ?? null;
+      // Direct tile tap: simulates tap at tile center via real handler path
+      (window as any).__interiorTapTile = (tx: number, ty: number) => {
+        const npc = npcsRef.current.find((n) => Math.round(n.tx) === tx && Math.round(n.ty) === ty);
+        if (npc && talkRef.current) { talkRef.current(npc.id); return npc.id; }
+        const rat = ratsRef.current.find((r) => Math.round(r.tx) === tx && Math.round(r.ty) === ty);
+        if (rat && strikeRatRef.current) { strikeRatRef.current(rat.id); return 'rat-' + rat.id; }
+        return null;
+      };
+    }
     const fromScreen = (sx: number, sy: number) => {
       const wx = (sx - state.w / 2) / state.zoom + state.camX;
       const wy = (sy - state.h / 2) / state.zoom + state.camY;
@@ -277,6 +304,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       // Tap an NPC -> talk.
       const npc = npcsRef.current.find((n) => Math.round(n.tx) === t.tx && Math.round(n.ty) === t.ty);
       if (npc && talkRef.current) { talkRef.current(npc.id); return; }
+      // BUILD 565: Tap a rat -> strike.
+      const rat = ratsRef.current.find((rat) => Math.round(rat.tx) === t.tx && Math.round(rat.ty) === t.ty);
+      if (rat && strikeRatRef.current) { strikeRatRef.current(rat.id); return; }
       // BUILD 430: tap a ground item -> pick up.
       const item = groundItemsRef.current.find((g) => Math.round(g.tx) === t.tx && Math.round(g.ty) === t.ty);
       if (item && pickupRef.current) { pickupRef.current(item.id); return; }
@@ -847,6 +877,28 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
             g2.fillStyle = '#ffe9a8';
             g2.textAlign = 'center';
             g2.fillText(n.name, c.x, c.y - 54);
+          },
+        });
+      }
+
+      // BUILD 565: Rats (cellar). Simple dark ellipse with HP bar.
+      for (const rat of ratsRef.current) {
+        const c = toScreen(rat.tx, rat.ty);
+        const z = state.zoom;
+        drawables.push({
+          depth: (rat.tx + rat.ty) * 10 + 5,
+          draw: (g2) => {
+            // Rat body (dark brown ellipse)
+            g2.fillStyle = '#4a3728';
+            g2.beginPath();
+            g2.ellipse(c.x, c.y - 10 * z, 14 * z, 8 * z, 0, 0, Math.PI * 2);
+            g2.fill();
+            // HP bar
+            const w = 28 * z;
+            g2.fillStyle = 'rgba(0,0,0,0.6)';
+            g2.fillRect(c.x - w/2, c.y - 28 * z, w, 4);
+            g2.fillStyle = rat.hp / rat.maxHp > 0.5 ? '#4a4' : '#a44';
+            g2.fillRect(c.x - w/2, c.y - 28 * z, w * (rat.hp / rat.maxHp), 4);
           },
         });
       }

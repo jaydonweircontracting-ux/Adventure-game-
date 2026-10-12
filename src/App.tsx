@@ -4449,6 +4449,21 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             return out;
           } catch { return []; }
         },
+        // BUILD 565: cellar rats for combat testing. LOCALHOST ONLY.
+        getCellarRats: () => {
+          if (typeof window === 'undefined') return [];
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return [];
+          try {
+            return cellarRatsRef.current.filter(r => r.hp > 0).map(r => ({
+              id: r.id,
+              tx: (r.x / 100) * 12,
+              ty: (r.y / 100) * 10,
+              hp: r.hp,
+              maxHp: r.maxHp,
+            }));
+          } catch { return []; }
+        },
       };
     } catch { /* test hooks are best-effort */ }
   }, []);
@@ -7005,6 +7020,14 @@ if (active) {
             debugFacing={dirTestMode ? (dirTestFacing?.face ?? null) : null}
             groundItems={interiorGroundItems()}
             onPickupItem={pickupGroundItem}
+            rats={cellarRats.filter(r => r.hp > 0).map(r => ({
+              id: r.id,
+              tx: (r.x / 100) * 12,
+              ty: (r.y / 100) * 10,
+              hp: r.hp,
+              maxHp: r.maxHp,
+            }))}
+            onStrikeRat={strikeCellarRat}
           />
         ) : <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onEnterCellar={enterCellar} onTavernSleep={tavernSleepUntilMorning} cellarRats={cellarRats} onStrikeCellarRat={strikeCellarRat} questStates={questStates} interiorTownsfolk={interiorTownsfolk} onTalkToTownsfolk={talkToTownsfolk} />) : (
         <div className={'pixel-field world-field has-ground-detail world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
