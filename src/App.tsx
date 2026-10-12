@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '641': 'build note in update banner',
   '640': 'fix stuck red statuses',
   '639': 'update in progress banner',
   '638': 'fix issues 5 and 6',
@@ -10196,6 +10197,7 @@ function Home() {
   // BUILD 633: Real-time — polls every 10s, banner updates live while on menu.
   // BUILD 634: Backoff on failures — doubles interval up to 5min to avoid flooding GitHub.
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
+  const [updateNote, setUpdateNote] = useState<string>('');
   const [updateStatus, setUpdateStatus] = useState<'checking' | 'available' | 'in-progress' | 'current' | 'error'>('checking');
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const backoffRef = useRef(10000);
@@ -10213,6 +10215,7 @@ function Home() {
         backoffRef.current = 10000;
         if (data.build && Number(data.build) > Number(runningBuild)) {
           setUpdateAvailable(data.build);
+          setUpdateNote(data.note || '');
           setUpdateStatus('available');
         } else {
           // Check 2: GitHub API for pushed (but not yet deployed) builds.
@@ -10719,8 +10722,8 @@ function Home() {
           <div className="main-menu-card">
             {/* BUILD 631: Tri-color update status banner — always visible above build title. */}
             {updateStatus === 'available' && updateAvailable && (
-              <div style={{ background: '#27ae60', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
-                <span>🎮 BUILD {updateAvailable} available!</span>
+              <div style={{ background: '#27ae60', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <span>🎮 BUILD {updateAvailable}{updateNote ? ` (${updateNote})` : ''} available!</span>
                 <button onClick={() => window.location.href = `${import.meta.env.BASE_URL}?v=${updateAvailable}`} style={{ background: '#fff', color: '#27ae60', border: 'none', borderRadius: 4, padding: '4px 12px', fontWeight: 'bold', cursor: 'pointer' }}>
                   Update
                 </button>
