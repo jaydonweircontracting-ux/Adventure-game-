@@ -88,6 +88,7 @@ import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, ques
 import { chestsForChunk, attemptLockpick, serializeOpenedChests, parseOpenedChests, type LockedChest } from '@/game/lockpicking';
 import { sitesForActiveStages, resolveSiteChunk, chunkSatisfiesStage, type ActiveQuestStage } from '@/game/questSites';
 import { playCombatSound } from '@/game/effects';
+import { createEmptySkills, awardXp, levelForXp, xpToNextLevel, SKILLS, WOODCUTTING_XP_PER_TREE, type SkillState } from '@/game/skills';
 import { cornStalksForChunk, type CornStalk } from '@/game/cornfield';
 import { getSpriteState } from '@/game/animation';
 import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/persistence';
@@ -1432,6 +1433,8 @@ type SaveGameData = {
   bodies?: LootableBody[];
   // BUILD 524: Bounty/wanted state.
   bounty?: BountyState;
+  // BUILD 595: Skill XP (levels recalculated from XP on load).
+  skills?: Record<string, { xp: number }>;
 };
 
 const SAVE_FILE_VERSION = CURRENT_SAVE_VERSION;
@@ -4020,6 +4023,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [horse, setHorse] = useState<HorseState>(initialHorseState);
   const [horseFacing, setHorseFacing] = useState<Direction>('down');
   const [logOpen, setLogOpen] = useState(false);
+  // BUILD 595: Skill panel visibility.
+  const [skillsOpen, setSkillsOpen] = useState(false);
   const [hpBoxHidden, setHpBoxHidden] = useState(false);
   // Quest system: active/completed quest states (pure logic in src/game/quests.ts).
   const [questStates, setQuestStates] = useState<QuestState[]>([]);
@@ -4597,6 +4602,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     civ: civRef.current ? serializeCivilization(civRef.current) : undefined,
     horses: horsesRef.current ? serializeHorses(horsesRef.current.horses, horsesRef.current.stables) : undefined,
     brainState: brainRef.current?.getGameState() || null,
+    // BUILD 595: Persist skill XP (levels recalculated on load).
+    skills: Object.fromEntries(
+      Object.entries(skillsRef.current).map(([id, s]) => [id, { xp: s.xp }])
+    ),
   });
   saveStateRef.current = createSaveData;
 
@@ -4624,6 +4633,20 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // BUILD 522: Restore lootable bodies.
     if (loadState.bodies && Array.isArray(loadState.bodies)) {
       bodiesRef.current = loadState.bodies; setBodies(loadState.bodies);
+    }
+    // BUILD 595: Restore skill XP; recalculate levels from XP. Invalid or
+    // missing data falls back to level-1 defaults without erasing progress.
+    {
+      const restored = createEmptySkills();
+      if (loadState.skills && typeof loadState.skills === 'object') {
+        for (const [id, val] of Object.entries(loadState.skills)) {
+          if (!SKILLS[id] || !val || typeof val !== 'object') continue;
+          const xp = (val as { xp?: unknown }).xp;
+          if (typeof xp !== 'number' || !Number.isFinite(xp) || xp < 0) continue;
+          restored[id] = { xp: Math.floor(Math.min(xp, 200000000)), level: levelForXp(xp) };
+        }
+      }
+      skillsRef.current = restored; setSkills({ ...restored });
     }
     targetGoatIdRef.current = null; setTargetGoatId(null);
     droppedLootRef.current = loadState.droppedLoot || []; setDroppedLoot(droppedLootRef.current);
@@ -5163,6 +5186,22 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [felledTrees, setFelledTrees] = useState<Record<string, number>>({});
   const felledTreesRef = useRef<Record<string, number>>({});
   const treeHitsRef = useRef<Record<string, number>>({});
+  // BUILD 595: Authoritative skill state. XP is authoritative; levels derive from XP.
+  const [skills, setSkills] = useState<Record<string, SkillState>>(() => createEmptySkills());
+  const skillsRef = useRef<Record<string, SkillState>>(skills);
+  const awardSkillXp = (skillId: string, amount: number) => {
+    const result = awardXp(skillsRef.current, skillId, amount);
+    setSkills({ ...skillsRef.current });
+    if (result.leveledUp) {
+      const def = SKILLS[skillId];
+      setLogs((currentLogs) => [
+        { text: `Level up! ${def ? def.name : skillId} is now level ${result.newLevel}.`, color: 'gold' },
+        ...currentLogs,
+      ].slice(0, 3));
+      spawnCombatText(`Level ${result.newLevel}!`, positionRef.current, 'reward');
+    }
+    return result;
+  };
   const purgeRegrownTrees = () => {
     const now = Date.now();
     let changed = false;
@@ -5942,6 +5981,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 spawnCombatText('+' + woodCount + ' wood', hitPosition, 'reward');
                 playCombatSound('shing', muted);
                 setLogs((currentLogs) => [{ text: 'You chop down a tree. +' + woodCount + ' wood.', color: 'blue' }, ...currentLogs].slice(0, 3));
+                // BUILD 595: Award woodcutting XP exactly once per successful felling.
+                awardSkillXp('woodcutting', WOODCUTTING_XP_PER_TREE);
               } else {
                 spawnCombatText('chop', hitPosition, 'damage');
                 playCombatSound('shing', muted);
@@ -9443,6 +9484,7 @@ if (active) {
             <button className="hud-quick-button hud-card-restore" onClick={() => setHpBoxHidden(false)} aria-label="Show HP box" title="Show HP box" data-testid="button-show-hp-box"><Eye size={15} /></button>
           )}
           <button className="hud-bag-button" onClick={onOpenInventory} aria-label="Open menu" title="Menu" data-testid="button-open-inventory"><Backpack size={17} /></button>
+          <button className="hud-bag-button" onClick={() => setSkillsOpen(true)} aria-label="Open skills" title="Skills" data-testid="button-open-skills">🎯</button>
         </div>
 
          {logOpen && (
@@ -9453,6 +9495,29 @@ if (active) {
              </div>
              <div className="log-list">
                {logs.map((log, index) => <div className="log-row" key={`${log.text}-${index}`} data-testid={`log-entry-${index}`}><span className={`log-dot ${log.color}`} /><span>{log.text}</span></div>)}
+             </div>
+           </section>
+         )}
+         {skillsOpen && (
+           <section id="skills-panel" className="field-log-drawer" aria-label="Skills" data-testid="panel-skills">
+             <div className="field-log-heading">
+               <h2>Skills</h2>
+               <button className="field-log-close" onClick={() => setSkillsOpen(false)} aria-label="Close skills" data-testid="button-close-skills"><X size={16} /></button>
+             </div>
+             <div className="log-list">
+               {Object.values(SKILLS).map((def) => {
+                 const s = skills[def.id] || { xp: 0, level: 1 };
+                 const prog = xpToNextLevel(s.xp);
+                 return (
+                   <div className="log-row" key={def.id} data-testid={`skill-${def.id}`}>
+                     <span aria-hidden="true">{def.icon}</span>
+                     <span><strong>{def.name}</strong> <small>Lv {s.level} • {s.xp} XP{prog.needed > 0 ? ` • ${prog.needed} to next` : ' • MAX'}</small></span>
+                     <span style={{ width: 60, height: 6, background: '#333', borderRadius: 3, overflow: 'hidden' }} aria-hidden="true">
+                       <span style={{ display: 'block', width: `${Math.round(prog.progress * 100)}%`, height: '100%', background: '#4caf50' }} />
+                     </span>
+                   </div>
+                 );
+               })}
              </div>
            </section>
          )}

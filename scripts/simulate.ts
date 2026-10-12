@@ -80,6 +80,7 @@ import { mulberry32, shadeColor, mixColor, hexToRgb, GROUND_PX_PER_UNIT } from '
 import { FIELD_SIZE, DEFAULT_GAME_ZOOM, zoomTranslatePct, cameraFrac, playerScreenPct, screenPxToFieldUnits, fieldPct } from '../src/game/fieldCamera';
 import { PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP, collisionBoxesOverlap, isPositionOccupiedByGoat, separateGoatFromPlayer } from '../src/game/fieldCollision';
 import { oreNodesForChunk, mineralRichness, geoHash, oreKindFor, GEOLOGY_CELL } from '../src/game/geology';
+import { createEmptySkills, awardXp, levelForXp, xpForLevel, xpToNextLevel, SKILLS, WOODCUTTING_XP_PER_TREE } from '../src/game/skills';
 import { ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset, isoViewportCovered, isoVisibleTileRange } from '../src/game/iso/isoChunks';
 import { barbarianRegistryStats, barbarianVariant, barbarianHairLabel, BARBARIAN_HAIRSTYLES, BARBARIAN_ATTACK_MS, BARB_FRAMES } from '../src/game/iso/barbarian';
 
@@ -5361,6 +5362,54 @@ import { inflateSync } from 'node:zlib';
   const neg = oreNodesForChunk(SEED, -3, -4, CHUNK, terrainAt);
   const neg2 = oreNodesForChunk(SEED, -3, -4, CHUNK, terrainAt);
   assert(JSON.stringify(neg) === JSON.stringify(neg2), 'Geology: negative chunks deterministic');
+}
+
+// ---- BUILD 595: skill system integration ----
+{
+  // 1. Fresh player receives valid default skills.
+  const skills = createEmptySkills();
+  assert(Object.keys(skills).length === 6, 'Skills: 6 skills by default');
+  for (const [id, s] of Object.entries(skills)) {
+    assert(s.xp === 0 && s.level === 1, `Skills: ${id} starts at level 1, 0 XP`);
+  }
+
+  // 2. XP awards update authoritative state.
+  let r = awardXp(skills, 'woodcutting', 25);
+  assert(skills.woodcutting.xp === 25, 'Skills: XP awarded');
+  assert(!r.leveledUp && r.newLevel === 1, 'Skills: 25 XP is still level 1');
+
+  // 3. Level-up at correct threshold (100 XP = level 2).
+  r = awardXp(skills, 'woodcutting', 75);
+  assert(skills.woodcutting.xp === 100, 'Skills: XP accumulates');
+  assert(r.leveledUp && r.oldLevel === 1 && r.newLevel === 2, 'Skills: level up at 100 XP');
+
+  // 4. Multi-level XP awards.
+  r = awardXp(skills, 'woodcutting', 10000);
+  assert(r.newLevel === levelForXp(10100), 'Skills: multi-level jump calculates correctly');
+  assert(r.leveledUp, 'Skills: multi-level triggers leveledUp');
+
+  // 5. XP curve consistency.
+  assert(xpForLevel(1) === 0, 'Skills: level 1 requires 0 XP');
+  assert(xpForLevel(2) === 100, 'Skills: level 2 requires 100 XP');
+  assert(levelForXp(0) === 1, 'Skills: 0 XP is level 1');
+  assert(levelForXp(99) === 1, 'Skills: 99 XP is level 1');
+  assert(levelForXp(100) === 2, 'Skills: 100 XP is level 2');
+
+  // 6. Progress to next level.
+  const prog = xpToNextLevel(50);
+  assert(prog.needed === 50 && Math.abs(prog.progress - 0.5) < 0.001, 'Skills: progress calculation');
+
+  // 7. Invalid skill ID does not corrupt.
+  const before = JSON.stringify(skills);
+  awardXp(skills, 'nonexistent', 100);
+  assert(JSON.stringify(skills) === before, 'Skills: invalid ID is no-op');
+
+  // 8. Woodcutting XP constant.
+  assert(WOODCUTTING_XP_PER_TREE === 25, 'Skills: woodcutting awards 25 XP per tree');
+
+  // 9. All six skills defined.
+  assert(SKILLS.woodcutting && SKILLS.mining && SKILLS.fishing && SKILLS.smithing && SKILLS.crafting && SKILLS.cooking,
+    'Skills: all six skills defined');
 }
 
 // ---- Results ----
