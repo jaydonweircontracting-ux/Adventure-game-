@@ -4439,6 +4439,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 445: generic HP tracker for field NPCs (adventurers, travelers).
   // Townsfolk use the sim state; these use a simple map.
   const fieldNpcHpRef = useRef<Map<string, number>>(new Map());
+  // BUILD 627: Wildlife HP tracking — deer etc. can be attacked.
+  // WildlifeState has no hp field; track separately like fieldNpcHpRef.
+  const wildlifeHpRef = useRef<Map<number, number>>(new Map());
+  const WILDLIFE_MAX_HP: Record<string, number> = {
+    rabbit: 8, deer: 20, wolf: 25, boar: 30, bear: 50, fox: 15, crab: 10,
+  };
   // src/game/touchInput.ts) — declared beside keysRef since every input-reset
   // path must clear both.
   const touchHoldsRef = useRef<TouchHoldState>(createTouchHoldState());
@@ -5962,6 +5968,16 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const monsterCandidates = inCellar ? [] : (monstersRef.current as (MonsterState & { entityKind?: string })[])
             .filter((monster) => monster.disposition !== 'defeated' && goatIsInAttackArc(monster, attackerPos, playerAttack.direction))
             .map((monster) => ({ ...monster, entityKind: 'monster' as const }));
+          // BUILD 627: Wildlife (deer etc.) can be attacked — same pipeline as goats/monsters.
+          // Uses wildlifeHpRef for HP tracking; dead wildlife (hp<=0) excluded.
+          const wildlifeCandidates = inCellar ? [] : (wildlifeRef.current as (WildlifeState & { entityKind?: string })[])
+            .filter((animal) => {
+              const maxHp = WILDLIFE_MAX_HP[animal.species] ?? 15;
+              const hp = wildlifeHpRef.current.get(animal.id) ?? maxHp;
+              if (hp <= 0) return false;
+              return goatIsInAttackArc(animal as unknown as GoatState, attackerPos, playerAttack.direction);
+            })
+            .map((animal) => ({ ...animal, entityKind: 'wildlife' as const }));
           const cornCandidates = inCellar ? [] : cornStalksRef.current
             .filter((stalk) => {
               if (stalk.harvested) return false;
@@ -6000,8 +6016,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               })
               .map((t) => ({ ...t, entityKind: 'traveler' as const })),
           ];
-          const attackCandidates: Array<(typeof goatCandidates)[number] | (typeof monsterCandidates)[number] | (typeof cornCandidates)[number] | (typeof ratCandidates)[number] | (typeof npcCandidates)[number] | (typeof fieldNpcCandidates)[number]> =
-            [...goatCandidates, ...monsterCandidates, ...cornCandidates, ...ratCandidates, ...npcCandidates, ...fieldNpcCandidates]
+          const attackCandidates: Array<(typeof goatCandidates)[number] | (typeof monsterCandidates)[number] | (typeof wildlifeCandidates)[number] | (typeof cornCandidates)[number] | (typeof ratCandidates)[number] | (typeof npcCandidates)[number] | (typeof fieldNpcCandidates)[number]> =
+            [...goatCandidates, ...monsterCandidates, ...wildlifeCandidates, ...cornCandidates, ...ratCandidates, ...npcCandidates, ...fieldNpcCandidates]
               .sort((a, b) => goatDistance(a as unknown as GoatState, attackerPos) - goatDistance(b as unknown as GoatState, attackerPos));
           // BUILD 447: prioritize NPCs — if any NPC is in range, target the
           // closest one (not a goat/corn that happens to be nearer).
@@ -6010,7 +6026,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const attackTarget = playerAttack.targetId == null
             ? (npcOnly[0] ?? attackCandidates[0])
             : attackCandidates.find((goat) => goat.id === playerAttack.targetId);
-          if (!swingDamageDealt && attackTarget && (attackTarget.entityKind === 'townsfolk' || attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler' || attackTarget.entityKind === 'cellar-rat' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
+          if (!swingDamageDealt && attackTarget && (attackTarget.entityKind === 'townsfolk' || attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler' || attackTarget.entityKind === 'cellar-rat' || attackTarget.entityKind === 'wildlife' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
             swingDamageDealt = true;
             // Harvesting corn: one swing cuts the stalk, which disappears and
             // drops corn loot. No HP, no combat — it's a crop, not a creature.
@@ -6091,6 +6107,38 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 spawnCombatText(`-${Math.round(damage)}`, pos, 'damage');
                 playCombatSound('scream', muted);
                 setLogs((currentLogs) => [{ text: `You hit ${name} for ${Math.round(damage)}!`, color: 'red' }, ...currentLogs].slice(0, 3));
+              }
+            } else if (attackTarget.entityKind === 'wildlife') {
+              // BUILD 627: Wildlife (deer etc.) takes damage via wildlifeHpRef.
+              // Same pipeline as other creatures — shared damage calculation.
+              const id = attackTarget.id as number;
+              const species = (attackTarget as { species: string }).species || 'deer';
+              const maxHp = WILDLIFE_MAX_HP[species] ?? 15;
+              const curHp = wildlifeHpRef.current.get(id) ?? maxHp;
+              const stats = playerStatsRef.current;
+              const critical = Math.random() < playerCriticalChanceForStats(stats);
+              const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
+              const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult);
+              const newHp = curHp - damage;
+              const pos = (attackTarget as { position: { x: number; y: number } }).position;
+              if (newHp <= 0) {
+                wildlifeHpRef.current.delete(id);
+                spawnCombatText('KILLED', pos, 'critical');
+                playCombatSound('scream', muted);
+                setLogs((currentLogs) => [{ text: `You killed the ${species}!`, color: 'red' }, ...currentLogs].slice(0, 3));
+                // Remove from field + drop loot (meat/hide).
+                const next = wildlifeRef.current.filter((a) => a.id !== id);
+                wildlifeRef.current = next;
+                const loot: Record<string, number> = species === 'deer' ? { venison: 2 } : species === 'boar' ? { pork: 2 } : { meat: 1 };
+                const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: { ...pos }, loot };
+                droppedLootRef.current = [...droppedLootRef.current, drop];
+                setDroppedLoot(droppedLootRef.current);
+                emitQuestEvent({ type: 'kill', target: species });
+              } else {
+                wildlifeHpRef.current.set(id, newHp);
+                spawnCombatText(`-${Math.round(damage)}`, pos, 'damage');
+                playCombatSound('shing', muted);
+                setLogs((currentLogs) => [{ text: `You hit the ${species} for ${Math.round(damage)}!`, color: 'red' }, ...currentLogs].slice(0, 3));
               }
             } else {
             const stats = playerStatsRef.current;
