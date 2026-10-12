@@ -6,18 +6,18 @@ The worker reads this at startup, updates it after each cycle, and resumes from 
 ## Worker Status
 - **State:** `running` (emergency directive — executing)
 - **Started:** 2026-10-11 (BUILD 548)
-- **Last cycle:** 8 (complete — 7/7 stable)
-- **Last known-good commit:** `2bd804c`
-- **Last known-good build:** 554
+- **Last cycle:** 9 (complete — Bryn rename)
+- **Last known-good commit:** `feee499`
+- **Last known-good build:** 555
 
 ## Current Cycle
-- **Cycle:** 8
+- **Cycle:** 9
 - **Phase:** `complete`
-- **Task:** Fix M6 flakiness (DISC-HARNESS-001), verify M5 robustness
+- **Task:** Rename farmer Mira→Bryn (duplicate NPC name fix)
 - **Started:** 2026-10-11
-- **Files changed:** [tests/real-game/playtest-harness.mjs, docs/PLAYTEST_BASELINE.md, docs/DISCOVERED_TASKS.md]
-- **Tests run:** [harness 5x (7/7 stable), smoke 7/7]
-- **Result:** `verified` — 7/7 stable. DISC-HARNESS-001/002 closed. No gameplay defect found.
+- **Files changed:** [src/game/townsfolk.ts, src/game/dialogue.ts]
+- **Tests run:** [harness 7/7, smoke 7/7, tsx dialogue]
+- **Result:** `verified` — Bryn rename save-safe, dialogue correct, 7/7 harness.
 
 ## Retry History
 - (empty)
