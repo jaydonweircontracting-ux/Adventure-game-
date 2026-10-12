@@ -5848,6 +5848,79 @@ import { inflateSync } from 'node:zlib';
   assert(typeof moodSummary(def) === 'string' && moodSummary(def).length > 0, 'Mood: summary works');
 }
 
+// BUILD 661: Town production tests (Living Town Simulation).
+{
+  const { applyNPCProduction, npcProductionSummary } = await import('../src/game/townProduction.js');
+
+  const makeFarmer = (seed: number, id: string) => ({
+    id, name: `Farmer${seed}`, gender: 'male' as const, archetype: 'farmer' as const,
+    role: 'farmer', seed, homeKey: 'farm0',
+    home: { x: 0, y: 0 }, position: { x: 0, y: 0 },
+    facing: 'south' as const, activity: 'Tending crops', indoors: false, location: 'OUTDOOR' as const,
+  });
+
+  const makeMerchant = (seed: number) => ({
+    id: `merch-${seed}`, name: 'Merch', gender: 'female' as const, archetype: 'merchant' as const,
+    role: 'merchant', seed, homeKey: 'h1',
+    home: { x: 0, y: 0 }, position: { x: 0, y: 0 },
+    facing: 'south' as const, activity: 'Minding stall', indoors: false, location: 'OUTDOOR' as const,
+  });
+
+  const makeCiv = (grain: number) => ({
+    worldSeed: 12345,
+    lastSimDay: 0,
+    settlements: [{
+      id: 'mosslight', name: 'Mosslight Crossing', kind: 'town' as const,
+      kingdomId: 'aldoria', region: 'Heartlands', chunk: { x: 4, y: 7 },
+      position: { x: 0, y: 0 }, population: 100,
+      production: {}, consumption: {},
+      storage: { grain } as any,
+      prices: {}, demand: {}, supply: {},
+    }],
+    routes: [], kingdoms: [], events: [], units: [],
+  } as any);
+
+  const clock = { day: 5 } as any;
+
+  // 1. Farmers produce grain.
+  const farmers = [makeFarmer(100, 'f1'), makeFarmer(200, 'f2'), makeFarmer(300, 'f3')];
+  const civ1 = makeCiv(10);
+  const before = civ1.settlements[0].storage.grain;
+  applyNPCProduction(civ1, farmers as any, clock);
+  const after = civ1.settlements[0].storage.grain;
+  assert(after > before, 'Production: farmers increase grain storage');
+
+  // 2. Non-farmers don't produce.
+  const merchants = [makeMerchant(100), makeMerchant(200)];
+  const civ2 = makeCiv(10);
+  applyNPCProduction(civ2, merchants as any, clock);
+  assert(civ2.settlements[0].storage.grain === 10, 'Production: merchants don\'t produce grain');
+
+  // 3. Deterministic — same input = same output.
+  const civ3a = makeCiv(10);
+  const civ3b = makeCiv(10);
+  applyNPCProduction(civ3a, farmers as any, clock);
+  applyNPCProduction(civ3b, farmers as any, clock);
+  assert(civ3a.settlements[0].storage.grain === civ3b.settlements[0].storage.grain,
+    'Production: deterministic');
+
+  // 4. Respects storage cap.
+  const civ4 = makeCiv(1000); // Way over cap (50 + 100 = 150).
+  applyNPCProduction(civ4, farmers as any, clock);
+  assert(civ4.settlements[0].storage.grain <= 150, 'Production: respects storage cap');
+
+  // 5. Summary function works.
+  const summary = npcProductionSummary(farmers as any, 5);
+  assert(summary.farmers === 3, 'Production: summary counts farmers');
+  assert(summary.workingFarmers <= 3, 'Production: working <= total');
+  assert(summary.estimatedGrain >= 0, 'Production: grain estimate non-negative');
+
+  // 6. No mosslight settlement = no crash.
+  const civNoMoss = { settlements: [], worldSeed: 1, lastSimDay: 0, routes: [], kingdoms: [], events: [], units: [] } as any;
+  const result = applyNPCProduction(civNoMoss, farmers as any, clock);
+  assert(result === civNoMoss, 'Production: no mosslight = no-op');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

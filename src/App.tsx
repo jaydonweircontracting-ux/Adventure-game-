@@ -63,6 +63,7 @@ import {
   type CivilizationState,
   type WorldEvent,
 } from '@/game/civilization';
+import { applyNPCProduction } from '@/game/townProduction';
 import {
   createHorses,
   deserializeHorses,
@@ -111,6 +112,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '661': 'NPC farmer production',
   '660': 'causal NPC mood engine',
   '659': 'NPC personality archetypes',
   '658': 'collision memoization',
@@ -4430,6 +4432,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (!clock) return;
     const civ = ensureCiv();
     advanceCivilization(civ, clock);
+    // BUILD 661: NPC-driven production (farmers → grain in settlement storage).
+    applyNPCProduction(civ, townsfolkRef.current, clock);
     const count = civ.events.length;
     if (lastEventCountRef.current >= 0 && count > lastEventCountRef.current) {
       const fresh = civ.events.slice(lastEventCountRef.current);
