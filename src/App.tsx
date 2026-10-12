@@ -4396,6 +4396,18 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           name: n.name, x: n.position.x, y: n.position.y,
           activity: n.activity, archetype: n.archetype,
         })),
+        // BUILD 554: teleport player to deterministic position for test isolation.
+        // LOCALHOST ONLY. Resets tap-move target to avoid interference.
+        teleportPlayer: (x: number, y: number) => {
+          if (typeof window === 'undefined') return false;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return false;
+          if (interiorRef.current) return false; // field only
+          positionRef.current = { x, y };
+          setPosition({ x, y });
+          tapMoveTargetRef.current = null;
+          return true;
+        },
       };
     } catch { /* test hooks are best-effort */ }
   }, []);

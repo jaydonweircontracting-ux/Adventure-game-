@@ -220,14 +220,18 @@ async function measureM5(page) {
 // (canMove=false) is correct behavior, not a bug.
 async function measureM6(page) {
   try {
-    // Settle: ensure dialogue is closed and keyboard has focus.
-    // Do NOT click mouse here — that would set a tap-move target.
+    // Settle: ensure dialogue is closed
     const dlgOpen = await page.locator('[data-testid="townsfolk-dialogue"]').isVisible().catch(() => false);
     if (dlgOpen) {
       await page.locator('.dialogue-close').click().catch(() => {});
       await page.waitForTimeout(1000);
     }
-    await page.waitForTimeout(1000);
+
+    // BUILD 554: Reset to deterministic open position before EACH direction.
+    // This isolates each test — movement in one direction no longer affects
+    // the starting conditions of the next.
+    // (95, 125) is open field south-east of spawn, away from house walls.
+    const TEST_POS = { x: 95, y: 125 };
 
     const dirs = [
       { key: 'ArrowUp', dx: 0, dy: -1 },
@@ -237,14 +241,20 @@ async function measureM6(page) {
     ];
     const stuckDirs = [];
     const blockedDirs = [];
+    const testedDirs = [];
 
     for (const { key, dx, dy } of dirs) {
-      // Check if game says this direction is walkable
+      // Reset to known position before each direction test
+      await page.evaluate(([x, y]) => window.__gameTest.teleportPlayer(x, y), [TEST_POS.x, TEST_POS.y]);
+      await page.waitForTimeout(500);
+
+      // Check if game says this direction is walkable FROM THE RESET POSITION
       const canMove = await page.evaluate(([x, y]) => window.__gameTest.canMove(x, y), [dx, dy]);
       if (!canMove) {
         blockedDirs.push(key);
         continue; // Legitimately blocked — not stuck
       }
+      testedDirs.push(key);
       // Try 3 sustained attempts (using down/wait/up like proven movement.mjs)
       let totalMove = 0;
       for (let i = 0; i < 3; i++) {
@@ -262,12 +272,12 @@ async function measureM6(page) {
     }
 
     results.metrics.M6 = {
-      name: 'Stuck incidents (genuine)',
+      name: 'Stuck incidents (isolated)',
       pass: stuckDirs.length === 0,
       detail: stuckDirs.length === 0
-        ? `No stuck incidents. ${blockedDirs.length} directions legitimately blocked by collision.`
-        : `STUCK in directions: ${stuckDirs.join(', ')} (canMove=true but no movement)`,
-      method: 'For each walkable direction: 3x sustained keypress, measure total displacement',
+        ? `No stuck incidents. Tested ${testedDirs.length} walkable directions, ${blockedDirs.length} legitimately blocked. Each direction tested from reset position (95,125).`
+        : `STUCK in directions: ${stuckDirs.join(', ')} (canMove=true but no movement from reset position)`,
+      method: 'Teleport to (95,125) before each direction. For walkable dirs: 3x sustained keypress, measure displacement.',
     };
   } catch (e) {
     results.metrics.M6 = { name: 'Stuck check', pass: false, detail: e.message.slice(0, 120) };
