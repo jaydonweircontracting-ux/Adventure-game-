@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '653': 'remove duplicate zoom under minimap',
   '652': 'unified chunk templates',
   '651': 'noise generator in map builder',
   '650': 'world editor in starting menu',
@@ -3652,7 +3653,6 @@ function MiniMap({ chunk, position }: { chunk: Point; position: Point }) {
     g.stroke();
   }, [chunk.x, chunk.y, Math.round(position.x / 10), Math.round(position.y / 10)]);
   return (
-    <>
     <canvas
       ref={canvasRef}
       width={size}
@@ -3664,32 +3664,6 @@ function MiniMap({ chunk, position }: { chunk: Point; position: Point }) {
       }}
       aria-label="Minimap"
     />
-    {/* BUILD 644: Zoom buttons under minimap on the right. */}
-    <div style={{ position: 'fixed', top: 140, right: 10, zIndex: 100, display: 'flex', gap: 6 }}>
-      <button
-        type="button"
-        onClick={() => {
-          const el = document.querySelector('[data-testid="button-zoom-out-hud"]') as HTMLButtonElement;
-          if (el) el.click();
-        }}
-        style={{ width: '40px', height: '40px', fontSize: '20px', fontWeight: 'bold', background: 'rgba(0,0,0,0.85)', color: '#fff', border: '2px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
-        aria-label="Zoom out"
-      >
-        −
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          const el = document.querySelector('[data-testid="button-zoom-in-hud"]') as HTMLButtonElement;
-          if (el) el.click();
-        }}
-        style={{ width: '40px', height: '40px', fontSize: '20px', fontWeight: 'bold', background: 'rgba(0,0,0,0.85)', color: '#fff', border: '2px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
-        aria-label="Zoom in"
-      >
-        +
-      </button>
-    </div>
-    </>
   );
 }
 

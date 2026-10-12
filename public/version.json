@@ -1,6 +1,6 @@
 {
-  "build": "652",
-  "note": "unified chunk templates",
-  "timestamp": "2026-10-12T21:43:03.939Z",
-  "cacheBuster": "mv5s3gg4"
+  "build": "653",
+  "note": "remove duplicate zoom under minimap",
+  "timestamp": "2026-10-12T21:51:06.170Z",
+  "cacheBuster": "mv5sdsjf"
 }
