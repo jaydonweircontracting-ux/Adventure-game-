@@ -284,6 +284,8 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         return null;
       };
       (window as any).__interiorPlayerPos = () => ({ tx: state.px, ty: state.py });
+      // BUILD 571: sync initial position for melee range
+      if (playerMoveRef.current) playerMoveRef.current(state.px, state.py);
     }
     const fromScreen = (sx: number, sy: number) => {
       const wx = (sx - state.w / 2) / state.zoom + state.camX;

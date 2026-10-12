@@ -1,0 +1,201 @@
+{
+  "version": "1.0.0",
+  "created": "2026-10-12T05:00:32.272Z",
+  "updated": "2026-10-12T05:00:43.085Z",
+  "sections": {
+    "creativeConstitution": [
+      {
+        "type": "EXPLICIT_REQUIREMENT",
+        "id": "constitution-001",
+        "summary": "Persistent living open-world adventure RPG",
+        "details": "Large, persistent, mysterious, living open-world adventure RPG with 2D/isometric presentation and deep simulated world. World continues when player not watching. Player is a person within the world, not the chosen hero.",
+        "source": "BUILD 570 specification",
+        "confidence": "high",
+        "status": "active",
+        "created": "2026-10-12T05:00:34.770Z"
+      }
+    ],
+    "inspirations": [
+      {
+        "type": "DESIGN_INSPIRATION",
+        "summary": "Habbo Hotel — spatial social presence",
+        "details": "Design reference for spatial social presence. Extract general principles, create original implementation.",
+        "source": "BUILD 570",
+        "confidence": "high",
+        "status": "active",
+        "id": "inspirations-1791781237167",
+        "created": "2026-10-12T05:00:37.167Z"
+      },
+      {
+        "type": "DESIGN_INSPIRATION",
+        "summary": "Endless Online — accessible persistent world",
+        "details": "Design reference for accessible persistent world. Extract general principles, create original implementation.",
+        "source": "BUILD 570",
+        "confidence": "high",
+        "status": "active",
+        "id": "inspirations-1791781237269",
+        "created": "2026-10-12T05:00:37.269Z"
+      },
+      {
+        "type": "DESIGN_INSPIRATION",
+        "summary": "Stardew Valley — daily life rhythm",
+        "details": "Design reference for daily life rhythm. Extract general principles, create original implementation.",
+        "source": "BUILD 570",
+        "confidence": "high",
+        "status": "active",
+        "id": "inspirations-1791781237373",
+        "created": "2026-10-12T05:00:37.373Z"
+      },
+      {
+        "type": "DESIGN_INSPIRATION",
+        "summary": "Oblivion — believable adventure",
+        "details": "Design reference for believable adventure. Extract general principles, create original implementation.",
+        "source": "BUILD 570",
+        "confidence": "high",
+        "status": "active",
+        "id": "inspirations-1791781237466",
+        "created": "2026-10-12T05:00:37.466Z"
+      },
+      {
+        "type": "DESIGN_INSPIRATION",
+        "summary": "Skyrim — exploration discovery",
+        "details": "Design reference for exploration discovery. Extract general principles, create original implementation.",
+        "source": "BUILD 570",
+        "confidence": "high",
+        "status": "active",
+        "id": "inspirations-1791781237568",
+        "created": "2026-10-12T05:00:37.568Z"
+      },
+      {
+        "type": "DESIGN_INSPIRATION",
+        "summary": "Dwarf Fortress — simulated history",
+        "details": "Design reference for simulated history. Extract general principles, create original implementation.",
+        "source": "BUILD 570",
+        "confidence": "high",
+        "status": "active",
+        "id": "inspirations-1791781237664",
+        "created": "2026-10-12T05:00:37.664Z"
+      },
+      {
+        "type": "DESIGN_INSPIRATION",
+        "summary": "WorldBox — emergent worlds",
+        "details": "Design reference for emergent worlds. Extract general principles, create original implementation.",
+        "source": "BUILD 570",
+        "confidence": "high",
+        "status": "active",
+        "id": "inspirations-1791781237753",
+        "created": "2026-10-12T05:00:37.754Z"
+      },
+      {
+        "type": "DESIGN_INSPIRATION",
+        "summary": "WoW — world density",
+        "details": "Design reference for world density. Extract general principles, create original implementation.",
+        "source": "BUILD 570",
+        "confidence": "high",
+        "status": "active",
+        "id": "inspirations-1791781237849",
+        "created": "2026-10-12T05:00:37.849Z"
+      },
+      {
+        "type": "DESIGN_INSPIRATION",
+        "summary": "RuneScape — readable progression",
+        "details": "Design reference for readable progression. Extract general principles, create original implementation.",
+        "source": "BUILD 570",
+        "confidence": "high",
+        "status": "active",
+        "id": "inspirations-1791781237943",
+        "created": "2026-10-12T05:00:37.943Z"
+      },
+      {
+        "type": "DESIGN_INSPIRATION",
+        "summary": "Zelda — spatial exploration",
+        "details": "Design reference for spatial exploration. Extract general principles, create original implementation.",
+        "source": "BUILD 570",
+        "confidence": "high",
+        "status": "active",
+        "id": "inspirations-1791781238037",
+        "created": "2026-10-12T05:00:38.037Z"
+      },
+      {
+        "type": "DESIGN_INSPIRATION",
+        "summary": "Diablo — procedural encounters",
+        "details": "Design reference for procedural encounters. Extract general principles, create original implementation.",
+        "source": "BUILD 570",
+        "confidence": "high",
+        "status": "active",
+        "id": "inspirations-1791781238145",
+        "created": "2026-10-12T05:00:38.145Z"
+      }
+    ],
+    "requirements": [],
+    "constraints": [
+      {
+        "type": "HARD_CONSTRAINT",
+        "id": "constraint-no-war",
+        "summary": "No constant-war simulator",
+        "details": "Do not turn the game into an endless war simulator, RTS, or kingdom-management game. Kingdoms/factions may exist as world systems without war being the main loop.",
+        "source": "BUILD 570",
+        "confidence": "high",
+        "status": "active",
+        "created": "2026-10-12T05:00:40.693Z"
+      },
+      {
+        "type": "HARD_CONSTRAINT",
+        "id": "constraint-no-rewrite",
+        "summary": "Preserve existing architecture",
+        "details": "Never rewrite the engine, create parallel coordinate/chunk systems, or remove working systems. Extend existing architecture.",
+        "source": "Standing directive",
+        "confidence": "high",
+        "status": "active",
+        "created": "2026-10-12T05:00:40.781Z"
+      },
+      {
+        "type": "HARD_CONSTRAINT",
+        "id": "constraint-no-teleport-test",
+        "summary": "No teleport-based verification",
+        "details": "Do not solve testing problems by teleporting the player or bypassing gameplay. Tests must use real controls.",
+        "source": "BUILD 570",
+        "confidence": "high",
+        "status": "active",
+        "created": "2026-10-12T05:00:40.874Z"
+      }
+    ],
+    "architecture": [],
+    "systems": [],
+    "features": [],
+    "implementation": [
+      {
+        "type": "IMPLEMENTATION_FACT",
+        "id": "impl-quest-rats",
+        "summary": "Rats in the Cellar quest exists",
+        "details": "Quest giver: Mira at Rusty Tankard. Stages: talk-mira, kill-rats (5), return-mira. Rewards: 25 coins, 40 XP, Rat-skin gloves, Bread. Rewards granted at turn-in via completeQuest().",
+        "source": "src/game/quests.ts",
+        "confidence": "high",
+        "status": "active",
+        "created": "2026-10-12T05:00:43.000Z"
+      }
+    ],
+    "worldSimulation": [],
+    "artContent": [],
+    "qualityCriteria": [],
+    "testCoverage": [],
+    "research": [],
+    "decisions": [],
+    "knownBugs": [
+      {
+        "type": "TEST_EVIDENCE",
+        "id": "bug-rat-damage",
+        "summary": "Cellar rat strikes deal no damage in iso mode",
+        "details": "Root cause: 1 tile = 8.33 units in 0-100 space, but PLAYER_MELEE_REACH=5. Adjacent tiles are out of range. Fix: tile-based adjacency check implemented in BUILD 571, verification pending.",
+        "source": "Browser gameplay tests",
+        "confidence": "high",
+        "status": "open",
+        "created": "2026-10-12T05:00:43.085Z"
+      }
+    ],
+    "milestones": [],
+    "saveCompatibility": [],
+    "performance": [],
+    "changeHistory": []
+  }
+}

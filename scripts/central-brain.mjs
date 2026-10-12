@@ -154,6 +154,16 @@ function addFailureTask(failure) {
   return true;
 }
 
+// === Game Genome Integration (BUILD 571) ===
+function queryGenome(query) {
+  try {
+    const out = execSync(`node ${__dirname}/genome.mjs search "${query}"`, { encoding: 'utf8' });
+    return out;
+  } catch (e) {
+    return '(genome query failed)';
+  }
+}
+
 // === Single Cycle ===
 function runCycle() {
   console.log('=== CENTRAL BRAIN CYCLE ===\n');
@@ -215,4 +225,7 @@ else if (cmd === 'tasks') {
     console.log(`  Status: ${t.status}, Created: ${t.createdAt}\n`);
   });
 }
-else console.log('Usage: node scripts/central-brain.mjs <status|cycle|registry|tasks|add-failure> [json]');
+else if (cmd === 'genome' && process.argv[3]) {
+  console.log(queryGenome(process.argv[3]));
+}
+else console.log('Usage: node scripts/central-brain.mjs <status|cycle|registry|tasks|add-failure|genome> [args]');

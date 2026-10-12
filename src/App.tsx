@@ -4290,6 +4290,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const playerClassRef = useRef<PlayerClass>(playerClass);
   const interiorRef = useRef(interior);
   const interiorPositionRef = useRef(interiorPosition);
+  // BUILD 571: iso tile position for cellar melee range (tile adjacency)
+  const isoPlayerTileRef = useRef<{ tx: number; ty: number } | null>(null);
   const interiorDoorwayIdRef = useRef<string | null>(STARTING_DOORWAY_ID);
   // The chunk the player was in when they entered the current interior, so
   // exit can resolve the same doorway from the same chunk (not hardcoded 4,7).
@@ -5672,7 +5674,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           }
           const ratCandidates = inCellar
             ? cellarRatsRef.current
-              .filter((rat) => rat.hp > 0 && goatIsInAttackArc({ position: { x: rat.x, y: rat.y } } as GoatState, attackerPos, playerAttack.direction))
+              .filter((rat) => {
+                if (rat.hp <= 0) return false;
+                // BUILD 571: tile adjacency for iso mode (see strikeCellarRat)
+                const playerTile = isoPlayerTileRef.current;
+                if (playerTile) {
+                  const ratTx = Math.round((rat.x / 100) * 12);
+                  const ratTy = Math.round((rat.y / 100) * 10);
+                  return Math.max(Math.abs(ratTx - playerTile.tx), Math.abs(ratTy - playerTile.ty)) <= 1;
+                }
+                return goatIsInAttackArc({ position: { x: rat.x, y: rat.y } } as GoatState, attackerPos, playerAttack.direction);
+              })
               .map((rat) => ({ ...rat, position: { x: rat.x, y: rat.y }, entityKind: 'cellar-rat' as const }))
             : [];
           const goatCandidates = inCellar ? [] : (goatsRef.current as (GoatState & { entityKind?: string })[])
@@ -6209,16 +6221,36 @@ if (active) {
     if (interiorRef.current?.roomType !== 'cellar' || inputLocked || optionsOpen || waitingRef.current || playerAttackStateRef.current.active) return;
     const rat = cellarRatsRef.current.find((r) => r.id === ratId && r.hp > 0);
     if (!rat) return;
-    // BUILD 569: Face the rat before checking arc. Tap-to-attack should
-    // orient toward the target like manual combat does.
-    const dx = rat.x - interiorPositionRef.current.x;
-    const dy = rat.y - interiorPositionRef.current.y;
-    if (Math.abs(dx) > Math.abs(dy)) {
-      facingRef.current = dx > 0 ? 'right' : 'left';
+    // BUILD 571: In iso mode, check tile adjacency. 1 tile = 8.33 units in
+    // 0-100 space, but PLAYER_MELEE_REACH is 5, so adjacent tiles fail the
+    // standard arc check. Tile-adjacent = in melee range.
+    const playerTile = isoPlayerTileRef.current;
+    let inRange = false;
+    if (playerTile) {
+      const ratTx = Math.round((rat.x / 100) * 12);
+      const ratTy = Math.round((rat.y / 100) * 10);
+      const tileDist = Math.max(Math.abs(ratTx - playerTile.tx), Math.abs(ratTy - playerTile.ty));
+      inRange = tileDist <= 1;
+      // Face the rat
+      const tdx = ratTx - playerTile.tx;
+      const tdy = ratTy - playerTile.ty;
+      if (Math.abs(tdx) > Math.abs(tdy)) {
+        facingRef.current = tdx > 0 ? 'right' : 'left';
+      } else if (tdy !== 0) {
+        facingRef.current = tdy > 0 ? 'down' : 'up';
+      }
     } else {
-      facingRef.current = dy > 0 ? 'down' : 'up';
+      // 2D mode: use standard arc check
+      const dx = rat.x - interiorPositionRef.current.x;
+      const dy = rat.y - interiorPositionRef.current.y;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        facingRef.current = dx > 0 ? 'right' : 'left';
+      } else {
+        facingRef.current = dy > 0 ? 'down' : 'up';
+      }
+      inRange = isInMeleeArc(interiorPositionRef.current, { x: rat.x, y: rat.y }, facingRef.current);
     }
-    if (!isInMeleeArc(interiorPositionRef.current, { x: rat.x, y: rat.y }, facingRef.current)) {
+    if (!inRange) {
       setLogs((currentLogs) => [{ text: 'The rat is too far away — get closer.', color: 'red' }, ...currentLogs].slice(0, 3));
       return;
     }
@@ -7043,6 +7075,8 @@ if (active) {
               const x = (tx / 12) * 100;
               const y = (ty / 10) * 100;
               interiorPositionRef.current = { x, y };
+              // BUILD 571: store tile for tile-based melee range
+              isoPlayerTileRef.current = { tx: Math.round(tx), ty: Math.round(ty) };
             }}
           />
         ) : <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onEnterCellar={enterCellar} onTavernSleep={tavernSleepUntilMorning} cellarRats={cellarRats} onStrikeCellarRat={strikeCellarRat} questStates={questStates} interiorTownsfolk={interiorTownsfolk} onTalkToTownsfolk={talkToTownsfolk} />) : (
