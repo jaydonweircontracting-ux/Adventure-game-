@@ -154,6 +154,7 @@ export function applyPersonalityTone(
   text: string,
   personality: { sociability: number; courage: number; curiosity: number } | undefined,
   seed: number,
+  topic?: string,
 ): string {
   if (!personality) return text;
   let result = text;
@@ -162,14 +163,28 @@ export function applyPersonalityTone(
     // Remove some warmth — keep it brief (don't alter facts).
     result = result.replace(/! /g, '. ');
   }
-  // High curiosity: add a follow-up question (deterministic by seed).
-  if (personality.curiosity > 0.7) {
-    const questions = [
-      ' What brings you here, anyway?',
-      ' Have you seen anything interesting on the road?',
-      ' What do you make of this place?',
-    ];
-    result += questions[seed % questions.length];
+  // BUILD 656: High curiosity adds a follow-up, but only when contextually
+  // appropriate — not after goodbyes, and topic-relevant when possible.
+  if (personality.curiosity > 0.7 && topic !== 'bye') {
+    const questions: Record<string, string[]> = {
+      rumors: [
+        ' Have you heard anything yourself?',
+        ' What do you make of that?',
+      ],
+      town: [
+        ' Are you planning to stay long?',
+        ' What brings you to Mosslight?',
+      ],
+      work: [
+        ' Do you know much about that kind of work?',
+      ],
+      who: [
+        ' What brings you here, anyway?',
+        ' Have you seen anything interesting on the road?',
+      ],
+    };
+    const options = questions[topic ?? ''] ?? questions.who;
+    result += options[seed % options.length];
   }
   // Low courage + cold: more evasive.
   if (personality.courage < 0.3 && personality.sociability < 0.5) {
@@ -276,7 +291,7 @@ export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): Dialo
   if (ctx.personality) {
     return {
       ...base,
-      text: applyPersonalityTone(base.text, ctx.personality, ctx.seed),
+      text: applyPersonalityTone(base.text, ctx.personality, ctx.seed, topic),
     };
   }
   return base;

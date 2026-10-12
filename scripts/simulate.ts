@@ -5566,6 +5566,70 @@ import { inflateSync } from 'node:zlib';
   assert(p1.text !== p2.text, 'Dialogue: different personalities differ');
 }
 
+// BUILD 656: Conversation memory tests.
+{
+  const { recordTopicDiscussed, recordFactShared, recallRelevantMemories, formatMemoryRecall, hasConversationMemories } = await import('../src/game/conversationMemory.js');
+  const { addNPCMemory } = await import('../src/game/villageLife.js');
+
+  const makeNpc = (id: string, name: string) => ({
+    id, name, gender: 'male' as const, archetype: 'farmer' as const,
+    role: 'farmer', seed: 123, homeKey: 'h1',
+    home: { x: 0, y: 0 }, position: { x: 0, y: 0 },
+    facing: 'south' as const, activity: 'farming', indoors: false, location: 'OUTDOOR' as const,
+  });
+
+  // 1. Memory recorded after conversation.
+  let npc1 = makeNpc('npc1', 'Bryn');
+  npc1 = recordTopicDiscussed(npc1, 'the old mine', 5);
+  assert(npc1.memories?.length === 1, 'Memory: topic recorded');
+  assert(npc1.memories?.[0].event.includes('old mine'), 'Memory: topic in event text');
+
+  // 2. No unbounded duplicates.
+  npc1 = recordTopicDiscussed(npc1, 'the old mine', 5);
+  npc1 = recordTopicDiscussed(npc1, 'the old mine', 5);
+  assert(npc1.memories?.length === 1, 'Memory: duplicates not stored');
+
+  // 3. NPC recalls previous topic accurately.
+  npc1 = recordFactShared(npc1, 'the old mine', 'a traveler saw lights near its entrance', 5);
+  const recalled = recallRelevantMemories(npc1, 'what did you tell me about the mine?', 2);
+  assert(recalled.length > 0, 'Memory: recall finds relevant memory');
+  assert(recalled[0].event.includes('lights'), 'Memory: recall returns correct fact');
+
+  // 4. NPC does not recall another NPC's memory.
+  let npc2 = makeNpc('npc2', 'Cedric');
+  const npc2Recall = recallRelevantMemories(npc2, 'what did you tell me about the mine?', 2);
+  assert(npc2Recall.length === 0, 'Memory: no cross-NPC leakage');
+
+  // 5. Rumor sources remain attributed.
+  npc1 = addNPCMemory(npc1, 'Heard from Mira: wolves near the north road', 5, 2);
+  const rumorRecall = recallRelevantMemories(npc1, 'what did Mira say about wolves?', 2);
+  assert(rumorRecall.length > 0, 'Memory: rumor recall works');
+  assert(rumorRecall[0].event.startsWith('Heard from'), 'Memory: rumor source preserved');
+
+  // 6. Unverified info stays unverified (format preserves "Heard from").
+  const formatted = formatMemoryRecall(rumorRecall[0], 'Bryn');
+  assert(formatted.includes('Heard from Mira'), 'Memory: formatted recall preserves source');
+
+  // 7. Format for told facts.
+  const factMem = npc1.memories?.find((m) => m.event.startsWith('Told traveler:'));
+  assert(factMem, 'Memory: fact memory exists');
+  const factFormatted = formatMemoryRecall(factMem!, 'Bryn');
+  assert(factFormatted.includes('I told you'), 'Memory: fact recall phrased correctly');
+
+  // 8. hasConversationMemories.
+  assert(hasConversationMemories(npc1), 'Memory: hasConversationMemories true');
+  assert(!hasConversationMemories(npc2), 'Memory: hasConversationMemories false for new NPC');
+
+  // 9. Memory intent recognition.
+  const { recognizeIntent } = await import('../src/game/dialogueIntent.js');
+  const mem1 = recognizeIntent('Do you remember what we talked about?');
+  assert(mem1?.topic === 'memory', 'Intent: remember maps to memory');
+  const mem2 = recognizeIntent('What did you tell me about the mine?');
+  assert(mem2?.topic === 'memory', 'Intent: what did you tell me maps to memory');
+  const mem3 = recognizeIntent('Who are you?');
+  assert(mem3?.topic === 'who', 'Intent: who still maps to who (not memory)');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

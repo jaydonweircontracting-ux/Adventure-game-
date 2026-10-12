@@ -33,8 +33,9 @@ import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cell
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds, type TouchHoldState, type TouchEventKind } from './game/touchInput';
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, type GeneratedItem } from './game/items';
-import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, type DialogueTopicId } from './game/dialogue';
+import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, applyPersonalityTone, type DialogueTopicId } from './game/dialogue';
 import { recognizeIntent, fallbackResponse } from './game/dialogueIntent';
+import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasConversationMemories } from './game/conversationMemory';
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
@@ -110,6 +111,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '656': 'NPC conversation memory',
   '655': 'personality-driven dialogue tone',
   '654': 'free-text NPC dialogue',
   '653': 'remove duplicate zoom under minimap',
@@ -7111,6 +7113,19 @@ if (active) {
     if (resp.rumor) onAddRumor(resp.rumor, npc.name);
     setDialogueTopic(topic);
     setDisposition((d) => ({ ...d, [npc.id]: adjustDisposition(d[npc.id] ?? defaultDisposition(), 1) }));
+    // BUILD 656: Record topic discussed for future recall (both button and free-text paths).
+    const day = brainRef.current?.worldCore.getClock().day ?? 1;
+    const topicLabels: Record<string, string> = {
+      who: 'introductions',
+      work: npc.archetype === 'farmer' ? 'the crops' : npc.archetype === 'merchant' ? 'trade' : npc.archetype === 'guard' ? 'town security' : 'their work',
+      rumors: 'rumors',
+      town: 'Mosslight Crossing',
+    };
+    const label = topicLabels[topic] ?? topic;
+    const updatedNpc = recordTopicDiscussed(npc, label, day);
+    const updated = townsfolkRef.current.map((w) => w.id === npc.id ? updatedNpc : w);
+    townsfolkRef.current = updated;
+    setTownsfolk(updated);
   };
   // BUILD 654: Free-text dialogue — recognize intent, route to existing topic backend.
   const sendDialogueMessage = (npc: Townsperson) => {
@@ -7120,10 +7135,27 @@ if (active) {
     setDialogueInput('');
     const intent = recognizeIntent(text);
     if (intent) {
+      if (intent.topic === 'memory') {
+        // BUILD 656: Memory recall — search this NPC's memories only.
+        const relevant = recallRelevantMemories(npc, intent.memoryQuery ?? text, 2);
+        if (relevant.length > 0) {
+          const recallText = relevant.map((m) => formatMemoryRecall(m, npc.name)).join(' ');
+          // Apply personality tone to the recall (facts unchanged).
+          const pers = npcPersonality(npc);
+          const toned = applyPersonalityTone(recallText, pers, npc.seed);
+          setDialogueHistory((h) => [...h, { speaker: 'npc', text: toned }]);
+        } else {
+          // Honest admission — no relevant memory.
+          const noMemory = hasConversationMemories(npc)
+            ? `I don't recall discussing that with you.`
+            : `We've barely spoken, traveler. I don't have much to remember yet.`;
+          setDialogueHistory((h) => [...h, { speaker: 'npc', text: noMemory }]);
+        }
+        return;
+      }
       // Route through the existing topic system (disposition, rumors, etc. all work).
+      // BUILD 656: chooseDialogueTopic records the topic for future recall.
       chooseDialogueTopic(npc, intent.topic);
-      // Record NPC response in history after topic is set.
-      // (The response renders via dialogueTopic; history captures the exchange.)
     } else {
       // Unknown — in-character fallback, suggest the topic buttons.
       setDialogueHistory((h) => [...h, { speaker: 'npc', text: fallbackResponse(npc.name) + ' Try asking about me, my work, rumors, or the town.' }]);

@@ -6,10 +6,28 @@
 
 import type { DialogueTopicId } from './dialogue';
 
+export type IntentTopic = DialogueTopicId | 'memory';
+
 export interface IntentResult {
-  topic: DialogueTopicId;
+  topic: IntentTopic;
   confidence: number; // 0-1
+  /** For 'memory' intents: the subject to recall (extracted keywords). */
+  memoryQuery?: string;
 }
+
+// Memory/recall patterns — checked before topic keywords.
+const MEMORY_PATTERNS = [
+  'do you remember',
+  'remember me',
+  'what did we talk about',
+  'what did you tell me',
+  'what did you say about',
+  'did you hear anything new',
+  'remember my promise',
+  'remember when',
+  'you told me',
+  'we discussed',
+];
 
 // Keyword lists per topic. Each entry: [keywords, weight].
 const TOPIC_KEYWORDS: Record<DialogueTopicId, [string[], number][]> = {
@@ -61,6 +79,13 @@ function scoreTopic(normalized: string, topic: DialogueTopicId): number {
 export function recognizeIntent(text: string): IntentResult | null {
   if (!text || !text.trim()) return null;
   const norm = normalize(text);
+
+  // BUILD 656: Memory/recall patterns — checked first (highest priority).
+  for (const pattern of MEMORY_PATTERNS) {
+    if (norm.includes(pattern)) {
+      return { topic: 'memory', confidence: 0.95, memoryQuery: text };
+    }
+  }
 
   // Greetings → 'who' (natural conversation opener).
   for (const g of GREETINGS) {
