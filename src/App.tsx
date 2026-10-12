@@ -21,6 +21,7 @@ import NotFound from '@/pages/not-found';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { createAdventureBrain, type RPGBrain, type RpgGameState } from '@/game/rpgBrain';
 import { DEFAULT_WORLD_SEED, formatClockDisplay, ticksUntilHour, type WorldClockState } from '@/game/worldCore';
+import { oreNodesForChunk, type OreNode, type OreKind } from '@/game/geology';
 import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem, EditorXMark, EditorLogEntry } from './game/worldEditor';
 export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText } from './game/worldEditor';
@@ -658,6 +659,43 @@ export function fieldTreesFor(chunk: Point): FieldTree[] {
 
   return trees;
 }
+
+// BUILD 612: Ore nodes for mining — wraps geology oreNodesForChunk.
+// Returns nodes in field coordinates (0..280) for the given chunk.
+export interface FieldOre extends OreNode {
+  /** Field coords (0..280) */
+  fx: number;
+  fy: number;
+}
+export function fieldOresFor(chunk: Point): FieldOre[] {
+  // Terrain lookup: world tile -> terrain kind string
+  const terrainKindAt = (wx: number, wy: number): string => {
+    const cx = Math.floor(wx / 280);
+    const cy = Math.floor(wy / 280);
+    const tile = mapTileFor({ x: cx, y: cy });
+    return tile.terrain || 'meadow';
+  };
+  const nodes = oreNodesForChunk(DEFAULT_WORLD_SEED, chunk.x, chunk.y, 280, terrainKindAt);
+  // Convert world coords to field coords (0..280 within chunk)
+  return nodes.map(n => ({
+    ...n,
+    fx: n.wx - chunk.x * 280,
+    fy: n.wy - chunk.y * 280,
+  }));
+}
+// Mining: hits to deplete by ore kind (harder ores take more hits)
+export const ORE_HITS: Record<OreKind, number> = {
+  stone: 3, coal: 4, copper: 5, iron: 6, silver: 7, gold: 8,
+};
+// Mining XP per ore kind
+export const MINING_XP: Record<OreKind, number> = {
+  stone: 10, coal: 15, copper: 25, iron: 40, silver: 60, gold: 100,
+};
+// Ore colors for rendering
+export const ORE_COLORS: Record<OreKind, string> = {
+  stone: '#8a8a8a', coal: '#2a2a2a', copper: '#b87333',
+  iron: '#a0a0a0', silver: '#c0c0c0', gold: '#ffd700',
+};
 
 type FieldAccentKind = 'grass' | 'flower' | 'stone' | 'leaf';
 type FieldAccent = { id: number; x: number; y: number; scale: number; rotation: number; kind: FieldAccentKind };
@@ -5293,6 +5331,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [felledTrees, setFelledTrees] = useState<Record<string, number>>({});
   const felledTreesRef = useRef<Record<string, number>>({});
   const treeHitsRef = useRef<Record<string, number>>({});
+  // BUILD 612: Mining state — hits per ore node, depleted nodes with respawn.
+  const oreHitsRef = useRef<Record<string, number>>({});
+  const depletedOresRef = useRef<Record<string, number>>({}); // oreId -> respawn timestamp
+  const ORE_RESPAWN_MS = 5 * 60 * 1000; // 5 minutes
   // BUILD 595: Authoritative skill state. XP is authoritative; levels derive from XP.
   const [skills, setSkills] = useState<Record<string, SkillState>>(() => createEmptySkills());
   const skillsRef = useRef<Record<string, SkillState>>(skills);
@@ -5335,6 +5377,23 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // Regrow stumps back into trees after a few minutes.
   useEffect(() => {
     const timer = window.setInterval(purgeRegrownTrees, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+  // BUILD 612: Respawn depleted ore nodes after 5 minutes.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+      for (const key of Object.keys(depletedOresRef.current)) {
+        if (depletedOresRef.current[key] <= now) {
+          delete depletedOresRef.current[key];
+          changed = true;
+        }
+      }
+      if (changed) {
+        (window as unknown as { __depletedOres?: Set<string> }).__depletedOres = new Set(Object.keys(depletedOresRef.current));
+      }
+    }, 5000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -6093,6 +6152,38 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               } else {
                 spawnCombatText('chop', hitPosition, 'damage');
                 playCombatSound('shing', muted);
+              }
+            } else {
+              // BUILD 612: Mining — check for ore node in melee arc.
+              // (Only if no tree was hit.)
+              const oreTarget = fieldOresFor(chunkRef.current).find((ore) => {
+                if (depletedOresRef.current[ore.id]) return false;
+                return isInMeleeArc(positionRef.current, { x: ore.fx, y: ore.fy }, playerAttack.direction);
+              });
+              if (oreTarget) {
+                const hits = (oreHitsRef.current[oreTarget.id] || 0) + 1;
+                const hitsNeeded = ORE_HITS[oreTarget.kind] || 3;
+                const hitPosition = { x: oreTarget.fx, y: oreTarget.fy };
+                if (hits >= hitsNeeded) {
+                  delete oreHitsRef.current[oreTarget.id];
+                  depletedOresRef.current[oreTarget.id] = Date.now() + ORE_RESPAWN_MS;
+                  // Sync to window for renderer
+                  (window as unknown as { __depletedOres?: Set<string> }).__depletedOres = new Set(Object.keys(depletedOresRef.current));
+                  const oreCount = oreTarget.richness;
+                  const oreName = oreTarget.kind;
+                  // Add ore to inventory (as generic item)
+                  const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot: { [oreName + '_ore']: oreCount } };
+                  droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
+                  spawnCombatText('+' + oreCount + ' ' + oreName + ' ore', hitPosition, 'reward');
+                  playCombatSound('shing', muted);
+                  setLogs((currentLogs) => [{ text: `You mine ${oreCount}x ${oreName} ore.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+                  // BUILD 612: Award mining XP exactly once per successful depletion.
+                  awardSkillXp('mining', MINING_XP[oreTarget.kind] || 10);
+                } else {
+                  oreHitsRef.current[oreTarget.id] = hits;
+                  spawnCombatText('clang', hitPosition, 'damage');
+                  playCombatSound('shing', muted);
+                }
               }
             }
             } // end cellar woodcutting guard

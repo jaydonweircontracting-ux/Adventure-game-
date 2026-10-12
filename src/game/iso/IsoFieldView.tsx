@@ -29,9 +29,9 @@ import {
   type AmbientCritter,
 } from './critters';
 import {
-  buildingDoorwaysFor, fieldTreesFor, mapTileFor, fieldPalettes, FIELD_SIZE,
-  isStartingArea,
-  type Point, type Doorway, type FieldTree, type MapTile,
+  buildingDoorwaysFor, fieldTreesFor, fieldOresFor, mapTileFor, fieldPalettes, FIELD_SIZE,
+  isStartingArea, ORE_COLORS,
+  type Point, type Doorway, type FieldTree, type FieldOre, type MapTile,
 } from '../../App';
 import type { Townsperson } from '../townsfolk';
 // BUILD 369 (Phase 2b): authoritative water/bridges in the iso field.
@@ -74,7 +74,7 @@ interface Drawable { depth: number; draw: (g: CanvasRenderingContext2D, now: num
 // seamlessly and generated terrain fills the whole screen at every zoom.
 interface IsoChunkScene {
   ox: number; oy: number;
-  buildings: Doorway[]; trees: FieldTree[];
+  buildings: Doorway[]; trees: FieldTree[]; ores: FieldOre[];
   tile: MapTile; water: WaterGrid;
   palette: { field: string; path: string; glow: string };
   road: string;
@@ -110,6 +110,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           ox, oy,
           buildings: buildingDoorwaysFor(cp),
           trees: fieldTreesFor(cp),
+          ores: fieldOresFor(cp),
           tile,
           water: waterGridForChunk(cp.x, cp.y, 70),
           palette: fieldPalettes[tile.terrain] || fieldPalettes.meadow,
@@ -669,6 +670,38 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           },
         });
         } // end neighbor-chunk tree loop
+      }
+
+      // BUILD 612: ore nodes for mining — rock piles with ore-colored veins.
+      for (const sc of scenes) {
+        const bx = sc.ox * N, by = sc.oy * N;
+        if (skipTrees) continue; // also skip ores when max zoomed out
+        for (const o of sc.ores) {
+          const ox2 = o.fx + bx, oy2 = o.fy + by;
+          // Skip depleted nodes (checked via window.__depletedOres)
+          const depKey = o.id;
+          const depleted = (window as unknown as { __depletedOres?: Set<string> }).__depletedOres;
+          if (depleted && depleted.has(depKey)) continue;
+          const c = isoToScreen(ox2, oy2);
+          const oreCol = ORE_COLORS[o.kind] || '#8a8a8a';
+          drawables.push({
+            depth: ox2 + oy2, draw: (g2) => {
+              // Rock base (gray)
+              g2.fillStyle = 'rgba(0,0,0,0.15)';
+              g2.beginPath(); g2.ellipse(c.x, c.y + 2, 12, 5, 0, 0, 7); g2.fill();
+              g2.fillStyle = '#6a6a6a';
+              g2.beginPath();
+              g2.moveTo(c.x - 10, c.y); g2.lineTo(c.x - 4, c.y - 14);
+              g2.lineTo(c.x + 6, c.y - 12); g2.lineTo(c.x + 10, c.y);
+              g2.closePath(); g2.fill();
+              // Ore veins (colored)
+              g2.fillStyle = oreCol;
+              g2.fillRect(c.x - 6, c.y - 10, 4, 4);
+              g2.fillRect(c.x + 1, c.y - 7, 3, 3);
+              g2.fillRect(c.x - 2, c.y - 12, 3, 3);
+            },
+          });
+        }
       }
 
       // BUILD 389: ambient critters (badger/stag/boar) — deterministic home-
