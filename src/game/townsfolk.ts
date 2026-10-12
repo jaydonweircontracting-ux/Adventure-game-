@@ -238,7 +238,9 @@ const ROSTER: TownsfolkDef[] = [
   ['Pip', 'male', 'child', 'rogue', 'tavern'],
   // BUILD 548: neighbor near tutorial house — visible life at player spawn.
   // Farmer archetype: wakes up outdoors at home (visible at 6am game start).
-  ['Mira', 'female', 'farmer', 'guide', 'cottage'],
+  // BUILD 555: Renamed from Mira to Bryn — the tavern bartender is already
+  // named Mira (quest giver for 'rats-in-the-cellar'). Two Miras was confusing.
+  ['Bryn', 'female', 'farmer', 'guide', 'cottage'],
 ];
 
 /** Build DoorwayLinks for the 6 Mosslight cottages (pure, no App dependency). */

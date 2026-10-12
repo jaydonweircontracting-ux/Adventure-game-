@@ -151,7 +151,7 @@ export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): Dialo
   const cold = tier === 'cold' || tier === 'wary';
   // BUILD 549: Mira the neighbor gives new-player guidance.
   // She's the first NPC most players meet — her dialogue should orient them.
-  const isMira = ctx.name === 'Mira';
+  const isBryn = ctx.name === 'Bryn';
   // BUILD 550: Key NPCs get unique introductions (DISC-DLG-001).
   // Players should remember who they talked to.
   const isCedric = ctx.name === 'Cedric';
@@ -159,8 +159,8 @@ export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): Dialo
   const isTom = ctx.name === 'Tom';
   switch (topic) {
     case 'who': {
-      if (isMira && !cold) {
-        return { text: `I'm Mira — I farm the plot just east of here. You must be the traveler staying in the old cottage. Welcome! If you're heading to town, follow the road northwest to Mosslight Crossing.` };
+      if (isBryn && !cold) {
+        return { text: `I'm Bryn — I farm the plot just east of here. You must be the traveler staying in the old cottage. Welcome! If you're heading to town, follow the road northwest to Mosslight Crossing.` };
       }
       if (isCedric && !cold) {
         return { text: `Cedric's the name — I run the trade stalls here in Mosslight. If you've got coin, I've got goods. Come back when the stalls are open!` };
@@ -209,7 +209,7 @@ export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): Dialo
     case 'town': {
       // BUILD 550: Mira gives practical directions for new players.
       // Corrected: town NPCs are northwest of Mira (16-93, 23-87), not northeast.
-      if (isMira && !cold) {
+      if (isBryn && !cold) {
         return { text: `Mosslight Crossing is northwest of here — just follow the road. You'll find the tavern, the smith, and the chapel there. The guards patrol the roads, so you should be safe.` };
       }
       const rep = ctx.townReputation;
