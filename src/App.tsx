@@ -39,7 +39,7 @@ import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasCo
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
 import { LANDMARKS } from '@/game/landmarks';
 import {
@@ -117,6 +117,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '673': 'NPC home spawning + house ownership fix',
   '671': 'polish pass: chunk builder UI',
   '672': 'world gen: chunk builder + terrain noise + village template',
   '668': '8-dir horse + A* minimap pathfinding',
@@ -4611,7 +4612,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 368: last world-day rumor propagation ran (daily gossip tick).
   const lastRumorDayRef = useRef<number>(-1);
   if (!townsfolkNavRef.current) {
-    const ids = Array.from({ length: 12 }, (_, i) => 'townsfolk-' + i);
+    // BUILD 673: 13 NPCs (was 12) — Bryn (townsfolk-12) was missing a bed.
+    const ids = Array.from({ length: 13 }, (_, i) => 'townsfolk-' + i);
     townsfolkNavRef.current = {
       housing: buildMosslightHousing(ids),
       doors: cottageDoorways(),
@@ -4650,7 +4652,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const clock = brainRef.current?.worldCore.getClock();
     if (!clock) return;
     if (townsfolkRef.current.length === 0) {
-      const folk = snapTownsfolk(createTownsfolk(anchors, DEFAULT_WORLD_SEED), anchors, clock, townsfolkNavRef.current!);
+      // BUILD 673: New game → place NPCs at their beds (indoors).
+      // Loaded game → snap to schedule (townsfolk already restored from save).
+      const isNewGame = !loadState;
+      const folk = isNewGame
+        ? placeTownsfolkAtHome(createTownsfolk(anchors, DEFAULT_WORLD_SEED), anchors, clock, townsfolkNavRef.current!)
+        : snapTownsfolk(createTownsfolk(anchors, DEFAULT_WORLD_SEED), anchors, clock, townsfolkNavRef.current!);
       townsfolkRef.current = folk;
       setTownsfolk(folk);
       return;
@@ -8289,11 +8296,21 @@ if (active) {
                 {controlCenterTab === 'npcs' && (
                   <div>
                     <h3>NPC Browser ({townsfolkRef.current.length})</h3>
+                    {/* BUILD 673: Home/schedule diagnostics */}
+                    <p>
+                      With valid homes: {townsfolkRef.current.filter((n) => n.homeId).length} /
+                      {' '}{townsfolkRef.current.length} |
+                      Indoors: {townsfolkRef.current.filter((n) => n.indoors).length} |
+                      Following schedule: {townsfolkRef.current.filter((n) => n.activity && n.activity !== 'Idle').length}
+                    </p>
                     {townsfolkRef.current.slice(0, 20).map((npc) => (
                       <div key={npc.id} style={{ padding: '4px', borderBottom: '1px solid #333' }}>
                         <strong>{npc.name}</strong> ({npc.archetype}) — {npc.activity}
                         <br />
-                        <span style={{ color: '#888' }}>ID: {npc.id} | Pos: ({Math.round(npc.position.x)}, {Math.round(npc.position.y)})</span>
+                        <span style={{ color: '#888' }}>
+                          ID: {npc.id} | Pos: ({Math.round(npc.position.x)}, {Math.round(npc.position.y)}) |
+                          Home: {npc.homeId || 'none'} | {npc.indoors ? 'Indoors' : 'Outdoors'}
+                        </span>
                       </div>
                     ))}
                     {townsfolkRef.current.length > 20 && <p><em>...and {townsfolkRef.current.length - 20} more</em></p>}

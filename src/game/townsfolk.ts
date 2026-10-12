@@ -350,7 +350,20 @@ export function buildMosslightHousing(npcIds: string[]): HousingRegistry {
       doorwayId: d.id,
       rect: d.buildingRect!,
     })),
+    // BUILD 673: 3 beds in first cottage (13 total) for 13 NPCs.
+    // Was 2 beds × 6 cottages = 12 beds, leaving Bryn homeless.
   );
+  // Add a 13th bed to the first cottage for Bryn.
+  if (registry.homes.length > 0) {
+    const firstHome = registry.homes[0];
+    const rect = doors[0].buildingRect!;
+    const bx = rect.left + (rect.right - rect.left) * 0.5;
+    const by = rect.top + (rect.bottom - rect.top) * 0.5;
+    firstHome.beds.push({
+      id: `${firstHome.id}-bed-3`,
+      position: { x: bx, y: by },
+    });
+  }
   return assignBeds(registry, npcIds);
 }
 
@@ -1065,6 +1078,53 @@ export function snapTownsfolk(
     }
     // No home assigned: place at the schedule target (fallback, no teleport
     // loop — this only runs once at construction).
+    return {
+      ...npc,
+      position: { ...resolved.target },
+      location: 'OUTDOOR' as NPCWorldLocation,
+      indoors: false,
+      moving: false,
+      activity: resolved.activity,
+      path: undefined,
+    };
+  });
+}
+
+/**
+ * Place townsfolk at their assigned beds for new-game initialization (BUILD 673).
+ * Unlike snapTownsfolk (which snaps to schedule positions), this places ALL
+ * eligible NPCs inside their homes at their beds, regardless of the current
+ * schedule. The schedule takes over on the first simulation tick.
+ *
+ * NPCs without a valid bed assignment are placed at their schedule target
+ * (fallback, same as snapTownsfolk).
+ */
+export function placeTownsfolkAtHome(
+  folk: Townsperson[],
+  anchors: TownsfolkAnchors,
+  clock: WorldClockState,
+  nav: TownsfolkNavContext,
+): Townsperson[] {
+  return folk.map((npc) => {
+    const bed = bedFor(nav.housing, npc.id);
+    const door = homeDoorFor(npc, nav);
+    if (bed && door) {
+      // Place at bed, indoors, sleeping (schedule will wake them).
+      return {
+        ...npc,
+        position: { ...bed.bed.position },
+        location: 'INTERIOR' as NPCWorldLocation,
+        indoors: true,
+        moving: false,
+        activity: 'Sleeping',
+        path: undefined,
+        homeId: bed.home.id,
+        bedId: bed.bed.id,
+        buildingId: undefined,
+      };
+    }
+    // No bed: fall back to schedule position.
+    const resolved = townsfolkTarget(npc, anchors, clock);
     return {
       ...npc,
       position: { ...resolved.target },

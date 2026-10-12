@@ -1,6 +1,6 @@
 {
-  "build": "672",
-  "note": "world gen: chunk builder + terrain noise + village template",
-  "timestamp": "2026-10-12T23:06:01.644Z",
-  "cacheBuster": "mv5v259o"
+  "build": "673",
+  "note": "NPC home spawning + house ownership fix",
+  "timestamp": "2026-10-12T23:11:43.312Z",
+  "cacheBuster": "mv5v9gwg"
 }
