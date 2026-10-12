@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '647': 'zoom in line with backpack',
   '646': 'zoom buttons under HP window',
   '645': 'save includes issue tracker state',
   '644': 'report issues + zoom under minimap',
@@ -9959,11 +9960,9 @@ if (active) {
           ) : (
             <button className="hud-quick-button hud-card-restore" onClick={() => setHpBoxHidden(false)} aria-label="Show HP box" title="Show HP box" data-testid="button-show-hp-box"><Eye size={15} /></button>
           )}
-          {/* BUILD 628: Compact HUD — backpack in HP area, zoom below, skills inside backpack. */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+          {/* BUILD 647: Backpack and zoom on same row, under HP window. */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', pointerEvents: 'auto' }}>
             <button className="hud-bag-button" onClick={onOpenInventory} aria-label="Open menu" title="Menu" data-testid="button-open-inventory"><Backpack size={17} /></button>
-          </div>
-          <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 10, color: '#fff', opacity: 0.7 }}>Zoom:</span>
             <button
               type="button"
