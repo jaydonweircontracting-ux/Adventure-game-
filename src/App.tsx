@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '630': 'update checker + deploy guard',
   '629': 'bug tracker + project memory',
   '628': 'clean HUD reorganization',
   '626': 'build notes + changelog',
@@ -10146,6 +10147,30 @@ function Home() {
   const [inventoryOpen, setInventoryOpen] = useState(false);
   // BUILD 626: Changelog panel visibility.
   const [changelogOpen, setChangelogOpen] = useState(false);
+  // BUILD 630: Update checker — fetches version.json, shows banner if newer build available.
+  const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
+  useEffect(() => {
+    const checkForUpdate = async () => {
+      try {
+        const base = import.meta.env.BASE_URL;
+        // Cache-bust the version check itself.
+        const res = await fetch(`${base}version.json?t=${Date.now()}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const runningBuild = BUILD_NUMBER;
+        if (data.build && data.build !== runningBuild) {
+          // Only notify if the server has a NEWER build.
+          if (Number(data.build) > Number(runningBuild)) {
+            setUpdateAvailable(data.build);
+          }
+        }
+      } catch { /* offline or version.json missing — silent */ }
+    };
+    checkForUpdate();
+    // Re-check every 60 seconds.
+    const interval = setInterval(checkForUpdate, 60000);
+    return () => clearInterval(interval);
+  }, []);
   const menuBridgeRef = useRef<{ openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null>(null);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
@@ -10618,6 +10643,15 @@ function Home() {
           </section>
       ) : menuOpen ? (
         <section className="main-menu" aria-label="Main menu" data-testid="main-menu">
+          {/* BUILD 630: Update banner — shown when a newer build is available. */}
+          {updateAvailable && (
+            <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 100, background: '#27ae60', color: '#fff', padding: '10px 20px', borderRadius: 8, fontSize: 14, fontWeight: 'bold', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span>🎮 BUILD {updateAvailable} available!</span>
+              <button onClick={() => window.location.href = `${import.meta.env.BASE_URL}?v=${updateAvailable}`} style={{ background: '#fff', color: '#27ae60', border: 'none', borderRadius: 4, padding: '4px 12px', fontWeight: 'bold', cursor: 'pointer' }}>
+                Update
+              </button>
+            </div>
+          )}
           <div className="main-menu-card">
             <div className="main-menu-swords" aria-hidden="true">
               <Sword className="menu-sword sword-left" size={44} strokeWidth={1.75} />
