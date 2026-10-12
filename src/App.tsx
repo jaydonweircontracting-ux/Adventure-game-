@@ -109,6 +109,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '629': 'bug tracker + project memory',
   '628': 'clean HUD reorganization',
   '626': 'build notes + changelog',
   '625': 'invisible wall behind houses fixed',
@@ -10027,6 +10028,119 @@ function SaveIcon() {
   return <span className="save-icon" aria-hidden="true">▣</span>;
 }
 
+// BUILD 629: Issue tracker panel with clickable status boxes.
+// Statuses: unresolved (red), in-progress (yellow), fixed (green), unverified (grey).
+// Persisted to localStorage; repo copy in project-memory/ISSUES.json is source of truth.
+type IssueStatus = 'unresolved' | 'in-progress' | 'fixed' | 'unverified';
+type Issue = {
+  id: string; title: string; description: string; status: IssueStatus;
+  severity: string; firstBuild: string; fixedBuild?: string;
+  relatedFiles: string[]; verification?: string; notes?: string;
+};
+const ISSUE_STATUSES: IssueStatus[] = ['unresolved', 'in-progress', 'fixed', 'unverified'];
+const STATUS_COLORS: Record<IssueStatus, string> = {
+  'unresolved': '#e74c3c', 'in-progress': '#f1c40f', 'fixed': '#27ae60', 'unverified': '#95a5a6',
+};
+const STATUS_LABELS: Record<IssueStatus, string> = {
+  'unresolved': 'Unresolved', 'in-progress': 'In progress', 'fixed': 'Fixed & verified', 'unverified': 'Unverified',
+};
+// Baked-in issues from project-memory/ISSUES.json (updated by agent at build time).
+const BAKED_ISSUES: Issue[] = [
+  { id: 'ISSUE-001', title: 'Deer/wildlife not attackable', description: 'Deer could not be targeted. Root cause: wildlife never added to attackCandidates.', status: 'fixed', severity: 'high', firstBuild: '627', fixedBuild: '627', relatedFiles: ['src/App.tsx'], verification: '6 wildlife combat assertions pass' },
+  { id: 'ISSUE-002', title: 'Invisible wall behind starting house', description: 'Roof overhang included in collision. Fixed with asymmetric shrink.', status: 'fixed', severity: 'medium', firstBuild: '625', fixedBuild: '625', relatedFiles: ['src/App.tsx'], verification: 'Build succeeds; awaiting phone verification' },
+  { id: 'ISSUE-003', title: 'Sprite flash on scene load', description: 'Old house/NPC visible briefly. Fixed with preload.', status: 'fixed', severity: 'low', firstBuild: '624', fixedBuild: '624', relatedFiles: ['src/game/iso/IsoFieldView.tsx'], verification: 'Build succeeds' },
+  { id: 'ISSUE-004', title: 'GitHub Pages deployment stuck', description: 'Actions succeed but live site not updating. Forced redeploy via workflow_dispatch.', status: 'in-progress', severity: 'high', firstBuild: '622', relatedFiles: ['.github/workflows/deploy-pages.yml'], notes: 'Monitoring deployment propagation' },
+  { id: 'ISSUE-005', title: 'Townsfolk test failures (pre-existing)', description: 'Simulate.ts townsfolk roster failures from BUILD 548.', status: 'unresolved', severity: 'medium', firstBuild: '548', relatedFiles: ['scripts/simulate.ts'], notes: 'Pre-existing; not caused by recent builds' },
+  { id: 'ISSUE-006', title: 'Player exits from back of house', description: 'Exit position may not match door location.', status: 'unverified', severity: 'medium', firstBuild: '625', relatedFiles: ['src/App.tsx'], notes: 'User reported; needs verification' },
+];
+function IssueTrackerPanel({ buildNumber, changelog }: { buildNumber: string; changelog: { build: string; note: string }[] }) {
+  const [issues, setIssues] = useState<Issue[]>(() => {
+    try {
+      const saved = localStorage.getItem('ag-issue-statuses');
+      if (saved) {
+        const overrides = JSON.parse(saved) as Record<string, IssueStatus>;
+        return BAKED_ISSUES.map((i) => ({ ...i, status: overrides[i.id] || i.status }));
+      }
+    } catch { /* use baked */ }
+    return BAKED_ISSUES;
+  });
+  const [filter, setFilter] = useState<'all' | IssueStatus>('all');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const cycleStatus = (id: string) => {
+    setIssues((prev) => {
+      const next = prev.map((i) => {
+        if (i.id !== id) return i;
+        const idx = ISSUE_STATUSES.indexOf(i.status);
+        return { ...i, status: ISSUE_STATUSES[(idx + 1) % ISSUE_STATUSES.length] };
+      });
+      // Persist to localStorage automatically.
+      try {
+        const overrides: Record<string, IssueStatus> = {};
+        next.forEach((i) => { overrides[i.id] = i.status; });
+        localStorage.setItem('ag-issue-statuses', JSON.stringify(overrides));
+      } catch { /* storage unavailable */ }
+      return next;
+    });
+  };
+  const filtered = filter === 'all' ? issues : issues.filter((i) => i.status === filter);
+  const unresolvedCount = issues.filter((i) => i.status === 'unresolved').length;
+  const fixedCount = issues.filter((i) => i.status === 'fixed').length;
+  return (
+    <div data-testid="panel-changelog" style={{ marginTop: 12, textAlign: 'left', maxHeight: 300, overflowY: 'auto', border: '1px solid rgba(0,0,0,0.15)', borderRadius: 8, padding: 10, background: 'rgba(255,255,255,0.5)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <strong style={{ fontSize: 13 }}>Issues & Changelog</strong>
+        <span style={{ fontSize: 11 }}>
+          <span style={{ color: '#e74c3c' }}>● {unresolvedCount} open</span>
+          {' · '}
+          <span style={{ color: '#27ae60' }}>● {fixedCount} fixed</span>
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
+        {(['all', ...ISSUE_STATUSES] as const).map((f) => (
+          <button key={f} onClick={() => setFilter(f)} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '1px solid #ccc', background: filter === f ? '#333' : '#fff', color: filter === f ? '#fff' : '#333', cursor: 'pointer' }}>
+            {f === 'all' ? 'All' : STATUS_LABELS[f]}
+          </button>
+        ))}
+      </div>
+      {filtered.map((issue) => (
+        <div key={issue.id} style={{ fontSize: 12, padding: '4px 0', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              onClick={() => cycleStatus(issue.id)}
+              title={`${STATUS_LABELS[issue.status]} — click to change`}
+              aria-label={`${issue.id} status: ${STATUS_LABELS[issue.status]}`}
+              style={{ width: 16, height: 16, borderRadius: 3, border: '1px solid #666', background: STATUS_COLORS[issue.status], cursor: 'pointer', flexShrink: 0 }}
+            />
+            <strong>{issue.id}</strong>
+            <span style={{ flex: 1 }}>{issue.title}</span>
+            <button onClick={() => setExpandedId(expandedId === issue.id ? null : issue.id)} style={{ fontSize: 10, background: 'none', border: 'none', cursor: 'pointer' }}>
+              {expandedId === issue.id ? '▼' : '▶'}
+            </button>
+          </div>
+          {expandedId === issue.id && (
+            <div style={{ marginLeft: 22, marginTop: 4, fontSize: 11, color: '#555' }}>
+              <div>{issue.description}</div>
+              <div>Severity: {issue.severity} · First: BUILD {issue.firstBuild}{issue.fixedBuild ? ` · Fixed: BUILD ${issue.fixedBuild}` : ''}</div>
+              {issue.verification && <div>Verification: {issue.verification}</div>}
+              {issue.notes && <div>Notes: {issue.notes}</div>}
+              <div style={{ color: '#888' }}>{issue.relatedFiles.join(', ')}</div>
+            </div>
+          )}
+        </div>
+      ))}
+      <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+        <strong style={{ fontSize: 12 }}>Recent builds</strong>
+        {changelog.slice(0, 5).map((c) => (
+          <div key={c.build} style={{ fontSize: 11, padding: '2px 0' }}>
+            <strong>BUILD {c.build}</strong> — {c.note}
+            {c.build === buildNumber && <span style={{ color: '#27ae60', marginLeft: 6 }}>✓ live</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Home() {
   const [mapOpen, setMapOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
@@ -10521,15 +10635,7 @@ function Home() {
               <button className="main-menu-button" onClick={() => setChangelogOpen((v) => !v)} data-testid="button-changelog">📋 Changelog</button>
             </div>
             {changelogOpen && (
-              <div className="main-menu-changelog" data-testid="panel-changelog" style={{ marginTop: 12, textAlign: 'left', maxHeight: 200, overflowY: 'auto', border: '1px solid rgba(0,0,0,0.15)', borderRadius: 8, padding: 10, background: 'rgba(255,255,255,0.5)' }}>
-                <strong style={{ fontSize: 13 }}>Recent updates</strong>
-                {CHANGELOG.map((c) => (
-                  <div key={c.build} style={{ fontSize: 12, padding: '3px 0', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-                    <strong>BUILD {c.build}</strong> — {c.note}
-                    {c.build === BUILD_NUMBER && <span style={{ color: '#2a7a2a', marginLeft: 6 }}>✓ live</span>}
-                  </div>
-                ))}
-              </div>
+              <IssueTrackerPanel buildNumber={BUILD_NUMBER} changelog={CHANGELOG} />
             )}
             <p className="main-menu-note">Use Load Game for this browser, or Import Save File for a downloaded backup.</p>
             {saveNotice && <div className="save-notice" role="status">{saveNotice}</div>}
