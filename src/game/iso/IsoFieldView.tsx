@@ -593,13 +593,19 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       }
 
       // BUILD 607: Market props in town plaza — stalls, well, barrels, lamps.
+      // BUILD 613: Redesigned as market square like reference — central fountain,
+      // colorful stalls in rows, street lamps along roads.
       // Only in starting chunk (4,7). Plaza at (124-164, 124-164).
       if (chunk.x === 4 && chunk.y === 7) {
         const propImgs = (window as unknown as { __propImgs?: Record<string, HTMLImageElement> }).__propImgs || {};
         const propSrc: Record<string, string> = {
           'stall': 'props/market-stall.png',
+          'stall-red': 'props/stall-red.png',
+          'stall-blue': 'props/stall-blue.png',
+          'stall-green': 'props/stall-green.png',
           'barrel': 'props/barrel.png',
           'well': 'props/well.png',
+          'fountain': 'props/fountain.png',
           'lamp': 'props/lamp.png',
         };
         for (const [kind, src] of Object.entries(propSrc)) {
@@ -611,19 +617,44 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         }
         (window as unknown as { __propImgs?: Record<string, HTMLImageElement> }).__propImgs = propImgs;
         // Prop placements: [kind, x, y, scale]
+        // Market square layout: fountain center, stalls in rows around it.
         const props: [string, number, number, number][] = [
-          ['well', 144, 144, 1.0],      // center fountain/well
-          ['stall', 132, 132, 0.9],     // market stalls
-          ['stall', 156, 132, 0.9],
-          ['stall', 132, 156, 0.9],
-          ['stall', 156, 156, 0.9],
-          ['barrel', 128, 140, 0.7],    // barrels near stalls
-          ['barrel', 160, 140, 0.7],
-          ['barrel', 140, 128, 0.7],
-          ['lamp', 124, 144, 0.8],      // lamps at plaza corners
-          ['lamp', 164, 144, 0.8],
-          ['lamp', 144, 124, 0.8],
-          ['lamp', 144, 164, 0.8],
+          ['fountain', 144, 144, 1.2],   // center fountain
+          // North row stalls (varied colors)
+          ['stall-red', 132, 130, 0.9],
+          ['stall-blue', 144, 130, 0.9],
+          ['stall-green', 156, 130, 0.9],
+          // South row stalls
+          ['stall-blue', 132, 158, 0.9],
+          ['stall-red', 144, 158, 0.9],
+          ['stall-green', 156, 158, 0.9],
+          // East/west stalls
+          ['stall', 128, 144, 0.9],
+          ['stall', 160, 144, 0.9],
+          // Barrels/crates near stalls
+          ['barrel', 128, 136, 0.7],
+          ['barrel', 160, 136, 0.7],
+          ['barrel', 136, 128, 0.7],
+          ['barrel', 152, 128, 0.7],
+          ['barrel', 136, 160, 0.7],
+          ['barrel', 152, 160, 0.7],
+          // Well (moved to side)
+          ['well', 124, 156, 0.9],
+          // Lamps at plaza corners
+          ['lamp', 124, 132, 0.8],
+          ['lamp', 164, 132, 0.8],
+          ['lamp', 124, 156, 0.8],
+          ['lamp', 164, 156, 0.8],
+          // Street lamps along roads (north-south road through town)
+          ['lamp', 144, 110, 0.8],
+          ['lamp', 144, 95, 0.8],
+          ['lamp', 144, 178, 0.8],
+          ['lamp', 144, 193, 0.8],
+          // Street lamps along east-west road
+          ['lamp', 110, 144, 0.8],
+          ['lamp', 95, 144, 0.8],
+          ['lamp', 178, 144, 0.8],
+          ['lamp', 193, 144, 0.8],
         ];
         for (const [kind, px, py, scale] of props) {
           const img = propImgs[kind];
