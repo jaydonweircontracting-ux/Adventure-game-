@@ -152,10 +152,24 @@ export function responseFor(ctx: DialogueContext, topic: DialogueTopicId): Dialo
   // BUILD 549: Mira the neighbor gives new-player guidance.
   // She's the first NPC most players meet — her dialogue should orient them.
   const isMira = ctx.name === 'Mira';
+  // BUILD 550: Key NPCs get unique introductions (DISC-DLG-001).
+  // Players should remember who they talked to.
+  const isCedric = ctx.name === 'Cedric';
+  const isAldous = ctx.name === 'Father Aldous';
+  const isTom = ctx.name === 'Tom';
   switch (topic) {
     case 'who': {
       if (isMira && !cold) {
         return { text: `I'm Mira — I farm the plot just east of here. You must be the traveler staying in the old cottage. Welcome! If you're heading to town, follow the road northwest to Mosslight Crossing.` };
+      }
+      if (isCedric && !cold) {
+        return { text: `Cedric's the name — I run the trade stalls here in Mosslight. If you've got coin, I've got goods. Come back when the stalls are open!` };
+      }
+      if (isAldous && !cold) {
+        return { text: `I am Father Aldous, keeper of the chapel. All are welcome here, traveler. If you seek guidance — or simply quiet — the doors are open.` };
+      }
+      if (isTom && !cold) {
+        return { text: `Tom, the smith. I keep the guards' blades sharp and the farmers' tools mended. If your sword needs work, you know where to find me.` };
       }
       if (cold) return { text: `${ctx.name}. That's all you need to know.` };
       const role = ctx.archetype === 'commoner' ? 'a resident of Mosslight' : `the town ${ctx.archetype}`;
