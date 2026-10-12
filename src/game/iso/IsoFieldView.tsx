@@ -88,6 +88,32 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing });
   liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing };
+  // BUILD 624: Preload all building/prop sprites on mount so there's no
+  // "old house" flash — sprites are cached before the render loop needs them.
+  useEffect(() => {
+    const base = import.meta.env.BASE_URL;
+    const urls = [
+      ...Object.values({
+        'blue-cottage': 'buildings/blue-cottage.png',
+        'red-cottage': 'buildings/red-cottage.png',
+        'blue-house': 'buildings/blue-house.png',
+        'red-shop': 'buildings/red-shop.png',
+        'tavern': 'buildings/tavern.png',
+        'gatehouse': 'buildings/gatehouse.png',
+        'hut-thatched': 'buildings/hut-thatched.png',
+        'shop-awning': 'buildings/shop-awning.png',
+        'house-timber': 'buildings/house-timber.png',
+        'inn-large': 'buildings/inn-large.png',
+      }),
+      'props/market-stall.png', 'props/stall-red.png', 'props/stall-blue.png',
+      'props/stall-green.png', 'props/barrel.png', 'props/well.png',
+      'props/fountain.png', 'props/lamp.png',
+    ];
+    for (const src of urls) {
+      const img = new Image();
+      img.src = `${base}${src}`;
+    }
+  }, []);
   // BUILD 460: collision debug selection — tap a critter to select, drag green box to reposition
   const [selectedCritterId, setSelectedCritterId] = useState<number | null>(null);
   const greenBoxRef = useRef({ dx: 0, dy: 0, hw: 0.35, hh: 0.4 }); // offset and size in world units
