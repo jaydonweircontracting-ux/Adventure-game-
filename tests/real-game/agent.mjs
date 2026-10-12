@@ -183,13 +183,23 @@ export class GameplayAgent {
   async enterBuilding(building, timeoutMs = 60000) {
     const start = Date.now();
     // Navigate to south of doorway
-    await this.navigateTo(building.x, building.y + 8, 5, 200);
-    // Precise X alignment
-    for (let i = 0; i < 20 && Date.now() - start < timeoutMs; i++) {
+    const navOk = await this.navigateTo(building.x, building.y + 8, 5, 200);
+    this.log.push(`enter_nav: ${navOk}`);
+    if (!navOk) return false;
+    // Precise X alignment (BUILD 561 fix: doorway trigger is narrow)
+    // If blocked by wall, back south first to go around
+    for (let i = 0; i < 30 && Date.now() - start < timeoutMs; i++) {
       const { pos } = await this.observe();
       const dx = building.x - pos.x;
       if (Math.abs(dx) < 0.5) break;
+      const before = { ...pos };
       await this.step(dx > 0 ? 'right' : 'left');
+      const { pos: after } = await this.observe();
+      // If not moving (blocked), back south and try again
+      if (Math.abs(after.x - before.x) < 0.3) {
+        await this.step('down');
+        await this.step('down');
+      }
     }
     // Walk north into doorway
     for (let i = 0; i < 15 && Date.now() - start < timeoutMs; i++) {
@@ -199,12 +209,12 @@ export class GameplayAgent {
       this.actions++;
       const { inInterior } = await this.observe();
       if (inInterior) {
-        this.log(`entered_building: ${building.name}`);
+        this.log.push(`entered_building: ${building.name}`);
         return true;
       }
       await this.page.waitForTimeout(100);
     }
-    this.log(`enter_failed: ${building.name}`);
+    this.log.push(`enter_failed: ${building.name}`);
     return false;
   }
 
