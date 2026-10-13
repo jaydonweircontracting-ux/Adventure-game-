@@ -1617,6 +1617,9 @@ type SaveGameData = {
   // BUILD 430: IDs of one-time ground items (e.g. tutorial-house sword) the
   // player has picked up. Persisted so they don't respawn.
   pickedUpGroundItems?: string[];
+  // BUILD 685: tutorial objective banner dismissal. Persisted so the banner
+  // never nags again after the player reaches the Wayfarer Guild / Bram.
+  tutorialBannerDismissed?: boolean;
   playerHp: number;
   // BUILD 479: ARPG equipment (found items).
   equipment?: GeneratedItem[];
@@ -1870,12 +1873,69 @@ const startingGoatPositions: Point[] = [
   { x: 12, y: 43 }, { x: 88, y: 44 }, { x: 14, y: 82 }, { x: 31, y: 87 },
   { x: 70, y: 86 }, { x: 87, y: 80 },
 ];
+// BUILD 685: deterministic ambient goats for the tutorial chunk (4,7).
+// The player exits the tutorial house at ~(89,114); both goats graze within
+// ~30 units of the door so the first steps outside aren't empty. 'calm'
+// disposition like normal spawns — they graze and flee, never attack — so the
+// safe zone stays safe. Same GoatState shape and save path as normal spawns
+// (spawn -> save -> restore all go through the existing goat machinery).
+function tutorialAmbientGoats(): GoatState[] {
+  const door: Point = { x: 89, y: 114 };
+  const spots: Point[] = [
+    { x: door.x + 13, y: door.y + 16 }, // (102,130) — ~20u from the door
+    { x: door.x - 13, y: door.y + 14 }, // (76,128)  — ~19u from the door
+  ];
+  const out: GoatState[] = [];
+  spots.forEach((position, index) => {
+    // Never spawn inside a wall, tree, or water tile.
+    if (isFieldPositionBlocked(position, { x: 4, y: 7 })) return;
+    const level = 1;
+    const maxHp = goatMaxHpForLevel(level);
+    out.push({
+      id: 1000 + index, // above normal spawn ids (0..3) and the old deer id (900)
+      kind: 'goat',
+      position: { ...position },
+      spawnPosition: { ...position },
+      roamRadius: 10, // graze nearby, never wander off toward the door
+      facing: (['up', 'right', 'down', 'left'] as Direction[])[index % 4],
+      level,
+      hp: maxHp,
+      maxHp,
+      disposition: GOAT_SPAWN_DISPOSITION,
+      attackCooldown: 0,
+      respawnTicks: 0,
+      wanderSeed: 5000 + index,
+      moving: false,
+      attacking: false,
+      state: 'idle',
+      hurtTimer: 0,
+      attackTimer: 0,
+      attackHitApplied: false,
+      hitFlash: false,
+      nextWanderTick: GOAT_WANDER_MIN_TICKS + index,
+    });
+  });
+  return out;
+}
+
+// BUILD 685: tutorial objective banner text — pure function of existing game
+// state (dismissal flag, interior status, sword pickup). Used by the render
+// and by the ?testmode=1 hook so both can never disagree.
+function tutorialObjectiveText(opts: { dismissed: boolean; inTutorialHouse: boolean; swordPickedUp: boolean }): string | null {
+  if (opts.dismissed) return null;
+  if (opts.inTutorialHouse) {
+    return opts.swordPickedUp ? 'Walk to the door to leave' : 'Pick up the Old Sword';
+  }
+  return 'Explore Mosslight Island — follow the road to the Wayfarer Guild';
+}
+
 function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
   if (mapTileFor(chunk).terrain === 'ocean') return [];
-  // Starting town is a safe zone: no goats wandering through Mosslight Crossing.
-  // Goats roam meadows and outskirts (danger 1+), RuneScape-style.
+  // Starting town is a safe zone: no random/hostile spawns in Mosslight Crossing.
+  // Goats roam meadows and outskirts (danger 1+), RuneScape-style — plus the two
+  // calm ambient goats near the tutorial house (BUILD 685).
   if (isTutorialCenter(chunk)) {
-    return [];
+    return tutorialAmbientGoats();
   }
   const positions = Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 20 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % (FIELD_SIZE - 40)), y: 20 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % (FIELD_SIZE - 40)) }));
   const safePositions = positions.filter((position) => !isFieldPositionBlocked(position, chunk));
@@ -4747,6 +4807,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 430: one-time ground items picked up (tutorial-house sword).
   const [pickedUpGroundItems, setPickedUpGroundItems] = useState<string[]>([]);
   const pickedUpGroundItemsRef = useRef<string[]>([]);
+  // BUILD 685: tutorial objective banner dismissal (ref = save truth, state = render).
+  const tutorialBannerDismissedRef = useRef<boolean>(loadState?.tutorialBannerDismissed ?? false);
+  const [tutorialBannerDismissed, setTutorialBannerDismissed] = useState<boolean>(loadState?.tutorialBannerDismissed ?? false);
+  const dismissTutorialBanner = () => {
+    if (tutorialBannerDismissedRef.current) return;
+    tutorialBannerDismissedRef.current = true;
+    setTutorialBannerDismissed(true);
+  };
   pickedUpGroundItemsRef.current = pickedUpGroundItems;
   const [attacking, setAttacking] = useState(false);
   const [attackSequence, setAttackSequence] = useState(0);
@@ -4953,6 +5021,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           name: n.name, x: n.position.x, y: n.position.y,
           activity: n.activity, archetype: n.archetype,
         })),
+        // BUILD 685: current tutorial objective banner text (null when hidden).
+        getObjectiveBanner: () => tutorialObjectiveText({
+          dismissed: tutorialBannerDismissedRef.current,
+          inTutorialHouse: interiorRef.current?.id === 'tutorial-house',
+          swordPickedUp: pickedUpGroundItemsRef.current.includes('tutorial-house-sword'),
+        }),
         // BUILD 554: teleport player to deterministic position for test isolation.
         // LOCALHOST ONLY. Resets tap-move target to avoid interference.
         teleportPlayer: (x: number, y: number) => {
@@ -5111,6 +5185,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     barbHair,
     droppedLoot,
     pickedUpGroundItems,
+    // BUILD 685: persist tutorial banner dismissal.
+    tutorialBannerDismissed: tutorialBannerDismissedRef.current,
     playerHp,
     equipment,
     playerXp,
@@ -5192,6 +5268,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     targetGoatIdRef.current = null; setTargetGoatId(null);
     droppedLootRef.current = loadState.droppedLoot || []; setDroppedLoot(droppedLootRef.current);
     pickedUpGroundItemsRef.current = loadState.pickedUpGroundItems || []; setPickedUpGroundItems(pickedUpGroundItemsRef.current);
+    // BUILD 685: restore tutorial banner dismissal (spawn -> save -> restore).
+    tutorialBannerDismissedRef.current = loadState.tutorialBannerDismissed ?? false;
+    setTutorialBannerDismissed(loadState.tutorialBannerDismissed ?? false);
     droppedLootIdRef.current = droppedLootRef.current.reduce((highest, drop) => Math.max(highest, drop.id), 0) + 1;
     playerHpRef.current = loadState.playerHp; setPlayerHp(loadState.playerHp);
     playerXpRef.current = loadState.playerXp; setPlayerXp(loadState.playerXp);
@@ -7627,6 +7706,8 @@ if (active) {
     setSmithRumor(null);
     setNpcDialogue(GUILD_SMITH);
     setLogs((currentLogs) => [{ text: 'Bram the smith looks up from his workbench.', color: 'blue' }, ...currentLogs].slice(0, 3));
+    // BUILD 685: talking to Bram retires the tutorial objective banner.
+    dismissTutorialBanner();
   };
   const closeSmithDialogue = () => {
     setNpcDialogue(null);
@@ -7728,6 +7809,8 @@ if (active) {
     interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
     setMoving(false);
     setLogs((currentLogs) => [{ text: 'You enter the ' + doorway.area.name + '.', color: 'blue' }, ...currentLogs].slice(0, 3));
+    // BUILD 685: visiting the Wayfarer Guild retires the tutorial objective banner.
+    if (doorway.area.id === 'wayfarer-guild') dismissTutorialBanner();
   };
   // BUILD 326: descend into the Tankard Cellar through the tavern hatch.
   // Unlike field doorways, the cellar exits back up to the tavern (tracked in
@@ -7781,6 +7864,12 @@ if (active) {
     }
   };
 
+  // BUILD 685: tutorial objective banner text — one contextual next step.
+  const objectiveBannerText = tutorialObjectiveText({
+    dismissed: tutorialBannerDismissed,
+    inTutorialHouse: interior?.id === 'tutorial-house',
+    swordPickedUp: pickedUpGroundItems.includes(TUTORIAL_SWORD_ITEM),
+  });
   return (
     <div className="field-column">
       {/* BUILD 609: Circular minimap in corner */}
@@ -10666,6 +10755,15 @@ if (active) {
             </button>
           </div>
           </div> {/* Close left column */}
+          {/* BUILD 685: tutorial objective banner — top-center below the HUD,
+              pointer-events none so it never blocks taps (only the × opts back in). */}
+          {objectiveBannerText && (
+            <div className="objective-banner" data-testid="objective-banner" role="status" aria-live="polite">
+              <span className="objective-banner-kicker">Objective</span>
+              <span className="objective-banner-text">{objectiveBannerText}</span>
+              <button type="button" className="objective-banner-dismiss" aria-label="Dismiss objective" onClick={dismissTutorialBanner}>×</button>
+            </div>
+          )}
         </div>
 
          {logOpen && (

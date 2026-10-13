@@ -730,6 +730,60 @@
   align-items: flex-start;
   pointer-events: none;
 }
+/* BUILD 685: tutorial objective banner — top-center below the HUD.
+   Dark translucent + gold text like the HUD. pointer-events: none so it
+   never blocks field taps; only the dismiss × opts back in. */
+.objective-banner {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  top: calc(100% + 8px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(92vw, 430px);
+  padding: 7px 10px 7px 12px;
+  background: rgba(12, 10, 8, .82);
+  border: 1px solid rgba(232, 211, 161, .55);
+  border-radius: 10px;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, .35);
+  color: #f3d27a;
+  font-family: var(--app-font-mono);
+  font-size: 12px;
+  letter-spacing: .02em;
+  pointer-events: none;
+}
+.objective-banner-kicker {
+  flex: none;
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(243, 210, 122, .62);
+  border: 1px solid rgba(243, 210, 122, .4);
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+.objective-banner-text {
+  text-align: center;
+}
+.objective-banner-dismiss {
+  flex: none;
+  pointer-events: auto;
+  appearance: none;
+  background: transparent;
+  border: 1px solid rgba(243, 210, 122, .4);
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  color: #f3d27a;
+  font-size: 14px;
+  cursor: pointer;
+}
+.objective-banner-dismiss:active {
+  background: rgba(243, 210, 122, .18);
+}
 .hud-card {
   pointer-events: auto;
   min-width: 185px;
