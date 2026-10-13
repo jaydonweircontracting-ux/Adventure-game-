@@ -58,6 +58,8 @@ interface IsoFieldViewProps {
   // BUILD 684: loot drops — rendered in iso (were 2D-DOM only, invisible here).
   droppedLoot?: Array<{ id: number; position: Point }>;
   onPickupDrop?: (drop: { id: number; position: Point }) => void;
+  // BUILD 684: floating combat text — rendered in iso (were 2D-DOM only).
+  damageTexts?: Array<{ id: number; text: string; position: Point; kind: string }>;
   zoom: number; // BUILD 372: zoom is owned by App so the main zoom buttons drive it
   onZoomChange: (z: number) => void;
   // BUILD 390: barbarian player equipment -> iso sprite variant + attack anim.
@@ -90,11 +92,13 @@ interface IsoChunkScene {
 const MARGIN = 48; // world-px background margin around the map
 const ROAD_HALF = 5; // road band half-width in tiles
 
-export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, droppedLoot, onPickupDrop, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot });
-  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot };
+  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts });
+  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts };
+  // BUILD 684: first-seen timestamps for floating combat text (float-up anim).
+  const dmgSeenRef = useRef(new Map<number, number>());
   // BUILD 624: Preload all building/prop sprites on mount so there's no
   // "old house" flash — sprites are cached before the render loop needs them.
   // BUILD 684: building paths from the single asset catalog.
@@ -1048,6 +1052,39 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
 
       drawables.sort((a, b) => a.depth - b.depth);
       for (const d of drawables) d.draw(g, nowMs);
+
+      // BUILD 684: floating combat text in iso (damage numbers were 2D-DOM
+      // only). World-space, floats up and fades over ~0.9s (matches the
+      // 2D lifetime). Drawn last so it sits above the world.
+      {
+        const texts = liveRef.current.damageTexts || [];
+        const seen = dmgSeenRef.current;
+        for (const t of texts) {
+          if (!seen.has(t.id)) seen.set(t.id, nowMs);
+        }
+        for (const id of [...seen.keys()]) {
+          if (!texts.some((t) => t.id === id)) seen.delete(id);
+        }
+        for (const t of texts) {
+          const born = seen.get(t.id) ?? nowMs;
+          const age = (nowMs - born) / 900; // 0..1
+          if (age >= 1) continue;
+          const w = isoToScreen(t.position.x, t.position.y);
+          const rise = age * 34;
+          const alpha = age < 0.7 ? 1 : 1 - (age - 0.7) / 0.3;
+          const col = t.kind === 'critical' ? '#ffd23f' : t.kind === 'reward' ? '#7dff8a' : '#ff6b5e';
+          g.save();
+          g.globalAlpha = Math.max(0, alpha);
+          g.font = `bold ${t.kind === 'critical' ? 22 : 17}px sans-serif`;
+          g.textAlign = 'center';
+          g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,0.75)';
+          const ty = w.y - 46 - rise;
+          g.strokeText(t.text, w.x, ty);
+          g.fillStyle = col;
+          g.fillText(t.text, w.x, ty);
+          g.restore();
+        }
+      }
 
       g.restore();
     };
