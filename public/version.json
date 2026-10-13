@@ -1,6 +1,6 @@
 {
-  "build": "683",
-  "note": "settlement renderer integration + cottage desync fix",
-  "timestamp": "2026-10-13T03:46:11.431Z",
-  "cacheBuster": "mv652fs8"
+  "build": "684",
+  "note": "iso loot pickup + iso damage numbers",
+  "timestamp": "2026-10-13T21:28:17.740Z",
+  "cacheBuster": "mv770bbh"
 }
