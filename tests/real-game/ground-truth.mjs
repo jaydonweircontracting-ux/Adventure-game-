@@ -82,33 +82,43 @@ check('enter: walked back into tutorial house', reentered);
 await page.screenshot({ path: `${SHOT}/gt4-reentered.png` });
 if (reentered) check('exit2: walked back out via doorway', await exitInteriorWalk());
 
-// combat
+// combat — continuous-hold chase (player 4 u/s outruns fleeing goat at 2 u/s;
+// the old staccato down/up chase lost too much ground between key presses).
 const goatId = await T(`window.__gameTest.spawnTestGoat()`);
 check('combat: goat spawned', typeof goatId === 'number');
+// helper: hold a movement key toward a target without releasing between polls
+let heldKey = null;
+const holdToward = async (tx, ty, arriveDist) => {
+  for (let c = 0; c < 80; c++) {
+    const p = await pos();
+    const dx = tx - p.x, dy = ty - p.y;
+    if (Math.hypot(dx, dy) < arriveDist) break;
+    const key = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'ArrowRight' : 'ArrowLeft') : (dy > 0 ? 'ArrowDown' : 'ArrowUp');
+    if (heldKey !== key) {
+      if (heldKey) await page.keyboard.up(heldKey);
+      await page.keyboard.down(key);
+      heldKey = key;
+    }
+    await page.waitForTimeout(150);
+  }
+  if (heldKey) { await page.keyboard.up(heldKey); heldKey = null; }
+};
 let dead = false, swings = 0;
 if (typeof goatId === 'number') {
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${SHOT}/gt4-goat.png` });
-  for (; swings < 20; swings++) {
-    // chase: close to within melee reach (goat flees when hurt)
-    for (let c = 0; c < 10; c++) {
-      const g = (await T(`window.__gameTest.getGoats()`)).find(x => String(x.id) === String(goatId));
-      if (!g) { dead = true; break; }
-      const p = await pos();
-      const dx = g.x - p.x, dy = g.y - p.y;
-      if (Math.hypot(dx, dy) < 4) break;
-      const key = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'ArrowRight' : 'ArrowLeft') : (dy > 0 ? 'ArrowDown' : 'ArrowUp');
-      await page.keyboard.down(key); await page.waitForTimeout(300); await page.keyboard.up(key);
-    }
-    if (dead) break;
+  for (; swings < 30 && !dead; swings++) {
     const g = (await T(`window.__gameTest.getGoats()`)).find(x => String(x.id) === String(goatId));
     if (!g || g.hp <= 0) { dead = true; break; }
+    await holdToward(g.x, g.y, 4.2);
+    const g2 = (await T(`window.__gameTest.getGoats()`)).find(x => String(x.id) === String(goatId));
+    if (!g2 || g2.hp <= 0) { dead = true; break; }
     const gp = await pos();
-    const dx = g.x - gp.x, dy = g.y - gp.y;
+    const dx = g2.x - gp.x, dy = g2.y - gp.y;
     const faceKey = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'ArrowRight' : 'ArrowLeft') : (dy > 0 ? 'ArrowDown' : 'ArrowUp');
     await page.keyboard.down(faceKey); await page.waitForTimeout(120); await page.keyboard.up(faceKey);
     await page.keyboard.press('Space');
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(800);
   }
 }
 check('combat: goat killed with swings', dead, `swings=${swings}`);
@@ -118,15 +128,10 @@ check('combat: loot dropped', loot.length > 0, `drops=${loot.length}`);
 await page.screenshot({ path: `${SHOT}/gt5-loot.png` });
 if (loot.length > 0) {
   const lp = loot[0];
-  for (let i = 0; i < 16; i++) {
-    const p = await pos();
-    if (Math.hypot(lp.x - p.x, lp.y - p.y) < 1.0) break;
-    const dx = lp.x - p.x, dy = lp.y - p.y;
-    const key = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'ArrowRight' : 'ArrowLeft') : (dy > 0 ? 'ArrowDown' : 'ArrowUp');
-    await page.keyboard.down(key); await page.waitForTimeout(350); await page.keyboard.up(key);
-  }
-  await page.waitForTimeout(800);
-  // iso pickup: tap the drop (player is standing on it, so tap screen center)
+  await holdToward(lp.x, lp.y, 0.7);
+  await page.waitForTimeout(1000); // let camera settle on the player
+  // iso pickup: player is standing on the drop; tap screen center (camera
+  // centers the player, drop is within the 48px hit-test radius)
   await page.mouse.click(640, 400);
   await page.waitForTimeout(800);
   const after = await T(`window.__gameTest.getDroppedLoot()`);
