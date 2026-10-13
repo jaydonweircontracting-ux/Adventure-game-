@@ -17,6 +17,7 @@ import {
   LANDSCAPE_FIELD_SIZE,
   type CorridorRect,
 } from './landscape';
+import { FIELD_SIZE } from './fieldCamera';
 
 export type NPCWorldLocation =
   | 'OUTDOOR'
@@ -552,8 +553,10 @@ export function validateDestination(
   p: NavPoint,
   obstacles: ObstacleRect[],
 ): { point: NavPoint; corrected: boolean } {
-  let x = Math.max(2, Math.min(138, p.x));
-  let y = Math.max(2, Math.min(138, p.y));
+  // BUILD 683: clamp to field space (was hardcoded 138 = 140-space legacy).
+  const LO = 2, HI = FIELD_SIZE - 2;
+  let x = Math.max(LO, Math.min(HI, p.x));
+  let y = Math.max(LO, Math.min(HI, p.y));
   let corrected = x !== p.x || y !== p.y;
   // Nudge margin: larger than the A* cell (4 units) so the corrected point's
   // cell never still overlaps the rect. Repeat until stable (a nudge out of
@@ -578,8 +581,8 @@ export function validateDestination(
     }
     if (!moved) break;
   }
-  x = Math.max(2, Math.min(138, x));
-  y = Math.max(2, Math.min(138, y));
+  x = Math.max(LO, Math.min(HI, x));
+  y = Math.max(LO, Math.min(HI, y));
   return { point: { x, y }, corrected };
 }
 

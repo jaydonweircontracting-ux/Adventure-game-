@@ -148,6 +148,9 @@ export interface SettlementOptions {
   profile?: SettlementType;
   /** Field size (default 140). */
   fieldSize?: number;
+  /** Rects (in generator space) that lanes must not cross.
+   *  Lane points stop before entering them (with margin). */
+  avoid?: Rect[];
 }
 
 /**
@@ -304,15 +307,43 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
     });
   }
 
+  // BUILD 683: Trim lanes — stop before avoid rects and field bounds.
+  // Own buildings are NOT blockers: lanes draw on the ground plane and
+  // buildings occlude them, so a path passing behind a cottage (or ending
+  // at its door) reads naturally.
+  const trimLanes = (lanes: Lane[]): Lane[] => {
+    const blockers: Rect[] = (opts.avoid ?? []).map((r) => padRect(r, 1));
+    const inBounds = (x: number, y: number) =>
+      x >= 1 && y >= 1 && x <= fieldSize - 1 && y <= fieldSize - 1;
+    const blocked = (x: number, y: number) =>
+      blockers.some((r) => x > r.left && x < r.right && y > r.top && y < r.bottom);
+    const out: Lane[] = [];
+    for (const lane of lanes) {
+      const pts: { x: number; y: number }[] = [];
+      for (const p of lane.points) {
+        if (!inBounds(p.x, p.y) || blocked(p.x, p.y)) break;
+        pts.push(p);
+      }
+      if (pts.length >= 2) out.push({ points: pts, width: lane.width });
+    }
+    return out;
+  };
+
+  const trimmedLanes = trimLanes(lanes);
+
   return {
     center,
     plazaRadius,
     centerFeature,
     buildings,
-    lanes,
+    lanes: trimmedLanes,
     props,
     profile,
   };
+}
+
+function padRect(r: Rect, pad: number): Rect {
+  return { left: r.left - pad, top: r.top - pad, right: r.right + pad, bottom: r.bottom + pad };
 }
 
 // ---------------------------------------------------------------------------
@@ -395,4 +426,118 @@ export function validateFullSettlement(layout: SettlementLayout, fieldSize: numb
   }
 
   return errors;
+}
+
+// ---------------------------------------------------------------------------
+// Mosslight Crossing unification (BUILD 683)
+//
+// The generator works in 140-space; the field is 280 units. All consumers
+// (visuals, player collision, NPC doors/homes/obstacles, interiors) must use
+// the SAME rects in field space. Previously the renderer used hardcoded
+// straight-line rects while NPC logic used generated ring positions —
+// NPCs lived in invisible houses. These exports are the single source.
+// ---------------------------------------------------------------------------
+
+/** Generator space (140) -> field space (280). */
+export const SETTLEMENT_FIELD_SCALE = 2;
+
+/**
+ * Fixed 280-space rects in Mosslight Crossing (chunk 4,7): 4 main buildings
+ * (user-placed 2026-09-30) + 8 walled-town buildings (BUILD 604).
+ * The settlement generator avoids these; lanes stop before them.
+ */
+export const MOSSLIGHT_FIXED_RECTS_280: Rect[] = [
+  { left: 85.9, top: 108.8, right: 92.9, bottom: 113.6 },   // tutorial house
+  { left: 192.1, top: 111.0, right: 199.1, bottom: 115.8 }, // wayfarer guild
+  { left: 84.1, top: 172.6, right: 91.1, bottom: 177.4 },   // rootbound chapel
+  { left: 179.7, top: 173.4, right: 186.7, bottom: 178.2 }, // stone house (tavern)
+  { left: 120, top: 108, right: 132, bottom: 117 },          // town north 1
+  { left: 156, top: 108, right: 168, bottom: 117 },          // town north 2
+  { left: 120, top: 171, right: 132, bottom: 180 },          // town south 1
+  { left: 156, top: 171, right: 168, bottom: 180 },          // town south 2
+  { left: 176, top: 120, right: 188, bottom: 129 },          // town east 1
+  { left: 176, top: 159, right: 188, bottom: 168 },          // town east 2
+  { left: 100, top: 120, right: 112, bottom: 129 },          // town west 1
+  { left: 100, top: 159, right: 112, bottom: 168 },          // town west 2
+];
+
+/** The 4 main buildings (first 4 of the fixed rects). */
+export const MOSSLIGHT_MAIN_RECTS_280: Rect[] = MOSSLIGHT_FIXED_RECTS_280.slice(0, 4);
+
+const HAMLET_WEST = { center: { x: 17, y: 76 }, seed: 0x1a2b3c, ids: ['cottage-1', 'cottage-2', 'cottage-3'] };
+const HAMLET_NORTH = { center: { x: 79, y: 24 }, seed: 0x4d5e6f, ids: ['cottage-4', 'cottage-5', 'cottage-6'] };
+
+export function scaleRectToField(r: Rect): Rect {
+  const s = SETTLEMENT_FIELD_SCALE;
+  return { left: r.left * s, top: r.top * s, right: r.right * s, bottom: r.bottom * s };
+}
+
+let _hamletLayouts: { west: SettlementLayout; north: SettlementLayout } | null = null;
+
+/**
+ * Full settlement layouts for Mosslight's two hamlet clusters.
+ * Deterministic (same seeds as BUILD 680). Lanes avoid the fixed buildings.
+ */
+export function mosslightHamletLayouts(): { west: SettlementLayout; north: SettlementLayout } {
+  if (!_hamletLayouts) {
+    const s = SETTLEMENT_FIELD_SCALE;
+    const avoid140 = MOSSLIGHT_FIXED_RECTS_280.map((r) => ({
+      left: r.left / s, top: r.top / s, right: r.right / s, bottom: r.bottom / s,
+    }));
+    const gen = (h: typeof HAMLET_WEST) => generateSettlementLayout({
+      center: h.center,
+      seed: h.seed,
+      buildings: h.ids.map((id) => ({ id, w: 6, h: 4.5 })),
+      profile: 'hamlet',
+      avoid: avoid140,
+    });
+    _hamletLayouts = { west: gen(HAMLET_WEST), north: gen(HAMLET_NORTH) };
+  }
+  return _hamletLayouts;
+}
+
+/** The 6 cottage rects in 280 field space — the single source for visuals, collision, doors. */
+export function mosslightCottageRects280(): Rect[] {
+  const { west, north } = mosslightHamletLayouts();
+  return [...west.buildings, ...north.buildings].map((b) => scaleRectToField(b.rect));
+}
+
+/** Roof/sprite variant for a cottage rect (matched by center proximity). */
+export function mosslightCottageVariantForRect(rect: Rect): string | null {
+  const { west, north } = mosslightHamletLayouts();
+  const cx = (rect.left + rect.right) / 2, cy = (rect.top + rect.bottom) / 2;
+  for (const b of [...west.buildings, ...north.buildings]) {
+    const r = scaleRectToField(b.rect);
+    const bx = (r.left + r.right) / 2, by = (r.top + r.bottom) / 2;
+    if (Math.hypot(cx - bx, cy - by) < 2) return b.spriteVariant;
+  }
+  return null;
+}
+
+/** Settlement decor for chunk (4,7) in 280 field space: plazas, lanes, props. */
+export interface SettlementDecor {
+  plazas: { x: number; y: number; r: number }[];
+  lanes: { points: { x: number; y: number }[]; width: number }[];
+  props: { id: string; asset: string; x: number; y: number; r: number }[];
+}
+
+export function mosslightSettlementDecor(): SettlementDecor {
+  const { west, north } = mosslightHamletLayouts();
+  const s = SETTLEMENT_FIELD_SCALE;
+  const convert = (l: SettlementLayout) => ({
+    plaza: { x: l.center.x * s, y: l.center.y * s, r: l.plazaRadius * s },
+    lanes: l.lanes.map((ln) => ({
+      points: ln.points.map((p) => ({ x: p.x * s, y: p.y * s })),
+      width: ln.width * s,
+    })),
+    props: l.props.map((p) => ({
+      id: p.id, asset: p.asset, x: p.x * s, y: p.y * s, r: p.radius * s,
+    })),
+  });
+  const w = convert(west), n = convert(north);
+  return {
+    plazas: [w.plaza, n.plaza],
+    lanes: [...w.lanes, ...n.lanes],
+    props: [...w.props, ...n.props],
+  };
 }

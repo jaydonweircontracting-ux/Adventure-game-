@@ -6,7 +6,7 @@
 // sleeps in the same bed.
 
 import type { NavPoint } from './npcNavigation';
-import { generateHamletLayout } from './settlements';
+import { mosslightCottageRects280 } from './settlements';
 
 export type Bed = {
   id: string;
@@ -89,14 +89,11 @@ export function bedFor(registry: HousingRegistry, npcId: string): { home: Home; 
 }
 
 /** Residential cottage rects for Mosslight Crossing (chunk 4,7), field units.
- * Six small cottages in open ground west and north of the four main
- * buildings — 2 beds each = 12 beds for the 12 townsfolk. */
+ * Six cottages in two generated hamlet clusters — the SINGLE SOURCE is
+ * mosslightCottageRects280() in settlements.ts (BUILD 683 unification).
+ * These must match the visual rects in fieldHouseRects exactly. */
 export function mosslightCottages(): { left: number; top: number; right: number; bottom: number }[] {
-  // BUILD 680: Use settlement generator for hamlet clusters.
-  // Must match cottageDoorways() in townsfolk.ts.
-  const westCenter = { x: 17, y: 76 };
-  const northCenter = { x: 79, y: 24 };
-  const westSlots = generateHamletLayout(westCenter, 0x1a2b3c, ['cottage-1', 'cottage-2', 'cottage-3']);
-  const northSlots = generateHamletLayout(northCenter, 0x4d5e6f, ['cottage-4', 'cottage-5', 'cottage-6']);
-  return [...westSlots, ...northSlots].map((s) => s.rect);
+  // BUILD 683: unified on the generated settlement layout (was: same
+  // generator but unscaled 140-space; visuals used hardcoded straight lines).
+  return mosslightCottageRects280();
 }

@@ -23,8 +23,8 @@ import { bedFor, buildHousingRegistry, assignBeds } from './housing';
 // BUILD 679: Bed-to-field mapping for visual alignment.
 import { layoutBedToField } from './interiors';
 import { houseTypeForBuilding } from './houseTypes';
-// BUILD 680: Settlement layout for believable hamlet.
-import { generateHamletLayout } from './settlements';
+// BUILD 683: Unified settlement rects (single source in settlements.ts).
+import { mosslightCottageRects280, MOSSLIGHT_MAIN_RECTS_280, mosslightHamletLayouts, SETTLEMENT_FIELD_SCALE } from './settlements';
 
 export type TownsfolkFacing = 'up' | 'down' | 'left' | 'right';
 export type TownsfolkArchetype = 'farmer' | 'merchant' | 'guard' | 'priest' | 'smith' | 'commoner' | 'child';
@@ -250,13 +250,9 @@ const ROSTER: TownsfolkDef[] = [
 
 /** Build DoorwayLinks for the 6 Mosslight cottages (pure, no App dependency). */
 export function cottageDoorways(): DoorwayLink[] {
-  // BUILD 680: Cottages arranged as two hamlet clusters (west and north)
-  // around village greens, not in straight lines. Deterministic.
-  const westCenter = { x: 17, y: 76 };
-  const northCenter = { x: 79, y: 24 };
-  const westSlots = generateHamletLayout(westCenter, 0x1a2b3c, ['cottage-1', 'cottage-2', 'cottage-3']);
-  const northSlots = generateHamletLayout(northCenter, 0x4d5e6f, ['cottage-4', 'cottage-5', 'cottage-6']);
-  const rects = [...westSlots, ...northSlots].map((s) => s.rect);
+  // BUILD 683: Unified on mosslightCottageRects280() — the same 280-space
+  // rects the renderer uses. Doors stay attached to the visible houses.
+  const rects = mosslightCottageRects280();
   return rects.map((rect, i) => {
     const doorX = rect.left + (rect.right - rect.left) * 0.51;
     return {
@@ -270,14 +266,22 @@ export function cottageDoorways(): DoorwayLink[] {
 
 /** All building rects that block NPC paths (4 main + 6 cottages). */
 export function mosslightObstacles(): ObstacleRect[] {
-  const main = [
-    { left: 41.2, top: 53.2, right: 48.2, bottom: 58.0 },
-    { left: 94.3, top: 54.3, right: 101.3, bottom: 59.1 },
-    { left: 40.3, top: 85.1, right: 47.3, bottom: 89.9 },
-    { left: 88.1, top: 85.5, right: 95.1, bottom: 90.3 },
-  ];
-  const cottages = cottageDoorways().map((d) => d.buildingRect!);
-  return [...main, ...cottages];
+  // BUILD 683: 280 field space, matching the visuals. Was 140-space.
+  const main = MOSSLIGHT_MAIN_RECTS_280;
+  const cottages = mosslightCottageRects280();
+  // Settlement props (wells, barrels) block NPCs too.
+  const { west, north } = mosslightHamletLayouts();
+  const props: ObstacleRect[] = [];
+  for (const l of [west, north]) {
+    for (const p of l.props) {
+      const s = SETTLEMENT_FIELD_SCALE;
+      props.push({
+        left: p.x * s - p.radius * s, top: p.y * s - p.radius * s,
+        right: p.x * s + p.radius * s, bottom: p.y * s + p.radius * s,
+      });
+    }
+  }
+  return [...main, ...cottages, ...props];
 }
 
 /**

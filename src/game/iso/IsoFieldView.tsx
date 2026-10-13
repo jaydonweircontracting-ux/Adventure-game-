@@ -30,7 +30,7 @@ import {
 } from './critters';
 import {
   buildingDoorwaysFor, fieldTreesFor, fieldOresFor, mapTileFor, fieldPalettes, FIELD_SIZE,
-  isStartingArea, ORE_COLORS,
+  isStartingArea, ORE_COLORS, settlementDecorFor, cottageVariantForRect,
   type Point, type Doorway, type FieldTree, type FieldOre, type MapTile,
 } from '../../App';
 import type { Townsperson } from '../townsfolk';
@@ -420,6 +420,33 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       }
       } // end useChunkLOD else
 
+      // BUILD 683: Settlement decor (plazas, lanes) — ground decals drawn
+      // after terrain, before depth-sorted drawables. Only chunk (4,7) has any.
+      for (const sc of scenes) {
+        const decor = settlementDecorFor({ x: chunk.x + sc.ox, y: chunk.y + sc.oy });
+        if (!decor.plazas.length && !decor.lanes.length) continue;
+        const bx = sc.ox * N, by = sc.oy * N;
+        for (const p of decor.plazas) {
+          const c = isoToScreen(p.x + bx, p.y + by);
+          g.fillStyle = 'rgba(124, 168, 88, 0.35)'; // village green
+          g.beginPath();
+          g.ellipse(c.x, c.y, p.r * 32, p.r * 16, 0, 0, 7);
+          g.fill();
+        }
+        g.strokeStyle = 'rgba(150, 118, 72, 0.7)'; // dirt lanes
+        g.lineCap = 'round'; g.lineJoin = 'round';
+        for (const ln of decor.lanes) {
+          if (ln.points.length < 2) continue;
+          g.lineWidth = Math.max(2, ln.width * 14);
+          g.beginPath();
+          ln.points.forEach((pt, i) => {
+            const s = isoToScreen(pt.x + bx, pt.y + by);
+            if (i === 0) g.moveTo(s.x, s.y); else g.lineTo(s.x, s.y);
+          });
+          g.stroke();
+        }
+      }
+
       const drawables: Drawable[] = [];
 
       // buildings: real rects -> iso boxes with pitched roofs. BUILD 376:
@@ -452,7 +479,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // BUILD 603: Stable sprite assignment using absolute chunk + local coords.
       // Previous BUILD 602 used r.left/r.top which include scene offset that
       // changes as player moves between chunks → flicker.
-      const bldKindForBuilding = (b: { rect: { left: number; top: number } }, scOx: number, scOy: number): string => {
+      const bldKindForBuilding = (b: { rect: { left: number; top: number; right: number; bottom: number } }, scOx: number, scOy: number): string => {
         const absCx = chunk.x + scOx, absCy = chunk.y + scOy;
         const lx = b.rect.left, ly = b.rect.top;
         // Special buildings: starting chunk (0,0) by local positions
@@ -461,6 +488,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           if (Math.abs(lx - 192.1) < 1 && Math.abs(ly - 111.0) < 1) return 'blue-house';
           if (Math.abs(lx - 84.1) < 1 && Math.abs(ly - 172.6) < 1) return 'red-shop';
           if (Math.abs(lx - 179.7) < 1 && Math.abs(ly - 173.4) < 1) return 'blue-cottage';
+        }
+        // BUILD 683: Mosslight cottages (chunk 4,7) use the settlement
+        // layout's roof variants, not the position hash.
+        if (absCx === 4 && absCy === 7 && b.rect) {
+          const v = cottageVariantForRect(b.rect);
+          if (v) return v;
         }
         // Stable hash: absolute chunk + local coords (both stable)
         // BUILD 614: expanded to 10 varieties for town diversity.
@@ -722,6 +755,48 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
 
       // trees: real positions — BUILD 376: every chunk in the scene grid,
       // offset into current-chunk-relative tile space.
+      // BUILD 683: settlement props (wells, barrels) — billboard sprites,
+      // depth-sorted like trees. Only chunk (4,7) has any.
+      const propImgs = (window as unknown as { __propImgs?: Record<string, HTMLImageElement> }).__propImgs || {};
+      const propSrc: Record<string, string> = {
+        'props/well.png': 'props/well.png',
+        'props/barrel.png': 'props/barrel.png',
+      };
+      for (const [key, src] of Object.entries(propSrc)) {
+        if (!propImgs[key]) {
+          const img = new Image();
+          img.src = `${import.meta.env.BASE_URL}${src}`;
+          propImgs[key] = img;
+        }
+      }
+      (window as unknown as { __propImgs?: Record<string, HTMLImageElement> }).__propImgs = propImgs;
+      for (const sc of scenes) {
+        const decor = settlementDecorFor({ x: chunk.x + sc.ox, y: chunk.y + sc.oy });
+        if (!decor.props.length) continue;
+        const bx = sc.ox * N, by = sc.oy * N;
+        const pvhw = (wpx / 2) / zm, pvhh = (hpx / 2) / zm;
+        for (const pr of decor.props) {
+          const px = pr.x + bx, py = pr.y + by;
+          const c = isoToScreen(px, py);
+          if (c.x < cam.x - pvhw - 100 || c.x > cam.x + pvhw + 100 || c.y < cam.y - pvhh - 150 || c.y > cam.y + pvhh + 50) continue;
+          const img = propImgs[pr.asset];
+          drawables.push({
+            depth: px + py,
+            draw: (g2) => {
+              if (img && img.complete && img.naturalWidth > 0) {
+                const sw = pr.r * 2 * 32;
+                const sh = sw / 2;
+                g2.drawImage(img, c.x - sw / 2, c.y - sh, sw, sh);
+              } else {
+                g2.fillStyle = '#8a8a8a';
+                g2.beginPath();
+                g2.ellipse(c.x, c.y - 4, pr.r * 32, pr.r * 16, 0, 0, 7);
+                g2.fill();
+              }
+            },
+          });
+        }
+      }
       // BUILD 608: skip trees when max zoomed out (sub-pixel, saves draw calls).
       const skipTrees = zm < 0.35;
       for (const sc of scenes) {

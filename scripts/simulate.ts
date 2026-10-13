@@ -1934,8 +1934,9 @@ for (const kind of EXPECTED_KINDS) {
 {
   // 1. validateDestination: clamps bounds, nudges out of buildings.
   const building = { left: 10, top: 10, right: 20, bottom: 20 };
-  const clamped = validateDestination({ x: -5, y: 200 }, []);
-  assert(clamped.point.x === 2 && clamped.point.y === 138 && clamped.corrected, 'validateDestination should clamp to field bounds');
+  const clamped = validateDestination({ x: -5, y: 400 }, []);
+  // BUILD 683: field is 280 units (was hardcoded 138 = 140-space legacy).
+  assert(clamped.point.x === 2 && clamped.point.y === 278 && clamped.corrected, 'validateDestination should clamp to field bounds');
   const inside = validateDestination({ x: 15, y: 15 }, [building]);
   assert(inside.corrected, 'point inside a building must be corrected');
   const ip = inside.point;
@@ -6556,6 +6557,90 @@ import { inflateSync } from 'node:zlib';
   // 7. Lanes generated.
   assert(hamlet.lanes.length === 2, 'Settlement: hamlet has 2 lanes');
   assert(town.lanes.length === 4, 'Settlement: market-town has 4 lanes');
+}
+
+// BUILD 683: Mosslight unification — one rect source for visuals, collision, NPCs.
+{
+  const {
+    mosslightHamletLayouts, mosslightCottageRects280, mosslightCottageVariantForRect,
+    mosslightSettlementDecor, validateFullSettlement, scaleRectToField,
+    MOSSLIGHT_FIXED_RECTS_280, MOSSLIGHT_MAIN_RECTS_280, SETTLEMENT_FIELD_SCALE,
+    BUILDING_VARIANTS,
+  } = await import('../src/game/settlements.js');
+
+  assert(SETTLEMENT_FIELD_SCALE === 2, 'Settlement683: 140->280 scale is 2');
+
+  // 1. Deterministic across calls.
+  const a = mosslightHamletLayouts();
+  const b = mosslightHamletLayouts();
+  assert(a.west.buildings[0].rect.left === b.west.buildings[0].rect.left,
+    'Settlement683: hamlet layouts deterministic');
+
+  // 2. Six cottage rects in 280 field space, 12x9 each.
+  const rects = mosslightCottageRects280();
+  assert(rects.length === 6, `Settlement683: 6 cottage rects (got ${rects.length})`);
+  for (const r of rects) {
+    const w = r.right - r.left, h = r.bottom - r.top;
+    assert(Math.abs(w - 12) < 0.01 && Math.abs(h - 9) < 0.01,
+      `Settlement683: cottage is 12x9 in field space (got ${w.toFixed(1)}x${h.toFixed(1)})`);
+  }
+
+  // 3. Cottages don't overlap the fixed buildings.
+  const overlap = (x, y) => x.left < y.right && y.left < x.right && x.top < y.bottom && y.top < x.bottom;
+  for (const r of rects) {
+    for (const f of MOSSLIGHT_FIXED_RECTS_280) {
+      assert(!overlap(r, f), 'Settlement683: cottage clear of fixed buildings');
+    }
+  }
+
+  // 4. Full validation passes for both hamlets.
+  for (const [name, l] of [['west', a.west], ['north', a.north]]) {
+    const errs = validateFullSettlement(l);
+    assert(errs.length === 0, `Settlement683: ${name} valid (${errs.join(', ')})`);
+  }
+
+  // 5. Lane points in bounds and clear of fixed rects (avoid works).
+  for (const l of [a.west, a.north]) {
+    for (const ln of l.lanes) {
+      assert(ln.points.length >= 2, 'Settlement683: lane has >= 2 points');
+      for (const p of ln.points) {
+        assert(p.x >= 1 && p.y >= 1 && p.x <= 139 && p.y <= 139,
+          `Settlement683: lane point in bounds (${p.x.toFixed(1)},${p.y.toFixed(1)})`);
+        for (const f of MOSSLIGHT_FIXED_RECTS_280) {
+          const f140 = { left: f.left / 2, top: f.top / 2, right: f.right / 2, bottom: f.bottom / 2 };
+          assert(!(p.x > f140.left && p.x < f140.right && p.y > f140.top && p.y < f140.bottom),
+            'Settlement683: lane avoids fixed buildings');
+        }
+      }
+    }
+  }
+
+  // 6. Every cottage rect resolves to a catalogue variant.
+  for (const r of rects) {
+    const v = mosslightCottageVariantForRect(r);
+    assert(v && (BUILDING_VARIANTS as readonly string[]).includes(v),
+      `Settlement683: variant resolves (${v})`);
+  }
+
+  // 7. Decor: 2 plazas, lanes, well+barrel per hamlet, all in 280 space.
+  const decor = mosslightSettlementDecor();
+  assert(decor.plazas.length === 2, 'Settlement683: 2 plazas');
+  assert(decor.props.length === 4, `Settlement683: 4 props (got ${decor.props.length})`);
+  assert(decor.props.filter((p) => p.asset === 'props/well.png').length === 2,
+    'Settlement683: 2 wells');
+  for (const p of decor.plazas) {
+    assert(p.x > 0 && p.x < 280 && p.y > 0 && p.y < 280, 'Settlement683: plaza in field space');
+  }
+
+  // 8. Main rects are the first 4 fixed rects.
+  assert(MOSSLIGHT_MAIN_RECTS_280.length === 4, 'Settlement683: 4 main rects');
+  assert(MOSSLIGHT_MAIN_RECTS_280[0].left === MOSSLIGHT_FIXED_RECTS_280[0].left,
+    'Settlement683: main rects match fixed');
+
+  // 9. Scale helper doubles.
+  const sr = scaleRectToField({ left: 10, top: 20, right: 16, bottom: 24.5 });
+  assert(sr.left === 20 && sr.top === 40 && sr.right === 32 && sr.bottom === 49,
+    'Settlement683: scaleRectToField doubles');
 }
 
 // ---- Results ----

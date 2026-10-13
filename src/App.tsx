@@ -40,6 +40,8 @@ import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBa
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+// BUILD 683: unified Mosslight rects (single source in settlements.ts).
+import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
 import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
 import { LANDMARKS } from '@/game/landmarks';
 import {
@@ -122,6 +124,7 @@ const BUILD_NOTES: Record<string, string> = {
   '680': 'procedural hamlet settlement generator',
   '681': 'centre-first adaptive settlement design',
   '682': 'grass texture on zoom-out LOD',
+  '683': 'settlement renderer integration + cottage desync fix',
   '679': 'bed-field integration for NPC placement',
   '678': 'hex toolkit + bed-field mapping',
   '677': 'bed anchors + browser testing verified',
@@ -581,39 +584,15 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
   if (variant >= 1) {
     return organicTownRects(variantSeed, variant, road, toBuilding);
   }
-  // Four corners (starting area default). All four stone cottages.
-  // Positions hardcoded from the user's 2026-09-30 mover screenshot
-  // ("Move them here"): tutorial 41.2,53.2 / crafting 94.3,54.3 /
-  // chapel 40.3,85.1 / fourth 88.1,85.5 — true field coordinates.
-  // Each house is 7 x 4.8 field units (BUILD 515: fixed double-size rects).
+  // Four corners (starting area default).
+  // BUILD 683: Single source of truth — MOSSLIGHT_FIXED_RECTS_280 (4 main +
+  // 8 town buildings) and the generated cottage rects, all in 280 field
+  // space. These MUST match settlements.ts / townsfolk.ts exactly, or NPC
+  // doors/homes desync from the visuals.
   return [
-    { left: 85.9, top: 108.8, right: 92.9, bottom: 113.6 },   // tutorial house
-    { left: 192.1, top: 111.0, right: 199.1, bottom: 115.8 },  // wayfarer guild
-    { left: 84.1, top: 172.6, right: 91.1, bottom: 177.4 },   // rootbound chapel
-    { left: 179.7, top: 173.4, right: 186.7, bottom: 178.2 },   // stone house
-    // BUILD 311: residential cottages (housing registry) — 2 beds each.
-    // BUILD 343: scaled 2x for 280-unit chunks (was 0..140).
-    { left: 28, top: 124, right: 40, bottom: 133 },   // cottage 1 (west)
-    { left: 28, top: 148, right: 40, bottom: 157 },   // cottage 2 (west)
-    { left: 28, top: 172, right: 40, bottom: 181 },   // cottage 3 (west)
-    { left: 124, top: 44, right: 136, bottom: 53 },   // cottage 4 (north)
-    { left: 152, top: 44, right: 164, bottom: 53 },   // cottage 5 (north)
-    { left: 180, top: 44, right: 192, bottom: 53 },   // cottage 6 (north)
-    // BUILD 604: Compact walled town — buildings clustered around central plaza.
-    // Plaza at (124-164, 124-164) kept clear for market square.
-    // 8 town buildings forming a square around the plaza (like reference).
-    // North side (facing plaza):
-    { left: 120, top: 108, right: 132, bottom: 117 },
-    { left: 156, top: 108, right: 168, bottom: 117 },
-    // South side (facing plaza):
-    { left: 120, top: 171, right: 132, bottom: 180 },
-    { left: 156, top: 171, right: 168, bottom: 180 },
-    // East side (facing plaza):
-    { left: 176, top: 120, right: 188, bottom: 129 },
-    { left: 176, top: 159, right: 188, bottom: 168 },
-    // West side (facing plaza):
-    { left: 100, top: 120, right: 112, bottom: 129 },
-    { left: 100, top: 159, right: 112, bottom: 168 },
+    ...MOSSLIGHT_FIXED_RECTS_280.slice(0, 4),   // tutorial, guild, chapel, fourth
+    ...mosslightCottageRects280(),               // 6 cottages (indices 4-9)
+    ...MOSSLIGHT_FIXED_RECTS_280.slice(4),       // 8 town buildings (indices 10-17)
   ];
 }
 
@@ -899,6 +878,11 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
   // Rusty Tankard annexes are solid in the starting town.
   if (chunk.x === 4 && chunk.y === 7) {
     if (TAVERN_ANNEX_RECTS.some((r) => pointInRect(position, r, 0.45))) return true;
+    // BUILD 683: settlement props (wells, barrels) are solid.
+    const decor = mosslightSettlementDecor();
+    if (decor.props.some((p) => pointInRect(position, {
+      left: p.x - p.r, top: p.y - p.r, right: p.x + p.r, bottom: p.y + p.r,
+    }, 0.2))) return true;
   }
 
   // Carriage stations/stops: house, stable and the carriage itself are solid.
@@ -1087,6 +1071,22 @@ const WORLD_RUMORS = [
   'The merchants are talking about bandits on the roads.',
   'Someone found an old shrine in the forest.',
 ];
+
+// BUILD 683: Settlement decor (plazas, lanes, props) for the iso renderer.
+// Only Mosslight Crossing (chunk 4,7) has generated settlement decor.
+export function settlementDecorFor(chunk: Point): {
+  plazas: { x: number; y: number; r: number }[];
+  lanes: { points: { x: number; y: number }[]; width: number }[];
+  props: { id: string; asset: string; x: number; y: number; r: number }[];
+} {
+  if (chunk.x === 4 && chunk.y === 7) return mosslightSettlementDecor();
+  return { plazas: [], lanes: [], props: [] };
+}
+
+// BUILD 683: Roof/sprite variant for a cottage rect in chunk (4,7).
+export function cottageVariantForRect(rect: { left: number; top: number; right: number; bottom: number }): string | null {
+  return mosslightCottageVariantForRect(rect);
+}
 
 export function buildingDoorwaysFor(chunk: Point): Doorway[] {
   // Use the same landmark source as the visual renderer (mapTileFor) so door
