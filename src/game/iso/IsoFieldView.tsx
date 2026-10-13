@@ -55,6 +55,9 @@ interface IsoFieldViewProps {
   onExit: () => void; // back to the 2D field
   onTapMove?: (point: Point) => void; // BUILD 366: tap-to-move target
   onTalkTo?: (npc: Townsperson) => void; // BUILD 366: tap an NPC to talk
+  // BUILD 684: loot drops — rendered in iso (were 2D-DOM only, invisible here).
+  droppedLoot?: Array<{ id: number; position: Point }>;
+  onPickupDrop?: (drop: { id: number; position: Point }) => void;
   zoom: number; // BUILD 372: zoom is owned by App so the main zoom buttons drive it
   onZoomChange: (z: number) => void;
   // BUILD 390: barbarian player equipment -> iso sprite variant + attack anim.
@@ -87,11 +90,11 @@ interface IsoChunkScene {
 const MARGIN = 48; // world-px background margin around the map
 const ROAD_HALF = 5; // road band half-width in tiles
 
-export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, droppedLoot, onPickupDrop, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing });
-  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing };
+  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot });
+  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot };
   // BUILD 624: Preload all building/prop sprites on mount so there's no
   // "old house" flash — sprites are cached before the render loop needs them.
   // BUILD 684: building paths from the single asset catalog.
@@ -112,8 +115,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   const [selectedCritterId, setSelectedCritterId] = useState<number | null>(null);
   const greenBoxRef = useRef({ dx: 0, dy: 0, hw: 0.35, hh: 0.4 }); // offset and size in world units
   // tap callbacks via ref so the canvas listener always calls the latest
-  const tapRef = useRef({ onTapMove, onTalkTo });
-  tapRef.current = { onTapMove, onTalkTo };
+  const tapRef = useRef({ onTapMove, onTalkTo, onPickupDrop });
+  tapRef.current = { onTapMove, onTalkTo, onPickupDrop };
 
   const R = ISO_CHUNK_RENDER_RADIUS;
   const GRID = 2 * R + 1;
@@ -843,6 +846,31 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             },
           });
         }
+
+        // BUILD 684: loot drops — visible in iso (were 2D-DOM only, invisible
+        // in the default view). Pulsing gold diamond, depth-sorted. Drops are
+        // pre-filtered to the home chunk by the caller.
+        if (sc.ox === 0 && sc.oy === 0) {
+          const drops = liveRef.current.droppedLoot || [];
+          for (const d of drops) {
+            const dx2 = d.position.x + bx, dy2 = d.position.y + by;
+            const dc = isoToScreen(dx2, dy2);
+            drawables.push({
+              depth: dx2 + dy2 + 0.001, draw: (g2, now) => {
+                const pulse = 1 + Math.sin(now / 300 + d.id) * 0.12;
+                const s = 9 * pulse;
+                g2.fillStyle = 'rgba(255, 215, 100, 0.35)';
+                g2.beginPath(); g2.arc(dc.x, dc.y - 6, s * 1.6, 0, 7); g2.fill();
+                g2.fillStyle = '#ffd764';
+                g2.beginPath();
+                g2.moveTo(dc.x, dc.y - 6 - s); g2.lineTo(dc.x + s * 0.7, dc.y - 6);
+                g2.lineTo(dc.x, dc.y - 6 + s); g2.lineTo(dc.x - s * 0.7, dc.y - 6);
+                g2.closePath(); g2.fill();
+                g2.strokeStyle = '#8a6a20'; g2.lineWidth = 1.5; g2.stroke();
+              },
+            });
+          }
+        }
       }
 
       // BUILD 389: ambient critters (badger/stag/boar) — deterministic home-
@@ -1093,6 +1121,26 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           if (d < bestD) { bestD = d; bestDoor = b.position; }
         }
         if (bestDoor) { tapMove({ x: bestDoor.x, y: bestDoor.y }); return; }
+        // BUILD 684: loot drop hit test — tap a drop to pick it up when close
+        // (same 16-unit rule as the 2D pickup button), else walk toward it.
+        {
+          const drops = liveRef.current.droppedLoot || [];
+          const { onPickupDrop: pickUp } = tapRef.current;
+          let bestDrop: { id: number; position: Point } | null = null; let bestDD = 48;
+          for (const d of drops) {
+            const w = isoToScreen(d.position.x, d.position.y);
+            const px = (w.x - cam.x) * zm + wpx / 2;
+            const py = (w.y - cam.y) * zm + hpx / 2;
+            const dd = Math.hypot(px - sx, py - sy);
+            if (dd < bestDD) { bestDD = dd; bestDrop = d; }
+          }
+          if (bestDrop && pickUp) {
+            const pl = liveRef.current;
+            const dist = Math.hypot(bestDrop.position.x - pl.px, bestDrop.position.y - pl.py);
+            if (dist <= 16) { pickUp(bestDrop); return; }
+            tapMove({ x: bestDrop.position.x, y: bestDrop.position.y }); return;
+          }
+        }
         // otherwise walk to the tapped tile (field units == tile space)
         const t = screenToTile(wx, wy);
         const tx = Math.min(N - 1, Math.max(0, t.tx));

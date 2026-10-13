@@ -8940,6 +8940,8 @@ if (active) {
               zoom={isoZoom} onZoomChange={setIsoZoom}
               onTapMove={(point) => { tapMoveTargetRef.current = point; }}
               onTalkTo={(npc) => talkToTownsfolk(npc)}
+              droppedLoot={droppedLoot.filter((drop) => drop.chunk.x === chunk.x && drop.chunk.y === chunk.y)}
+              onPickupDrop={(d) => { const full = droppedLootRef.current.find((x) => x.id === d.id); if (full) pickupDrop(full); }}
               barbOutfit={equippedShirt ? 'blue' : 'bare'}
               barbWeapon={equippedSword ? 'sword' : equippedBow ? 'bow' : 'none'}
               barbHair={barbHair}
