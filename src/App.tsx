@@ -1882,8 +1882,10 @@ const startingGoatPositions: Point[] = [
 function tutorialAmbientGoats(): GoatState[] {
   const door: Point = { x: 89, y: 114 };
   const spots: Point[] = [
-    { x: door.x + 13, y: door.y + 16 }, // (102,130) — ~20u from the door
-    { x: door.x - 13, y: door.y + 14 }, // (76,128)  — ~19u from the door
+    // BUILD 685: visible on screen at spawn (iso math: within ~±15u box).
+    // (95,120) renders below-right of the player; (82,118) renders left.
+    { x: door.x + 6, y: door.y + 6 },  // (95,120) — ~8u from the door
+    { x: door.x - 7, y: door.y + 4 },  // (82,118) — ~8u from the door
   ];
   const out: GoatState[] = [];
   spots.forEach((position, index) => {
