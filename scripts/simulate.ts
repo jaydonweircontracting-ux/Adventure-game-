@@ -6643,6 +6643,182 @@ import { inflateSync } from 'node:zlib';
     'Settlement683: scaleRectToField doubles');
 }
 
+// BUILD 684: Building rig — one authoritative instance record per building,
+// assembled from the engine's real sources, plus the consistency audit.
+{
+  const { assembleBuildingRig, auditBuildingRigs, assetMetaFor, serializeRigIdentity, BUILDING_ASSET_META } =
+    await import('../src/game/buildingRig.js');
+  const { cottageDoorways, interiorAreaIdForCottage } = await import('../src/game/townsfolk.js');
+  const { mosslightCottageVariantForRect, generateSettlementLayout, BUILDING_VARIANTS } =
+    await import('../src/game/settlements.js');
+  const { findPath } = await import('../src/game/npcNavigation.js');
+
+  const pathExists = (from: any, to: any, obstacles: any[], viaDoor?: any) =>
+    findPath(from, to, obstacles,
+      viaDoor ? { id: viaDoor.id, exterior: viaDoor.exterior, interior: viaDoor.exterior } : undefined) !== null;
+
+  // 1. Asset catalog: every audited variant has metadata with sane dimensions.
+  for (const v of BUILDING_VARIANTS) {
+    const meta = assetMetaFor(v);
+    assert(meta !== null, `Rig684: asset meta exists for '${v}'`);
+    assert(meta!.file === `buildings/${v}.png`, `Rig684: asset file path for '${v}'`);
+    assert(meta!.w > 0 && meta!.h > 0, `Rig684: asset dimensions for '${v}'`);
+    assert(meta!.anchor === 'base-center', `Rig684: anchor convention for '${v}'`);
+  }
+  assert(assetMetaFor('no-such-variant') === null, 'Rig684: unknown variant returns null');
+  assert(Object.keys(BUILDING_ASSET_META).length === BUILDING_VARIANTS.length,
+    'Rig684: meta catalog covers every audited variant');
+
+  // 2. Real cottage rigs: 6 Mosslight cottages from the real doorway source.
+  const doors = cottageDoorways();
+  assert(doors.length === 6, `Rig684: 6 real cottage doorways (got ${doors.length})`);
+  const cottageRigs = doors.map((d: any, i: number) => {
+    const rect = d.buildingRect;
+    const variant = mosslightCottageVariantForRect(rect) || 'blue-cottage';
+    const interiorId = interiorAreaIdForCottage(`cottage-${i + 1}`, { x: 4, y: 7 });
+    const { rig, warnings } = assembleBuildingRig({
+      id: `cottage-${i + 1}`,
+      kind: 'cottage',
+      chunk: { x: 4, y: 7 },
+      doorway: { id: d.id, exterior: d.exterior, interior: d.interior, rect },
+      spriteVariant: variant,
+      interiorId,
+      exteriorSpawn: { x: d.exterior.x, y: d.exterior.y + 1.5 },
+    });
+    assert(warnings.length === 0, `Rig684: no assembly warnings for cottage-${i + 1} (${warnings.join('; ')})`);
+    return rig;
+  });
+  const cottageErrors = auditBuildingRigs(cottageRigs, {
+    fieldSize: 280,
+    interiorResolves: (id: string) => id.length > 0,
+    pathExists,
+  });
+  assert(cottageErrors.length === 0,
+    `Rig684: audit passes on 6 real cottages (${cottageErrors.slice(0, 3).join('; ')})`);
+
+  // 3. Generated settlement rigs: hamlet + village + market-town layouts.
+  // Doors face the plaza (like the real facingForRect faces roads): door
+  // exterior = closest edge midpoint pushed 0.7 toward the centre.
+  for (const [profile, n] of [['hamlet', 4], ['village', 9], ['market-town', 16]] as const) {
+    const layout = generateSettlementLayout({
+      center: { x: 70, y: 70 }, seed: 4242,
+      buildings: Array.from({ length: n }, (_, i) => ({ id: `b${i}`, w: 8, h: 6 })),
+      profile,
+    });
+    const cx = layout.center.x, cy = layout.center.y;
+    const clearOfOthers = (p: any, self: any) =>
+      !layout.buildings.some((o: any) => o.id !== self.id &&
+        p.x > o.rect.left - 0.5 && p.x < o.rect.right + 0.5 &&
+        p.y > o.rect.top - 0.5 && p.y < o.rect.bottom + 0.5);
+    // Nav-aware door placement: pick the first edge whose door is clear AND
+    // an NPC can actually path away from it (mirrors production door logic).
+    const navOk = (door: any, b: any) => {
+      const r = b.rect;
+      const rcx = (r.left + r.right) / 2, rcy = (r.top + r.bottom) / 2;
+      let ox = door.x - rcx, oy = door.y - rcy;
+      const ol = Math.hypot(ox, oy) || 1; ox /= ol; oy /= ol;
+      const goal = { x: Math.max(2, Math.min(138, door.x + ox * 18)),
+                     y: Math.max(2, Math.min(138, door.y + oy * 18)) };
+      return pathExists(door, goal,
+        layout.buildings.map((o: any) => o.rect),
+        { id: `${b.id}-door`, exterior: door });
+    };
+    const rigs = layout.buildings.map((b: any) => {
+      const r = b.rect;
+      // Best-edge door placement: first edge whose door + spawn clear all
+      // other footprints (a real door placer avoids blocked sides).
+      const edges = [
+        { x: (r.left + r.right) / 2, y: r.top, nx: 0, ny: -1 },
+        { x: (r.left + r.right) / 2, y: r.bottom, nx: 0, ny: 1 },
+        { x: r.left, y: (r.top + r.bottom) / 2, nx: -1, ny: 0 },
+        { x: r.right, y: (r.top + r.bottom) / 2, nx: 1, ny: 0 },
+      ];
+      edges.sort((p, q) =>
+        Math.hypot(p.x + p.nx * 2.5 - cx, p.y + p.ny * 2.5 - cy) -
+        Math.hypot(q.x + q.nx * 2.5 - cx, q.y + q.ny * 2.5 - cy));
+      let e = edges[0];
+      for (const c of edges) {
+        const door = { x: c.x + c.nx * 0.7, y: c.y + c.ny * 0.7 };
+        const spawn = { x: c.x + c.nx * 2.5, y: c.y + c.ny * 2.5 };
+        if (clearOfOthers(door, b) && clearOfOthers(spawn, b) && navOk(door, b)) { e = c; break; }
+      }
+      return assembleBuildingRig({
+        id: b.id, kind: 'cottage', chunk: { x: 0, y: 0 },
+        doorway: {
+          id: `${b.id}-door`,
+          exterior: { x: e.x + e.nx * 0.7, y: e.y + e.ny * 0.7 },
+          interior: { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 },
+          rect: r,
+        },
+        spriteVariant: b.spriteVariant,
+        interiorId: `0-0-${b.id}`,
+        exteriorSpawn: { x: e.x + e.nx * 2.5, y: e.y + e.ny * 2.5 },
+      }).rig;
+    });
+    const errs = auditBuildingRigs(rigs, { fieldSize: 140, pathExists });
+    assert(errs.length === 0, `Rig684: audit passes on generated ${profile} (${errs.slice(0, 3).join('; ')})`);
+  }
+
+  // 4. Negative tests — each defect class must be caught.
+  const goodDoor = (id: string, cx: number, cy: number) => ({
+    id: `${id}-door`,
+    exterior: { x: cx, y: cy + 6 },
+    interior: { x: cx, y: cy },
+    rect: { left: cx - 5, top: cy - 5, right: cx + 5, bottom: cy + 5 },
+  });
+  const mkRig = (over: any = {}) => assembleBuildingRig({
+    id: 'test-1', kind: 'cottage', chunk: { x: 0, y: 0 },
+    doorway: goodDoor('test-1', 50, 50),
+    spriteVariant: 'blue-cottage', interiorId: 'int-1',
+    exteriorSpawn: { x: 50, y: 58.5 }, ...over,
+  }).rig;
+  const expectError = (rigs: any[], frag: string, label: string) => {
+    const errs = auditBuildingRigs(rigs, { fieldSize: 280 });
+    assert(errs.some((e: string) => e.includes(frag)), `Rig684: catches ${label} (got: ${errs.slice(0, 2).join('; ') || 'no errors'})`);
+  };
+  expectError([mkRig(), mkRig()], 'Duplicate building id', 'duplicate ids');
+  expectError([mkRig({ spriteVariant: 'nope' })], "not in BUILDING_VARIANTS", 'unknown variant');
+  expectError([mkRig({ doorway: { ...goodDoor('t', 50, 50), exterior: { x: 50, y: 50 } } })],
+    'deep inside its own footprint', 'door inside own footprint');
+  {
+    // test-b's door sits at its own edge but inside test-a's footprint.
+    const a = mkRig({ id: 'test-a',
+      doorway: { id: 'test-a-door',
+        exterior: { x: 50, y: 70.7 }, interior: { x: 50, y: 55 },
+        rect: { left: 40, top: 40, right: 60, bottom: 70 } },
+      exteriorSpawn: { x: 50, y: 73 } });
+    const b = mkRig({ id: 'test-b',
+      doorway: { id: 'test-b-door',
+        exterior: { x: 52, y: 65.7 }, interior: { x: 52, y: 60 },
+        rect: { left: 47, top: 55, right: 57, bottom: 65 } },
+      exteriorSpawn: { x: 52, y: 67.5 } });
+    expectError([a, b], 'inside building', 'door inside another building');
+  }
+  {
+    const r = mkRig({ exteriorSpawn: { x: 50, y: 50 } }); // inside own rect
+    expectError([r], 'would trap player', 'spawn inside footprint');
+  }
+  {
+    const a = mkRig();
+    const b = mkRig({ id: 'test-2', doorway: goodDoor('test-2', 54, 50), exteriorSpawn: { x: 54, y: 62.5 } });
+    expectError([a, b], 'overlap', 'overlapping footprints');
+  }
+  expectError([mkRig({ interiorId: null })], 'missing interior id', 'missing interior');
+  {
+    const r = mkRig();
+    (r as any).rect = { left: -5, top: 10, right: 5, bottom: 20 };
+    expectError([r], 'out of bounds', 'out-of-bounds rect');
+  }
+
+  // 5. Save/load identity: stable and deterministic.
+  const r1 = mkRig();
+  const r2 = mkRig();
+  assert(serializeRigIdentity(r1) === serializeRigIdentity(r2), 'Rig684: rig identity is deterministic');
+  const parsed = JSON.parse(serializeRigIdentity(r1));
+  assert(parsed.id === 'test-1' && parsed.interiorId === 'int-1' && parsed.spriteVariant === 'blue-cottage',
+    'Rig684: serialized identity round-trips all critical fields');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

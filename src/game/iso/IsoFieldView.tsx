@@ -34,6 +34,10 @@ import {
   type Point, type Doorway, type FieldTree, type FieldOre, type MapTile,
 } from '../../App';
 import type { Townsperson } from '../townsfolk';
+// BUILD 684: single authoritative building asset catalog (was: hardcoded
+// kind->path maps duplicated in this file). Anchor/scale conventions documented
+// in src/game/buildingRig.ts.
+import { BUILDING_ASSET_META } from '../buildingRig';
 // BUILD 369 (Phase 2b): authoritative water/bridges in the iso field.
 import { waterGridForChunk, waterGridAt, type WaterGrid } from '../landscape';
 // BUILD 376: multi-chunk rendering so generated terrain fills the whole
@@ -90,21 +94,11 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing };
   // BUILD 624: Preload all building/prop sprites on mount so there's no
   // "old house" flash — sprites are cached before the render loop needs them.
+  // BUILD 684: building paths from the single asset catalog.
   useEffect(() => {
     const base = import.meta.env.BASE_URL;
     const urls = [
-      ...Object.values({
-        'blue-cottage': 'buildings/blue-cottage.png',
-        'red-cottage': 'buildings/red-cottage.png',
-        'blue-house': 'buildings/blue-house.png',
-        'red-shop': 'buildings/red-shop.png',
-        'tavern': 'buildings/tavern.png',
-        'gatehouse': 'buildings/gatehouse.png',
-        'hut-thatched': 'buildings/hut-thatched.png',
-        'shop-awning': 'buildings/shop-awning.png',
-        'house-timber': 'buildings/house-timber.png',
-        'inn-large': 'buildings/inn-large.png',
-      }),
+      ...Object.values(BUILDING_ASSET_META).map((m) => m.file),
       'props/market-stall.png', 'props/stall-red.png', 'props/stall-blue.png',
       'props/stall-green.png', 'props/barrel.png', 'props/well.png',
       'props/fountain.png', 'props/lamp.png',
@@ -454,20 +448,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // into current-chunk-relative tile space so they tile seamlessly.
       // BUILD 601: Building sprites — Exiled Kingdoms style.
       // Cache building images on window.
+      // BUILD 684: paths from the single asset catalog (no duplicated map).
       const bldImgs = (window as unknown as { __bldImgs?: Record<string, HTMLImageElement> }).__bldImgs || {};
-      const bldSrc: Record<string, string> = {
-        'blue-cottage': 'buildings/blue-cottage.png',
-        'red-cottage': 'buildings/red-cottage.png',
-        'blue-house': 'buildings/blue-house.png',
-        'red-shop': 'buildings/red-shop.png',
-        'tavern': 'buildings/tavern.png',
-        'gatehouse': 'buildings/gatehouse.png',
-        // BUILD 614: new varieties
-        'hut-thatched': 'buildings/hut-thatched.png',
-        'shop-awning': 'buildings/shop-awning.png',
-        'house-timber': 'buildings/house-timber.png',
-        'inn-large': 'buildings/inn-large.png',
-      };
+      const bldSrc: Record<string, string> = {};
+      for (const [variant, meta] of Object.entries(BUILDING_ASSET_META)) bldSrc[variant] = meta.file;
       for (const [kind, src] of Object.entries(bldSrc)) {
         if (!bldImgs[kind]) {
           const img = new Image();

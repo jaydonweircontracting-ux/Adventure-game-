@@ -210,22 +210,38 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
   const variantCount = BUILDING_VARIANTS.length;
   let lastVariantIdx = -1;
 
+  // BUILD 684: overlap rejection. The ring slot (angle + jitter) can collide
+  // for larger counts — expand radially until the rect clears already-placed
+  // buildings. The retry consumes no rng, so the stream (and hamlet output)
+  // is unchanged when nothing overlaps: same seed -> same layout.
+  const rectsOverlapMargin = (a: Rect, b: Rect, margin: number): boolean =>
+    a.left < b.right + margin && b.left < a.right + margin &&
+    a.top < b.bottom + margin && b.top < a.bottom + margin;
+  const placeRectAt = (b: { w: number; h: number }, angle: number, distance: number): Rect => {
+    const cx = center.x + Math.cos(angle) * distance;
+    const cy = center.y + Math.sin(angle) * distance;
+    // Clamp to field bounds (keep 3-unit margin).
+    const clampedCx = Math.max(3 + b.w / 2, Math.min(fieldSize - 3 - b.w / 2, cx));
+    const clampedCy = Math.max(3 + b.h / 2, Math.min(fieldSize - 3 - b.h / 2, cy));
+    return {
+      left: clampedCx - b.w / 2, top: clampedCy - b.h / 2,
+      right: clampedCx + b.w / 2, bottom: clampedCy + b.h / 2,
+    };
+  };
+
   for (let i = 0; i < count; i++) {
     const b = opts.buildings[i];
     const angle = baseAngle + (i / count) * Math.PI * 2 + (rng() - 0.5) * 0.5;
     // Distance: varied 18-28 (BUILD 680 proven safe for NPC separation).
     // Adaptive plaza affects the centre, not the building ring distance.
-    const distance = 18 + rng() * 10;
-
-    const cx = center.x + Math.cos(angle) * distance;
-    const cy = center.y + Math.sin(angle) * distance;
-
-    // Clamp to field bounds (keep 3-unit margin).
-    const clampedCx = Math.max(3 + b.w / 2, Math.min(fieldSize - 3 - b.w / 2, cx));
-    const clampedCy = Math.max(3 + b.h / 2, Math.min(fieldSize - 3 - b.h / 2, cy));
-
-    const left = clampedCx - b.w / 2;
-    const top = clampedCy - b.h / 2;
+    let distance = 18 + rng() * 10;
+    let rect = placeRectAt(b, angle, distance);
+    for (let attempt = 0;
+         attempt < 40 && buildings.some((o) => rectsOverlapMargin(rect, o.rect, 1.5));
+         attempt++) {
+      distance += 2.5;
+      rect = placeRectAt(b, angle, distance);
+    }
 
     // Pick variant: avoid repeating the last one.
     let variantIdx = Math.floor(rng() * variantCount);
@@ -236,13 +252,34 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
 
     buildings.push({
       id: b.id,
-      rect: { left, top, right: left + b.w, bottom: top + b.h },
+      rect,
       angleFromCenter: angle,
       distanceFromCenter: distance,
       district: b.district ?? 'residential',
       spriteVariant: BUILDING_VARIANTS[variantIdx],
     });
   }
+
+  // BUILD 684: prop placement must also clear building footprints. Nudge
+  // radially outward from the centre (bounded); drop the prop if it cannot
+  // be placed cleanly. Deterministic.
+  const propOverlapsBuilding = (x: number, y: number, radius: number): boolean =>
+    buildings.some((bd) => {
+      const bx = (bd.rect.left + bd.rect.right) / 2;
+      const by = (bd.rect.top + bd.rect.bottom) / 2;
+      const dist = Math.hypot(x - bx, y - by);
+      return dist < radius + Math.max(bd.rect.right - bd.rect.left, bd.rect.bottom - bd.rect.top) / 2;
+    });
+  const placePropClear = (x: number, y: number, radius: number): { x: number; y: number } | null => {
+    for (let t = 0; t < 20; t++) {
+      if (!propOverlapsBuilding(x, y, radius)) return { x, y };
+      const dx = x - center.x, dy = y - center.y;
+      const len = Math.hypot(dx, dy) || 1;
+      x = Math.max(1, Math.min(fieldSize - 1, center.x + (dx / len) * (len + 2)));
+      y = Math.max(1, Math.min(fieldSize - 1, center.y + (dy / len) * (len + 2)));
+    }
+    return propOverlapsBuilding(x, y, radius) ? null : { x, y };
+  };
 
   // Place props.
   const props: PropPlacement[] = [];
@@ -267,13 +304,12 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
     for (let i = 0; i < stallCount; i++) {
       const angle = rng() * Math.PI * 2;
       const dist = plazaRadius + 2;
-      props.push({
-        id: nextPropId(),
-        asset: stallAssets[i % stallAssets.length],
-        x: center.x + Math.cos(angle) * dist,
-        y: center.y + Math.sin(angle) * dist,
-        radius: 1.2,
-      });
+      const spot = placePropClear(
+        center.x + Math.cos(angle) * dist, center.y + Math.sin(angle) * dist, 1.2);
+      if (spot) {
+        props.push({ id: nextPropId(), asset: stallAssets[i % stallAssets.length],
+          x: spot.x, y: spot.y, radius: 1.2 });
+      }
     }
   }
 
@@ -283,13 +319,11 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
       // Place lamp at midpoint of lane.
       const mid = lane.points[Math.floor(lane.points.length / 2)];
       // Offset perpendicular so it's not ON the lane.
-      props.push({
-        id: nextPropId(),
-        asset: PROP_ASSETS.lamp,
-        x: mid.x + 2.5,
-        y: mid.y + 2.5,
-        radius: 0.8,
-      });
+      const spot = placePropClear(mid.x + 2.5, mid.y + 2.5, 0.8);
+      if (spot) {
+        props.push({ id: nextPropId(), asset: PROP_ASSETS.lamp,
+          x: spot.x, y: spot.y, radius: 0.8 });
+      }
     }
   }
 
@@ -298,13 +332,11 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
     const b = buildings[i];
     const bx = (b.rect.left + b.rect.right) / 2;
     const by = (b.rect.top + b.rect.bottom) / 2;
-    props.push({
-      id: nextPropId(),
-      asset: PROP_ASSETS.barrel,
-      x: bx + b.rect.right - b.rect.left + 1.5,
-      y: by + 1,
-      radius: 0.7,
-    });
+    const spot = placePropClear(bx + b.rect.right - b.rect.left + 1.5, by + 1, 0.7);
+    if (spot) {
+      props.push({ id: nextPropId(), asset: PROP_ASSETS.barrel,
+        x: spot.x, y: spot.y, radius: 0.7 });
+    }
   }
 
   // BUILD 683: Trim lanes — stop before avoid rects and field bounds.
