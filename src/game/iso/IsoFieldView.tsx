@@ -302,19 +302,39 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       const showDetail = zm > 0.45;
       const tilesOn = isoTilesReady();
       if (useChunkLOD) {
-        // Draw each visible chunk as a single diamond (9 draw calls vs thousands)
-        // (Background already filled green above.)
+        // BUILD 682: Chunk LOD with grass texture. Instead of one flat diamond
+        // per chunk (which looked like solid green paint), subdivide each chunk
+        // into an 8x8 coarse grid with subtle deterministic color variation.
+        // 576 diamonds for 9 chunks — still cheap, but looks like grass.
+        const SUB = 8;
+        const subN = N / SUB;
         for (const sc of scenes) {
           const cx0 = (chunk.x + sc.ox) * N, cy0 = (chunk.y + sc.oy) * N;
-          const p00 = isoToScreen(cx0, cy0);
-          const p10 = isoToScreen(cx0 + N, cy0);
-          const p11 = isoToScreen(cx0 + N, cy0 + N);
-          const p01 = isoToScreen(cx0, cy0 + N);
-          g.fillStyle = sc.palette.field;
-          g.beginPath();
-          g.moveTo(p00.x, p00.y); g.lineTo(p10.x, p10.y);
-          g.lineTo(p11.x, p11.y); g.lineTo(p01.x, p01.y);
-          g.closePath(); g.fill();
+          const baseCol = sc.palette.field;
+          // Parse base color to RGB for variation.
+          const br = parseInt(baseCol.slice(1, 3), 16);
+          const bg = parseInt(baseCol.slice(3, 5), 16);
+          const bb = parseInt(baseCol.slice(5, 7), 16);
+          for (let sy = 0; sy < SUB; sy++) {
+            for (let sx = 0; sx < SUB; sx++) {
+              const tx0 = cx0 + sx * subN, ty0 = cy0 + sy * subN;
+              const p00 = isoToScreen(tx0, ty0);
+              const p10 = isoToScreen(tx0 + subN, ty0);
+              const p11 = isoToScreen(tx0 + subN, ty0 + subN);
+              const p01 = isoToScreen(tx0, ty0 + subN);
+              // Deterministic hash for subtle brightness variation (±8%).
+              const h = Math.abs(Math.sin((tx0 * 12.9898 + ty0 * 78.233) * 43758.5453) % 1);
+              const v = 0.92 + h * 0.16;
+              const r = Math.min(255, Math.round(br * v));
+              const gg = Math.min(255, Math.round(bg * v));
+              const b2 = Math.min(255, Math.round(bb * v));
+              g.fillStyle = `rgb(${r},${gg},${b2})`;
+              g.beginPath();
+              g.moveTo(p00.x, p00.y); g.lineTo(p10.x, p10.y);
+              g.lineTo(p11.x, p11.y); g.lineTo(p01.x, p01.y);
+              g.closePath(); g.fill();
+            }
+          }
         }
       } else {
       for (let ty = y0; ty <= y1; ty++) {
