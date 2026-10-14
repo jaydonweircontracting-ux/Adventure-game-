@@ -1,6 +1,6 @@
 {
-  "build": "690",
-  "note": "BUILD 690: Mosslight Crossing now grows from the procedural town layout engine (seed 4242) \u2014 18 pinned buildings unchanged, organic streets + door lanes, plaza/market, 7 filler buildings. iPhone hold-drag no longer scrolls the page. Art cache-busting: sprite URLs now carry ?v=<build> so iOS Safari fetches fresh art.",
-  "timestamp": "2026-10-14T04:07:54.262Z",
-  "cacheBuster": "mv7la7pz"
+  "build": "691",
+  "note": "minimap hides while the world map is open",
+  "timestamp": "2026-10-14T04:26:34.116Z",
+  "cacheBuster": "mv7ly7ti"
 }
