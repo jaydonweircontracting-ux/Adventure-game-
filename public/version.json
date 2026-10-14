@@ -1,6 +1,6 @@
 {
-  "build": "688",
-  "note": "procedural town layout engine: seeded road/district/lot generator + validator (engine-only, no gameplay change)",
-  "timestamp": "2026-10-14T02:49:42.167Z",
-  "cacheBuster": "mv7ihnas"
+  "build": "689",
+  "note": "door/path alignment fix: building sprites flipped so painted doors sit on the south face (same side as triggers, exits, lanes); door geometry now a shared module",
+  "timestamp": "2026-10-14T03:08:13.850Z",
+  "cacheBuster": "mv7j5h23"
 }

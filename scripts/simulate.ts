@@ -6893,6 +6893,50 @@ import { inflateSync } from 'node:zlib';
   assert(rigErrors.length === 0, `Town686: rig audit passes on 18 town buildings (${rigErrors.slice(0, 3).join('; ')})`);
 }
 
+// BUILD 689: Door/lane/exit agreement. Root cause of the "path on the opposite
+// side from the door" report: the AI building sprites painted doors on the
+// EAST face while every game system (triggers, exits, lanes, 2D + fallback
+// renderers) uses the SOUTH face — fixed by flipping the sprites. These
+// assertions pin the geometry contract so logic can never drift again:
+//  1. townDoors() == doorGeometry formulas on all 18 rects (single source of
+//     truth; App.tsx re-exports the same module).
+//  2. Every door has a lane endpoint within 2.0u, approaching from the south.
+//  3. Every exit spawn (door.x, bottom+0.7) lands within 4u of a lane point.
+{
+  const { townDoors, mosslightTownPlan } = await import('../src/game/townPlan.js');
+  const { fieldDoorPosition, newHouseDoorPosition, isNewStyleDoorBuilding } =
+    await import('../src/game/doorGeometry.js');
+  const { mosslightCottageRects280, MOSSLIGHT_FIXED_RECTS_280 } = await import('../src/game/settlements.js');
+  const rects = [...MOSSLIGHT_FIXED_RECTS_280.slice(0, 4), ...mosslightCottageRects280(), ...MOSSLIGHT_FIXED_RECTS_280.slice(4)];
+  const names = ['tutorial','guild','chapel','tavern','cottage-1','cottage-2','cottage-3','cottage-4','cottage-5','cottage-6',
+    'town-n1','town-n2','town-s1','town-s2','town-e1','town-e2','town-w1','town-w2'];
+  const doors = townDoors();
+  const plan = mosslightTownPlan();
+  assert(doors.length === 18 && rects.length === 18, 'Town689: 18 doors and 18 rects');
+  for (let i = 0; i < 18; i++) {
+    const r = rects[i];
+    const expected = isNewStyleDoorBuilding(names[i]) ? newHouseDoorPosition(r) : fieldDoorPosition(r);
+    assert(Math.abs(doors[i].x - expected.x) < 1e-9 && Math.abs(doors[i].y - expected.y) < 1e-9,
+      `Town689: plan door == live door formula for ${names[i]}`);
+    let best = Infinity, bestY = 0;
+    for (const ln of plan.lanes) {
+      for (const p of [ln.points[0], ln.points[ln.points.length - 1]]) {
+        const d = Math.hypot(p.x - doors[i].x, p.y - doors[i].y);
+        if (d < best) { best = d; bestY = p.y; }
+      }
+    }
+    assert(best <= 2.0, `Town689: lane reaches ${names[i]} door (dist ${best.toFixed(2)})`);
+    assert(bestY >= doors[i].y - 0.5, `Town689: lane approaches ${names[i]} from the south side`);
+    const ex = { x: doors[i].x, y: Math.min(280 - 6, r.bottom + 0.7) };
+    let bestEx = Infinity;
+    for (const ln of plan.lanes) for (const p of ln.points) {
+      const d = Math.hypot(p.x - ex.x, p.y - ex.y);
+      if (d < bestEx) bestEx = d;
+    }
+    assert(bestEx <= 4.0, `Town689: exit for ${names[i]} lands near a lane (dist ${bestEx.toFixed(2)})`);
+  }
+}
+
 // BUILD 688: Procedural town layout engine — seeded, validated blueprints.
 {
   const { generateTownLayout, validateTownLayout, exportTownLayout, importTownLayout,

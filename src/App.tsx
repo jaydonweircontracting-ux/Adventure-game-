@@ -122,6 +122,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '689': 'door/path alignment fix: building sprites flipped so painted doors sit on the south face (same side as triggers, exits, lanes); door geometry now a shared module',
   '688': 'procedural town layout engine: seeded road/district/lot generator + validator (engine-only, no gameplay change)',
   '687': 'town lag fix: A* pathfinding 8x faster (binary heap), cached water grids + decor',
   '686': 'authored Mosslight town: path network to every door, plaza, walls + gatehouse, garden',
@@ -1260,22 +1261,10 @@ let moveHouses: boolean = typeof window !== 'undefined' && new URLSearchParams(w
 // Pure helpers live in ./game/worldEditor.ts (unit-tested in simulate.ts).
 export let editorSolids: EditorSolid[] = [];
 
-function fieldDoorPosition(rect: FieldRect): Point {
-  // Match .field-house::after: left 43%, width 16%, bottom 0, height 44%.
-  return {
-    x: rect.left + (rect.right - rect.left) * 0.51,
-    y: rect.top + (rect.bottom - rect.top) * 0.78,
-  };
-}
-
-function newHouseDoorPosition(rect: FieldRect): Point {
-  // Match .field-house.new-house::after: left 38%, width 24%, bottom 0, height 55%.
-  // Door center x: 38% + 12% = 50%. Door center y: 100% - 27.5% = 72.5%.
-  return {
-    x: rect.left + (rect.right - rect.left) * 0.50,
-    y: rect.top + (rect.bottom - rect.top) * 0.725,
-  };
-}
+// BUILD 689: door position formulas live in src/game/doorGeometry.ts (single
+// source of truth shared with townPlan.ts and simulate.ts). Imported here so
+// existing call sites keep working unchanged.
+import { fieldDoorPosition, newHouseDoorPosition } from './game/doorGeometry';
 
 function doorwayTriggerDims(rect: { left: number; right: number }): { xTol: number } {
   // Hard-lock the trigger to the visual doorway: the CSS door (::after) is

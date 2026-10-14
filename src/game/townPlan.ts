@@ -12,6 +12,7 @@
 // fence references).
 
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280 } from './settlements';
+import { fieldDoorPosition, newHouseDoorPosition, isNewStyleDoorBuilding } from './doorGeometry';
 
 export interface TownPoint { x: number; y: number }
 export interface TownLane { points: TownPoint[]; width: number }
@@ -26,17 +27,14 @@ export interface TownPlan {
 
 export interface TownDoor { building: string; x: number; y: number }
 
-/** Door positions replicating buildingDoorwaysFor (App.tsx:1246/1254).
+/** Door positions — single source of truth shared with the live game
+ *  (App.tsx buildingDoorwaysFor imports the same functions from
+ *  doorGeometry.ts). Doors are always on the building's south face.
  *  Mains (tutorial/guild/chapel/tavern) use newHouseDoorPosition;
  *  all others use fieldDoorPosition. */
 function doorFor(name: string, rect: { left: number; top: number; right: number; bottom: number }): TownDoor {
-  const w = rect.right - rect.left, h = rect.bottom - rect.top;
-  const isMain = name === 'tutorial' || name === 'guild' || name === 'chapel' || name === 'tavern';
-  return {
-    building: name,
-    x: rect.left + (isMain ? 0.50 : 0.51) * w,
-    y: rect.top + (isMain ? 0.725 : 0.78) * h,
-  };
+  const p = isNewStyleDoorBuilding(name) ? newHouseDoorPosition(rect) : fieldDoorPosition(rect);
+  return { building: name, x: p.x, y: p.y };
 }
 
 /** The 18 fixed building rects (chunk 4,7), 280 field space.
