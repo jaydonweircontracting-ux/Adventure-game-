@@ -30,6 +30,10 @@ export interface TLRoad {
   kind: RoadKind;
   points: TLPoint[];
   width: number;
+  // BUILD 692: marks a door-spur lane and the lot whose door it serves, so
+  // the validator can exempt it from that lot's road-clearance check (the
+  // spur legitimately terminates AT the door).
+  spurFor?: string;
 }
 export type DistrictKind = 'residential' | 'commercial' | 'industrial' | 'civic' | 'park';
 export type DistrictZone = 'circle' | 'arterial-corridor' | 'edge-sector';
@@ -638,6 +642,87 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     isNewStyleDoorBuilding(pl.id)
       ? newHouseDoorPosition(pl.footprint)
       : fieldDoorPosition(pl.footprint);
+  // Shared door-spur builder (B2 pinned + B3 filler). Builds a short curved
+  // lane from the nearest road to the door point and marks it with spurFor
+  // so the validator exempts it from that lot's road clearance. Returns the
+  // new road, or null if no legal spur could be built. Uses the shared
+  // layout RNG (rngS) — call order is deterministic.
+  const buildDoorSpur = (
+    door: TLPoint,
+    ownId: string,
+    avoid: { id: string; footprint: Rect }[],
+  ): TLRoad | null => {
+    // collect the nearest road samples as spur starts (try several)
+    const starts: { s: TLPoint; d: number }[] = [];
+    for (const rs of roadSamples) {
+      for (const s of rs.pts) {
+        const d = dist(s, door);
+        if (d <= 2.5) continue;
+        // the spur start itself must be in a legal position (not inside
+        // another building's margin)
+        let legalStart = true;
+        for (const q of avoid) {
+          if (q.id === ownId) continue;
+          const r = q.footprint, m = 2.5;
+          if (s.x > r.left - m && s.x < r.right + m &&
+              s.y > r.top - m && s.y < r.bottom + m) { legalStart = false; break; }
+        }
+        if (legalStart) starts.push({ s, d });
+      }
+    }
+    starts.sort((a, b) => a.d - b.d);
+    const E = { x: door.x, y: door.y + 0.3 };
+    let built: TLRoad | null = null;
+    // approach waypoints: 8 compass points around the door — the spur may
+    // need to swing around a neighboring building to reach the door.
+    const approaches: TLPoint[] = [];
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      approaches.push({ x: door.x + Math.cos(a) * 7, y: door.y + Math.sin(a) * 7 });
+    }
+    for (const { s: start } of starts.slice(0, 4)) {
+      if (built) break;
+      const mx = (start.x + E.x) / 2, my = (start.y + E.y) / 2;
+      const dx = E.x - start.x, dy = E.y - start.y;
+      const dl = Math.hypot(dx, dy) || 1;
+      const nx = -dy / dl, ny = dx / dl;
+      const bow = Math.min(6, dl * 0.3) * (rngS() < 0.5 ? 1 : -1);
+      const cands: TLPoint[][] = [
+        [start, E],
+        [start, { x: mx + nx * bow, y: my + ny * bow }, E],
+        [start, { x: mx - nx * bow, y: my - ny * bow }, E],
+        ...approaches.map((ap) => [start, ap, E]),
+      ];
+      for (const c of cands) {
+        const samples = samplePolyline(c, 1.5);
+        let ok = true;
+        for (const s of samples) {
+          if (dist(s, E) < 3.0) continue;      // door exemption zone
+          if (dist(s, start) < 4.0) continue;  // joining the existing road
+          if (!inside(s, 1)) { ok = false; break; }
+          // clear of all avoided footprints (validator needs width/2+1 =
+          // 2.0 for a width-2 lane; keep 2.5). The target's own footprint
+          // is skipped: the spur legitimately terminates at its door.
+          for (const q of avoid) {
+            if (q.id === ownId) continue;
+            const r = q.footprint;
+            const m = 2.5;
+            if (s.x > r.left - m && s.x < r.right + m &&
+                s.y > r.top - m && s.y < r.bottom + m) { ok = false; break; }
+          }
+          if (!ok) break;
+          // (may cross other roads at grade — intersections are fine)
+        }
+        if (ok) {
+          built = addRoad('lane', c, 2);
+          built.spurFor = ownId;
+          break;
+        }
+      }
+    }
+    if (built) refreshSamples();
+    return built;
+  };
   const pinnedDoors = pinned.map((pl) => ({ pl, door: doorPointForPinned(pl) }));
   for (const { pl, door } of pinnedDoors) {
     let covered = false;
@@ -648,72 +733,7 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
       if (covered) break;
     }
     if (!covered) {
-      // collect the nearest road samples as spur starts (try several)
-      const starts: { s: TLPoint; d: number }[] = [];
-      for (const rs of roadSamples) {
-        for (const s of rs.pts) {
-          const d = dist(s, door);
-          if (d <= 2.5) continue;
-          // the spur start itself must be in a legal position (not inside
-          // another pinned building's margin)
-          let legalStart = true;
-          for (const q of pinned) {
-            if (q.id === pl.id) continue;
-            const r = q.footprint, m = 2.5;
-            if (s.x > r.left - m && s.x < r.right + m &&
-                s.y > r.top - m && s.y < r.bottom + m) { legalStart = false; break; }
-          }
-          if (legalStart) starts.push({ s, d });
-        }
-      }
-      starts.sort((a, b) => a.d - b.d);
-      const E = { x: door.x, y: door.y + 0.3 };
-      let built = false;
-      // approach waypoints: 8 compass points around the door — the spur may
-      // need to swing around a neighboring building to reach the door.
-      const approaches: TLPoint[] = [];
-      for (let k = 0; k < 8; k++) {
-        const a = (k / 8) * Math.PI * 2;
-        approaches.push({ x: door.x + Math.cos(a) * 7, y: door.y + Math.sin(a) * 7 });
-      }
-      for (const { s: start } of starts.slice(0, 4)) {
-        if (built) break;
-        const mx = (start.x + E.x) / 2, my = (start.y + E.y) / 2;
-        const dx = E.x - start.x, dy = E.y - start.y;
-        const dl = Math.hypot(dx, dy) || 1;
-        const nx = -dy / dl, ny = dx / dl;
-        const bow = Math.min(6, dl * 0.3) * (rngS() < 0.5 ? 1 : -1);
-        const cands: TLPoint[][] = [
-          [start, E],
-          [start, { x: mx + nx * bow, y: my + ny * bow }, E],
-          [start, { x: mx - nx * bow, y: my - ny * bow }, E],
-          ...approaches.map((ap) => [start, ap, E]),
-        ];
-        for (const c of cands) {
-          const samples = samplePolyline(c, 1.5);
-          let ok = true;
-          for (const s of samples) {
-            if (dist(s, E) < 3.0) continue;      // door exemption zone
-            if (dist(s, start) < 4.0) continue;  // joining the existing road
-            if (!inside(s, 1)) { ok = false; break; }
-            // clear of all pinned footprints (validator needs width/2+1 =
-            // 2.0 for a width-2 lane; keep 2.5). The target's own footprint
-            // is skipped: the spur legitimately terminates at its door, and
-            // the validator skips a pinned lot's own road.
-            for (const q of pinned) {
-              if (q.id === pl.id) continue;
-              const r = q.footprint;
-              const m = 2.5;
-              if (s.x > r.left - m && s.x < r.right + m &&
-                  s.y > r.top - m && s.y < r.bottom + m) { ok = false; break; }
-            }
-            if (!ok) break;
-            // (may cross other roads at grade — intersections are fine)
-          }
-          if (ok) { addRoad('lane', c, 2); built = true; break; }
-        }
-      }
-      if (built) refreshSamples();
+      buildDoorSpur(door, pl.id, pinned);
     }
     // assign the pinned lot its road: prefer a road with an endpoint at the
     // door (the spur, or an organic street that already reaches it); fall
@@ -854,6 +874,31 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     facing: 'south', roadId: arterials[0]?.id ?? roads[0]?.id ?? 'road-0', kind: 'plaza',
   });
   const plazas = [{ x: plazaC.x, y: plazaC.y, r: plazaR }];
+
+  // ---- Stage B3: filler door spurs — the BUILD 689 geometry contract for
+  // the roadside filler lots (placed after B2, so they got no spur yet).
+  // Every filler building door gets a lane endpoint within 2.0u via the
+  // shared builder. Filler lots are never new-style, so the door is always
+  // fieldDoorPosition. The lot keeps its original roadId (facing and parcel
+  // checks stay valid); the spur is marked spurFor so the validator exempts
+  // it from that lot's road clearance, and the door-zone exemption covers
+  // the terminal samples.
+  {
+    const avoidAll = lots.map((l) => ({ id: l.id, footprint: l.footprint }));
+    for (const lot of lots) {
+      if (lot.kind !== 'building' || lot.pinned) continue;
+      const door = fieldDoorPosition(lot.footprint);
+      let covered = false;
+      for (const r of roads) {
+        for (const e of [r.points[0], r.points[r.points.length - 1]]) {
+          if (dist(e, door) <= 2.0) { covered = true; break; }
+        }
+        if (covered) break;
+      }
+      if (!covered) buildDoorSpur(door, lot.id, avoidAll);
+    }
+  }
+
 
   // ---- suburbs: farm lots along outward stubs past the boundary
   if (config?.suburbs ?? true) {
@@ -1061,19 +1106,22 @@ export function validateTownLayout(layout: TownLayout): string[] {
     // Road clearance + facing apply to buildings, not the open plaza square
     // (arterials legitimately border/cross the central plaza).
     if (!isPlaza) {
-      // Pinned lots: door spurs legitimately terminate AT the door, so
-      // samples within 3.0 of the lot's door are exempt from clearance
-      // (mirrors the authored plan's near-door exemption).
+      // Door spurs legitimately terminate AT the door, so samples within
+      // 3.0 of the lot's door are exempt from clearance (mirrors the
+      // authored plan's near-door exemption). Applies to pinned (B2) and
+      // filler (B3) building lots alike.
       const doorExempt: TLPoint[] = [];
-      if (lot.pinned) {
-        doorExempt.push(isNewStyleDoorBuilding(lot.id)
+      if (lot.kind === 'building') {
+        doorExempt.push(lot.pinned && isNewStyleDoorBuilding(lot.id)
           ? newHouseDoorPosition(lot.footprint)
           : fieldDoorPosition(lot.footprint));
       }
       // road clearance: footprint must clear every road by half-width + 1
       for (let i = 0; i < layout.roads.length; i++) {
-        // A pinned lot's own road is its door spur: it legitimately
+        // A lot's door spur (marked spurFor by the shared builder) legitimately
         // terminates at the door (generation-time legality is the guard).
+        if (layout.roads[i].spurFor === lot.id) continue;
+        // A pinned lot's own road is its door spur (B2 assigns roadId to it).
         if (lot.pinned && layout.roads[i].id === lot.roadId) continue;
         const clearance = layout.roads[i].width / 2 + 1.0;
         let viol = false;

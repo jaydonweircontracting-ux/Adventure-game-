@@ -20,6 +20,7 @@ import type { BarbarianOutfit, BarbarianWeapon } from './barbarian';
 import { BARBARIAN_ATTACK_MS } from './barbarian';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
 import { artUrl } from '../artCache';
+import { computeDirtPathGeometry, buildDirtPath2D } from './dirtPaths';
 // BUILD 389: user-supplied landscape tileset + ambient critters.
 import {
   preloadIsoTiles, isoTilesReady, drawGroundTile, drawDecor,
@@ -35,6 +36,8 @@ import {
   type Point, type Doorway, type FieldTree, type FieldOre, type MapTile,
 } from '../../App';
 import type { Townsperson } from '../townsfolk';
+// BUILD 692: district-appropriate art variants for the engine's filler lots.
+import { mosslightFillerLots, fillerVariantForLot } from '../mosslightLayout';
 // BUILD 684: single authoritative building asset catalog (was: hardcoded
 // kind->path maps duplicated in this file). Anchor/scale conventions documented
 // in src/game/buildingRig.ts.
@@ -47,6 +50,12 @@ import {
   ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset,
   isoVisibleTileRange,
 } from './isoChunks';
+
+// BUILD 692: cached textured dirt-path layers per decor chunk. Lanes are
+// static world geometry (seed-pinned town), so the Path2D layers are built
+// once per chunk key and re-filled every frame — zero per-frame allocation.
+type DirtPathCacheEntry = ReturnType<typeof buildDirtPath2D>;
+const dirtPathCache = new Map<string, DirtPathCacheEntry>();
 
 interface IsoFieldViewProps {
   chunk: Point;
@@ -436,17 +445,32 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           g.ellipse(c.x, c.y, p.r * 32, p.r * 16, 0, 0, 7);
           g.fill();
         }
-        g.strokeStyle = 'rgba(150, 118, 72, 0.7)'; // dirt lanes
-        g.lineCap = 'round'; g.lineJoin = 'round';
-        for (const ln of decor.lanes) {
-          if (ln.points.length < 2) continue;
-          g.lineWidth = Math.max(2, ln.width * 14);
-          g.beginPath();
-          ln.points.forEach((pt, i) => {
-            const s = isoToScreen(pt.x + bx, pt.y + by);
-            if (i === 0) g.moveTo(s.x, s.y); else g.lineTo(s.x, s.y);
-          });
-          g.stroke();
+        // BUILD 692: textured dirt paths — layered fills from cached Path2D
+        // (soft dark fringe, dirt body, worn center, pebble speckles).
+        // Geometry is precomputed per decor chunk; lanes are static.
+        {
+          const dcx = chunk.x + sc.ox, dcy = chunk.y + sc.oy;
+          const dkey = `${dcx},${dcy}`;
+          let paths = dirtPathCache.get(dkey);
+          if (!paths) {
+            const geo = computeDirtPathGeometry(
+              decor.lanes,
+              (x, y) => isoToScreen(x + bx, y + by),
+              `dirt:${dkey}`,
+            );
+            paths = buildDirtPath2D(geo);
+            dirtPathCache.set(dkey, paths);
+          }
+          g.fillStyle = 'rgba(110, 82, 50, 0.18)'; // worn fringe
+          g.fill(paths.edge);
+          g.fillStyle = 'rgba(156, 122, 72, 0.55)'; // dirt body
+          g.fill(paths.dirt);
+          g.fillStyle = 'rgba(190, 160, 108, 0.28)'; // foot-worn center
+          g.fill(paths.center);
+          g.fillStyle = 'rgba(92, 66, 40, 0.55)'; // pebbles (dark)
+          g.fill(paths.speckleDark);
+          g.fillStyle = 'rgba(205, 175, 120, 0.50)'; // pebbles (light)
+          g.fill(paths.speckleLight);
         }
         // BUILD 686: town walls — stone grey strokes with a lighter cap.
         for (const w of decor.walls || []) {
@@ -484,6 +508,18 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         }
       }
       (window as unknown as { __bldImgs?: Record<string, HTMLImageElement> }).__bldImgs = bldImgs;
+      // BUILD 692: district-appropriate new art variants for filler lots.
+      // Matches the rect against the engine's filler lots, then picks from
+      // the district pool via the pure fillerVariantForLot (stable, no flicker).
+      const fillerVariantForRect = (rect: { left: number; top: number; right: number; bottom: number }): string | null => {
+        for (const f of mosslightFillerLots()) {
+          if (Math.abs(f.rect.left - rect.left) < 0.01 && Math.abs(f.rect.top - rect.top) < 0.01 &&
+              Math.abs(f.rect.right - rect.right) < 0.01 && Math.abs(f.rect.bottom - rect.bottom) < 0.01) {
+            return fillerVariantForLot(f.rect, f.district);
+          }
+        }
+        return null;
+      };
       // BUILD 603: Stable sprite assignment using absolute chunk + local coords.
       // Previous BUILD 602 used r.left/r.top which include scene offset that
       // changes as player moves between chunks → flicker.
@@ -499,9 +535,14 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         }
         // BUILD 683: Mosslight cottages (chunk 4,7) use the settlement
         // layout's roof variants, not the position hash.
+        // BUILD 692: the engine's roadside filler lots use district-appropriate
+        // new art variants (commercial -> shops, residential -> cottages),
+        // picked by stable hash so the assignment never flickers.
         if (absCx === 4 && absCy === 7 && b.rect) {
           const v = cottageVariantForRect(b.rect);
           if (v) return v;
+          const fv = fillerVariantForRect(b.rect);
+          if (fv) return fv;
         }
         // Stable hash: absolute chunk + local coords (both stable)
         // BUILD 614: expanded to 10 varieties for town diversity.

@@ -65,6 +65,14 @@ export const BUILDING_ASSET_META: Record<string, BuildingAssetMeta> = {
   'tavern':        { variant: 'tavern',         file: 'buildings/tavern.png',        w: 2240, h: 1120, anchor: 'base-center', kind: 'inn-tavern' },
   'inn-large':     { variant: 'inn-large',      file: 'buildings/inn-large.png',     w: 1920, h: 1280, anchor: 'base-center', kind: 'inn-tavern' },
   'gatehouse':     { variant: 'gatehouse',      file: 'buildings/gatehouse.png',     w: 1920, h: 1280, anchor: 'base-center', kind: 'civic' },
+  // BUILD 692: new art variants for the engine's roadside filler lots.
+  // Doors verified on the south face (left of image, ~38% width) like the
+  // flipped 689 set. Dimensions audited from the actual PNG files.
+  'green-shop':    { variant: 'green-shop',     file: 'buildings/green-shop.png',     w: 2240, h: 1120, anchor: 'base-center', kind: 'shop' },
+  'brick-shop':    { variant: 'brick-shop',     file: 'buildings/brick-shop.png',     w: 2240, h: 1120, anchor: 'base-center', kind: 'shop' },
+  'green-cottage': { variant: 'green-cottage',  file: 'buildings/green-cottage.png',  w: 2240, h: 1120, anchor: 'base-center', kind: 'cottage' },
+  'stone-cottage': { variant: 'stone-cottage',  file: 'buildings/stone-cottage.png',  w: 2240, h: 1120, anchor: 'base-center', kind: 'cottage' },
+  'plaster-house': { variant: 'plaster-house',  file: 'buildings/plaster-house.png',  w: 2240, h: 1120, anchor: 'base-center', kind: 'stone-house' },
 };
 
 /** The authoritative per-instance building record. */

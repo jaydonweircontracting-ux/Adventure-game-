@@ -100,6 +100,23 @@ export function mosslightFillerRects(): Rect[] {
     .filter((r) => r.left >= 0 && r.top >= 0 && r.right <= 280 && r.bottom <= 280);
 }
 
+/** Filler lots with district info, in chunk space (for district-appropriate
+ *  variant assignment). Same bounds filter as mosslightFillerRects — the two
+ *  stay in sync (rects only vs rects+district).
+ *  BUILD 692: the engine's roadside filler lots get proper house/shop art
+ *  variants instead of the generic position-hash rotation. */
+let cachedFillerLots: { rect: Rect; district: string }[] | null = null;
+/** Filler lots with district info — memoized (called in the per-frame render path). */
+export function mosslightFillerLots(): { rect: Rect; district: string }[] {
+  if (!cachedFillerLots) {
+    cachedFillerLots = mosslightEngineChunkLayout().lots
+      .filter((l) => !l.pinned && l.kind === 'building')
+      .map((l) => ({ rect: lotToBuildingRect(l), district: l.district }))
+      .filter((f) => f.rect.left >= 0 && f.rect.top >= 0 && f.rect.right <= 280 && f.rect.bottom <= 280);
+  }
+  return cachedFillerLots;
+}
+
 /** Pinned building rects in chunk space, in pin order.
  *  Byte-identical to the 689 source (same functions, same order). */
 export function mosslightPinnedRects(): Rect[] {
@@ -111,8 +128,26 @@ export function mosslightPinnedRects(): Rect[] {
   return rects.map((r: Rect) => ({ ...r }));
 }
 
+/** BUILD 692: district-appropriate art variant pools for the engine's
+ *  roadside filler lots. Commercial lots get shops, residential get cottages.
+ *  All doors verified on the south face (left of image, ~38% width). */
+export const FILLER_VARIANT_POOLS: Record<string, readonly string[]> = {
+  commercial: ['green-shop', 'brick-shop'],
+  residential: ['green-cottage', 'stone-cottage', 'plaster-house'],
+};
+const FILLER_VARIANT_FALLBACK = ['plaster-house', 'green-shop'] as const;
+
+/** Pick a district-appropriate variant for a filler lot. Stable hash on the
+ *  rect (never flickers, varied across lots). Pure — safe for sim tests. */
+export function fillerVariantForLot(rect: Rect, district: string): string {
+  const pool = FILLER_VARIANT_POOLS[district] ?? FILLER_VARIANT_FALLBACK;
+  const h = Math.abs(Math.sin((rect.left * 12.9898 + rect.top * 78.233) * 43758.5453) % 1);
+  return pool[Math.floor(h * pool.length) % pool.length];
+}
+
 /** Clear the memo (tests only). */
 export function clearMosslightEngineCache(): void {
   cached = null;
   cachedChunked = null;
+  cachedFillerLots = null;
 }

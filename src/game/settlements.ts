@@ -106,6 +106,12 @@ export const BUILDING_VARIANTS = [
   'inn-large',
   'tavern',
   'gatehouse',
+  // BUILD 692: new art variants for the engine's roadside filler lots.
+  'green-shop',
+  'brick-shop',
+  'green-cottage',
+  'stone-cottage',
+  'plaster-house',
 ] as const;
 
 /**

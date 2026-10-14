@@ -1,0 +1,47 @@
+{
+  "timestamp": "2026-10-12T22:08:52.426Z",
+  "build": "657",
+  "commit": "HEAD",
+  "results": [
+    {
+      "name": "intent-recognize",
+      "iterations": 1000,
+      "totalMs": 1.8969900000001871,
+      "avgMs": 0.0018969900000001872,
+      "minMs": 0.0013219999999591892,
+      "maxMs": 0.07503200000002153
+    },
+    {
+      "name": "dialogue-response",
+      "iterations": 1000,
+      "totalMs": 0.8290990000003262,
+      "avgMs": 0.0008290990000003263,
+      "minMs": 0.00035999999994373866,
+      "maxMs": 0.030185000000017226
+    },
+    {
+      "name": "memory-recall",
+      "iterations": 1000,
+      "totalMs": 4.18196099999949,
+      "avgMs": 0.00418196099999949,
+      "minMs": 0.0022529999999960637,
+      "maxMs": 0.8025049999999965
+    },
+    {
+      "name": "personality-compute",
+      "iterations": 1000,
+      "totalMs": 0.698152999999536,
+      "avgMs": 0.0006981529999995359,
+      "minMs": 0.00024000000001933586,
+      "maxMs": 0.12277399999999261
+    },
+    {
+      "name": "memory-record",
+      "iterations": 1000,
+      "totalMs": 0.934929999999838,
+      "avgMs": 0.000934929999999838,
+      "minMs": 0.00029000000000678483,
+      "maxMs": 0.36464699999999084
+    }
+  ]
+}

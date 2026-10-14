@@ -6964,6 +6964,67 @@ import { inflateSync } from 'node:zlib';
   }
 }
 
+// BUILD 692: Filler-lot alignment (the user's hard rule) + new art variants.
+//  1. Every filler door (fieldDoorPosition, the single source of truth) has an
+//     engine lane endpoint within 2.0u, approaching from the south.
+//  2. Every filler exit spawn (door.x, bottom+0.7) lands within 4u of a lane point.
+//  3. Every filler lot gets a district-appropriate new variant (commercial->shops,
+//     residential->cottages), stable across runs.
+//  4. The 5 new variants are registered with valid rig metadata.
+{
+  const { mosslightEngineLanes, mosslightFillerLots, mosslightFillerRects,
+    fillerVariantForLot, FILLER_VARIANT_POOLS } =
+    await import('../src/game/mosslightLayout.js');
+  const { fieldDoorPosition } = await import('../src/game/doorGeometry.js');
+  const { assetMetaFor } = await import('../src/game/buildingRig.js');
+  const lanes = mosslightEngineLanes();
+  const fillers = mosslightFillerLots();
+  const rects = mosslightFillerRects();
+  assert(fillers.length === rects.length && fillers.length >= 1,
+    `Town692: filler lots with districts (got ${fillers.length})`);
+
+  for (const f of fillers) {
+    const r = f.rect;
+    // Door from the single source of truth, as the live game does.
+    const door = fieldDoorPosition(r);
+    let best = Infinity, bestY = 0;
+    for (const ln of lanes) {
+      for (const p of [ln.points[0], ln.points[ln.points.length - 1]]) {
+        const d = Math.hypot(p.x - door.x, p.y - door.y);
+        if (d < best) { best = d; bestY = p.y; }
+      }
+    }
+    assert(best <= 2.0,
+      `Town692: engine lane reaches filler door (${r.left.toFixed(1)},${r.top.toFixed(1)}) dist ${best.toFixed(2)}`);
+    assert(bestY >= door.y - 0.5,
+      `Town692: engine lane approaches filler door from the south side`);
+    const ex = { x: door.x, y: Math.min(280 - 6, r.bottom + 0.7) };
+    let bestEx = Infinity;
+    for (const ln of lanes) for (const p of ln.points) {
+      const d = Math.hypot(p.x - ex.x, p.y - ex.y);
+      if (d < bestEx) bestEx = d;
+    }
+    assert(bestEx <= 4.0,
+      `Town692: filler exit lands near an engine lane (dist ${bestEx.toFixed(2)})`);
+
+    // District-appropriate variant, stable.
+    const v1 = fillerVariantForLot(r, f.district);
+    const v2 = fillerVariantForLot(r, f.district);
+    assert(v1 === v2, `Town692: filler variant stable for ${f.district} lot`);
+    const pool = (FILLER_VARIANT_POOLS as Record<string, readonly string[]>)[f.district];
+    assert(pool ? pool.includes(v1) : ['plaster-house', 'green-shop'].includes(v1),
+      `Town692: filler variant '${v1}' district-appropriate for ${f.district}`);
+    const meta = assetMetaFor(v1);
+    assert(meta !== null && meta.w === 2240 && meta.h === 1120,
+      `Town692: rig meta valid for filler variant '${v1}'`);
+  }
+
+  // The 5 new art variants are all registered.
+  for (const v of ['green-shop', 'brick-shop', 'green-cottage', 'stone-cottage', 'plaster-house']) {
+    assert(assetMetaFor(v) !== null, `Town692: new variant '${v}' registered in rig`);
+  }
+}
+
 // BUILD 688: Procedural town layout engine — seeded, validated blueprints.
 {
   const { generateTownLayout, validateTownLayout, exportTownLayout, importTownLayout,
@@ -7046,6 +7107,69 @@ import { inflateSync } from 'node:zlib';
     const roadIds = new Set(L.roads.map((r) => r.id));
     assert(L.lots.every((l) => roadIds.has(l.roadId)), 'Town688: every lot roadId resolves');
   }
+}
+
+// BUILD 692: textured dirt-path geometry — deterministic, valid polygons.
+{
+  const { computeDirtPathGeometry, hashSeed, mulberry32, resamplePolyline, offsetPolygon } =
+    await import('../src/game/iso/dirtPaths.js');
+  const proj = (x: number, y: number) => ({ x: (x - y) * 32, y: (x + y) * 16 });
+  const lanes = [
+    { points: [{ x: 0, y: 0 }, { x: 10, y: 5 }, { x: 20, y: 8 }], width: 2 },
+    { points: [{ x: 5, y: 5 }, { x: 5, y: 25 }], width: 2.8 },
+  ];
+
+  // 1. Deterministic: same input -> byte-identical geometry.
+  const g1 = computeDirtPathGeometry(lanes, proj, 'dirt:4,7');
+  const g2 = computeDirtPathGeometry(lanes, proj, 'dirt:4,7');
+  assert(JSON.stringify(g1) === JSON.stringify(g2), 'Dirt692: geometry deterministic');
+
+  // 2. Seed matters: different seedBase -> different speckles.
+  const g3 = computeDirtPathGeometry(lanes, proj, 'dirt:9,9');
+  assert(JSON.stringify(g1.speckles) !== JSON.stringify(g3.speckles), 'Dirt692: seedBase changes decoration');
+
+  // 3. Polygon validity: one closed polygon per layer per lane, non-degenerate.
+  assert(g1.edge.length === 2 && g1.dirt.length === 2 && g1.center.length === 2,
+    `Dirt692: 3 layers x 2 lanes (got ${g1.edge.length}/${g1.dirt.length}/${g1.center.length})`);
+  for (const poly of [...g1.edge, ...g1.dirt, ...g1.center]) {
+    assert(poly.length >= 8, `Dirt692: polygon non-degenerate (${poly.length} pts)`);
+    assert(poly.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)), 'Dirt692: all points finite');
+  }
+
+  // 4. Layer ordering: edge wider than dirt wider than center (polygon area).
+  const polyArea = (poly: { x: number; y: number }[]) => {
+    let a = 0;
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i], q = poly[(i + 1) % poly.length];
+      a += p.x * q.y - q.x * p.y;
+    }
+    return Math.abs(a) / 2;
+  };
+  for (let i = 0; i < 2; i++) {
+    assert(polyArea(g1.edge[i]) >= polyArea(g1.dirt[i]) && polyArea(g1.dirt[i]) >= polyArea(g1.center[i]),
+      `Dirt692: lane ${i} edge >= dirt >= center area`);
+  }
+
+  // 5. Speckles: deterministic count scaling with length, sane radii.
+  assert(g1.speckles.length > 0, `Dirt692: speckles generated (${g1.speckles.length})`);
+  assert(g1.speckles.every((s) => s.rx >= 0.9 && s.rx <= 2.8 && s.ry < s.rx),
+    'Dirt692: speckle radii sane and iso-squashed');
+
+  // 6. Degenerate input -> empty geometry, no crash.
+  const gEmpty = computeDirtPathGeometry(
+    [{ points: [], width: 2 }, { points: [{ x: 1, y: 1 }], width: 2 }], proj, 'dirt:0,0');
+  assert(gEmpty.edge.length === 0 && gEmpty.speckles.length === 0, 'Dirt692: degenerate lanes skipped');
+
+  // 7. PRNG/hash determinism.
+  const r1 = mulberry32(hashSeed('abc')), r2 = mulberry32(hashSeed('abc'));
+  assert(r1() === r2() && r1() === r2(), 'Dirt692: mulberry32 deterministic');
+  assert(hashSeed('abc') !== hashSeed('abd'), 'Dirt692: hashSeed distinguishes inputs');
+
+  // 8. Resample + offset helpers behave.
+  const { pts, arc } = resamplePolyline([{ x: 0, y: 0 }, { x: 30, y: 0 }], 6);
+  assert(pts.length >= 5 && Math.abs(arc[arc.length - 1] - 30) < 1e-6, 'Dirt692: resample covers length');
+  const poly = offsetPolygon(pts, arc, () => 5);
+  assert(poly.length === pts.length * 2, 'Dirt692: offset polygon has 2x points');
 }
 
 // ---- Results ----
