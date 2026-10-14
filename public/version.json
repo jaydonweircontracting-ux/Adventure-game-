@@ -1,1 +1,6 @@
-{"build":"699","cacheBuster":"npc40house","note":"40 NPC households in Mosslight (was 13): couples and families sharing houses across 6 cottages, 8 town buildings, chapel and filler; unique names/appearances/jobs/schedules; children render at 70% scale; daytime market/street bustle with 8-12+ visible NPCs; household-aware bed assignment (54 beds)","timestamp":"2026-10-14T17:30:00.000Z"}
+{
+  "build": "699",
+  "note": "",
+  "timestamp": "2026-10-14T17:03:18.181Z",
+  "cacheBuster": "mv8czdt1"
+}
