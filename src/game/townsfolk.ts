@@ -231,7 +231,7 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
       if (mins >= lunchStart && mins < lunchEnd + 30) return { activity: 'Lunch at home', target: homeSpot, indoors: false };
       if (mins >= 1080) return { activity: 'At home', target: homeSpot, indoors: true };
       // BUILD 694: afternoons the children join the market bustle.
-      if (mins >= 840 && mins < 1020) {
+      if (mins >= MARKET_WINDOWS[1][0] && mins < MARKET_WINDOWS[1][1]) {
         const market = marketRoutine(npc, anchors, clock);
         if (market) return market;
       }
@@ -241,7 +241,9 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
     default: {
       if (atNight) return { activity: 'Sleeping', target: home, indoors: true };
       if (atLunch) return { activity: 'Having lunch', target: plazaSpot, indoors: false };
-      const outAndAbout = (mins >= 540 && mins < 720) || (mins >= 840 && mins < workEnd);
+      const outAndAbout =
+        (mins >= MARKET_WINDOWS[0][0] && mins < MARKET_WINDOWS[0][1]) ||
+        (mins >= MARKET_WINDOWS[1][0] && mins < MARKET_WINDOWS[1][1]);
       // BUILD 694: market life — stroll between stalls, pause to browse, and
       // on errand days walk the arterials. Falls back to the plaza when the
       // market is unavailable (no stalls in the anchors).
@@ -340,8 +342,11 @@ export function stallBrowseSpot(
   };
 }
 
-// Market windows (game minutes): 9:00–12:00 and 14:00–17:00.
-const MARKET_WINDOWS: [number, number][] = [[540, 720], [840, 1020]];
+// Market windows (game minutes): 9:00–12:00 and 13:00–17:30. The afternoon
+// window starts right after lunch at the plaza (a short walk from the
+// stalls), so even shoppers commuting from far cottages get a full
+// afternoon of browsing instead of spending it all on the road.
+export const MARKET_WINDOWS: [number, number][] = [[540, 720], [780, 1050]];
 /**
  * Minutes per stall visit; the last MARKET_BROWSE minutes of each visit are
  * the browse pause (stand still, face the stall). Visits are long on purpose:

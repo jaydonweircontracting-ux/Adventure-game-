@@ -1046,7 +1046,10 @@ console.log('Testing ambient market life (BUILD 694)...');
   assert(mornNear, 'Morning shopper target not at a stall front or arterial');
   assert(!morn.indoors, 'Shopper should be outdoors');
   // Outside market windows the old behavior is unchanged.
-  assert(townsfolkTarget(commoner, anchors, clockAt(13, 35)).activity === 'At home', 'Commoner should be home at 13:35');
+  assert(townsfolkTarget(commoner, anchors, clockAt(18, 0)).activity === 'At home', 'Commoner should be home at 18:00');
+  // Afternoon window runs 13:00-17:30, straight from lunch at the plaza.
+  const aft = townsfolkTarget(commoner, anchors, clockAt(15, 40));
+  assert(['Strolling the market', 'Browsing the stalls'].includes(aft.activity), `Commoner at 15:40: ${aft.activity}`);
 
   // 4. Browse pause: last 30 min of a visit -> stand still, face the stall.
   // Visit 1 of the morning window runs 630-720; browse phase is 690-720.
@@ -1115,10 +1118,11 @@ console.log('Testing ambient market life (BUILD 694)...');
   }
   assert(errandSeen, 'No errand day in 12 days (seeded ~45% expected)');
 
-  // 11. Children join the afternoon market (15:00 is a browse phase).
+  // 11. Children join the afternoon market (15:40 is a browse phase:
+  // afternoon visit 1 runs 870-960, browse phase 930-960).
   const child = folk.find((n) => n.archetype === 'child')!;
-  const childPm = townsfolkTarget(child, anchors, clockAt(15, 0));
-  assert(childPm.activity === 'Browsing the stalls', `Child at 15:00: ${childPm.activity}`);
+  const childPm = townsfolkTarget(child, anchors, clockAt(15, 40));
+  assert(childPm.activity === 'Browsing the stalls', `Child at 15:40: ${childPm.activity}`);
   assert(townsfolkTarget(child, anchors, clockAt(10, 0)).activity === 'Playing', 'Child mornings should stay playful');
 
   // 12. The merchant still minds a live stall (dynamic positions).
