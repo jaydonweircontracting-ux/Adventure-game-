@@ -25,6 +25,8 @@ import { layoutBedToField } from './interiors';
 import { houseTypeForBuilding } from './houseTypes';
 // BUILD 683: Unified settlement rects (single source in settlements.ts).
 import { mosslightCottageRects280, MOSSLIGHT_MAIN_RECTS_280, mosslightHamletLayouts, SETTLEMENT_FIELD_SCALE } from './settlements';
+// BUILD 699: household homes need pinned town-building + filler rects.
+import { mosslightPinnedRects, mosslightFillerRects } from './mosslightLayout';
 
 export type TownsfolkFacing = 'up' | 'down' | 'left' | 'right';
 export type TownsfolkArchetype = 'farmer' | 'merchant' | 'guard' | 'priest' | 'smith' | 'commoner' | 'child';
@@ -223,7 +225,7 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
       const forge = anchors.points.guild ?? anchors.plaza;
       const atForge = (mins >= 420 && mins < 720) || (mins >= 780 && mins < workEnd);
       if (atForge) return { activity: 'Working the forge', target: forgeSpot, indoors: false };
-      if (mins >= workEnd && mins < workEnd + 90) return { activity: 'Evening at the Tankard', target: anchors.points.tavern ?? anchors.plaza, indoors: false };
+      if (mins >= workEnd && mins < workEnd + 90) return { activity: 'Evening at the Tankard', target: tavernSpot, indoors: false };
       return { activity: 'At the guild', target: homeSpot, indoors: false };
     }
     case 'child': {
@@ -402,24 +404,80 @@ export function marketRoutine(
 
 type TownsfolkDef = [name: string, gender: 'male' | 'female', archetype: TownsfolkArchetype, role: TownsfolkRole, homeKey: string];
 
+/**
+ * BUILD 699: 40 NPCs in households sharing houses (was 13). The first 13
+ * entries keep their exact order and ids (townsfolk-0..12) so existing saves
+ * restore cleanly; entries 13-39 are new. Households share a homeKey:
+ * couples (2 adults) and families (2 adults + 1-2 kids) per house.
+ * Home layout:
+ *   cottage-1..6: families (3-4 each = 19)
+ *   chapel: Father Aldous (1)
+ *   town-n1..w2: couples/families (2-3 each = 18)
+ *   filler-1: couple (2)
+ * Total: 40. Every homeKey must resolve in townsfolkAnchors (App.tsx) and
+ * have beds in buildMosslightHousing below.
+ */
 const ROSTER: TownsfolkDef[] = [
-  ['Aldric', 'male', 'farmer', 'guide', 'farm0'],
-  ['Brenna', 'female', 'farmer', 'guide', 'farm1'],
-  ['Cedric', 'male', 'merchant', 'mage', 'tavern'],
+  // --- Original 13 (order preserved for save compatibility) ---
+  ['Aldric', 'male', 'farmer', 'guide', 'cottage-6'],
+  ['Brenna', 'female', 'farmer', 'guide', 'cottage-6'],
+  ['Cedric', 'male', 'merchant', 'mage', 'cottage-2'],
   ['Father Aldous', 'male', 'priest', 'mage', 'chapel'],
-  ['Rowan', 'female', 'guard', 'warrior', 'guild'],
-  ['Kess', 'female', 'guard', 'warrior', 'guild'],
-  ['Tom', 'male', 'smith', 'warrior', 'guild'],
-  ['Mabel', 'female', 'commoner', 'mage', 'chapel'],
-  ['Dunstan', 'male', 'commoner', 'guide', 'tavern'],
-  ['Elsa', 'female', 'commoner', 'mage', 'guild'],
-  ['Wren', 'female', 'child', 'guide', 'chapel'],
-  ['Pip', 'male', 'child', 'rogue', 'tavern'],
+  ['Rowan', 'female', 'guard', 'warrior', 'town-n1'],
+  ['Kess', 'female', 'guard', 'warrior', 'town-n1'],
+  ['Tom', 'male', 'smith', 'warrior', 'town-n2'],
+  ['Mabel', 'female', 'commoner', 'mage', 'cottage-4'],
+  ['Dunstan', 'male', 'commoner', 'guide', 'cottage-5'],
+  ['Elsa', 'female', 'commoner', 'mage', 'town-n2'],
+  ['Wren', 'female', 'child', 'guide', 'cottage-4'],
+  ['Pip', 'male', 'child', 'rogue', 'cottage-2'],
   // BUILD 548: neighbor near tutorial house — visible life at player spawn.
   // Farmer archetype: wakes up outdoors at home (visible at 6am game start).
   // BUILD 555: Renamed from Mira to Bryn — the tavern bartender is already
   // named Mira (quest giver for 'rats-in-the-cellar'). Two Miras was confusing.
-  ['Bryn', 'female', 'farmer', 'guide', 'cottage'],
+  // BUILD 699: Bryn's family takes cottage-1 (nearest the tutorial house).
+  ['Bryn', 'female', 'farmer', 'guide', 'cottage-1'],
+  // --- BUILD 699: 27 new townsfolk in households ---
+  // Cottage-6: Aldric & Brenna's kids
+  ['Ash', 'male', 'child', 'rogue', 'cottage-6'],
+  ['Lily', 'female', 'child', 'guide', 'cottage-6'],
+  // Cottage-2: Cedric's wife (Pip is their son)
+  ['Sella', 'female', 'merchant', 'mage', 'cottage-2'],
+  // Cottage-3: Garrick & Hilda's family
+  ['Garrick', 'male', 'commoner', 'guide', 'cottage-3'],
+  ['Hilda', 'female', 'commoner', 'mage', 'cottage-3'],
+  ['Fen', 'male', 'child', 'rogue', 'cottage-3'],
+  // Cottage-4: Mabel's husband (Wren is their daughter)
+  ['Odo', 'male', 'commoner', 'warrior', 'cottage-4'],
+  // Cottage-5: Dunstan's wife and son
+  ['Petra', 'female', 'commoner', 'mage', 'cottage-5'],
+  ['Ned', 'male', 'child', 'guide', 'cottage-5'],
+  // Cottage-1: Bryn's husband and daughter (near player spawn)
+  ['Cole', 'male', 'farmer', 'guide', 'cottage-1'],
+  ['Sage', 'female', 'child', 'mage', 'cottage-1'],
+  // town-s1: Brand's merchant family
+  ['Brand', 'male', 'merchant', 'warrior', 'town-s1'],
+  ['Tilda', 'female', 'commoner', 'mage', 'town-s1'],
+  ['Kit', 'male', 'child', 'rogue', 'town-s1'],
+  // town-s2: Finn & Willa
+  ['Finn', 'male', 'commoner', 'guide', 'town-s2'],
+  ['Willa', 'female', 'commoner', 'mage', 'town-s2'],
+  // town-e1: Ham's farmer family
+  ['Ham', 'male', 'farmer', 'guide', 'town-e1'],
+  ['Rosa', 'female', 'commoner', 'mage', 'town-e1'],
+  ['Bede', 'male', 'child', 'guide', 'town-e1'],
+  // town-e2: Corb & Liss
+  ['Corb', 'male', 'guard', 'warrior', 'town-e2'],
+  ['Liss', 'female', 'commoner', 'mage', 'town-e2'],
+  // town-w1: Tam & Nan
+  ['Tam', 'male', 'commoner', 'guide', 'town-w1'],
+  ['Nan', 'female', 'commoner', 'mage', 'town-w1'],
+  // town-w2: Jory & Ess
+  ['Jory', 'male', 'smith', 'warrior', 'town-w2'],
+  ['Ess', 'female', 'merchant', 'mage', 'town-w2'],
+  // filler-1: Sten & Aya
+  ['Sten', 'male', 'commoner', 'guide', 'filler-1'],
+  ['Aya', 'female', 'commoner', 'mage', 'filler-1'],
 ];
 
 /** Build DoorwayLinks for the 6 Mosslight cottages (pure, no App dependency). */
@@ -521,59 +579,153 @@ export function cottageRectFor(cottageId: string): { left: number; top: number; 
 }
 
 /**
- * Build the housing registry for Mosslight's 6 cottages and assign beds to
- * the given NPC ids. Deterministic — same ids always get the same beds.
+ * BUILD 699: Doorways for ALL household homes (not just the 6 cottages).
+ * Returns DoorwayLinks keyed by homeKey: cottage-1..6, town-n1..w2, chapel,
+ * filler-1. Uses the same simplified door formula as cottageDoorways (door
+ * centered on the south face) so NPC navigation stays consistent.
  */
-export function buildMosslightHousing(npcIds: string[]): HousingRegistry {
-  const doors = cottageDoorways();
-  const registry = buildHousingRegistry(
-    doors.map((d, i) => ({
-      buildingId: `cottage-${i + 1}`,
-      doorwayId: d.id,
-      rect: d.buildingRect!,
-    })),
-    // BUILD 673: 3 beds in first cottage (13 total) for 13 NPCs.
-    // Was 2 beds × 6 cottages = 12 beds, leaving Bryn homeless.
-  );
-  // Add a 13th bed to the first cottage for Bryn.
-  if (registry.homes.length > 0) {
-    const firstHome = registry.homes[0];
-    const rect = doors[0].buildingRect!;
-    const bx = rect.left + (rect.right - rect.left) * 0.5;
-    const by = rect.top + (rect.bottom - rect.top) * 0.5;
-    firstHome.beds.push({
-      id: `${firstHome.id}-bed-3`,
-      position: { x: bx, y: by },
+export function mosslightHouseholdDoorways(): { homeKey: string; door: DoorwayLink }[] {
+  const out: { homeKey: string; door: DoorwayLink }[] = [];
+  const mkDoor = (homeKey: string, rect: { left: number; top: number; right: number; bottom: number }): void => {
+    const doorX = rect.left + (rect.right - rect.left) * 0.51;
+    out.push({
+      homeKey,
+      door: {
+        id: `${homeKey}-door`,
+        exterior: { x: doorX, y: rect.bottom + 0.7 },
+        interior: { x: doorX, y: (rect.top + rect.bottom) / 2 },
+        buildingRect: rect,
+      },
     });
-  }
+  };
+  // 6 cottages.
+  mosslightCottageRects280().forEach((rect, i) => mkDoor(`cottage-${i + 1}`, rect));
+  // 8 town buildings (pinned indices 10-17).
+  const pinned = mosslightPinnedRects();
+  const townKeys = ['town-n1', 'town-n2', 'town-s1', 'town-s2', 'town-e1', 'town-e2', 'town-w1', 'town-w2'];
+  townKeys.forEach((key, i) => mkDoor(key, pinned[10 + i]));
+  // Chapel (pinned index 2) — Father Aldous lives there.
+  mkDoor('chapel', pinned[2]);
+  // First filler building — Sten & Aya.
+  const filler = mosslightFillerRects();
+  if (filler.length > 0) mkDoor('filler-1', filler[0]);
+  return out;
+}
+
+/**
+ * Bed counts per household home. Must cover the roster (40 NPCs).
+ * Cottages hold families (4), town buildings hold couples/small families (3),
+ * chapel and filler hold 1-2.
+ */
+const HOUSEHOLD_BEDS: Record<string, number> = {
+  'cottage-1': 4, 'cottage-2': 4, 'cottage-3': 4,
+  'cottage-4': 4, 'cottage-5': 4, 'cottage-6': 4,
+  'town-n1': 3, 'town-n2': 3, 'town-s1': 3, 'town-s2': 3,
+  'town-e1': 3, 'town-e2': 3, 'town-w1': 3, 'town-w2': 3,
+  'chapel': 2, 'filler-1': 2,
+};
+
+/**
+ * Build the housing registry for all Mosslight household homes and assign
+ * beds HOUSEHOLD-aware: NPCs sharing a homeKey sleep in the same home.
+ * Deterministic — same roster always gets the same beds.
+ *
+ * BUILD 699: replaces the cottage-only registry (13 beds). Now 6 cottages +
+ * 8 town buildings + chapel + filler = 54 beds for 40 NPCs.
+ */
+export function buildMosslightHousing(entries: { id: string; homeKey: string }[]): HousingRegistry {
+  const householdDoors = mosslightHouseholdDoorways();
+  const registry = buildHousingRegistry(
+    householdDoors.map(({ homeKey, door }) => ({
+      buildingId: homeKey,
+      doorwayId: door.id,
+      rect: door.buildingRect!,
+    })),
+    // Bed counts per home (overrides the default 2-per-home).
+    Object.fromEntries(householdDoors.map(({ homeKey }) => [homeKey, HOUSEHOLD_BEDS[homeKey] ?? 2])),
+  );
   // BUILD 679: Align first bed in each cottage with the interior layout's
-  // visual bed position. This ensures NPCs sleep where the bed is rendered.
-  // Additional beds keep their existing spaced positions (deterministic).
-  const chunk = { x: 4, y: 7 }; // Mosslight cottages are in chunk 4,7.
-  for (let i = 0; i < registry.homes.length; i++) {
+  // visual bed position (cottages only — town buildings have no interiors).
+  const chunk = { x: 4, y: 7 };
+  householdDoors.forEach(({ homeKey, door }, i) => {
+    if (!homeKey.startsWith('cottage-')) return;
     const home = registry.homes[i];
-    const cottageId = `cottage-${i + 1}`;
-    const rect = doors[i].buildingRect!;
-    const buildingId = `4-7-building-${i + 4}`;
+    const rect = door.buildingRect!;
+    const n = parseInt(homeKey.split('-')[1], 10);
+    const buildingId = `4-7-building-${n + 3}`;
     const houseType = houseTypeForBuilding(buildingId);
-    const layoutPos = layoutBedToField(cottageId, rect, chunk, houseType);
+    const layoutPos = layoutBedToField(homeKey, rect, chunk, houseType);
     if (layoutPos && home.beds.length > 0) {
-      // Move first bed to layout position; keep others spaced relative to it.
       const oldFirst = home.beds[0].position;
       const dx = layoutPos.x - oldFirst.x;
       const dy = layoutPos.y - oldFirst.y;
-      // Only adjust if the shift is reasonable (within rect).
       if (Math.abs(dx) < (rect.right - rect.left) && Math.abs(dy) < (rect.bottom - rect.top)) {
         home.beds[0].position = { ...layoutPos };
       }
     }
+  });
+  // Household-aware assignment: group NPC ids by homeKey, fill each home's
+  // beds in roster order. NPCs without a matching home fall back to any
+  // free bed (shouldn't happen — roster and homes are kept in sync).
+  const homesByKey = new Map(registry.homes.map((h) => [h.id, h]));
+  const byHome = new Map<string, string[]>();
+  const unassigned: string[] = [];
+  for (const e of entries) {
+    if (homesByKey.has(e.homeKey)) {
+      if (!byHome.has(e.homeKey)) byHome.set(e.homeKey, []);
+      byHome.get(e.homeKey)!.push(e.id);
+    } else {
+      unassigned.push(e.id);
+    }
   }
-  return assignBeds(registry, npcIds);
+  const assignments: Record<string, { homeId: string; bedId: string }> = {};
+  const warnings: string[] = [];
+  for (const [homeKey, ids] of byHome) {
+    const home = homesByKey.get(homeKey)!;
+    ids.forEach((id, idx) => {
+      if (idx < home.beds.length) {
+        const bed = home.beds[idx];
+        bed.occupantId = id;
+        assignments[id] = { homeId: home.id, bedId: bed.id };
+      } else {
+        warnings.push(`HOUSING SHORTAGE — NPC: ${id}. Home ${homeKey} has ${home.beds.length} beds.`);
+      }
+    });
+  }
+  // Fallback: any unassigned NPC takes any free bed.
+  if (unassigned.length > 0) {
+    const freeBeds: { home: (typeof registry.homes)[number]; bed: { id: string; occupantId?: string } }[] = [];
+    for (const home of registry.homes) {
+      for (const bed of home.beds) {
+        if (!(bed as { occupantId?: string }).occupantId) freeBeds.push({ home, bed: bed as { id: string; occupantId?: string } });
+      }
+    }
+    unassigned.forEach((id, idx) => {
+      if (idx < freeBeds.length) {
+        const { home, bed } = freeBeds[idx];
+        bed.occupantId = id;
+        assignments[id] = { homeId: home.id, bedId: bed.id };
+      } else {
+        warnings.push(`HOUSING SHORTAGE — NPC: ${id}. Required: 1 bed. Available: 0.`);
+      }
+    });
+  }
+  return { homes: registry.homes, assignments, warnings };
+}
+
+/**
+ * BUILD 699: Roster ids + homeKeys for building the nav context (housing)
+ * before townsfolk are created. Order matches createTownsfolk.
+ */
+export function townsfolkRosterEntries(): { id: string; homeKey: string }[] {
+  return ROSTER.map(([, , , , homeKey], index) => ({
+    id: 'townsfolk-' + index,
+    homeKey,
+  }));
 }
 
 /** Build the persistent roster. Homes resolve through anchor keys. */
-export function createTownsfolk(anchors: TownsfolkAnchors, worldSeed: number): Townsperson[] {
-  return ROSTER.map(([name, gender, archetype, role, homeKey], index) => {
+export function createTownsfolk(anchors: TownsfolkAnchors, worldSeed: number): Townsperson[] {  return ROSTER.map(([name, gender, archetype, role, homeKey], index) => {
     const seed = (worldSeed ^ Math.imul(index + 1, 2654435761)) >>> 0;
     const home = anchors.points[homeKey] ?? anchors.plaza;
     return {

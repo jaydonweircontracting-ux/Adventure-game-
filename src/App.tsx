@@ -41,7 +41,7 @@ import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasCo
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, marketStallsFromDecor, arterialWaypointsFromDecor, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, townsfolkRosterEntries, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, marketStallsFromDecor, arterialWaypointsFromDecor, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 // BUILD 683: unified Mosslight rects (single source in settlements.ts).
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
 import { mosslightEngineChunkLayout, mosslightEngineLanes, mosslightEngineProps, mosslightFillerRects } from '@/game/mosslightLayout';
@@ -2565,6 +2565,12 @@ function townsfolkAnchors(offsets: Record<string, Point>): TownsfolkAnchors {
   // BUILD 548: neighbor cottage near tutorial house — visible life at spawn.
   // Player exits at (89, 114); this puts a friendly NPC in view immediately.
   points.cottage = { x: 98, y: 118 };
+  // BUILD 699: household homeKeys — doorsteps for every house NPCs live in.
+  // Cottages are fieldHouseRects indices 4-9, town buildings 10-17, filler 18+.
+  for (let i = 1; i <= 6; i++) points[`cottage-${i}`] = doorstep(`4,7-building-${i + 3}`);
+  const townKeys = ['town-n1', 'town-n2', 'town-s1', 'town-s2', 'town-e1', 'town-e2', 'town-w1', 'town-w2'];
+  townKeys.forEach((key, i) => { points[key] = doorstep(`4,7-building-${10 + i}`); });
+  points['filler-1'] = doorstep('4,7-building-18');
   // BUILD 694: stalls and arterial waypoints come from the LIVE settlement
   // decor (settlementDecorFor) — the merchant's stall and the shoppers'
   // browse targets automatically follow the engine layout when Phase 2
@@ -4752,11 +4758,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 368: last world-day rumor propagation ran (daily gossip tick).
   const lastRumorDayRef = useRef<number>(-1);
   if (!townsfolkNavRef.current) {
-    // BUILD 673: 13 NPCs (was 12) — Bryn (townsfolk-12) was missing a bed.
-    const ids = Array.from({ length: 13 }, (_, i) => 'townsfolk-' + i);
+    // BUILD 699: 40 NPCs in households (was 13). Housing is household-aware:
+    // NPCs sharing a homeKey get beds in the same home.
+    const entries = townsfolkRosterEntries();
     townsfolkNavRef.current = {
-      housing: buildMosslightHousing(ids),
-      doors: cottageDoorways(),
+      housing: buildMosslightHousing(entries),
+      doors: mosslightHouseholdDoorways().map((h) => h.door),
       obstacles: mosslightObstacles(),
       roadPiece: mapTileFor(TOWNSFOLK_CHUNK).road,
       chunk: { x: TOWNSFOLK_CHUNK.x, y: TOWNSFOLK_CHUNK.y },

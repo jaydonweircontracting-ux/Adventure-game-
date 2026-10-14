@@ -37,13 +37,14 @@ export type HousingRegistry = {
  */
 export function buildHousingRegistry(
   residential: { buildingId: string; doorwayId: string; rect: { left: number; top: number; right: number; bottom: number } }[],
-  bedsPerHome = 2,
+  bedsPerHome: number | Record<string, number> = 2,
 ): HousingRegistry {
   const homes: Home[] = residential.map((r) => {
+    const count = typeof bedsPerHome === 'number' ? bedsPerHome : (bedsPerHome[r.buildingId] ?? 2);
     const beds: Bed[] = [];
-    for (let b = 0; b < bedsPerHome; b++) {
+    for (let b = 0; b < count; b++) {
       // Beds along the back wall, spaced out.
-      const bx = r.rect.left + ((b + 1) / (bedsPerHome + 1)) * (r.rect.right - r.rect.left);
+      const bx = r.rect.left + ((b + 1) / (count + 1)) * (r.rect.right - r.rect.left);
       const by = r.rect.top + (r.rect.bottom - r.rect.top) * 0.3;
       beds.push({ id: `${r.buildingId}-bed-${b + 1}`, position: { x: bx, y: Math.max(r.rect.top + 1, by) } });
     }

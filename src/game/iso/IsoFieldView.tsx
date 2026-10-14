@@ -309,7 +309,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
 
     // Shared character renderer: one animator per character id drives facing,
     // walk/idle state and speed-tied walk phase; the draw is feet-anchored.
-    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, barb?: { attackT?: number }) => {
+    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, barb?: { attackT?: number }, size?: number) => {
       const c = isoToScreen(tx, ty);
       let anim = charAnims.get(animKey);
       if (!anim) { anim = new CharacterAnimator(animKey); charAnims.set(animKey, anim); }
@@ -323,6 +323,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             barbWeapon: liveRef.current.barbWeapon,
             barbHair: liveRef.current.barbHair,
             barbAttackT: barb?.attackT,
+            // BUILD 699: children render smaller (same chibi LPC sprites, scaled).
+            size,
           });
         },
       });
@@ -1142,7 +1144,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       for (const npc of live.folk) {
         const nc = isoToScreen(npc.position.x, npc.position.y);
         if (nc.x < cam.x - npcVhw - 50 || nc.x > cam.x + npcVhw + 50 || nc.y < cam.y - npcVhh - 100 || nc.y > cam.y + npcVhh + 50) continue;
-        drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id);
+        drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id, undefined,
+          // BUILD 699: children are smaller (70% scale).
+          npc.archetype === 'child' ? 36 : undefined);
       }
       // BUILD 451: goats in the iso view — simple canvas goat (body, head,
       // BUILD 457: deer (stag sprite) replaces the canvas goat. Uses the
