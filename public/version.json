@@ -1,6 +1,6 @@
 {
-  "build": "696",
-  "note": "NPC market life: townsfolk shop the market square (browse pauses at stalls, arterial strolls, errand loops), all through existing pathfinding",
-  "timestamp": "2026-10-14T08:46:06.260Z",
-  "cacheBuster": "mv7v7zck"
+  "build": "697",
+  "note": "clickable market stalls: tap a stall to open its shop — buy/sell with gold, per-stall stock that restocks each game day, stock persists in saves",
+  "timestamp": "2026-10-14T15:13:54.750Z",
+  "cacheBuster": "mv892pfj"
 }

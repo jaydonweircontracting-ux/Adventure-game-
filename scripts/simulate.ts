@@ -7534,6 +7534,123 @@ import { inflateSync } from 'node:zlib';
   assert(maxDev <= wobAmp + 1e-9, `Dirt693: wobble bounded by amplitude (${maxDev})`);
 }
 
+// BUILD 697: market stall shops — deterministic defs, guarded transactions,
+// restock on game-clock days, save sanitation.
+{
+  const { stallShopDef, stallBuyList, createStallStock, restockStall,
+    buyFromStall, sellToStall, sanitizeStallStocks, SHOP_CATALOG } =
+    await import('../src/game/shops.js');
+
+  // 1. Defs are deterministic per stall index and total (any index works).
+  const d0a = stallShopDef(0), d0b = stallShopDef(0);
+  assert(JSON.stringify(d0a) === JSON.stringify(d0b), 'Shop697: stall def deterministic per index');
+  for (let i = 0; i < 21; i++) {
+    const d = stallShopDef(i);
+    assert(typeof d.merchantName === 'string' && d.merchantName.length > 0, `Shop697: stall ${i} has merchant name`);
+    assert(typeof d.shopName === 'string' && d.shopName.includes(d.merchantName), `Shop697: stall ${i} shop name carries merchant`);
+    assert(d.goods.length >= 3 && d.goods.length <= 4, `Shop697: stall ${i} has 3-4 goods (got ${d.goods.length})`);
+    const keys = d.goods.map((g) => g.key);
+    assert(new Set(keys).size === keys.length, `Shop697: stall ${i} goods unique`);
+    for (const g of d.goods) {
+      assert(g.buyPrice > 0, `Shop697: stall ${i} ${g.key} buyPrice positive`);
+      assert(g.maxStock >= 1, `Shop697: stall ${i} ${g.key} maxStock >= 1`);
+      assert(g.buyPrice > g.sellPrice, `Shop697: stall ${i} ${g.key} buy > sell (no arbitrage)`);
+      assert(typeof g.label === 'string' && g.label.length > 0 && typeof g.description === 'string' && g.description.length > 0,
+        `Shop697: stall ${i} ${g.key} has label + description`);
+    }
+  }
+  const names = new Set(Array.from({ length: 21 }, (_, i) => stallShopDef(i).merchantName));
+  assert(names.size >= 5, `Shop697: merchant variety across 21 stalls (got ${names.size})`);
+
+  // 2. Catalog coherence: every entry labeled; buy > sell whenever both > 0.
+  for (const [key, c] of Object.entries(SHOP_CATALOG)) {
+    assert(c.label.length > 0 && c.description.length > 0, `Shop697: catalog ${key} labeled`);
+    if (c.buyPrice > 0 && c.sellPrice > 0) {
+      assert(c.buyPrice > c.sellPrice, `Shop697: catalog ${key} buy > sell (no money loop)`);
+    }
+  }
+  // Monster drops are buy-only for stalls (Bram's smith prices preserved).
+  for (const k of ['bone', 'pelt', 'fang', 'goatHorns', 'fabric']) {
+    const c = (SHOP_CATALOG as Record<string, { buyPrice: number; sellPrice: number }>)[k];
+    assert(c.buyPrice === 0 && c.sellPrice > 0, `Shop697: ${k} stall buys but never sells`);
+  }
+  const smithPrices: Record<string, number> = { bone: 2, pelt: 3, fang: 4, goatHorns: 5, fabric: 2 };
+  for (const [k, p] of Object.entries(smithPrices)) {
+    assert((SHOP_CATALOG as Record<string, { sellPrice: number }>)[k].sellPrice === p,
+      `Shop697: stall pays Bram's price for ${k} (${p}g)`);
+  }
+
+  // 3. Stock: fresh stock is full and deterministic; purity (no mutation).
+  const def0 = stallShopDef(0);
+  const s0 = createStallStock(def0, 10);
+  assert(s0.lastRestockDay === 10, 'Shop697: fresh stock records restock day');
+  for (const g of def0.goods) assert(s0.stock[g.key] === g.maxStock, `Shop697: fresh ${g.key} at maxStock`);
+  const s0b = createStallStock(def0, 10);
+  assert(JSON.stringify(s0) === JSON.stringify(s0b), 'Shop697: fresh stock deterministic');
+
+  // 4. Restock: same day keeps depleted stock; new day refills.
+  const afterBuy = buyFromStall(def0, s0, def0.goods[0].key, 10000);
+  assert(afterBuy.ok, 'Shop697: buy succeeds with ample gold');
+  if (afterBuy.ok) {
+    const sameDay = restockStall(def0, afterBuy.state, 10);
+    assert(sameDay === afterBuy.state, 'Shop697: same-day restock is a no-op (same object)');
+    const nextDay = restockStall(def0, afterBuy.state, 11);
+    assert(nextDay !== afterBuy.state, 'Shop697: new-day restock returns fresh state');
+    assert(nextDay.stock[def0.goods[0].key] === def0.goods[0].maxStock, 'Shop697: new-day restock refills');
+    assert(nextDay.lastRestockDay === 11, 'Shop697: restock day advances');
+    const never = restockStall(def0, null, 5);
+    assert(never.lastRestockDay === 5 && never.stock[def0.goods[0].key] === def0.goods[0].maxStock,
+      'Shop697: null stock restocks fresh');
+  }
+  assert(s0.stock[def0.goods[0].key] === def0.goods[0].maxStock, 'Shop697: buy did not mutate input stock');
+
+  // 5. Buy guards.
+  const cheap = buyFromStall(def0, s0, def0.goods[0].key, 0);
+  assert(!cheap.ok && cheap.reason === 'no-gold', 'Shop697: buy rejected without gold');
+  const exact = buyFromStall(def0, s0, def0.goods[0].key, def0.goods[0].buyPrice);
+  assert(exact.ok, 'Shop697: buy succeeds with exact gold');
+  const notSold = buyFromStall(def0, s0, 'bone', 10000);
+  assert(!notSold.ok && notSold.reason === 'not-sold', 'Shop697: stall refuses goods it does not sell');
+  // Drain a 1-max good then double-tap: first ok, second sold-out, spent once.
+  const oneDef = { ...def0, goods: [{ key: 'corn', ...SHOP_CATALOG.corn, maxStock: 1 }] };
+  const oneStock = createStallStock(oneDef, 10);
+  const first = buyFromStall(oneDef, oneStock, 'corn', 10000);
+  assert(first.ok, 'Shop697: first tap on 1-stock buys');
+  if (first.ok) {
+    const second = buyFromStall(oneDef, first.state, 'corn', 10000);
+    assert(!second.ok && second.reason === 'sold-out', 'Shop697: second tap rejected as sold-out');
+    assert(second.state.stock.corn === 0, 'Shop697: stock never negative after double-tap');
+    assert(first.coinsSpent === SHOP_CATALOG.corn.buyPrice, 'Shop697: spent exactly the price once');
+  }
+
+  // 6. Sell guards.
+  const sellBone = sellToStall('bone', 3);
+  assert(sellBone.ok && sellBone.coinsEarned === 2, 'Shop697: sell bone earns 2g');
+  const sellNone = sellToStall('bone', 0);
+  assert(!sellNone.ok && sellNone.reason === 'none-held', 'Shop697: cannot sell what you lack');
+  const sellUnknown = sellToStall('coins' as never, 5);
+  assert(!sellUnknown.ok && sellUnknown.reason === 'not-bought', 'Shop697: stall refuses unknown goods');
+  const sellZero = sellToStall('wood', 0);
+  assert(!sellZero.ok && sellZero.reason === 'none-held', 'Shop697: zero count rejected');
+
+  // 7. Save sanitation: garbage -> empty; valid-ish -> cleaned.
+  assert(Object.keys(sanitizeStallStocks(null)).length === 0, 'Shop697: null sanitizes to empty');
+  assert(Object.keys(sanitizeStallStocks('junk')).length === 0, 'Shop697: junk sanitizes to empty');
+  assert(Object.keys(sanitizeStallStocks([])).length === 0, 'Shop697: array sanitizes to empty');
+  const dirty = sanitizeStallStocks({
+    0: { stock: { corn: 3.7, wood: -2, bogus: 5 }, lastRestockDay: 10 },
+    x: { stock: {}, lastRestockDay: 1 },
+    2: 'nope',
+  });
+  assert(dirty[0].stock.corn === 3 && dirty[0].stock.wood === 0, 'Shop697: stock floored/clamped');
+  assert(!('bogus' in (dirty[0].stock as object)), 'Shop697: unknown items dropped');
+  assert(dirty[0].lastRestockDay === 10, 'Shop697: restock day kept');
+  assert(!(1 in dirty) && !(2 in dirty), 'Shop697: bad keys/entries dropped');
+
+  // 8. Buy list covers all 16 tradeable goods.
+  assert(stallBuyList().length === 16, `Shop697: buy list has 16 goods (got ${stallBuyList().length})`);
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

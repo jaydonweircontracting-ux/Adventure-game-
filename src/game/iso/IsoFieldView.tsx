@@ -36,6 +36,7 @@ import {
   type Point, type Doorway, type FieldTree, type FieldOre, type MapTile,
 } from '../../App';
 import type { Townsperson } from '../townsfolk';
+import { marketStallsFromDecor } from '../townsfolk';
 // BUILD 692: district-appropriate art variants for the engine's filler lots.
 import { mosslightFillerLots, fillerVariantForLot } from '../mosslightLayout';
 // BUILD 684: single authoritative building asset catalog (was: hardcoded
@@ -65,6 +66,9 @@ interface IsoFieldViewProps {
   onExit: () => void; // back to the 2D field
   onTapMove?: (point: Point) => void; // BUILD 366: tap-to-move target
   onTalkTo?: (npc: Townsperson) => void; // BUILD 366: tap an NPC to talk
+  // BUILD 697: tap a market stall to open its shop UI (stall index into
+  // marketStallsFromDecor(decor.props) — stable decor order, never hardcoded).
+  onShopStall?: (stallIndex: number) => void;
   // BUILD 684: loot drops — rendered in iso (were 2D-DOM only, invisible here).
   droppedLoot?: Array<{ id: number; position: Point }>;
   onPickupDrop?: (drop: { id: number; position: Point }) => void;
@@ -102,7 +106,7 @@ interface IsoChunkScene {
 const MARGIN = 48; // world-px background margin around the map
 const ROAD_HALF = 5; // road band half-width in tiles
 
-export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, onShopStall, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts });
@@ -130,8 +134,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   const [selectedCritterId, setSelectedCritterId] = useState<number | null>(null);
   const greenBoxRef = useRef({ dx: 0, dy: 0, hw: 0.35, hh: 0.4 }); // offset and size in world units
   // tap callbacks via ref so the canvas listener always calls the latest
-  const tapRef = useRef({ onTapMove, onTalkTo, onPickupDrop });
-  tapRef.current = { onTapMove, onTalkTo, onPickupDrop };
+  const tapRef = useRef({ onTapMove, onTalkTo, onPickupDrop, onShopStall });
+  tapRef.current = { onTapMove, onTalkTo, onPickupDrop, onShopStall };
 
   const R = ISO_CHUNK_RENDER_RADIUS;
   const GRID = 2 * R + 1;
@@ -159,6 +163,18 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     return list;
   }, [chunk.x, chunk.y]);
   const homeScene = scenes[R * GRID + R];
+  // BUILD 697: market-stall positions from the LIVE settlement decor (same
+  // source as the NPC browsers) — never hardcoded. Ref-mirrored so the tap
+  // listener always hit-tests the current chunk's stalls.
+  const homeStalls = useMemo(() => {
+    try {
+      return marketStallsFromDecor(settlementDecorFor({ x: chunk.x, y: chunk.y }).props);
+    } catch {
+      return [];
+    }
+  }, [chunk.x, chunk.y]);
+  const stallsRef = useRef(homeStalls);
+  stallsRef.current = homeStalls;
   const sceneFor = (ox: number, oy: number): IsoChunkScene => {
     const c = clampChunkOffset(ox, oy, R);
     return scenes[(c.oy + R) * GRID + (c.ox + R)];
@@ -1144,7 +1160,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     // doorway check fires entry), else walk to the tapped field point.
     const onTap = (e: PointerEvent) => {
       const { onTapMove: tapMove, onTalkTo: talk } = tapRef.current;
-      if (!tapMove && !talk) return;
+      if (!tapMove && !talk && !tapRef.current.onShopStall) return;
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
       // BUILD 460: collision debug — tap a critter to select it (green box).
@@ -1193,6 +1209,27 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           if (d < bestD) { bestD = d; best = npc; }
         }
         if (best) { talk(best); return; }
+      }
+      // BUILD 697: stall hit test — tap a market stall to open its shop.
+      // Runs after the NPC test (an NPC standing at a stall still wins) and
+      // before the door test (market stalls sit near buildings). Screen
+      // space, generous 44px radius for touch, offset up to the sprite's
+      // center-ish like the NPC test. Home chunk only — the market is at
+      // chunk (4,7) and settlementDecorFor returns stalls only there.
+      {
+        const { onShopStall: shop } = tapRef.current;
+        if (shop) {
+          let bestStall = -1; let bestSD = 44;
+          const stalls = stallsRef.current;
+          for (let i = 0; i < stalls.length; i++) {
+            const w = isoToScreen(stalls[i].x, stalls[i].y);
+            const px = (w.x - cam.x) * zm + wpx / 2;
+            const py = (w.y - cam.y) * zm + hpx / 2 - 24; // sprite center-ish
+            const d = Math.hypot(px - sx, py - sy);
+            if (d < bestSD) { bestSD = d; bestStall = i; }
+          }
+          if (bestStall >= 0) { shop(bestStall); return; }
+        }
       }
       // door hit test: tap near a doorway walks the player to it.
       // BUILD 376: home-chunk doors only (neighbor-chunk doors belong to the
@@ -1282,7 +1319,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
 
   return (
     <div ref={wrapRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#0e1713', touchAction: 'none' }}>
-      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', touchAction: 'none' }} />
+      <canvas ref={canvasRef} data-testid="iso-field-canvas" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', touchAction: 'none' }} />
       {/* BUILD 372: zoom is driven by the main black zoom buttons (App), so the
           duplicate in-canvas zoom controls were removed. */}
       {/* beta badge + exit */}

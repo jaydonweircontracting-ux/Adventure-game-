@@ -138,6 +138,82 @@ if (loot.length > 0) {
   check('combat: loot picked up (iso tap)', after.length < loot.length, `${loot.length}->${after.length}`);
 }
 
+// BUILD 697: market stall shop — tap a stall (live decor positions), buy, sell.
+// Re-anchor to the market chunk first: the combat chase can wander across a
+// chunk boundary, and stalls only exist in (4,7).
+await T(`window.__gameTest.teleportToChunk(4, 7, 144, 130)`);
+await page.waitForTimeout(1000);
+const stalls = await T(`window.__gameTest.getStalls()`);
+check('shop: stalls found from live decor', Array.isArray(stalls) && stalls.length > 0, `stalls=${stalls.length}`);
+let shopOpened = false, shopInfo = null;
+if (stalls.length > 0) {
+  const s = stalls[0];
+  // stand on an unblocked spot near the stall so the camera frames it
+  const cands = [[s.x, s.y + 7], [s.x, s.y - 7], [s.x + 7, s.y], [s.x - 7, s.y], [144, 130]];
+  for (const [cx, cy] of cands) {
+    if (await T(`window.__gameTest.isBlocked(${cx.toFixed(1)}, ${cy.toFixed(1)})`) === false) {
+      await T(`window.__gameTest.teleportPlayer(${cx.toFixed(1)}, ${cy.toFixed(1)})`);
+      break;
+    }
+  }
+  await page.waitForTimeout(2500); // camera settle
+  for (let attempt = 0; attempt < 4 && !shopOpened; attempt++) {
+    // tap math mirrors IsoFieldView.onTap: iso feet pos -> camera-relative screen
+    const pt = await page.evaluate(([sx, sy]) => {
+      const t = window.__gameTest;
+      const p = t.getPlayerPos(); const zm = t.getIsoZoom();
+      const r = document.querySelector('[data-testid="iso-field-canvas"]').getBoundingClientRect();
+      const w = { x: (sx - sy) * 32, y: (sx + sy) * 16 };
+      const cam = { x: (p.x - p.y) * 32, y: (p.x + p.y) * 16 - 24 };
+      return {
+        x: r.left + (w.x - cam.x) * zm + r.width / 2,
+        y: r.top + (w.y - cam.y) * zm + r.height / 2 - 24,
+      };
+    }, [s.x, s.y]);
+    await page.mouse.click(pt.x, pt.y);
+    await page.waitForTimeout(700);
+    shopInfo = await T(`window.__gameTest.getShopState()`);
+    if (shopInfo) { shopOpened = true; break; }
+    // an NPC browsing the stall may have intercepted the tap — dismiss and retry
+    const dlg = await page.$('[data-testid="townsfolk-dialogue"]');
+    if (dlg) {
+      await page.click('[data-testid="button-close-townsfolk-dialogue"]');
+      await page.waitForTimeout(400);
+    }
+  }
+}
+check('shop: tapping a stall opens the shop panel', shopOpened, shopInfo ? shopInfo.shopName : 'no panel');
+if (shopOpened) {
+  await page.screenshot({ path: `${SHOT}/gt7-shop-open.png` });
+  check('shop: minimap hidden while shop open', await page.$('[data-testid="minimap-canvas"]') === null);
+  // BUY: grant exact gold, click the first good's Buy button
+  const good = shopInfo.goods[0];
+  await T(`window.__gameTest.giveTestItem('coins', ${good.price})`);
+  await page.waitForTimeout(400);
+  const goldBefore = await T(`window.__gameTest.getGold()`);
+  await page.click(`[data-testid="button-shop-buy-${good.key}"]`);
+  await page.waitForTimeout(600);
+  const goldAfter = await T(`window.__gameTest.getGold()`);
+  check('shop: buy deducts gold', goldAfter === goldBefore - good.price, `${goldBefore}->${goldAfter} (price ${good.price})`);
+  const afterBuy = await T(`window.__gameTest.getShopState()`);
+  const bought = afterBuy.goods.find(g => g.key === good.key);
+  check('shop: buy reduces stall stock', bought.stock === good.stock - 1, `stock ${good.stock}->${bought.stock}`);
+  await page.screenshot({ path: `${SHOT}/gt7-shop-bought.png` });
+  // SELL: grant 2 bone, sell one
+  await T(`window.__gameTest.giveTestItem('bone', 2)`);
+  await page.waitForTimeout(600);
+  check('shop: sell button appears for held bone', await page.$(`[data-testid="button-shop-sell-bone"]`) !== null);
+  const g2 = await T(`window.__gameTest.getGold()`);
+  await page.click(`[data-testid="button-shop-sell-bone"]`);
+  await page.waitForTimeout(600);
+  const g3 = await T(`window.__gameTest.getGold()`);
+  check('shop: sell awards gold', g3 === g2 + 2, `${g2}->${g3} (+2)`);
+  await page.screenshot({ path: `${SHOT}/gt7-shop-sold.png` });
+  await page.click('[data-testid="button-close-shop"]');
+  await page.waitForTimeout(400);
+  check('shop: panel closes', await T(`window.__gameTest.getShopState()`) === null);
+}
+
 // save via inventory -> options -> save to browser (on the field, before re-entry)
 const savePos = await pos();
 await page.click('[data-testid="button-open-inventory"]');

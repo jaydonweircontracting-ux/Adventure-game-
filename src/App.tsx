@@ -28,6 +28,8 @@ import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList
 import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE, type MapPaints, type MapPaintTile, type PaintedTile } from './game/mapBuilder';
 import { organicTownSpecs } from './game/organicTowns';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
+// BUILD 697: market stall shops — pure defs + guarded transactions.
+import { stallShopDef, stallBuyList, createStallStock, restockStall, buyFromStall, sellToStall, sanitizeStallStocks, type ShopItemKey, type StallStockState } from '@/game/shops';
 import { findTalkTarget } from './game/talkTarget';
 import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cellarRats';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds, type TouchHoldState, type TouchEventKind } from './game/touchInput';
@@ -124,6 +126,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '697': 'clickable market stalls: tap a stall to open its shop — buy/sell with gold, per-stall stock that restocks each game day, stock persists in saves',
   '696': 'NPC market life: townsfolk shop the market square (browse pauses at stalls, arterial strolls, errand loops), all through existing pathfinding',
   '695': 'storybook town content: market square with striped-stall rows, angel statue centerpiece, hedge-maze garden with fountain, wooden carts, sandy tan streets in Mosslight',
   '694': 'storybook sprite set (civic tower, angel statue, hedge maze walls, wooden cart) + ambient market life (NPC shoppers, stall browsers, errand loops)',
@@ -1633,6 +1636,9 @@ type SaveGameData = {
   equippedSword?: boolean;
   barbHair?: string;
   droppedLoot?: DroppedLoot[];
+  // BUILD 697: market stall stock — keyed by stall index (stallShopDef index).
+  // Session-persistent; saved/restored with the game.
+  shopStocks?: Record<string, StallStockState>;
   // BUILD 645: Issue tracker state — saved so the save captures which boxes the user checked.
   issueStatuses?: Record<string, string>;
   userIssues?: Issue[];
@@ -3844,6 +3850,7 @@ function MiniMap({ chunk, position, onTap }: { chunk: Point; position: Point; on
   return (
     <canvas
       ref={canvasRef}
+      data-testid="minimap-canvas"
       width={size}
       height={size}
       style={{
@@ -4505,6 +4512,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 372: the main black zoom buttons drive the iso camera when the 2.5D
   // field beta is on (previously they only scaled the hidden 2D player).
   const [isoZoom, setIsoZoom] = useState(1);
+  // BUILD 697: ref mirror of iso zoom for the test hooks (the __gameTest
+  // effect mounts once, so it can't close over the state value).
+  const isoZoomRef = useRef(isoZoom);
+  useEffect(() => { isoZoomRef.current = isoZoom; }, [isoZoom]);
   const toggleMarkerMode = () => {
     const next = !markerMode;
     debugDoors = next;
@@ -5067,6 +5078,20 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           tapMoveTargetRef.current = null;
           return true;
         },
+        // BUILD 697: teleport across chunks (combat chases can wander out of
+        // the market chunk; tests re-anchor to (4,7) before stall tests).
+        // LOCALHOST ONLY. Mirrors the load-restore chunk switch.
+        teleportToChunk: (cx: number, cy: number, x: number, y: number) => {
+          if (typeof window === 'undefined') return false;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return false;
+          if (interiorRef.current) return false; // field only
+          const nc = { x: Math.floor(cx), y: Math.floor(cy) };
+          chunkRef.current = nc; setChunk(nc); onChunkChange(nc);
+          positionRef.current = { x, y }; setPosition({ x, y });
+          tapMoveTargetRef.current = null;
+          return true;
+        },
         // BUILD 560: building doorways for quest navigation testing.
         // LOCALHOST ONLY. Observation only — agent uses this to find
         // building screen positions for tap-to-enter.
@@ -5083,6 +5108,45 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             }));
           } catch { return []; }
         },
+        // BUILD 697: market stall positions (field-local, home chunk) for
+        // shop-verification testing. LOCALHOST ONLY.
+        getStalls: () => {
+          if (typeof window === 'undefined') return [];
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return [];
+          try {
+            return marketStallsFromDecor(settlementDecorFor(chunkRef.current).props)
+              .map((s, i) => ({ index: i, x: s.x, y: s.y, shopName: stallShopDef(i).shopName }));
+          } catch { return []; }
+        },
+        // BUILD 697: open stall shop panel state. Null when no shop is open.
+        getShopState: () => {
+          const index = shopStallIndexRef.current;
+          if (index === null) return null;
+          const def = stallShopDef(index);
+          const state = restockStall(def, shopStocksRef.current[index], brainRef.current?.worldCore.getClock().day ?? 0);
+          return {
+            index,
+            shopName: def.shopName,
+            merchantName: def.merchantName,
+            gold: inventoryRef.current.coins,
+            goods: def.goods.map((g) => ({
+              key: g.key, label: g.label, price: g.buyPrice,
+              stock: Math.max(0, Math.floor(state.stock[g.key] ?? 0)),
+            })),
+          };
+        },
+        // BUILD 697: grant test items. LOCALHOST ONLY.
+        giveTestItem: (key: string, n: number) => {
+          if (typeof window === 'undefined') return false;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return false;
+          const count = Math.max(1, Math.floor(n) || 1);
+          onLoot({ [key]: count } as GoatLoot);
+          return true;
+        },
+        // BUILD 697: iso zoom for tap-position math in tests.
+        getIsoZoom: () => isoZoomRef.current,
         // BUILD 564: interior NPCs for quest interaction testing.
         // LOCALHOST ONLY. Returns NPCs in current interior with tile coords.
         getInteriorNPCs: () => {
@@ -5213,6 +5277,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     barbHair,
     droppedLoot,
     pickedUpGroundItems,
+    // BUILD 697: persist market stall stock.
+    shopStocks: shopStocksRef.current,
     // BUILD 685: persist tutorial banner dismissal.
     tutorialBannerDismissed: tutorialBannerDismissedRef.current,
     playerHp,
@@ -5299,6 +5365,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // BUILD 685: restore tutorial banner dismissal (spawn -> save -> restore).
     tutorialBannerDismissedRef.current = loadState.tutorialBannerDismissed ?? false;
     setTutorialBannerDismissed(loadState.tutorialBannerDismissed ?? false);
+    // BUILD 697: restore market stall stock (sanitized; missing/invalid data
+    // restocks fresh on next open via restockStall).
+    {
+      const restoredStocks = sanitizeStallStocks(loadState.shopStocks);
+      shopStocksRef.current = restoredStocks;
+      setShopStocks(restoredStocks);
+    }
     droppedLootIdRef.current = droppedLootRef.current.reduce((highest, drop) => Math.max(highest, drop.id), 0) + 1;
     playerHpRef.current = loadState.playerHp; setPlayerHp(loadState.playerHp);
     playerXpRef.current = loadState.playerXp; setPlayerXp(loadState.playerXp);
@@ -7757,6 +7830,69 @@ if (active) {
     onLoot({ coins: -10, healthPotion: 1 } as GoatLoot);
     setLogs((currentLogs) => [{ text: 'Bought a health potion for 10 gold.', color: 'blue' }, ...currentLogs].slice(0, 3));
   };
+  // BUILD 697: market stall shops — tapping a stall opens its shop panel.
+  // Double-tap safety: the pure shops.ts transactions guard against bad
+  // state, but two taps landing before React re-renders would both see the
+  // same stale inventory prop. shopReserveRef tracks coins/items committed by
+  // taps in the current burst; it resets the moment the real inventory
+  // updates (new prop object), so a fast double-tap can never spend the same
+  // gold twice or sell the same item twice.
+  const shopReserveRef = useRef<{ coins: number; items: Partial<Record<ShopItemKey, number>> }>({ coins: 0, items: {} });
+  const shopInvSeenRef = useRef(inventory);
+  if (shopInvSeenRef.current !== inventory) {
+    shopInvSeenRef.current = inventory;
+    shopReserveRef.current = { coins: 0, items: {} };
+  }
+  const gameDayNow = () => brainRef.current?.worldCore.getClock().day ?? 0;
+  const openShopStall = (index: number) => {
+    if (!Number.isInteger(index) || index < 0) return;
+    const def = stallShopDef(index);
+    const restocked = restockStall(def, shopStocksRef.current[index], gameDayNow());
+    syncShopStocks({ ...shopStocksRef.current, [index]: restocked });
+    shopStallIndexRef.current = index;
+    setShopStallIndex(index);
+  };
+  const closeShopStall = () => {
+    shopStallIndexRef.current = null;
+    setShopStallIndex(null);
+  };
+  const buyStallGood = (itemKey: ShopItemKey) => {
+    const index = shopStallIndexRef.current;
+    if (index === null) return;
+    const def = stallShopDef(index);
+    // Restock check with the live game day — deterministic and idempotent.
+    const state = restockStall(def, shopStocksRef.current[index], gameDayNow());
+    const effectiveCoins = inventory.coins - shopReserveRef.current.coins;
+    const result = buyFromStall(def, state, itemKey, effectiveCoins);
+    if (!result.ok) {
+      const good = def.goods.find((g) => g.key === itemKey);
+      const why = result.reason === 'sold-out' ? 'is sold out'
+        : result.reason === 'no-gold' ? `costs ${good?.buyPrice ?? 0} gold — you don't have enough`
+        : 'is not sold here';
+      setLogs((c) => [{ text: `${def.merchantName}: sorry, that ${why}.`, color: 'red' }, ...c].slice(0, 5));
+      return;
+    }
+    shopReserveRef.current.coins += result.coinsSpent;
+    syncShopStocks({ ...shopStocksRef.current, [index]: result.state });
+    onLoot({ coins: -result.coinsSpent, [itemKey]: 1 } as GoatLoot);
+    const good = def.goods.find((g) => g.key === itemKey);
+    setLogs((c) => [{ text: `Bought ${good?.label ?? itemKey} for ${result.coinsSpent} gold from ${def.merchantName}.`, color: 'blue' }, ...c].slice(0, 5));
+  };
+  const sellStallGood = (itemKey: ShopItemKey) => {
+    const index = shopStallIndexRef.current;
+    if (index === null) return;
+    const def = stallShopDef(index);
+    const effectiveHave = (inventory[itemKey] ?? 0) - (shopReserveRef.current.items[itemKey] ?? 0);
+    const result = sellToStall(itemKey, effectiveHave);
+    if (!result.ok) {
+      setLogs((c) => [{ text: `${def.merchantName} shakes their head — ${result.reason === 'none-held' ? "you don't have one to sell" : "they don't buy that"}.`, color: 'red' }, ...c].slice(0, 5));
+      return;
+    }
+    shopReserveRef.current.items[itemKey] = (shopReserveRef.current.items[itemKey] ?? 0) + 1;
+    onLoot({ [itemKey]: -1, coins: result.coinsEarned } as GoatLoot);
+    const entry = stallBuyList().find((g) => g.key === itemKey);
+    setLogs((c) => [{ text: `Sold ${entry?.label ?? itemKey} for ${result.coinsEarned} gold to ${def.merchantName}.`, color: 'blue' }, ...c].slice(0, 5));
+  };
   const askSmithRumor = () => {
     const rumor = WORLD_RUMORS[Math.floor(Math.random() * WORLD_RUMORS.length)];
     setSmithRumor(rumor);
@@ -7766,6 +7902,16 @@ if (active) {
   // Rusty Tankard tavern: the bartender shares rumors, patrons share flavor.
   // Rusty Tankard: Mira's full service menu (beer, rooms, escort, rumors).
   const [tavernMenuOpen, setTavernMenuOpen] = useState(false);
+  // BUILD 697: market stall shop — open stall index (into the live decor's
+  // marketStallsFromDecor order) and session-persistent stock per stall.
+  const [shopStallIndex, setShopStallIndex] = useState<number | null>(null);
+  const shopStallIndexRef = useRef<number | null>(null);
+  const [shopStocks, setShopStocks] = useState<Record<number, StallStockState>>({});
+  const shopStocksRef = useRef<Record<number, StallStockState>>({});
+  const syncShopStocks = (next: Record<number, StallStockState>) => {
+    shopStocksRef.current = next;
+    setShopStocks(next);
+  };
   const [escortHired, setEscortHired] = useState(false);
   const escortHiredRef = useRef(false);
   useEffect(() => { escortHiredRef.current = escortHired; }, [escortHired]);
@@ -7903,7 +8049,8 @@ if (active) {
       {/* BUILD 609: Circular minimap in corner */}
       {/* BUILD 663: Hide minimap when Options is open (mandatory UI fix). */}
       {/* BUILD 691: Hide minimap when the world map is open. */}
-      {!interior && !optionsOpen && !mapOpen && (
+      {/* BUILD 697: Hide minimap while a market stall shop is open. */}
+      {!interior && !optionsOpen && !mapOpen && shopStallIndex === null && (
         <MiniMap
           chunk={chunk}
           position={position}
@@ -9058,6 +9205,7 @@ if (active) {
               zoom={isoZoom} onZoomChange={setIsoZoom}
               onTapMove={(point) => { tapMoveTargetRef.current = point; }}
               onTalkTo={(npc) => talkToTownsfolk(npc)}
+              onShopStall={(stallIndex) => openShopStall(stallIndex)}
               droppedLoot={droppedLoot.filter((drop) => drop.chunk.x === chunk.x && drop.chunk.y === chunk.y)}
               onPickupDrop={(d) => { const full = droppedLootRef.current.find((x) => x.id === d.id); if (full) pickupDrop(full); }}
               damageTexts={damageTexts}
@@ -10581,6 +10729,67 @@ if (active) {
             </div>
           </div>
         )}
+        {/* BUILD 697: market stall shop — tap a stall in the market square to
+            trade. Reuses the tavern modal pattern and the smith buy/sell
+            button styles. Stock is session-persistent (and saved); restocks
+            each game day via the world clock. */}
+        {shopStallIndex !== null && (() => {
+          const def = stallShopDef(shopStallIndex);
+          const state = restockStall(def, shopStocks[shopStallIndex], gameDayNow());
+          const effectiveCoins = inventory.coins - shopReserveRef.current.coins;
+          const buyable = stallBuyList();
+          const sellable = buyable.filter((g) => (inventory[g.key] ?? 0) > 0);
+          return (
+            <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="shop-stall-title" data-testid="shop-stall-panel">
+              <div className="npc-dialogue-card shop-stall-card">
+                <div className="npc-dialogue-copy">
+                  <span className="dialogue-kicker">Market Stall</span>
+                  <h2 id="shop-stall-title">{def.shopName}</h2>
+                  <p>"{def.flavor}" — <strong>{def.merchantName}</strong></p>
+                  <p className="shop-gold" data-testid="shop-player-gold">Your gold: <strong>{inventory.coins}</strong></p>
+                  <h3 className="shop-section-title">Buy</h3>
+                  <div className="buy-options" data-testid="shop-buy-options">
+                    {def.goods.map((g) => {
+                      const stock = Math.max(0, Math.floor(state.stock[g.key] ?? 0));
+                      const afford = effectiveCoins >= g.buyPrice;
+                      return (
+                        <button className="craft-button buy-button" key={g.key}
+                          onClick={() => buyStallGood(g.key)}
+                          disabled={stock < 1 || !afford}
+                          data-testid={'button-shop-buy-' + g.key}
+                          title={stock < 1 ? 'Sold out' : !afford ? "You don't have enough gold" : `Buy ${g.label} for ${g.buyPrice} gold`}>
+                          <span><b>{g.mark} {g.label}</b><small>{g.description} · Stock {stock}</small></span>
+                          <em>{g.buyPrice} gold</em>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <h3 className="shop-section-title">Sell</h3>
+                  {sellable.length === 0 ? (
+                    <p className="shop-empty" data-testid="shop-sell-empty">You have nothing {def.merchantName} wants.</p>
+                  ) : (
+                    <div className="sell-options" data-testid="shop-sell-options">
+                      {sellable.map((g) => {
+                        const have = (inventory[g.key] ?? 0) - (shopReserveRef.current.items[g.key] ?? 0);
+                        return (
+                          <button className="craft-button sell-button" key={g.key}
+                            onClick={() => sellStallGood(g.key)}
+                            disabled={have < 1}
+                            data-testid={'button-shop-sell-' + g.key}
+                            title={`Sell ${g.label} for ${g.sellPrice} gold`}>
+                            <span><b>{g.mark} {g.label}</b><small>You have {inventory[g.key] ?? 0}</small></span>
+                            <em>+{g.sellPrice} gold</em>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <button className="dialogue-close" onClick={closeShopStall} data-testid="button-close-shop">Leave</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         {questDialog && (() => {
           const def = questById(questDialog.questId);
           if (!def) return null;
@@ -10672,7 +10881,7 @@ if (active) {
                     </button>
                   </div>
                 </div>
-                <button type="button" className="dialogue-close" onClick={() => { setTownsfolkDialogue(null); setDialogueTopic(null); setDialogueHistory([]); setDialogueInput(''); }} aria-label="Close dialogue">✕</button>
+                <button type="button" className="dialogue-close" onClick={() => { setTownsfolkDialogue(null); setDialogueTopic(null); setDialogueHistory([]); setDialogueInput(''); }} aria-label="Close dialogue" data-testid="button-close-townsfolk-dialogue">✕</button>
               </div>
             </div>
           );
