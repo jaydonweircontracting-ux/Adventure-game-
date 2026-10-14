@@ -8,13 +8,15 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, npcHp, npcMaxHp, isNpcDead, NPC_RESPAWN_TICKS, type TownsfolkAnchors, type TownsfolkNavContext } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, npcHp, npcMaxHp, isNpcDead, NPC_RESPAWN_TICKS, marketRoutine, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
 import { npcPersonality, npcAge, npcAgeYears, npcNeeds, villageTarget, npcRelationships, addNPCMemory, npcWage, npcGold, adjustNPCGold, villageEventsForDay, propagateRumors } from '../src/game/villageLife';
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { landscapeSeed, moistureAt, forestDensityAt, rockDensityAt, macroLandformAt, regionForChunk, roadCorridorsFor, pointInCorridors, townInfluenceAt, landUseAt, landscapeSitesFor, checkFieldContinuity, riverChannelAt, riverAt, lakesForChunk, waterAt, bridgeAt } from '../src/game/landscape';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText, EDITOR_LOG_MAX } from '../src/game/worldEditor';
 import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE } from '../src/game/mapBuilder';
 import { organicTownSpecs } from '../src/game/organicTowns';
+import { mosslightSettlementDecor } from '../src/game/settlements';
+import { mosslightEngineProps } from '../src/game/mosslightLayout';
 import { WfcSolver, WfcSeededRng, wfcSeedFor } from '../src/game/wfc';
 import { worldBiomeTileSet, generateChunkBiomes, validateBiomeGrid } from '../src/game/wfcWorld';
 import { SpatialHash, updateSeparation, createSeparationState } from '../src/game/spatialHash';
@@ -983,6 +985,169 @@ console.log('Testing townsfolk living-town simulation...');
   const respawned = advanceTownsfolk([killed], anchors, fleeClock(2000 + NPC_RESPAWN_TICKS + 1), navCtx)[0];
   assert(respawned.deadUntilTick === undefined, 'Respawn did not clear death');
   assert(npcHp(respawned) === npcMaxHp(respawned), 'Respawn should restore HP');
+}
+
+// ---- 13b. Ambient market life (BUILD 694): shoppers, browsers, errands ----
+console.log('Testing ambient market life (BUILD 694)...');
+{
+  const mkAnchors = (stalls: TownsfolkPoint[], arterials?: TownsfolkPoint[]): TownsfolkAnchors => ({
+    points: { guild: { x: 90, y: 60 }, chapel: { x: 40, y: 90 }, tavern: { x: 90, y: 90 } },
+    plaza: { x: 144, y: 144 },
+    stalls,
+    gardens: [{ x: 30, y: 108 }],
+    patrol: [],
+    arterials,
+  });
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+  const testStalls = [{ x: 132, y: 130 }, { x: 144, y: 130 }, { x: 156, y: 158 }];
+  const testArterials = [{ x: 51, y: 165 }, { x: 231, y: 123 }];
+  const anchors: TownsfolkAnchors = mkAnchors(testStalls, testArterials);
+  const folk = createTownsfolk(anchors, 847291583);
+  const commoner = folk.find((n) => n.archetype === 'commoner')!;
+  const navCtx: TownsfolkNavContext = {
+    housing: buildMosslightHousing(folk.map((n) => n.id)),
+    doors: cottageDoorways(),
+    obstacles: mosslightObstacles(),
+  };
+
+  // 1. marketStallsFromDecor: extracts stall props only, dedupes, stable order.
+  const decorStalls = marketStallsFromDecor([
+    { asset: 'props/stall-red.png', x: 132, y: 130 },
+    { asset: 'props/barrel.png', x: 100, y: 100 },
+    { asset: 'props/market-stall.png', x: 128, y: 144 },
+    { asset: 'props/stall-red.png', x: 132.04, y: 130.02 }, // near-duplicate
+    { asset: 'props/lamp.png', x: 140, y: 140 },
+  ]);
+  assert(decorStalls.length === 2, `Expected 2 stalls from decor, got ${decorStalls.length}`);
+  assert(decorStalls[0].x === 132 && decorStalls[1].x === 128, 'Stall order not stable');
+  assert(marketStallsFromDecor([]).length === 0, 'Empty decor should yield no stalls');
+
+  // 2. arterialWaypointsFromDecor: long lanes sampled, short spurs skipped,
+  // plaza surroundings excluded, deterministic.
+  const lanes = [
+    { points: Array.from({ length: 100 }, (_, i) => ({ x: i * 3, y: 140 })) },
+    { points: [{ x: 140, y: 140 }, { x: 145, y: 145 }] },
+  ];
+  const art = arterialWaypointsFromDecor(lanes, { x: 144, y: 144 });
+  assert(art.length === 2, `Expected 2 arterial waypoints, got ${art.length}`);
+  assert(art.every((p) => Math.hypot(p.x - 144, p.y - 144) >= 25), 'Arterial too close to plaza');
+  assert(JSON.stringify(art) === JSON.stringify(arterialWaypointsFromDecor(lanes, { x: 144, y: 144 })), 'Arterials not deterministic');
+  assert(arterialWaypointsFromDecor([], { x: 144, y: 144 }).length === 0, 'No lanes should yield no arterials');
+
+  // 3. Shoppers head for the market during market windows (9-12, 14-17).
+  const morn = townsfolkTarget(commoner, anchors, clockAt(9, 5));
+  assert(['Strolling the market', 'Running errands'].includes(morn.activity), `Commoner at 9:05: ${morn.activity}`);
+  const mornNear = morn.activity === 'Running errands'
+    ? testArterials.some((a) => Math.hypot(a.x - morn.target.x, a.y - morn.target.y) < 6)
+    : testStalls.some((s) => Math.hypot(s.x - morn.target.x, s.y - morn.target.y) < 8);
+  assert(mornNear, 'Morning shopper target not at a stall front or arterial');
+  assert(!morn.indoors, 'Shopper should be outdoors');
+  // Outside market windows the old behavior is unchanged.
+  assert(townsfolkTarget(commoner, anchors, clockAt(13, 35)).activity === 'At home', 'Commoner should be home at 13:35');
+
+  // 4. Browse pause: last 30 min of a visit -> stand still, face the stall.
+  // Visit 1 of the morning window runs 630-720; browse phase is 690-720.
+  const browse = townsfolkTarget(commoner, anchors, clockAt(11, 40));
+  assert(browse.activity === 'Browsing the stalls', `Expected browsing at 11:40, got ${browse.activity}`);
+  assert(browse.face !== undefined, 'Browse target has no facing');
+  const nearest = testStalls.reduce((best, s) =>
+    Math.hypot(s.x - browse.target.x, s.y - browse.target.y) < Math.hypot(best.x - browse.target.x, best.y - browse.target.y) ? s : best);
+  assert(Math.hypot(nearest.x - browse.target.x, nearest.y - browse.target.y) < 6, 'Browse spot not at a stall front');
+  assert(browse.face === faceToward(browse.target, nearest), 'Browse facing does not point at the stall');
+
+  // 5. No hardcoded coordinates: moving the stalls moves the targets.
+  const shifted = mkAnchors(testStalls.map((s) => ({ x: s.x + 50, y: s.y + 50 })), testArterials);
+  const browseShifted = townsfolkTarget(commoner, shifted, clockAt(11, 40));
+  assert(browseShifted.activity === 'Browsing the stalls', 'Shifted-stall browse broke');
+  const nearShifted = shifted.stalls.some((s) => Math.hypot(s.x - browseShifted.target.x, s.y - browseShifted.target.y) < 6);
+  const nearOriginal = testStalls.some((s) => Math.hypot(s.x - browseShifted.target.x, s.y - browseShifted.target.y) < 6);
+  assert(nearShifted && !nearOriginal, 'Shopper targets do not follow the live stall positions');
+
+  // 6. Determinism: same npc + clock -> identical target, no Math.random.
+  const d1 = townsfolkTarget(commoner, anchors, clockAt(11, 40));
+  const d2 = townsfolkTarget(commoner, anchors, clockAt(11, 40));
+  assert(JSON.stringify(d1) === JSON.stringify(d2), 'Market routine not deterministic');
+  const r1 = marketRoutine(commoner, anchors, clockAt(10, 20, 9));
+  const r2 = marketRoutine(commoner, anchors, clockAt(10, 20, 9));
+  assert(JSON.stringify(r1) === JSON.stringify(r2), 'marketRoutine not deterministic');
+
+  // 7. Physical browse: an NPC arriving at the browse target stops and faces the stall.
+  const placed = {
+    ...commoner, position: { ...browse.target }, location: 'OUTDOOR' as const,
+    path: undefined, moving: true, facing: 'left' as const,
+  };
+  const stepped = advanceTownsfolk([placed], anchors, clockAt(11, 40), navCtx)[0];
+  assert(!stepped.moving, 'Browser did not stop at the stall');
+  assert(stepped.facing === browse.face, `Browser faces ${stepped.facing}, expected ${browse.face}`);
+  assert(stepped.activity === 'Browsing the stalls', 'Browser activity wrong after arrival');
+
+  // 8. Turn-in-place: a settled NPC turns to face the stall when browse begins
+  // (same visit, stroll phase target == browse phase target).
+  const stroll = townsfolkTarget(commoner, anchors, clockAt(11, 0));
+  assert(stroll.activity === 'Strolling the market', `Expected stroll at 11:00, got ${stroll.activity}`);
+  assert(Math.hypot(stroll.target.x - browse.target.x, stroll.target.y - browse.target.y) < 0.01, 'Stroll/browse targets differ within a visit');
+  const wrongFace = browse.face === 'left' ? 'right' : 'left';
+  const settled = {
+    ...commoner, position: { ...stroll.target }, location: 'OUTDOOR' as const,
+    path: undefined, moving: false, facing: wrongFace as 'left' | 'right', activity: stroll.activity,
+  };
+  const turned = advanceTownsfolk([settled], anchors, clockAt(11, 40), navCtx)[0];
+  assert(turned.facing === browse.face, 'Settled browser did not turn to face the stall');
+  assert(!turned.moving, 'Turning browser should stay still');
+
+  // 9. Empty stalls -> graceful fallback to the old plaza behavior.
+  const noStalls = mkAnchors([]);
+  assert(marketRoutine(commoner, noStalls, clockAt(10, 0)) === null, 'marketRoutine should be null without stalls');
+  assert(townsfolkTarget(commoner, noStalls, clockAt(10, 0)).activity === 'About town', 'No-stall fallback broke');
+
+  // 10. Errand loop: on errand days the first morning visit walks an arterial.
+  let errandSeen = false;
+  for (let day = 1; day <= 12 && !errandSeen; day++) {
+    const e = townsfolkTarget(commoner, anchors, clockAt(9, 5, day));
+    if (e.activity === 'Running errands') {
+      errandSeen = true;
+      assert(testArterials.some((a) => Math.hypot(a.x - e.target.x, a.y - e.target.y) < 6), 'Errand target not on an arterial');
+      assert(!e.indoors, 'Errand should be outdoors');
+    }
+  }
+  assert(errandSeen, 'No errand day in 12 days (seeded ~45% expected)');
+
+  // 11. Children join the afternoon market (15:00 is a browse phase).
+  const child = folk.find((n) => n.archetype === 'child')!;
+  const childPm = townsfolkTarget(child, anchors, clockAt(15, 0));
+  assert(childPm.activity === 'Browsing the stalls', `Child at 15:00: ${childPm.activity}`);
+  assert(townsfolkTarget(child, anchors, clockAt(10, 0)).activity === 'Playing', 'Child mornings should stay playful');
+
+  // 12. The merchant still minds a live stall (dynamic positions).
+  const merchant = folk.find((n) => n.archetype === 'merchant')!;
+  const mt = townsfolkTarget(merchant, anchors, clockAt(10, 0));
+  assert(mt.activity === 'Minding the stall', `Merchant at 10 AM: ${mt.activity}`);
+  assert(testStalls.some((s) => Math.hypot(s.x - mt.target.x, s.y - mt.target.y) < 6), 'Merchant not at a live stall');
+
+  // 13. The needs layer (villageTarget) handles the new activities.
+  const vt = villageTarget(commoner, anchors, clockAt(11, 40));
+  assert(typeof vt.activity === 'string' && !vt.indoors, 'villageTarget broke on market activities');
+
+  // 14. Browse spots stay clear of buildings and door trigger zones against
+  // the REAL Mosslight layout: real stalls from the live decor, real
+  // obstacles, real door positions.
+  const realDecor = mosslightSettlementDecor();
+  const realStalls = marketStallsFromDecor([...realDecor.props, ...mosslightEngineProps()]);
+  assert(realStalls.length > 0, 'No live stalls found in the settlement decor');
+  const realObstacles = mosslightObstacles();
+  const realDoors = cottageDoorways();
+  for (const s of realStalls) {
+    for (const salt of [8102, 8105, 8108]) {
+      const spot = stallBrowseSpot(s, { x: 144, y: 144 }, commoner, 5, salt);
+      const inside = realObstacles.some((o) => spot.x > o.left && spot.x < o.right && spot.y > o.top && spot.y < o.bottom);
+      assert(!inside, `Browse spot (${spot.x.toFixed(1)},${spot.y.toFixed(1)}) inside a building rect`);
+      const nearDoor = realDoors.some((d) => Math.hypot(d.exterior.x - spot.x, d.exterior.y - spot.y) < 6);
+      assert(!nearDoor, `Browse spot (${spot.x.toFixed(1)},${spot.y.toFixed(1)}) inside a door trigger zone`);
+    }
+  }
 }
 
 console.log('Testing village life layer (BUILD 366)...');
@@ -7023,6 +7188,35 @@ import { inflateSync } from 'node:zlib';
   for (const v of ['green-shop', 'brick-shop', 'green-cottage', 'stone-cottage', 'plaster-house']) {
     assert(assetMetaFor(v) !== null, `Town692: new variant '${v}' registered in rig`);
   }
+}
+
+// BUILD 694: storybook sprite set — tower building + angel statue / hedge /
+// cart props. Art + catalog registration only (no gameplay change).
+{
+  const { assetMetaFor } = await import('../src/game/buildingRig.js');
+
+  // story-tower is registered with audited 2240x1120 dims, base-center anchor,
+  // civic kind (same kind as the gatehouse).
+  const tower = assetMetaFor('story-tower');
+  assert(tower !== null, 'Story694: story-tower registered in rig');
+  assert(tower !== null && tower.w === 2240 && tower.h === 1120,
+    `Story694: story-tower dims audited 2240x1120 (got ${tower?.w}x${tower?.h})`);
+  assert(tower !== null && tower.anchor === 'base-center',
+    'Story694: story-tower anchored base-center');
+  assert(tower !== null && tower.kind === 'civic',
+    `Story694: story-tower kind is civic (got ${tower?.kind})`);
+  assert(tower !== null && tower.file === 'buildings/story-tower.png',
+    `Story694: story-tower file path (got ${tower?.file})`);
+
+  // New props exist as files (loaded through artUrl in IsoFieldView).
+  // The propSrc map keys are asserted by file presence here.
+  const { default: fs } = await import('node:fs');
+  for (const p of ['statue-angel.png', 'hedge-straight.png', 'cart-wood.png']) {
+    const st = fs.statSync(`public/props/${p}`, { throwIfNoEntry: false });
+    assert(st !== undefined && st.isFile(), `Story694: prop file public/props/${p} exists`);
+  }
+  const tst = fs.statSync('public/buildings/story-tower.png', { throwIfNoEntry: false });
+  assert(tst !== undefined && tst.isFile(), 'Story694: building file public/buildings/story-tower.png exists');
 }
 
 // BUILD 688: Procedural town layout engine — seeded, validated blueprints.

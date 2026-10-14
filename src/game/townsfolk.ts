@@ -97,6 +97,13 @@ export type TownsfolkAnchors = {
   stalls: TownsfolkPoint[];
   gardens: TownsfolkPoint[];
   patrol: TownsfolkPoint[];
+  /**
+   * BUILD 694: arterial waypoints — walkable points along the town's main
+   * roads between the plaza and the town edges. Derived live from the
+   * settlement decor lanes (never hardcoded). Optional so older callers and
+   * tests keep working; absent = skip the arterial stroll phase.
+   */
+  arterials?: TownsfolkPoint[];
 };
 
 /** Deterministic 0..1 from two ints. The NPC "personality" RNG. */
@@ -106,7 +113,17 @@ export function townsfolkHash(a: number, b: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-export type TownsfolkTarget = { activity: string; target: TownsfolkPoint; indoors: boolean };
+export type TownsfolkTarget = {
+  activity: string;
+  target: TownsfolkPoint;
+  indoors: boolean;
+  /**
+   * BUILD 694: optional facing to adopt on arrival (e.g. a browser facing
+   * the stall they stopped at). The movement layer applies it once the NPC
+   * settles; walkers keep their travel facing.
+   */
+  face?: TownsfolkFacing;
+};
 
 function minutesOf(clock: WorldClockState): number {
   return Math.floor(clock.hour) * 60 + (Math.floor(clock.minuteOfDay) % 60);
@@ -213,6 +230,11 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
       if (atNight || mins < wake) return { activity: 'Sleeping', target: home, indoors: true };
       if (mins >= lunchStart && mins < lunchEnd + 30) return { activity: 'Lunch at home', target: homeSpot, indoors: false };
       if (mins >= 1080) return { activity: 'At home', target: homeSpot, indoors: true };
+      // BUILD 694: afternoons the children join the market bustle.
+      if (mins >= 840 && mins < 1020) {
+        const market = marketRoutine(npc, anchors, clock);
+        if (market) return market;
+      }
       return { activity: 'Playing', target: plazaSpot, indoors: false };
     }
     case 'commoner':
@@ -220,10 +242,157 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
       if (atNight) return { activity: 'Sleeping', target: home, indoors: true };
       if (atLunch) return { activity: 'Having lunch', target: plazaSpot, indoors: false };
       const outAndAbout = (mins >= 540 && mins < 720) || (mins >= 840 && mins < workEnd);
-      if (outAndAbout) return { activity: 'About town', target: plazaSpot, indoors: false };
+      // BUILD 694: market life — stroll between stalls, pause to browse, and
+      // on errand days walk the arterials. Falls back to the plaza when the
+      // market is unavailable (no stalls in the anchors).
+      if (outAndAbout) return marketRoutine(npc, anchors, clock) ?? { activity: 'About town', target: plazaSpot, indoors: false };
       return { activity: 'At home', target: homeSpot, indoors: true };
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Ambient market life (BUILD 694): shoppers, browsers, errand loops.
+//
+// Pure and deterministic — everything derives from (npc, anchors, clock), so
+// save/load and time-skips stay correct. The movement layer (advanceOne)
+// does the walking; this only resolves targets. Stall positions come from
+// the live settlement decor via marketStallsFromDecor (never hardcoded).
+// ---------------------------------------------------------------------------
+
+/** Asset-name substring identifying market-stall props in the decor. */
+const STALL_ASSET_MATCH = 'stall';
+
+/**
+ * Market-stall positions from the live settlement decor props
+ * (settlementDecorFor). Adapts automatically when stalls are added, moved or
+ * removed — no hardcoded stall coordinates anywhere in the sim. Stable order
+ * (decor order, deduped) so seeded stall picks stay consistent.
+ */
+export function marketStallsFromDecor(
+  props: { asset: string; x: number; y: number }[],
+): TownsfolkPoint[] {
+  const seen = new Set<string>();
+  const stalls: TownsfolkPoint[] = [];
+  for (const p of props) {
+    if (!p.asset.includes(STALL_ASSET_MATCH)) continue;
+    const key = `${Math.round(p.x * 10)},${Math.round(p.y * 10)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    stalls.push({ x: p.x, y: p.y });
+  }
+  return stalls;
+}
+
+/**
+ * Arterial waypoints from the live decor lanes: walkable points along the
+ * town's main roads between the plaza and the town edges. Only long lanes
+ * (the arterials — door spurs and short connectors are skipped) are sampled,
+ * at fixed fractions, keeping clear of the plaza/market itself. Deterministic.
+ */
+export function arterialWaypointsFromDecor(
+  lanes: { points: { x: number; y: number }[] }[],
+  plaza: TownsfolkPoint,
+  fieldSize = 280,
+  maxPoints = 8,
+): TownsfolkPoint[] {
+  const pts: { p: TownsfolkPoint; len: number }[] = [];
+  for (const lane of lanes) {
+    const lp = lane.points;
+    if (lp.length < 40) continue;
+    for (const f of [0.2, 0.5, 0.8]) {
+      const q = lp[Math.min(lp.length - 1, Math.floor(lp.length * f))];
+      if (q.x < 4 || q.y < 4 || q.x > fieldSize - 4 || q.y > fieldSize - 4) continue;
+      if (Math.hypot(q.x - plaza.x, q.y - plaza.y) < 25) continue;
+      pts.push({ p: { x: q.x, y: q.y }, len: lp.length });
+    }
+  }
+  pts.sort((a, b) => b.len - a.len); // longest lanes (true arterials) first
+  return pts.slice(0, maxPoints).map((e) => e.p);
+}
+
+/** Facing from `from` toward `to` (dominant axis). Pure. */
+export function faceToward(from: TownsfolkPoint, to: TownsfolkPoint): TownsfolkFacing {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'down' : 'up');
+}
+
+/**
+ * Where a browser stands to look at a stall: just in front of it (toward
+ * the plaza), with a deterministic per-NPC-per-day personal offset so
+ * browsers gather *around* a stall instead of stacking on one point. Stalls
+ * are decor-only (walkable) and ring the plaza — far from any door trigger
+ * zone — and pathTo validates the destination against obstacles anyway.
+ */
+export function stallBrowseSpot(
+  stall: TownsfolkPoint,
+  plaza: TownsfolkPoint,
+  npc: Townsperson,
+  day: number,
+  salt: number,
+): TownsfolkPoint {
+  const dx = plaza.x - stall.x, dy = plaza.y - stall.y;
+  const d = Math.hypot(dx, dy) || 1;
+  const o = personalOffset(npc.seed, day, salt);
+  return {
+    x: stall.x + (dx / d) * 2.6 + o.x * 0.6,
+    y: stall.y + (dy / d) * 2.6 + o.y * 0.6,
+  };
+}
+
+// Market windows (game minutes): 9:00–12:00 and 14:00–17:00.
+const MARKET_WINDOWS: [number, number][] = [[540, 720], [840, 1020]];
+/**
+ * Minutes per stall visit; the last MARKET_BROWSE minutes of each visit are
+ * the browse pause (stand still, face the stall). Visits are long on purpose:
+ * NPCs walk ~33 field units per game hour, so a 90-minute visit lets them
+ * actually arrive and pause instead of perpetually chasing a moving target.
+ */
+const MARKET_VISIT = 90;
+const MARKET_BROWSE = 30;
+
+/**
+ * Ambient market routine for shoppers. Each visit picks one stall (seeded per
+ * NPC/day/visit); the NPC strolls to its front, then PAUSES there for the
+ * last 30 minutes, standing still and facing the stall ('Browsing the
+ * stalls'). On errand days (~45%, seeded) the first morning visit is a long
+ * walk along an arterial waypoint ('Running errands') — the door-to-market
+ * errand loop; the walk home emerges from the schedule at noon.
+ * Returns null outside market windows or when there are no stalls, so
+ * callers fall back to the previous behavior.
+ */
+export function marketRoutine(
+  npc: Townsperson,
+  anchors: TownsfolkAnchors,
+  clock: WorldClockState,
+): TownsfolkTarget | null {
+  const stalls = anchors.stalls;
+  if (!stalls || stalls.length === 0) return null;
+  const mins = minutesOf(clock);
+  const winIdx = MARKET_WINDOWS.findIndex(([s, e]) => mins >= s && mins < e);
+  if (winIdx < 0) return null;
+  const wStart = MARKET_WINDOWS[winIdx][0];
+  const daySalt = Math.floor(clock.day) * 131;
+  const visit = Math.floor((mins - wStart) / MARKET_VISIT);
+  const visitIndex = winIdx * 2 + visit;
+  const inVisit = (mins - wStart) % MARKET_VISIT;
+  const browsing = inVisit >= MARKET_VISIT - MARKET_BROWSE;
+  const arterials = anchors.arterials ?? [];
+  // Errand day: first morning visit walks an arterial before the market.
+  const errandDay = townsfolkHash(npc.seed, daySalt + 8150) < 0.45;
+  if (errandDay && visit === 0 && winIdx === 0 && arterials.length > 0) {
+    const a = arterials[Math.floor(townsfolkHash(npc.seed, daySalt + 8151) * arterials.length) % arterials.length];
+    const o = personalOffset(npc.seed, clock.day, 8152);
+    return { activity: 'Running errands', target: { x: a.x + o.x, y: a.y + o.y }, indoors: false };
+  }
+  const stall = stalls[Math.floor(townsfolkHash(npc.seed, daySalt + 8101 + visitIndex * 17) * stalls.length) % stalls.length];
+  const spot = stallBrowseSpot(stall, anchors.plaza, npc, clock.day, 8102 + visitIndex * 3);
+  return {
+    activity: browsing ? 'Browsing the stalls' : 'Strolling the market',
+    target: spot,
+    indoors: false,
+    face: browsing ? faceToward(spot, stall) : undefined,
+  };
 }
 
 type TownsfolkDef = [name: string, gender: 'male' | 'female', archetype: TownsfolkArchetype, role: TownsfolkRole, homeKey: string];
@@ -902,9 +1071,15 @@ function advanceOne(
   const dx = want.target.x - npc.position.x;
   const dy = want.target.y - npc.position.y;
   if (Math.hypot(dx, dy) < 0.7 && !npc.path) {
-    return !npc.moving && npc.activity === want.activity && !npc.indoors && npc.location === 'OUTDOOR'
+    // BUILD 694: a settled NPC adopts the schedule's arrival facing (e.g. a
+    // browser turning to face the stall when the browse phase begins — the
+    // target doesn't move, so this branch is where the turn happens).
+    const settledFacing = want.face ?? npc.facing;
+    const settled = !npc.moving && npc.activity === want.activity && !npc.indoors
+      && npc.location === 'OUTDOOR' && npc.facing === settledFacing;
+    return settled
       ? npc
-      : { ...npc, moving: false, activity: want.activity, indoors: false, location: 'OUTDOOR', path: undefined };
+      : { ...npc, moving: false, activity: want.activity, indoors: false, location: 'OUTDOOR', path: undefined, facing: settledFacing };
   }
   if (npc.path?.gaveUp && pathDestIs(npc.path, want.target)) {
     // Destination unreachable: wait for the schedule to pick a new one.
@@ -923,7 +1098,9 @@ function advanceOne(
   }
   const res = stepAlongPath(path!, npc.position, step);
   if (res.arrived) {
-    return { ...npc, position: res.position, path: undefined, moving: false, activity: want.activity, indoors: false, location: 'OUTDOOR', facing: res.facing };
+    // BUILD 694: adopt the schedule's arrival facing when one is given (a
+    // browser faces the stall they stopped at); otherwise keep walk facing.
+    return { ...npc, position: res.position, path: undefined, moving: false, activity: want.activity, indoors: false, location: 'OUTDOOR', facing: want.face ?? res.facing };
   }
   const tracked = trackStep(path!, npc.position, res, (from) => pathTo(from, want.target, nav.obstacles, nav.roadPiece, nav.chunk));
   return { ...npc, position: tracked.position, path: tracked.path, moving: tracked.moving, facing: tracked.facing, activity: want.activity, indoors: false, location: 'OUTDOOR' };

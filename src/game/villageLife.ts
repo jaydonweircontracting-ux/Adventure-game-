@@ -97,6 +97,10 @@ const SOCIAL_ACTIVITIES = [
   'Playing',
   'About town',
   'Prayers',
+  // BUILD 694: ambient market life is social time too.
+  'Strolling the market',
+  'Browsing the stalls',
+  'Running errands',
 ];
 
 /**
@@ -109,7 +113,7 @@ export function npcNeeds(npc: Townsperson, clock: WorldClockState): NPCNeeds {
   const mins = minutesOf(clock);
   const p = npcPersonality(npc);
   const age = npcAge(npc);
-  const target = townsfolkTarget(npc, { points: {}, plaza: { x: 0, y: 0 }, stalls: [], gardens: [], patrol: [] } as TownsfolkAnchors, clock);
+  const target = townsfolkTarget(npc, { points: {}, plaza: { x: 0, y: 0 }, stalls: [], gardens: [], patrol: [], arterials: [] } as TownsfolkAnchors, clock);
 
   // --- Hunger: 100 right after each meal, decaying ~8/hr between meals. ---
   const wake = 360; // ~6:00 (matches schedule jitter range 5:30–6:30)

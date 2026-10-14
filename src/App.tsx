@@ -39,7 +39,7 @@ import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasCo
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, marketStallsFromDecor, arterialWaypointsFromDecor, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 // BUILD 683: unified Mosslight rects (single source in settlements.ts).
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
 import { mosslightEngineChunkLayout, mosslightEngineLanes, mosslightEngineProps, mosslightFillerRects } from '@/game/mosslightLayout';
@@ -2555,18 +2555,22 @@ function townsfolkAnchors(offsets: Record<string, Point>): TownsfolkAnchors {
   // BUILD 548: neighbor cottage near tutorial house — visible life at spawn.
   // Player exits at (89, 114); this puts a friendly NPC in view immediately.
   points.cottage = { x: 98, y: 118 };
+  // BUILD 694: stalls and arterial waypoints come from the LIVE settlement
+  // decor (settlementDecorFor) — the merchant's stall and the shoppers'
+  // browse targets automatically follow the engine layout when Phase 2
+  // adds/moves stalls. No hardcoded stall coordinates.
+  const decor = settlementDecorFor(TOWNSFOLK_CHUNK);
+  const liveStalls = marketStallsFromDecor(decor.props);
   return {
     points,
     // BUILD 429: plaza moved to the four-way road split (the town square).
     // Was (70, 82) — a stale pre-BUILD-343 coordinate in the grass. The road
     // intersection is at (144, 144); NPCs gather on the road now, not in grass.
     plaza: { x: 144, y: 144 },
-    // BUILD 664: Stalls moved near the plaza to create a visible market.
-    // Was (58,64)/(82,64) — isolated northwest, merchant worked alone.
-    // Now at (128,128)/(160,128) — flanking the plaza, visible town centre.
-    stalls: [{ x: 128, y: 128 }, { x: 160, y: 128 }],
+    stalls: liveStalls.length > 0 ? liveStalls : [{ x: 128, y: 128 }, { x: 160, y: 128 }],
     gardens: [{ x: 30, y: 108 }, { x: 110, y: 108 }],
     patrol: [{ x: 70, y: 24 }, { x: 118, y: 70 }, { x: 70, y: 116 }, { x: 22, y: 70 }],
+    arterials: arterialWaypointsFromDecor(decor.lanes, { x: 144, y: 144 }),
   };
 }
 
