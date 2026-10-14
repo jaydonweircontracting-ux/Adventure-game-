@@ -329,8 +329,8 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     let pts: TLPoint[] | null = null;
     let bestCands: TLPoint[] | null = null;
     let bestHits = Infinity;
-    for (let attempt = 0; attempt < 6 && !pts; attempt++) {
-      const cands = growArterial((i / nArt) * Math.PI * 2 + rngR() * 0.5 + attempt * 0.9);
+    for (let attempt = 0; attempt < 12 && !pts; attempt++) {
+      const cands = growArterial((i / nArt) * Math.PI * 2 + rngR() * 0.5 + attempt * 0.45);
       // Validator needs width/2+1 = 3.0 clearance for arterials; retry at 3.5
       // with fine sampling so near-misses between samples can't slip through.
       if (pinned.length === 0) { pts = cands; break; }
