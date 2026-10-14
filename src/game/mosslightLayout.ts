@@ -90,11 +90,14 @@ export function mosslightEngineProps() {
 }
 
 /** Filler building rects in chunk space (indices 18+, generic ids). Does NOT
- *  include the 18 pinned buildings — those come from the existing 689 source. */
+ *  include the 18 pinned buildings — those come from the existing 689 source.
+ *  Filtered to the chunk bounds: a building outside 0..280 would lose
+ *  collision/doors when the player crosses into the neighboring chunk. */
 export function mosslightFillerRects(): Rect[] {
   return mosslightEngineChunkLayout().lots
     .filter((l) => !l.pinned && l.kind === 'building')
-    .map((l) => lotToBuildingRect(l));
+    .map((l) => lotToBuildingRect(l))
+    .filter((r) => r.left >= 0 && r.top >= 0 && r.right <= 280 && r.bottom <= 280);
 }
 
 /** Pinned building rects in chunk space, in pin order.
