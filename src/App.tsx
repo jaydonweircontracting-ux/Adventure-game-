@@ -42,6 +42,7 @@ import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 // BUILD 683: unified Mosslight rects (single source in settlements.ts).
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
+import { mosslightTownPlan } from '@/game/townPlan';
 import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
 import { LANDMARKS } from '@/game/landmarks';
 import {
@@ -121,6 +122,8 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '686': 'authored Mosslight town: path network to every door, plaza, walls + gatehouse, garden',
+  '685': 'tutorial objective banner + ambient goats',
   '680': 'procedural hamlet settlement generator',
   '681': 'centre-first adaptive settlement design',
   '682': 'grass texture on zoom-out LOD',
@@ -1078,9 +1081,21 @@ export function settlementDecorFor(chunk: Point): {
   plazas: { x: number; y: number; r: number }[];
   lanes: { points: { x: number; y: number }[]; width: number }[];
   props: { id: string; asset: string; x: number; y: number; r: number }[];
+  walls: { points: { x: number; y: number }[]; width: number }[];
 } {
-  if (chunk.x === 4 && chunk.y === 7) return mosslightSettlementDecor();
-  return { plazas: [], lanes: [], props: [] };
+  // BUILD 686: merge the authored Mosslight town plan (paths, plaza,
+  // market, lamps, clutter, walls) with the generated hamlet decor.
+  if (chunk.x === 4 && chunk.y === 7) {
+    const base = mosslightSettlementDecor();
+    const plan = mosslightTownPlan();
+    return {
+      plazas: [...base.plazas, ...plan.plazas],
+      lanes: [...base.lanes, ...plan.lanes],
+      props: [...base.props, ...plan.props],
+      walls: plan.walls,
+    };
+  }
+  return { plazas: [], lanes: [], props: [], walls: [] };
 }
 
 // BUILD 683: Roof/sprite variant for a cottage rect in chunk (4,7).

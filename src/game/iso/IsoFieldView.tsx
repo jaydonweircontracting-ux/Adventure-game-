@@ -446,6 +446,21 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           });
           g.stroke();
         }
+        // BUILD 686: town walls — stone grey strokes with a lighter cap.
+        for (const w of decor.walls || []) {
+          if (w.points.length < 2) continue;
+          g.lineWidth = Math.max(3, w.width * 16);
+          g.strokeStyle = 'rgba(105, 105, 115, 0.9)';
+          g.beginPath();
+          w.points.forEach((pt, i) => {
+            const s = isoToScreen(pt.x + bx, pt.y + by);
+            if (i === 0) g.moveTo(s.x, s.y); else g.lineTo(s.x, s.y);
+          });
+          g.stroke();
+          g.lineWidth = Math.max(1.5, w.width * 8);
+          g.strokeStyle = 'rgba(150, 150, 160, 0.9)';
+          g.stroke();
+        }
       }
 
       const drawables: Drawable[] = [];
@@ -752,6 +767,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       const propSrc: Record<string, string> = {
         'props/well.png': 'props/well.png',
         'props/barrel.png': 'props/barrel.png',
+        // BUILD 686: town plan assets (lamps, garden well, gatehouse).
+        // (Market fountain/stalls come from the BUILD 613 block above.)
+        'props/lamp.png': 'props/lamp.png',
+        'buildings/gatehouse.png': 'buildings/gatehouse.png',
       };
       for (const [key, src] of Object.entries(propSrc)) {
         if (!propImgs[key]) {
@@ -776,7 +795,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             draw: (g2) => {
               if (img && img.complete && img.naturalWidth > 0) {
                 const sw = pr.r * 2 * 32;
-                const sh = sw / 2;
+                // BUILD 686: natural aspect (well/barrel/lamp are 2:1 natively;
+                // fountain is 1:1, stalls/gatehouse 1.5:1 — no squish).
+                const sh = sw / (img.naturalWidth / img.naturalHeight);
                 g2.drawImage(img, c.x - sw / 2, c.y - sh, sw, sh);
               } else {
                 g2.fillStyle = '#8a8a8a';

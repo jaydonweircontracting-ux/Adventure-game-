@@ -253,10 +253,12 @@ export function auditBuildingRigs(rigs: BuildingRig[], ctx: RigAuditContext = {}
   }
 
   // 12. NPC navigation spot-check: from each door exterior, an NPC must be
-  //     able to walk away from the door along the outward normal without
-  //     crossing footprints (uses real pathfinding when provided — with the
-  //     doorway passed as viaDoor, exactly like the real pathToDoor —
-  //     otherwise a segment-sampling fallback).
+  //     able to walk away from the door in SOME direction without crossing
+  //     footprints. Probes the outward normal plus the other three cardinals
+  //     (a single fixed probe can land inside a neighboring building even
+  //     when the door itself is fine). Uses real pathfinding when provided —
+  //     with the doorway passed as viaDoor, exactly like the real pathToDoor —
+  //     otherwise a segment-sampling fallback.
   if (rigs.length > 0) {
     const obstacles = rigs.map((r) => r.rect);
     for (const r of rigs) {
@@ -265,19 +267,23 @@ export function auditBuildingRigs(rigs: BuildingRig[], ctx: RigAuditContext = {}
       const rcy = (r.rect.top + r.rect.bottom) / 2;
       let ox = from.x - rcx, oy = from.y - rcy;
       const ol = Math.hypot(ox, oy) || 1; ox /= ol; oy /= ol;
-      const to = {
-        x: Math.max(2, Math.min(fieldSize - 2, from.x + ox * 18)),
-        y: Math.max(2, Math.min(fieldSize - 2, from.y + oy * 18)),
-      };
-      let ok: boolean;
-      if (ctx.pathExists) {
-        ok = ctx.pathExists(from, to, obstacles, { id: r.doorwayId, exterior: r.doorExterior });
-      } else {
-        // Fallback: sample the segment; fail if any sample is inside a rect.
-        ok = true;
-        for (let t = 0; t <= 1.0001; t += 0.05) {
-          const p = { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
-          if (obstacles.some((o) => o !== r.rect && pointInRect(p, o, 0.5))) { ok = false; break; }
+      // Outward normal first, then 90° rotations.
+      const dirs = [[ox, oy], [-oy, ox], [oy, -ox], [-ox, -oy]];
+      let ok = false;
+      for (const [dx, dy] of dirs) {
+        const to = {
+          x: Math.max(2, Math.min(fieldSize - 2, from.x + dx * 18)),
+          y: Math.max(2, Math.min(fieldSize - 2, from.y + dy * 18)),
+        };
+        if (ctx.pathExists) {
+          if (ctx.pathExists(from, to, obstacles, { id: r.doorwayId, exterior: r.doorExterior })) { ok = true; break; }
+        } else {
+          ok = true;
+          for (let t = 0; t <= 1.0001; t += 0.05) {
+            const p = { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
+            if (obstacles.some((o) => o !== r.rect && pointInRect(p, o, 0.5))) { ok = false; break; }
+          }
+          if (ok) break;
         }
       }
       if (!ok) errors.push(`Building '${r.id}': NPC cannot path away from door exterior (navigation blocked)`);

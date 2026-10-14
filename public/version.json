@@ -1,6 +1,6 @@
 {
-  "build": "685",
-  "note": "tutorial objective banner + ambient life near spawn",
-  "timestamp": "2026-10-13T22:01:30.003Z",
-  "cacheBuster": "mv7870k4"
+  "build": "686",
+  "note": "authored Mosslight town: path network to every door, plaza, walls + gatehouse, garden",
+  "timestamp": "2026-10-14T00:19:46.273Z",
+  "cacheBuster": "mv7d4u01"
 }

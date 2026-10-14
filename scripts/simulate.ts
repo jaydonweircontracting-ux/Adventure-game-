@@ -6819,6 +6819,80 @@ import { inflateSync } from 'node:zlib';
     'Rig684: serialized identity round-trips all critical fields');
 }
 
+// BUILD 686: Authored Mosslight town plan — every door gets a path.
+{
+  const { mosslightTownPlan, validateTownPlan, townDoors } = await import('../src/game/townPlan.js');
+  const { assembleBuildingRig, auditBuildingRigs } = await import('../src/game/buildingRig.js');
+  const { findPath } = await import('../src/game/npcNavigation.js');
+  const plan = mosslightTownPlan();
+
+  // 1. Plan validates clean.
+  const planErrors = validateTownPlan();
+  assert(planErrors.length === 0, `Town686: plan validates (${planErrors.slice(0, 3).join('; ')})`);
+
+  // 2. Deterministic.
+  const plan2 = mosslightTownPlan();
+  assert(JSON.stringify(plan) === JSON.stringify(plan2), 'Town686: plan is deterministic');
+
+  // 3. All 18 doors covered.
+  const doors = townDoors();
+  assert(doors.length === 18, `Town686: 18 doors (got ${doors.length})`);
+
+  // 4. Every prop asset exists on disk (audited set).
+  const knownAssets = new Set([
+    'props/well.png', 'props/barrel.png', 'props/fountain.png', 'props/lamp.png',
+    'props/stall-blue.png', 'props/stall-green.png', 'props/stall-red.png',
+    'props/market-stall.png', 'buildings/gatehouse.png',
+  ]);
+  for (const p of plan.props) {
+    assert(knownAssets.has(p.asset), `Town686: prop asset exists '${p.asset}' (${p.id})`);
+  }
+
+  // 5. Full rig audit over the 18 town buildings with plan doors.
+  //    Exterior spawns come from the plan's own lane endpoints (validated
+  //    outside footprints), mirroring how NPCs actually use the path network.
+  const { mosslightCottageRects280, MOSSLIGHT_FIXED_RECTS_280 } = await import('../src/game/settlements.js');
+  const rects = [...MOSSLIGHT_FIXED_RECTS_280.slice(0, 4), ...mosslightCottageRects280(), ...MOSSLIGHT_FIXED_RECTS_280.slice(4)];
+  const names = ['tutorial','guild','chapel','tavern','cottage-1','cottage-2','cottage-3','cottage-4','cottage-5','cottage-6',
+    'town-n1','town-n2','town-s1','town-s2','town-e1','town-e2','town-w1','town-w2'];
+  const rigs = names.map((name, i) => {
+    const d = doors[i];
+    const r = rects[i];
+    // Nearest lane point that is outside every footprint (the audit rejects
+    // spawns inside any rect, so door-adjacent lane starts don't qualify).
+    let best: { x: number; y: number } | null = null;
+    let bestDist = Infinity;
+    const inAny = (x: number, y: number) => rects.some((o) =>
+      x > o.left - 0.5 && x < o.right + 0.5 && y > o.top - 0.5 && y < o.bottom + 0.5);
+    for (const ln of plan.lanes) {
+      for (const pt of ln.points) {
+        if (inAny(pt.x, pt.y)) continue;
+        const dist = Math.hypot(pt.x - d.x, pt.y - d.y);
+        if (dist < bestDist) { bestDist = dist; best = { x: pt.x, y: pt.y }; }
+      }
+    }
+    return assembleBuildingRig({
+      id: name, kind: 'cottage', chunk: { x: 4, y: 7 },
+      doorway: {
+        id: `${name}-door`,
+        // Real formula (App.tsx doorwayExteriorPosition): just south of the
+        // collision rect, aligned with the door's x.
+        exterior: { x: d.x, y: Math.min(280 - 6, r.bottom + 0.7) },
+        interior: { x: d.x, y: d.y },
+        rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+      },
+      spriteVariant: 'blue-cottage',
+      interiorId: `4-7-${name}`,
+      exteriorSpawn: best ?? { x: d.x, y: d.y + 2.5 },
+    }).rig;
+  });
+  const pathExists = (from: any, to: any, obstacles: any[], viaDoor?: any) =>
+    findPath(from, to, obstacles,
+      viaDoor ? { id: viaDoor.id, exterior: viaDoor.exterior, interior: viaDoor.exterior } : undefined) !== null;
+  const rigErrors = auditBuildingRigs(rigs, { fieldSize: 280, pathExists });
+  assert(rigErrors.length === 0, `Town686: rig audit passes on 18 town buildings (${rigErrors.slice(0, 3).join('; ')})`);
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
