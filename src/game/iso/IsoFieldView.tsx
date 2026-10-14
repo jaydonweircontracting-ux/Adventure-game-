@@ -24,7 +24,7 @@ import { computeDirtPathGeometry, buildDirtPath2D, DIRT_LAYER_STYLE } from './di
 // BUILD 389: user-supplied landscape tileset + ambient critters.
 import {
   preloadIsoTiles, isoTilesReady, drawGroundTile, drawDecor,
-  groundTileFor, decorTileFor,
+  groundTileFor, decorTileFor, mosslightSandAt,
 } from './isoTiles';
 import {
   preloadCritters, crittersReady, crittersForChunk, critterPose, drawCritter,
@@ -324,8 +324,15 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         // 576 diamonds for 9 chunks — still cheap, but looks like grass.
         const SUB = 8;
         const subN = N / SUB;
+        // BUILD 695: sandy base color inside the Mosslight town mask.
+        const desertCol = fieldPalettes.desert.field;
+        const sdr = parseInt(desertCol.slice(1, 3), 16);
+        const sdg = parseInt(desertCol.slice(3, 5), 16);
+        const sdb = parseInt(desertCol.slice(5, 7), 16);
         for (const sc of scenes) {
           const cx0 = (chunk.x + sc.ox) * N, cy0 = (chunk.y + sc.oy) * N;
+          const nearTown = (chunk.x + sc.ox) >= 3 && (chunk.x + sc.ox) <= 5 &&
+            (chunk.y + sc.oy) >= 6 && (chunk.y + sc.oy) <= 8;
           const baseCol = sc.palette.field;
           // Parse base color to RGB for variation.
           const br = parseInt(baseCol.slice(1, 3), 16);
@@ -334,6 +341,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           for (let sy = 0; sy < SUB; sy++) {
             for (let sx = 0; sx < SUB; sx++) {
               const tx0 = cx0 + sx * subN, ty0 = cy0 + sy * subN;
+              // BUILD 695: sandy ground inside the Mosslight town mask.
+              const isSand = nearTown && mosslightSandAt(tx0 + subN / 2, ty0 + subN / 2) > 0.5;
+              const cr = isSand ? sdr : br, cg = isSand ? sdg : bg, cb = isSand ? sdb : bb;
               const p00 = isoToScreen(tx0, ty0);
               const p10 = isoToScreen(tx0 + subN, ty0);
               const p11 = isoToScreen(tx0 + subN, ty0 + subN);
@@ -341,9 +351,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
               // Deterministic hash for subtle brightness variation (±8%).
               const h = Math.abs(Math.sin((tx0 * 12.9898 + ty0 * 78.233) * 43758.5453) % 1);
               const v = 0.92 + h * 0.16;
-              const r = Math.min(255, Math.round(br * v));
-              const gg = Math.min(255, Math.round(bg * v));
-              const b2 = Math.min(255, Math.round(bb * v));
+              const r = Math.min(255, Math.round(cr * v));
+              const gg = Math.min(255, Math.round(cg * v));
+              const b2 = Math.min(255, Math.round(cb * v));
               g.fillStyle = `rgb(${r},${gg},${b2})`;
               g.beginPath();
               g.moveTo(p00.x, p00.y); g.lineTo(p10.x, p10.y);
@@ -381,6 +391,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             }
           }
           let tileDrawn = false;
+          // BUILD 695: storybook sandy ground inside Mosslight — radial mask
+          // in world coords. Roads/plaza/water keep their own tiles (branch
+          // order below); everything else inside the mask gets sand.
+          const absCxS = chunk.x + sc.ox, absCyS = chunk.y + sc.oy;
+          const sandy = absCxS >= 3 && absCxS <= 5 && absCyS >= 6 && absCyS <= 8 &&
+            mosslightSandAt(lx + absCxS * 280, ly + absCyS * 280) > 0.5;
           if (tilesOn) {
             let tn: number;
             // BUILD 604: Cobblestone plaza in starting town (124-164, 124-164).
@@ -390,12 +406,15 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             if (isOcean || wet) tn = groundTileFor('ocean', lx, ly, sc.ox, sc.oy);
             else if (inPlaza) tn = groundTileFor('cobble', lx, ly, sc.ox, sc.oy);
             else if (roadHere) tn = groundTileFor('road', lx, ly, sc.ox, sc.oy);
+            else if (sandy) tn = groundTileFor('desert', lx, ly, sc.ox, sc.oy);
             else tn = groundTileFor(terr, lx, ly, sc.ox, sc.oy);
             tileDrawn = drawGroundTile(g, tn, p.x, p.y);
           }
           if (!tileDrawn) {
             let col = sc.palette.field;
             if (roadHere) col = sc.palette.path;
+            // BUILD 695: sandy fallback color inside the Mosslight mask.
+            else if (sandy && !wet) col = fieldPalettes.desert.field;
             // BUILD 604: plaza fallback color (cobblestone gray)
             const absCx2 = chunk.x + sc.ox, absCy2 = chunk.y + sc.oy;
             const wx2 = lx + absCx2 * 280, wy2 = ly + absCy2 * 280;
@@ -429,7 +448,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
               g.fillStyle = 'rgba(0,0,0,0.05)';
               g.fill();
             }
-            const dn = decorTileFor(terr, lx, ly, sc.ox, sc.oy);
+            // BUILD 695: clean sandy streets — no decor sprites on town sand
+            // (desert rocks would litter the market square).
+            const dn = sandy ? -1 : decorTileFor(terr, lx, ly, sc.ox, sc.oy);
             if (dn >= 0) drawDecor(g, dn, p.x, p.y);
           }
         }
@@ -444,7 +465,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         const bx = sc.ox * N, by = sc.oy * N;
         for (const p of decor.plazas) {
           const c = isoToScreen(p.x + bx, p.y + by);
-          g.fillStyle = 'rgba(124, 168, 88, 0.35)'; // village green
+          // BUILD 695: sandy plaza decal (was village green) — matches the
+          // storybook sandy streets.
+          g.fillStyle = 'rgba(216, 186, 132, 0.35)'; // sandy plaza
           g.beginPath();
           g.ellipse(c.x, c.y, p.r * 32, p.r * 16, 0, 0, 7);
           g.fill();

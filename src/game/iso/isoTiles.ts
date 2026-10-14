@@ -63,6 +63,33 @@ export function decorTileFor(terrain: string, lx: number, ly: number, ox: number
 }
 
 // ---------------------------------------------------------------------------
+// BUILD 695: storybook sandy ground inside Mosslight (chunk 4,7).
+// Seeded radial mask around the town center (world 1264,2104 = chunk-local
+// 144,144): sandy tan inside, blending to green at the town edge. Pure and
+// deterministic — the same (wx,wy) always gives the same answer.
+// ---------------------------------------------------------------------------
+
+/** Mosslight town center in world tile coords (chunk 4,7 local 144,144). */
+export const MOSSLIGHT_SAND_CX = 4 * 280 + 144;
+export const MOSSLIGHT_SAND_CY = 7 * 280 + 144;
+
+/**
+ * Sandy-ground mask at world tile coords: 1 = full sand, 0 = normal terrain.
+ * The blend edge wobbles deterministically with angle so the sand/green
+ * boundary isn't a perfect circle.
+ */
+export function mosslightSandAt(wx: number, wy: number): number {
+  const dx = wx - MOSSLIGHT_SAND_CX, dy = wy - MOSSLIGHT_SAND_CY;
+  const d = Math.hypot(dx, dy);
+  const ang = Math.atan2(dy, dx);
+  const wob = Math.abs(Math.sin(ang * 3.7 + 1.3) * 0.5 + Math.sin(ang * 7.9 + 4.1) * 0.5);
+  const rIn = 100, rOut = 128 + wob * 14;
+  if (d <= rIn) return 1;
+  if (d >= rOut) return 0;
+  return (rOut - d) / (rOut - rIn);
+}
+
+// ---------------------------------------------------------------------------
 // Loading + canvas draw
 // ---------------------------------------------------------------------------
 

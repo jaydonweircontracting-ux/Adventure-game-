@@ -1,6 +1,6 @@
 {
-  "build": "694",
-  "note": "storybook sprite set (civic tower, angel statue, hedge maze walls, wooden cart) + ambient market life (NPC shoppers, stall browsers, errand loops)",
-  "timestamp": "2026-10-14T05:48:57.661Z",
-  "cacheBuster": "mv7ow69p"
+  "build": "695",
+  "note": "storybook town content: market square with striped-stall rows, angel statue centerpiece, hedge-maze garden with fountain, wooden carts, sandy tan streets in Mosslight",
+  "timestamp": "2026-10-14T06:45:18.875Z",
+  "cacheBuster": "mv7qwn8b"
 }

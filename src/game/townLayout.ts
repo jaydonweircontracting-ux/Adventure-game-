@@ -69,7 +69,9 @@ export interface PinnedLot {
   district: DistrictKind;
   kind: LotKind;
 }
-export type PropKind = 'fountain' | 'stall' | 'lamp' | 'barrel' | 'well' | 'gatehouse';
+export type PropKind = 'fountain' | 'stall' | 'lamp' | 'barrel' | 'well' | 'gatehouse'
+  // BUILD 695: storybook market/garden kinds.
+  | 'statue' | 'hedge' | 'cart';
 export interface TLProp {
   id: string;
   kind: PropKind;
@@ -969,18 +971,92 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     });
   const nearPinnedDoor = (x: number, y: number, r = 2.5): boolean =>
     pinnedDoors.some(({ door }) => Math.hypot(x - door.x, y - door.y) < r);
+  // BUILD 695: lane-corridor guard (689 contract) — exact point-to-segment
+  // distance over every road. A prop "blocks a path" when it enters the
+  // corridor; need = extra clearance beyond the road half-width.
+  const clearOfRoads = (x: number, y: number, need: number): boolean => {
+    for (const r of roads) {
+      const pts = r.points, half = r.width / 2;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const ax = pts[i].x, ay = pts[i].y;
+        const dx = pts[i + 1].x - ax, dy = pts[i + 1].y - ay;
+        const l2 = dx * dx + dy * dy;
+        let t = l2 > 0 ? ((x - ax) * dx + (y - ay) * dy) / l2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        if (Math.hypot(x - (ax + t * dx), y - (ay + t * dy)) < half + need) return false;
+      }
+    }
+    return true;
+  };
+  // All three guards a market/garden prop must pass (689 contract: no prop
+  // may block a door, path, or exit).
+  const propSpotOk = (x: number, y: number, roadNeed: number, fpMargin = 0.5): boolean =>
+    clearOfRoads(x, y, roadNeed) && !footprintAt(x, y, fpMargin) && !nearPinnedDoor(x, y);
 
-  // Fountain at the plaza center (decor only, like the old market square).
-  addProp('fountain', plazaC.x, plazaC.y, 1.2, false, 'props/fountain.png');
-  // Market stalls in rows around the plaza (decor only).
-  const stallSpots: [number, number, string][] = [
-    [-12, -14, 'props/stall-red.png'], [0, -14, 'props/stall-blue.png'],
-    [12, -14, 'props/stall-green.png'], [-12, 14, 'props/stall-blue.png'],
-    [0, 14, 'props/stall-red.png'], [12, 14, 'props/stall-green.png'],
-    [-16, 0, 'props/market-stall.png'], [16, 0, 'props/market-stall.png'],
-  ];
-  for (const [dx, dy, asset] of stallSpots) {
-    addProp('stall', plazaC.x + dx, plazaC.y + dy, 0.9, false, asset);
+  // BUILD 695: angel statue at the plaza center (decor only, like the
+  // fountain it replaces — the north-south street passes ~1u east of the
+  // center, so a solid centerpiece would block the path).
+  addProp('statue', plazaC.x, plazaC.y, 2.0, false, 'props/statue-angel.png');
+  // Market stalls in denser rows around the plaza (decor only). Candidates
+  // form full rows/columns; the lane/door/footprint guards carve the gaps
+  // where streets cross, so no stall ever sits on a path.
+  const stallAssets = ['props/stall-red.png', 'props/stall-blue.png',
+    'props/stall-green.png', 'props/market-stall.png'];
+  const stallCands: [number, number][] = [];
+  for (let i = 0; i < 7; i++) stallCands.push([-16 + i * (40 / 6), -18]);  // north row
+  for (let i = 0; i < 8; i++) stallCands.push([-18 + i * (44 / 7), 17]);  // south row
+  for (let i = 0; i < 4; i++) stallCands.push([-19, -10 + i * (20 / 3)]);  // west column
+  for (let i = 0; i < 4; i++) stallCands.push([27, -10 + i * (20 / 3)]);   // east column
+  for (let i = 0; i < 4; i++) stallCands.push([-4 + i * 4, -26]);          // north row 2 (short)
+  for (let i = 0; i < 10; i++) stallCands.push([-22 + i * (48 / 9), 25]);  // south row 2 (full)
+  let stallAssetIdx = 0;
+  for (const [dx, dy] of stallCands) {
+    const x = plazaC.x + dx, y = plazaC.y + dy;
+    if (!propSpotOk(x, y, 1.5)) continue;
+    addProp('stall', x, y, 1.4, false, stallAssets[stallAssetIdx++ % stallAssets.length]);
+  }
+  // BUILD 695: wooden carts near the market edge (solid, like barrels).
+  for (const [dx, dy] of [[-28, -8], [-14, 22], [-8, -24]] as [number, number][]) {
+    const x = plazaC.x + dx, y = plazaC.y + dy;
+    if (!propSpotOk(x, y, 2.2, 1.5)) continue;
+    addProp('cart', x, y, 1.2, true, 'props/cart-wood.png');
+  }
+  // BUILD 695: hedge-maze garden NE of the plaza (storybook top-right).
+  // Concentric broken hedge rings around a central fountain; the gaps are
+  // the maze entrances (offset per ring so it reads as a maze, not a box).
+  // Solid walls, walkable gaps.
+  const gardenC = { x: plazaC.x + 31, y: plazaC.y - 54 };
+  const hedgeSeen = new Set<string>(); // ring corners are shared — place once
+  const hedgeLine = (x0: number, y0: number, x1: number, y1: number,
+      gapAlong: number | null, gapHalf: number): void => {
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    const n = Math.max(2, Math.round(len / 2.5) + 1);
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1), along = t * len;
+      if (gapAlong !== null && Math.abs(along - gapAlong) < gapHalf) continue;
+      const x = gardenC.x + x0 + (x1 - x0) * t;
+      const y = gardenC.y + y0 + (y1 - y0) * t;
+      const key = `${x.toFixed(3)},${y.toFixed(3)}`;
+      if (hedgeSeen.has(key)) continue;
+      hedgeSeen.add(key);
+      if (!propSpotOk(x, y, 1.0, 1.0)) continue;
+      // r=2.6: the hedge sprite's content is ~48% of its frame, so the
+      // visible wall (~2.5u) matches the 2.5u piece spacing — continuous
+      // maze walls, not scattered bushes.
+      addProp('hedge', x, y, 2.6, true, 'props/hedge-straight.png');
+    }
+  };
+  hedgeLine(-10, -10, 10, -10, 10, 3);  // outer north, entrance gap
+  hedgeLine(-10, 10, 10, 10, null, 0);   // outer south, full
+  hedgeLine(-10, -10, -10, 10, null, 0); // outer west, full
+  hedgeLine(10, -10, 10, 10, 10, 3);    // outer east, entrance gap
+  hedgeLine(-5, -5, 5, -5, null, 0);    // inner north, full
+  hedgeLine(-5, 5, 5, 5, 5, 3);         // inner south, entrance gap (offset)
+  hedgeLine(-5, -5, -5, 5, 5, 3);       // inner west, entrance gap (offset)
+  hedgeLine(5, -5, 5, 5, null, 0);       // inner east, full
+  // The old plaza fountain becomes the garden centerpiece (decor only).
+  if (propSpotOk(gardenC.x, gardenC.y, 1.5, 1.5) && !nearPinnedDoor(gardenC.x, gardenC.y, 4)) {
+    addProp('fountain', gardenC.x, gardenC.y, 1.2, false, 'props/fountain.png');
   }
   // Plaza corner lamps (solid, like the old plan's lamps).
   for (const [dx, dy] of [[-20, -12], [20, -12], [-20, 12], [20, 12]] as [number, number][]) {

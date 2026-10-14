@@ -7080,6 +7080,8 @@ import { inflateSync } from 'node:zlib';
     'props/well.png', 'props/barrel.png', 'props/fountain.png', 'props/lamp.png',
     'props/stall-blue.png', 'props/stall-green.png', 'props/stall-red.png',
     'props/market-stall.png', 'buildings/gatehouse.png',
+    // BUILD 695: storybook content assets.
+    'props/statue-angel.png', 'props/hedge-straight.png', 'props/cart-wood.png',
   ]);
   for (const p of mosslightEngineProps()) {
     assert(knownAssets.has(p.asset), `Town690: prop asset exists '${p.asset}' (${p.id})`);
@@ -7255,6 +7257,127 @@ import { inflateSync } from 'node:zlib';
   }
   const tst = fs.statSync('public/buildings/story-tower.png', { throwIfNoEntry: false });
   assert(tst !== undefined && tst.isFile(), 'Story694: building file public/buildings/story-tower.png exists');
+}
+
+// BUILD 695: storybook town content — market square, angel statue, hedge
+// garden, sandy streets. Placement + palette only (no gameplay change).
+{
+  const { mosslightEngineLayout, mosslightEngineProps, mosslightPinnedRects,
+    MOSSLIGHT_PINNED_NAMES } = await import('../src/game/mosslightLayout.js');
+  const { toChunkSpace } = await import('../src/game/townLayout.js');
+  const { fieldDoorPosition, newHouseDoorPosition, isNewStyleDoorBuilding } =
+    await import('../src/game/doorGeometry.js');
+  const { marketStallsFromDecor } = await import('../src/game/townsfolk.js');
+  const { mosslightSettlementDecor } = await import('../src/game/settlements.js');
+  const { mosslightSandAt, MOSSLIGHT_SAND_CX, MOSSLIGHT_SAND_CY } =
+    await import('../src/game/iso/isoTiles.js');
+
+  const layout = mosslightEngineLayout();
+  const chunked = toChunkSpace(layout);
+  const props = mosslightEngineProps();
+
+  // 1. Angel statue: exactly one, at the plaza center, decor-only (the
+  // north-south street passes ~1u east of center, so a solid centerpiece
+  // would block the path — same non-solid treatment as the fountain it
+  // replaces).
+  const statues = props.filter((p) => p.asset === 'props/statue-angel.png');
+  assert(statues.length === 1, `Town695: exactly one angel statue (got ${statues.length})`);
+  assert(Math.abs(statues[0].x - 144) < 0.01 && Math.abs(statues[0].y - 144) < 0.01,
+    `Town695: statue at plaza center (got ${statues[0].x},${statues[0].y})`);
+  assert(statues[0].solid === false, 'Town695: statue is decor-only (non-solid)');
+
+  // 2. Denser stall rows: more than the 8 pre-695 spots, all striped-awning
+  // assets, all decor-only.
+  const stallAssets695 = ['props/stall-red.png', 'props/stall-blue.png',
+    'props/stall-green.png', 'props/market-stall.png'];
+  const stalls = props.filter((p) => p.asset.includes('stall'));
+  assert(stalls.length >= 12, `Town695: denser stall rows (got ${stalls.length}, want >= 12)`);
+  for (const s of stalls) {
+    assert(stallAssets695.includes(s.asset), `Town695: stall asset audited '${s.asset}'`);
+    assert(s.solid === false, `Town695: stall ${s.id} decor-only`);
+  }
+
+  // 3. Hedge maze garden: substantial ring fragment + fountain centerpiece;
+  // 2-3 wooden carts near the market edge.
+  const hedges = props.filter((p) => p.asset === 'props/hedge-straight.png');
+  assert(hedges.length >= 20, `Town695: hedge maze fragment (got ${hedges.length}, want >= 20)`);
+  for (const h of hedges) assert(h.solid === true, `Town695: hedge ${h.id} solid`);
+  const fountains = props.filter((p) => p.asset === 'props/fountain.png');
+  assert(fountains.length === 1, `Town695: fountain relocated to garden (got ${fountains.length})`);
+  assert(Math.hypot(fountains[0].x - 175, fountains[0].y - 90) < 2,
+    `Town695: fountain at garden center (got ${fountains[0].x},${fountains[0].y})`);
+  const carts = props.filter((p) => p.asset === 'props/cart-wood.png');
+  assert(carts.length >= 2 && carts.length <= 3, `Town695: 2-3 wooden carts (got ${carts.length})`);
+  for (const c of carts) assert(c.solid === true, `Town695: cart ${c.id} solid`);
+
+  // 4. Plaza corner lamps present (storybook streets); all arterial lamps
+  // use the storybook lamp asset.
+  const lamps = props.filter((p) => p.asset === 'props/lamp.png');
+  const cornerLamps = lamps.filter((p) =>
+    Math.hypot(Math.abs(p.x - 144) - 20, Math.abs(p.y - 144) - 12) < 1.5);
+  assert(cornerLamps.length === 4, `Town695: 4 plaza-corner lamps (got ${cornerLamps.length})`);
+
+  // 5. Well placed exactly once.
+  const wells = props.filter((p) => p.asset === 'props/well.png');
+  assert(wells.length === 1, `Town695: exactly one well (got ${wells.length})`);
+
+  // 6. 689 contract on the new content: no prop may block a door, path, or
+  // exit. Door trigger zones (>= 2.5u, the placement guard) and lane
+  // corridors (centerline >= halfwidth + 1.0) for every new prop; building
+  // footprints keep clear too. The statue is exempt from the corridor check:
+  // the plaza center is the mandated centerpiece spot and it is non-solid,
+  // so it cannot block — same as the fountain it replaced.
+  const rects = mosslightPinnedRects();
+  const doors = rects.map((r, i) => isNewStyleDoorBuilding(MOSSLIGHT_PINNED_NAMES[i])
+    ? newHouseDoorPosition(r) : fieldDoorPosition(r));
+  const newAssetSet = new Set(['props/statue-angel.png', 'props/hedge-straight.png',
+    'props/cart-wood.png', 'props/fountain.png', ...stallAssets695]);
+  const newProps = props.filter((p) => newAssetSet.has(p.asset));
+  const distSeg = (px: number, py: number, ax: number, ay: number, bx: number, by: number): number => {
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+    let t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+  };
+  for (const p of newProps) {
+    let dd = Infinity;
+    for (const d of doors) dd = Math.min(dd, Math.hypot(p.x - d.x, p.y - d.y));
+    assert(dd >= 2.5, `Town695: prop ${p.id} clear of door trigger zones (${dd.toFixed(2)})`);
+    if (p.asset !== 'props/statue-angel.png') {
+      let lm = Infinity;
+      for (const r of chunked.roads) {
+        for (let i = 0; i < r.points.length - 1; i++) {
+          const m = distSeg(p.x, p.y, r.points[i].x, r.points[i].y,
+            r.points[i + 1].x, r.points[i + 1].y) - r.width / 2;
+          if (m < lm) lm = m;
+        }
+      }
+      assert(lm >= 1.0, `Town695: prop ${p.id} clear of lane corridors (${lm.toFixed(2)})`);
+      const inBldg = layout.lots.some((l) => {
+        if (l.kind !== 'building') return false;
+        const f = l.footprint, ox = p.x - 140, oy = p.y - 140;
+        return ox > f.left - 0.5 && ox < f.right + 0.5 && oy > f.top - 0.5 && oy < f.bottom + 0.5;
+      });
+      assert(!inBldg, `Town695: prop ${p.id} not inside a building footprint`);
+    }
+  }
+
+  // 7. NPC market life reads the new stalls dynamically (live decor path).
+  const base = mosslightSettlementDecor();
+  const liveStalls = marketStallsFromDecor([...base.props, ...props]);
+  assert(liveStalls.length >= 12,
+    `Town695: marketStallsFromDecor sees the denser rows (got ${liveStalls.length})`);
+
+  // 8. Sandy mask: full sand at town center, green far away, deterministic,
+  // blend band strictly between.
+  assert(MOSSLIGHT_SAND_CX === 1264 && MOSSLIGHT_SAND_CY === 2104,
+    'Town695: sand mask centered on Mosslight town center');
+  assert(mosslightSandAt(1264, 2104) === 1, 'Town695: full sand at town center');
+  assert(mosslightSandAt(1264 + 300, 2104) === 0, 'Town695: green far outside town');
+  assert(mosslightSandAt(1264, 2104 - 300) === 0, 'Town695: green far outside town (north)');
+  const mid = mosslightSandAt(1264 + 115, 2104);
+  assert(mid > 0 && mid < 1, `Town695: blend band at edge (got ${mid})`);
+  assert(mosslightSandAt(1264 + 115, 2104) === mid, 'Town695: sand mask deterministic');
 }
 
 // BUILD 688: Procedural town layout engine — seeded, validated blueprints.
