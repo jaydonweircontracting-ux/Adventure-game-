@@ -24,7 +24,9 @@ import { computeDirtPathGeometry, buildDirtPath2D, DIRT_LAYER_STYLE } from './di
 // BUILD 389: user-supplied landscape tileset + ambient critters.
 import {
   preloadIsoTiles, isoTilesReady, drawGroundTile, drawDecor,
-  groundTileFor, decorTileFor, mosslightSandAt,
+  groundTileFor, decorTileFor, mosslightSandAt, hashTile,
+  farmlandPlotAt, farmlandDetailAt, FARM_BASE_COLORS, FARM_TRACK,
+  FARM_DET_HEDGE, FARM_DET_FENCE, FARM_DET_HOUSE, FARM_DET_BARN,
 } from './isoTiles';
 import {
   preloadCritters, crittersReady, crittersForChunk, critterPose, drawCritter,
@@ -57,6 +59,63 @@ import {
 // once per chunk key and re-stroked every frame — zero per-frame allocation.
 type DirtPathCacheEntry = ReturnType<typeof buildDirtPath2D>;
 const dirtPathCache = new Map<string, DirtPathCacheEntry>();
+
+// ---------------------------------------------------------------------------
+// BUILD 698 helpers
+// ---------------------------------------------------------------------------
+
+/** Brightness-scaled rgb() string from a hex color (cheap, no allocation per tile when precomputed). */
+function shadeOf(hex: string, v: number): string {
+  const r = Math.min(255, Math.round(parseInt(hex.slice(1, 3), 16) * v));
+  const g = Math.min(255, Math.round(parseInt(hex.slice(3, 5), 16) * v));
+  const b = Math.min(255, Math.round(parseInt(hex.slice(5, 7), 16) * v));
+  return `rgb(${r},${g},${b})`;
+}
+
+/**
+ * Pre-tinted goat sprite. Goats reuse the deer strip as a placeholder; the
+ * old per-frame white fillRect over the whole bounding box read as a broken
+ * white rectangle. Tint once at load (source-atop on the deer strip),
+ * cache on the window, draw like any other sprite afterwards.
+ */
+function goatTintedImg(): HTMLCanvasElement | null {
+  const w = window as unknown as {
+    __goatTinted?: HTMLCanvasElement;
+    __critterImgs?: Record<string, HTMLImageElement>;
+  };
+  if (w.__goatTinted) return w.__goatTinted;
+  const deer = w.__critterImgs?.deer;
+  if (!deer || !deer.complete || deer.naturalWidth === 0) return null;
+  const c = document.createElement('canvas');
+  c.width = deer.naturalWidth; c.height = deer.naturalHeight;
+  const ctx = c.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(deer, 0, 0);
+  ctx.globalCompositeOperation = 'source-atop';
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillRect(0, 0, c.width, c.height);
+  w.__goatTinted = c;
+  return c;
+}
+
+/**
+ * Procedural fence tile sprite, pre-rendered once (no fence art exists in
+ * props/). Wood posts + rails sized to one iso diamond; drawn with a single
+ * drawImage per boundary tile.
+ */
+function farmFenceSprite(): HTMLCanvasElement {
+  const w = window as unknown as { __farmFence?: HTMLCanvasElement };
+  if (w.__farmFence) return w.__farmFence;
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 32;
+  const x = c.getContext('2d')!;
+  x.strokeStyle = '#7a5c3a'; x.lineWidth = 5; x.lineCap = 'round';
+  x.beginPath(); x.moveTo(2, 9); x.lineTo(62, 9); x.moveTo(2, 23); x.lineTo(62, 23); x.stroke();
+  x.fillStyle = '#5e4429';
+  x.fillRect(7, 2, 7, 28); x.fillRect(50, 2, 7, 28);
+  w.__farmFence = c;
+  return c;
+}
 
 interface IsoFieldViewProps {
   chunk: Point;
@@ -123,7 +182,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       ...Object.values(BUILDING_ASSET_META).map((m) => m.file),
       'props/market-stall.png', 'props/stall-red.png', 'props/stall-blue.png',
       'props/stall-green.png', 'props/barrel.png', 'props/well.png',
-      'props/fountain.png', 'props/lamp.png',
+      'props/fountain.png', 'props/lamp.png', 'props/hedge-straight.png',
+      'props/cart-wood.png',
     ];
     for (const src of urls) {
       const img = new Image();
@@ -279,6 +339,24 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       const skipDirt = (frame as unknown as { __skipDirt?: boolean }).__skipDirt
         ?? ((frame as unknown as { __skipDirt?: boolean }).__skipDirt =
           new URLSearchParams(location.search).get('nodirt') === '1');
+      // BUILD 698: perf-debug hook (?nofarm=1): skip the farmland ring for A/B timing.
+      const skipFarm = (frame as unknown as { __skipFarm?: boolean }).__skipFarm
+        ?? ((frame as unknown as { __skipFarm?: boolean }).__skipFarm =
+          new URLSearchParams(location.search).get('nofarm') === '1');
+      // BUILD 698: precomputed shade palettes — seeded per-tile brightness
+      // variation for sand (±2%, subtle like the reference) and farmland
+      // plots (±5%). Built once per frame so the per-tile ground loop does
+      // zero allocation.
+      const sandShades: string[] = [];
+      for (let i = 0; i < 8; i++) sandShades.push(shadeOf(fieldPalettes.desert.field, 0.98 + (i / 7) * 0.04));
+      const farmShades: string[][] = FARM_BASE_COLORS.map((hex) => {
+        const arr: string[] = [];
+        for (let i = 0; i < 4; i++) arr.push(shadeOf(hex, 0.95 + (i / 3) * 0.10));
+        return arr;
+      });
+      // BUILD 698: farmstead building sites (farmhouse/barn) spotted in the
+      // ground pass; drawn as depth-sorted drawables after the building pass.
+      const farmsteadQueue: Array<{ x: number; y: number; barn: boolean }> = [];
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const live = liveRef.current;
@@ -358,7 +436,18 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
               // BUILD 695: sandy ground inside the Mosslight town mask
               // (the mask is 0 outside town, so no chunk check needed).
               const isSand = mosslightSandAt(tx0 + subN / 2, ty0 + subN / 2) > 0.5;
-              const cr = isSand ? sdr : br, cg = isSand ? sdg : bg, cb = isSand ? sdb : bb;
+              // BUILD 698: farmland ring renders in the chunk-LOD path too
+              // (plot/track base color; hedge/fence boundaries are sub-pixel
+              // at this zoom so they resolve to the plot color).
+              const farm = (!skipFarm && !isSand)
+                ? farmlandPlotAt(tx0 + subN / 2, ty0 + subN / 2, isSand) : 0;
+              let cr = isSand ? sdr : br, cg = isSand ? sdg : bg, cb = isSand ? sdb : bb;
+              if (farm > 0) {
+                const fc = FARM_BASE_COLORS[farm - 1];
+                cr = parseInt(fc.slice(1, 3), 16);
+                cg = parseInt(fc.slice(3, 5), 16);
+                cb = parseInt(fc.slice(5, 7), 16);
+              }
               const p00 = isoToScreen(tx0, ty0);
               const p10 = isoToScreen(tx0 + subN, ty0);
               const p11 = isoToScreen(tx0 + subN, ty0 + subN);
@@ -382,15 +471,29 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         for (let tx = x0; tx <= x1; tx++) {
           const { ox, oy, lx, ly } = isoTileChunkOffset(tx, ty, N);
           const sc = sceneFor(ox, oy);
+          // BUILD 695: storybook sandy ground inside Mosslight — radial mask
+          // in world coords. Computed before the path so sand diamonds can
+          // be expanded to kill AA seams (below).
+          const absCxS = chunk.x + sc.ox, absCyS = chunk.y + sc.oy;
+          const sandy = absCxS >= 3 && absCxS <= 5 && absCyS >= 6 && absCyS <= 8 &&
+            mosslightSandAt(lx + absCxS * 280, ly + absCyS * 280) > 0.5;
+          // BUILD 698: world tile coords + farmland plot code (0 = none).
+          // Computed before the tileset branch so farm tiles use the flat
+          // plot-color fallback (like the 695 sand), not the meadow tileset.
+          const wxW = lx + absCxS * 280, wyW = ly + absCyS * 280;
+          const farmCode = skipFarm ? 0 : farmlandPlotAt(wxW, wyW, sandy);
           const terr = sc.tile.terrain;
-          const p = isoToScreen(tx, ty);
-          const hw = TILE_W / 2, hh = TILE_H / 2;
-          g.beginPath();
-          g.moveTo(p.x, p.y - hh); g.lineTo(p.x + hw, p.y);
-          g.lineTo(p.x, p.y + hh); g.lineTo(p.x - hw, p.y);
-          g.closePath();
           const isOcean = terr === 'ocean';
           const roadHere = isOcean ? false : isRoadTileFor(sc, lx, ly);
+          const p = isoToScreen(tx, ty);
+          const hw = TILE_W / 2, hh = TILE_H / 2;
+          // BUILD 698: expand sand/road diamonds ~1px so AA seams can't show
+          // the dark background — the "graph paper" grid lines.
+          const ex = (sandy || roadHere) && !isOcean ? 1 : 0;
+          g.beginPath();
+          g.moveTo(p.x, p.y - hh - ex); g.lineTo(p.x + hw + ex, p.y);
+          g.lineTo(p.x, p.y + hh + ex); g.lineTo(p.x - hw - ex, p.y);
+          g.closePath();
           // BUILD 369 (Phase 2b): authoritative rivers/lakes; road crossings draw as bridges.
           let wet = false;
           if (!isOcean) {
@@ -406,12 +509,6 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             }
           }
           let tileDrawn = false;
-          // BUILD 695: storybook sandy ground inside Mosslight — radial mask
-          // in world coords. Roads/plaza/water keep their own tiles (branch
-          // order below); everything else inside the mask gets sand.
-          const absCxS = chunk.x + sc.ox, absCyS = chunk.y + sc.oy;
-          const sandy = absCxS >= 3 && absCxS <= 5 && absCyS >= 6 && absCyS <= 8 &&
-            mosslightSandAt(lx + absCxS * 280, ly + absCyS * 280) > 0.5;
           if (tilesOn) {
             let tn: number;
             // BUILD 604: Cobblestone plaza in starting town (124-164, 124-164).
@@ -427,7 +524,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             // not the desert block tiles (tile_000-005 are raised 3D dirt
             // blocks — they tiled into a red-brown checkerboard). The
             // fallback draws fieldPalettes.desert.field, a warm flat sand.
-            else if (sandy) tn = -1;
+            // BUILD 698: farmland tiles likewise use the flat plot-color
+            // fallback so the seeded plot colors show.
+            else if (sandy || farmCode > 0) tn = -1;
             else tn = groundTileFor(terr, lx, ly, sc.ox, sc.oy);
             tileDrawn = tn >= 0 && drawGroundTile(g, tn, p.x, p.y);
           }
@@ -435,11 +534,22 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             let col = sc.palette.field;
             if (roadHere) col = sc.palette.path;
             // BUILD 695: sandy fallback color inside the Mosslight mask.
-            else if (sandy && !wet) col = fieldPalettes.desert.field;
+            // BUILD 698: seeded ±2% per-tile brightness on sandy tiles —
+            // subtle texture like the reference (the flat single fill was
+            // the "graph paper" root cause). The checkerboard darkening is
+            // skipped on sand in the detail block, and sand diamonds are
+            // expanded 1px at path build to kill AA seams.
+            else if (sandy && !wet) {
+              col = sandShades[hashTile(wxW, wyW, 698, 0, 0) % 8];
+            }
+            // BUILD 698: farmland ring — seeded plot colors outside the sand
+            // mask. Roads/water/plaza keep their own tiles; collision and the
+            // 689 door/path alignment are untouched (ground color only).
+            else if (farmCode > 0 && !wet) {
+              col = farmShades[farmCode - 1][hashTile(wxW, wyW, 698, 0, 0) % 4];
+            }
             // BUILD 604: plaza fallback color (cobblestone gray)
-            const absCx2 = chunk.x + sc.ox, absCy2 = chunk.y + sc.oy;
-            const wx2 = lx + absCx2 * 280, wy2 = ly + absCy2 * 280;
-            if (absCx2 === 0 && absCy2 === 0 && wx2 >= 124 && wx2 < 164 && wy2 >= 124 && wy2 < 164) {
+            if (absCxS === 0 && absCyS === 0 && wxW >= 124 && wxW < 164 && wyW >= 124 && wyW < 164) {
               col = '#9a9a9a';
             }
             if (wet) {
@@ -465,14 +575,37 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           // the home chunk's pattern; home chunk hash is unchanged.)
           // BUILD 389: tileset decor sprites replace the rect-based bits.
           if (showDetail && !isOcean && !roadHere && !wet) {
-            if ((lx + ly) % 2 === 1) {
+            // BUILD 698: skip the checkerboard darkening on sand and
+            // farmland — plots carry their own seeded variation and
+            // boundaries, so the extra darkening just re-grids them.
+            if ((lx + ly) % 2 === 1 && !sandy && farmCode === 0) {
               g.fillStyle = 'rgba(0,0,0,0.05)';
               g.fill();
             }
             // BUILD 695: clean sandy streets — no decor sprites on town sand
             // (desert rocks would litter the market square).
-            const dn = sandy ? -1 : decorTileFor(terr, lx, ly, sc.ox, sc.oy);
+            // BUILD 698: none on farmland either — meadow tufts on plowed
+            // soil read wrong; plots get hedge/fence boundaries instead.
+            const dn = (sandy || farmCode > 0) ? -1 : decorTileFor(terr, lx, ly, sc.ox, sc.oy);
             if (dn >= 0) drawDecor(g, dn, p.x, p.y);
+            // BUILD 698: farmland plot boundaries (hedges/fences) and
+            // farmstead building sites (drawn as drawables after the pass).
+            if (farmCode > 0 && farmCode !== FARM_TRACK) {
+              const det = farmlandDetailAt(wxW, wyW);
+              if (det === FARM_DET_HEDGE) {
+                const hedge = (window as unknown as { __propImgs?: Record<string, HTMLImageElement> })
+                  .__propImgs?.['props/hedge-straight.png'];
+                if (hedge && hedge.complete && hedge.naturalWidth > 0) {
+                  g.drawImage(hedge, p.x - hw, p.y - hh, TILE_W, TILE_H);
+                }
+              } else if (det === FARM_DET_FENCE) {
+                g.drawImage(farmFenceSprite(), p.x - hw, p.y - hh, TILE_W, TILE_H);
+              } else if (det === FARM_DET_HOUSE) {
+                farmsteadQueue.push({ x: wxW, y: wyW, barn: false });
+              } else if (det === FARM_DET_BARN) {
+                farmsteadQueue.push({ x: wxW, y: wyW, barn: true });
+              }
+            }
           }
         }
       }
@@ -656,6 +789,13 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
               const scale = targetW / sprite.naturalWidth;
               const sw = sprite.naturalWidth * scale;
               const sh = sprite.naturalHeight * scale;
+              // BUILD 698: soft elliptical ground shadow so sprite buildings
+              // don't float — centered at the base like the NPC/critter
+              // shadow direction (ellipse at feet, no offset).
+              g2.fillStyle = 'rgba(0,0,0,0.20)';
+              g2.beginPath();
+              g2.ellipse(cx, baseY, sw * 0.45, sw * 0.16, 0, 0, Math.PI * 2);
+              g2.fill();
               g2.drawImage(sprite, cx - sw / 2, baseY - sh, sw, sh);
               return;
             }
@@ -742,6 +882,39 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           },
         });
         } // end neighbor-chunk building loop
+      }
+
+      // BUILD 698: farmstead buildings (farmhouse + barn) in the farmland
+      // ring — visual scenery only: no doors, no triggers, no collision
+      // changes. Depth-sorted like real buildings, with the same soft
+      // ground shadow treatment.
+      for (const f of farmsteadQueue) {
+        const fc = isoToScreen(f.x + 0.5, f.y + 0.5);
+        const fvhw = (wpx / 2) / zm, fvhh = (hpx / 2) / zm;
+        if (fc.x < cam.x - fvhw - 100 || fc.x > cam.x + fvhw + 100 ||
+            fc.y < cam.y - fvhh - 150 || fc.y > cam.y + fvhh + 50) continue;
+        drawables.push({
+          depth: f.x + f.y,
+          draw: (g2) => {
+            const kind = f.barn ? 'house-timber' : 'hut-thatched';
+            const sprite = bldImgs[kind];
+            const e0 = isoToScreen(f.x + 0.5, f.y + 0.5);
+            const e1 = isoToScreen(f.x + 1.5, f.y + 0.5);
+            const tileEdge = Math.hypot(e1.x - e0.x, e1.y - e0.y);
+            const sw = tileEdge * 4.5;
+            const natW = sprite && sprite.complete && sprite.naturalWidth > 0 ? sprite.naturalWidth : 1600;
+            const natH = sprite && sprite.complete && sprite.naturalWidth > 0 ? sprite.naturalHeight : 1600;
+            const sh = sw * (natH / natW);
+            // ground shadow (same treatment as town buildings)
+            g2.fillStyle = 'rgba(0,0,0,0.20)';
+            g2.beginPath();
+            g2.ellipse(e0.x, e0.y, sw * 0.45, sw * 0.16, 0, 0, Math.PI * 2);
+            g2.fill();
+            if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+              g2.drawImage(sprite, e0.x - sw / 2, e0.y - sh, sw, sh);
+            }
+          },
+        });
       }
 
       // BUILD 600: Town walls — stone perimeter with gates (Exiled Kingdoms style).
@@ -1020,11 +1193,16 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
               g.fillStyle = 'rgba(0,0,0,0.25)';
               g.beginPath(); g.ellipse(sx, sy, s * 0.6, s * 0.15, 0, 0, Math.PI * 2); g.fill();
               // critter sprite (feet-anchored)
+              // BUILD 698: goats draw the pre-tinted strip (tint baked once
+              // at load by goatTintedImg) — no more white fillRect over the
+              // bounding box, which read as a broken white rectangle.
+              const dimg: HTMLImageElement | HTMLCanvasElement =
+                kind === 'goat' ? (goatTintedImg() ?? img) : img;
               const dw = frameW * (s / 24), dh = frameH * (s / 24);
               if (isStrip) {
-                g.drawImage(img, frameIdx * frameW, 0, frameW, frameH, sx - dw / 2, sy - dh, dw, dh);
+                g.drawImage(dimg, frameIdx * frameW, 0, frameW, frameH, sx - dw / 2, sy - dh, dw, dh);
               } else {
-                g.drawImage(img, sx - dw / 2, sy - dh, dw, dh);
+                g.drawImage(dimg, sx - dw / 2, sy - dh, dw, dh);
               }
               // BUILD 576: goats get distinctive curved horns (deer sprite is placeholder)
               if (kind === 'goat') {
@@ -1042,9 +1220,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
                 g.moveTo(hx + dw * 0.15, hy);
                 g.quadraticCurveTo(hx + dw * 0.25, hy - dh * 0.15, hx + dw * 0.18, hy - dh * 0.25);
                 g.stroke();
-                // White tint to distinguish from brown deer
-                g.fillStyle = 'rgba(255,255,255,0.25)';
-                g.fillRect(sx - dw / 2, sy - dh, dw, dh);
+                // BUILD 698: white tint is pre-baked into the goat sprite at
+                // load (goatTintedImg) — the old per-frame fillRect over the
+                // whole bounding box is gone.
               }
               // aggro marker
               if (goat.disposition === 'aggressive') {

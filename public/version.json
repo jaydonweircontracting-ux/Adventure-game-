@@ -1,6 +1,6 @@
 {
-  "build": "697",
-  "note": "clickable market stalls: tap a stall to open its shop — buy/sell with gold, per-stall stock that restocks each game day, stock persists in saves",
-  "timestamp": "2026-10-14T15:13:54.750Z",
-  "cacheBuster": "mv892pfj"
+  "build": "698",
+  "note": "farmland ring around Mosslight: seeded field plots in ochre/green/soil with dirt tracks, hedgerow and fence boundaries, farmstead farmhouses and barns; sand texture fix (seeded variation, no more grid lines or seams); soft shadows under buildings; goats no longer draw white boxes",
+  "timestamp": "2026-10-14T16:09:53.472Z",
+  "cacheBuster": "mv8b2p1c"
 }

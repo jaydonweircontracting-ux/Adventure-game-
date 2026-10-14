@@ -7380,6 +7380,83 @@ import { inflateSync } from 'node:zlib';
   assert(mosslightSandAt(1264 + 150, 2104) === mid, 'Town695: sand mask deterministic');
 }
 
+// BUILD 698: farmland ring around Mosslight — seeded field parcels outside
+// the sandy mask (plots, dirt tracks, hedge/fence boundaries, farmsteads).
+{
+  const { farmlandPlotAt, farmlandDetailAt, FARMSTEADS, FARM_CELL, FARM_RING_R,
+    FARM_NONE, FARM_OCHRE, FARM_GREEN, FARM_SOIL, FARM_TRACK,
+    FARM_DET_NONE, FARM_DET_HEDGE, FARM_DET_FENCE, FARM_DET_HOUSE, FARM_DET_BARN,
+    MOSSLIGHT_SAND_CX, MOSSLIGHT_SAND_CY, mosslightSandAt } =
+    await import('../src/game/iso/isoTiles.js');
+
+  // 1. No farmland inside the sand mask, outside the town chunks, or past the ring.
+  assert(farmlandPlotAt(MOSSLIGHT_SAND_CX, MOSSLIGHT_SAND_CY, true) === FARM_NONE,
+    'Town698: no farmland under the sand mask');
+  assert(farmlandPlotAt(0, 0, false) === FARM_NONE, 'Town698: no farmland outside town chunks');
+  assert(farmlandPlotAt(2 * 280, 7 * 280, false) === FARM_NONE, 'Town698: no farmland in chunk 2');
+  assert(farmlandPlotAt(6 * 280, 7 * 280, false) === FARM_NONE, 'Town698: no farmland in chunk 6');
+  assert(farmlandPlotAt(MOSSLIGHT_SAND_CX + FARM_RING_R + 50, MOSSLIGHT_SAND_CY, false) === FARM_NONE,
+    'Town698: no farmland beyond the ring');
+  // 2. Ring presence: all three plot palettes + dirt tracks exist in the ring.
+  const seen = new Set<number>();
+  for (let wx = MOSSLIGHT_SAND_CX - 320; wx <= MOSSLIGHT_SAND_CX + 320; wx += 3) {
+    for (let wy = MOSSLIGHT_SAND_CY - 320; wy <= MOSSLIGHT_SAND_CY + 320; wy += 7) {
+      const c = farmlandPlotAt(wx, wy, mosslightSandAt(wx, wy) > 0.5);
+      if (c > 0) seen.add(c);
+    }
+  }
+  assert(seen.has(FARM_OCHRE) && seen.has(FARM_GREEN) && seen.has(FARM_SOIL) && seen.has(FARM_TRACK),
+    `Town698: all palettes + tracks present in ring (got ${[...seen].sort()})`);
+  // 3. Determinism.
+  assert(farmlandPlotAt(1400, 1950, false) === farmlandPlotAt(1400, 1950, false),
+    'Town698: plot deterministic');
+  assert(farmlandDetailAt(1400, 1950) === farmlandDetailAt(1400, 1950),
+    'Town698: detail deterministic');
+  // 4. Farmsteads: in town chunks, outside the sand mask, tilled-soil plots
+  // with exactly one farmhouse marker and one barn marker each.
+  assert(FARMSTEADS.length === 3, `Town698: three farmsteads (got ${FARMSTEADS.length})`);
+  for (const [fx, fy] of FARMSTEADS) {
+    const acx = Math.floor(fx / 280), acy = Math.floor(fy / 280);
+    assert(acx >= 3 && acx <= 5 && acy >= 6 && acy <= 8,
+      `Town698: farmstead (${fx},${fy}) in town chunks`);
+    const s = mosslightSandAt(fx, fy) > 0.5;
+    assert(!s, `Town698: farmstead (${fx},${fy}) outside sand mask`);
+    assert(farmlandPlotAt(fx, fy, s) === FARM_SOIL,
+      `Town698: farmstead (${fx},${fy}) is tilled soil`);
+    assert(farmlandDetailAt(fx, fy) === FARM_DET_HOUSE,
+      `Town698: farmhouse marker at (${fx},${fy})`);
+    const px = Math.floor(fx / FARM_CELL), py = Math.floor(fy / FARM_CELL);
+    let barn = 0;
+    for (let t = 0; t < FARM_CELL * FARM_CELL; t++) {
+      if (farmlandDetailAt(px * FARM_CELL + (t % FARM_CELL),
+          py * FARM_CELL + Math.floor(t / FARM_CELL)) === FARM_DET_BARN) barn++;
+    }
+    assert(barn === 1, `Town698: exactly one barn in farmstead plot (${fx},${fy})`);
+  }
+  // 5. Boundaries: every edge tile of a normal plot gets a hedge or fence;
+  // interior tiles get nothing.
+  const bpx = 77, bpy = 108; // normal plot (not a farmstead), in the ring
+  const samplePlot = farmlandPlotAt(bpx * FARM_CELL + 5, bpy * FARM_CELL + 5, false);
+  assert(samplePlot >= FARM_OCHRE && samplePlot <= FARM_SOIL,
+    `Town698: sample plot is a normal plot (got ${samplePlot})`);
+  let nHedge = 0, nFence = 0;
+  for (let ly = 2; ly < FARM_CELL; ly++) {
+    for (let lx = 2; lx < FARM_CELL; lx++) {
+      const d = farmlandDetailAt(bpx * FARM_CELL + lx, bpy * FARM_CELL + ly);
+      const edge = lx === 2 || ly === 2 || lx === FARM_CELL - 1 || ly === FARM_CELL - 1;
+      if (edge) {
+        assert(d === FARM_DET_HEDGE || d === FARM_DET_FENCE,
+          `Town698: boundary tile gets hedge/fence (got ${d})`);
+        if (d === FARM_DET_HEDGE) nHedge++; else nFence++;
+      } else {
+        assert(d === FARM_DET_NONE, `Town698: interior tile has no detail (got ${d})`);
+      }
+    }
+  }
+  assert(nHedge + nFence === 4 * (FARM_CELL - 2) - 4,
+    `Town698: all boundary tiles covered (${nHedge + nFence})`);
+}
+
 // BUILD 688: Procedural town layout engine — seeded, validated blueprints.
 {
   const { generateTownLayout, validateTownLayout, exportTownLayout, importTownLayout,

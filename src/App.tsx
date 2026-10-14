@@ -127,6 +127,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
   '697': 'clickable market stalls: tap a stall to open its shop — buy/sell with gold, per-stall stock that restocks each game day, stock persists in saves',
+  '698': 'farmland ring around Mosslight: seeded field plots in ochre/green/soil with dirt tracks, hedgerow and fence boundaries, farmstead farmhouses and barns; sand texture fix (seeded variation, no more grid lines or seams); soft shadows under buildings; goats no longer draw white boxes',
   '696': 'NPC market life: townsfolk shop the market square (browse pauses at stalls, arterial strolls, errand loops), all through existing pathfinding',
   '695': 'storybook town content: market square with striped-stall rows, angel statue centerpiece, hedge-maze garden with fountain, wooden carts, sandy tan streets in Mosslight',
   '694': 'storybook sprite set (civic tower, angel statue, hedge maze walls, wooden cart) + ambient market life (NPC shoppers, stall browsers, errand loops)',

@@ -38,7 +38,7 @@ export const DECOR_TILES: Record<string, number[]> = {
 };
 
 /** Deterministic 32-bit hash of tile + chunk offset + salt. */
-function hashTile(lx: number, ly: number, salt: number, ox: number, oy: number): number {
+export function hashTile(lx: number, ly: number, salt: number, ox: number, oy: number): number {
   let h = (Math.imul(lx | 0, 73856093) ^ Math.imul(ly | 0, 19349663) ^ Math.imul(salt | 0, 83492791) ^ Math.imul(((ox * 31 + oy * 57) | 0), 2654435761)) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
   return h;
@@ -87,6 +87,92 @@ export function mosslightSandAt(wx: number, wy: number): number {
   if (d <= rIn) return 1;
   if (d >= rOut) return 0;
   return (rOut - d) / (rOut - rIn);
+}
+
+// ---------------------------------------------------------------------------
+// BUILD 698: farmland ring around Mosslight (town chunks absCx 3..5, absCy 6..8).
+// Large seeded field parcels outside the 695 sandy mask, matching the
+// reference's outskirts: alternating plots in pale ochre #E8D8A0, muted
+// green #A8C090, brown soil #B8A890, separated by dirt tracks, with
+// hedgerow/fence boundaries and farmstead plots (farmhouse + barn).
+// Pure and deterministic in world tile coords. Visual only — no collision,
+// no doors, no gameplay state.
+// ---------------------------------------------------------------------------
+
+/** Farmland plot codes returned by farmlandPlotAt (world tile coords). */
+export const FARM_NONE = 0;
+export const FARM_OCHRE = 1; // pale ochre #E8D8A0
+export const FARM_GREEN = 2; // muted green #A8C090
+export const FARM_SOIL = 3; // brown soil   #B8A890
+export const FARM_TRACK = 4; // dirt track   #BFA878
+
+/** Base colors for the FARM_* codes above (index = code - 1). */
+export const FARM_BASE_COLORS = ['#E8D8A0', '#A8C090', '#B8A890', '#BFA878'];
+
+/** Farmland detail codes returned by farmlandDetailAt: 0 none, 1 hedge, 2 fence, 3 farmhouse, 4 barn. */
+export const FARM_DET_NONE = 0;
+export const FARM_DET_HEDGE = 1;
+export const FARM_DET_FENCE = 2;
+export const FARM_DET_HOUSE = 3;
+export const FARM_DET_BARN = 4;
+
+/** Tiles per plot cell (2-tile dirt track + 16-tile plot). */
+export const FARM_CELL = 18;
+
+/** Farmstead anchors (world tile coords, comfortably inside plots, not on tracks). */
+export const FARMSTEADS: Array<readonly [number, number]> = [
+  [1058, 1988], // west of town
+  [1482, 1958], // north-east of town
+  [1248, 2332], // south of town
+];
+
+/** Outer radius of the farmland ring from the Mosslight center (world tiles). */
+export const FARM_RING_R = 330;
+
+/**
+ * Farmland plot code at world tile coords, or FARM_NONE.
+ * `sandy` is the caller's 695 mask result (mosslightSandAt > 0.5) — sand
+ * always wins over farmland so the town mask is never broken.
+ */
+export function farmlandPlotAt(wx: number, wy: number, sandy: boolean): number {
+  if (sandy) return FARM_NONE;
+  const acx = Math.floor(wx / 280), acy = Math.floor(wy / 280);
+  if (acx < 3 || acx > 5 || acy < 6 || acy > 8) return FARM_NONE;
+  const dx = wx - MOSSLIGHT_SAND_CX, dy = wy - MOSSLIGHT_SAND_CY;
+  if (dx * dx + dy * dy > FARM_RING_R * FARM_RING_R) return FARM_NONE;
+  const px = Math.floor(wx / FARM_CELL), py = Math.floor(wy / FARM_CELL);
+  const lx = wx - px * FARM_CELL, ly = wy - py * FARM_CELL;
+  if (lx < 2 || ly < 2) return FARM_TRACK;
+  // Farmstead plots render as tilled soil.
+  for (const [fx, fy] of FARMSTEADS) {
+    if (Math.floor(fx / FARM_CELL) === px && Math.floor(fy / FARM_CELL) === py) return FARM_SOIL;
+  }
+  return 1 + (hashTile(px, py, 698, 0, 0) % 3);
+}
+
+/**
+ * Farmland boundary/sprite detail at world tile coords. Only meaningful when
+ * farmlandPlotAt returns a plot (not a track). Deterministic per tile.
+ */
+export function farmlandDetailAt(wx: number, wy: number): number {
+  const px = Math.floor(wx / FARM_CELL), py = Math.floor(wy / FARM_CELL);
+  const lx = wx - px * FARM_CELL, ly = wy - py * FARM_CELL;
+  // Farmstead sprites: farmhouse at the anchor tile, barn offset within the plot.
+  for (const [fx, fy] of FARMSTEADS) {
+    if (Math.floor(fx / FARM_CELL) === px && Math.floor(fy / FARM_CELL) === py) {
+      const cx = Math.floor(fx) - px * FARM_CELL, cy = Math.floor(fy) - py * FARM_CELL;
+      if (lx === cx && ly === cy) return FARM_DET_HOUSE;
+      const bh = hashTile(px, py, 700, 0, 0);
+      const bx = Math.min(14, Math.max(3, cx + (bh % 2 === 0 ? 4 : -4)));
+      const by = Math.min(14, Math.max(3, cy + 4));
+      if (lx === bx && ly === by) return FARM_DET_BARN;
+      return FARM_DET_NONE;
+    }
+  }
+  // Plot boundaries (outer ring, adjacent to the track) get hedges or fences.
+  const edge = lx === 2 || ly === 2 || lx === FARM_CELL - 1 || ly === FARM_CELL - 1;
+  if (!edge) return FARM_DET_NONE;
+  return hashTile(px, py, 699, 0, 0) % 2 === 0 ? FARM_DET_HEDGE : FARM_DET_FENCE;
 }
 
 // ---------------------------------------------------------------------------
