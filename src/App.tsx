@@ -42,7 +42,8 @@ import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 // BUILD 683: unified Mosslight rects (single source in settlements.ts).
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
-import { mosslightTownPlan } from '@/game/townPlan';
+import { mosslightEngineChunkLayout, mosslightEngineLanes, mosslightEngineProps, mosslightFillerRects } from '@/game/mosslightLayout';
+import { wallToTownWall } from '@/game/townLayout';
 import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
 import { LANDMARKS } from '@/game/landmarks';
 import {
@@ -599,6 +600,9 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
     ...MOSSLIGHT_FIXED_RECTS_280.slice(0, 4),   // tutorial, guild, chapel, fourth
     ...mosslightCottageRects280(),               // 6 cottages (indices 4-9)
     ...MOSSLIGHT_FIXED_RECTS_280.slice(4),       // 8 town buildings (indices 10-17)
+    // BUILD 690: engine filler buildings (indices 18+). Generic ids
+    // (4,7-building-18, ...) and generic interiors — no gameplay roles.
+    ...mosslightFillerRects(),
   ];
 }
 
@@ -889,6 +893,11 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
     if (decor.props.some((p) => pointInRect(position, {
       left: p.x - p.r, top: p.y - p.r, right: p.x + p.r, bottom: p.y + p.r,
     }, 0.2))) return true;
+    // BUILD 690: engine solid props (lamps, barrels, well, gatehouse) block.
+    // Fountain and market stalls are decor-only (walkable, like the old plan).
+    if (mosslightEngineProps().some((p) => p.solid && pointInRect(position, {
+      left: p.x - p.r, top: p.y - p.r, right: p.x + p.r, bottom: p.y + p.r,
+    }, 0.2))) return true;
   }
 
   // Carriage stations/stops: house, stable and the carriage itself are solid.
@@ -1086,16 +1095,17 @@ export function settlementDecorFor(chunk: Point): {
   props: { id: string; asset: string; x: number; y: number; r: number }[];
   walls: { points: { x: number; y: number }[]; width: number }[];
 } {
-  // BUILD 686: merge the authored Mosslight town plan (paths, plaza,
-  // market, lamps, clutter, walls) with the generated hamlet decor.
+  // BUILD 690: the procedural town layout engine (seed 4242) is the live
+  // Mosslight source — lanes, plaza, props, walls come from the engine
+  // instance. The hamlet decor (cottage clusters) is unchanged.
   if (chunk.x === 4 && chunk.y === 7) {
     const base = mosslightSettlementDecor();
-    const plan = mosslightTownPlan();
+    const chunked = mosslightEngineChunkLayout();
     return {
-      plazas: [...base.plazas, ...plan.plazas],
-      lanes: [...base.lanes, ...plan.lanes],
-      props: [...base.props, ...plan.props],
-      walls: plan.walls,
+      plazas: [...base.plazas, ...chunked.plazas],
+      lanes: [...base.lanes, ...mosslightEngineLanes()],
+      props: [...base.props, ...mosslightEngineProps()],
+      walls: chunked.walls.map(wallToTownWall),
     };
   }
   return { plazas: [], lanes: [], props: [], walls: [] };

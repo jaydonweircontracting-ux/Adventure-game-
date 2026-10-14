@@ -682,83 +682,6 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         drawWall(wx1, cy + gateHalf, wx1, wy1);
       }
 
-      // BUILD 607: Market props in town plaza — stalls, well, barrels, lamps.
-      // BUILD 613: Redesigned as market square like reference — central fountain,
-      // colorful stalls in rows, street lamps along roads.
-      // Only in starting chunk (4,7). Plaza at (124-164, 124-164).
-      if (chunk.x === 4 && chunk.y === 7) {
-        const propImgs = (window as unknown as { __propImgs?: Record<string, HTMLImageElement> }).__propImgs || {};
-        const propSrc: Record<string, string> = {
-          'stall': 'props/market-stall.png',
-          'stall-red': 'props/stall-red.png',
-          'stall-blue': 'props/stall-blue.png',
-          'stall-green': 'props/stall-green.png',
-          'barrel': 'props/barrel.png',
-          'well': 'props/well.png',
-          'fountain': 'props/fountain.png',
-          'lamp': 'props/lamp.png',
-        };
-        for (const [kind, src] of Object.entries(propSrc)) {
-          if (!propImgs[kind]) {
-            const img = new Image();
-            img.src = `${import.meta.env.BASE_URL}${src}`;
-            propImgs[kind] = img;
-          }
-        }
-        (window as unknown as { __propImgs?: Record<string, HTMLImageElement> }).__propImgs = propImgs;
-        // Prop placements: [kind, x, y, scale]
-        // Market square layout: fountain center, stalls in rows around it.
-        const props: [string, number, number, number][] = [
-          ['fountain', 144, 144, 1.2],   // center fountain
-          // North row stalls (varied colors)
-          ['stall-red', 132, 130, 0.9],
-          ['stall-blue', 144, 130, 0.9],
-          ['stall-green', 156, 130, 0.9],
-          // South row stalls
-          ['stall-blue', 132, 158, 0.9],
-          ['stall-red', 144, 158, 0.9],
-          ['stall-green', 156, 158, 0.9],
-          // East/west stalls
-          ['stall', 128, 144, 0.9],
-          ['stall', 160, 144, 0.9],
-          // Barrels/crates near stalls
-          ['barrel', 128, 136, 0.7],
-          ['barrel', 160, 136, 0.7],
-          ['barrel', 136, 128, 0.7],
-          ['barrel', 152, 128, 0.7],
-          ['barrel', 136, 160, 0.7],
-          ['barrel', 152, 160, 0.7],
-          // Well (moved to side)
-          ['well', 124, 156, 0.9],
-          // Lamps at plaza corners
-          ['lamp', 124, 132, 0.8],
-          ['lamp', 164, 132, 0.8],
-          ['lamp', 124, 156, 0.8],
-          ['lamp', 164, 156, 0.8],
-          // Street lamps along roads (north-south road through town)
-          ['lamp', 144, 110, 0.8],
-          ['lamp', 144, 95, 0.8],
-          ['lamp', 144, 178, 0.8],
-          ['lamp', 144, 193, 0.8],
-          // Street lamps along east-west road
-          ['lamp', 110, 144, 0.8],
-          ['lamp', 95, 144, 0.8],
-          ['lamp', 178, 144, 0.8],
-          ['lamp', 193, 144, 0.8],
-        ];
-        for (const [kind, px, py, scale] of props) {
-          const img = propImgs[kind];
-          if (!img || !img.complete || img.naturalWidth === 0) continue;
-          const p = isoToScreen(px, py);
-          const sw = img.naturalWidth * 0.12 * scale;
-          const sh = img.naturalHeight * 0.12 * scale;
-          drawables.push({
-            depth: px + py,
-            draw: (g2) => { g2.drawImage(img, p.x - sw / 2, p.y - sh, sw, sh); },
-          });
-        }
-      }
-
       // trees: real positions — BUILD 376: every chunk in the scene grid,
       // offset into current-chunk-relative tile space.
       // BUILD 683: settlement props (wells, barrels) — billboard sprites,
@@ -768,9 +691,15 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         'props/well.png': 'props/well.png',
         'props/barrel.png': 'props/barrel.png',
         // BUILD 686: town plan assets (lamps, garden well, gatehouse).
-        // (Market fountain/stalls come from the BUILD 613 block above.)
         'props/lamp.png': 'props/lamp.png',
         'buildings/gatehouse.png': 'buildings/gatehouse.png',
+        // BUILD 690: engine market assets (fountain + stalls from the
+        // procedural layout; the 613 hardcoded block is retired).
+        'props/fountain.png': 'props/fountain.png',
+        'props/stall-red.png': 'props/stall-red.png',
+        'props/stall-blue.png': 'props/stall-blue.png',
+        'props/stall-green.png': 'props/stall-green.png',
+        'props/market-stall.png': 'props/market-stall.png',
       };
       for (const [key, src] of Object.entries(propSrc)) {
         if (!propImgs[key]) {
@@ -1253,8 +1182,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   };
 
   return (
-    <div ref={wrapRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#0e1713' }}>
-      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }} />
+    <div ref={wrapRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#0e1713', touchAction: 'none' }}>
+      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', touchAction: 'none' }} />
       {/* BUILD 372: zoom is driven by the main black zoom buttons (App), so the
           duplicate in-canvas zoom controls were removed. */}
       {/* beta badge + exit */}
