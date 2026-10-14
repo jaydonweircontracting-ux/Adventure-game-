@@ -7375,9 +7375,9 @@ import { inflateSync } from 'node:zlib';
   assert(mosslightSandAt(1264, 2104) === 1, 'Town695: full sand at town center');
   assert(mosslightSandAt(1264 + 300, 2104) === 0, 'Town695: green far outside town');
   assert(mosslightSandAt(1264, 2104 - 300) === 0, 'Town695: green far outside town (north)');
-  const mid = mosslightSandAt(1264 + 115, 2104);
+  const mid = mosslightSandAt(1264 + 150, 2104);
   assert(mid > 0 && mid < 1, `Town695: blend band at edge (got ${mid})`);
-  assert(mosslightSandAt(1264 + 115, 2104) === mid, 'Town695: sand mask deterministic');
+  assert(mosslightSandAt(1264 + 150, 2104) === mid, 'Town695: sand mask deterministic');
 }
 
 // BUILD 688: Procedural town layout engine — seeded, validated blueprints.

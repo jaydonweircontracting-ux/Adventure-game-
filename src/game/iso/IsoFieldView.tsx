@@ -404,10 +404,16 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             const inPlaza = absCx === 0 && absCy === 0 && wx >= 124 && wx < 164 && wy >= 124 && wy < 164;
             if (isOcean || wet) tn = groundTileFor('ocean', lx, ly, sc.ox, sc.oy);
             else if (inPlaza) tn = groundTileFor('cobble', lx, ly, sc.ox, sc.oy);
-            else if (roadHere) tn = groundTileFor('road', lx, ly, sc.ox, sc.oy);
-            else if (sandy) tn = groundTileFor('desert', lx, ly, sc.ox, sc.oy);
+            else if (roadHere && !sandy) tn = groundTileFor('road', lx, ly, sc.ox, sc.oy);
+            // BUILD 695 fix: town roads use the flat fallback too (the road
+            // tileset blocks would checkerboard the sandy streets).
+            // BUILD 695 fix: sandy tiles use the FLAT diamond fallback below,
+            // not the desert block tiles (tile_000-005 are raised 3D dirt
+            // blocks — they tiled into a red-brown checkerboard). The
+            // fallback draws fieldPalettes.desert.field, a warm flat sand.
+            else if (sandy) tn = -1;
             else tn = groundTileFor(terr, lx, ly, sc.ox, sc.oy);
-            tileDrawn = drawGroundTile(g, tn, p.x, p.y);
+            tileDrawn = tn >= 0 && drawGroundTile(g, tn, p.x, p.y);
           }
           if (!tileDrawn) {
             let col = sc.palette.field;
