@@ -1,6 +1,6 @@
 {
-  "build": "692",
-  "note": "",
-  "timestamp": "2026-10-14T05:11:00.816Z",
-  "cacheBuster": "mv7njdg1"
+  "build": "693",
+  "note": "dirt paths rebuilt as layered strokes (fringe/body/worn center + pebbles) — fixes the 692 rendering streaks; new house art kept",
+  "timestamp": "2026-10-14T05:33:45.598Z",
+  "cacheBuster": "mv7ocmin"
 }

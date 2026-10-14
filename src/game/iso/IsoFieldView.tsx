@@ -20,7 +20,7 @@ import type { BarbarianOutfit, BarbarianWeapon } from './barbarian';
 import { BARBARIAN_ATTACK_MS } from './barbarian';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
 import { artUrl } from '../artCache';
-import { computeDirtPathGeometry, buildDirtPath2D } from './dirtPaths';
+import { computeDirtPathGeometry, buildDirtPath2D, DIRT_LAYER_STYLE } from './dirtPaths';
 // BUILD 389: user-supplied landscape tileset + ambient critters.
 import {
   preloadIsoTiles, isoTilesReady, drawGroundTile, drawDecor,
@@ -53,7 +53,7 @@ import {
 
 // BUILD 692: cached textured dirt-path layers per decor chunk. Lanes are
 // static world geometry (seed-pinned town), so the Path2D layers are built
-// once per chunk key and re-filled every frame — zero per-frame allocation.
+// once per chunk key and re-stroked every frame — zero per-frame allocation.
 type DirtPathCacheEntry = ReturnType<typeof buildDirtPath2D>;
 const dirtPathCache = new Map<string, DirtPathCacheEntry>();
 
@@ -259,6 +259,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       const zm = zoomRef.current;
       const wpx = canvas.clientWidth || 1, hpx = canvas.clientHeight || 1;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
+      // Perf-debug hook (?nodirt=1): skip textured dirt paths for A/B timing.
+      const skipDirt = (frame as unknown as { __skipDirt?: boolean }).__skipDirt
+        ?? ((frame as unknown as { __skipDirt?: boolean }).__skipDirt =
+          new URLSearchParams(location.search).get('nodirt') === '1');
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const live = liveRef.current;
@@ -445,8 +449,13 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           g.ellipse(c.x, c.y, p.r * 32, p.r * 16, 0, 0, 7);
           g.fill();
         }
-        // BUILD 692: textured dirt paths — layered fills from cached Path2D
+        // BUILD 692: textured dirt paths — layered strokes from cached Path2D
         // (soft dark fringe, dirt body, worn center, pebble speckles).
+        // BUILD 693: strokes, not filled polygons — v1's filled ribbons
+        // rasterized into screen-spanning streaks on sharp road joints, and
+        // filling one Path2D holding thousands of ellipse subpaths corrupts
+        // Chromium's rasterizer (reproduced in isolation). Stroked polylines
+        // with round joins are spike-proof; speckles are fillRect dots.
         // Geometry is precomputed per decor chunk; lanes are static.
         {
           const dcx = chunk.x + sc.ox, dcy = chunk.y + sc.oy;
@@ -461,16 +470,31 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             paths = buildDirtPath2D(geo);
             dirtPathCache.set(dkey, paths);
           }
-          g.fillStyle = 'rgba(110, 82, 50, 0.18)'; // worn fringe
-          g.fill(paths.edge);
-          g.fillStyle = 'rgba(156, 122, 72, 0.55)'; // dirt body
-          g.fill(paths.dirt);
-          g.fillStyle = 'rgba(190, 160, 108, 0.28)'; // foot-worn center
-          g.fill(paths.center);
-          g.fillStyle = 'rgba(92, 66, 40, 0.55)'; // pebbles (dark)
-          g.fill(paths.speckleDark);
-          g.fillStyle = 'rgba(205, 175, 120, 0.50)'; // pebbles (light)
-          g.fill(paths.speckleLight);
+          if (!skipDirt) {
+          g.lineCap = 'round';
+          g.lineJoin = 'round';
+          // Viewport culling (BUILD 693 perf): only stroke/fill what's visible.
+          const vx0 = cam.x - wpx / (2 * zm) - 120, vx1 = cam.x + wpx / (2 * zm) + 120;
+          const vy0 = cam.y - hpx / (2 * zm) - 120, vy1 = cam.y + hpx / (2 * zm) + 120;
+          for (const lane of paths.lanes) {
+            const bb = lane.bbox;
+            if (bb[1] < vx0 || bb[0] > vx1 || bb[3] < vy0 || bb[2] > vy1) continue;
+            for (let li = 0; li < 3; li++) {
+              g.lineWidth = lane.widths[li];
+              g.strokeStyle = DIRT_LAYER_STYLE[li];
+              g.stroke(lane.path);
+            }
+          }
+          // Speckles as fillRect dots, NOT a Path2D: filling one Path2D that
+          // holds thousands of ellipse subpaths corrupts Chromium's
+          // rasterizer (reproduced in isolation — full-canvas triangle
+          // explosion). Individual fillRects are cheap and always safe.
+          for (const s of paths.speckles) {
+            if (s.x < vx0 || s.x > vx1 || s.y < vy0 || s.y > vy1) continue;
+            g.fillStyle = s.dark ? 'rgba(92, 66, 40, 0.55)' : 'rgba(205, 175, 120, 0.50)';
+            g.fillRect(s.x - s.rx, s.y - s.rx * 0.55, s.rx * 2, s.rx * 1.1);
+          }
+          }
         }
         // BUILD 686: town walls — stone grey strokes with a lighter cap.
         for (const w of decor.walls || []) {

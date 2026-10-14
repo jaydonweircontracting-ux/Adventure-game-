@@ -124,6 +124,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '693': 'dirt paths rebuilt as layered strokes (fringe/body/worn center + pebbles) — fixes the 692 rendering streaks; new house art kept',
   '691': 'minimap hides while the world map is open',
   '689': 'door/path alignment fix: building sprites flipped so painted doors sit on the south face (same side as triggers, exits, lanes); door geometry now a shared module',
   '688': 'procedural town layout engine: seeded road/district/lot generator + validator (engine-only, no gameplay change)',

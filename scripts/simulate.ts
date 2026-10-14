@@ -7109,9 +7109,12 @@ import { inflateSync } from 'node:zlib';
   }
 }
 
-// BUILD 692: textured dirt-path geometry — deterministic, valid polygons.
+// BUILD 692: textured dirt-path geometry — deterministic, valid strokes.
+// BUILD 693: reworked from filled polygons to layered strokes (v1's filled
+// ribbons rasterized into streaks on sharp road joints; strokes with round
+// joins are spike-proof by construction).
 {
-  const { computeDirtPathGeometry, hashSeed, mulberry32, resamplePolyline, offsetPolygon } =
+  const { computeDirtPathGeometry, hashSeed, mulberry32, resamplePolyline, wavyCenterline } =
     await import('../src/game/iso/dirtPaths.js');
   const proj = (x: number, y: number) => ({ x: (x - y) * 32, y: (x + y) * 16 });
   const lanes = [
@@ -7122,54 +7125,58 @@ import { inflateSync } from 'node:zlib';
   // 1. Deterministic: same input -> byte-identical geometry.
   const g1 = computeDirtPathGeometry(lanes, proj, 'dirt:4,7');
   const g2 = computeDirtPathGeometry(lanes, proj, 'dirt:4,7');
-  assert(JSON.stringify(g1) === JSON.stringify(g2), 'Dirt692: geometry deterministic');
+  assert(JSON.stringify(g1) === JSON.stringify(g2), 'Dirt693: geometry deterministic');
 
   // 2. Seed matters: different seedBase -> different speckles.
   const g3 = computeDirtPathGeometry(lanes, proj, 'dirt:9,9');
-  assert(JSON.stringify(g1.speckles) !== JSON.stringify(g3.speckles), 'Dirt692: seedBase changes decoration');
+  assert(JSON.stringify(g1.speckles) !== JSON.stringify(g3.speckles), 'Dirt693: seedBase changes decoration');
 
-  // 3. Polygon validity: one closed polygon per layer per lane, non-degenerate.
-  assert(g1.edge.length === 2 && g1.dirt.length === 2 && g1.center.length === 2,
-    `Dirt692: 3 layers x 2 lanes (got ${g1.edge.length}/${g1.dirt.length}/${g1.center.length})`);
-  for (const poly of [...g1.edge, ...g1.dirt, ...g1.center]) {
-    assert(poly.length >= 8, `Dirt692: polygon non-degenerate (${poly.length} pts)`);
-    assert(poly.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)), 'Dirt692: all points finite');
+  // 3. Stroke validity: one stroke per lane, 3 ordered widths, finite points.
+  assert(g1.strokes.length === 2, `Dirt693: 2 strokes (got ${g1.strokes.length})`);
+  for (const st of g1.strokes) {
+    assert(st.line.length >= 4, `Dirt693: stroke non-degenerate (${st.line.length} pts)`);
+    assert(st.line.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)), 'Dirt693: all points finite');
+    assert(st.widths[0] > st.widths[1] && st.widths[1] > st.widths[2],
+      `Dirt693: fringe > body > center widths (${st.widths.join('/')})`);
+    assert(st.widths.every((w) => Number.isFinite(w) && w > 0), 'Dirt693: widths finite positive');
   }
 
-  // 4. Layer ordering: edge wider than dirt wider than center (polygon area).
-  const polyArea = (poly: { x: number; y: number }[]) => {
-    let a = 0;
-    for (let i = 0; i < poly.length; i++) {
-      const p = poly[i], q = poly[(i + 1) % poly.length];
-      a += p.x * q.y - q.x * p.y;
+  // 4. Wobble is bounded: no stroke point strays far from the lane corridor.
+  for (let i = 0; i < lanes.length; i++) {
+    const inp = lanes[i].points.map((p) => proj(p.x, p.y));
+    const xs = inp.map((p) => p.x), ys = inp.map((p) => p.y);
+    const margin = g1.strokes[i].widths[0];
+    for (const p of g1.strokes[i].line) {
+      assert(p.x >= Math.min(...xs) - margin && p.x <= Math.max(...xs) + margin &&
+             p.y >= Math.min(...ys) - margin && p.y <= Math.max(...ys) + margin,
+        'Dirt693: stroke stays in lane corridor');
     }
-    return Math.abs(a) / 2;
-  };
-  for (let i = 0; i < 2; i++) {
-    assert(polyArea(g1.edge[i]) >= polyArea(g1.dirt[i]) && polyArea(g1.dirt[i]) >= polyArea(g1.center[i]),
-      `Dirt692: lane ${i} edge >= dirt >= center area`);
   }
 
   // 5. Speckles: deterministic count scaling with length, sane radii.
-  assert(g1.speckles.length > 0, `Dirt692: speckles generated (${g1.speckles.length})`);
+  assert(g1.speckles.length > 0, `Dirt693: speckles generated (${g1.speckles.length})`);
   assert(g1.speckles.every((s) => s.rx >= 0.9 && s.rx <= 2.8 && s.ry < s.rx),
-    'Dirt692: speckle radii sane and iso-squashed');
+    'Dirt693: speckle radii sane and iso-squashed');
 
   // 6. Degenerate input -> empty geometry, no crash.
   const gEmpty = computeDirtPathGeometry(
     [{ points: [], width: 2 }, { points: [{ x: 1, y: 1 }], width: 2 }], proj, 'dirt:0,0');
-  assert(gEmpty.edge.length === 0 && gEmpty.speckles.length === 0, 'Dirt692: degenerate lanes skipped');
+  assert(gEmpty.strokes.length === 0 && gEmpty.speckles.length === 0, 'Dirt693: degenerate lanes skipped');
 
   // 7. PRNG/hash determinism.
   const r1 = mulberry32(hashSeed('abc')), r2 = mulberry32(hashSeed('abc'));
-  assert(r1() === r2() && r1() === r2(), 'Dirt692: mulberry32 deterministic');
-  assert(hashSeed('abc') !== hashSeed('abd'), 'Dirt692: hashSeed distinguishes inputs');
+  assert(r1() === r2() && r1() === r2(), 'Dirt693: mulberry32 deterministic');
+  assert(hashSeed('abc') !== hashSeed('abd'), 'Dirt693: hashSeed distinguishes inputs');
 
-  // 8. Resample + offset helpers behave.
+  // 8. Resample + wavy-centerline helpers behave.
   const { pts, arc } = resamplePolyline([{ x: 0, y: 0 }, { x: 30, y: 0 }], 6);
-  assert(pts.length >= 5 && Math.abs(arc[arc.length - 1] - 30) < 1e-6, 'Dirt692: resample covers length');
-  const poly = offsetPolygon(pts, arc, () => 5);
-  assert(poly.length === pts.length * 2, 'Dirt692: offset polygon has 2x points');
+  assert(pts.length >= 5 && Math.abs(arc[arc.length - 1] - 30) < 1e-6, 'Dirt693: resample covers length');
+  const wobAmp = 2;
+  const wavy = wavyCenterline(pts, arc, (s) => wobAmp * Math.sin(s * 0.5));
+  assert(wavy.length === pts.length, 'Dirt693: wavy centerline keeps point count');
+  assert(wavy.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)), 'Dirt693: wavy points finite');
+  const maxDev = Math.max(...wavy.map((p, i) => Math.hypot(p.x - pts[i].x, p.y - pts[i].y)));
+  assert(maxDev <= wobAmp + 1e-9, `Dirt693: wobble bounded by amplitude (${maxDev})`);
 }
 
 // ---- Results ----

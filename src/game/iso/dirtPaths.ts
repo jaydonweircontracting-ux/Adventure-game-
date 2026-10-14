@@ -1,16 +1,25 @@
 /**
- * Textured dirt paths for the iso renderer (BUILD 692).
+ * Textured dirt paths for the iso renderer (BUILD 692, reworked in BUILD 693).
  *
- * Replaces the old flat semi-transparent lane strokes with layered,
- * worn-dirt rendering: a soft dark fringe, a dirt body with deterministic
- * width wobble, a lighter foot-worn center strip, and pebble speckles.
+ * v1 (692) built filled offset-polygons (fringe/dirt/center layers). On real
+ * lane data the filled ribbons rasterized into screen-spanning streaks —
+ * bounded input geometry, but the fill triangulation exploded on the engine's
+ * sharp road joints. v2 (693) draws the same layered look as STROKES with
+ * round caps/joins: a stroke is the Minkowski sum of the polyline with a
+ * disc, so it cannot produce spikes by construction.
+ *
+ * Layers per lane (all strokes of one cached wavy centerline):
+ *   fringe — soft dark edge (widest, faintest)
+ *   body   — the dirt itself
+ *   center — lighter foot-worn strip (narrowest)
+ * plus pebble speckles (tiny convex ellipse fills — always safe).
  *
  * Pure geometry module (no DOM): `computeDirtPathGeometry` returns plain
  * point arrays so it runs in node for sim assertions. The renderer converts
  * to Path2D via `buildDirtPath2D` (browser only) and caches per chunk —
  * zero per-frame allocation, satisfying the BUILD 687 perf bar.
  *
- * Deterministic: a seeded PRNG per lane drives wobble phase and speckle
+ * Deterministic: a seeded PRNG per lane drives the edge wobble and speckle
  * placement, so paths never flicker between frames.
  */
 
@@ -21,14 +30,17 @@ export interface DirtLaneInput {
 
 export interface Speckle { x: number; y: number; rx: number; ry: number; dark: boolean }
 
+export interface DirtStrokeLane {
+  /** Wavy centerline in projected space (wobble baked in). */
+  line: { x: number; y: number }[];
+  /** Full stroke widths in projected px: [fringe, body, center]. */
+  widths: [number, number, number];
+}
+
 export interface DirtPathGeometry {
-  /** One closed polygon per lane: outer soft fringe (drawn first, widest). */
-  edge: { x: number; y: number }[][];
-  /** Main dirt body polygons. */
-  dirt: { x: number; y: number }[][];
-  /** Foot-worn center strip polygons (narrowest, drawn last). */
-  center: { x: number; y: number }[][];
-  /** Pebble speckles in screen space. */
+  /** One stroked lane per input lane. */
+  strokes: DirtStrokeLane[];
+  /** Pebble speckles in projected space. */
   speckles: Speckle[];
 }
 
@@ -55,7 +67,7 @@ export function mulberry32(seed: number): () => number {
 
 interface SPoint { x: number; y: number }
 
-/** Resample a screen-space polyline at ~step px intervals. Returns points
+/** Resample a projected polyline at ~step px intervals. Returns points
  *  plus cumulative arc length at each point. */
 export function resamplePolyline(pts: SPoint[], step: number): { pts: SPoint[]; arc: number[] } {
   const out: SPoint[] = [];
@@ -80,15 +92,15 @@ export function resamplePolyline(pts: SPoint[], step: number): { pts: SPoint[]; 
 }
 
 /**
- * Build a closed offset polygon around a resampled centerline.
- * halfWidthAt(s) gives the half-width in px at arc length s (wobble lives here).
+ * Wavy centerline: offset each resampled point along its normal by wob(s).
+ * The wobble gives the path organic edges; the stroke width stays constant
+ * per layer, so rendering is spike-proof (round joins bound everything).
  */
-export function offsetPolygon(
+export function wavyCenterline(
   pts: SPoint[], arc: number[],
-  halfWidthAt: (s: number) => number,
+  wob: (s: number) => number,
 ): SPoint[] {
-  const left: SPoint[] = [];
-  const right: SPoint[] = [];
+  const out: SPoint[] = [];
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i];
     const a = pts[Math.max(0, i - 1)];
@@ -96,13 +108,10 @@ export function offsetPolygon(
     let dx = b.x - a.x, dy = b.y - a.y;
     const len = Math.hypot(dx, dy) || 1;
     dx /= len; dy /= len;
-    const hw = Math.max(0.5, halfWidthAt(arc[i]));
-    // normal (screen space)
-    const nx = -dy, ny = dx;
-    left.push({ x: p.x + nx * hw, y: p.y + ny * hw });
-    right.push({ x: p.x - nx * hw, y: p.y - ny * hw });
+    const o = wob(arc[i]);
+    out.push({ x: p.x + -dy * o, y: p.y + dx * o });
   }
-  return [...left, ...right.reverse()];
+  return out;
 }
 
 /** Point + normal at arc length s along a resampled polyline (for speckles). */
@@ -122,7 +131,7 @@ function pointAt(pts: SPoint[], arc: number[], s: number): { p: SPoint; n: SPoin
   };
 }
 
-const RESAMPLE_STEP = 14; // px between centerline samples (perf: 6px -> 83k pts, too slow)
+const RESAMPLE_STEP = 10; // px between centerline samples
 
 /**
  * Compute textured dirt-path geometry for a set of lanes.
@@ -134,7 +143,7 @@ export function computeDirtPathGeometry(
   project: (x: number, y: number) => SPoint,
   seedBase: string,
 ): DirtPathGeometry {
-  const geo: DirtPathGeometry = { edge: [], dirt: [], center: [], speckles: [] };
+  const geo: DirtPathGeometry = { strokes: [], speckles: [] };
   lanes.forEach((ln, li) => {
     if (ln.points.length < 2) return;
     const screen = ln.points.map((p) => project(p.x, p.y));
@@ -145,21 +154,22 @@ export function computeDirtPathGeometry(
     const rng = mulberry32(hashSeed(`${seedBase}:lane:${li}`));
     const p1 = rng() * Math.PI * 2, p2 = rng() * Math.PI * 2;
     const f1 = 0.035 + rng() * 0.03, f2 = 0.09 + rng() * 0.06;
-    const baseHW = Math.max(1, (ln.width * 14) / 2);
-    // Wobble is ADDITIVE and identical across layers (same phase/frequency):
-    // only the base width differs per layer, so edge > dirt > center holds
-    // at every point along the path. Scaling the amplitude per layer would
-    // invert the ordering at wobble troughs.
-    const wob = (s: number) => baseHW * 0.25 * (0.20 * Math.sin(s * f1 + p1) + 0.12 * Math.sin(s * f2 + p2));
-    geo.edge.push(offsetPolygon(pts, arc, (s) => baseHW * 1.18 + 1.5 + wob(s)));
-    geo.dirt.push(offsetPolygon(pts, arc, (s) => baseHW + wob(s)));
-    geo.center.push(offsetPolygon(pts, arc, (s) => baseHW * 0.55 + wob(s)));
+    // Full stroke width in px, matching the pre-692 flat-stroke look.
+    const bodyW = Math.max(2, ln.width * 14);
+    // Organic edge wobble, bounded to a fraction of the path width.
+    const wobAmp = bodyW * 0.16;
+    const wob = (s: number) =>
+      wobAmp * (0.62 * Math.sin(s * f1 + p1) + 0.38 * Math.sin(s * f2 + p2));
+    geo.strokes.push({
+      line: wavyCenterline(pts, arc, wob),
+      widths: [bodyW * 1.45, bodyW, bodyW * 0.5],
+    });
     // pebble speckles along the path (sparse for perf)
     const count = Math.floor(total / 25);
     for (let k = 0; k < count; k++) {
       const s = rng() * total;
       const { p, n } = pointAt(pts, arc, s);
-      const lateral = (rng() * 2 - 1) * baseHW * 0.75;
+      const lateral = (rng() * 2 - 1) * bodyW * 0.38;
       const rx = 0.9 + rng() * 1.9;
       geo.speckles.push({
         x: p.x + n.x * lateral,
@@ -173,31 +183,38 @@ export function computeDirtPathGeometry(
   return geo;
 }
 
-/** Browser-only: convert geometry to cached Path2D layers. */
+/** Layer styles, kept next to the geometry they belong to. */
+export const DIRT_LAYER_STYLE = [
+  'rgba(110, 82, 50, 0.16)', // worn fringe (widest)
+  'rgba(156, 122, 72, 0.55)', // dirt body
+  'rgba(190, 160, 108, 0.30)', // foot-worn center (narrowest)
+] as const;
+
+/** Browser-only: convert geometry to cached stroke Path2Ds.
+ * Speckles are returned raw (drawn as fillRect dots): filling one Path2D
+ * that holds thousands of ellipse subpaths corrupts Chromium's rasterizer
+ * (full-canvas triangle explosion, reproduced in isolation). */
 export function buildDirtPath2D(geo: DirtPathGeometry): {
-  edge: Path2D; dirt: Path2D; center: Path2D; speckleDark: Path2D; speckleLight: Path2D;
+  lanes: { path: Path2D; widths: [number, number, number]; pts: { x: number; y: number }[]; bbox: [number, number, number, number] }[];
+  speckles: Speckle[];
 } {
-  const poly = (polys: SPoint[][]): Path2D => {
+  const lanes = geo.strokes.map((st) => {
     const path = new Path2D();
-    for (const polyPts of polys) {
-      if (polyPts.length < 3) continue;
-      path.moveTo(polyPts[0].x, polyPts[0].y);
-      for (let i = 1; i < polyPts.length; i++) path.lineTo(polyPts[i].x, polyPts[i].y);
-      path.closePath();
+    if (st.line.length >= 2) {
+      path.moveTo(st.line[0].x, st.line[0].y);
+      for (let i = 1; i < st.line.length; i++) path.lineTo(st.line[i].x, st.line[i].y);
     }
-    return path;
-  };
-  const speckleDark = new Path2D();
-  const speckleLight = new Path2D();
-  for (const s of geo.speckles) {
-    const path = s.dark ? speckleDark : speckleLight;
-    path.ellipse(s.x, s.y, s.rx, s.ry, 0, 0, Math.PI * 2);
-  }
-  return {
-    edge: poly(geo.edge),
-    dirt: poly(geo.dirt),
-    center: poly(geo.center),
-    speckleDark,
-    speckleLight,
-  };
+    // World-px bbox (padded by the widest layer) for viewport culling.
+    const pad = st.widths[0];
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of st.line) {
+      if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
+      if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
+    }
+    return {
+      path, widths: st.widths, pts: st.line,
+      bbox: [x0 - pad, x1 + pad, y0 - pad, y1 + pad] as [number, number, number, number],
+    };
+  });
+  return { lanes, speckles: geo.speckles };
 }
