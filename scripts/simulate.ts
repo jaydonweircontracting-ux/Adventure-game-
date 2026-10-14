@@ -1152,6 +1152,40 @@ console.log('Testing ambient market life (BUILD 694)...');
       assert(!nearDoor, `Browse spot (${spot.x.toFixed(1)},${spot.y.toFixed(1)}) inside a door trigger zone`);
     }
   }
+
+  // 15. Real-time commute simulation: shoppers starting at the plaza at
+  // 13:00 (post-lunch, as really happens) walk to the stalls and genuinely
+  // pause to browse — 25 NPC steps per 10-minute clock tick matches the
+  // live 120ms-step / 3s-tick ratio.
+  {
+    let sim = folk
+      .filter((n) => n.archetype === 'commoner')
+      .map((n) => ({
+        ...n,
+        position: { x: 144, y: 144 },
+        location: 'OUTDOOR' as const,
+        path: undefined,
+        moving: false,
+        indoors: false,
+      }));
+    const browsed = new Set<string>();
+    for (let t = 0; t < 27; t++) {
+      const mins = 780 + t * 10; // 13:00 -> 17:30
+      const clock = {
+        tick: t, year: 1, month: 1, week: 1, day: 5,
+        hour: Math.floor(mins / 60), minuteOfDay: mins, second: 0, season: 'spring' as const,
+      };
+      for (let s = 0; s < 25; s++) sim = advanceTownsfolk(sim, anchors, clock, navCtx);
+      for (const n of sim) {
+        if (n.activity === 'Browsing the stalls' && !n.moving) {
+          if (testStalls.some((st) => Math.hypot(st.x - n.position.x, st.y - n.position.y) < 7)) {
+            browsed.add(n.id);
+          }
+        }
+      }
+    }
+    assert(browsed.size === 3, `Expected all 3 commoners to pause-browse, got ${browsed.size}`);
+  }
 }
 
 console.log('Testing village life layer (BUILD 366)...');
