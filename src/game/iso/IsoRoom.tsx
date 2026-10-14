@@ -3,6 +3,7 @@
 // (select/move/delete, paint terrain, place objects, copy/paste regions, resize
 // up to 200x200, undo). World persists in localStorage.
 import React, { useEffect, useRef, useState } from 'react';
+import { artUrl } from '../artCache';
 import {
   isoToScreen, screenToTile, screenToTileInt, depthKey, findPath, TILE_W, TILE_H,
   type TilePoint,
@@ -1368,7 +1369,7 @@ export default function IsoRoom(): React.JSX.Element {
             <div style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '-18px -20px 8px',
               padding: '12px 20px', borderRadius: '14px 14px 0 0',
-              backgroundImage: `url(${import.meta.env.BASE_URL}iso-ui/wood-panel.png)`,
+              backgroundImage: `url(${artUrl('iso-ui/wood-panel.png')})`,
               backgroundSize: 'cover', color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.7)',
             }}>
               <div style={{ fontWeight: 800, fontSize: 17 }}>⛰️ Isometric Demo — Info</div>

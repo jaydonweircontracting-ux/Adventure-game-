@@ -14,6 +14,8 @@
 //   hat   — child headbands, 2 styles (walk cycle only)
 // Layers that only drew a walk cycle hold walk frame 0 for other states.
 
+import { artUrl } from '../artCache';
+
 export type Face4 = 'up' | 'left' | 'down' | 'right';
 /**
  * BUILD 414: extended player facing. The barbarian pack has dedicated
@@ -302,7 +304,7 @@ export function preloadLpcSprites() {
     const img = new Image();
     // Warn once per sheet if it fails — the renderer falls back gracefully.
     img.onerror = () => console.warn(`[isoSprites] character sheet failed to load: ${f}`);
-    img.src = `${import.meta.env.BASE_URL}lpc/${f}.png`;
+    img.src = artUrl(`lpc/${f}.png`);
     sprCache[f] = img;
   }
 }
@@ -326,7 +328,7 @@ export function preloadFoodSprites() {
   foodPreloaded = true;
   for (const f of FOOD_FILES) {
     const img = new Image();
-    img.src = `${import.meta.env.BASE_URL}iso-food/${f}.png`;
+    img.src = artUrl(`iso-food/${f}.png`);
     foodCache[f] = img;
   }
 }

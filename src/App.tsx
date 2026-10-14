@@ -109,12 +109,13 @@ import { getSpriteState } from '@/game/animation';
 import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/persistence';
 import CharacterCreator from '@/components/CharacterCreator';
 import { compositeAttackSprite, compositeCharacterSheet, sanitizeCharacterChoices, type CharacterChoices } from '@/game/characterCreator';
+import { artUrl } from '@/game/artCache';
 import { initWorldNoise, shouldPlaceVegetation, vegetationDensity } from '@/game/noise';
-const PLAYER_SPRITE_URL = `${import.meta.env.BASE_URL}assets/cute-fantasy/player.png`;
-const PLAYER_ATTACK_SPRITE_URL = `${import.meta.env.BASE_URL}assets/gameplay/shining-fields/characters/player/attack.png`;
+const PLAYER_SPRITE_URL = artUrl('assets/cute-fantasy/player.png');
+const PLAYER_ATTACK_SPRITE_URL = artUrl('assets/gameplay/shining-fields/characters/player/attack.png');
 
 const queryClient = new QueryClient();
-const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
+const assetUrl = (path: string) => artUrl(path);
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
 // BUILD 375: single source of truth — the build marker injected into

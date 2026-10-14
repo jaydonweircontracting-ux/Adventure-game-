@@ -10,6 +10,8 @@
 // Missing assets warn once and draw nothing; the caller falls back to the
 // procedural room when the kit isn't ready.
 
+import { artUrl } from '../artCache';
+
 export type DungeonKitKey =
   | 'wall' | 'floor' | 'torch' | 'pillar'
   | 'chestBase' | 'chestTop' | 'armor';
@@ -133,7 +135,7 @@ export function preloadDungeonKit(): void {
         console.warn(`[dungeonKit] asset failed to load: ${KIT_FILES[k]}`);
       }
     };
-    img.src = `${import.meta.env.BASE_URL}iso-dungeon/${KIT_FILES[k]}`;
+    img.src = artUrl(`iso-dungeon/${KIT_FILES[k]}`);
     kitCache[k] = img;
   });
 }

@@ -19,6 +19,7 @@ import { preloadBarbarian } from './barbarian';
 import type { BarbarianOutfit, BarbarianWeapon } from './barbarian';
 import { BARBARIAN_ATTACK_MS } from './barbarian';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
+import { artUrl } from '../artCache';
 // BUILD 389: user-supplied landscape tileset + ambient critters.
 import {
   preloadIsoTiles, isoTilesReady, drawGroundTile, drawDecor,
@@ -102,8 +103,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   // BUILD 624: Preload all building/prop sprites on mount so there's no
   // "old house" flash — sprites are cached before the render loop needs them.
   // BUILD 684: building paths from the single asset catalog.
+  // BUILD 690: artUrl cache-busting (?v=build) so iOS Safari fetches fresh
+  // sprites after art changes (e.g. the 689 door flip).
   useEffect(() => {
-    const base = import.meta.env.BASE_URL;
     const urls = [
       ...Object.values(BUILDING_ASSET_META).map((m) => m.file),
       'props/market-stall.png', 'props/stall-red.png', 'props/stall-blue.png',
@@ -112,7 +114,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     ];
     for (const src of urls) {
       const img = new Image();
-      img.src = `${base}${src}`;
+      img.src = artUrl(src);
     }
   }, []);
   // BUILD 460: collision debug selection — tap a critter to select, drag green box to reposition
@@ -477,7 +479,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       for (const [kind, src] of Object.entries(bldSrc)) {
         if (!bldImgs[kind]) {
           const img = new Image();
-          img.src = `${import.meta.env.BASE_URL}${src}`;
+          img.src = artUrl(src);
           bldImgs[kind] = img;
         }
       }
@@ -704,7 +706,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       for (const [key, src] of Object.entries(propSrc)) {
         if (!propImgs[key]) {
           const img = new Image();
-          img.src = `${import.meta.env.BASE_URL}${src}`;
+          img.src = artUrl(src);
           propImgs[key] = img;
         }
       }
@@ -873,7 +875,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       for (const [kind, src] of Object.entries(critterSrc)) {
         if (!critterImgs[kind]) {
           const img = new Image();
-          img.src = `${import.meta.env.BASE_URL}${src}`;
+          img.src = artUrl(src);
           critterImgs[kind] = img;
         }
       }

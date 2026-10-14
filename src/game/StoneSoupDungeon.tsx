@@ -1,3 +1,4 @@
+import { artUrl } from './artCache';
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import {
   castSpell,
@@ -18,7 +19,7 @@ import './stoneSoupDungeon.css';
 
 type Props = { onExit: () => void };
 
-const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
+const assetUrl = (path: string) => artUrl(path);
 
 const glyphs: Record<GameState['tiles'][number][number]['kind'], string> = {
   wall: '', floor: '·', door: '+', stairs: '↓', altar: 'A', water: '≈', lava: '^',

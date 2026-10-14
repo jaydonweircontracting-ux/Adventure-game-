@@ -1,3 +1,4 @@
+import { artUrl } from '../game/artCache';
 import { useEffect, useState } from 'react';
 import {
   CharacterChoices,
@@ -11,7 +12,7 @@ import {
   compositeCharacterSheet,
 } from '../game/characterCreator';
 
-const PLAYER_SPRITE_URL = `${import.meta.env.BASE_URL}assets/cute-fantasy/player.png`;
+const PLAYER_SPRITE_URL = artUrl('assets/cute-fantasy/player.png');
 
 interface CharacterCreatorProps {
   onConfirm: (choices: CharacterChoices) => void;
