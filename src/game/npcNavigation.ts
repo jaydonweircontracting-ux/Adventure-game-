@@ -138,6 +138,21 @@ function buildWaterGrid(
   return { depths, bridges };
 }
 
+// BUILD 687: cache water grids per chunk. buildWaterGrid costs ~11ms
+// (19,600 waterAt noise samples) and was rebuilt on every NPC A* replan.
+// Pure deterministic inputs (chunk + road piece) — safe to share.
+const _waterGridCache = new Map<string, WaterGrid>();
+function cachedWaterGrid(chunkX: number, chunkY: number, roadPiece?: string): WaterGrid {
+  const ck = chunkX + ',' + chunkY + ',' + (roadPiece ?? '');
+  let g = _waterGridCache.get(ck);
+  if (!g) {
+    if (_waterGridCache.size >= 12) _waterGridCache.clear();
+    g = buildWaterGrid(chunkX, chunkY, roadPiece);
+    _waterGridCache.set(ck, g);
+  }
+  return g;
+}
+
 /** Movement cost multiplier for a chunk-local point. Pure. */
 function waterFactorAt(grid: WaterGrid | null, lx: number, ly: number): number {
   if (!grid) return 1;
@@ -271,15 +286,60 @@ export function findPath(
   if (start.x === goal.x && start.y === goal.y) return [to];
 
   const waterGrid = waterChunk
-    ? buildWaterGrid(waterChunk.x, waterChunk.y, roadPiece)
+    ? cachedWaterGrid(waterChunk.x, waterChunk.y, roadPiece)
     : null;
 
   const key = (c: GridCell) => c.y * GRID + c.x;
-  const open: GridCell[] = [start];
   const cameFrom = new Map<number, number>();
   const gScore = new Map<number, number>([[key(start), 0]]);
   const fScore = new Map<number, number>([[key(start), heuristic(start, goal)]]);
   const closed = new Set<number>();
+
+  // BUILD 687: binary min-heap for the A* open list. The old linear scan +
+  // open.some membership check was O(n^2) per search (~53ms per NPC replan in
+  // town, ~47% of frame CPU while walking). Entries carry the fScore at push
+  // time; superseded or already-closed entries are skipped on pop (lazy
+  // deletion). Tie-break by insertion sequence keeps searches deterministic.
+  interface HeapEntry { k: number; f: number; s: number; cell: GridCell }
+  const heap: HeapEntry[] = [];
+  let heapSeq = 0;
+  const heapLess = (a: HeapEntry, b: HeapEntry) => a.f < b.f || (a.f === b.f && a.s < b.s);
+  const heapPush = (cell: GridCell) => {
+    const k = key(cell);
+    const e: HeapEntry = { k, f: fScore.get(k) ?? Infinity, s: heapSeq++, cell };
+    heap.push(e);
+    let i = heap.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (!heapLess(heap[i], heap[p])) break;
+      const tmp = heap[i]; heap[i] = heap[p]; heap[p] = tmp;
+      i = p;
+    }
+  };
+  const heapPop = (): GridCell | null => {
+    while (heap.length > 0) {
+      const top = heap[0];
+      const last = heap.pop()!;
+      if (heap.length > 0) {
+        heap[0] = last;
+        let i = 0;
+        for (;;) {
+          const l = 2 * i + 1, r = l + 1;
+          let m = i;
+          if (l < heap.length && heapLess(heap[l], heap[m])) m = l;
+          if (r < heap.length && heapLess(heap[r], heap[m])) m = r;
+          if (m === i) break;
+          const tmp = heap[i]; heap[i] = heap[m]; heap[m] = tmp;
+          i = m;
+        }
+      }
+      if (closed.has(top.k)) continue;
+      if ((fScore.get(top.k) ?? Infinity) !== top.f) continue; // stale entry
+      return top.cell;
+    }
+    return null;
+  };
+  heapPush(start);
 
   const neighbors = (c: GridCell): GridCell[] => {
     const out: GridCell[] = [];
@@ -303,14 +363,8 @@ export function findPath(
 
   let found = false;
   let guard = 0;
-  while (open.length > 0 && guard++ < 12000) {
-    // Pick lowest fScore (linear scan; fine at 70x70 for occasional repaths —
-    // paths are computed on destination change, not per tick).
-    let best = 0;
-    for (let i = 1; i < open.length; i++) {
-      if ((fScore.get(key(open[i])) ?? Infinity) < (fScore.get(key(open[best])) ?? Infinity)) best = i;
-    }
-    const current = open.splice(best, 1)[0];
+  let current: GridCell | null;
+  while ((current = heapPop()) !== null && guard++ < 12000) {
     const ck = key(current);
     if (current.x === goal.x && current.y === goal.y) {
       found = true;
@@ -332,7 +386,7 @@ export function findPath(
         cameFrom.set(nk, ck);
         gScore.set(nk, tentative);
         fScore.set(nk, tentative + heuristic(nb, goal));
-        if (!open.some((c) => key(c) === nk)) open.push(nb);
+        heapPush(nb);
       }
     }
   }

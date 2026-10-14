@@ -553,7 +553,14 @@ export interface SettlementDecor {
   props: { id: string; asset: string; x: number; y: number; r: number }[];
 }
 
+let _settlementDecor: SettlementDecor | null = null;
 export function mosslightSettlementDecor(): SettlementDecor {
+  // BUILD 687: memoized — this is pure deterministic data, but it was rebuilt
+  // (fresh lane/point/prop objects) on every call: twice per render frame plus
+  // once per collision probe (~54 calls/sec while walking in town).
+  // Callers only read the result (settlementDecorFor spreads into new arrays),
+  // so sharing the instance is safe.
+  if (_settlementDecor) return _settlementDecor;
   const { west, north } = mosslightHamletLayouts();
   const s = SETTLEMENT_FIELD_SCALE;
   const convert = (l: SettlementLayout) => ({
@@ -567,9 +574,10 @@ export function mosslightSettlementDecor(): SettlementDecor {
     })),
   });
   const w = convert(west), n = convert(north);
-  return {
+  _settlementDecor = {
     plazas: [w.plaza, n.plaza],
     lanes: [...w.lanes, ...n.lanes],
     props: [...w.props, ...n.props],
   };
+  return _settlementDecor;
 }

@@ -1,6 +1,6 @@
 {
-  "build": "686",
-  "note": "authored Mosslight town: path network to every door, plaza, walls + gatehouse, garden",
-  "timestamp": "2026-10-14T00:19:46.273Z",
-  "cacheBuster": "mv7d4u01"
+  "build": "687",
+  "note": "town lag fix: A* pathfinding 8x faster (binary heap), cached water grids + decor",
+  "timestamp": "2026-10-14T02:30:53.304Z",
+  "cacheBuster": "mv7htg8o"
 }

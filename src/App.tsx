@@ -122,6 +122,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '687': 'town lag fix: A* pathfinding 8x faster (binary heap), cached water grids + decor',
   '686': 'authored Mosslight town: path network to every door, plaza, walls + gatehouse, garden',
   '685': 'tutorial objective banner + ambient goats',
   '680': 'procedural hamlet settlement generator',
