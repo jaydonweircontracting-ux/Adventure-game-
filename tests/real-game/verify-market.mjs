@@ -48,9 +48,10 @@ check('boot: zero JS page errors', pageErrors.length === 0, pageErrors.slice(0, 
 console.log('  build =', await T(`window.__gameTest.getBuild()`));
 check('exit: walked out via doorway', await exitInteriorWalk());
 
-// Teleport to the market plaza (stalls ring the fountain at ~144,144).
-check('teleport: to market', await T(`window.__gameTest.teleportPlayer(144, 122)`));
-await sleep(1500);
+// Teleport to the market plaza itself (stalls ring the fountain at 144,144),
+// and let the camera settle so the market is in frame.
+check('teleport: to market', await T(`window.__gameTest.teleportPlayer(144, 140)`));
+await sleep(3000);
 
 // NO fast-forward: let the clock and NPCs advance together in real time
 // (fast-forwarding the clock without moving NPCs distorts commutes).
@@ -60,33 +61,49 @@ console.log('  letting real time run to the morning market window...');
 await sleep(60000); // 6:00 -> ~6:20... wait for the window below via clock
 
 // Poll townsfolk until shoppers REACH the market and pause at stalls.
+// Walkers and browsers peak at DIFFERENT instants (they walk, then pause),
+// so track peaks across polls and screenshot each phase when seen.
 const MARKET_ACTS = ['Strolling the market', 'Browsing the stalls', 'Running errands', 'Minding the stall'];
 const STALLS = [[132,130],[144,130],[156,130],[132,158],[144,158],[156,158],[128,144],[160,144]];
 const nearStall = (n) => STALLS.some(([sx, sy]) => Math.hypot(n.x - sx, n.y - sy) < 7);
 let folk = [];
-let settled = [];
+let peakWalkers = [];
+let peakBrowsers = [];
 const t0 = Date.now();
+let shotWalking = false, shotBrowsing = false;
 while (Date.now() - t0 < 240000) {
   folk = await T(`window.__gameTest.getTownsfolk()`);
-  settled = folk.filter((n) => n.activity === 'Browsing the stalls' && nearStall(n));
   const walkers = folk.filter((n) => n.activity === 'Strolling the market' || n.activity === 'Running errands');
-  if (settled.length >= 1 && walkers.length >= 2) break;
+  const browsers = folk.filter((n) => n.activity === 'Browsing the stalls' && nearStall(n));
+  if (walkers.length > peakWalkers.length) {
+    peakWalkers = walkers;
+    if (walkers.length >= 2 && !shotWalking) {
+      shotWalking = true;
+      await page.screenshot({ path: `${SHOT}/market-walking.png` });
+      console.log(`  screenshot walkers: ${SHOT}/market-walking.png`);
+    }
+  }
+  if (browsers.length > peakBrowsers.length) {
+    peakBrowsers = browsers;
+    if (browsers.length >= 1 && !shotBrowsing) {
+      shotBrowsing = true;
+      // Player is already at the plaza; screenshot immediately while the
+      // browser is paused at the stall.
+      await page.screenshot({ path: `${SHOT}/market-browsing.png` });
+      const b0 = browsers[0];
+      console.log(`  screenshot browsers: ${SHOT}/market-browsing.png (browser ${b0.name} @ ${b0.x.toFixed(0)},${b0.y.toFixed(0)})`);
+    }
+  }
+  if (peakWalkers.length >= 2 && peakBrowsers.length >= 1) break;
   await sleep(5000);
 }
-const browsers = folk.filter((n) => n.activity === 'Browsing the stalls');
-const walkers = folk.filter((n) => n.activity === 'Strolling the market' || n.activity === 'Running errands');
-console.log(`  townsfolk: ${folk.length}, browsing: ${browsers.length}, settled at stalls: ${settled.length}, walking: ${walkers.length}`);
-for (const b of settled.slice(0, 6)) console.log(`    browser: ${b.name} @ (${b.x.toFixed(0)},${b.y.toFixed(0)}) ${b.activity}`);
-for (const w of walkers.slice(0, 4)) console.log(`    walker: ${w.name} @ (${w.x.toFixed(0)},${w.y.toFixed(0)}) ${w.activity}`);
-check('market: >=1 NPC settled browsing at a stall', settled.length >= 1, `got ${settled.length}`);
-check('market: >=2 NPCs walking streets/stalls', walkers.length >= 2, `got ${walkers.length}`);
-
-// Settled browsers stand at stall fronts (physical proximity proof).
-check('market: settled browsers stand at stall fronts', settled.length >= 1 && settled.every(nearStall),
-  `${settled.filter(nearStall).length}/${settled.length} near stalls`);
-
-await page.screenshot({ path: `${SHOT}/market-browsing.png` });
-console.log('  screenshot:', `${SHOT}/market-browsing.png`);
+console.log(`  townsfolk: ${folk.length}, peak walkers: ${peakWalkers.length}, peak browsers: ${peakBrowsers.length}`);
+for (const b of peakBrowsers.slice(0, 6)) console.log(`    browser: ${b.name} @ (${b.x.toFixed(0)},${b.y.toFixed(0)}) ${b.activity}`);
+for (const w of peakWalkers.slice(0, 4)) console.log(`    walker: ${w.name} @ (${w.x.toFixed(0)},${w.y.toFixed(0)}) ${w.activity}`);
+check('market: >=1 NPC paused browsing at a stall front', peakBrowsers.length >= 1, `got ${peakBrowsers.length}`);
+check('market: >=2 NPCs walked the streets/stalls', peakWalkers.length >= 2, `got ${peakWalkers.length}`);
+check('market: peak browsers stood at stall fronts', peakBrowsers.length >= 1 && peakBrowsers.every(nearStall),
+  `${peakBrowsers.filter(nearStall).length}/${peakBrowsers.length} near stalls`);
 
 // Frame times at the market (A/B handled by ?nodirt=1 param externally).
 const frameStats = await T(`new Promise((resolve) => {
