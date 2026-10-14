@@ -1,6 +1,6 @@
 {
-  "build": "687",
-  "note": "town lag fix: A* pathfinding 8x faster (binary heap), cached water grids + decor",
-  "timestamp": "2026-10-14T02:30:53.304Z",
-  "cacheBuster": "mv7htg8o"
+  "build": "688",
+  "note": "procedural town layout engine: seeded road/district/lot generator + validator (engine-only, no gameplay change)",
+  "timestamp": "2026-10-14T02:49:42.167Z",
+  "cacheBuster": "mv7ihnas"
 }

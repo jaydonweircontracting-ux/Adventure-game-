@@ -6893,6 +6893,90 @@ import { inflateSync } from 'node:zlib';
   assert(rigErrors.length === 0, `Town686: rig audit passes on 18 town buildings (${rigErrors.slice(0, 3).join('; ')})`);
 }
 
+// BUILD 688: Procedural town layout engine — seeded, validated blueprints.
+{
+  const { generateTownLayout, validateTownLayout, exportTownLayout, importTownLayout,
+    roadToTownLane, lotToBuildingRect, toChunkSpace, TOWN_LAYOUT_VERSION } =
+    await import('../src/game/townLayout.js');
+
+  assert(TOWN_LAYOUT_VERSION === 1, 'Town688: layout version is 1');
+
+  // 1. Determinism: same seed -> byte-identical export (3 sizes x 3 seeds).
+  for (const size of ['hamlet', 'village', 'town'] as const) {
+    for (const seed of [4242, 7777, 909]) {
+      const a = generateTownLayout(seed, { size });
+      const b = generateTownLayout(seed, { size });
+      assert(exportTownLayout(a) === exportTownLayout(b),
+        `Town688: deterministic (${size} seed ${seed})`);
+    }
+  }
+
+  // 2. Validity: fixed seeds x sizes all pass the validator.
+  const seeds = [7, 42, 1234, 7777, 42424];
+  for (const size of ['hamlet', 'village', 'town'] as const) {
+    for (const seed of seeds) {
+      const L = generateTownLayout(seed, { size });
+      const errs = validateTownLayout(L);
+      assert(errs.length === 0,
+        `Town688: valid ${size} seed ${seed} (${L.roads.length} roads, ${L.lots.length} lots${errs.length ? ': ' + errs.slice(0, 2).join('; ') : ''})`);
+    }
+  }
+
+  // 3. Export/import round-trip.
+  for (const seed of [11, 222, 3333]) {
+    const L = generateTownLayout(seed, { size: 'village' });
+    const rt = importTownLayout(exportTownLayout(L));
+    assert(exportTownLayout(rt) === exportTownLayout(L),
+      `Town688: export/import round-trip identical (seed ${seed})`);
+  }
+
+  // 4. importTownLayout rejects bad type/version.
+  let threw = 0;
+  try { importTownLayout(JSON.stringify({ type: 'nope', version: 1, layout: {} })); } catch { threw++; }
+  try { importTownLayout(JSON.stringify({ type: 'adventure-town-layout', version: 999, layout: {} })); } catch { threw++; }
+  assert(threw === 2, 'Town688: import rejects bad type and bad version');
+
+  // 5. Phase-2 bridges: road->TownLane compat, lot->Rect, chunk-space mapping.
+  {
+    const L = generateTownLayout(4242, { size: 'town' });
+    const lane = roadToTownLane(L.roads[0]);
+    assert(Array.isArray(lane.points) && lane.points.length >= 2 && typeof lane.width === 'number',
+      'Town688: roadToTownLane yields TownLane-compatible {points,width}');
+    const r = lotToBuildingRect(L.lots[0]);
+    assert(r.left < r.right && r.top < r.bottom, 'Town688: lotToBuildingRect yields a valid Rect');
+    const cs = toChunkSpace(L, 280);
+    const inBounds = cs.lots.every((l) =>
+      l.footprint.left >= 0 && l.footprint.top >= 0 &&
+      l.footprint.right <= 280 && l.footprint.bottom <= 280);
+    assert(inBounds, `Town688: toChunkSpace keeps all ${cs.lots.length} footprints inside [0,280]`);
+    assert(cs.roads.length === L.roads.length && cs.lots.length === L.lots.length,
+      'Town688: toChunkSpace preserves road/lot counts');
+  }
+
+  // 6. District coherence: civic district + plaza lot always exist; every
+  // lot's district is a known kind.
+  {
+    const kinds = new Set(['residential', 'commercial', 'industrial', 'civic', 'park']);
+    for (const size of ['hamlet', 'village', 'town'] as const) {
+      const L = generateTownLayout(5150, { size });
+      assert(L.districts.some((d) => d.kind === 'civic'), `Town688: ${size} has a civic district`);
+      assert(L.lots.some((l) => l.kind === 'plaza'), `Town688: ${size} has a plaza lot`);
+      assert(L.lots.every((l) => kinds.has(l.district)), `Town688: ${size} lot districts all known`);
+      const buildings = L.lots.filter((l) => l.kind === 'building').length;
+      assert(buildings >= 6, `Town688: ${size} has enough buildings (${buildings})`);
+    }
+  }
+
+  // 7. Road network has arterials and the plaza roadId resolves.
+  {
+    const L = generateTownLayout(999, { size: 'town' });
+    const arts = L.roads.filter((r) => r.kind === 'arterial');
+    assert(arts.length >= 2 && arts.length <= 4, `Town688: 2-4 arterials (got ${arts.length})`);
+    const roadIds = new Set(L.roads.map((r) => r.id));
+    assert(L.lots.every((l) => roadIds.has(l.roadId)), 'Town688: every lot roadId resolves');
+  }
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);

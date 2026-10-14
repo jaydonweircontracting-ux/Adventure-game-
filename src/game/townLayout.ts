@@ -1,0 +1,830 @@
+// Procedural TOWN LAYOUT engine — BUILD 688.
+//
+// Generates the 2D blueprint of a town: staged road network, districts,
+// building lots, and suburbs. Pure deterministic module: no React, no
+// App.tsx imports. Same seed + config -> byte-identical TownLayout.
+//
+// Functional reference: Fantasy Town Generator's documented pipeline
+// (staged roads -> lot detection -> district stages -> suburb stage).
+// Our implementation is original: roads are grown from a proposal queue,
+// lots are placed roadside (guaranteeing every lot fronts a road), and
+// districts are coherent zones (civic core, commercial arterials,
+// industrial edge sector, parks, residential fill).
+//
+// Coordinate space: town-local units, origin at town center, roughly
+// [-110, 110]. Phase 2 maps this into chunk space via toChunkSpace().
+// Road records are structurally compatible with townPlan.ts TownLane
+// ({ points, width }); lot footprints use settlements.ts Rect, matching
+// MOSSLIGHT_FIXED_RECTS_280.
+
+import { mulberry32 } from './groundDetail';
+import { rectsOverlap, type Rect } from './settlements';
+
+// ---------------------------------------------------------------- types
+
+export interface TLPoint { x: number; y: number }
+export type RoadKind = 'arterial' | 'street' | 'lane';
+export interface TLRoad {
+  id: string;
+  kind: RoadKind;
+  points: TLPoint[];
+  width: number;
+}
+export type DistrictKind = 'residential' | 'commercial' | 'industrial' | 'civic' | 'park';
+export type DistrictZone = 'circle' | 'arterial-corridor' | 'edge-sector';
+export interface TLDistrict {
+  id: string;
+  kind: DistrictKind;
+  center: TLPoint;   // representative point (labels, SVG)
+  radius: number;    // zone radius for 'circle' (0 otherwise)
+  zone: DistrictZone;
+  sectorAngle?: number;  // edge-sector: center angle (radians)
+  sectorWidth?: number;  // edge-sector: half-width (radians)
+  corridorDist?: number; // arterial-corridor: max distance to an arterial
+}
+export type Facing = 'north' | 'south' | 'east' | 'west';
+export type LotKind = 'building' | 'farm' | 'plaza';
+export interface TLLot {
+  id: string;
+  district: DistrictKind;
+  parcel: Rect;      // town-local lot parcel (axis-aligned)
+  footprint: Rect;   // town-local building rect (axis-aligned, inside parcel)
+  facing: Facing;    // door side: direction from footprint toward its road
+  roadId: string;    // the road this lot fronts
+  kind: LotKind;
+}
+export type TownSize = 'hamlet' | 'village' | 'town';
+export interface TownGenConfig {
+  size: TownSize;
+  arterialCount?: number; // default by size
+}
+export interface TownLayout {
+  version: 1;
+  seed: number;
+  config: TownGenConfig;
+  center: TLPoint;
+  boundary: TLPoint[];   // irregular town-edge polygon (CCW)
+  roads: TLRoad[];
+  districts: TLDistrict[];
+  lots: TLLot[];
+  plazas: { x: number; y: number; r: number }[];
+}
+
+export const TOWN_LAYOUT_VERSION = 1 as const;
+
+// ---------------------------------------------------------------- rng
+
+function hashStr(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+/** Independent deterministic stream per generation stage. */
+function stream(seed: number, tag: string): () => number {
+  return mulberry32(hashStr(`${seed}:${tag}`));
+}
+
+// ---------------------------------------------------------------- geometry
+
+const dist = (a: TLPoint, b: TLPoint): number => Math.hypot(a.x - b.x, a.y - b.y);
+
+function distPointSeg(p: TLPoint, a: TLPoint, b: TLPoint): number {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return dist(p, a);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+function distPointPolyline(p: TLPoint, pts: TLPoint[]): number {
+  let best = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const d = distPointSeg(p, pts[i], pts[i + 1]);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+/** Nearest point on a polyline to p (for facing computation). */
+function nearestOnPolyline(p: TLPoint, pts: TLPoint[]): TLPoint {
+  let best: TLPoint = pts[0];
+  let bestD = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    let t = len2 === 0 ? 0 : ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const c = { x: a.x + t * dx, y: a.y + t * dy };
+    const d = dist(p, c);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
+function pointInPolygon(p: TLPoint, poly: TLPoint[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > p.y) !== (b.y > p.y) &&
+        p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/** Minimum distance from p to a polygon's edges (for margin checks). */
+function distToPolygonEdge(p: TLPoint, poly: TLPoint[]): number {
+  let best = Infinity;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const d = distPointSeg(p, poly[j], poly[i]);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+/** Sample a polyline every `step` units (endpoints included). */
+function samplePolyline(pts: TLPoint[], step: number): TLPoint[] {
+  const out: TLPoint[] = [pts[0]];
+  let acc = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const segLen = dist(a, b);
+    let d = step - acc;
+    while (d < segLen) {
+      const t = d / segLen;
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      d += step;
+    }
+    acc = (acc + segLen) % step;
+  }
+  const last = pts[pts.length - 1];
+  if (dist(out[out.length - 1], last) > 1e-6) out.push({ ...last });
+  return out;
+}
+
+function rectCenter(r: Rect): TLPoint {
+  return { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 };
+}
+
+/** Min distance from a rect to a set of points (0 if any point inside). */
+function distRectToPoints(r: Rect, pts: TLPoint[]): number {
+  let best = Infinity;
+  for (const p of pts) {
+    if (p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom) return 0;
+    const cx = Math.max(r.left, Math.min(r.right, p.x));
+    const cy = Math.max(r.top, Math.min(r.bottom, p.y));
+    const d = Math.hypot(p.x - cx, p.y - cy);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------- config
+
+interface SizeParams {
+  radius: number;
+  targetLots: [number, number];
+  maxStreets: number;
+  maxLanes: number;
+  plazaR: number;
+}
+const SIZE_PARAMS: Record<TownSize, SizeParams> = {
+  hamlet:  { radius: 52, targetLots: [8, 14],   maxStreets: 10, maxLanes: 4,  plazaR: 5 },
+  village: { radius: 72, targetLots: [18, 30],  maxStreets: 22, maxLanes: 8,  plazaR: 7 },
+  town:    { radius: 92, targetLots: [35, 60],  maxStreets: 40, maxLanes: 14, plazaR: 9 },
+};
+
+// ---------------------------------------------------------------- generation
+
+export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>): TownLayout {
+  const size: TownSize = config?.size ?? 'village';
+  const P = SIZE_PARAMS[size];
+  const fullConfig: TownGenConfig = {
+    size,
+    arterialCount: config?.arterialCount ?? (size === 'hamlet' ? 2 : 3),
+  };
+  const R = P.radius;
+  const rngB = stream(seed, 'boundary');
+  const rngR = stream(seed, 'roads');
+  const rngD = stream(seed, 'districts');
+  const rngL = stream(seed, 'lots');
+
+  // ---- boundary: irregular polygon around the center
+  const boundary: TLPoint[] = [];
+  const nVert = 18;
+  for (let i = 0; i < nVert; i++) {
+    const a = (i / nVert) * Math.PI * 2;
+    const r = R * (0.82 + 0.36 * rngB());
+    boundary.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
+  }
+  const inside = (p: TLPoint, margin = 0): boolean =>
+    pointInPolygon(p, boundary) && distToPolygonEdge(p, boundary) > margin;
+
+  const roads: TLRoad[] = [];
+  let roadSeq = 0;
+  const addRoad = (kind: RoadKind, points: TLPoint[], width: number): TLRoad => {
+    const r: TLRoad = { id: `road-${roadSeq++}`, kind, points, width };
+    roads.push(r);
+    return r;
+  };
+
+  // ---- Stage A: arterials — edge to edge via near-center
+  const arterials: TLRoad[] = [];
+  const nArt = fullConfig.arterialCount!;
+  for (let i = 0; i < nArt; i++) {
+    const baseA = (i / nArt) * Math.PI * 2 + rngR() * 0.5;
+    const a0 = baseA + (rngR() - 0.5) * 0.35;
+    const a1 = baseA + Math.PI + (rngR() - 0.5) * 0.35;
+    const start = { x: Math.cos(a0) * R * 1.02, y: Math.sin(a0) * R * 1.02 };
+    const end = { x: Math.cos(a1) * R * 1.02, y: Math.sin(a1) * R * 1.02 };
+    const via = { x: (rngR() - 0.5) * 10, y: (rngR() - 0.5) * 10 };
+    const pts: TLPoint[] = [];
+    const legs: [TLPoint, TLPoint][] = [[start, via], [via, end]];
+    for (const [p0, p1] of legs) {
+      const segs = 6;
+      const phase = rngR() * Math.PI * 2;
+      const amp = 3 + rngR() * 5;
+      for (let s = 0; s <= segs; s++) {
+        if (pts.length > 0 && s === 0) continue;
+        const t = s / segs;
+        const nx = -(p1.y - p0.y), ny = p1.x - p0.x;
+        const nl = Math.hypot(nx, ny) || 1;
+        const off = Math.sin(t * Math.PI + phase) * amp * Math.sin(t * Math.PI);
+        pts.push({
+          x: p0.x + (p1.x - p0.x) * t + (nx / nl) * off,
+          y: p0.y + (p1.y - p0.y) * t + (ny / nl) * off,
+        });
+      }
+    }
+    arterials.push(addRoad('arterial', pts, 4));
+  }
+
+  // Cached road samples for legality checks (rebuilt as roads are added).
+  let roadSamples: { road: TLRoad; pts: TLPoint[] }[] = [];
+  const refreshSamples = () => {
+    roadSamples = roads.map((r) => ({ road: r, pts: samplePolyline(r.points, 2) }));
+  };
+  refreshSamples();
+
+  /** Min distance from p to any road sample, ignoring samples near `exempt`. */
+  const minDistToRoads = (p: TLPoint, onlyKind?: RoadKind, exempt?: TLPoint, exemptR = 0): number => {
+    let best = Infinity;
+    for (const rs of roadSamples) {
+      if (onlyKind && rs.road.kind !== onlyKind) continue;
+      for (const s of rs.pts) {
+        if (exempt && dist(p, exempt) < exemptR && dist(s, exempt) < exemptR) continue;
+        const d = dist(p, s);
+        if (d < best) best = d;
+      }
+    }
+    return best;
+  };
+
+  // ---- Stage B: streets — proposal queue (branch/continue), pruned later
+  interface Proposal { x: number; y: number; dir: number; len: number; depth: number }
+  const queue: Proposal[] = [];
+  for (const art of arterials) {
+    const pts = art.points;
+    const total = pts.reduce((a, _, i) => (i === 0 ? 0 : a + dist(pts[i - 1], pts[i])), 0);
+    for (let d = 14; d < total - 8; d += 13 + rngR() * 8) {
+      // walk to distance d along the polyline
+      let acc = 0, px = pts[0].x, py = pts[0].y, pdx = 1, pdy = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const sl = dist(pts[i], pts[i + 1]);
+        if (acc + sl >= d) {
+          const t = (d - acc) / sl;
+          px = pts[i].x + (pts[i + 1].x - pts[i].x) * t;
+          py = pts[i].y + (pts[i + 1].y - pts[i].y) * t;
+          pdx = (pts[i + 1].x - pts[i].x) / sl;
+          pdy = (pts[i + 1].y - pts[i].y) / sl;
+          break;
+        }
+        acc += sl;
+      }
+      if (!inside({ x: px, y: py }, 10)) continue;
+      const base = Math.atan2(pdy, pdx);
+      for (const side of [-1, 1]) {
+        if (rngR() < 0.72) {
+          queue.push({
+            x: px, y: py,
+            dir: base + (side * Math.PI) / 2 + (rngR() - 0.5) * 0.5,
+            len: 24 + rngR() * 16,
+            depth: 0,
+          });
+        }
+      }
+    }
+  }
+
+  const buildCurved = (x: number, y: number, dir: number, len: number): TLPoint[] => {
+    const pts: TLPoint[] = [{ x, y }];
+    const segs = 4;
+    const bend = (rngR() - 0.5) * 0.5;
+    let cx = x, cy = y, cd = dir;
+    for (let s = 1; s <= segs; s++) {
+      cd += bend / segs + (rngR() - 0.5) * 0.12;
+      const sl = len / segs;
+      cx += Math.cos(cd) * sl;
+      cy += Math.sin(cd) * sl;
+      pts.push({ x: cx, y: cy });
+    }
+    return pts;
+  };
+
+  const streetCount = () => roads.filter((r) => r.kind === 'street').length;
+  while (queue.length > 0 && streetCount() < P.maxStreets) {
+    const pr = queue.shift()!;
+    const pts = buildCurved(pr.x, pr.y, pr.dir, pr.len);
+    const samples = samplePolyline(pts, 2);
+    // legality: inside boundary, clear of other streets/lanes
+    let ok = true;
+    for (const s of samples) {
+      if (!inside(s, 4)) { ok = false; break; }
+      const nearStart = dist(s, { x: pr.x, y: pr.y }) < 7;
+      const dmin = minDistToRoads(s, undefined, nearStart ? { x: pr.x, y: pr.y } : undefined, 7);
+      // arterials may be crossed (intersections are good); streets/lanes keep distance
+      if (!nearStart) {
+        let dStreets = Infinity;
+        for (const rs of roadSamples) {
+          if (rs.road.kind === 'arterial') continue;
+          for (const q of rs.pts) {
+            const d = dist(s, q);
+            if (d < dStreets) dStreets = d;
+          }
+        }
+        if (dStreets < 5.5) { ok = false; break; }
+      }
+      void dmin;
+    }
+    if (!ok || samples.length < 3) continue;
+    const road = addRoad('street', pts, 2.5);
+    refreshSamples();
+    if (pr.depth < 3) {
+      const endP = pts[pts.length - 1];
+      const endDir = Math.atan2(
+        endP.y - pts[pts.length - 2].y, endP.x - pts[pts.length - 2].x);
+      if (rngR() < 0.75) {
+        queue.push({ x: endP.x, y: endP.y, dir: endDir + (rngR() - 0.5) * 0.4,
+          len: pr.len * 0.8, depth: pr.depth + 1 });
+      }
+      for (const side of [-1, 1]) {
+        if (rngR() < 0.55) {
+          queue.push({ x: endP.x, y: endP.y,
+            dir: endDir + (side * Math.PI) / 2 + (rngR() - 0.5) * 0.5,
+            len: pr.len * 0.7, depth: pr.depth + 1 });
+        }
+      }
+    }
+    void road;
+  }
+
+  // ---- Stage C: lanes — short connectors between nearby street endpoints
+  const laneCount = () => roads.filter((r) => r.kind === 'lane').length;
+  const endpoints: TLPoint[] = [];
+  for (const r of roads) {
+    if (r.kind === 'arterial') continue;
+    endpoints.push(r.points[0], r.points[r.points.length - 1]);
+  }
+  let laneTries = 0;
+  outer: for (let i = 0; i < endpoints.length && laneCount() < P.maxLanes; i++) {
+    for (let j = i + 1; j < endpoints.length && laneCount() < P.maxLanes; j++) {
+      if (laneTries++ > 220) break outer;
+      const a = endpoints[i], b = endpoints[j];
+      const d = dist(a, b);
+      if (d < 8 || d > 17) continue;
+      const mid = { x: (a.x + b.x) / 2 + (rngR() - 0.5) * 4,
+                    y: (a.y + b.y) / 2 + (rngR() - 0.5) * 4 };
+      const pts = [a, mid, b];
+      const samples = samplePolyline(pts, 2);
+      let ok = true;
+      for (const s of samples) {
+        if (!inside(s, 3)) { ok = false; break; }
+        if (dist(s, a) < 5 || dist(s, b) < 5) continue;
+        let dStreets = Infinity;
+        for (const rs of roadSamples) {
+          if (rs.road.kind === 'arterial') continue;
+          for (const q of rs.pts) {
+            const dd = dist(s, q);
+            if (dd < dStreets) dStreets = dd;
+          }
+        }
+        if (dStreets < 4) { ok = false; break; }
+      }
+      if (!ok) continue;
+      addRoad('lane', pts, 1.5);
+      refreshSamples();
+    }
+  }
+
+  // ---- prune: drop roads disconnected from the arterial skeleton
+  // (union-find over roads joined by sample proximity < 4)
+  const parent = roads.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const union = (a: number, b: number) => { parent[find(a)] = find(b); };
+  const allSamples = roads.map((r) => samplePolyline(r.points, 3));
+  for (let i = 0; i < roads.length; i++) {
+    for (let j = i + 1; j < roads.length; j++) {
+      let joined = false;
+      for (const s of allSamples[i]) {
+        for (const t of allSamples[j]) {
+          if (dist(s, t) < 4) { joined = true; break; }
+        }
+        if (joined) break;
+      }
+      if (joined) union(i, j);
+    }
+  }
+  const artRoots = new Set(arterials.map((a) => find(roads.indexOf(a))));
+  const kept = roads.filter((_, i) => artRoots.has(find(i)));
+  roads.length = 0;
+  roads.push(...kept);
+  refreshSamples();
+
+  // ---- districts: coherent zones
+  const districts: TLDistrict[] = [];
+  let dSeq = 0;
+  const civicR = R * 0.22;
+  districts.push({ id: `district-${dSeq++}`, kind: 'civic', center: { x: 0, y: 0 },
+    radius: civicR, zone: 'circle' });
+  const indAngle = rngD() * Math.PI * 2;
+  districts.push({ id: `district-${dSeq++}`, kind: 'industrial', center:
+    { x: Math.cos(indAngle) * R * 0.75, y: Math.sin(indAngle) * R * 0.75 },
+    radius: 0, zone: 'edge-sector', sectorAngle: indAngle, sectorWidth: 0.55 });
+  districts.push({ id: `district-${dSeq++}`, kind: 'commercial', center: { x: 0, y: 0 },
+    radius: 0, zone: 'arterial-corridor', corridorDist: 11 });
+  const nParks = size === 'town' ? 2 : size === 'village' ? 1 : (rngD() < 0.5 ? 1 : 0);
+  for (let i = 0; i < nParks; i++) {
+    const a = rngD() * Math.PI * 2;
+    const pr = 9 + rngD() * 4;
+    const c = { x: Math.cos(a) * R * 0.45, y: Math.sin(a) * R * 0.45 };
+    if (dist(c, { x: 0, y: 0 }) < civicR + pr + 4) continue;
+    districts.push({ id: `district-${dSeq++}`, kind: 'park', center: c, radius: pr, zone: 'circle' });
+  }
+
+  const arterialSamples = arterials.flatMap((a) =>
+    samplePolyline(a.points, 3));
+  const distToArterial = (p: TLPoint): number => {
+    let best = Infinity;
+    for (const s of arterialSamples) {
+      const d = dist(p, s);
+      if (d < best) best = d;
+    }
+    return best;
+  };
+  const districtAt = (p: TLPoint): DistrictKind => {
+    if (dist(p, { x: 0, y: 0 }) < civicR) return 'civic';
+    for (const d of districts) {
+      if (d.kind === 'park' && d.zone === 'circle' && dist(p, d.center) < d.radius) return 'park';
+    }
+    if (distToArterial(p) < 11) return 'commercial';
+    const ind = districts.find((d) => d.kind === 'industrial')!;
+    const pa = Math.atan2(p.y, p.x);
+    let da = Math.abs(pa - ind.sectorAngle!);
+    if (da > Math.PI) da = 2 * Math.PI - da;
+    if (da < ind.sectorWidth! && dist(p, { x: 0, y: 0 }) > R * 0.55) return 'industrial';
+    return 'residential';
+  };
+
+  // ---- lots: roadside placement (every lot fronts a road by construction)
+  const lots: TLLot[] = [];
+  let lotSeq = 0;
+  const [lotMin, lotMax] = P.targetLots;
+  // The central plaza rect is reserved up front so no building lot can
+  // ever overlap it (the plaza lot itself is pushed after placement).
+  const plazaR = P.plazaR;
+  const plazaRect: Rect = { left: -plazaR, top: -plazaR, right: plazaR, bottom: plazaR };
+
+  const footprintSize = (dk: DistrictKind): [number, number] => {
+    switch (dk) {
+      case 'residential': return [6 + rngL() * 3, 5 + rngL() * 2.5];
+      case 'commercial': return [8 + rngL() * 4, 6 + rngL() * 3];
+      case 'industrial': return [12 + rngL() * 6, 9 + rngL() * 4];
+      default: return [7 + rngL() * 3, 6 + rngL() * 2];
+    }
+  };
+  const lotDepthFor = (dk: DistrictKind): number => {
+    switch (dk) {
+      case 'residential': return 11;
+      case 'commercial': return 13;
+      case 'industrial': return 19;
+      default: return 12;
+    }
+  };
+  const lotFrontageFor = (dk: DistrictKind): number => {
+    switch (dk) {
+      case 'residential': return 11;
+      case 'commercial': return 14;
+      case 'industrial': return 20;
+      default: return 12;
+    }
+  };
+
+  const tryPlaceLot = (road: TLRoad, sx: number, sy: number, tx: number, ty: number,
+      sideSign: number, dkHint?: DistrictKind): boolean => {
+    // station (sx,sy), tangent (tx,ty); lot sits to the side
+    const tl = Math.hypot(tx, ty) || 1;
+    const nx = -ty / tl * sideSign, ny = tx / tl * sideSign;
+    const probe = { x: sx + nx * 6, y: sy + ny * 6 };
+    const dk = dkHint ?? districtAt(probe);
+    if (dk === 'civic' || dk === 'park') return false;
+    const depth = lotDepthFor(dk);
+    const frontage = lotFrontageFor(dk);
+    const [fw, fh] = footprintSize(dk);
+    const cx = sx + nx * (road.width / 2 + 2 + depth / 2);
+    const cy = sy + ny * (road.width / 2 + 2 + depth / 2);
+    const hw = Math.min(fw, frontage - 3) / 2, hh = Math.min(fh, depth - 4) / 2;
+    const footprint: Rect = { left: cx - hw, top: cy - hh, right: cx + hw, bottom: cy + hh };
+    const parcel: Rect = { left: cx - frontage / 2, top: cy - depth / 2,
+      right: cx + frontage / 2, bottom: cy + depth / 2 };
+    // inside town?
+    for (const c of [{ x: footprint.left, y: footprint.top }, { x: footprint.right, y: footprint.top },
+                     { x: footprint.left, y: footprint.bottom }, { x: footprint.right, y: footprint.bottom }]) {
+      if (!inside(c, 2)) return false;
+    }
+    // clear of all roads
+    for (const rs of roadSamples) {
+      const clearance = rs.road.width / 2 + 1.0;
+      if (distRectToPoints(footprint, rs.pts) < clearance) return false;
+    }
+    // no footprint overlaps (shared overlap logic from settlements.ts),
+    // and never on the reserved central plaza
+    for (const l of lots) {
+      if (rectsOverlap(footprint, l.footprint, 1.0)) return false;
+      if (rectsOverlap(parcel, l.parcel, 0.5)) return false;
+    }
+    if (rectsOverlap(footprint, plazaRect, 1.0)) return false;
+    // facing: dominant axis from footprint center toward the road
+    const fc = rectCenter(footprint);
+    const near = nearestOnPolyline(fc, road.points);
+    const vx = near.x - fc.x, vy = near.y - fc.y;
+    const facing: Facing = Math.abs(vx) > Math.abs(vy)
+      ? (vx > 0 ? 'east' : 'west') : (vy > 0 ? 'south' : 'north');
+    lots.push({ id: `lot-${lotSeq++}`, district: dk, parcel, footprint,
+      facing, roadId: road.id, kind: 'building' });
+    return true;
+  };
+
+  const roadOrder = [...roads].sort((a, b) => {
+    const rank = (k: RoadKind) => (k === 'arterial' ? 0 : k === 'street' ? 1 : 2);
+    return rank(a.kind) - rank(b.kind);
+  });
+  for (const road of roadOrder) {
+    if (lots.filter((l) => l.kind === 'building').length >= lotMax) break;
+    const pts = road.points;
+    const total = pts.reduce((a, _, i) => (i === 0 ? 0 : a + dist(pts[i - 1], pts[i])), 0);
+    const step = 12;
+    for (let d = 6; d < total - 4; d += step + rngL() * 5) {
+      let acc = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const sl = dist(pts[i], pts[i + 1]);
+        if (acc + sl >= d) {
+          const t = (d - acc) / sl;
+          const sx = pts[i].x + (pts[i + 1].x - pts[i].x) * t;
+          const sy = pts[i].y + (pts[i + 1].y - pts[i].y) * t;
+          const tx = (pts[i + 1].x - pts[i].x) / sl, ty = (pts[i + 1].y - pts[i].y) / sl;
+          // jitter side order deterministically
+          const sides = rngL() < 0.5 ? [-1, 1] : [1, -1];
+          for (const s of sides) tryPlaceLot(road, sx, sy, tx, ty, s);
+          break;
+        }
+        acc += sl;
+      }
+    }
+  }
+
+  // ---- center plaza lot (civic landmark; rect was reserved during placement)
+  lots.push({
+    id: `lot-${lotSeq++}`, district: 'civic',
+    parcel: { left: -plazaR - 2, top: -plazaR - 2, right: plazaR + 2, bottom: plazaR + 2 },
+    footprint: { left: -plazaR, top: -plazaR, right: plazaR, bottom: plazaR },
+    facing: 'south', roadId: arterials[0]?.id ?? roads[0]?.id ?? 'road-0', kind: 'plaza',
+  });
+  const plazas = [{ x: 0, y: 0, r: plazaR }];
+
+  // ---- suburbs: farm lots along outward stubs past the boundary
+  const farmLots: TLLot[] = [];
+  for (const art of arterials) {
+    const endP = art.points[art.points.length - 1];
+    const prev = art.points[art.points.length - 2];
+    const dir = Math.atan2(endP.y - prev.y, endP.x - prev.x);
+    const stubLen = 16 + rngL() * 10;
+    const stub: TLPoint[] = [];
+    for (let s = 0; s <= 4; s++) {
+      const t = (s / 4) * stubLen;
+      stub.push({ x: endP.x + Math.cos(dir + (rngL() - 0.5) * 0.2) * t,
+                  y: endP.y + Math.sin(dir + (rngL() - 0.5) * 0.2) * t });
+    }
+    const stubRoad = addRoad('lane', stub, 1.5);
+    refreshSamples();
+    const nFarms = 1 + Math.floor(rngL() * 2.4);
+    for (let f = 0; f < nFarms; f++) {
+      const t = 0.35 + 0.5 * (f / Math.max(1, nFarms - 1)) + (rngL() - 0.5) * 0.1;
+      const si = Math.min(stub.length - 1, Math.floor(t * (stub.length - 1)));
+      const sp = stub[si];
+      const side = rngL() < 0.5 ? -1 : 1;
+      const nx = -Math.sin(dir) * side, ny = Math.cos(dir) * side;
+      const cx = sp.x + nx * 14, cy = sp.y + ny * 14;
+      const footprint: Rect = { left: cx - 4, top: cy - 3, right: cx + 4, bottom: cy + 3 };
+      const parcel: Rect = { left: cx - 11, top: cy - 11, right: cx + 11, bottom: cy + 11 };
+      const far = dist({ x: 0, y: 0 }, { x: cx, y: cy });
+      if (far > R + 30) continue;
+      let ok = true;
+      for (const l of [...lots, ...farmLots]) {
+        if (rectsOverlap(footprint, l.footprint, 2)) { ok = false; break; }
+      }
+      // farms must also clear all roads (the stub they front is 10+ units
+      // from the footprint edge, so it passes naturally)
+      if (ok) {
+        for (const rs of roadSamples) {
+          if (distRectToPoints(footprint, rs.pts) < rs.road.width / 2 + 1.0) { ok = false; break; }
+        }
+      }
+      if (!ok) continue;
+      const fc = rectCenter(footprint);
+      const near = nearestOnPolyline(fc, stubRoad.points);
+      const vx = near.x - fc.x, vy = near.y - fc.y;
+      farmLots.push({ id: `lot-${lotSeq++}`, district: 'residential', parcel, footprint,
+        facing: Math.abs(vx) > Math.abs(vy) ? (vx > 0 ? 'east' : 'west') : (vy > 0 ? 'south' : 'north'),
+        roadId: stubRoad.id, kind: 'farm' });
+    }
+  }
+  lots.push(...farmLots);
+
+  return {
+    version: TOWN_LAYOUT_VERSION,
+    seed,
+    config: fullConfig,
+    center: { x: 0, y: 0 },
+    boundary,
+    roads,
+    districts,
+    lots,
+    plazas,
+  };
+}
+
+// ---------------------------------------------------------------- validation
+
+/** Validate a generated layout. Returns a list of error strings (empty = valid). */
+export function validateTownLayout(layout: TownLayout): string[] {
+  const errors: string[] = [];
+  if (layout.version !== TOWN_LAYOUT_VERSION) {
+    errors.push(`unsupported version ${layout.version}`);
+  }
+  const roadById = new Map(layout.roads.map((r) => [r.id, r]));
+  const allSamples = layout.roads.map((r) => samplePolyline(r.points, 2));
+
+  // unique ids
+  const ids = new Set<string>();
+  for (const l of layout.lots) {
+    if (ids.has(l.id)) errors.push(`duplicate lot id ${l.id}`);
+    ids.add(l.id);
+  }
+
+  // footprint inside parcel, no overlaps, clear of roads, fronts a road
+  for (const lot of layout.lots) {
+    const f = lot.footprint, p = lot.parcel;
+    if (!(f.left >= p.left + 1 && f.top >= p.top + 1 && f.right <= p.right - 1 && f.bottom <= p.bottom - 1)) {
+      errors.push(`lot ${lot.id}: footprint not inset inside parcel`);
+    }
+    if (!roadById.has(lot.roadId)) {
+      errors.push(`lot ${lot.id}: unknown roadId ${lot.roadId}`);
+      continue;
+    }
+    const road = roadById.get(lot.roadId)!;
+    const isPlaza = lot.kind === 'plaza';
+    // Road clearance + facing apply to buildings, not the open plaza square
+    // (arterials legitimately border/cross the central plaza).
+    if (!isPlaza) {
+      // road clearance: footprint must clear every road by half-width + 1
+      for (let i = 0; i < layout.roads.length; i++) {
+        const clearance = layout.roads[i].width / 2 + 1.0;
+        if (distRectToPoints(f, allSamples[i]) < clearance - 1e-6) {
+          errors.push(`lot ${lot.id}: footprint too close to ${layout.roads[i].id}`);
+          break;
+        }
+      }
+      // facing: the road must lie in the facing direction from the footprint
+      const fc = rectCenter(f);
+      const near = nearestOnPolyline(fc, road.points);
+      const vx = near.x - fc.x, vy = near.y - fc.y;
+      const dirVec: Record<Facing, TLPoint> = {
+        north: { x: 0, y: -1 }, south: { x: 0, y: 1 },
+        east: { x: 1, y: 0 }, west: { x: -1, y: 0 },
+      };
+      const fv = dirVec[lot.facing];
+      const dot = vx * fv.x + vy * fv.y;
+      if (dot <= 0.3 * Math.hypot(vx, vy)) {
+        errors.push(`lot ${lot.id}: facing ${lot.facing} does not point at road ${lot.roadId}`);
+      }
+    }
+    // every lot's PARCEL must front its road (front edge sits roadHalf+2 out
+    // by construction; the footprint may sit deeper in a deep parcel)
+    const roadIdx = layout.roads.indexOf(road);
+    const parcelTouch = distRectToPoints(p, allSamples[roadIdx]);
+    if (parcelTouch > road.width / 2 + 3) {
+      errors.push(`lot ${lot.id}: parcel does not front road ${lot.roadId} (gap ${parcelTouch.toFixed(1)})`);
+    }
+    // non-farm footprints inside the boundary
+    if (lot.kind !== 'farm') {
+      for (const c of [{ x: f.left, y: f.top }, { x: f.right, y: f.top },
+                       { x: f.left, y: f.bottom }, { x: f.right, y: f.bottom }]) {
+        if (!pointInPolygon(c, layout.boundary)) {
+          errors.push(`lot ${lot.id}: footprint corner outside boundary`);
+          break;
+        }
+      }
+    }
+  }
+
+  // pairwise footprint overlaps (shared logic from settlements.ts)
+  for (let i = 0; i < layout.lots.length; i++) {
+    for (let j = i + 1; j < layout.lots.length; j++) {
+      if (rectsOverlap(layout.lots[i].footprint, layout.lots[j].footprint, 0.5)) {
+        errors.push(`lots ${layout.lots[i].id} and ${layout.lots[j].id} overlap`);
+      }
+    }
+  }
+
+  // road network connected: union-find over roads joined by sample proximity
+  const n = layout.roads.length;
+  const parent = layout.roads.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      let joined = false;
+      for (const s of allSamples[i]) {
+        for (const t of allSamples[j]) {
+          if (dist(s, t) < 4) { joined = true; break; }
+        }
+        if (joined) break;
+      }
+      if (joined) parent[find(i)] = find(j);
+    }
+  }
+  const roots = new Set(layout.roads.map((_, i) => find(i)));
+  if (roots.size > 1) errors.push(`road network has ${roots.size} disconnected components`);
+
+  return errors;
+}
+
+// ---------------------------------------------------------------- export
+
+export interface ExportedTownLayout {
+  type: 'adventure-town-layout';
+  version: 1;
+  layout: TownLayout;
+}
+
+/** Serialize a layout to versioned JSON (the phase-2 blueprint). */
+export function exportTownLayout(layout: TownLayout): string {
+  const doc: ExportedTownLayout = { type: 'adventure-town-layout', version: TOWN_LAYOUT_VERSION, layout };
+  return JSON.stringify(doc);
+}
+
+/** Parse a previously exported layout. Throws on bad type/version. */
+export function importTownLayout(json: string): TownLayout {
+  const doc = JSON.parse(json) as ExportedTownLayout;
+  if (doc.type !== 'adventure-town-layout') throw new Error(`bad layout type: ${doc.type}`);
+  if (doc.version !== TOWN_LAYOUT_VERSION) throw new Error(`unsupported layout version: ${doc.version}`);
+  return doc.layout;
+}
+
+// ---------------------------------------------------------------- phase-2 bridges
+
+/** Road -> townPlan.ts TownLane-compatible record ({ points, width }). */
+export function roadToTownLane(road: TLRoad): { points: TLPoint[]; width: number } {
+  return { points: road.points.map((p) => ({ ...p })), width: road.width };
+}
+
+/** Lot -> building rect (settlements.ts Rect, like MOSSLIGHT_FIXED_RECTS_280). */
+export function lotToBuildingRect(lot: TLLot): Rect {
+  return { ...lot.footprint };
+}
+
+/**
+ * Shift a layout into chunk space: town-local origin -> chunk center.
+ * Default 280 matches FIELD_SIZE so rects drop straight into chunk coords.
+ */
+export function toChunkSpace(layout: TownLayout, chunkSize = 280): {
+  roads: TLRoad[];
+  lots: TLLot[];
+  boundary: TLPoint[];
+  plazas: { x: number; y: number; r: number }[];
+} {
+  const o = chunkSize / 2;
+  const shiftP = (p: TLPoint): TLPoint => ({ x: p.x + o, y: p.y + o });
+  const shiftR = (r: Rect): Rect => ({ left: r.left + o, top: r.top + o, right: r.right + o, bottom: r.bottom + o });
+  return {
+    roads: layout.roads.map((r) => ({ ...r, points: r.points.map(shiftP) })),
+    lots: layout.lots.map((l) => ({ ...l, parcel: shiftR(l.parcel), footprint: shiftR(l.footprint) })),
+    boundary: layout.boundary.map(shiftP),
+    plazas: layout.plazas.map((p) => ({ x: p.x + o, y: p.y + o, r: p.r })),
+  };
+}

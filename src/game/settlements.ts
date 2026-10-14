@@ -33,6 +33,15 @@ export interface Rect {
   bottom: number;
 }
 
+// BUILD 688: shared AABB overlap test (exported for the town layout engine;
+// previously a local closure inside generateSettlementLayout).
+export function rectsOverlap(a: Rect, b: Rect, margin = 0): boolean {
+  return (
+    a.left < b.right + margin && b.left < a.right + margin &&
+    a.top < b.bottom + margin && b.top < a.bottom + margin
+  );
+}
+
 export interface BuildingSlot {
   id: string;
   rect: Rect;
@@ -210,13 +219,11 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
   const variantCount = BUILDING_VARIANTS.length;
   let lastVariantIdx = -1;
 
-  // BUILD 684: overlap rejection. The ring slot (angle + jitter) can collide
-  // for larger counts — expand radially until the rect clears already-placed
-  // buildings. The retry consumes no rng, so the stream (and hamlet output)
-  // is unchanged when nothing overlaps: same seed -> same layout.
-  const rectsOverlapMargin = (a: Rect, b: Rect, margin: number): boolean =>
-    a.left < b.right + margin && b.left < a.right + margin &&
-    a.top < b.bottom + margin && b.top < a.bottom + margin;
+  // BUILD 684: overlap rejection (uses shared rectsOverlap; BUILD 688 export).
+  // The ring slot (angle + jitter) can collide for larger counts — expand
+  // radially until the rect clears already-placed buildings. The retry
+  // consumes no rng, so the stream (and hamlet output) is unchanged when
+  // nothing overlaps: same seed -> same layout.
   const placeRectAt = (b: { w: number; h: number }, angle: number, distance: number): Rect => {
     const cx = center.x + Math.cos(angle) * distance;
     const cy = center.y + Math.sin(angle) * distance;
@@ -237,7 +244,7 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
     let distance = 18 + rng() * 10;
     let rect = placeRectAt(b, angle, distance);
     for (let attempt = 0;
-         attempt < 40 && buildings.some((o) => rectsOverlapMargin(rect, o.rect, 1.5));
+         attempt < 40 && buildings.some((o) => rectsOverlap(rect, o.rect, 1.5));
          attempt++) {
       distance += 2.5;
       rect = placeRectAt(b, angle, distance);
