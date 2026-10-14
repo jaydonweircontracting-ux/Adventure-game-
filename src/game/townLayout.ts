@@ -19,6 +19,7 @@
 
 import { mulberry32 } from './groundDetail';
 import { rectsOverlap, type Rect } from './settlements';
+import { fieldDoorPosition, newHouseDoorPosition, isNewStyleDoorBuilding } from './doorGeometry';
 
 // ---------------------------------------------------------------- types
 
@@ -52,11 +53,42 @@ export interface TLLot {
   facing: Facing;    // door side: direction from footprint toward its road
   roadId: string;    // the road this lot fronts
   kind: LotKind;
+  pinned?: boolean;  // true for fixed anchor lots (phase 2: Mosslight's 18)
+}
+/** A fixed building anchor: the engine routes streets to it but never moves
+ *  it. Footprint is town-local. Door geometry comes from doorGeometry.ts via
+ *  the lot id (building name). */
+export interface PinnedLot {
+  id: string;
+  footprint: Rect;
+  facing: Facing;
+  district: DistrictKind;
+  kind: LotKind;
+}
+export type PropKind = 'fountain' | 'stall' | 'lamp' | 'barrel' | 'well' | 'gatehouse';
+export interface TLProp {
+  id: string;
+  kind: PropKind;
+  x: number; y: number;  // town-local
+  r: number;             // collision/render radius (chunk units)
+  solid: boolean;        // blocks movement
+  asset: string;         // e.g. 'props/lamp.png'
+}
+export interface TLWall {
+  points: TLPoint[];
+  width: number;
 }
 export type TownSize = 'hamlet' | 'village' | 'town';
 export interface TownGenConfig {
   size: TownSize;
   arterialCount?: number; // default by size
+  radius?: number;        // default SIZE_PARAMS[size].radius
+  plazaCenter?: TLPoint;  // default { x: 0, y: 0 }
+  plazaRadius?: number;   // default SIZE_PARAMS[size].plazaR
+  pinnedLots?: PinnedLot[];
+  maxFillerLots?: number; // default: size target max
+  avoidRects?: Rect[];    // filler lots keep clear (town-local)
+  suburbs?: boolean;      // default true
 }
 export interface TownLayout {
   version: 1;
@@ -68,6 +100,8 @@ export interface TownLayout {
   districts: TLDistrict[];
   lots: TLLot[];
   plazas: { x: number; y: number; r: number }[];
+  props: TLProp[];
+  walls: TLWall[];
 }
 
 export const TOWN_LAYOUT_VERSION = 1 as const;
@@ -209,18 +243,37 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     size,
     arterialCount: config?.arterialCount ?? (size === 'hamlet' ? 2 : 3),
   };
-  const R = P.radius;
+  const R = config?.radius ?? P.radius;
   const rngB = stream(seed, 'boundary');
   const rngR = stream(seed, 'roads');
   const rngD = stream(seed, 'districts');
   const rngL = stream(seed, 'lots');
+  const rngS = stream(seed, 'spurs');
+  const rngP = stream(seed, 'props');
+  const pinned: PinnedLot[] = config?.pinnedLots ?? [];
+  const avoid: Rect[] = config?.avoidRects ?? [];
+  // Central plaza (phase 2: pinnable so Mosslight keeps its historic square).
+  const plazaC: TLPoint = config?.plazaCenter ?? { x: 0, y: 0 };
+  const plazaR: number = config?.plazaRadius ?? P.plazaR;
 
   // ---- boundary: irregular polygon around the center
   const boundary: TLPoint[] = [];
   const nVert = 18;
+  // Phase 2: the boundary must contain every pinned footprint (the validator
+  // requires non-farm footprints inside). No-op without pinned lots.
+  let minBoundaryR = 0;
+  if (pinned.length > 0) {
+    for (const q of pinned) {
+      const f = q.footprint;
+      for (const c of [{ x: f.left, y: f.top }, { x: f.right, y: f.top },
+                       { x: f.left, y: f.bottom }, { x: f.right, y: f.bottom }]) {
+        minBoundaryR = Math.max(minBoundaryR, Math.hypot(c.x, c.y) + 10);
+      }
+    }
+  }
   for (let i = 0; i < nVert; i++) {
     const a = (i / nVert) * Math.PI * 2;
-    const r = R * (0.82 + 0.36 * rngB());
+    const r = Math.max(R * (0.82 + 0.36 * rngB()), minBoundaryR);
     boundary.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
   }
   const inside = (p: TLPoint, margin = 0): boolean =>
@@ -236,9 +289,13 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
 
   // ---- Stage A: arterials — edge to edge via near-center
   const arterials: TLRoad[] = [];
-  const nArt = fullConfig.arterialCount!;
-  for (let i = 0; i < nArt; i++) {
-    const baseA = (i / nArt) * Math.PI * 2 + rngR() * 0.5;
+  const pinnedHit = (s: TLPoint, margin = 2): boolean =>
+    pinned.some((q) => {
+      const r = q.footprint;
+      return s.x > r.left - margin && s.x < r.right + margin &&
+             s.y > r.top - margin && s.y < r.bottom + margin;
+    });
+  const growArterial = (baseA: number): TLPoint[] => {
     const a0 = baseA + (rngR() - 0.5) * 0.35;
     const a1 = baseA + Math.PI + (rngR() - 0.5) * 0.35;
     const start = { x: Math.cos(a0) * R * 1.02, y: Math.sin(a0) * R * 1.02 };
@@ -262,15 +319,68 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
         });
       }
     }
-    arterials.push(addRoad('arterial', pts, 4));
+    return pts;
+  };
+  const nArt = fullConfig.arterialCount!;
+  for (let i = 0; i < nArt; i++) {
+    // Retry with a rotated base angle if the arterial would cross a pinned
+    // building (deterministic: same seed -> same retries). With no pinned
+    // lots the first attempt always succeeds, preserving 688 output.
+    let pts: TLPoint[] | null = null;
+    let bestCands: TLPoint[] | null = null;
+    let bestHits = Infinity;
+    for (let attempt = 0; attempt < 6 && !pts; attempt++) {
+      const cands = growArterial((i / nArt) * Math.PI * 2 + rngR() * 0.5 + attempt * 0.9);
+      // Validator needs width/2+1 = 3.0 clearance for arterials; retry at 3.5
+      // with fine sampling so near-misses between samples can't slip through.
+      if (pinned.length === 0) { pts = cands; break; }
+      const hits = samplePolyline(cands, 0.5).filter((s) => pinnedHit(s, 3.5)).length;
+      if (hits === 0) { pts = cands; break; }
+      if (hits < bestHits) { bestHits = hits; bestCands = cands; }
+    }
+    arterials.push(addRoad('arterial', pts ?? bestCands ?? growArterial((i / nArt) * Math.PI * 2), 4));
   }
-
   // Cached road samples for legality checks (rebuilt as roads are added).
   let roadSamples: { road: TLRoad; pts: TLPoint[] }[] = [];
   const refreshSamples = () => {
     roadSamples = roads.map((r) => ({ road: r, pts: samplePolyline(r.points, 2) }));
   };
   refreshSamples();
+
+  // Relax arterials away from pinned footprints (deterministic constraint
+  // pass). Retry-with-rotation gets close; relaxation guarantees clearance.
+  // Operates on a dense resampling (polyline vertices alone can't capture
+  // segment midpoints cutting near a rect). No-op without pinned lots.
+  if (pinned.length > 0) {
+    for (const art of arterials) {
+      const pts = samplePolyline(art.points, 1);
+      for (let iter = 0; iter < 8; iter++) {
+        let moved = false;
+        for (const s of pts) {
+          for (const q of pinned) {
+            const r = q.footprint;
+            const cx = Math.max(r.left, Math.min(r.right, s.x));
+            const cy = Math.max(r.top, Math.min(r.bottom, s.y));
+            const dx = s.x - cx, dy = s.y - cy;
+            const d = Math.hypot(dx, dy);
+            const need = 4.0;
+            if (d < need && d > 1e-6) {
+              s.x += (dx / d) * (need - d);
+              s.y += (dy / d) * (need - d);
+              moved = true;
+            } else if (d <= 1e-6) {
+              s.y = r.bottom + need;
+              moved = true;
+            }
+          }
+        }
+        if (!moved) break;
+      }
+      art.points = pts;
+    }
+    refreshSamples();
+  }
+
 
   /** Min distance from p to any road sample, ignoring samples near `exempt`. */
   const minDistToRoads = (p: TLPoint, onlyKind?: RoadKind, exempt?: TLPoint, exemptR = 0): number => {
@@ -342,10 +452,12 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     const pr = queue.shift()!;
     const pts = buildCurved(pr.x, pr.y, pr.dir, pr.len);
     const samples = samplePolyline(pts, 2);
-    // legality: inside boundary, clear of other streets/lanes
+    // legality: inside boundary, clear of other streets/lanes and of pinned
+    // building footprints
     let ok = true;
     for (const s of samples) {
       if (!inside(s, 4)) { ok = false; break; }
+      if (pinnedHit(s, 2.75)) { ok = false; break; }
       const nearStart = dist(s, { x: pr.x, y: pr.y }) < 7;
       const dmin = minDistToRoads(s, undefined, nearStart ? { x: pr.x, y: pr.y } : undefined, 7);
       // arterials may be crossed (intersections are good); streets/lanes keep distance
@@ -405,6 +517,7 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
       let ok = true;
       for (const s of samples) {
         if (!inside(s, 3)) { ok = false; break; }
+        if (pinnedHit(s, 2.25)) { ok = false; break; }
         if (dist(s, a) < 5 || dist(s, b) < 5) continue;
         let dStreets = Infinity;
         for (const rs of roadSamples) {
@@ -497,8 +610,133 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
   const [lotMin, lotMax] = P.targetLots;
   // The central plaza rect is reserved up front so no building lot can
   // ever overlap it (the plaza lot itself is pushed after placement).
-  const plazaR = P.plazaR;
-  const plazaRect: Rect = { left: -plazaR, top: -plazaR, right: plazaR, bottom: plazaR };
+  const plazaRect: Rect = {
+    left: plazaC.x - plazaR, top: plazaC.y - plazaR,
+    right: plazaC.x + plazaR, bottom: plazaC.y + plazaR,
+  };
+
+  // Pinned anchor lots: fixed footprints the engine routes streets to but
+  // never moves. Registered before filler placement so overlap checks
+  // protect them. roadId is assigned after the door-spur stage.
+  for (const pl of pinned) {
+    const f = pl.footprint;
+    lots.push({
+      id: pl.id, district: pl.district,
+      parcel: { left: f.left - 3, top: f.top - 3, right: f.right + 3, bottom: f.bottom + 3 },
+      footprint: { ...f }, facing: pl.facing, roadId: '', kind: pl.kind, pinned: true,
+    });
+  }
+
+  // ---- Stage B2: pinned door spurs — guarantee every pinned door has a
+  // lane endpoint at its door (the BUILD 689 geometry contract). Organic
+  // streets may already reach some doors; spurs cover the rest with short
+  // curved lanes from the nearest road. Spurs terminate AT the door point
+  // (like the authored plan's spurs) and may cross other roads at grade
+  // (intersections); the validator exempts the door zone and the lot's own
+  // spur from clearance.
+  const doorPointForPinned = (pl: PinnedLot): TLPoint =>
+    isNewStyleDoorBuilding(pl.id)
+      ? newHouseDoorPosition(pl.footprint)
+      : fieldDoorPosition(pl.footprint);
+  const pinnedDoors = pinned.map((pl) => ({ pl, door: doorPointForPinned(pl) }));
+  for (const { pl, door } of pinnedDoors) {
+    let covered = false;
+    for (const r of roads) {
+      for (const e of [r.points[0], r.points[r.points.length - 1]]) {
+        if (dist(e, door) <= 2.0) { covered = true; break; }
+      }
+      if (covered) break;
+    }
+    if (!covered) {
+      // collect the nearest road samples as spur starts (try several)
+      const starts: { s: TLPoint; d: number }[] = [];
+      for (const rs of roadSamples) {
+        for (const s of rs.pts) {
+          const d = dist(s, door);
+          if (d <= 2.5) continue;
+          // the spur start itself must be in a legal position (not inside
+          // another pinned building's margin)
+          let legalStart = true;
+          for (const q of pinned) {
+            if (q.id === pl.id) continue;
+            const r = q.footprint, m = 2.5;
+            if (s.x > r.left - m && s.x < r.right + m &&
+                s.y > r.top - m && s.y < r.bottom + m) { legalStart = false; break; }
+          }
+          if (legalStart) starts.push({ s, d });
+        }
+      }
+      starts.sort((a, b) => a.d - b.d);
+      const E = { x: door.x, y: door.y + 0.3 };
+      let built = false;
+      // approach waypoints: 8 compass points around the door — the spur may
+      // need to swing around a neighboring building to reach the door.
+      const approaches: TLPoint[] = [];
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        approaches.push({ x: door.x + Math.cos(a) * 7, y: door.y + Math.sin(a) * 7 });
+      }
+      for (const { s: start } of starts.slice(0, 4)) {
+        if (built) break;
+        const mx = (start.x + E.x) / 2, my = (start.y + E.y) / 2;
+        const dx = E.x - start.x, dy = E.y - start.y;
+        const dl = Math.hypot(dx, dy) || 1;
+        const nx = -dy / dl, ny = dx / dl;
+        const bow = Math.min(6, dl * 0.3) * (rngS() < 0.5 ? 1 : -1);
+        const cands: TLPoint[][] = [
+          [start, E],
+          [start, { x: mx + nx * bow, y: my + ny * bow }, E],
+          [start, { x: mx - nx * bow, y: my - ny * bow }, E],
+          ...approaches.map((ap) => [start, ap, E]),
+        ];
+        for (const c of cands) {
+          const samples = samplePolyline(c, 1.5);
+          let ok = true;
+          for (const s of samples) {
+            if (dist(s, E) < 3.0) continue;      // door exemption zone
+            if (dist(s, start) < 4.0) continue;  // joining the existing road
+            if (!inside(s, 1)) { ok = false; break; }
+            // clear of all pinned footprints (validator needs width/2+1 =
+            // 2.0 for a width-2 lane; keep 2.5). The target's own footprint
+            // is skipped: the spur legitimately terminates at its door, and
+            // the validator skips a pinned lot's own road.
+            for (const q of pinned) {
+              if (q.id === pl.id) continue;
+              const r = q.footprint;
+              const m = 2.5;
+              if (s.x > r.left - m && s.x < r.right + m &&
+                  s.y > r.top - m && s.y < r.bottom + m) { ok = false; break; }
+            }
+            if (!ok) break;
+            // (may cross other roads at grade — intersections are fine)
+          }
+          if (ok) { addRoad('lane', c, 2); built = true; break; }
+        }
+      }
+      if (built) refreshSamples();
+    }
+    // assign the pinned lot its road: prefer a road with an endpoint at the
+    // door (the spur, or an organic street that already reaches it); fall
+    // back to the nearest road by polyline distance. The validator checks
+    // the facing against this road, so it must be the door-serving one.
+    let br: TLRoad | null = null;
+    for (const r of roads) {
+      for (const e of [r.points[0], r.points[r.points.length - 1]]) {
+        if (dist(e, door) <= 2.0) { br = r; break; }
+      }
+      if (br) break;
+    }
+    if (!br) {
+      let bd = Infinity;
+      for (const r of roads) {
+        const d = distPointPolyline(door, r.points);
+        if (d < bd) { bd = d; br = r; }
+      }
+    }
+    const lot = lots.find((l) => l.pinned && l.id === pl.id);
+    if (lot) lot.roadId = br ? br.id : (roads[0]?.id ?? 'road-0');
+  }
+
 
   const footprintSize = (dk: DistrictKind): [number, number] => {
     switch (dk) {
@@ -559,6 +797,11 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
       if (rectsOverlap(parcel, l.parcel, 0.5)) return false;
     }
     if (rectsOverlap(footprint, plazaRect, 1.0)) return false;
+    // phase 2: filler lots keep clear of the avoid rects (pinned anchors'
+    // expanded footprints) so generated houses never crowd fixed buildings
+    for (const a of avoid) {
+      if (rectsOverlap(footprint, a, 0) || rectsOverlap(parcel, a, 0)) return false;
+    }
     // facing: dominant axis from footprint center toward the road
     const fc = rectCenter(footprint);
     const near = nearestOnPolyline(fc, road.points);
@@ -575,11 +818,14 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     return rank(a.kind) - rank(b.kind);
   });
   for (const road of roadOrder) {
-    if (lots.filter((l) => l.kind === 'building').length >= lotMax) break;
+    const fillerCap = config?.maxFillerLots ?? lotMax;
+    const fillerCount = () => lots.filter((l) => l.kind === 'building' && !l.pinned).length;
+    if (fillerCount() >= fillerCap) break;
     const pts = road.points;
     const total = pts.reduce((a, _, i) => (i === 0 ? 0 : a + dist(pts[i - 1], pts[i])), 0);
     const step = 12;
     for (let d = 6; d < total - 4; d += step + rngL() * 5) {
+      if (fillerCount() >= fillerCap) break;
       let acc = 0;
       for (let i = 0; i < pts.length - 1; i++) {
         const sl = dist(pts[i], pts[i + 1]);
@@ -601,13 +847,16 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
   // ---- center plaza lot (civic landmark; rect was reserved during placement)
   lots.push({
     id: `lot-${lotSeq++}`, district: 'civic',
-    parcel: { left: -plazaR - 2, top: -plazaR - 2, right: plazaR + 2, bottom: plazaR + 2 },
-    footprint: { left: -plazaR, top: -plazaR, right: plazaR, bottom: plazaR },
+    parcel: { left: plazaC.x - plazaR - 2, top: plazaC.y - plazaR - 2,
+              right: plazaC.x + plazaR + 2, bottom: plazaC.y + plazaR + 2 },
+    footprint: { left: plazaC.x - plazaR, top: plazaC.y - plazaR,
+                 right: plazaC.x + plazaR, bottom: plazaC.y + plazaR },
     facing: 'south', roadId: arterials[0]?.id ?? roads[0]?.id ?? 'road-0', kind: 'plaza',
   });
-  const plazas = [{ x: 0, y: 0, r: plazaR }];
+  const plazas = [{ x: plazaC.x, y: plazaC.y, r: plazaR }];
 
   // ---- suburbs: farm lots along outward stubs past the boundary
+  if (config?.suburbs ?? true) {
   const farmLots: TLLot[] = [];
   for (const art of arterials) {
     const endP = art.points[art.points.length - 1];
@@ -655,6 +904,114 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     }
   }
   lots.push(...farmLots);
+  } // end suburbs
+
+  // ---- Stage E: props — market square, street lamps, clutter, gate.
+  // Deterministic; placed relative to generated features. Only runs when
+  // the layout has a plaza (always, currently).
+  const props: TLProp[] = [];
+  const walls: TLWall[] = [];
+  let propSeq = 0;
+  const addProp = (kind: PropKind, x: number, y: number, r: number,
+      solid: boolean, asset: string): void => {
+    props.push({ id: `prop-${propSeq++}`, kind, x, y, r, solid, asset });
+  };
+  const footprintAt = (x: number, y: number, margin = 0.5): boolean =>
+    lots.some((l) => {
+      const f = l.footprint;
+      return x > f.left - margin && x < f.right + margin &&
+             y > f.top - margin && y < f.bottom + margin;
+    });
+  const nearPinnedDoor = (x: number, y: number, r = 2.5): boolean =>
+    pinnedDoors.some(({ door }) => Math.hypot(x - door.x, y - door.y) < r);
+
+  // Fountain at the plaza center (decor only, like the old market square).
+  addProp('fountain', plazaC.x, plazaC.y, 1.2, false, 'props/fountain.png');
+  // Market stalls in rows around the plaza (decor only).
+  const stallSpots: [number, number, string][] = [
+    [-12, -14, 'props/stall-red.png'], [0, -14, 'props/stall-blue.png'],
+    [12, -14, 'props/stall-green.png'], [-12, 14, 'props/stall-blue.png'],
+    [0, 14, 'props/stall-red.png'], [12, 14, 'props/stall-green.png'],
+    [-16, 0, 'props/market-stall.png'], [16, 0, 'props/market-stall.png'],
+  ];
+  for (const [dx, dy, asset] of stallSpots) {
+    addProp('stall', plazaC.x + dx, plazaC.y + dy, 0.9, false, asset);
+  }
+  // Plaza corner lamps (solid, like the old plan's lamps).
+  for (const [dx, dy] of [[-20, -12], [20, -12], [-20, 12], [20, 12]] as [number, number][]) {
+    addProp('lamp', plazaC.x + dx, plazaC.y + dy, 0.8, true, 'props/lamp.png');
+  }
+  // Street lamps along arterials and streets, alternating sides.
+  for (const road of roads) {
+    if (road.kind === 'lane') continue;
+    const pts = road.points;
+    const total = pts.reduce((a, _, i) => (i === 0 ? 0 : a + dist(pts[i - 1], pts[i])), 0);
+    let side = 1;
+    for (let d = 10; d < total - 5; d += 20 + rngP() * 8) {
+      let acc = 0, px = 0, py = 0, pdx = 1, pdy = 0, found = false;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const sl = dist(pts[i], pts[i + 1]);
+        if (acc + sl >= d) {
+          const t = (d - acc) / sl;
+          px = pts[i].x + (pts[i + 1].x - pts[i].x) * t;
+          py = pts[i].y + (pts[i + 1].y - pts[i].y) * t;
+          pdx = (pts[i + 1].x - pts[i].x) / sl;
+          pdy = (pts[i + 1].y - pts[i].y) / sl;
+          found = true;
+          break;
+        }
+        acc += sl;
+      }
+      if (!found) continue;
+      const lx = px + -pdy * 3 * side, ly = py + pdx * 3 * side;
+      side = -side;
+      if (footprintAt(lx, ly) || nearPinnedDoor(lx, ly)) continue;
+      if (Math.hypot(lx - plazaC.x, ly - plazaC.y) < plazaR + 4) continue;
+      addProp('lamp', lx, ly, 0.8, true, 'props/lamp.png');
+    }
+  }
+  // Barrel clutter near buildings (north side, away from the south doors).
+  for (const lot of lots) {
+    if (lot.kind !== 'building' || rngP() > 0.5) continue;
+    const f = lot.footprint;
+    const bx = (rngP() < 0.5 ? f.left : f.right) + (rngP() - 0.5) * 2;
+    const by = f.top - 1.5 - rngP();
+    if (footprintAt(bx, by)) continue;
+    addProp('barrel', bx, by, 0.7, true, 'props/barrel.png');
+  }
+  // Well in the largest park (garden corner, like the old plan).
+  const park = districts
+    .filter((d) => d.kind === 'park' && d.zone === 'circle')
+    .sort((a, b) => b.radius - a.radius)[0];
+  if (park && !footprintAt(park.center.x, park.center.y, 2)) {
+    addProp('well', park.center.x, park.center.y, 1.5, true, 'props/well.png');
+  }
+  // Gatehouse at the southernmost arterial exit, with flanking wall segments
+  // (visual only — walls were never solid, matching the old plan).
+  let gate: TLRoad | null = null;
+  let gateY = -Infinity;
+  for (const a of arterials) {
+    const e = a.points[a.points.length - 1];
+    if (e.y > gateY) { gateY = e.y; gate = a; }
+  }
+  if (gate) {
+    const pts = gate.points;
+    const e = pts[pts.length - 1], p = pts[pts.length - 2];
+    const dx = e.x - p.x, dy = e.y - p.y;
+    const dl = Math.hypot(dx, dy) || 1;
+    const nx = -dy / dl, ny = dx / dl;
+    addProp('gatehouse', e.x, e.y, 2.5, true, 'buildings/gatehouse.png');
+    const gap = 5, run = 14;
+    for (const s of [-1, 1]) {
+      walls.push({
+        points: [
+          { x: e.x + nx * s * gap, y: e.y + ny * s * gap },
+          { x: e.x + nx * s * (gap + run), y: e.y + ny * s * (gap + run) },
+        ],
+        width: 2,
+      });
+    }
+  }
 
   return {
     version: TOWN_LAYOUT_VERSION,
@@ -666,6 +1023,8 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     districts,
     lots,
     plazas,
+    props,
+    walls,
   };
 }
 
@@ -702,26 +1061,47 @@ export function validateTownLayout(layout: TownLayout): string[] {
     // Road clearance + facing apply to buildings, not the open plaza square
     // (arterials legitimately border/cross the central plaza).
     if (!isPlaza) {
+      // Pinned lots: door spurs legitimately terminate AT the door, so
+      // samples within 3.0 of the lot's door are exempt from clearance
+      // (mirrors the authored plan's near-door exemption).
+      const doorExempt: TLPoint[] = [];
+      if (lot.pinned) {
+        doorExempt.push(isNewStyleDoorBuilding(lot.id)
+          ? newHouseDoorPosition(lot.footprint)
+          : fieldDoorPosition(lot.footprint));
+      }
       // road clearance: footprint must clear every road by half-width + 1
       for (let i = 0; i < layout.roads.length; i++) {
+        // A pinned lot's own road is its door spur: it legitimately
+        // terminates at the door (generation-time legality is the guard).
+        if (lot.pinned && layout.roads[i].id === lot.roadId) continue;
         const clearance = layout.roads[i].width / 2 + 1.0;
-        if (distRectToPoints(f, allSamples[i]) < clearance - 1e-6) {
+        let viol = false;
+        for (const s of allSamples[i]) {
+          if (doorExempt.some((e) => dist(s, e) < 3.0)) continue;
+          if (distRectToPoints(f, [s]) < clearance - 1e-6) { viol = true; break; }
+        }
+        if (viol) {
           errors.push(`lot ${lot.id}: footprint too close to ${layout.roads[i].id}`);
           break;
         }
       }
-      // facing: the road must lie in the facing direction from the footprint
-      const fc = rectCenter(f);
-      const near = nearestOnPolyline(fc, road.points);
-      const vx = near.x - fc.x, vy = near.y - fc.y;
-      const dirVec: Record<Facing, TLPoint> = {
-        north: { x: 0, y: -1 }, south: { x: 0, y: 1 },
-        east: { x: 1, y: 0 }, west: { x: -1, y: 0 },
-      };
-      const fv = dirVec[lot.facing];
-      const dot = vx * fv.x + vy * fv.y;
-      if (dot <= 0.3 * Math.hypot(vx, vy)) {
-        errors.push(`lot ${lot.id}: facing ${lot.facing} does not point at road ${lot.roadId}`);
+      // facing: the road must lie in the facing direction from the footprint.
+      // Pinned lots are covered by the dedicated door-endpoint check below
+      // (a spur terminating AT the door makes the dot-product degenerate).
+      if (!lot.pinned) {
+        const fc = rectCenter(f);
+        const near = nearestOnPolyline(fc, road.points);
+        const vx = near.x - fc.x, vy = near.y - fc.y;
+        const dirVec: Record<Facing, TLPoint> = {
+          north: { x: 0, y: -1 }, south: { x: 0, y: 1 },
+          east: { x: 1, y: 0 }, west: { x: -1, y: 0 },
+        };
+        const fv = dirVec[lot.facing];
+        const dot = vx * fv.x + vy * fv.y;
+        if (dot <= 0.3 * Math.hypot(vx, vy)) {
+          errors.push(`lot ${lot.id}: facing ${lot.facing} does not point at road ${lot.roadId}`);
+        }
       }
     }
     // every lot's PARCEL must front its road (front edge sits roadHalf+2 out
@@ -771,6 +1151,25 @@ export function validateTownLayout(layout: TownLayout): string[] {
   const roots = new Set(layout.roads.map((_, i) => find(i)));
   if (roots.size > 1) errors.push(`road network has ${roots.size} disconnected components`);
 
+  // pinned buildings: a lane endpoint must reach each door (the 689 contract)
+  for (const lot of layout.lots) {
+    if (!lot.pinned || lot.kind !== 'building') continue;
+    const f = lot.footprint;
+    const door = isNewStyleDoorBuilding(lot.id)
+      ? newHouseDoorPosition(f)
+      : fieldDoorPosition(f);
+    let best = Infinity;
+    for (const r of layout.roads) {
+      for (const e of [r.points[0], r.points[r.points.length - 1]]) {
+        const d = dist(e, door);
+        if (d < best) best = d;
+      }
+    }
+    if (best > 2.0) {
+      errors.push(`pinned lot ${lot.id}: no lane endpoint at door (best ${best.toFixed(2)})`);
+    }
+  }
+
   return errors;
 }
 
@@ -808,6 +1207,18 @@ export function lotToBuildingRect(lot: TLLot): Rect {
   return { ...lot.footprint };
 }
 
+/** Engine prop -> settlement decor prop record (asset path + radius + solidity). */
+export function propToTownProp(p: TLProp): {
+  id: string; asset: string; x: number; y: number; r: number; solid: boolean;
+} {
+  return { id: p.id, asset: p.asset, x: p.x, y: p.y, r: p.r, solid: p.solid };
+}
+
+/** Engine wall -> decor wall record ({ points, width }). */
+export function wallToTownWall(w: TLWall): { points: TLPoint[]; width: number } {
+  return { points: w.points.map((p) => ({ ...p })), width: w.width };
+}
+
 /**
  * Shift a layout into chunk space: town-local origin -> chunk center.
  * Default 280 matches FIELD_SIZE so rects drop straight into chunk coords.
@@ -817,6 +1228,8 @@ export function toChunkSpace(layout: TownLayout, chunkSize = 280): {
   lots: TLLot[];
   boundary: TLPoint[];
   plazas: { x: number; y: number; r: number }[];
+  props: TLProp[];
+  walls: TLWall[];
 } {
   const o = chunkSize / 2;
   const shiftP = (p: TLPoint): TLPoint => ({ x: p.x + o, y: p.y + o });
@@ -826,5 +1239,7 @@ export function toChunkSpace(layout: TownLayout, chunkSize = 280): {
     lots: layout.lots.map((l) => ({ ...l, parcel: shiftR(l.parcel), footprint: shiftR(l.footprint) })),
     boundary: layout.boundary.map(shiftP),
     plazas: layout.plazas.map((p) => ({ x: p.x + o, y: p.y + o, r: p.r })),
+    props: layout.props.map((p) => ({ ...p, x: p.x + o, y: p.y + o })),
+    walls: layout.walls.map((w) => ({ ...w, points: w.points.map(shiftP) })),
   };
 }
