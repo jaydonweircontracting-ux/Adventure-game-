@@ -6819,52 +6819,88 @@ import { inflateSync } from 'node:zlib';
     'Rig684: serialized identity round-trips all critical fields');
 }
 
-// BUILD 686: Authored Mosslight town plan — every door gets a path.
+// BUILD 690: Mosslight Crossing from the procedural town layout engine
+// (seed 4242, phase-2 cutover). The 18 pinned buildings keep their 689 rects,
+// ids, and doors; the engine supplies streets, door-spur lanes, plaza, props.
 {
-  const { mosslightTownPlan, validateTownPlan, townDoors } = await import('../src/game/townPlan.js');
+  const { mosslightEngineLayout, mosslightEngineChunkLayout, mosslightEngineLanes,
+    mosslightEngineProps, mosslightPinnedRects, mosslightFillerRects,
+    MOSSLIGHT_ENGINE_SEED, MOSSLIGHT_PINNED_NAMES, clearMosslightEngineCache } =
+    await import('../src/game/mosslightLayout.js');
+  const { validateTownLayout } = await import('../src/game/townLayout.js');
   const { assembleBuildingRig, auditBuildingRigs } = await import('../src/game/buildingRig.js');
   const { findPath } = await import('../src/game/npcNavigation.js');
-  const plan = mosslightTownPlan();
+  const { fieldDoorPosition, newHouseDoorPosition, isNewStyleDoorBuilding } =
+    await import('../src/game/doorGeometry.js');
 
-  // 1. Plan validates clean.
-  const planErrors = validateTownPlan();
-  assert(planErrors.length === 0, `Town686: plan validates (${planErrors.slice(0, 3).join('; ')})`);
+  assert(MOSSLIGHT_ENGINE_SEED === 4242, 'Town690: Mosslight engine seed is pinned at 4242');
 
-  // 2. Deterministic.
-  const plan2 = mosslightTownPlan();
-  assert(JSON.stringify(plan) === JSON.stringify(plan2), 'Town686: plan is deterministic');
+  // 1. Engine Mosslight instance validates clean.
+  const layout = mosslightEngineLayout();
+  const layoutErrors = validateTownLayout(layout);
+  assert(layoutErrors.length === 0, `Town690: engine Mosslight validates (${layoutErrors.slice(0, 3).join('; ')})`);
 
-  // 3. All 18 doors covered.
-  const doors = townDoors();
-  assert(doors.length === 18, `Town686: 18 doors (got ${doors.length})`);
+  // 2. Deterministic: clear the memo and regenerate -> identical.
+  clearMosslightEngineCache();
+  const layout2 = mosslightEngineLayout();
+  assert(JSON.stringify(layout) === JSON.stringify(layout2), 'Town690: engine Mosslight is deterministic');
 
-  // 4. Every prop asset exists on disk (audited set).
+  // 3. Pinned rects byte-identical to the 689 source (same functions/order).
+  const { mosslightCottageRects280, MOSSLIGHT_FIXED_RECTS_280 } = await import('../src/game/settlements.js');
+  const rects = [...MOSSLIGHT_FIXED_RECTS_280.slice(0, 4), ...mosslightCottageRects280(), ...MOSSLIGHT_FIXED_RECTS_280.slice(4)];
+  const pinned = mosslightPinnedRects();
+  assert(pinned.length === 18 && rects.length === 18, 'Town690: 18 pinned rects');
+  for (let i = 0; i < 18; i++) {
+    const a = pinned[i], b = rects[i];
+    assert(a.left === b.left && a.top === b.top && a.right === b.right && a.bottom === b.bottom,
+      `Town690: pinned rect byte-identical for ${MOSSLIGHT_PINNED_NAMES[i]}`);
+  }
+
+  // 4. Every pinned door has an engine lane endpoint within 2.0u.
+  const lanes = mosslightEngineLanes();
+  const doors = rects.map((r, i) => isNewStyleDoorBuilding(MOSSLIGHT_PINNED_NAMES[i])
+    ? newHouseDoorPosition(r) : fieldDoorPosition(r));
+  assert(doors.length === 18, `Town690: 18 doors (got ${doors.length})`);
+  for (let i = 0; i < 18; i++) {
+    let best = Infinity;
+    for (const ln of lanes) {
+      for (const p of [ln.points[0], ln.points[ln.points.length - 1]]) {
+        const d = Math.hypot(p.x - doors[i].x, p.y - doors[i].y);
+        if (d < best) best = d;
+      }
+    }
+    assert(best <= 2.0, `Town690: engine lane reaches ${MOSSLIGHT_PINNED_NAMES[i]} door (dist ${best.toFixed(2)})`);
+  }
+
+  // 5. Every engine prop asset exists on disk (audited set).
   const knownAssets = new Set([
     'props/well.png', 'props/barrel.png', 'props/fountain.png', 'props/lamp.png',
     'props/stall-blue.png', 'props/stall-green.png', 'props/stall-red.png',
     'props/market-stall.png', 'buildings/gatehouse.png',
   ]);
-  for (const p of plan.props) {
-    assert(knownAssets.has(p.asset), `Town686: prop asset exists '${p.asset}' (${p.id})`);
+  for (const p of mosslightEngineProps()) {
+    assert(knownAssets.has(p.asset), `Town690: prop asset exists '${p.asset}' (${p.id})`);
   }
 
-  // 5. Full rig audit over the 18 town buildings with plan doors.
-  //    Exterior spawns come from the plan's own lane endpoints (validated
-  //    outside footprints), mirroring how NPCs actually use the path network.
-  const { mosslightCottageRects280, MOSSLIGHT_FIXED_RECTS_280 } = await import('../src/game/settlements.js');
-  const rects = [...MOSSLIGHT_FIXED_RECTS_280.slice(0, 4), ...mosslightCottageRects280(), ...MOSSLIGHT_FIXED_RECTS_280.slice(4)];
-  const names = ['tutorial','guild','chapel','tavern','cottage-1','cottage-2','cottage-3','cottage-4','cottage-5','cottage-6',
-    'town-n1','town-n2','town-s1','town-s2','town-e1','town-e2','town-w1','town-w2'];
+  // 6. Filler buildings: bounded count, no gameplay ids, outside pinned rects.
+  const filler = mosslightFillerRects();
+  assert(filler.length <= 8 && filler.length >= 1, `Town690: filler building count bounded (got ${filler.length})`);
+  for (const f of filler) {
+    const overlapsPinned = rects.some((o) =>
+      f.left < o.right && f.right > o.left && f.top < o.bottom && f.bottom > o.top);
+    assert(!overlapsPinned, `Town690: filler does not overlap pinned (${f.left.toFixed(1)},${f.top.toFixed(1)})`);
+  }
+
+  // 7. Full rig audit over the 18 pinned buildings with engine lane endpoints.
+  const names = [...MOSSLIGHT_PINNED_NAMES];
   const rigs = names.map((name, i) => {
     const d = doors[i];
     const r = rects[i];
-    // Nearest lane point that is outside every footprint (the audit rejects
-    // spawns inside any rect, so door-adjacent lane starts don't qualify).
     let best: { x: number; y: number } | null = null;
     let bestDist = Infinity;
     const inAny = (x: number, y: number) => rects.some((o) =>
       x > o.left - 0.5 && x < o.right + 0.5 && y > o.top - 0.5 && y < o.bottom + 0.5);
-    for (const ln of plan.lanes) {
+    for (const ln of lanes) {
       for (const pt of ln.points) {
         if (inAny(pt.x, pt.y)) continue;
         const dist = Math.hypot(pt.x - d.x, pt.y - d.y);
@@ -6875,8 +6911,6 @@ import { inflateSync } from 'node:zlib';
       id: name, kind: 'cottage', chunk: { x: 4, y: 7 },
       doorway: {
         id: `${name}-door`,
-        // Real formula (App.tsx doorwayExteriorPosition): just south of the
-        // collision rect, aligned with the door's x.
         exterior: { x: d.x, y: Math.min(280 - 6, r.bottom + 0.7) },
         interior: { x: d.x, y: d.y },
         rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
@@ -6890,50 +6924,43 @@ import { inflateSync } from 'node:zlib';
     findPath(from, to, obstacles,
       viaDoor ? { id: viaDoor.id, exterior: viaDoor.exterior, interior: viaDoor.exterior } : undefined) !== null;
   const rigErrors = auditBuildingRigs(rigs, { fieldSize: 280, pathExists });
-  assert(rigErrors.length === 0, `Town686: rig audit passes on 18 town buildings (${rigErrors.slice(0, 3).join('; ')})`);
+  assert(rigErrors.length === 0, `Town690: rig audit passes on 18 pinned buildings (${rigErrors.slice(0, 3).join('; ')})`);
 }
 
-// BUILD 689: Door/lane/exit agreement. Root cause of the "path on the opposite
-// side from the door" report: the AI building sprites painted doors on the
-// EAST face while every game system (triggers, exits, lanes, 2D + fallback
-// renderers) uses the SOUTH face — fixed by flipping the sprites. These
-// assertions pin the geometry contract so logic can never drift again:
-//  1. townDoors() == doorGeometry formulas on all 18 rects (single source of
-//     truth; App.tsx re-exports the same module).
-//  2. Every door has a lane endpoint within 2.0u, approaching from the south.
+// BUILD 690: Door/lane/exit agreement on the ENGINE town (phase-2 cutover).
+// Same geometry contract as 689, now sourced from the procedural layout:
+//  1. engine doors == doorGeometry formulas on all 18 pinned rects.
+//  2. Every pinned door has an engine lane endpoint within 2.0u, from the south.
 //  3. Every exit spawn (door.x, bottom+0.7) lands within 4u of a lane point.
 {
-  const { townDoors, mosslightTownPlan } = await import('../src/game/townPlan.js');
+  const { mosslightEngineLanes, mosslightPinnedRects, MOSSLIGHT_PINNED_NAMES } =
+    await import('../src/game/mosslightLayout.js');
   const { fieldDoorPosition, newHouseDoorPosition, isNewStyleDoorBuilding } =
     await import('../src/game/doorGeometry.js');
-  const { mosslightCottageRects280, MOSSLIGHT_FIXED_RECTS_280 } = await import('../src/game/settlements.js');
-  const rects = [...MOSSLIGHT_FIXED_RECTS_280.slice(0, 4), ...mosslightCottageRects280(), ...MOSSLIGHT_FIXED_RECTS_280.slice(4)];
-  const names = ['tutorial','guild','chapel','tavern','cottage-1','cottage-2','cottage-3','cottage-4','cottage-5','cottage-6',
-    'town-n1','town-n2','town-s1','town-s2','town-e1','town-e2','town-w1','town-w2'];
-  const doors = townDoors();
-  const plan = mosslightTownPlan();
-  assert(doors.length === 18 && rects.length === 18, 'Town689: 18 doors and 18 rects');
+  const rects = mosslightPinnedRects();
+  const names = [...MOSSLIGHT_PINNED_NAMES];
+  const lanes = mosslightEngineLanes();
+  assert(rects.length === 18 && names.length === 18, 'Town690: 18 doors and 18 rects');
   for (let i = 0; i < 18; i++) {
     const r = rects[i];
-    const expected = isNewStyleDoorBuilding(names[i]) ? newHouseDoorPosition(r) : fieldDoorPosition(r);
-    assert(Math.abs(doors[i].x - expected.x) < 1e-9 && Math.abs(doors[i].y - expected.y) < 1e-9,
-      `Town689: plan door == live door formula for ${names[i]}`);
+    // Door from the single source of truth (doorGeometry), as the live game does.
+    const door = isNewStyleDoorBuilding(names[i]) ? newHouseDoorPosition(r) : fieldDoorPosition(r);
     let best = Infinity, bestY = 0;
-    for (const ln of plan.lanes) {
+    for (const ln of lanes) {
       for (const p of [ln.points[0], ln.points[ln.points.length - 1]]) {
-        const d = Math.hypot(p.x - doors[i].x, p.y - doors[i].y);
+        const d = Math.hypot(p.x - door.x, p.y - door.y);
         if (d < best) { best = d; bestY = p.y; }
       }
     }
-    assert(best <= 2.0, `Town689: lane reaches ${names[i]} door (dist ${best.toFixed(2)})`);
-    assert(bestY >= doors[i].y - 0.5, `Town689: lane approaches ${names[i]} from the south side`);
-    const ex = { x: doors[i].x, y: Math.min(280 - 6, r.bottom + 0.7) };
+    assert(best <= 2.0, `Town690: engine lane reaches ${names[i]} door (dist ${best.toFixed(2)})`);
+    assert(bestY >= door.y - 0.5, `Town690: engine lane approaches ${names[i]} from the south side`);
+    const ex = { x: door.x, y: Math.min(280 - 6, r.bottom + 0.7) };
     let bestEx = Infinity;
-    for (const ln of plan.lanes) for (const p of ln.points) {
+    for (const ln of lanes) for (const p of ln.points) {
       const d = Math.hypot(p.x - ex.x, p.y - ex.y);
       if (d < bestEx) bestEx = d;
     }
-    assert(bestEx <= 4.0, `Town689: exit for ${names[i]} lands near a lane (dist ${bestEx.toFixed(2)})`);
+    assert(bestEx <= 4.0, `Town690: exit for ${names[i]} lands near an engine lane (dist ${bestEx.toFixed(2)})`);
   }
 }
 
