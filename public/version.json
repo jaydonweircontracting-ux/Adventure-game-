@@ -1,6 +1,6 @@
 {
-  "build": "695",
-  "note": "storybook town content: market square with striped-stall rows, angel statue centerpiece, hedge-maze garden with fountain, wooden carts, sandy tan streets in Mosslight",
-  "timestamp": "2026-10-14T06:59:33.967Z",
-  "cacheBuster": "mv7rez0w"
+  "build": "696",
+  "note": "NPC market life: townsfolk shop the market square (browse pauses at stalls, arterial strolls, errand loops), all through existing pathfinding",
+  "timestamp": "2026-10-14T08:46:06.260Z",
+  "cacheBuster": "mv7v7zck"
 }
