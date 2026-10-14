@@ -1,6 +1,6 @@
 {
-  "build": "689",
-  "note": "door/path alignment fix: building sprites flipped so painted doors sit on the south face (same side as triggers, exits, lanes); door geometry now a shared module",
-  "timestamp": "2026-10-14T03:08:13.850Z",
-  "cacheBuster": "mv7j5h23"
+  "build": "690",
+  "note": "BUILD 690: Mosslight Crossing now grows from the procedural town layout engine (seed 4242) \u2014 18 pinned buildings unchanged, organic streets + door lanes, plaza/market, 7 filler buildings. iPhone hold-drag no longer scrolls the page.",
+  "timestamp": "2026-10-14T04:30:00.000Z",
+  "cacheBuster": "mv7l6egl"
 }
