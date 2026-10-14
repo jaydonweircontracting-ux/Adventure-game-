@@ -331,8 +331,6 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         const sdb = parseInt(desertCol.slice(5, 7), 16);
         for (const sc of scenes) {
           const cx0 = (chunk.x + sc.ox) * N, cy0 = (chunk.y + sc.oy) * N;
-          const nearTown = (chunk.x + sc.ox) >= 3 && (chunk.x + sc.ox) <= 5 &&
-            (chunk.y + sc.oy) >= 6 && (chunk.y + sc.oy) <= 8;
           const baseCol = sc.palette.field;
           // Parse base color to RGB for variation.
           const br = parseInt(baseCol.slice(1, 3), 16);
@@ -341,8 +339,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           for (let sy = 0; sy < SUB; sy++) {
             for (let sx = 0; sx < SUB; sx++) {
               const tx0 = cx0 + sx * subN, ty0 = cy0 + sy * subN;
-              // BUILD 695: sandy ground inside the Mosslight town mask.
-              const isSand = nearTown && mosslightSandAt(tx0 + subN / 2, ty0 + subN / 2) > 0.5;
+              // BUILD 695: sandy ground inside the Mosslight town mask
+              // (the mask is 0 outside town, so no chunk check needed).
+              const isSand = mosslightSandAt(tx0 + subN / 2, ty0 + subN / 2) > 0.5;
               const cr = isSand ? sdr : br, cg = isSand ? sdg : bg, cb = isSand ? sdb : bb;
               const p00 = isoToScreen(tx0, ty0);
               const p10 = isoToScreen(tx0 + subN, ty0);
