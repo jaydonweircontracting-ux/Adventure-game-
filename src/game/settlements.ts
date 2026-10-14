@@ -112,6 +112,10 @@ export const BUILDING_VARIANTS = [
   'green-cottage',
   'stone-cottage',
   'plaster-house',
+  // BUILD 694: storybook civic tower (grey stone, crenellations, orange cone
+  // roof). Catalog registration only — Mosslight filler lots keep their own
+  // district pools in mosslightLayout.ts.
+  'story-tower',
 ] as const;
 
 /**

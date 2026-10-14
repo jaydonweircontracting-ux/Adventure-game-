@@ -73,6 +73,11 @@ export const BUILDING_ASSET_META: Record<string, BuildingAssetMeta> = {
   'green-cottage': { variant: 'green-cottage',  file: 'buildings/green-cottage.png',  w: 2240, h: 1120, anchor: 'base-center', kind: 'cottage' },
   'stone-cottage': { variant: 'stone-cottage',  file: 'buildings/stone-cottage.png',  w: 2240, h: 1120, anchor: 'base-center', kind: 'cottage' },
   'plaster-house': { variant: 'plaster-house',  file: 'buildings/plaster-house.png',  w: 2240, h: 1120, anchor: 'base-center', kind: 'stone-house' },
+  // BUILD 694: storybook civic tower (grey stone, crenellations, orange cone
+  // roof). Door painted on the south-west face, left of center (~46% width;
+  // the tower body spans 41-59% of the canvas so 38% would fall outside the
+  // tower). Dimensions audited from the actual PNG file.
+  'story-tower':   { variant: 'story-tower',    file: 'buildings/story-tower.png',    w: 2240, h: 1120, anchor: 'base-center', kind: 'civic' },
 };
 
 /** The authoritative per-instance building record. */

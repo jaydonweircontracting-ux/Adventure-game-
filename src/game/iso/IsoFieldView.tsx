@@ -767,6 +767,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         'props/stall-blue.png': 'props/stall-blue.png',
         'props/stall-green.png': 'props/stall-green.png',
         'props/market-stall.png': 'props/market-stall.png',
+        // BUILD 694: storybook props (angel statue, hedge maze wall, cart).
+        'props/statue-angel.png': 'props/statue-angel.png',
+        'props/hedge-straight.png': 'props/hedge-straight.png',
+        'props/cart-wood.png': 'props/cart-wood.png',
       };
       for (const [key, src] of Object.entries(propSrc)) {
         if (!propImgs[key]) {
