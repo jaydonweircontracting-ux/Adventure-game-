@@ -580,13 +580,47 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     radius: 0, zone: 'edge-sector', sectorAngle: indAngle, sectorWidth: 0.55 });
   districts.push({ id: `district-${dSeq++}`, kind: 'commercial', center: { x: 0, y: 0 },
     radius: 0, zone: 'arterial-corridor', corridorDist: 11 });
-  const nParks = size === 'town' ? 2 : size === 'village' ? 1 : (rngD() < 0.5 ? 1 : 0);
-  for (let i = 0; i < nParks; i++) {
-    const a = rngD() * Math.PI * 2;
-    const pr = 9 + rngD() * 4;
-    const c = { x: Math.cos(a) * R * 0.45, y: Math.sin(a) * R * 0.45 };
+  // BUILD 725: place green spaces as real reserved districts, not just
+  // random circles that can disappear inside the civic core or overlap a
+  // road, fixed landmark, or another park. Candidate order is seeded, so
+  // the same seed/config still produces identical layouts.
+  const desiredParks = size === 'town' ? 2 : size === 'village' ? 1 : (rngD() < 0.5 ? 1 : 0);
+  const placedParks: TLDistrict[] = [];
+  const parkCandidates = Array.from({ length: 56 }, (_, i) => {
+    const angle = rngD() * Math.PI * 2;
+    const radial = R * (0.32 + rngD() * 0.43);
+    return {
+      angle,
+      center: { x: Math.cos(angle) * radial, y: Math.sin(angle) * radial },
+      radius: 8 + rngD() * 3.5,
+    };
+  }).sort((a, b) => b.radius - a.radius);
+  for (const candidate of parkCandidates) {
+    if (placedParks.length >= desiredParks) break;
+    const { center: c, radius: pr, angle: a } = candidate;
+    if (!pointInPolygon(c, boundary) || distToPolygonEdge(c, boundary) < pr + 3) continue;
+    if (dist(c, plazaC) < plazaR + pr + 5) continue;
+    if (placedParks.some((p) => dist(c, p.center) < pr + p.radius + 5)) continue;
+    // Keep a green district clear of fixed buildings and all road corridors.
+    const hitsPinned = pinned.some((q) => {
+      const f = q.footprint;
+      const px = Math.max(f.left, Math.min(f.right, c.x));
+      const py = Math.max(f.top, Math.min(f.bottom, c.y));
+      return Math.hypot(c.x - px, c.y - py) < pr + 3;
+    });
+    if (hitsPinned) continue;
+    const hitsRoad = roads.some((road) =>
+      distPointPolyline(c, road.points) < pr + road.width / 2 + 3);
+    if (hitsRoad) continue;
+    // Reserve a comfortable buffer from the civic center and commercial
+    // corridor so the park remains a distinct neighborhood destination.
     if (dist(c, { x: 0, y: 0 }) < civicR + pr + 4) continue;
-    districts.push({ id: `district-${dSeq++}`, kind: 'park', center: c, radius: pr, zone: 'circle' });
+    if (Math.abs(Math.atan2(c.y, c.x) - a) > Math.PI) continue;
+    const park: TLDistrict = {
+      id: `district-${dSeq++}`, kind: 'park', center: c, radius: pr, zone: 'circle',
+    };
+    placedParks.push(park);
+    districts.push(park);
   }
 
   const arterialSamples = arterials.flatMap((a) =>
