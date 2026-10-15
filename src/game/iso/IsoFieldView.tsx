@@ -1487,6 +1487,42 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         // the feet anchor (52 * 62/64 ~= 50.4 world units); the old 50 let
         // NPCs pop out while their head was still visible at the edge.
         if (nc.x < cam.x - npcVhw - 50 || nc.x > cam.x + npcVhw + 50 || nc.y < cam.y - npcVhh - 100 || nc.y > cam.y + npcVhh + 64) continue;
+        // BUILD 719: selected NPC ring is a lightweight canvas drawable, not a
+        // DOM overlay. The chat affordance appears only for the selected NPC
+        // once the player is close enough to interact.
+        if (live.selectedNpcId === npc.id) {
+          const selectedX = ix, selectedY = iy;
+          const playerDistance = Math.hypot(npc.position.x - live.px, npc.position.y - live.py);
+          const canTalk = playerDistance <= 8.5;
+          drawables.push({
+            depth: selectedX + selectedY - 0.025,
+            draw: (g2) => {
+              g2.save();
+              g2.strokeStyle = '#ffd34d';
+              g2.lineWidth = 2.5;
+              g2.fillStyle = 'rgba(255, 197, 45, 0.16)';
+              g2.beginPath();
+              g2.ellipse(nc.x, nc.y - 2, 20, 7, 0, 0, Math.PI * 2);
+              g2.fill(); g2.stroke();
+              if (canTalk) {
+                const bx = nc.x, by = nc.y - 58;
+                g2.fillStyle = '#fff4c8';
+                g2.strokeStyle = '#8b6822';
+                g2.lineWidth = 1.5;
+                g2.beginPath();
+                g2.roundRect(bx - 13, by - 10, 26, 20, 6);
+                g2.fill(); g2.stroke();
+                g2.beginPath(); g2.moveTo(bx - 4, by + 9); g2.lineTo(bx - 1, by + 14); g2.lineTo(bx + 2, by + 9); g2.fill();
+                g2.fillStyle = '#5a4318';
+                g2.font = 'bold 14px sans-serif';
+                g2.textAlign = 'center';
+                g2.textBaseline = 'middle';
+                g2.fillText('…', bx, by - 1);
+              }
+              g2.restore();
+            },
+          });
+        }
         drawPerson(drawables, ix, iy, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id,
           // BUILD 699: children are smaller (70% scale).
           // BUILD 704: fleeing NPCs run (explicit), everyone else walks.
@@ -1535,6 +1571,19 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           else if (kind === 'badger') { frameW = 33; frameH = 32; }
           const frameCount = isStrip ? Math.max(1, Math.floor(img.naturalWidth / frameW)) : 1;
           const frameIdx = isStrip ? Math.floor(nowMs / 150) % frameCount : 0;
+          if (live.selectedGoatId === goat.id) {
+            drawables.push({
+              depth: depth - 0.025,
+              draw: (g: CanvasRenderingContext2D) => {
+                g.save();
+                g.strokeStyle = '#ffd34d';
+                g.fillStyle = 'rgba(255, 197, 45, 0.16)';
+                g.lineWidth = 2.5;
+                g.beginPath(); g.ellipse(sx, sy - 2, 22, 8, 0, 0, Math.PI * 2); g.fill(); g.stroke();
+                g.restore();
+              },
+            });
+          }
           drawables.push({
             depth,
             draw: (g: CanvasRenderingContext2D) => {
@@ -1749,18 +1798,44 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // inverse of the frame()'s translate/scale/translate camera transform
       const wx = (sx - wpx / 2) / zm + cam.x;
       const wy = (sy - hpx / 2) / zm + cam.y;
-      // NPC hit test in screen space (generous 34px radius for touch)
-      if (talk) {
-        let best: Townsperson | null = null; let bestD = 34;
-        for (const npc of liveRef.current.folk) {
-          if (npc.indoors) continue;
-          const w = isoToScreen(npc.position.x, npc.position.y);
-          const px = (w.x - cam.x) * zm + wpx / 2;
-          const py = (w.y - cam.y) * zm + hpx / 2 - 24; // sprite center-ish
-          const d = Math.hypot(px - sx, py - sy);
-          if (d < bestD) { bestD = d; best = npc; }
-        }
-        if (best) { talk(best); return; }
+      // BUILD 719: chat is a separate affordance. It exists only for the
+      // selected NPC and only when the player is within interaction range.
+      const selectedNpc = liveRef.current.folk.find((npc) => npc.id === liveRef.current.selectedNpcId && !npc.indoors);
+      if (selectedNpc && talk && Math.hypot(selectedNpc.position.x - liveRef.current.px, selectedNpc.position.y - liveRef.current.py) <= 8.5) {
+        const w = isoToScreen(selectedNpc.position.x, selectedNpc.position.y);
+        const bx = (w.x - cam.x) * zm + wpx / 2;
+        const by = (w.y - cam.y) * zm + hpx / 2 - 24 - 58 * zm;
+        if (Math.hypot(bx - sx, by - sy) <= 25) { talk(selectedNpc); return; }
+      }
+      // NPC body taps select/deselect and start/stop the existing follow system.
+      const { onSelectNpc: selectNpc, onSelectGoat: selectGoat } = tapRef.current;
+      let bestNpc: Townsperson | null = null; let bestNpcD = 34;
+      for (const npc of liveRef.current.folk) {
+        if (npc.indoors) continue;
+        const w = isoToScreen(npc.position.x, npc.position.y);
+        const px = (w.x - cam.x) * zm + wpx / 2;
+        const py = (w.y - cam.y) * zm + hpx / 2 - 24;
+        const d = Math.hypot(px - sx, py - sy);
+        if (d < bestNpcD) { bestNpcD = d; bestNpc = npc; }
+      }
+      if (bestNpc && selectNpc) {
+        selectNpc(liveRef.current.selectedNpcId === bestNpc.id ? null : bestNpc);
+        return;
+      }
+      // Hostile critters can be targeted directly in the isometric view.
+      let bestEnemy: NonNullable<typeof liveRef.current.goats>[number] | null = null;
+      let bestEnemyD = 36;
+      for (const goat of liveRef.current.goats || []) {
+        if (goat.disposition !== 'aggressive') continue;
+        const w = isoToScreen(goat.position.x, goat.position.y);
+        const px = (w.x - cam.x) * zm + wpx / 2;
+        const py = (w.y - cam.y) * zm + hpx / 2;
+        const d = Math.hypot(px - sx, py - sy);
+        if (d < bestEnemyD) { bestEnemyD = d; bestEnemy = goat; }
+      }
+      if (bestEnemy && selectGoat) {
+        selectGoat(liveRef.current.selectedGoatId === bestEnemy.id ? null : bestEnemy);
+        return;
       }
       // BUILD 697: stall hit test — tap a market stall to open its shop.
       // Runs after the NPC test (an NPC standing at a stall still wins) and
