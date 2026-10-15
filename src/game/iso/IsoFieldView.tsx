@@ -44,7 +44,7 @@ import { mosslightFillerLots, fillerVariantForLot } from '../mosslightLayout';
 // in src/game/buildingRig.ts.
 import { BUILDING_ASSET_META } from '../buildingRig';
 // BUILD 369 (Phase 2b): authoritative water/bridges in the iso field.
-import { waterGridForChunk, waterGridAt, type WaterGrid } from '../landscape';
+import { waterGridForChunk, waterDepthAt, type WaterGrid } from '../landscape';
 // BUILD 376: multi-chunk rendering so generated terrain fills the whole
 // screen at every zoom level — no blue void where nothing was generated.
 import {
@@ -702,10 +702,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             const inTownArea = (chunk.x + sc.ox) >= 3 && (chunk.x + sc.ox) <= 5 &&
                                (chunk.y + sc.oy) >= 6 && (chunk.y + sc.oy) <= 8;
             if (!inTownArea) {
-              const wq = waterGridAt(sc.water, (chunk.x + sc.ox) * FIELD_SIZE + lx + 0.5, (chunk.y + sc.oy) * FIELD_SIZE + ly + 0.5);
+              // BUILD 714: depth-only lookup avoids allocating a temporary
+              // { depth, kind } object for every visible tile on every frame.
+              const depth = waterDepthAt(sc.water, (chunk.x + sc.ox) * FIELD_SIZE + lx + 0.5, (chunk.y + sc.oy) * FIELD_SIZE + ly + 0.5);
               // BUILD 583: require deeper water before overriding land tiles.
               // Shallow depth (0.25-0.5) was causing false water rendering on meadows.
-              wet = wq.depth > 0.5;
+              wet = depth > 0.5;
             }
           }
           let tileDrawn = false;
