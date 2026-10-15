@@ -922,12 +922,39 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         const bx = sc.ox * N, by = sc.oy * N;
         for (const p of decor.plazas) {
           const c = isoToScreen(p.x + bx, p.y + by);
-          // BUILD 695: sandy plaza decal (was village green) — matches the
-          // storybook sandy streets.
-          g.fillStyle = 'rgba(216, 186, 132, 0.35)'; // sandy plaza
+          // BUILD 722: layered plaza paving. A soft ground shadow, warm
+          // sandstone bed, restrained border, and radial joints give the
+          // square a deliberate focal point without adding gameplay objects.
+          // Keep the geometry deterministic and cheap: a handful of ellipses
+          // and line segments per static plaza, not per terrain tile.
+          g.fillStyle = 'rgba(67, 49, 31, 0.13)';
           g.beginPath();
-          g.ellipse(c.x, c.y, p.r * 32, p.r * 16, 0, 0, 7);
+          g.ellipse(c.x, c.y + 2, p.r * 34, p.r * 17, 0, 0, Math.PI * 2);
           g.fill();
+          g.fillStyle = 'rgba(195, 157, 103, 0.24)';
+          g.beginPath();
+          g.ellipse(c.x, c.y, p.r * 32, p.r * 16, 0, 0, Math.PI * 2);
+          g.fill();
+          g.strokeStyle = 'rgba(111, 78, 44, 0.34)';
+          g.lineWidth = 1.5;
+          g.beginPath();
+          g.ellipse(c.x, c.y, p.r * 29, p.r * 14.5, 0, 0, Math.PI * 2);
+          g.stroke();
+          // Paving seams follow the isometric square rather than a grid of
+          // screen-aligned lines, keeping the plaza integrated with the world.
+          g.strokeStyle = 'rgba(117, 83, 48, 0.22)';
+          g.lineWidth = 1;
+          for (let seam = -2; seam <= 2; seam++) {
+            const t = seam / 3;
+            g.beginPath();
+            g.moveTo(c.x + t * p.r * 25, c.y - p.r * 12.5);
+            g.lineTo(c.x + t * p.r * 25, c.y + p.r * 12.5);
+            g.stroke();
+            g.beginPath();
+            g.moveTo(c.x - p.r * 25, c.y + t * p.r * 12.5);
+            g.lineTo(c.x + p.r * 25, c.y + t * p.r * 12.5);
+            g.stroke();
+          }
         }
         // BUILD 692: textured dirt paths — layered strokes from cached Path2D
         // (soft dark fringe, dirt body, worn center, pebble speckles).
@@ -1011,7 +1038,6 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           // a continuous pipe. Segment count is bounded by actual wall length.
           g.strokeStyle = 'rgba(48, 45, 41, 0.68)';
           g.lineWidth = Math.max(1, wallWidth * 0.045);
-          let walked = 0;
           for (let i = 1; i < pts.length; i++) {
             const a = pts[i - 1], b = pts[i];
             const dx = b.x - a.x, dy = b.y - a.y;
@@ -1025,9 +1051,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
               g.lineTo(x, y + wallWidth * 0.42);
               g.stroke();
             }
-            walked += len;
           }
-          void walked;
         }
       }
 
