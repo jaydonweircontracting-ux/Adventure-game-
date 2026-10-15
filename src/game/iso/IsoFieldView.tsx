@@ -493,6 +493,13 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     // BUILD 716: reusable membership set avoids O(n²) damage-text pruning and
     // a per-frame spread allocation while keeping the seen-time Map intact.
     const activeDamageIds = new Set<number>();
+    // BUILD 717: viewport-sized static terrain surface. Moving actors/effects
+    // remain on the main canvas and keep their normal depth ordering.
+    const groundCacheCanvas = document.createElement('canvas');
+    const groundCacheG = groundCacheCanvas.getContext('2d')!;
+    let groundCacheKey = '';
+    let groundCacheBounds: { originX: number; originY: number; worldW: number; worldH: number } | null = null;
+    let groundCacheFarmsteadQueue: Array<{ x: number; y: number; barn: boolean }> = [];
     // BUILD 390: track the player's attack sequence -> swing start time so the
     // barbarian attack clip plays once per swing.
     let lastAttackSeq = -1;
@@ -660,14 +667,57 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         p.y >= cam.y - viewHalfH - marginTop &&
         p.y <= cam.y + viewHalfH + marginBottom;
 
+      // BUILD 717: cache static ground separately from animated actors.
+      // Cache covers 1.5 viewports and is rebuilt only when the camera leaves
+      // it or a render-affecting input changes. Resolution is capped to avoid
+      // enormous per-chunk bitmaps on high-DPI and zoomed-out devices.
+      const useChunkLOD = zm < 0.14;
+      const showDetail = zm > 0.20;
+      const tilesOn = isoTilesReady();
+      const hedgeImage = (window as unknown as { __propImgs?: Record<string, HTMLImageElement> })
+        .__propImgs?.['props/hedge-straight.png'];
+      const hedgeReady = !!hedgeImage && hedgeImage.complete && hedgeImage.naturalWidth > 0;
+      const groundCacheW = Math.max(1, Math.min(2048, Math.ceil(wpx * 1.5)));
+      const groundCacheH = Math.max(1, Math.min(1536, Math.ceil(hpx * 1.5)));
+      const desiredWorldW = (wpx / zm) * 1.5;
+      const desiredWorldH = (hpx / zm) * 1.5;
+      const groundCacheScale = Math.max(0.01, Math.min(
+        zm, groundCacheW / desiredWorldW, groundCacheH / desiredWorldH,
+      ));
+      const groundWorldW = groundCacheW / groundCacheScale;
+      const groundWorldH = groundCacheH / groundCacheScale;
+      const groundKey = [
+        chunk.x, chunk.y, zm, wpx, hpx, useChunkLOD, showDetail, tilesOn,
+        skipFarm, hedgeReady,
+      ].join('|');
+      const viewportInsideCache = !!groundCacheBounds &&
+        cam.x - viewHalfW >= groundCacheBounds.originX &&
+        cam.x + viewHalfW <= groundCacheBounds.originX + groundCacheBounds.worldW &&
+        cam.y - viewHalfH >= groundCacheBounds.originY &&
+        cam.y + viewHalfH <= groundCacheBounds.originY + groundCacheBounds.worldH;
+      if (groundCacheKey !== groundKey || !viewportInsideCache) {
+        groundCacheCanvas.width = groundCacheW;
+        groundCacheCanvas.height = groundCacheH;
+        groundCacheG.setTransform(1, 0, 0, 1, 0, 0);
+        groundCacheG.clearRect(0, 0, groundCacheW, groundCacheH);
+        const originX = cam.x - groundWorldW / 2;
+        const originY = cam.y - groundWorldH / 2;
+        groundCacheG.setTransform(
+          groundCacheScale, 0, 0, groundCacheScale,
+          -originX * groundCacheScale, -originY * groundCacheScale,
+        );
+        groundCacheG.imageSmoothingEnabled = false;
+        const cacheCenterX = originX + groundWorldW / 2;
+        const cacheCenterY = originY + groundWorldH / 2;
+        const { x0: groundX0, x1: groundX1, y0: groundY0, y1: groundY1 } =
+          isoVisibleTileRange(cacheCenterX, cacheCenterY, groundCacheW, groundCacheH, groundCacheScale);
+        farmsteadQueue.length = 0;
       // ground — per-tile chunk lookup into the scene grid
       // BUILD 376: tile detail is sub-pixel when zoomed out, so skip it there.
       // BUILD 389: user-supplied landscape tileset replaces the procedural
       // diamond fill (falls back to it while tiles load).
       // BUILD 713: retain terrain accents/decor at smaller zoom levels too;
       // only omit these when they are effectively sub-pixel.
-      const showDetail = zm > 0.20;
-      const tilesOn = isoTilesReady();
       if (useChunkLOD) {
         // BUILD 682: Chunk LOD with grass texture. Instead of one flat diamond
         // per chunk (which looked like solid green paint), subdivide each chunk
@@ -687,21 +737,21 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             for (let sx = 0; sx < SUB; sx++) {
               const tx0 = cx0 + sx * subN, ty0 = cy0 + sy * subN;
               // BUILD 701: memoized fill (sand/farm/normal + brightness hash).
-              g.fillStyle = lodFillFor(tx0, ty0, subN, skipFarm, baseHex);
+              groundCacheG.fillStyle = lodFillFor(tx0, ty0, subN, skipFarm, baseHex);
               const p00 = isoToScreen(tx0, ty0);
               const p10 = isoToScreen(tx0 + subN, ty0);
               const p11 = isoToScreen(tx0 + subN, ty0 + subN);
               const p01 = isoToScreen(tx0, ty0 + subN);
-              g.beginPath();
-              g.moveTo(p00.x, p00.y); g.lineTo(p10.x, p10.y);
-              g.lineTo(p11.x, p11.y); g.lineTo(p01.x, p01.y);
-              g.closePath(); g.fill();
+              groundCacheG.beginPath();
+              groundCacheG.moveTo(p00.x, p00.y); groundCacheG.lineTo(p10.x, p10.y);
+              groundCacheG.lineTo(p11.x, p11.y); groundCacheG.lineTo(p01.x, p01.y);
+              groundCacheG.closePath(); groundCacheG.fill();
             }
           }
         }
       } else {
-      for (let ty = y0; ty <= y1; ty++) {
-        for (let tx = x0; tx <= x1; tx++) {
+      for (let ty = groundY0; ty <= groundY1; ty++) {
+        for (let tx = groundX0; tx <= groundX1; tx++) {
           const { ox, oy, lx, ly } = isoTileChunkOffset(tx, ty, N);
           const sc = sceneFor(ox, oy);
           // BUILD 695: storybook sandy ground inside Mosslight — radial mask
@@ -723,10 +773,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           // BUILD 698: expand sand/road diamonds ~1px so AA seams can't show
           // the dark background — the "graph paper" grid lines.
           const ex = (sandy || roadHere) && !isOcean ? 1 : 0;
-          g.beginPath();
-          g.moveTo(p.x, p.y - hh - ex); g.lineTo(p.x + hw + ex, p.y);
-          g.lineTo(p.x, p.y + hh + ex); g.lineTo(p.x - hw - ex, p.y);
-          g.closePath();
+          groundCacheG.beginPath();
+          groundCacheG.moveTo(p.x, p.y - hh - ex); groundCacheG.lineTo(p.x + hw + ex, p.y);
+          groundCacheG.lineTo(p.x, p.y + hh + ex); groundCacheG.lineTo(p.x - hw - ex, p.y);
+          groundCacheG.closePath();
           // BUILD 369 (Phase 2b): authoritative rivers/lakes; road crossings draw as bridges.
           let wet = false;
           if (!isOcean) {
@@ -763,7 +813,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             // fallback so the seeded plot colors show.
             else if (sandy || farmCode > 0) tn = -1;
             else tn = groundTileFor(terr, lx, ly, sc.ox, sc.oy);
-            tileDrawn = tn >= 0 && drawGroundTile(g, tn, p.x, p.y);
+            tileDrawn = tn >= 0 && drawGroundTile(groundCacheG, tn, p.x, p.y);
           }
           if (!tileDrawn) {
             let col = sc.palette.field;
@@ -802,8 +852,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
                 col = '#' + ((1 << 24) + (r << 16) + (gg << 8) + b).toString(16).slice(1);
               }
             }
-            g.fillStyle = col;
-            g.fill();
+            groundCacheG.fillStyle = col;
+            groundCacheG.fill();
           }
           // BUILD 366: deterministic per-tile detail (chunk-gen video techniques).
           // (chunk offset mixed into the hash so neighbor chunks don't repeat
@@ -814,15 +864,15 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             // farmland — plots carry their own seeded variation and
             // boundaries, so the extra darkening just re-grids them.
             if ((lx + ly) % 2 === 1 && !sandy && farmCode === 0) {
-              g.fillStyle = 'rgba(0,0,0,0.05)';
-              g.fill();
+              groundCacheG.fillStyle = 'rgba(0,0,0,0.05)';
+              groundCacheG.fill();
             }
             // BUILD 695: clean sandy streets — no decor sprites on town sand
             // (desert rocks would litter the market square).
             // BUILD 698: none on farmland either — meadow tufts on plowed
             // soil read wrong; plots get hedge/fence boundaries instead.
             const dn = (sandy || farmCode > 0) ? -1 : decorTileFor(terr, lx, ly, sc.ox, sc.oy);
-            if (dn >= 0) drawDecor(g, dn, p.x, p.y);
+            if (dn >= 0) drawDecor(groundCacheG, dn, p.x, p.y);
             // BUILD 698: farmland plot boundaries (hedges/fences) and
             // farmstead building sites (drawn as drawables after the pass).
             if (farmCode > 0 && farmCode !== FARM_TRACK) {
@@ -831,10 +881,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
                 const hedge = (window as unknown as { __propImgs?: Record<string, HTMLImageElement> })
                   .__propImgs?.['props/hedge-straight.png'];
                 if (hedge && hedge.complete && hedge.naturalWidth > 0) {
-                  g.drawImage(hedge, p.x - hw, p.y - hh, TILE_W, TILE_H);
+                  groundCacheG.drawImage(hedge, p.x - hw, p.y - hh, TILE_W, TILE_H);
                 }
               } else if (det === FARM_DET_FENCE) {
-                g.drawImage(farmFenceSprite(), p.x - hw, p.y - hh, TILE_W, TILE_H);
+                groundCacheG.drawImage(farmFenceSprite(), p.x - hw, p.y - hh, TILE_W, TILE_H);
               } else if (det === FARM_DET_HOUSE) {
                 farmsteadQueue.push({ x: wxW, y: wyW, barn: false });
               } else if (det === FARM_DET_BARN) {
@@ -845,6 +895,19 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         }
       }
       } // end useChunkLOD else
+        groundCacheBounds = { originX, originY, worldW: groundWorldW, worldH: groundWorldH };
+        groundCacheKey = groundKey;
+        groundCacheFarmsteadQueue = farmsteadQueue.slice();
+      } else {
+        farmsteadQueue.length = 0;
+        for (const farm of groundCacheFarmsteadQueue) farmsteadQueue.push(farm);
+      }
+      g.drawImage(
+        groundCacheCanvas,
+        groundCacheBounds!.originX, groundCacheBounds!.originY,
+        groundCacheBounds!.worldW, groundCacheBounds!.worldH,
+      );
+
 
       // BUILD 683: Settlement decor (plazas, lanes) — ground decals drawn
       // after terrain, before depth-sorted drawables. Only chunk (4,7) has any.
