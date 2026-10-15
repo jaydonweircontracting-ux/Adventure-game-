@@ -235,9 +235,9 @@ interface SizeParams {
   plazaR: number;
 }
 const SIZE_PARAMS: Record<TownSize, SizeParams> = {
-  hamlet:  { radius: 52, targetLots: [8, 14],   maxStreets: 10, maxLanes: 4,  plazaR: 5 },
-  village: { radius: 72, targetLots: [18, 30],  maxStreets: 22, maxLanes: 8,  plazaR: 7 },
-  town:    { radius: 92, targetLots: [35, 60],  maxStreets: 40, maxLanes: 14, plazaR: 9 },
+  hamlet:  { radius: 52, targetLots: [8, 14],   maxStreets: 6,  maxLanes: 2,  plazaR: 5 },
+  village: { radius: 72, targetLots: [18, 30],  maxStreets: 12, maxLanes: 4,  plazaR: 7 },
+  town:    { radius: 92, targetLots: [35, 60],  maxStreets: 18, maxLanes: 4,  plazaR: 9 },
 };
 
 // ---------------------------------------------------------------- generation
