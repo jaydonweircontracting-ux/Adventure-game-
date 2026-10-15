@@ -176,6 +176,71 @@ export function farmlandDetailAt(wx: number, wy: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// BUILD 701: chunk-LOD ground classification cache (zoomed-out perf fix).
+//
+// The chunk-LOD path (zm < 0.35) classifies 576 subtiles per frame. The sand
+// mask (BUILD 695), farmland layout (BUILD 698) and the deterministic
+// brightness hash are all STATIC per world subtile — recomputing the trig
+// (hypot/atan2/2x sin in mosslightSandAt) 576x per frame was the hotspot.
+// Subtile origins are integer world tile coords, so the classification is
+// memoized per origin and computed at most once ever. The visual output is
+// unchanged: same kind mapping and the same hash formula as the old loop.
+//
+// A cheap squared-distance reject runs before the trig-heavy mask on the
+// first computation: the sand blend edge can never exceed 165 + 14 = 179
+// tiles from the Mosslight center, so distant subtiles skip mosslightSandAt
+// entirely.
+// ---------------------------------------------------------------------------
+
+/** Per-subtile LOD classification: 0 = normal, 1 = sand, 2..5 = FARM_OCHRE..FARM_TRACK (code+1). */
+export interface LodGroundClass {
+  kind: number;
+  /** Deterministic brightness hash in [0,1) — same formula the LOD loop used. */
+  h: number;
+}
+
+/** Max possible sand-blend radius: rOut = 165 + wob*14, wob in [0,1]. */
+const LOD_SAND_R_MAX = 179;
+const LOD_CLASS_CACHE_MAX = 65536;
+
+const lodClassCache = new Map<string, LodGroundClass>();
+
+/**
+ * Classify one chunk-LOD subtile. tx0/ty0 = integer subtile origin in world
+ * tile coords, subN = subtile size in tiles. Pure in its inputs; results are
+ * memoized (the underlying data is procedural and never changes).
+ */
+export function lodGroundClassAt(tx0: number, ty0: number, subN: number, skipFarm: boolean): LodGroundClass {
+  const key = tx0 + ',' + ty0 + ',' + (skipFarm ? '1' : '0');
+  let c = lodClassCache.get(key);
+  if (!c) {
+    const cx = tx0 + subN / 2, cy = ty0 + subN / 2;
+    const dx = cx - MOSSLIGHT_SAND_CX, dy = cy - MOSSLIGHT_SAND_CY;
+    // Fast reject: outside the max sand radius the mask is always 0.
+    const sandy = dx * dx + dy * dy <= LOD_SAND_R_MAX * LOD_SAND_R_MAX
+      && mosslightSandAt(cx, cy) > 0.5;
+    let kind = 0;
+    if (sandy) kind = 1;
+    else if (!skipFarm) {
+      // farmlandPlotAt returns FARM_NONE when sandy; we only reach here when
+      // !sandy, so passing false is identical to the old call's `isSand`.
+      const f = farmlandPlotAt(cx, cy, false);
+      if (f > 0) kind = 1 + f;
+    }
+    const h = Math.abs(Math.sin((tx0 * 12.9898 + ty0 * 78.233) * 43758.5453) % 1);
+    c = { kind, h };
+    if (lodClassCache.size >= LOD_CLASS_CACHE_MAX) lodClassCache.clear();
+    lodClassCache.set(key, c);
+  }
+  return c;
+}
+
+/** Current number of memoized LOD subtile classifications (debug/introspection). */
+export function lodClassCacheSize(): number {
+  return lodClassCache.size;
+}
+
+// ---------------------------------------------------------------------------
 // Loading + canvas draw
 // ---------------------------------------------------------------------------
 

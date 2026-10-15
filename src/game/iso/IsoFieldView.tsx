@@ -27,6 +27,7 @@ import {
   groundTileFor, decorTileFor, mosslightSandAt, hashTile,
   farmlandPlotAt, farmlandDetailAt, FARM_BASE_COLORS, FARM_TRACK,
   FARM_DET_HEDGE, FARM_DET_FENCE, FARM_DET_HOUSE, FARM_DET_BARN,
+  lodGroundClassAt,
 } from './isoTiles';
 import {
   preloadCritters, crittersReady, crittersForChunk, critterPose, drawCritter,
@@ -164,6 +165,103 @@ interface IsoChunkScene {
 
 const MARGIN = 48; // world-px background margin around the map
 const ROAD_HALF = 5; // road band half-width in tiles
+
+// BUILD 701: hoisted color parsing for the chunk-LOD ground path. Scene
+// palettes come from a small fixed set of hex strings, so parse each once.
+// The desert/farm base colors are constants — parsed once at module load.
+const lodHexCache = new Map<string, [number, number, number]>();
+function lodHexRgb(hex: string): [number, number, number] {
+  let c = lodHexCache.get(hex);
+  if (!c) {
+    c = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+    lodHexCache.set(hex, c);
+  }
+  return c;
+}
+const LOD_DESERT_RGB_LAZY: { v: [number, number, number] | null } = { v: null };
+// fieldPalettes lives in App.tsx, which circularly imports this module —
+// parsing it at module load would throw a TDZ ReferenceError and kill the
+// boot. Defer to first use (still parsed exactly once).
+function lodDesertRgb(): [number, number, number] {
+  if (!LOD_DESERT_RGB_LAZY.v) LOD_DESERT_RGB_LAZY.v = lodHexRgb(fieldPalettes.desert.field);
+  return LOD_DESERT_RGB_LAZY.v;
+}
+const LOD_FARM_RGB: Array<[number, number, number]> = FARM_BASE_COLORS.map(
+  (fc) => [parseInt(fc.slice(1, 3), 16), parseInt(fc.slice(3, 5), 16), parseInt(fc.slice(5, 7), 16)] as [number, number, number],
+);
+
+// BUILD 701: memoized final fill strings for chunk-LOD subtiles. The
+// classification (lodGroundClassAt) is already cached, but the per-frame
+// Math.round x3 + template-literal fillStyle build for 576 subtiles was the
+// remaining cost. The fill string is fully static per (world subtile, scene
+// palette, skipFarm), so it's memoized too — the hot loop becomes two Map
+// lookups and a fillStyle assignment. Nested numeric maps avoid per-frame
+// string-key allocation. Palette hex is validated on hit so a palette change
+// can never serve a stale color.
+
+// BUILD 701: smooth value-noise brightness for the chunk-LOD grass. This
+// replaces the BUILD 682 per-subtile hash (every 8x8 diamond got an
+// independent random brightness, so neighboring diamonds had hard brightness
+// edges — it read as TV static, not grass). Three octaves over a GLOBAL
+// tile-unit lattice, so the pattern is seamless across chunk borders and
+// deterministic forever:
+//   coarse: ~140-tile spacing, ±4% — large soft mottling, like real turf
+//   mid:    ~70-tile spacing,  ±4% — medium variation
+//   fine:   ~35-tile spacing,  ±4% — gentle per-diamond texture, no edges
+// Smoothstep interpolation means neighboring diamonds agree in brightness,
+// so no hard diamond-edge quilt lines. Mean stays 1.0 (same overall
+// brightness as before); only the spatial character changes.
+function lodValueNoise(u: number, v: number, seed: number): number {
+  const ix = Math.floor(u), iy = Math.floor(v);
+  const fx = u - ix, fy = v - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const n = (x: number, y: number): number => {
+    const s = Math.sin(x * 127.1 + y * 311.7 + seed * 74.7) * 43758.5453;
+    return s - Math.floor(s);
+  };
+  const a = n(ix, iy), b = n(ix + 1, iy), c = n(ix, iy + 1), d = n(ix + 1, iy + 1);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+function lodGrassBrightness(tx0: number, ty0: number, subN: number): number {
+  // Subtile center in world tiles. The lattice is in tile units, so the
+  // texture scale is independent of the SUB subdivision: ~140-tile soft
+  // blobs + ~70-tile variation + ~35-tile mottling. Smoothstep
+  // interpolation means neighboring diamonds agree — no hard quilt edges.
+  const cx = tx0 + subN / 2, cy = ty0 + subN / 2;
+  const coarse = lodValueNoise(cx / 140, cy / 140, 1);
+  const mid = lodValueNoise(cx / 70, cy / 70, 2);
+  const fine = lodValueNoise(cx / 35, cy / 35, 3);
+  return 1.0 + (coarse - 0.5) * 0.08 + (mid - 0.5) * 0.08 + (fine - 0.5) * 0.08;
+}
+
+const lodFillCache = new Map<number, Map<number, { fill: string; pal: string; sf: boolean }>>();
+const LOD_FILL_CACHE_MAX_ROWS = 2048;
+function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, baseHex: string): string {
+  let row = lodFillCache.get(ty0);
+  let e = row?.get(tx0);
+  if (!e || e.pal !== baseHex || e.sf !== skipFarm) {
+    const cls = lodGroundClassAt(tx0, ty0, subN, skipFarm);
+    const [br, bg, bb] = lodHexRgb(baseHex);
+    let cr: number, cg: number, cb: number;
+    if (cls.kind === 1) { const dr = lodDesertRgb(); cr = dr[0]; cg = dr[1]; cb = dr[2]; }
+    else if (cls.kind >= 2) {
+      const fc = LOD_FARM_RGB[cls.kind - 2];
+      cr = fc[0]; cg = fc[1]; cb = fc[2];
+    } else { cr = br; cg = bg; cb = bb; }
+    // BUILD 701: smooth value-noise brightness (was: independent per-subtile
+    // hash, which read as static). Deterministic per world subtile, so the
+    // memoization below stays valid.
+    const v = lodGrassBrightness(tx0, ty0, subN);
+    const r = Math.min(255, Math.round(cr * v));
+    const gg = Math.min(255, Math.round(cg * v));
+    const b2 = Math.min(255, Math.round(cb * v));
+    e = { fill: `rgb(${r},${gg},${b2})`, pal: baseHex, sf: skipFarm };
+    if (!row) { row = new Map(); lodFillCache.set(ty0, row); }
+    if (lodFillCache.size > LOD_FILL_CACHE_MAX_ROWS) lodFillCache.clear();
+    row.set(tx0, e);
+  }
+  return e.fill;
+}
 
 export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, onShopStall, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -418,49 +516,25 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         // per chunk (which looked like solid green paint), subdivide each chunk
         // into an 8x8 coarse grid with subtle deterministic color variation.
         // 576 diamonds for 9 chunks — still cheap, but looks like grass.
+        // BUILD 701: per-subtile classification (sand/farm/normal) and the
+        // brightness hash are static per world subtile, so they're memoized
+        // in lodGroundClassAt — no more per-frame trig/hashTile/parseInt.
+        // Scene palette + desert/farm base colors are hoisted out of the
+        // subtile loops. Visual output is identical to the old computation.
         const SUB = 8;
         const subN = N / SUB;
-        // BUILD 695: sandy base color inside the Mosslight town mask.
-        const desertCol = fieldPalettes.desert.field;
-        const sdr = parseInt(desertCol.slice(1, 3), 16);
-        const sdg = parseInt(desertCol.slice(3, 5), 16);
-        const sdb = parseInt(desertCol.slice(5, 7), 16);
         for (const sc of scenes) {
           const cx0 = (chunk.x + sc.ox) * N, cy0 = (chunk.y + sc.oy) * N;
-          const baseCol = sc.palette.field;
-          // Parse base color to RGB for variation.
-          const br = parseInt(baseCol.slice(1, 3), 16);
-          const bg = parseInt(baseCol.slice(3, 5), 16);
-          const bb = parseInt(baseCol.slice(5, 7), 16);
+          const baseHex = sc.palette.field;
           for (let sy = 0; sy < SUB; sy++) {
             for (let sx = 0; sx < SUB; sx++) {
               const tx0 = cx0 + sx * subN, ty0 = cy0 + sy * subN;
-              // BUILD 695: sandy ground inside the Mosslight town mask
-              // (the mask is 0 outside town, so no chunk check needed).
-              const isSand = mosslightSandAt(tx0 + subN / 2, ty0 + subN / 2) > 0.5;
-              // BUILD 698: farmland ring renders in the chunk-LOD path too
-              // (plot/track base color; hedge/fence boundaries are sub-pixel
-              // at this zoom so they resolve to the plot color).
-              const farm = (!skipFarm && !isSand)
-                ? farmlandPlotAt(tx0 + subN / 2, ty0 + subN / 2, isSand) : 0;
-              let cr = isSand ? sdr : br, cg = isSand ? sdg : bg, cb = isSand ? sdb : bb;
-              if (farm > 0) {
-                const fc = FARM_BASE_COLORS[farm - 1];
-                cr = parseInt(fc.slice(1, 3), 16);
-                cg = parseInt(fc.slice(3, 5), 16);
-                cb = parseInt(fc.slice(5, 7), 16);
-              }
+              // BUILD 701: memoized fill (sand/farm/normal + brightness hash).
+              g.fillStyle = lodFillFor(tx0, ty0, subN, skipFarm, baseHex);
               const p00 = isoToScreen(tx0, ty0);
               const p10 = isoToScreen(tx0 + subN, ty0);
               const p11 = isoToScreen(tx0 + subN, ty0 + subN);
               const p01 = isoToScreen(tx0, ty0 + subN);
-              // Deterministic hash for subtle brightness variation (±8%).
-              const h = Math.abs(Math.sin((tx0 * 12.9898 + ty0 * 78.233) * 43758.5453) % 1);
-              const v = 0.92 + h * 0.16;
-              const r = Math.min(255, Math.round(cr * v));
-              const gg = Math.min(255, Math.round(cg * v));
-              const b2 = Math.min(255, Math.round(cb * v));
-              g.fillStyle = `rgb(${r},${gg},${b2})`;
               g.beginPath();
               g.moveTo(p00.x, p00.y); g.lineTo(p10.x, p10.y);
               g.lineTo(p11.x, p11.y); g.lineTo(p01.x, p01.y);
@@ -893,8 +967,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       for (const f of farmsteadQueue) {
         const fc = isoToScreen(f.x + 0.5, f.y + 0.5);
         const fvhw = (wpx / 2) / zm, fvhh = (hpx / 2) / zm;
+        // BUILD 701: bottom margin 192 covers the farmstead sprite above its
+        // base anchor (sw ~= 161 world units, ~1:1 aspect -> ~161 tall).
         if (fc.x < cam.x - fvhw - 100 || fc.x > cam.x + fvhw + 100 ||
-            fc.y < cam.y - fvhh - 150 || fc.y > cam.y + fvhh + 50) continue;
+            fc.y < cam.y - fvhh - 150 || fc.y > cam.y + fvhh + 192) continue;
         drawables.push({
           depth: f.x + f.y,
           draw: (g2) => {
@@ -1007,7 +1083,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         for (const pr of decor.props) {
           const px = pr.x + bx, py = pr.y + by;
           const c = isoToScreen(px, py);
-          if (c.x < cam.x - pvhw - 100 || c.x > cam.x + pvhw + 100 || c.y < cam.y - pvhh - 150 || c.y > cam.y + pvhh + 50) continue;
+          // BUILD 701: bottom margin 128 covers the tallest prop sprite above
+          // its base anchor (r=1.5 -> sw=96, up to ~96 tall at 1:1 aspect).
+          if (c.x < cam.x - pvhw - 100 || c.x > cam.x + pvhw + 100 || c.y < cam.y - pvhh - 150 || c.y > cam.y + pvhh + 128) continue;
           const img = propImgs[pr.asset];
           drawables.push({
             depth: px + py,
@@ -1143,7 +1221,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       const npcVhw = (wpx / 2) / zm, npcVhh = (hpx / 2) / zm;
       for (const npc of live.folk) {
         const nc = isoToScreen(npc.position.x, npc.position.y);
-        if (nc.x < cam.x - npcVhw - 50 || nc.x > cam.x + npcVhw + 50 || nc.y < cam.y - npcVhh - 100 || nc.y > cam.y + npcVhh + 50) continue;
+        // BUILD 701: bottom margin 64 covers the full character sprite above
+        // the feet anchor (52 * 62/64 ~= 50.4 world units); the old 50 let
+        // NPCs pop out while their head was still visible at the edge.
+        if (nc.x < cam.x - npcVhw - 50 || nc.x > cam.x + npcVhw + 50 || nc.y < cam.y - npcVhh - 100 || nc.y > cam.y + npcVhh + 64) continue;
         drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id, undefined,
           // BUILD 699: children are smaller (70% scale).
           npc.archetype === 'child' ? 36 : undefined);
@@ -1179,9 +1260,17 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           const c = isoToScreen(gx, gy);
           // BUILD 597: Viewport culling for animals.
           const vhw = (wpx / 2) / zm, vhh = (hpx / 2) / zm;
-          if (c.x < cam.x - vhw - 50 || c.x > cam.x + vhw + 50 || c.y < cam.y - vhh - 50 || c.y > cam.y + vhh + 50) continue;
+          // BUILD 701: bottom margin 80 covers the tallest critter sprite
+          // above the feet anchor (deer dh = 41 * 36/24 = 61.5 world units).
+          if (c.x < cam.x - vhw - 50 || c.x > cam.x + vhw + 50 || c.y < cam.y - vhh - 50 || c.y > cam.y + vhh + 80) continue;
           const sx = c.x, sy = c.y;
-          const s = 36 * zoomRef.current;
+          // BUILD 701: fixed world-unit size. This draw runs under
+          // g.scale(zm, zm), so a zoom-multiplied size here scaled TWICE
+          // (36*zm world units -> 36*zm^2 screen px): critters shrank to
+          // near-invisible dots when zooming out and ballooned past the
+          // player sprite when zooming in. Fixed 36 world units scales
+          // with the world exactly like characters and buildings.
+          const s = 36;
           const depth = gx + gy;
           // Sprite dimensions per kind (strips animate, wolf is a single image)
           let frameW = 32, frameH = 41, isStrip = true;
@@ -1250,7 +1339,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           const box = boxSizes[kind] || { hw: 0.5, hh: 0.6 };
           const gx = goat.position.x, gy = goat.position.y;
           const c = isoToScreen(gx, gy);
-          const s = 36 * zoomRef.current;
+          const s = 36; // BUILD 701: world units (see critter draw above)
           const w = box.hw * 2 * (s / 24);
           const h = box.hh * 2 * (s / 24);
           drawables.push({
@@ -1270,7 +1359,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           const gb = greenBoxRef.current;
           const gx = goat.position.x + gb.dx, gy = goat.position.y + gb.dy;
           const c = isoToScreen(gx, gy);
-          const s = 36 * zoomRef.current;
+          const s = 36; // BUILD 701: world units (see critter draw above)
           const w = gb.hw * 2 * (s / 24);
           const h = gb.hh * 2 * (s / 24);
           drawables.push({

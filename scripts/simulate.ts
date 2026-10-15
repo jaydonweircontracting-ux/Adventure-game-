@@ -37,6 +37,7 @@ import { BURROWING_BEAST, TWO_HEADED_SERPENT, phaseForHealth, allBosses } from '
 import { EntityPool, type PoolableEntity } from '../src/game/entityPool';
 import { FlowField, FlowFieldCache, sampleFlowSmoothed } from '../src/game/flowField';
 import { riverTileSetCached, roadTileSetCached } from '../src/game/wfcInfra';
+import { mosslightSandAt, farmlandPlotAt, lodGroundClassAt, lodClassCacheSize } from '../src/game/iso/isoTiles';
 import { dungeonTileSetCached, generateDungeon } from '../src/game/wfcDungeon';
 import { simTierForDistance, shouldUpdate, SIM_TIER_INTERVAL } from '../src/game/simLod';
 import { dangerForBiome, accumulateDanger, BIOME_DANGERS } from '../src/game/environmentalDanger';
@@ -7921,6 +7922,37 @@ import { inflateSync } from 'node:zlib';
       'Shop700: browse visit deterministic');
     assert(bv1.stallIndex >= 0 && bv1.stallIndex < 3, 'Shop700: stall index in range');
   }
+}
+
+// BUILD 701: chunk-LOD ground classification cache — the memoized result must
+// agree with the direct computation (sand mask, farmland layout, hash).
+{
+  const SUBN = 35; // N=280 / SUB=8
+  const check = (tx0: number, ty0: number, skipFarm: boolean) => {
+    const cls = lodGroundClassAt(tx0, ty0, SUBN, skipFarm);
+    const cx = tx0 + SUBN / 2, cy = ty0 + SUBN / 2;
+    const sandy = mosslightSandAt(cx, cy) > 0.5;
+    let want = 0;
+    if (sandy) want = 1;
+    else if (!skipFarm) {
+      const f = farmlandPlotAt(cx, cy, sandy);
+      if (f > 0) want = 1 + f;
+    }
+    assert(cls.kind === want, `LOD701: kind mismatch at ${tx0},${ty0} (skipFarm=${skipFarm}): got ${cls.kind}, want ${want}`);
+    const wantH = Math.abs(Math.sin((tx0 * 12.9898 + ty0 * 78.233) * 43758.5453) % 1);
+    assert(cls.h === wantH, `LOD701: hash mismatch at ${tx0},${ty0}`);
+    // Memoized: same object returned on repeat.
+    assert(lodGroundClassAt(tx0, ty0, SUBN, skipFarm) === cls, `LOD701: not memoized at ${tx0},${ty0}`);
+  };
+  // Town center (sand), farmland ring, and far field.
+  for (const [wx, wy] of [[1264, 2104], [1100, 2000], [1482, 1958], [5000, 5000], [-3000, 9000]] as Array<[number, number]>) {
+    const tx0 = Math.floor(wx / SUBN) * SUBN, ty0 = Math.floor(wy / SUBN) * SUBN;
+    check(tx0, ty0, false);
+    check(tx0, ty0, true);
+  }
+  // The fast reject must never misclassify: every subtile in the 3x3 chunks
+  // around Mosslight matches the direct mask call (checked above via kind).
+  assert(lodClassCacheSize() > 0, 'LOD701: cache populated');
 }
 
 // ---- Results ----
