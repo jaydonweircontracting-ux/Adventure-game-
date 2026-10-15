@@ -58,8 +58,7 @@ import {
 // static world geometry (seed-pinned town), so the Path2D layers are built
 // once per chunk key and re-stroked every frame — zero per-frame allocation.
 type DirtPathCacheEntry = ReturnType<typeof buildDirtPath2D>;
-const DIRT_PATH_CACHE_MAX = 64;
-const dirtPathCache = new Map<string, DirtPathCacheEntry>();
+const dirtPathCache = createBoundedCache<string, DirtPathCacheEntry>(64);
 
 // BUILD 715: cache deterministic settlement geometry and sprite variants.
 // These were being rebuilt/reselected inside the 60 Hz draw loop.
@@ -985,11 +984,6 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             );
             paths = buildDirtPath2D(geo);
             // Keep nearby path geometry warm while bounding memory in long sessions.
-            while (dirtPathCache.size >= DIRT_PATH_CACHE_MAX) {
-              const oldest = dirtPathCache.keys().next();
-              if (oldest.done) break;
-              dirtPathCache.delete(oldest.value);
-            }
             dirtPathCache.set(dkey, paths);
           }
           if (!skipDirt) {
