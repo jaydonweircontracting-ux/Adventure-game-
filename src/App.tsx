@@ -4485,6 +4485,15 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [horse, setHorse] = useState<HorseState>(initialHorseState);
   const [horseFacing, setHorseFacing] = useState<EightDirection>('down');
   const [logOpen, setLogOpen] = useState(false);
+  // BUILD 722: optional ambient NPC speech bubbles; remember the player's preference.
+  const [npcSpeechEnabled, setNpcSpeechEnabled] = useState(() => {
+    try { return localStorage.getItem('ag-npc-speech') === 'on'; } catch { return false; }
+  });
+  const toggleNpcSpeech = () => setNpcSpeechEnabled((enabled) => {
+    const next = !enabled;
+    try { localStorage.setItem('ag-npc-speech', next ? 'on' : 'off'); } catch { /* storage unavailable */ }
+    return next;
+  });
   // BUILD 595: Skill panel visibility.
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [hpBoxHidden, setHpBoxHidden] = useState(false);
@@ -9323,7 +9332,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView playerLook={rpgConfig.look} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={monsters.map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
+            <IsoFieldView playerLook={rpgConfig.look} npcSpeechEnabled={npcSpeechEnabled} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={monsters.map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {
@@ -11146,6 +11155,7 @@ if (active) {
               <button className="hud-quick-button" onClick={() => setHpBoxHidden(true)} aria-label="Hide HP box" title="Hide HP box" data-testid="button-hide-hp-box"><EyeOff size={15} /></button>
               <button className="hud-quick-button" onClick={onOpenMap} aria-label="Open world map" title="World map" data-testid="button-open-map"><MapIcon size={15} /></button>
               <button className="hud-quick-button" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={15} /></button>
+              <button className="hud-quick-button" onClick={toggleNpcSpeech} aria-pressed={npcSpeechEnabled} aria-label={npcSpeechEnabled ? 'Hide NPC speech bubbles' : 'Show NPC speech bubbles'} title={npcSpeechEnabled ? 'NPC speech: on' : 'NPC speech: off'} data-testid="button-toggle-npc-speech" style={npcSpeechEnabled ? { color: '#ffe08a', borderColor: '#ffe08a' } : undefined}><MessageCircle size={15} /></button>
               <button className="hud-quick-button" onClick={() => setWaitSheetOpen(true)} aria-label="Wait / pass time" title="Wait" data-testid="button-wait"><Hourglass size={15} /></button>
             </div>
             {selectedGoat && (
