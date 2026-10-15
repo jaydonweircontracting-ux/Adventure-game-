@@ -4365,6 +4365,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       targetNpcModeRef.current = 'attack';
       targetGoatIdRef.current = null;
       setTargetGoatId(null);
+      targetMonsterIdRef.current = null;
+      setTargetMonsterId(null);
       setTargetNpcId(npcTarget.npc.id);
       setLogs((currentLogs) => [{ text: `Targeting ${npcTarget.npc.name} — chasing!`, color: 'red' }, ...currentLogs].slice(0, 3));
     }
@@ -4875,6 +4877,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const wildlifeRef = useRef<WildlifeState[]>(wildlife);
   useEffect(() => { waterLifeRef.current = waterLife; }, [waterLife]);
   const [targetGoatId, setTargetGoatId] = useState<number | null>(null);
+  const [targetMonsterId, setTargetMonsterId] = useState<number | null>(null);
   const [droppedLoot, setDroppedLoot] = useState<DroppedLoot[]>([]);
   // BUILD 430: one-time ground items picked up (tutorial-house sword).
   const [pickedUpGroundItems, setPickedUpGroundItems] = useState<string[]>([]);
@@ -4968,6 +4971,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const goatsRef = useRef(goats);
   const cornStalksRef = useRef<CornStalk[]>(cornStalks);
   const targetGoatIdRef = useRef<number | null>(null);
+  const targetMonsterIdRef = useRef<number | null>(null);
   const droppedLootRef = useRef(droppedLoot);
   const droppedLootIdRef = useRef(1);
   const playerHpRef = useRef(playerHp);
@@ -5583,6 +5587,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   useEffect(() => { bodiesRef.current = bodies; }, [bodies]);
   useEffect(() => { cornStalksRef.current = cornStalks; }, [cornStalks]);
   useEffect(() => { targetGoatIdRef.current = targetGoatId; }, [targetGoatId]);
+  useEffect(() => { targetMonsterIdRef.current = targetMonsterId; }, [targetMonsterId]);
   useEffect(() => { droppedLootRef.current = droppedLoot; }, [droppedLoot]);
   useEffect(() => { playerHpRef.current = playerHp; }, [playerHp]);
   useEffect(() => { playerXpRef.current = playerXp; }, [playerXp]);
@@ -6426,17 +6431,28 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       // behavior as NPCs. In range, attackGoat uses the selected ID, so a
       // swing cannot silently switch to a nearby unselected creature.
       const selectedGoatId = targetGoatIdRef.current;
-      if (!targetId && selectedGoatId != null && (input.x !== 0 || input.y !== 0)) {
+      const selectedMonsterId = targetMonsterIdRef.current;
+      if (!targetId && (selectedGoatId != null || selectedMonsterId != null) && (input.x !== 0 || input.y !== 0)) {
         targetGoatIdRef.current = null;
         setTargetGoatId(null);
-      } else if (!targetId && selectedGoatId != null && !inputLocked && !optionsOpen && !waitingRef.current) {
-        const targetGoat = goatsRef.current.find((goat) => goat.id === selectedGoatId && goat.disposition === 'aggressive');
-        if (!targetGoat || targetGoat.hp <= 0) {
+        targetMonsterIdRef.current = null;
+        setTargetMonsterId(null);
+      } else if (!targetId && (selectedGoatId != null || selectedMonsterId != null) && !inputLocked && !optionsOpen && !waitingRef.current) {
+        const targetGoat = selectedGoatId != null
+          ? goatsRef.current.find((goat) => goat.id === selectedGoatId && goat.disposition === 'aggressive' && goat.hp > 0)
+          : undefined;
+        const targetMonster = selectedMonsterId != null
+          ? monstersRef.current.find((monster) => monster.id === selectedMonsterId && monster.disposition !== 'defeated' && monster.hp > 0)
+          : undefined;
+        const combatTarget = targetGoat || targetMonster;
+        if (!combatTarget) {
           targetGoatIdRef.current = null;
           setTargetGoatId(null);
+          targetMonsterIdRef.current = null;
+          setTargetMonsterId(null);
         } else {
-          const dx = targetGoat.position.x - positionRef.current.x;
-          const dy = targetGoat.position.y - positionRef.current.y;
+          const dx = combatTarget.position.x - positionRef.current.x;
+          const dy = combatTarget.position.y - positionRef.current.y;
           const dist = Math.hypot(dx, dy);
           if (dist > PLAYER_MELEE_REACH * 0.8) {
             tapSteer = { x: dx / dist, y: dy / dist };
@@ -6448,7 +6464,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               setFacing(faceDir);
             }
             if (!playerAttackStateRef.current.active && playerAttackCooldownRef.current <= 0) {
-              attackGoat(selectedGoatId);
+              attackGoat(combatTarget.id);
             }
           }
         }
@@ -6753,11 +6769,19 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const npcOnly = [...npcCandidates, ...fieldNpcCandidates]
             .sort((a, b) => goatDistance(a as unknown as GoatState, attackerPos) - goatDistance(b as unknown as GoatState, attackerPos));
           const lockedNpcTargetId = targetNpcIdRef.current;
+          const lockedMonsterId = targetMonsterIdRef.current;
+          const lockedGoatId = targetGoatIdRef.current;
           const attackTarget = playerAttack.targetId == null
             ? (lockedNpcTargetId
                 ? npcOnly.find((npc) => npc.id === lockedNpcTargetId)
                 : (npcOnly[0] ?? attackCandidates[0]))
-            : attackCandidates.find((goat) => goat.id === playerAttack.targetId);
+            : attackCandidates.find((candidate) =>
+                candidate.id === playerAttack.targetId
+                && (lockedMonsterId === playerAttack.targetId
+                  ? candidate.entityKind === 'monster'
+                  : lockedGoatId === playerAttack.targetId
+                    ? candidate.entityKind === 'goat'
+                    : true));
           if (!swingDamageDealt && attackTarget && (attackTarget.entityKind === 'townsfolk' || attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler' || attackTarget.entityKind === 'cellar-rat' || attackTarget.entityKind === 'wildlife' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
             swingDamageDealt = true;
             // Harvesting corn: one swing cuts the stalk, which disappears and
@@ -7312,7 +7336,9 @@ if (active) {
       ? null
       : (inCellar
           ? cellarRatsRef.current.find((rat) => rat.id === targetId && rat.hp > 0)
-          : goatsRef.current.find((goat) => goat.id === targetId && goat.disposition !== 'defeated'));
+          : (targetMonsterIdRef.current === targetId
+              ? monstersRef.current.find((monster) => monster.id === targetId && monster.disposition !== 'defeated' && monster.hp > 0)
+              : goatsRef.current.find((goat) => goat.id === targetId && goat.disposition !== 'defeated' && goat.hp > 0)));
     playerAttackStateRef.current = { active: true, direction: currentFacing, targetId: target?.id ?? null, elapsed: 0, hitApplied: false, ranged: inCellar ? false : bowEquipped };
     playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS;
     setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS);
@@ -9677,7 +9703,7 @@ if (active) {
               <button
                 type="button"
                 key={'monster-' + monster.kind + '-' + monster.id}
-                className={'monster monster-' + spriteKind + ' monster-state-' + getSpriteState(monster.state, monster.facing) + (monster.moving ? ' is-moving' : '') + (monster.attacking ? ' is-attacking' : '') + (monster.hitFlash ? ' is-hit' : '') + (dead ? ' is-dead' : '')}
+                className={'monster monster-' + spriteKind + ' monster-state-' + getSpriteState(monster.state, monster.facing) + (monster.moving ? ' is-moving' : '') + (monster.attacking ? ' is-attacking' : '') + (monster.hitFlash ? ' is-hit' : '') + (dead ? ' is-dead' : '') + (targetMonsterId === monster.id ? ' is-targeted' : '')}
                 style={{ left: fieldPct(monster.position.x), top: fieldPct(monster.position.y) }}
                 data-facing={monster.facing}
                 data-state={monster.state}
@@ -9687,10 +9713,23 @@ if (active) {
                 data-testid={'button-target-monster-' + monster.id}
                 onClick={dead ? undefined : () => {
                   if (inputLocked || optionsOpen || waitingRef.current || playerAttackStateRef.current.active) return;
-                  attackGoat();
+                  if (targetMonsterIdRef.current === monster.id) {
+                    targetMonsterIdRef.current = null;
+                    setTargetMonsterId(null);
+                    return;
+                  }
+                  targetNpcIdRef.current = null;
+                  targetNpcModeRef.current = null;
+                  setTargetNpcId(null);
+                  targetGoatIdRef.current = null;
+                  setTargetGoatId(null);
+                  tapMoveTargetRef.current = null;
+                  targetMonsterIdRef.current = monster.id;
+                  setTargetMonsterId(monster.id);
                 }}
               >
                 {!dead && <span className="monster-aggro">!</span>}
+                {!dead && targetMonsterId === monster.id && <span className="goat-target-ring" aria-hidden="true" />}
                 <span className="monster-sprite" />
                 {markerMode && (
                   <span className="monster-debug">
@@ -10521,7 +10560,22 @@ if (active) {
             <button
               key={npc.id}
               className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
-              onClick={(moverMode || markerMode) ? undefined : () => talkToTownsfolk(npc)}
+              onClick={(moverMode || markerMode) ? undefined : () => {
+                if (targetNpcIdRef.current === npc.id) {
+                  targetNpcIdRef.current = null;
+                  targetNpcModeRef.current = null;
+                  setTargetNpcId(null);
+                } else {
+                  targetGoatIdRef.current = null;
+                  setTargetGoatId(null);
+                  targetMonsterIdRef.current = null;
+                  setTargetMonsterId(null);
+                  tapMoveTargetRef.current = null;
+                  targetNpcIdRef.current = npc.id;
+                  targetNpcModeRef.current = 'talk';
+                  setTargetNpcId(npc.id);
+                }
+              }}
               style={{ ...npcAppearanceStyle(npc.id, npc.archetype), left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role={npc.role}
               data-facing={npc.facing}
@@ -10537,6 +10591,11 @@ if (active) {
               </span>
               {barks[npc.id] && <span className="npc-bark" aria-hidden="true">{barks[npc.id]}</span>}
               {targetNpcId === npc.id && <span className="npc-target-marker" aria-hidden="true">🎯</span>}
+              {targetNpcId === npc.id && Math.hypot(npc.position.x - position.x, npc.position.y - position.y) <= 8.5 && (
+                <span className="npc-chat-prompt" role="button" tabIndex={0} aria-label={'Talk to ' + npc.name}
+                  onClick={(event) => { event.stopPropagation(); talkToTownsfolk(npc); }}
+                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); talkToTownsfolk(npc); } }}>💬</span>
+              )}
               {(() => {
                 const hp = npcHp(npc);
                 const maxHp = npcMaxHp(npc);
