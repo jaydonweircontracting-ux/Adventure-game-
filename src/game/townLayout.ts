@@ -235,9 +235,12 @@ interface SizeParams {
   plazaR: number;
 }
 const SIZE_PARAMS: Record<TownSize, SizeParams> = {
-  hamlet:  { radius: 52, targetLots: [8, 14],   maxStreets: 10, maxLanes: 4,  plazaR: 5 },
-  village: { radius: 72, targetLots: [18, 30],  maxStreets: 22, maxLanes: 8,  plazaR: 7 },
-  town:    { radius: 92, targetLots: [35, 60],  maxStreets: 40, maxLanes: 14, plazaR: 9 },
+  // Keep a readable road hierarchy: a few continuous streets, with only
+  // occasional connectors. Door spurs are generated separately, so pinned
+  // gameplay buildings retain access without filling the town with shortcuts.
+  hamlet:  { radius: 52, targetLots: [8, 14],   maxStreets: 4,  maxLanes: 1, plazaR: 5 },
+  village: { radius: 72, targetLots: [18, 30],  maxStreets: 8,  maxLanes: 3, plazaR: 7 },
+  town:    { radius: 92, targetLots: [35, 60],  maxStreets: 12, maxLanes: 3, plazaR: 9 },
 };
 
 // ---------------------------------------------------------------- generation
@@ -577,13 +580,45 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     radius: 0, zone: 'edge-sector', sectorAngle: indAngle, sectorWidth: 0.55 });
   districts.push({ id: `district-${dSeq++}`, kind: 'commercial', center: { x: 0, y: 0 },
     radius: 0, zone: 'arterial-corridor', corridorDist: 11 });
-  const nParks = size === 'town' ? 2 : size === 'village' ? 1 : (rngD() < 0.5 ? 1 : 0);
-  for (let i = 0; i < nParks; i++) {
-    const a = rngD() * Math.PI * 2;
-    const pr = 9 + rngD() * 4;
-    const c = { x: Math.cos(a) * R * 0.45, y: Math.sin(a) * R * 0.45 };
+  // BUILD 725: place green spaces as real reserved districts, not just
+  // random circles that can disappear inside the civic core or overlap a
+  // road, fixed landmark, or another park. Candidate order is seeded, so
+  // the same seed/config still produces identical layouts.
+  const desiredParks = size === 'town' ? 2 : size === 'village' ? 1 : (rngD() < 0.5 ? 1 : 0);
+  const placedParks: TLDistrict[] = [];
+  const parkCandidates = Array.from({ length: 56 }, () => {
+    const angle = rngD() * Math.PI * 2;
+    const radial = R * (0.32 + rngD() * 0.43);
+    return {
+      center: { x: Math.cos(angle) * radial, y: Math.sin(angle) * radial },
+      radius: 8 + rngD() * 3.5,
+    };
+  }).sort((a, b) => b.radius - a.radius);
+  for (const candidate of parkCandidates) {
+    if (placedParks.length >= desiredParks) break;
+    const { center: c, radius: pr } = candidate;
+    if (!pointInPolygon(c, boundary) || distToPolygonEdge(c, boundary) < pr + 3) continue;
+    if (dist(c, plazaC) < plazaR + pr + 5) continue;
+    if (placedParks.some((p) => dist(c, p.center) < pr + p.radius + 5)) continue;
+    // Keep a green district clear of fixed buildings and all road corridors.
+    const hitsPinned = pinned.some((q) => {
+      const f = q.footprint;
+      const px = Math.max(f.left, Math.min(f.right, c.x));
+      const py = Math.max(f.top, Math.min(f.bottom, c.y));
+      return Math.hypot(c.x - px, c.y - py) < pr + 3;
+    });
+    if (hitsPinned) continue;
+    const hitsRoad = roads.some((road) =>
+      distPointPolyline(c, road.points) < pr + road.width / 2 + 3);
+    if (hitsRoad) continue;
+    // Reserve a comfortable buffer from the civic center and commercial
+    // corridor so the park remains a distinct neighborhood destination.
     if (dist(c, { x: 0, y: 0 }) < civicR + pr + 4) continue;
-    districts.push({ id: `district-${dSeq++}`, kind: 'park', center: c, radius: pr, zone: 'circle' });
+    const park: TLDistrict = {
+      id: `district-${dSeq++}`, kind: 'park', center: c, radius: pr, zone: 'circle',
+    };
+    placedParks.push(park);
+    districts.push(park);
   }
 
   const arterialSamples = arterials.flatMap((a) =>
@@ -960,8 +995,12 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
   const walls: TLWall[] = [];
   let propSeq = 0;
   const addProp = (kind: PropKind, x: number, y: number, r: number,
-      solid: boolean, asset: string): void => {
-    props.push({ id: `prop-${propSeq++}`, kind, x, y, r, solid, asset });
+      _solid: boolean, asset: string): void => {
+    // BUILD 726: generated town decor is temporarily non-blocking. This keeps
+    // stalls, hedges, lamps, carts, and barrels from trapping players while
+    // world collision is being simplified. Preserve the field in the data
+    // contract so solidity can be restored per asset later.
+    props.push({ id: `prop-${propSeq++}`, kind, x, y, r, solid: false, asset });
   };
   const footprintAt = (x: number, y: number, margin = 0.5): boolean =>
     lots.some((l) => {
@@ -1025,17 +1064,24 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
   // Concentric broken hedge rings around a central fountain; the gaps are
   // the maze entrances (offset per ring so it reads as a maze, not a box).
   // Solid walls, walkable gaps.
-  const gardenC = { x: plazaC.x + 31, y: plazaC.y - 54 };
+  // Scale the garden with settlement size and keep it well inside the
+  // irregular boundary; a fixed offset pushed the maze out of small hamlets.
+  const gardenScale = Math.min(1, R / 92);
+  const gardenC = { x: plazaC.x + R * 0.29, y: plazaC.y - R * 0.48 };
   const hedgeSeen = new Set<string>(); // ring corners are shared — place once
   const hedgeLine = (x0: number, y0: number, x1: number, y1: number,
       gapAlong: number | null, gapHalf: number): void => {
-    const len = Math.hypot(x1 - x0, y1 - y0);
+    const sx0 = x0 * gardenScale, sy0 = y0 * gardenScale;
+    const sx1 = x1 * gardenScale, sy1 = y1 * gardenScale;
+    const scaledGap = gapAlong === null ? null : gapAlong * gardenScale;
+    const scaledGapHalf = gapHalf * gardenScale;
+    const len = Math.hypot(sx1 - sx0, sy1 - sy0);
     const n = Math.max(2, Math.round(len / 2.5) + 1);
     for (let i = 0; i < n; i++) {
       const t = i / (n - 1), along = t * len;
-      if (gapAlong !== null && Math.abs(along - gapAlong) < gapHalf) continue;
-      const x = gardenC.x + x0 + (x1 - x0) * t;
-      const y = gardenC.y + y0 + (y1 - y0) * t;
+      if (scaledGap !== null && Math.abs(along - scaledGap) < scaledGapHalf) continue;
+      const x = gardenC.x + sx0 + (sx1 - sx0) * t;
+      const y = gardenC.y + sy0 + (sy1 - sy0) * t;
       const key = `${x.toFixed(3)},${y.toFixed(3)}`;
       if (hedgeSeen.has(key)) continue;
       hedgeSeen.add(key);
@@ -1060,7 +1106,9 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
   }
   // Plaza corner lamps (solid, like the old plan's lamps).
   for (const [dx, dy] of [[-20, -12], [20, -12], [-20, 12], [20, 12]] as [number, number][]) {
-    addProp('lamp', plazaC.x + dx, plazaC.y + dy, 0.8, true, 'props/lamp.png');
+    const x = plazaC.x + dx, y = plazaC.y + dy;
+    if (!propSpotOk(x, y, 0.6, 0.8)) continue;
+    addProp('lamp', x, y, 0.8, false, 'props/lamp.png');
   }
   // Street lamps along arterials and streets, alternating sides.
   for (const road of roads) {
@@ -1084,11 +1132,14 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
         acc += sl;
       }
       if (!found) continue;
-      const lx = px + -pdy * 3 * side, ly = py + pdx * 3 * side;
+      // Offset by the actual road width plus a safety margin; a fixed
+      // 3-unit offset can put lamps inside wide arterial walk corridors.
+      const lampOffset = road.width / 2 + 1.5;
+      const lx = px + -pdy * lampOffset * side, ly = py + pdx * lampOffset * side;
       side = -side;
-      if (footprintAt(lx, ly) || nearPinnedDoor(lx, ly)) continue;
+      if (!propSpotOk(lx, ly, 0.6, 0.8)) continue;
       if (Math.hypot(lx - plazaC.x, ly - plazaC.y) < plazaR + 4) continue;
-      addProp('lamp', lx, ly, 0.8, true, 'props/lamp.png');
+      addProp('lamp', lx, ly, 0.8, false, 'props/lamp.png');
     }
   }
   // Barrel clutter near buildings (north side, away from the south doors).
