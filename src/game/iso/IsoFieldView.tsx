@@ -58,6 +58,21 @@ import {
 type DirtPathCacheEntry = ReturnType<typeof buildDirtPath2D>;
 const dirtPathCache = new Map<string, DirtPathCacheEntry>();
 
+// BUILD 715: cache deterministic settlement geometry and sprite variants.
+// These were being rebuilt/reselected inside the 60 Hz draw loop.
+const settlementDecorCache = new Map<string, ReturnType<typeof settlementDecorFor>>();
+const buildingKindCache = new WeakMap<object, string>();
+function cachedSettlementDecorFor(chunk: { x: number; y: number }): ReturnType<typeof settlementDecorFor> {
+  const key = `${chunk.x},${chunk.y}`;
+  const cached = settlementDecorCache.get(key);
+  if (cached) return cached;
+  const decor = settlementDecorFor(chunk);
+  settlementDecorCache.set(key, decor);
+  // Bound cache size as the player explores an effectively unbounded world.
+  if (settlementDecorCache.size > 32) settlementDecorCache.delete(settlementDecorCache.keys().next().value!);
+  return decor;
+}
+
 // ---------------------------------------------------------------------------
 // BUILD 698 helpers
 // ---------------------------------------------------------------------------
@@ -396,7 +411,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   // listener always hit-tests the current chunk's stalls.
   const homeStalls = useMemo(() => {
     try {
-      return marketStallsFromDecor(settlementDecorFor({ x: chunk.x, y: chunk.y }).props);
+      return marketStallsFromDecor(cachedSettlementDecorFor({ x: chunk.x, y: chunk.y }).props);
     } catch {
       return [];
     }
@@ -816,7 +831,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // BUILD 683: Settlement decor (plazas, lanes) — ground decals drawn
       // after terrain, before depth-sorted drawables. Only chunk (4,7) has any.
       for (const sc of scenes) {
-        const decor = settlementDecorFor({ x: chunk.x + sc.ox, y: chunk.y + sc.oy });
+        const decor = cachedSettlementDecorFor({ x: chunk.x + sc.ox, y: chunk.y + sc.oy });
         if (!decor.plazas.length && !decor.lanes.length) continue;
         const bx = sc.ox * N, by = sc.oy * N;
         for (const p of decor.plazas) {
@@ -978,7 +993,11 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         drawables.push({
           depth: buildingDepth, draw: (g2) => {
             // BUILD 603: stable sprite by absolute chunk + local coords.
-            const kind = bldKindForBuilding(b, sc.ox, sc.oy);
+            let kind = buildingKindCache.get(b);
+            if (!kind) {
+              kind = bldKindForBuilding(b, sc.ox, sc.oy);
+              buildingKindCache.set(b, kind);
+            }
             const sprite = bldImgs[kind];
             if (sprite && sprite.complete && sprite.naturalWidth > 0) {
               // Draw sprite anchored at building base center
