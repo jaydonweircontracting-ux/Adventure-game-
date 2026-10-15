@@ -160,18 +160,17 @@ export function isoPlayerFaceForScreenDelta(dx: number, dy: number, current: Fac
   const sx = dx - dy; // screen x of the tile delta (2:1 dimetric)
   const sy = (dx + dy) / 2; // screen y of the tile delta
   const ax = Math.abs(sx), ay = Math.abs(sy);
+  // BUILD 711: widen the straight vertical-facing dead zone to 30 degrees.
+  // Small horizontal drift from pathing/interpolation must not turn a mostly
+  // forward/back walk into an angled diagonal sprite. Keep diagonal art for
+  // clearly diagonal travel and retain the existing side-facing boundary.
+  const straightFacingLimit = 0.57735; // tan(30deg)
   if (sy < 0) {
-    // northward: back sprite within 22.5deg of straight-up; the diagonal
-    // bands (22.5-67.5deg) use the dedicated up-right/up-left art; beyond
-    // that the side sprite for the travel direction.
-    if (ax <= ay * 0.4142) return 'up';
+    if (ax <= ay * straightFacingLimit) return 'up';
     if (ax <= ay * 2.4142) return sx > 0 ? 'upright' : 'upleft';
     return sx > 0 ? 'right' : 'left';
   }
-  // southward: front sprite within 22.5deg of straight-down; the diagonal
-  // bands (22.5-67.5deg) use the dedicated down-right/down-left art; beyond
-  // that the side sprite for the travel direction.
-  if (ax <= ay * 0.4142) return 'down';
+  if (ax <= ay * straightFacingLimit) return 'down';
   if (ax <= ay * 2.4142) return sx > 0 ? 'downright' : 'downleft';
   return sx > 0 ? 'right' : 'left';
 }
