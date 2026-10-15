@@ -444,6 +444,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     // per frame. The animator also receives the interpolated position, so
     // its speed measurement stays smooth instead of spiky.
     const npcInterp = new Map<string, { px: number; py: number; cx: number; cy: number; t: number }>();
+    // BUILD 710: reuse hot-loop buffers instead of allocating new arrays every
+    // frame. This reduces garbage collection pauses while walking through town.
+    const drawables: Drawable[] = [];
+    const farmsteadQueue: Array<{ x: number; y: number; barn: boolean }> = [];
     // BUILD 390: track the player's attack sequence -> swing start time so the
     // barbarian attack clip plays once per swing.
     let lastAttackSeq = -1;
@@ -516,9 +520,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // every frame — static data, zero reason for per-frame allocation).
       const sandShades = getSandShades();
       const farmShades = getFarmShades();
-      // BUILD 698: farmstead building sites (farmhouse/barn) spotted in the
-      // ground pass; drawn as depth-sorted drawables after the building pass.
-      const farmsteadQueue: Array<{ x: number; y: number; barn: boolean }> = [];
+      // Reset reusable per-frame buffers; retain their backing storage.
+      drawables.length = 0;
+      farmsteadQueue.length = 0;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const live = liveRef.current;
@@ -855,8 +859,6 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           g.stroke();
         }
       }
-
-      const drawables: Drawable[] = [];
 
       // buildings: real rects -> iso boxes with pitched roofs. BUILD 376:
       // drawn for every chunk in the scene grid; neighbor rects are offset
