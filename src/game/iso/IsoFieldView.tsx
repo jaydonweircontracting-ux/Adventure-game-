@@ -162,6 +162,8 @@ interface IsoFieldViewProps {
   // BUILD 684: floating combat text — rendered in iso (were 2D-DOM only).
   damageTexts?: Array<{ id: number; text: string; position: Point; kind: string }>;
   zoom: number; // BUILD 372: zoom is owned by App so the main zoom buttons drive it
+  // BUILD 720: selected new-model RPG appearance for the live player.
+  playerLook?: LookRef;
   onZoomChange: (z: number) => void;
   // BUILD 390: barbarian player equipment -> iso sprite variant + attack anim.
   // BUILD 702: deprecated (RPG sprite system) — kept for App.tsx compat, ignored.
@@ -1697,7 +1699,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // on top. When the player is behind a house (smaller x+y than the
       // house's front corner), the house draws over them; when in front,
       // the player draws over the house.
-      drawPerson(drawables, playerX, playerY, playerFace.f, playerMoving, 0, nowMs, 'player',
+      drawPerson(drawables, playerX, playerY, playerFace.f, playerMoving, props.playerLook ?? 0, nowMs, 'player',
         undefined, live.playerRunning === true);
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
       // BUILD 707: prune interpolation entries for NPCs no longer drawn.
