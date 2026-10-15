@@ -1219,7 +1219,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       }
       (window as unknown as { __propImgs?: Record<string, HTMLImageElement> }).__propImgs = propImgs;
       for (const sc of scenes) {
-        const decor = settlementDecorFor({ x: chunk.x + sc.ox, y: chunk.y + sc.oy });
+        const decor = cachedSettlementDecorFor({ x: chunk.x + sc.ox, y: chunk.y + sc.oy });
         if (!decor.props.length) continue;
         const bx = sc.ox * N, by = sc.oy * N;
         const pvhw = (wpx / 2) / zm, pvhh = (hpx / 2) / zm;
