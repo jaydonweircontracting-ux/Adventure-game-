@@ -1399,6 +1399,12 @@ export default function IsoRoom(): React.JSX.Element {
             <div style={{ marginTop: 4 }}>
               <a href="https://seliel-the-shaper.itch.io/character-base" target="_blank" rel="noreferrer">Mana Seed Character Base on itch.io</a>
             </div>
+            <div style={{ fontWeight: 700, marginTop: 10 }}>Characters — RPG sprite pack (BUILD 702)</div>
+            <div>
+              Isometric RPG character sprites (7 base bodies, 7 animations × 8
+              directions, 93 equipment items catalogued) — supplied by the user.
+              Original author/license to be confirmed.
+            </div>
             <div style={{ fontWeight: 700, marginTop: 10 }}>Market food — Ghostpixxells pixel food</div>
             <div>
               The bread, burgers, pies and more on the market stalls come from the

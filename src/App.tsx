@@ -1,4 +1,5 @@
 import IsoRoomDemo from './game/iso/IsoRoom';
+import RpgPreview from './game/iso/RpgPreview';
 import IsoFieldView from './game/iso/IsoFieldView';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
 import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
@@ -12063,6 +12064,11 @@ function Router() {
   // the main game renderer and simulation are untouched.
   if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('iso') === '1') {
     return <IsoRoomDemo />;
+  }
+  // BUILD 702: RPG character preview (?charPreview=1). Debug tool for the
+  // RPG sprite system — bases, directions, animations, layering.
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('charPreview') === '1') {
+    return <RpgPreview />;
   }
   return <RoutedErrorBoundary><Switch><Route path="/" component={Home} /><Route component={NotFound} /></Switch></RoutedErrorBoundary>;
 }
