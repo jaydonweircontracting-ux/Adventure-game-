@@ -516,6 +516,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const live = liveRef.current;
+      const interp = playerRenderRef.current;
+      const renderT = Math.min(1, Math.max(0, (nowMs - interp.changedAt) / 33));
+      const playerX = interp.fromX + (interp.toX - interp.fromX) * renderT;
+      const playerY = interp.fromY + (interp.toY - interp.fromY) * renderT;
       // BUILD 702: a new attack sequence triggers the RPG attack animation
       // via the animator state machine (one-shot, returns to idle/walk).
       const seq = live.barbAttackSequence ?? 0;
@@ -525,7 +529,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         if (pa) pa.setState('attack');
       }
       // player facing from movement delta
-      const mdx = live.px - prevP.x, mdy = live.py - prevP.y;
+      const mdx = playerX - prevP.x, mdy = playerY - prevP.y;
       // BUILD 422: debug direction test overrides facing and forces the walk
       // cycle so each numbered arrow shows its direction's sprite sheet.
       const dbgFace = live.debugFacing ?? null;
@@ -540,10 +544,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // settle to idle only after movement has genuinely stopped.
       let playerMoving = nowMs - lastPlayerMovementAt < 110;
       if (dbgFace) { playerFace.f = dbgFace; playerMoving = true; }
-      prevP.x = live.px; prevP.y = live.py;
+      prevP.x = playerX; prevP.y = playerY;
 
       // camera follows the player
-      const target = isoToScreen(live.px, live.py);
+      const target = isoToScreen(playerX, playerY);
       target.y -= 24;
       const k = Math.min(1, dt / 90);
       cam.x += (target.x - cam.x) * k;
@@ -916,7 +920,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         // when standing at the door, so the wall covered the sprite.
         // Use a small tolerance so players standing in the doorway (at the
         // south edge) also get the building drawn behind them.
-        const playerSouthOfBuilding = live.py > r.bottom - 1;
+        const playerSouthOfBuilding = playerY > r.bottom - 1;
         const buildingDepth = playerSouthOfBuilding ? (r.left + r.top - 10) : (r.right + r.bottom);
         drawables.push({
           depth: buildingDepth, draw: (g2) => {
@@ -1463,7 +1467,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // on top. When the player is behind a house (smaller x+y than the
       // house's front corner), the house draws over them; when in front,
       // the player draws over the house.
-      drawPerson(drawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs, 'player',
+      drawPerson(drawables, playerX, playerY, playerFace.f, playerMoving, 0, nowMs, 'player',
         undefined, live.playerRunning === true);
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
       // BUILD 707: prune interpolation entries for NPCs no longer drawn.
