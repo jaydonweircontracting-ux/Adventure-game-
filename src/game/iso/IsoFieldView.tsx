@@ -1206,7 +1206,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
             depth: px + py,
             draw: (g2) => {
               if (img && img.complete && img.naturalWidth > 0) {
-                const sw = pr.r * 2 * 32;
+                // BUILD 713: street lamps are intentionally larger so they
+                // read clearly as town lighting without changing other props.
+                const propScale = pr.asset === 'props/lamp.png' ? 1.6 : 1;
+                const sw = pr.r * 2 * 32 * propScale;
                 // BUILD 686: natural aspect (well/barrel/lamp are 2:1 natively;
                 // fountain is 1:1, stalls/gatehouse 1.5:1 — no squish).
                 const sh = sw / (img.naturalWidth / img.naturalHeight);
