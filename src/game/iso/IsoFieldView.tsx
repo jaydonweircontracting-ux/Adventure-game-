@@ -1224,53 +1224,130 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         });
       }
 
-      // BUILD 600: Town walls — stone perimeter with gates (Exiled Kingdoms style).
-      // Only in starting area. Wall segments with gaps for N/S/E/W gates.
+      // BUILD 720: cohesive stone town enceinte. The old single-stroke
+      // rectangle looked like floating rails; draw a chamfered perimeter with
+      // a visible wall face, coping, masonry joints, and four clear gate mouths.
+      // Render-only: movement, collision, doors, and the world grid are unchanged.
       if (isStartingArea(chunk)) {
-        const wallH = 28;
-        const wallColor = '#8a7a6a', wallDark = '#6e5f52';
-        // Wall bounds (field units)
+        const wallH = 24;
+        const wallColor = '#9b8b75';
+        const wallFace = '#786956';
+        const wallShadow = '#51483d';
+        const wallCap = '#b7a68c';
         const wx0 = 20, wx1 = 256, wy0 = 36, wy1 = 237;
-        const gateHalf = 8; // gate opening half-width
-        const cx = 144; // town center x
-        const cy = 144; // town center y
-        // Helper to draw a wall segment
+        const corner = 12;
+        const gateHalf = 9;
+        const cx = 144, cy = 144;
         const drawWall = (x0: number, y0: number, x1: number, y1: number) => {
           const a = isoToScreen(x0, y0), b = isoToScreen(x1, y1);
-          // Simple wall: draw as a thick line with stone texture
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const len = Math.hypot(dx, dy);
+          if (len < 1) return;
+          const ux = dx / len, uy = dy / len;
           drawables.push({
             depth: (x0 + x1) / 2 + (y0 + y1) / 2,
             draw: (g2) => {
-              g2.strokeStyle = wallColor;
-              g2.lineWidth = 10;
-              g2.beginPath(); g2.moveTo(a.x, a.y - wallH); g2.lineTo(b.x, b.y - wallH); g2.stroke();
-              g2.strokeStyle = wallDark;
-              g2.lineWidth = 10;
-              g2.beginPath(); g2.moveTo(a.x, a.y - wallH + 5); g2.lineTo(b.x, b.y - wallH + 5); g2.stroke();
-              // Crenellations (battlements)
+              // Front face and dark footing establish real height instead of
+              // drawing a detached horizontal stroke above the ground.
+              g2.fillStyle = wallShadow;
+              g2.beginPath();
+              g2.moveTo(a.x, a.y); g2.lineTo(b.x, b.y);
+              g2.lineTo(b.x, b.y - wallH + 3); g2.lineTo(a.x, a.y - wallH + 3);
+              g2.closePath(); g2.fill();
+              g2.fillStyle = wallFace;
+              g2.beginPath();
+              g2.moveTo(a.x, a.y - 3); g2.lineTo(b.x, b.y - 3);
+              g2.lineTo(b.x, b.y - wallH + 4); g2.lineTo(a.x, a.y - wallH + 4);
+              g2.closePath(); g2.fill();
+              // Subtle alternating stone courses.
+              g2.strokeStyle = 'rgba(47, 39, 31, 0.45)';
+              g2.lineWidth = 1;
+              for (let y = 8; y < wallH - 3; y += 8) {
+                g2.beginPath();
+                g2.moveTo(a.x + ux * 2, a.y - y);
+                g2.lineTo(b.x - ux * 2, b.y - y);
+                g2.stroke();
+              }
+              const stoneStep = 18;
+              for (let d = stoneStep; d < len - 5; d += stoneStep) {
+                const t = d / len;
+                const px = a.x + dx * t, py = a.y + dy * t;
+                g2.beginPath();
+                g2.moveTo(px, py - 4);
+                g2.lineTo(px, py - wallH + 4);
+                g2.stroke();
+              }
+              // Continuous pale coping with a restrained dark underside.
+              g2.strokeStyle = wallCap;
+              g2.lineWidth = 7;
+              g2.lineCap = 'square';
+              g2.beginPath();
+              g2.moveTo(a.x, a.y - wallH); g2.lineTo(b.x, b.y - wallH);
+              g2.stroke();
+              g2.strokeStyle = wallShadow;
+              g2.lineWidth = 2;
+              g2.beginPath();
+              g2.moveTo(a.x, a.y - wallH + 4); g2.lineTo(b.x, b.y - wallH + 4);
+              g2.stroke();
+              // Low, evenly spaced merlons; skip the endpoints to avoid
+              // oversized blobs at corners and gatehouse posts.
               g2.fillStyle = wallColor;
-              const len = Math.hypot(b.x - a.x, b.y - a.y);
-              const steps = Math.floor(len / 16);
-              for (let i = 0; i <= steps; i++) {
-                const t = i / Math.max(1, steps);
-                const px = a.x + (b.x - a.x) * t, py = a.y + (b.y - a.y) * t - wallH - 6;
-                g2.fillRect(px - 4, py, 8, 8);
+              for (let d = 12; d < len - 8; d += 24) {
+                const t = d / len;
+                const px = a.x + dx * t, py = a.y + dy * t - wallH;
+                g2.fillRect(px - 3.5, py - 5, 7, 7);
               }
             },
           });
         };
-        // North wall (two segments with gate gap)
-        drawWall(wx0, wy0, cx - gateHalf, wy0);
-        drawWall(cx + gateHalf, wy0, wx1, wy0);
-        // South wall
-        drawWall(wx0, wy1, cx - gateHalf, wy1);
-        drawWall(cx + gateHalf, wy1, wx1, wy1);
-        // West wall
-        drawWall(wx0, wy0, wx0, cy - gateHalf);
-        drawWall(wx0, cy + gateHalf, wx0, wy1);
-        // East wall
-        drawWall(wx1, wy0, wx1, cy - gateHalf);
-        drawWall(wx1, cy + gateHalf, wx1, wy1);
+        // Chamfered corners soften the perimeter into a believable walled town.
+        const topLeft = { x: wx0 + corner, y: wy0 };
+        const topRight = { x: wx1 - corner, y: wy0 };
+        const bottomLeft = { x: wx0 + corner, y: wy1 };
+        const bottomRight = { x: wx1 - corner, y: wy1 };
+        const leftTop = { x: wx0, y: wy0 + corner };
+        const leftBottom = { x: wx0, y: wy1 - corner };
+        const rightTop = { x: wx1, y: wy0 + corner };
+        const rightBottom = { x: wx1, y: wy1 - corner };
+        // North/south openings align to the central road; east/west gates
+        // align to the cross-town route. Every entrance has clear wall ends.
+        drawWall(leftTop.x, leftTop.y, topLeft.x, topLeft.y);
+        drawWall(topLeft.x, wy0, cx - gateHalf, wy0);
+        drawWall(cx + gateHalf, wy0, topRight.x, wy0);
+        drawWall(topRight.x, wy0, rightTop.x, rightTop.y);
+        drawWall(leftBottom.x, leftBottom.y, bottomLeft.x, wy1);
+        drawWall(bottomLeft.x, wy1, cx - gateHalf, wy1);
+        drawWall(cx + gateHalf, wy1, bottomRight.x, wy1);
+        drawWall(bottomRight.x, wy1, rightBottom.x, rightBottom.y);
+        drawWall(leftTop.x, leftTop.y, wx0, cy - gateHalf);
+        drawWall(wx0, cy + gateHalf, leftBottom.x, leftBottom.y);
+        drawWall(rightTop.x, rightTop.y, wx1, cy - gateHalf);
+        drawWall(wx1, cy + gateHalf, rightBottom.x, rightBottom.y);
+
+        // Gate piers frame each entrance without closing its walkable gap.
+        const drawGatePier = (x: number, y: number) => {
+          const p = isoToScreen(x, y);
+          drawables.push({
+            depth: x + y + 0.25,
+            draw: (g2) => {
+              g2.fillStyle = wallShadow;
+              g2.fillRect(p.x - 6, p.y - wallH - 2, 12, wallH + 2);
+              g2.fillStyle = wallColor;
+              g2.fillRect(p.x - 5, p.y - wallH - 2, 10, wallH - 1);
+              g2.fillStyle = wallCap;
+              g2.fillRect(p.x - 7, p.y - wallH - 5, 14, 6);
+              g2.fillStyle = 'rgba(47, 39, 31, 0.45)';
+              g2.fillRect(p.x - 4, p.y - wallH + 8, 8, 1);
+              g2.fillRect(p.x - 4, p.y - wallH + 16, 8, 1);
+            },
+          });
+        };
+        for (const [gx, gy] of [
+          [cx - gateHalf, wy0], [cx + gateHalf, wy0],
+          [cx - gateHalf, wy1], [cx + gateHalf, wy1],
+          [wx0, cy - gateHalf], [wx0, cy + gateHalf],
+          [wx1, cy - gateHalf], [wx1, cy + gateHalf],
+        ]) drawGatePier(gx, gy);
       }
 
       // trees: real positions — BUILD 376: every chunk in the scene grid,
