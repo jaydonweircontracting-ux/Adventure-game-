@@ -229,7 +229,12 @@ export function lodGroundClassAt(tx0: number, ty0: number, subN: number, skipFar
     }
     const h = Math.abs(Math.sin((tx0 * 12.9898 + ty0 * 78.233) * 43758.5453) % 1);
     c = { kind, h };
-    if (lodClassCache.size >= LOD_CLASS_CACHE_MAX) lodClassCache.clear();
+    // Keep the cache bounded without throwing away every warm classification.
+    while (lodClassCache.size >= LOD_CLASS_CACHE_MAX) {
+      const oldest = lodClassCache.keys().next();
+      if (oldest.done) break;
+      lodClassCache.delete(oldest.value);
+    }
     lodClassCache.set(key, c);
   }
   return c;
