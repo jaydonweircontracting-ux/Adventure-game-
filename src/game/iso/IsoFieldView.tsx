@@ -1804,7 +1804,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       if (selectedNpc && talk && Math.hypot(selectedNpc.position.x - liveRef.current.px, selectedNpc.position.y - liveRef.current.py) <= 8.5) {
         const w = isoToScreen(selectedNpc.position.x, selectedNpc.position.y);
         const bx = (w.x - cam.x) * zm + wpx / 2;
-        const by = (w.y - cam.y) * zm + hpx / 2 - 24 - 58 * zm;
+        const by = (w.y - cam.y) * zm + hpx / 2 - 58 * zm;
         if (Math.hypot(bx - sx, by - sy) <= 25) { talk(selectedNpc); return; }
       }
       // NPC body taps select/deselect and start/stop the existing follow system.
