@@ -12,8 +12,8 @@
 // talk buttons) stay on the 2D renderer for now.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
-import { createBoundedCache } from './boundedCache';
-import { FrameMetrics } from './frameMetrics';
+import { createBoundedCache } from '../rendering/boundedCache';
+import { FrameMetrics } from '../rendering/frameMetrics';
 import {
   isoPlayerFaceForScreenDeltaSticky, type Face4, type Face8,
 } from './isoSprites';
