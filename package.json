@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node server.js",
     "world-server": "node server.js",
-    "prebuild": "node scripts/prepare-build-entry.cjs"
+    "prebuild": "node scripts/prepare-build-entry.cjs",
+    "test:iso-directions": "node tests/iso-direction-mapping.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
