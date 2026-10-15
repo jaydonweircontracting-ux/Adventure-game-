@@ -313,11 +313,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   // by the performance throttle without re-rendering the full React tree.
   const playerRenderRef = useRef({ fromX: position.x, fromY: position.y, toX: position.x, toY: position.y, changedAt: 0 });
   if (playerRenderRef.current.toX !== position.x || playerRenderRef.current.toY !== position.y) {
-    playerRenderRef.current = {
-      fromX: playerRenderRef.current.toX, fromY: playerRenderRef.current.toY,
-      toX: position.x, toY: position.y,
-      changedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
-    };
+    // Keep the currently rendered coordinates as the interpolation origin.
+    // Resetting fromX/fromY to the previous target here creates a visible snap
+    // whenever a new 30 Hz simulation sample arrives.
+    playerRenderRef.current.toX = position.x;
+    playerRenderRef.current.toY = position.y;
+    playerRenderRef.current.changedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
   }
   // BUILD 684: first-seen timestamps for floating combat text (float-up anim).
   const dmgSeenRef = useRef(new Map<number, number>());
