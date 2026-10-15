@@ -7707,9 +7707,15 @@ if (active) {
     if (wanderMage) {
       candidates.push({ name: wanderMage.name, position: wanderMage.position, talk: () => talkToWanderMage(wanderMage) });
     }
-    if (candidates.length === 0) return null;
-    return findTalkTarget(candidates, position, facing);
-  }, [interior, moverMode, markerMode, inputLocked, currentWorldTile, chunk, npcStates, townsfolk, position, facing, wanderMage]);
+    // BUILD 721: the Talk action belongs to the selected NPC only. Do not
+    // surface a chat icon for whichever unrelated NPC happens to be in front.
+    if (!targetNpcId || candidates.length === 0) return null;
+    const selectedTownsperson = townsfolk.find((npc) => npc.id === targetNpcId && !npc.indoors);
+    if (!selectedTownsperson) return null;
+    const selectedCandidate = candidates.find((candidate) => candidate.name === selectedTownsperson.name);
+    if (!selectedCandidate) return null;
+    return findTalkTarget([selectedCandidate], position, facing);
+  }, [interior, moverMode, markerMode, inputLocked, currentWorldTile, chunk, npcStates, townsfolk, position, facing, wanderMage, targetNpcId]);
   // Road traffic: analytic travelers resolved from the world clock (civ phase 2).
   // Recomputed whenever the clock ticks, so waiting visibly moves traffic.
   // Road links are static for the world seed — built once.
