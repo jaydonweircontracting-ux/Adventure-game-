@@ -694,7 +694,24 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
           state.px = target.tx; state.py = target.ty;
           state.path.shift();
           if (playerMoveRef.current) playerMoveRef.current(state.px, state.py);
-          if (state.path.length === 0) { state.moving = false; state.tapPath = false; }
+          // BUILD 703: don't drop state.moving when a tile step completes if
+          // a direction is still held — the next frame starts a new step.
+          // Flickering moving=false made the animator reset to idle and
+          // restart the walk cycle on every tile, so the interior walk
+          // looked nothing like the smooth field walk. But if the held
+          // direction is blocked (wall), stop — otherwise the walk pose
+          // freezes mid-stride.
+          if (state.path.length === 0) {
+            let blocked = true;
+            if (hd.x !== 0 || hd.y !== 0) {
+              const bdx = hd.x !== 0 ? Math.sign(hd.x) : 0;
+              const bdy = hd.x !== 0 ? 0 : Math.sign(hd.y);
+              const bnx = Math.round(state.px) + bdx, bny = Math.round(state.py) + bdy;
+              blocked = !(bnx === doorTile.tx && bny === doorTile.ty) && !walkable(bnx, bny);
+            }
+            if ((hd.x === 0 && hd.y === 0) || blocked) state.moving = false;
+            state.tapPath = false;
+          }
           else state.facing = faceForMove(state.fx, state.fy, state.path[0].tx, state.path[0].ty, state.facing);
         } else {
           state.facing = faceForMove(state.fx, state.fy, target.tx, target.ty, state.facing);
