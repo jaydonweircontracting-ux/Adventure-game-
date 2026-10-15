@@ -75,6 +75,7 @@ These are targeted hot-path improvements, not a claim that all lag is solved. Th
 
 - `src/game/iso/boundedCache.ts` now owns the bounded insertion-order cache policy used by the isometric renderer. It is independent of React and world-generation imports.
 - `src/game/iso/frameMetrics.ts` provides a fixed-size rolling frame-time window (average, p95, and estimated FPS).
+- `src/game/iso/IsoFieldView.tsx` now raster-caches the static ground pass into a capped viewport-sized canvas. Animated characters, wildlife, props, combat text, and other depth-sorted objects remain on the main canvas. The cache rebuilds when zoom/viewport/chunk/render mode or terrain asset readiness changes, and when camera movement exits the cached world rectangle. Farmstead placement requests are retained alongside the cached ground so buildings still enter the depth-sorted pass.
 - The isometric renderer can display live measurements when opened with `?perf=1`. The overlay is opt-in; normal gameplay does not allocate metric snapshots or draw the overlay.
 - The renderer uses the shared bounded-cache helper for deterministic settlement decor and ambient wildlife. Cache capacity remains 32 entries and eviction remains oldest-inserted-first.
 - No existing source, asset, backup, save, or test files were removed.
@@ -83,7 +84,7 @@ These are targeted hot-path improvements, not a claim that all lag is solved. Th
 
 1. Extract renderer utilities behind small, dependency-light modules while keeping visible behavior unchanged.
 2. Add repeatable measurements before changing rendering architecture.
-3. Move the terrain draw pass behind a dedicated renderer boundary. Only then add a viewport-sized terrain surface cache with explicit invalidation for zoom, chunk/scene, tile-asset readiness, and terrain mode. Do not allocate one enormous full-chunk bitmap; the world chunks are too large for that to be safe on mobile.
+3. Keep extracting the ground pass behind a dedicated renderer boundary and verify cache invalidation/visual parity across zoom levels, resize, terrain asset loading, water, farmland, and neighboring chunks. The current viewport cache is intentionally capped; do not allocate one enormous full-chunk bitmap because the world chunks are too large for that to be safe on mobile.
 4. Split `App.tsx` by domain. Move a complete dependency cluster at a time, and preserve the old exports as compatibility re-exports until all imports and tests are migrated.
 5. Validate direction mapping, world-generation determinism, collision, save migration, simulation suites, type checking, and the production build after each stage.
 
