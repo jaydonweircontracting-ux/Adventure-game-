@@ -9432,6 +9432,8 @@ if (active) {
               onSelectNpc={(npc) => {
                 targetGoatIdRef.current = null;
                 setTargetGoatId(null);
+                targetMonsterIdRef.current = null;
+                setTargetMonsterId(null);
                 tapMoveTargetRef.current = null;
                 if (!npc) {
                   targetNpcIdRef.current = null;
@@ -9448,6 +9450,8 @@ if (active) {
                 targetNpcIdRef.current = null;
                 targetNpcModeRef.current = null;
                 setTargetNpcId(null);
+                targetMonsterIdRef.current = null;
+                setTargetMonsterId(null);
                 tapMoveTargetRef.current = null;
                 targetGoatIdRef.current = goat?.id ?? null;
                 setTargetGoatId(goat?.id ?? null);
