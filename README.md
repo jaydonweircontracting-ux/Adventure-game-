@@ -55,14 +55,12 @@ The current browser UI does not open this socket yet. That is intentional: run a
 
 ## GitHub Pages deployment
 
-GitHub Pages currently publishes the **`main` branch `/docs` directory** (legacy Pages source). The published site is:
+The live game is published by the GitHub Actions workflow in `.github/workflows/deploy-pages.yml`. The workflow installs the locked dependencies, runs TypeScript checks and the isometric-direction regression test, builds the production app, then deploys `dist/public/` to GitHub Pages.
 
-`https://jaydonweircontracting-ux.github.io/Adventure-game-/`
+Live site: `https://jaydonweircontracting-ux.github.io/Adventure-game-/`
 
-- `src/` is source code only; changing it does **not** update the live site by itself.
-- Build with Node 20 using `npm run build` and the repository base path `/Adventure-game-/`.
-- Copy the generated `dist/public/` output into `docs/`, including the generated JavaScript, CSS, and asset files.
-- Commit the source changes and the refreshed `docs/` bundle together.
-- Update the build/cache version in `docs/index.html` when publishing so browsers do not keep the previous bundle.
-- Confirm the GitHub Pages deployment reaches **built** and verify the live URL before calling the update live.
+- Make gameplay and source changes in `src/` and supporting source/config files.
+- Do not manually copy build output into `docs/`; the workflow deploys the generated artifact directly.
+- Treat `docs/` as legacy documentation and historical static-site material. Its `docs/index.html` currently points to `assets/index-Adventure080.js` and `assets/index-Adventure078.css`; keep those exact referenced entry files and their shared runtime chunks if maintaining that legacy preview.
+- Confirm the latest GitHub Actions run passes type checking, regression tests, build, and deployment before considering a change live.
 - GitHub Pages publishes the browser client only; it does not run `server.js` or the optional WebSocket world server.
