@@ -307,6 +307,18 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning });
   liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning };
+  // BUILD 709: interpolate between throttled React position samples in the
+  // canvas loop. Simulation/collision stay authoritative in App; only visual
+  // coordinates are interpolated, eliminating the 30 Hz stepping introduced
+  // by the performance throttle without re-rendering the full React tree.
+  const playerRenderRef = useRef({ fromX: position.x, fromY: position.y, toX: position.x, toY: position.y, changedAt: 0 });
+  if (playerRenderRef.current.toX !== position.x || playerRenderRef.current.toY !== position.y) {
+    playerRenderRef.current = {
+      fromX: playerRenderRef.current.toX, fromY: playerRenderRef.current.toY,
+      toX: position.x, toY: position.y,
+      changedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+    };
+  }
   // BUILD 684: first-seen timestamps for floating combat text (float-up anim).
   const dmgSeenRef = useRef(new Map<number, number>());
   // BUILD 624: Preload all building/prop sprites on mount so there's no
