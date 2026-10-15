@@ -1064,17 +1064,24 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
   // Concentric broken hedge rings around a central fountain; the gaps are
   // the maze entrances (offset per ring so it reads as a maze, not a box).
   // Solid walls, walkable gaps.
-  const gardenC = { x: plazaC.x + 31, y: plazaC.y - 54 };
+  // Scale the garden with settlement size and keep it well inside the
+  // irregular boundary; a fixed offset pushed the maze out of small hamlets.
+  const gardenScale = Math.min(1, R / 92);
+  const gardenC = { x: plazaC.x + R * 0.29, y: plazaC.y - R * 0.48 };
   const hedgeSeen = new Set<string>(); // ring corners are shared — place once
   const hedgeLine = (x0: number, y0: number, x1: number, y1: number,
       gapAlong: number | null, gapHalf: number): void => {
-    const len = Math.hypot(x1 - x0, y1 - y0);
+    const sx0 = x0 * gardenScale, sy0 = y0 * gardenScale;
+    const sx1 = x1 * gardenScale, sy1 = y1 * gardenScale;
+    const scaledGap = gapAlong === null ? null : gapAlong * gardenScale;
+    const scaledGapHalf = gapHalf * gardenScale;
+    const len = Math.hypot(sx1 - sx0, sy1 - sy0);
     const n = Math.max(2, Math.round(len / 2.5) + 1);
     for (let i = 0; i < n; i++) {
       const t = i / (n - 1), along = t * len;
-      if (gapAlong !== null && Math.abs(along - gapAlong) < gapHalf) continue;
-      const x = gardenC.x + x0 + (x1 - x0) * t;
-      const y = gardenC.y + y0 + (y1 - y0) * t;
+      if (scaledGap !== null && Math.abs(along - scaledGap) < scaledGapHalf) continue;
+      const x = gardenC.x + sx0 + (sx1 - sx0) * t;
+      const y = gardenC.y + sy0 + (sy1 - sy0) * t;
       const key = `${x.toFixed(3)},${y.toFixed(3)}`;
       if (hedgeSeen.has(key)) continue;
       hedgeSeen.add(key);
