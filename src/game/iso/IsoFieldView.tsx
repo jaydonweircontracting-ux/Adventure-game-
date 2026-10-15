@@ -611,6 +611,15 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // bottom edges, leaving black bars). Out-of-grid tiles reuse the
       // edge-clamped scene, so the view fills the whole screen at every zoom.
       const { x0, x1, y0, y1 } = isoVisibleTileRange(cam.x, cam.y, wpx, hpx, zm);
+      // BUILD 712: shared viewport test. Off-screen props stay in world data
+      // but never enter the depth-sort queue or execute canvas drawing.
+      const viewHalfW = (wpx / 2) / zm;
+      const viewHalfH = (hpx / 2) / zm;
+      const anchorVisible = (p: { x: number; y: number }, marginX: number, marginTop: number, marginBottom: number) =>
+        p.x >= cam.x - viewHalfW - marginX &&
+        p.x <= cam.x + viewHalfW + marginX &&
+        p.y >= cam.y - viewHalfH - marginTop &&
+        p.y <= cam.y + viewHalfH + marginBottom;
 
       // ground — per-tile chunk lookup into the scene grid
       // BUILD 376: tile detail is sub-pixel when zoomed out, so skip it there.
@@ -1220,6 +1229,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         for (const t of sc.trees) {
           const tx2 = t.x + bx, ty2 = t.y + by;
           const c = isoToScreen(tx2, ty2);
+          // BUILD 712: include canopy height in viewport bounds.
+          if (!anchorVisible(c, 28, 66, 12)) continue;
         const s = 0.7 + t.scale * 0.6;
         drawables.push({
           depth: tx2 + ty2, draw: (g2) => {
@@ -1255,6 +1266,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           const depleted = (window as unknown as { __depletedOres?: Set<string> }).__depletedOres;
           if (depleted && depleted.has(depKey)) continue;
           const c = isoToScreen(ox2, oy2);
+          // BUILD 712: skip off-screen ore before queueing its drawable.
+          if (!anchorVisible(c, 18, 20, 10)) continue;
           const oreCol = ORE_COLORS[o.kind] || '#8a8a8a';
           drawables.push({
             depth: ox2 + oy2, draw: (g2) => {
@@ -1312,6 +1325,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         };
         for (const c of crittersForChunk(chunk.x, chunk.y, N, isLand)) {
           const pose = critterPose(c, nowMs);
+          // BUILD 712: avoid pose and draw-queue work for unseen wildlife.
+          if (!anchorVisible(isoToScreen(pose.x, pose.y), 48, 60, 24)) continue;
           drawables.push({
             depth: pose.x + pose.y + 0.005,
             draw: (g2) => { drawCritter(g2, c, nowMs, isoToScreen); },
