@@ -7330,7 +7330,7 @@ if (active) {
     if ((!inCellar && interiorRef.current) || (!bowEquipped && mountedRef.current) || playerAttackStateRef.current.active || playerAttackCooldownRef.current > 0) return;
     const currentPlayer = positionRef.current;
     const currentFacing = facingRef.current;
-    const targetId = preferredTargetId ?? targetGoatIdRef.current;
+    const targetId = preferredTargetId ?? targetGoatIdRef.current ?? targetMonsterIdRef.current;
     // BUILD 574: rats are in cellarRatsRef, not goatsRef. Check both.
     const target = targetId == null
       ? null
