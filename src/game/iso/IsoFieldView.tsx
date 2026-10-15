@@ -332,7 +332,7 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
   return e.fill;
 }
 
-export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, onShopStall, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, onShopStall, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, selectedNpcId, selectedGoatId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning });
