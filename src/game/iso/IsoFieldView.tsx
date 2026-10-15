@@ -1851,16 +1851,13 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // Empty-field taps release entity lock before movement or world interactions.
       tapRef.current.onSelectNpc?.(null);
       tapRef.current.onSelectGoat?.(null);
-      // BUILD 697: stall hit test — tap a market stall to open its shop.
-      // Runs after the NPC test (an NPC standing at a stall still wins) and
-      // before the door test (market stalls sit near buildings). Screen
-      // space, generous 44px radius for touch, offset up to the sprite's
-      // center-ish like the NPC test. Home chunk only — the market is at
-      // chunk (4,7) and settlementDecorFor returns stalls only there.
+      // BUILD 721: stall hit test — only taps directly on the stall open its shop.
+      // Keep the touch target tight so nearby paths, props, and open ground
+      // remain normal movement targets. NPC hit-testing still takes priority.
       {
         const { onShopStall: shop } = tapRef.current;
         if (shop) {
-          let bestStall = -1; let bestSD = 44;
+          let bestStall = -1; let bestSD = 22;
           const stalls = stallsRef.current;
           for (let i = 0; i < stalls.length; i++) {
             const w = isoToScreen(stalls[i].x, stalls[i].y);
