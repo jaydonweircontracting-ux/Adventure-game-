@@ -166,20 +166,26 @@ export const RPG_BASES: RpgBase[] = [
 export const RPG_DEFAULT_BASE: RpgBase = 'BaseHumanMale';
 
 // ---------------------------------------------------------------------------
-// Direction mapping: game Face8 -> sprite CAM number (verified visually)
-// ---------------------------------------------------------------------------
-// CAM0 = front/S, CAM4 = back/N, CAM1 = W, CAM5 = E,
-// CAM2 = SW, CAM3 = NW, CAM6 = NE, CAM7 = SE.
+// Direction mapping: game Face8 -> the actual camera view in the RPG pack.
+// Verified against the real BaseHumanMale Idle CAM0-7 PNGs and matched to the
+// old barbarian's named views. CAM3 is the straight back; CAM7 is the straight
+// front. CAM1/CAM5 are the two side profiles. The diagonal views sit between
+// those cardinal views; don't infer compass directions from CAM number alone.
+//
+// Game-facing key -> actual art:
+//   N/back CAM3, NE/back-right CAM4, E/right profile CAM5,
+//   SE/front-right CAM6, S/front CAM7, SW/front-left CAM0,
+//   W/left profile CAM1, NW/back-left CAM2.
 
 export const RPG_CAM_FOR_FACE: Record<Face8, number> = {
-  up: 4,        // N/back
-  down: 0,      // S/front
-  left: 1,      // W
-  right: 5,     // E
-  upleft: 3,    // NW
-  upright: 6,   // NE
-  downleft: 2,  // SW
-  downright: 7, // SE
+  up: 3,        // N/back
+  down: 7,      // S/front
+  left: 1,      // W/left profile
+  right: 5,     // E/right profile
+  upleft: 2,     // NW/back-left
+  upright: 4,    // NE/back-right
+  downleft: 0,   // SW/front-left
+  downright: 6,  // SE/front-right
 };
 
 // ---------------------------------------------------------------------------
