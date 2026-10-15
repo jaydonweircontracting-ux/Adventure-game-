@@ -940,21 +940,26 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           g.beginPath();
           g.ellipse(c.x, c.y, p.r * 29, p.r * 14.5, 0, 0, Math.PI * 2);
           g.stroke();
-          // Paving seams follow the isometric square rather than a grid of
-          // screen-aligned lines, keeping the plaza integrated with the world.
+          // Clip the subtle diagonal paving joints to the plaza edge so no
+          // seams spill into the surrounding road or terrain.
+          g.save();
+          g.beginPath();
+          g.ellipse(c.x, c.y, p.r * 28.5, p.r * 14, 0, 0, Math.PI * 2);
+          g.clip();
           g.strokeStyle = 'rgba(117, 83, 48, 0.22)';
           g.lineWidth = 1;
           for (let seam = -2; seam <= 2; seam++) {
-            const t = seam / 3;
+            const offset = seam * p.r * 9;
             g.beginPath();
-            g.moveTo(c.x + t * p.r * 25, c.y - p.r * 12.5);
-            g.lineTo(c.x + t * p.r * 25, c.y + p.r * 12.5);
+            g.moveTo(c.x - p.r * 34 + offset, c.y - p.r * 17);
+            g.lineTo(c.x + p.r * 34 + offset, c.y + p.r * 17);
             g.stroke();
             g.beginPath();
-            g.moveTo(c.x - p.r * 25, c.y + t * p.r * 12.5);
-            g.lineTo(c.x + p.r * 25, c.y + t * p.r * 12.5);
+            g.moveTo(c.x - p.r * 34 + offset, c.y + p.r * 17);
+            g.lineTo(c.x + p.r * 34 + offset, c.y - p.r * 17);
             g.stroke();
           }
+          g.restore();
         }
         // BUILD 692: textured dirt paths — layered strokes from cached Path2D
         // (soft dark fringe, dirt body, worn center, pebble speckles).
