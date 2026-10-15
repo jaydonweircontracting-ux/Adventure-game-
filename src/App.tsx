@@ -9323,7 +9323,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView playerLook={rpgConfig.look} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
+            <IsoFieldView playerLook={rpgConfig.look} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={monsters.map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {
