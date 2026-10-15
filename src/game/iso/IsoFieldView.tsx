@@ -1662,7 +1662,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         const def = isoMonsterDef(monster.kind);
         if (!def) continue;
         let img = monsterImgs[def.spriteSheet];
-        if (!img) { img = new Image(); img.src = artUrl(def.spriteSheet); monsterImgs[def.spriteSheet] = img; }
+        if (!img) { img = new Image(); img.src = artUrl(def.spriteSheet.replace(/^\/+/, '')); monsterImgs[def.spriteSheet] = img; }
         if (!img.complete || img.naturalWidth === 0) continue;
         const mx = monster.position.x, my = monster.position.y;
         const c = isoToScreen(mx, my);
