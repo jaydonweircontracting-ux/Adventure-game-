@@ -129,6 +129,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '712': 'Sprite fallback fix: every direction resolves to available outfit/weapon art and mirrors compatible left-facing fallbacks',
   '711': 'Facing fix: forward and down movement keep the straight-facing sprite despite small horizontal drift',
   '710': 'Performance overhaul: smoother player/NPC interpolation, lower mobile canvas GPU load, and reduced frame-loop garbage collection',
   '709': 'Movement: smooth isometric player interpolation, stable walk animation, and reduced facing jitter',

@@ -308,39 +308,31 @@ export function drawBarbarian(o: BarbarianDrawOptions): boolean {
     o.attackT !== undefined && o.attackT >= 0 && o.attackT < BARBARIAN_ATTACK_MS
       ? 'attack'
       : o.moving ? 'walk' : 'idle';
-  let fview: string = view;
-  if (o.facing === 'right') {
-    const rf = BARB_FRAMES[variant]?.['right']?.[anim];
-    if (rf && rf.length > 0) fview = 'right';
-  } else if (o.facing === 'left') {
-    const lf = BARB_FRAMES[variant]?.['left']?.[anim];
-    if (lf && lf.length > 0) fview = 'left';
-  } else if (o.facing === 'upright') {
-    // BUILD 414: dedicated up-right diagonal art (the user's walk sheet);
-    // variants without it (sword) fall back per-anim to the up view.
-    const uf = BARB_FRAMES[variant]?.['upright']?.[anim];
-    fview = (uf && uf.length > 0) ? 'upright' : 'up';
-  } else if (o.facing === 'upleft') {
-    // BUILD 414: dedicated up-left diagonal art (mirrored walk sheet);
-    // variants without it (sword) fall back per-anim to the up view.
-    const uf = BARB_FRAMES[variant]?.['upleft']?.[anim];
-    fview = (uf && uf.length > 0) ? 'upleft' : 'up';
-  } else if (o.facing === 'downright') {
-    // BUILD 423: dedicated down-right diagonal art (user's sheet, coming);
-    // until it lands, fall back per-anim to the right side view — the same
-    // art the old southward mapping showed for this travel direction.
-    const uf = BARB_FRAMES[variant]?.['downright']?.[anim];
-    fview = (uf && uf.length > 0) ? 'downright' : 'right';
-  } else if (o.facing === 'downleft') {
-    // BUILD 423: dedicated down-left diagonal art (user's sheet, coming);
-    // until it lands, fall back per-anim to the left side view.
-    const uf = BARB_FRAMES[variant]?.['downleft']?.[anim];
-    fview = (uf && uf.length > 0) ? 'downleft' : 'left';
-  }
-  // Shared side art natively faces screen-right; mirror it when facing left.
-  // Dedicated left/right sets natively face their direction and are never
-  // mirrored.
-  const flip = o.facing === 'left' && fview !== 'left';
+  // BUILD 712: resolve the requested facing against the actual frames for
+  // this outfit/weapon AND animation. The pack is not perfectly symmetrical:
+  // some variants have dedicated diagonal sheets while others only have
+  // front/back/side art. Never let one missing direction force a blank sprite
+  // or an unrelated LPC fallback; use the nearest compatible view instead.
+  const candidatesByFacing: Record<Face8, BarbarianView[]> = {
+    up: ['up', 'side', 'down'],
+    down: ['down', 'side', 'up'],
+    left: ['left', 'side', 'right'],
+    right: ['right', 'side', 'left'],
+    upright: ['upright', 'up', 'right', 'side'],
+    upleft: ['upleft', 'up', 'left', 'side'],
+    downright: ['downright', 'down', 'right', 'side'],
+    downleft: ['downleft', 'down', 'left', 'side'],
+  };
+  const fview = candidatesByFacing[o.facing].find((candidate) => {
+    const frames = BARB_FRAMES[variant]?.[candidate]?.[anim];
+    return !!BARB_BOX[variant]?.[candidate] && !!frames && frames.length > 0;
+  });
+  if (!fview) return false;
+  // Shared side art natively faces screen-right; mirror it when a fallback
+  // view needs to face left. Down-left may reuse mirrored front art if the
+  // selected outfit has no dedicated south-west sheet.
+  const flip = (o.facing === 'left' && fview !== 'left') ||
+    (o.facing === 'downleft' && fview === 'down');
   const size = o.size ?? 60;
   const box = BARB_BOX[variant]?.[fview];
   if (!box) return false;
@@ -382,7 +374,7 @@ export function drawBarbarian(o: BarbarianDrawOptions): boolean {
       : (fview === 'upright' || fview === 'upleft') ? 'up'
       : (fview === 'downright' || fview === 'downleft') ? 'down' : view;
     // Side hair art natively faces right; mirror it whenever the body faces left.
-    const hairFlip = o.facing === 'left';
+    const hairFlip = o.facing === 'left' || (o.facing === 'downleft' && fview === 'down');
     if (flip) {
       g.save();
       g.translate(o.x, 0);
