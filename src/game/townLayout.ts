@@ -995,8 +995,12 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
   const walls: TLWall[] = [];
   let propSeq = 0;
   const addProp = (kind: PropKind, x: number, y: number, r: number,
-      solid: boolean, asset: string): void => {
-    props.push({ id: `prop-${propSeq++}`, kind, x, y, r, solid, asset });
+      _solid: boolean, asset: string): void => {
+    // BUILD 726: generated town decor is temporarily non-blocking. This keeps
+    // stalls, hedges, lamps, carts, and barrels from trapping players while
+    // world collision is being simplified. Preserve the field in the data
+    // contract so solidity can be restored per asset later.
+    props.push({ id: `prop-${propSeq++}`, kind, x, y, r, solid: false, asset });
   };
   const footprintAt = (x: number, y: number, margin = 0.5): boolean =>
     lots.some((l) => {
@@ -1095,7 +1099,9 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
   }
   // Plaza corner lamps (solid, like the old plan's lamps).
   for (const [dx, dy] of [[-20, -12], [20, -12], [-20, 12], [20, 12]] as [number, number][]) {
-    addProp('lamp', plazaC.x + dx, plazaC.y + dy, 0.8, true, 'props/lamp.png');
+    const x = plazaC.x + dx, y = plazaC.y + dy;
+    if (!propSpotOk(x, y, 0.6, 0.8)) continue;
+    addProp('lamp', x, y, 0.8, false, 'props/lamp.png');
   }
   // Street lamps along arterials and streets, alternating sides.
   for (const road of roads) {
@@ -1119,11 +1125,14 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
         acc += sl;
       }
       if (!found) continue;
-      const lx = px + -pdy * 3 * side, ly = py + pdx * 3 * side;
+      // Offset by the actual road width plus a safety margin; a fixed
+      // 3-unit offset can put lamps inside wide arterial walk corridors.
+      const lampOffset = road.width / 2 + 1.5;
+      const lx = px + -pdy * lampOffset * side, ly = py + pdx * lampOffset * side;
       side = -side;
-      if (footprintAt(lx, ly) || nearPinnedDoor(lx, ly)) continue;
+      if (!propSpotOk(lx, ly, 0.6, 0.8)) continue;
       if (Math.hypot(lx - plazaC.x, ly - plazaC.y) < plazaR + 4) continue;
-      addProp('lamp', lx, ly, 0.8, true, 'props/lamp.png');
+      addProp('lamp', lx, ly, 0.8, false, 'props/lamp.png');
     }
   }
   // Barrel clutter near buildings (north side, away from the south doors).
