@@ -402,6 +402,33 @@ export function marketRoutine(
   };
 }
 
+/**
+ * BUILD 700: which stall (index into anchors.stalls — the same
+ * marketStallsFromDecor order that stallShopDef uses) an NPC is browsing
+ * right now, plus the market visit index. Mirrors marketRoutine's
+ * deterministic stall pick exactly. Returns null unless the NPC is in the
+ * browse pause of a visit. Callers resolve the shop via stallShopDef(index).
+ */
+export function marketBrowseVisit(
+  npc: Townsperson,
+  anchors: TownsfolkAnchors,
+  clock: WorldClockState,
+): { stallIndex: number; visitIndex: number } | null {
+  const stalls = anchors.stalls;
+  if (!stalls || stalls.length === 0) return null;
+  const mins = minutesOf(clock);
+  const winIdx = MARKET_WINDOWS.findIndex(([s, e]) => mins >= s && mins < e);
+  if (winIdx < 0) return null;
+  const wStart = MARKET_WINDOWS[winIdx][0];
+  const daySalt = Math.floor(clock.day) * 131;
+  const visit = Math.floor((mins - wStart) / MARKET_VISIT);
+  const visitIndex = winIdx * 2 + visit;
+  const inVisit = (mins - wStart) % MARKET_VISIT;
+  if (inVisit < MARKET_VISIT - MARKET_BROWSE) return null;
+  const stallIndex = Math.floor(townsfolkHash(npc.seed, daySalt + 8101 + visitIndex * 17) * stalls.length) % stalls.length;
+  return { stallIndex, visitIndex };
+}
+
 type TownsfolkDef = [name: string, gender: 'male' | 'female', archetype: TownsfolkArchetype, role: TownsfolkRole, homeKey: string];
 
 /**

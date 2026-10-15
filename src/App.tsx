@@ -3,7 +3,7 @@ import IsoFieldView from './game/iso/IsoFieldView';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
 import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/iso/isoSprites';
-import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality, npcGold } from './game/villageLife';
+import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality, npcGold, adjustNPCGold } from './game/villageLife';
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
 import { createBody, lootBody, type LootableBody } from './game/lootableBodies';
 import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
@@ -29,7 +29,7 @@ import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_T
 import { organicTownSpecs } from './game/organicTowns';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 // BUILD 697: market stall shops — pure defs + guarded transactions.
-import { stallShopDef, stallBuyList, createStallStock, restockStall, buyFromStall, sellToStall, sanitizeStallStocks, type ShopItemKey, type StallStockState } from '@/game/shops';
+import { stallShopDef, stallBuyList, createStallStock, restockStall, buyFromStall, sellToStall, sanitizeStallStocks, npcShoppingPick, type ShopItemKey, type StallStockState } from '@/game/shops';
 import { findTalkTarget } from './game/talkTarget';
 import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cellarRats';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds, type TouchHoldState, type TouchEventKind } from './game/touchInput';
@@ -41,7 +41,7 @@ import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasCo
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, townsfolkRosterEntries, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, marketStallsFromDecor, arterialWaypointsFromDecor, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, townsfolkRosterEntries, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, marketStallsFromDecor, arterialWaypointsFromDecor, marketBrowseVisit, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 // BUILD 683: unified Mosslight rects (single source in settlements.ts).
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
 import { mosslightEngineChunkLayout, mosslightEngineLanes, mosslightEngineProps, mosslightFillerRects } from '@/game/mosslightLayout';
@@ -126,6 +126,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '700': 'NPC shop transactions: townsfolk now complete real purchases at market stalls through the shared shop ledger — gold moves from NPC purse to merchant, stock decrements for everyone (player sees NPC-bought items gone), merchants keep earned gold across restocks; role-appropriate buying (guards buy potions, farmers buy food), ~35% chance per market visit, one decision per visit, all persisted in saves',
   '697': 'clickable market stalls: tap a stall to open its shop — buy/sell with gold, per-stall stock that restocks each game day, stock persists in saves',
   '698': 'farmland ring around Mosslight: seeded field plots in ochre/green/soil with dirt tracks, hedgerow and fence boundaries, farmstead farmhouses and barns; sand texture fix (seeded variation, no more grid lines or seams); soft shadows under buildings; goats no longer draw white boxes',
   '696': 'NPC market life: townsfolk shop the market square (browse pauses at stalls, arterial strolls, errand loops), all through existing pathfinding',
@@ -1640,6 +1641,9 @@ type SaveGameData = {
   // BUILD 697: market stall stock — keyed by stall index (stallShopDef index).
   // Session-persistent; saved/restored with the game.
   shopStocks?: Record<string, StallStockState>;
+  // BUILD 700: NPC stall purchase decisions — keyed "npcId:day:visitIndex".
+  // Persisted so a reload never re-runs (or double-runs) a visit's purchase.
+  npcPurchases?: Record<string, true>;
   // BUILD 645: Issue tracker state — saved so the save captures which boxes the user checked.
   issueStatuses?: Record<string, string>;
   userIssues?: Issue[];
@@ -5155,6 +5159,23 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         },
         // BUILD 697: iso zoom for tap-position math in tests.
         getIsoZoom: () => isoZoomRef.current,
+        // BUILD 700: NPC economy inspection. LOCALHOST ONLY.
+        // Purchase decision count (one per npc/day/visit) and per-stall
+        // merchant gold + stock, so tests can prove NPC transactions move
+        // gold and inventory through the shared ledger.
+        getNpcPurchaseCount: () => Object.keys(npcPurchasesRef.current).length,
+        getStallEconomy: (index: number) => {
+          if (typeof window === 'undefined') return null;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return null;
+          const def = stallShopDef(Math.max(0, Math.floor(index)));
+          const state = shopStocksRef.current[index];
+          return {
+            index,
+            merchantGold: state ? Math.max(0, Math.floor(state.merchantGold ?? 0)) : 0,
+            stock: Object.fromEntries(def.goods.map((g) => [g.key, state ? Math.max(0, Math.floor(state.stock[g.key] ?? 0)) : g.maxStock])),
+          };
+        },
         // BUILD 564: interior NPCs for quest interaction testing.
         // LOCALHOST ONLY. Returns NPCs in current interior with tile coords.
         getInteriorNPCs: () => {
@@ -5287,6 +5308,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     pickedUpGroundItems,
     // BUILD 697: persist market stall stock.
     shopStocks: shopStocksRef.current,
+    // BUILD 700: persist NPC purchase decisions.
+    npcPurchases: npcPurchasesRef.current,
     // BUILD 685: persist tutorial banner dismissal.
     tutorialBannerDismissed: tutorialBannerDismissedRef.current,
     playerHp,
@@ -5379,6 +5402,19 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const restoredStocks = sanitizeStallStocks(loadState.shopStocks);
       shopStocksRef.current = restoredStocks;
       setShopStocks(restoredStocks);
+    }
+    // BUILD 700: restore NPC purchase decisions (sanitized to a flat key set;
+    // garbage never blocks a legitimate future purchase).
+    {
+      const raw = loadState.npcPurchases;
+      const restored: Record<string, true> = {};
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        for (const k of Object.keys(raw)) {
+          if (typeof k === 'string' && k.length > 0 && k.length < 120) restored[k] = true;
+        }
+      }
+      npcPurchasesRef.current = restored;
+      setNpcPurchases(restored);
     }
     droppedLootIdRef.current = droppedLootRef.current.reduce((highest, drop) => Math.max(highest, drop.id), 0) + 1;
     playerHpRef.current = loadState.playerHp; setPlayerHp(loadState.playerHp);
@@ -5602,6 +5638,38 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             townsfolkRef.current = gossiped;
             setTownsfolk(gossiped);
           }
+        }
+        // BUILD 700: NPC shoppers complete REAL transactions at market stalls.
+        // Event-driven: at most one purchase decision per (npc, day, visit),
+        // recorded in npcPurchasesRef — the transaction itself fires once on
+        // the purchase event, never per-frame. Uses the SAME buyFromStall
+        // ledger as the player: stock decrements are shared (an NPC buying the
+        // last potion means the player sees it gone), and gold moves NPC ->
+        // merchant (conserved via goldDelta + merchantGold).
+        {
+          let seen: Record<string, true> | null = null;
+          let folk = townsfolkRef.current;
+          let folkTouched = false;
+          for (const npc of folk) {
+            if (npc.indoors || npc.activity !== 'Browsing the stalls') continue;
+            const visit = marketBrowseVisit(npc, folkAnchors, folkClock);
+            if (!visit) continue;
+            const key = `${npc.id}:${today}:${visit.visitIndex}`;
+            if (npcPurchasesRef.current[key]) continue;
+            (seen ??= { ...npcPurchasesRef.current })[key] = true;
+            const def = stallShopDef(visit.stallIndex);
+            const purse = npcGold(npc, folkClock);
+            const pick = npcShoppingPick(npc.seed, npc.archetype, today, visit.visitIndex, def, purse);
+            if (!pick) continue;
+            const state = restockStall(def, shopStocksRef.current[visit.stallIndex], today);
+            const result = buyFromStall(def, state, pick.itemKey, purse);
+            if (!result.ok) continue;
+            folk = folk.map((w) => (w.id === npc.id ? adjustNPCGold(w, -result.coinsSpent) : w));
+            folkTouched = true;
+            syncShopStocks({ ...shopStocksRef.current, [visit.stallIndex]: result.state });
+          }
+          if (seen) { npcPurchasesRef.current = seen; setNpcPurchases(seen); }
+          if (folkTouched) { townsfolkRef.current = folk; setTownsfolk(folk); }
         }
       }
     }, 120);
@@ -7920,6 +7988,10 @@ if (active) {
     shopStocksRef.current = next;
     setShopStocks(next);
   };
+  // BUILD 700: NPC stall purchase decisions — one per (npcId, day, visitIndex).
+  // Persisted so a reload never re-runs (or double-runs) a visit's purchase.
+  const [npcPurchases, setNpcPurchases] = useState<Record<string, true>>({});
+  const npcPurchasesRef = useRef<Record<string, true>>({});
   const [escortHired, setEscortHired] = useState(false);
   const escortHiredRef = useRef(false);
   useEffect(() => { escortHiredRef.current = escortHired; }, [escortHired]);

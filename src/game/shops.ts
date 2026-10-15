@@ -75,6 +75,12 @@ export type StallShopDef = {
 export type StallStockState = {
   stock: Partial<Record<ShopItemKey, number>>;
   lastRestockDay: number;
+  /**
+   * BUILD 700: gold this stall's merchant has earned from sales (player and
+   * NPC alike). Part of the stall's persisted state — gold is conserved:
+   * every coinsSpent leaving a buyer lands here.
+   */
+  merchantGold: number;
 };
 
 // --- deterministic PRNG (local, no imports — keeps the module pure) ---
@@ -169,17 +175,21 @@ export function stallBuyList(): StallGood[] {
 export function createStallStock(def: StallShopDef, day: number): StallStockState {
   const stock: Partial<Record<ShopItemKey, number>> = {};
   for (const g of def.goods) stock[g.key] = g.maxStock;
-  return { stock, lastRestockDay: day };
+  return { stock, lastRestockDay: day, merchantGold: 0 };
 }
 
 /**
  * Restock check driven by the game clock: a new game day refills the stall.
  * Lazy and deterministic — call when the stall is opened (stock only matters
  * when the shop UI is open). Never mutates the input.
+ * BUILD 700: the merchant KEEPS earned gold across restocks — only the goods
+ * refill. Gold is conserved, not wiped by the calendar.
  */
 export function restockStall(def: StallShopDef, prev: StallStockState | null | undefined, day: number): StallStockState {
   if (!prev || !Number.isFinite(prev.lastRestockDay) || day > prev.lastRestockDay) {
-    return createStallStock(def, day);
+    const fresh = createStallStock(def, day);
+    fresh.merchantGold = Math.max(0, Math.floor(prev?.merchantGold ?? 0));
+    return fresh;
   }
   return prev;
 }
@@ -194,6 +204,8 @@ export type BuyResult =
  * Attempt to buy one unit of itemKey from the stall.
  * Guards (in order): the stall sells it → stock remains → player can afford it.
  * Idempotent under double-tap: the second call sees the updated stock.
+ * BUILD 700: the price moves into the merchant's gold (gold conservation —
+ * every coinsSpent leaving the buyer lands in state.merchantGold).
  */
 export function buyFromStall(
   def: StallShopDef,
@@ -208,7 +220,11 @@ export function buyFromStall(
   if (!Number.isFinite(coins) || coins < good.buyPrice) return { ok: false, reason: 'no-gold', state };
   return {
     ok: true,
-    state: { stock: { ...state.stock, [itemKey]: have - 1 }, lastRestockDay: state.lastRestockDay },
+    state: {
+      stock: { ...state.stock, [itemKey]: have - 1 },
+      lastRestockDay: state.lastRestockDay,
+      merchantGold: Math.max(0, Math.floor(state.merchantGold ?? 0)) + good.buyPrice,
+    },
     coinsSpent: good.buyPrice,
     price: good.buyPrice,
   };
@@ -255,7 +271,78 @@ export function sanitizeStallStocks(raw: unknown): Record<number, StallStockStat
         stock[ik as ShopItemKey] = Math.max(0, Math.floor(iv));
       }
     }
-    out[index] = { stock, lastRestockDay: day };
+    // BUILD 700: merchant gold restores too (old saves predate it → 0).
+    const mg = (vv as { merchantGold?: unknown }).merchantGold;
+    const merchantGold = typeof mg === 'number' && Number.isFinite(mg) ? Math.max(0, Math.floor(mg)) : 0;
+    out[index] = { stock, lastRestockDay: day, merchantGold };
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// NPC shopping (BUILD 700): real NPC transactions through the SAME ledger.
+// ---------------------------------------------------------------------------
+//
+// NPC shoppers don't browse idly — during a market visit's browse pause they
+// may buy one good from the stall they're facing. The purchase runs through
+// buyFromStall above, so NPC and player share one inventory ledger: if an NPC
+// buys the last health potion, the player sees it gone.
+//
+// The decision is pure and deterministic: same (npcSeed, day, visitIndex,
+// stall goods, gold) → same pick. The caller (App.tsx) records one decision
+// per (npc, day, visit) so the event fires once — never per-frame.
+
+/** Local deterministic 0..1 hash (keeps this module import-free). */
+function npcShopHash(a: number, b: number): number {
+  let h = (Math.imul(a | 0, 0x85ebca6b) ^ Math.imul(b | 0, 0xc2b2ae35)) >>> 0;
+  h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995) >>> 0; h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+
+/**
+ * Goods each archetype plausibly buys. Believable, not random: farmers buy
+ * food and wood, guards buy potions and blades, children buy a corn snack.
+ * Children never buy weapons.
+ */
+const NPC_WANTS: Record<string, ShopItemKey[]> = {
+  child: ['corn'],
+  commoner: ['corn', 'beer', 'cloths', 'shirts'],
+  farmer: ['corn', 'beer', 'wood'],
+  merchant: ['silk', 'cloths', 'healthPotion'],
+  guard: ['healthPotion', 'beer', 'daggers'],
+  smith: ['wood', 'beer', 'healthPotion'],
+  priest: ['corn', 'healthPotion'],
+};
+
+/** Chance an NPC buys during a single market visit (~1-2 buys/day/shopper). */
+const NPC_BUY_CHANCE = 0.35;
+
+export type NPCPurchasePick = { itemKey: ShopItemKey; price: number };
+
+/**
+ * What (if anything) an NPC buys during one market visit.
+ * Guards: the stall must sell something fitting the archetype AND the NPC
+ * must afford it (no negative gold, ever — the buyFromStall guard double-
+ * checks). Returns null when the NPC buys nothing this visit.
+ */
+export function npcShoppingPick(
+  npcSeed: number,
+  archetype: string,
+  day: number,
+  visitIndex: number,
+  def: StallShopDef,
+  gold: number,
+): NPCPurchasePick | null {
+  const wants = NPC_WANTS[archetype] ?? NPC_WANTS['commoner'];
+  // Defensive: skip malformed goods rather than crashing the NPC tick.
+  const goods = (def?.goods ?? []).filter((g) => g && typeof g.key === 'string');
+  const affordable = goods.filter(
+    (g) => wants.includes(g.key) && g.buyPrice > 0 && g.buyPrice <= gold,
+  );
+  if (affordable.length === 0) return null;
+  if (npcShopHash(npcSeed, day * 131 + 8200 + visitIndex * 17) >= NPC_BUY_CHANCE) return null;
+  const pickIdx = Math.floor(npcShopHash(npcSeed, day * 131 + 8201 + visitIndex * 29) * affordable.length) % affordable.length;
+  const pick = affordable[pickIdx];
+  if (!pick) return null;
+  return { itemKey: pick.key, price: pick.buyPrice };
 }

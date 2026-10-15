@@ -1,6 +1,6 @@
 {
-  "build": "699",
-  "note": "",
-  "timestamp": "2026-10-14T17:03:18.181Z",
-  "cacheBuster": "mv8czdt1"
+  "build": "700",
+  "note": "NPC shop transactions: townsfolk now complete real purchases at market stalls through the shared shop ledger — gold moves from NPC purse to merchant, stock decrements for everyone (player sees NPC-bought items gone), merchants keep earned gold across restocks; role-appropriate buying (guards buy potions, farmers buy food), ~35% chance per market visit, one decision per visit, all persisted in saves",
+  "timestamp": "2026-10-15T01:40:01.144Z",
+  "cacheBuster": "mv8vfvuh"
 }

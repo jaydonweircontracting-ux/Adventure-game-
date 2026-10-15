@@ -8,7 +8,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, npcHp, npcMaxHp, isNpcDead, NPC_RESPAWN_TICKS, marketRoutine, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, npcHp, npcMaxHp, isNpcDead, NPC_RESPAWN_TICKS, marketRoutine, marketBrowseVisit, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
 
 /**
  * BUILD 699: Test anchors need all household homeKeys. Uses the real
@@ -7785,6 +7785,142 @@ import { inflateSync } from 'node:zlib';
 
   // 8. Buy list covers all 16 tradeable goods.
   assert(stallBuyList().length === 16, `Shop697: buy list has 16 goods (got ${stallBuyList().length})`);
+}
+
+// BUILD 700: NPC shop transactions — real NPC economy through the shared ledger.
+// Gold conservation: NPC gold + merchant gold is conserved across transactions;
+// inventory decrements are shared with the player; no negative gold, ever.
+{
+  const { stallShopDef, createStallStock, restockStall, buyFromStall,
+    sanitizeStallStocks, npcShoppingPick, SHOP_CATALOG } =
+    await import('../src/game/shops.js');
+
+  const clockAt = (hour: number, minute: number, day = 5) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour,
+    minuteOfDay: hour * 60 + minute, second: 0, season: 'spring' as const,
+  });
+
+  // 1. Merchant gold lives in the stall ledger.
+  const def = stallShopDef(3);
+  const fresh = createStallStock(def, 7);
+  assert(fresh.merchantGold === 0, 'Shop700: fresh stall merchant gold starts at 0');
+  const bought = buyFromStall(def, fresh, def.goods[0].key, 10000);
+  assert(bought.ok, 'Shop700: buy succeeds');
+  if (bought.ok) {
+    assert(bought.state.merchantGold === def.goods[0].buyPrice,
+      `Shop700: merchant credited ${def.goods[0].buyPrice}g (got ${bought.state.merchantGold})`);
+    assert(bought.state.stock[def.goods[0].key] === def.goods[0].maxStock - 1,
+      'Shop700: stock decremented by the purchase');
+    // Restock refills goods but the merchant KEEPS earned gold.
+    const restocked = restockStall(def, bought.state, 8);
+    assert(restocked.stock[def.goods[0].key] === def.goods[0].maxStock, 'Shop700: restock refills goods');
+    assert(restocked.merchantGold === def.goods[0].buyPrice, 'Shop700: restock preserves merchant gold');
+    assert(restocked.lastRestockDay === 8, 'Shop700: restock day advances');
+  }
+  assert(fresh.merchantGold === 0 && fresh.stock[def.goods[0].key] === def.goods[0].maxStock,
+    'Shop700: buy did not mutate input state');
+
+  // 2. Sanitation: merchant gold cleaned; old saves (no field) default to 0.
+  const clean = sanitizeStallStocks({
+    0: { stock: { corn: 2 }, lastRestockDay: 7, merchantGold: 45 },
+    1: { stock: { corn: 2 }, lastRestockDay: 7, merchantGold: -9 },
+    2: { stock: { corn: 2 }, lastRestockDay: 7 },
+    3: { stock: { corn: 2 }, lastRestockDay: 7, merchantGold: 'junk' },
+  });
+  assert(clean[0].merchantGold === 45, 'Shop700: valid merchant gold kept');
+  assert(clean[1].merchantGold === 0, 'Shop700: negative merchant gold clamped to 0');
+  assert(clean[2].merchantGold === 0, 'Shop700: missing merchant gold defaults to 0');
+  assert(clean[3].merchantGold === 0, 'Shop700: junk merchant gold defaults to 0');
+
+  // 3. npcShoppingPick: deterministic, role-appropriate, respects gold.
+  const armsDef = { ...stallShopDef(0), goods: [
+    { key: 'swords', ...SHOP_CATALOG.swords },
+    { key: 'daggers', ...SHOP_CATALOG.daggers },
+    { key: 'corn', ...SHOP_CATALOG.corn },
+  ] };
+  const p1 = npcShoppingPick(12345, 'guard', 5, 2, armsDef, 1000);
+  const p2 = npcShoppingPick(12345, 'guard', 5, 2, armsDef, 1000);
+  assert(JSON.stringify(p1) === JSON.stringify(p2), 'Shop700: pick deterministic for same inputs');
+  // Broke NPC buys nothing.
+  assert(npcShoppingPick(12345, 'guard', 5, 2, armsDef, 0) === null, 'Shop700: broke NPC buys nothing');
+  assert(npcShoppingPick(12345, 'guard', 5, 2, armsDef, 1) === null, 'Shop700: NPC with 1g buys nothing');
+  // Child never buys weapons even at an arms stall.
+  for (let s = 1; s < 200; s++) {
+    for (let v = 0; v < 5; v++) {
+      const pk = npcShoppingPick(s, 'child', 5, v, armsDef, 1000);
+      assert(!pk || pk.itemKey === 'corn', `Shop700: child bought non-food (${pk?.itemKey})`);
+    }
+  }
+  // Guard picks are always affordable and from their wants.
+  for (let s = 1; s < 200; s++) {
+    const pk = npcShoppingPick(s, 'guard', 5, 1, armsDef, 30);
+    if (pk) {
+      assert(pk.price <= 30, `Shop700: guard pick over budget (${pk.price})`);
+      assert(['healthPotion', 'beer', 'daggers'].includes(pk.itemKey) || pk.itemKey === 'corn',
+        `Shop700: guard pick off-role (${pk.itemKey})`);
+    }
+  }
+  // Stall selling nothing the archetype wants → null.
+  const noWant = npcShoppingPick(999, 'priest', 5, 1, armsDef, 1000);
+  void noWant; // priest wants corn/healthPotion; armsDef has corn → may pick; just check it runs
+  const silkOnly = { ...stallShopDef(0), goods: [{ key: 'silk', ...SHOP_CATALOG.silk }] };
+  assert(npcShoppingPick(7, 'guard', 5, 1, silkOnly, 1000) === null,
+    'Shop700: guard buys nothing at silk-only stall');
+
+  // 4. Gold conservation across a full NPC transaction.
+  // Simulate: NPC purse P, merchant M. After buy: (P - price) + (M + price) = P + M.
+  const anchors = {
+    points: {}, plaza: { x: 144, y: 144 },
+    stalls: [{ x: 130, y: 130 }, { x: 140, y: 130 }, { x: 150, y: 130 }],
+    gardens: [], patrol: [], arterials: [],
+  } as TownsfolkAnchors;
+  const folk = createTownsfolk(anchors, 847291583);
+  const shopper = folk.find((n) => n.archetype === 'commoner') ?? folk[0];
+  const c = clockAt(10, 30, 9);
+  const purseBefore = npcGold(shopper, c);
+  assert(purseBefore >= 0, 'Shop700: NPC purse never negative');
+  const sDef = stallShopDef(1);
+  const sState = createStallStock(sDef, 9);
+  const pick = npcShoppingPick(shopper.seed, shopper.archetype, 9, 1, sDef, purseBefore);
+  if (pick) {
+    const tx = buyFromStall(sDef, sState, pick.itemKey, purseBefore);
+    assert(tx.ok, 'Shop700: affordable NPC pick transacts');
+    if (tx.ok) {
+      const shopperAfter = adjustNPCGold(shopper, -tx.coinsSpent);
+      const purseAfter = npcGold(shopperAfter, c);
+      assert(purseAfter === purseBefore - tx.coinsSpent, 'Shop700: NPC gold debited exactly');
+      assert(purseAfter >= 0, 'Shop700: NPC gold never negative after purchase');
+      const conserved = (purseBefore + sState.merchantGold) === (purseAfter + tx.state.merchantGold);
+      assert(conserved, 'Shop700: gold conserved (NPC + merchant)');
+      assert(tx.state.stock[pick.itemKey] === (sState.stock[pick.itemKey] ?? 0) - 1,
+        'Shop700: shared ledger decremented by NPC purchase');
+    }
+  }
+
+  // 6. Hash regression (BUILD 700 fix): npcShopHash must never return a
+  // negative value — a negative pick hash indexed affordable[-1] and crashed
+  // the NPC tick in the browser. Sweep many seeds; every call must return a
+  // valid pick or null, never throw.
+  for (let s = 1; s <= 5000; s++) {
+    const pk = npcShoppingPick(s, 'commoner', 3, s % 4, stallShopDef(s % 21), 100);
+    if (pk) {
+      assert(typeof pk.itemKey === 'string' && pk.price > 0 && pk.price <= 100,
+        `Shop700: invalid pick for seed ${s}`);
+    }
+  }
+  assert(marketBrowseVisit(shopper, anchors, clockAt(8, 0, 5)) === null, 'Shop700: no visit before market opens');
+  assert(marketBrowseVisit(shopper, anchors, clockAt(18, 0, 5)) === null, 'Shop700: no visit after market closes');
+  // 9:30 is in the stroll phase of the first morning visit (browse pause starts 10:00).
+  assert(marketBrowseVisit(shopper, anchors, clockAt(9, 30, 5)) === null, 'Shop700: no visit during stroll phase');
+  // 11:45 is in the last-30-min browse pause of the 10:30-12:00 visit.
+  const bv1 = marketBrowseVisit(shopper, anchors, clockAt(11, 45, 5));
+  const bv2 = marketBrowseVisit(shopper, anchors, clockAt(11, 45, 5));
+  assert(bv1 !== null && bv2 !== null, 'Shop700: visit resolved during browse pause');
+  if (bv1 && bv2) {
+    assert(bv1.stallIndex === bv2.stallIndex && bv1.visitIndex === bv2.visitIndex,
+      'Shop700: browse visit deterministic');
+    assert(bv1.stallIndex >= 0 && bv1.stallIndex < 3, 'Shop700: stall index in range');
+  }
 }
 
 // ---- Results ----
