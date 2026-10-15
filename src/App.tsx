@@ -898,127 +898,14 @@ function fieldTreeBaseRect(tree: FieldTree): FieldRect {
 }
 
 function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Record<string, Point>) {
-  // BUILD 658: Memoize pure world-gen calls (was regenerating 5-20x per frame).
+  // TEMPORARY DEVELOPMENT MODE: physical collision is disabled for world
+  // props, trees, houses/buildings, editor solids, and NPCs. Keep water
+  // blocking intact so the player cannot walk across impassable water.
+  // Doorway triggers, interaction logic, combat, rendering, and navigation
+  // data remain available. Restore the original checks when collision is re-enabled.
   const chunkKey = `${chunk.x},${chunk.y}`;
   const tile = _memoizedWorldGen(`tile:${chunkKey}`, () => mapTileFor(chunk));
-  if (pointInWater(position, tile)) return true;
-
-  const trees = _memoizedWorldGen(`trees:${chunkKey}`, () => fieldTreesFor(chunk));
-  const treeBlocked = trees.some((tree) => !felledTreeKeys.has(fieldTreeKey(chunk, tree.id)) && !editorDeletedTreeKeys.has(fieldTreeKey(chunk, tree.id)) && pointInRect(position, fieldTreeBaseRect(tree), 0.45));
-  if (treeBlocked) return true;
-
-  // Rusty Tankard annexes are solid in the starting town.
-  if (chunk.x === 4 && chunk.y === 7) {
-    if (TAVERN_ANNEX_RECTS.some((r) => pointInRect(position, r, 0.45))) return true;
-    // BUILD 683: settlement props (wells, barrels) are solid.
-    const decor = mosslightSettlementDecor();
-    if (decor.props.some((p) => pointInRect(position, {
-      left: p.x - p.r, top: p.y - p.r, right: p.x + p.r, bottom: p.y + p.r,
-    }, 0.2))) return true;
-    // BUILD 690: engine solid props (lamps, barrels, well, gatehouse) block.
-    // Fountain and market stalls are decor-only (walkable, like the old plan).
-    if (mosslightEngineProps().some((p) => p.solid && pointInRect(position, {
-      left: p.x - p.r, top: p.y - p.r, right: p.x + p.r, bottom: p.y + p.r,
-    }, 0.2))) return true;
-  }
-
-  // Carriage stations/stops: house, stable and the carriage itself are solid.
-  const station = getCarriageStation(chunk);
-  if (station) {
-    const l = station.layout;
-    if (pointInRect(position, carriageHouseRect(l.house), 0.45) || pointInRect(position, carriageStableRect(l.stable), 0.45) || pointInRect(position, carriageCartRect(l.carriage), 0.45)) return true;
-  } else {
-    const stop = getCarriageStop(chunk);
-    if (stop && pointInRect(position, carriageCartRect(stop.carriage), 0.45)) return true;
-  }
-
-  // Debug world editor (BUILD 274): user-placed houses/trees/rocks are solid
-  // in normal play. Skipped while the editor is open (moveHouses) so the user
-  // can walk freely while laying out, like generated-house collision.
-  if (!moveHouses && editorSolids.length > 0) {
-    const chunkKey = chunk.x + ',' + chunk.y;
-    const placedBlocked = editorSolids.some((s) => s.chunk === chunkKey && pointInRect(position, {
-      left: s.x - s.w / 2, top: s.y - s.h / 2, right: s.x + s.w / 2, bottom: s.y + s.h / 2,
-    }, 0.35));
-    if (placedBlocked) return true;
-  }
-
-  const landmark = tile.landmark;
-  // Keep the visible building/base solid, but do not extend its collision far
-  // into the surrounding grass where it reads as a random invisible wall.
-  // In mover mode (?moveHouses=1), skip building collision so the user can
-  // walk freely while positioning houses.
-  // If house offsets are provided (mover mode), collision follows the visual —
-  // the solid area is attached to the house, not a stagnant separate position.
-  if (!moveHouses && landmark) {
-    const rects = fieldHouseRects(landmark.kind, isStartingArea(chunk), Math.round(chunk.x) * 31 + Math.round(chunk.y) * 17, tile.road);
-    const doorways = _memoizedWorldGen(`doorways:${chunkKey}`, () => buildingDoorwaysFor(chunk));
-    const blocked = rects.some((rect, index) => {
-      const doorway = doorways[index];
-      const off = (doorway && houseOffsets?.[doorway.id]) || { x: 0, y: 0 };
-      // BUILD 615: Shrink collision to match visual sprite (not transparent padding).
-      // Sprites have ~15-20% transparent padding on each side; the visible building
-      // is ~65-70% of the authored rect. Full-rect collision = invisible walls.
-      // BUILD 625: Asymmetric — roof overhangs north, so shrink top more.
-      const cx = (rect.left + rect.right) / 2 + off.x;
-      const cy = (rect.top + rect.bottom) / 2 + off.y;
-      const hw = (rect.right - rect.left) / 2 * 0.68;
-      const hh = (rect.bottom - rect.top) / 2;
-      const movedRect = {
-        left: cx - hw,
-        top: cy - hh * 0.35,  // roof overhang — shrink top aggressively
-        right: cx + hw,
-        bottom: cy + hh * 0.85,
-      };
-      // BUILD 428: carve the doorway out of the collision. The entry trigger
-      // sits just south of the door, but the solid rect (plus padding) extends
-      // further south — without a gap the player gets stuck in the dead zone
-      // between the collision edge and the trigger, unable to re-enter.
-      if (doorway) {
-        const dx = doorway.position.x + off.x;
-        const dy = doorway.position.y + off.y;
-        const { xTol } = doorwayTriggerDims({
-          left: doorway.rect.left + off.x,
-          right: doorway.rect.right + off.x,
-        });
-        if (Math.abs(position.x - dx) <= xTol && position.y > dy && position.y <= movedRect.bottom + 0.35) {
-          return false; // in the doorway corridor — not blocked
-        }
-      }
-      return pointInRect(position, movedRect, 0.35);
-    });
-    if (blocked) return true;
-  }
-
-  // Farmhouses are solid enterable buildings too.
-  if (!moveHouses && !landmark && ['meadow', 'grassland', 'greenvale'].includes(tile.terrain)) {
-    const farmDoorways = _memoizedWorldGen(`doorways:${chunkKey}`, () => buildingDoorwaysFor(chunk));
-    const farmBlocked = fieldFarmRects(chunk.x, chunk.y).houses.some((rect, index) => {
-      // BUILD 428: same doorway carve-out as town buildings — the farmhouse
-      // door trigger sits south of the door inside the collision padding.
-      const doorway = farmDoorways[index];
-      if (doorway) {
-        const { xTol } = doorwayTriggerDims(doorway.rect);
-        if (Math.abs(position.x - doorway.position.x) <= xTol
-          && position.y > doorway.position.y
-          && position.y <= rect.bottom + 0.35) {
-          return false;
-        }
-      }
-      // BUILD 615: shrink to match visual (see town buildings above).
-      const cx = (rect.left + rect.right) / 2;
-      const cy = (rect.top + rect.bottom) / 2;
-      const hw = (rect.right - rect.left) / 2 * 0.68;
-      const hh = (rect.bottom - rect.top) / 2 * 0.68;
-      return pointInRect(position, { left: cx - hw, top: cy - hh, right: cx + hw, bottom: cy + hh }, 0.35);
-    });
-    if (farmBlocked) return true;
-  }
-
-  // Mosslight Crossing fountain: decorative only, no collision.
-  // (Collision removed — was causing invisible wall reports.)
-
-  return false;
+  return pointInWater(position, tile);
 }
 
 function wrapFieldPosition(position: Point, chunk: Point) {
