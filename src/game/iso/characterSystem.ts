@@ -389,12 +389,15 @@ export function drawIsoCharacter(o: DrawCharacterOptions): void {
   let im = rpgSprite(base, anim, face, spriteFrame);
   if (!im) {
     const cached = lastCharacterSprite.get(o.animator);
-    if (cached?.key === spriteKey) {
+    if (cached) {
+      // Keep the last real model visible while a newly selected base, facing,
+      // animation, or frame finishes loading. A vector placeholder here caused
+      // the character creator to flash between the real RPG art and a 2D figure.
       im = cached.image;
       spriteFrame = cached.frame;
     } else {
-      // Prefer a stable frame from the same animation/direction over a
-      // different-looking placeholder while the requested frame is loading.
+      // First-ever frame only: try the stable first frame before using the
+      // vector placeholder. Once any real frame has loaded, never flash back.
       im = rpgSprite(base, anim, face, 0);
       if (im) spriteFrame = 0;
     }
