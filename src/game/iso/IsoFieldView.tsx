@@ -313,11 +313,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   // by the performance throttle without re-rendering the full React tree.
   const playerRenderRef = useRef({ fromX: position.x, fromY: position.y, toX: position.x, toY: position.y, changedAt: 0 });
   if (playerRenderRef.current.toX !== position.x || playerRenderRef.current.toY !== position.y) {
-    playerRenderRef.current = {
-      fromX: playerRenderRef.current.toX, fromY: playerRenderRef.current.toY,
-      toX: position.x, toY: position.y,
-      changedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
-    };
+    // Keep the currently rendered coordinates as the interpolation origin.
+    // Resetting fromX/fromY to the previous target here creates a visible snap
+    // whenever a new 30 Hz simulation sample arrives.
+    playerRenderRef.current.toX = position.x;
+    playerRenderRef.current.toY = position.y;
+    playerRenderRef.current.changedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
   }
   // BUILD 684: first-seen timestamps for floating combat text (float-up anim).
   const dmgSeenRef = useRef(new Map<number, number>());
@@ -400,7 +401,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     preloadCritters(); // BUILD 389: ambient critters
     const canvas = canvasRef.current!;
     const wrap = wrapRef.current!;
-    const g = canvas.getContext('2d')!;
+    // BUILD 710: favor low-latency opaque canvas composition on mobile GPUs.
+    const g = canvas.getContext('2d', { alpha: false, desynchronized: true })!;
     const N = FIELD_SIZE;
     // BUILD 376: map bounds in world px (tile space == field units, 1:1)
     // covering the whole rendered chunk grid, so the camera never reveals
@@ -442,6 +444,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     // per frame. The animator also receives the interpolated position, so
     // its speed measurement stays smooth instead of spiky.
     const npcInterp = new Map<string, { px: number; py: number; cx: number; cy: number; t: number }>();
+    // BUILD 710: reuse hot-loop buffers instead of allocating new arrays every
+    // frame. This reduces garbage collection pauses while walking through town.
+    const drawables: Drawable[] = [];
+    const farmsteadQueue: Array<{ x: number; y: number; barn: boolean }> = [];
     // BUILD 390: track the player's attack sequence -> swing start time so the
     // barbarian attack clip plays once per swing.
     let lastAttackSeq = -1;
@@ -451,7 +457,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
 
     const resize = () => {
       const r = wrap.getBoundingClientRect();
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      // Cap backing-store resolution to avoid 4x pixel fill on high-DPR phones.
+      const dpr = Math.min(1.5, window.devicePixelRatio || 1);
       canvas.width = Math.max(1, Math.round(r.width * dpr));
       canvas.height = Math.max(1, Math.round(r.height * dpr));
     };
@@ -495,7 +502,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       const dt = Math.min(100, nowMs - last); last = nowMs;
       const zm = zoomRef.current;
       const wpx = canvas.clientWidth || 1, hpx = canvas.clientHeight || 1;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      // Keep draw resolution aligned with the capped canvas backing store.
+      const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+      // BUILD 710: don't burn CPU/GPU redrawing a hidden game tab.
+      if (document.hidden) { last = nowMs; return; }
       // Perf-debug hook (?nodirt=1): skip textured dirt paths for A/B timing.
       const skipDirt = (frame as unknown as { __skipDirt?: boolean }).__skipDirt
         ?? ((frame as unknown as { __skipDirt?: boolean }).__skipDirt =
@@ -510,16 +520,29 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // every frame — static data, zero reason for per-frame allocation).
       const sandShades = getSandShades();
       const farmShades = getFarmShades();
-      // BUILD 698: farmstead building sites (farmhouse/barn) spotted in the
-      // ground pass; drawn as depth-sorted drawables after the building pass.
-      const farmsteadQueue: Array<{ x: number; y: number; barn: boolean }> = [];
+      // Reset reusable per-frame buffers; retain their backing storage.
+      drawables.length = 0;
+      farmsteadQueue.length = 0;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const live = liveRef.current;
+      // BUILD 710: use a bounded, delta-time-independent presentation smoother.
+      // A 33 ms one-shot interpolation reached the target then stopped; if React
+      // published at 30 Hz that still produced visible stepping. Exponential
+      // convergence runs every canvas frame while simulation/collision remain
+      // authoritative in App. Large teleports snap to avoid cross-map sliding.
       const interp = playerRenderRef.current;
-      const renderT = Math.min(1, Math.max(0, (nowMs - interp.changedAt) / 33));
-      const playerX = interp.fromX + (interp.toX - interp.fromX) * renderT;
-      const playerY = interp.fromY + (interp.toY - interp.fromY) * renderT;
+      const targetDX = interp.toX - interp.fromX;
+      const targetDY = interp.toY - interp.fromY;
+      const playerX = Math.abs(targetDX) + Math.abs(targetDY) > 8
+        ? interp.toX
+        : interp.fromX + targetDX * Math.min(1, 1 - Math.exp(-dt / 45));
+      const playerY = Math.abs(targetDX) + Math.abs(targetDY) > 8
+        ? interp.toY
+        : interp.fromY + targetDY * Math.min(1, 1 - Math.exp(-dt / 45));
+      // Advance the render-only origin so the next frame continues smoothly.
+      interp.fromX = playerX;
+      interp.fromY = playerY;
       // BUILD 702: a new attack sequence triggers the RPG attack animation
       // via the animator state machine (one-shot, returns to idle/walk).
       const seq = live.barbAttackSequence ?? 0;
@@ -836,8 +859,6 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           g.stroke();
         }
       }
-
-      const drawables: Drawable[] = [];
 
       // buildings: real rects -> iso boxes with pitched roofs. BUILD 376:
       // drawn for every chunk in the scene grid; neighbor rects are offset
@@ -1300,9 +1321,14 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           // BUILD 707: teleport guard — a jump > 5 units is a respawn/teleport,
           // not a walk step; snap instead of sliding across the map.
           const jumped = prev && Math.hypot(npc.position.x - prev.cx, npc.position.y - prev.cy) > 5;
+          // Critical interpolation fix: on the sample-change frame, render from
+          // the previous sample (t=0), not at the new target. The old branch
+          // left ix/iy at the raw target for one frame, then moved backwards to
+          // the previous sample on the next frame — visible NPC footstep jitter.
+          ix = prev && !jumped ? prev.cx : npc.position.x;
+          iy = prev && !jumped ? prev.cy : npc.position.y;
           npcInterp.set(npc.id, {
-            px: prev && !jumped ? prev.cx : npc.position.x,
-            py: prev && !jumped ? prev.cy : npc.position.y,
+            px: ix, py: iy,
             cx: npc.position.x, cy: npc.position.y, t: nowMs,
           });
         } else {
