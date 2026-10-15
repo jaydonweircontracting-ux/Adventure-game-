@@ -516,10 +516,23 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const live = liveRef.current;
+      // BUILD 710: use a bounded, delta-time-independent presentation smoother.
+      // A 33 ms one-shot interpolation reached the target then stopped; if React
+      // published at 30 Hz that still produced visible stepping. Exponential
+      // convergence runs every canvas frame while simulation/collision remain
+      // authoritative in App. Large teleports snap to avoid cross-map sliding.
       const interp = playerRenderRef.current;
-      const renderT = Math.min(1, Math.max(0, (nowMs - interp.changedAt) / 33));
-      const playerX = interp.fromX + (interp.toX - interp.fromX) * renderT;
-      const playerY = interp.fromY + (interp.toY - interp.fromY) * renderT;
+      const targetDX = interp.toX - interp.fromX;
+      const targetDY = interp.toY - interp.fromY;
+      const playerX = Math.abs(targetDX) + Math.abs(targetDY) > 8
+        ? interp.toX
+        : interp.fromX + targetDX * Math.min(1, 1 - Math.exp(-dt / 45));
+      const playerY = Math.abs(targetDX) + Math.abs(targetDY) > 8
+        ? interp.toY
+        : interp.fromY + targetDY * Math.min(1, 1 - Math.exp(-dt / 45));
+      // Advance the render-only origin so the next frame continues smoothly.
+      interp.fromX = playerX;
+      interp.fromY = playerY;
       // BUILD 702: a new attack sequence triggers the RPG attack animation
       // via the animator state machine (one-shot, returns to idle/walk).
       const seq = live.barbAttackSequence ?? 0;
