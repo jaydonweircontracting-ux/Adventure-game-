@@ -10564,7 +10564,7 @@ if (active) {
             return (
             <button
               key={npc.id}
-              className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
+              className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (targetNpcId === npc.id ? ' is-targeted' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => {
                 if (targetNpcIdRef.current === npc.id) {
                   targetNpcIdRef.current = null;
