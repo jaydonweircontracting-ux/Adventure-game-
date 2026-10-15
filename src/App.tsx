@@ -6473,7 +6473,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
 
       
        playerAttackCooldownRef.current = Math.max(0, playerAttackCooldownRef.current - elapsed * 1000);
-      setAttackCooldownMs(playerAttackCooldownRef.current);
+      // Only publish cooldown changes to React at 20 Hz. The simulation still
+      // decrements every animation frame, but a new floating-point state value
+      // every frame forced the entire App tree to render at ~60 Hz even while idle.
+      setAttackCooldownMs(Math.ceil(playerAttackCooldownRef.current / 50) * 50);
       const playerAttack = playerAttackStateRef.current;
       if (playerAttack.active) {
         playerAttack.elapsed += elapsed * 1000;
