@@ -4948,6 +4948,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   };
   const dismissLoopError = () => { loopErrorRef.current = null; setLoopErrorTick(0); };
   const positionRef = useRef(position);
+  // BUILD 708: cap isometric player-position React publishes at 30 Hz.
+  // Simulation/collision still run every RAF using positionRef; the canvas
+  // redraws at display refresh, while avoiding 60 full App-tree renders/sec.
+  const lastIsoPositionUiAtRef = useRef(0);
   const facingRef = useRef(facing);
   // BUILD 668: 8-direction facing for mounted horse.
   const mountedFacing8Ref = useRef<EightDirection>('down');
@@ -7182,7 +7186,15 @@ if (active) {
         if (resolved) {
           // The current continent is the tutorial world. Its ocean edge is reserved for the future boat route.
           positionRef.current = resolved.position;
-          setPosition(resolved.position);
+          if (!isoFieldBetaRef.current) {
+            setPosition(resolved.position);
+          } else {
+            const uiNow = performance.now();
+            if (uiNow - lastIsoPositionUiAtRef.current >= 33) {
+              lastIsoPositionUiAtRef.current = uiNow;
+              setPosition(resolved.position);
+            }
+          }
           if (resolved.travelLabels.length > 0) {
             brainRef.current?.visitChunk(resolved.chunk, chunkRegion(resolved.chunk), resolved.travelLabels.join(' and '));
             chunkRef.current = resolved.chunk;
