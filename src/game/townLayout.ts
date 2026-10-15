@@ -577,13 +577,54 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     radius: 0, zone: 'edge-sector', sectorAngle: indAngle, sectorWidth: 0.55 });
   districts.push({ id: `district-${dSeq++}`, kind: 'commercial', center: { x: 0, y: 0 },
     radius: 0, zone: 'arterial-corridor', corridorDist: 11 });
-  const nParks = size === 'town' ? 2 : size === 'village' ? 1 : (rngD() < 0.5 ? 1 : 0);
-  for (let i = 0; i < nParks; i++) {
-    const a = rngD() * Math.PI * 2;
-    const pr = 9 + rngD() * 4;
-    const c = { x: Math.cos(a) * R * 0.45, y: Math.sin(a) * R * 0.45 };
+  const desiredParks = size === 'town' ? 2 : size === 'village' ? 1 : (rngD() < 0.5 ? 1 : 0);
+  const placedParks: TLDistrict[] = [];
+  // Generate more candidates than needed so awkward seeds do not lose parks
+  // simply because the first random point landed on the plaza, a building,
+  // or a busy road. Sorting larger parks first keeps the green spaces legible.
+  const parkCandidates = Array.from({ length: desiredParks * 24 }, () => {
+    const angle = rngD() * Math.PI * 2;
+    const radial = R * (0.32 + rngD() * 0.43);
+    return {
+      center: { x: Math.cos(angle) * radial, y: Math.sin(angle) * radial },
+      radius: 8 + rngD() * 3.5,
+    };
+  }).sort((a, b) => b.radius - a.radius);
+  for (const candidate of parkCandidates) {
+    if (placedParks.length >= desiredParks) break;
+    const { center: c, radius: pr } = candidate;
+    // Keep the entire green-space footprint inside the town boundary and
+    // preserve a clear civic square around the plaza.
+    if (!pointInPolygon(c, boundary) || distToPolygonEdge(c, boundary) < pr + 3) continue;
+    if (dist(c, plazaC) < plazaR + pr + 5) continue;
     if (dist(c, { x: 0, y: 0 }) < civicR + pr + 4) continue;
-    districts.push({ id: `district-${dSeq++}`, kind: 'park', center: c, radius: pr, zone: 'circle' });
+    if (placedParks.some((p) => dist(c, p.center) < pr + p.radius + 5)) continue;
+    // Parks are destinations, not decorative circles painted over streets.
+    let roadConflict = false;
+    for (const rs of roadSamples) {
+      const clearance = pr + rs.road.width / 2 + 3;
+      if (rs.pts.some((point) => dist(c, point) < clearance)) {
+        roadConflict = true;
+        break;
+      }
+    }
+    if (roadConflict) continue;
+    // Fixed landmarks must remain untouched. Test circle/rectangle distance
+    // rather than just the park center so a large park cannot clip a building.
+    const conflictsWithFootprint = (rect: Rect): boolean => {
+      const nearest = {
+        x: Math.max(rect.left, Math.min(rect.right, c.x)),
+        y: Math.max(rect.top, Math.min(rect.bottom, c.y)),
+      };
+      return dist(c, nearest) < pr + 3;
+    };
+    if (pinned.some((lot) => conflictsWithFootprint(lot.footprint))) continue;
+    if ((config?.avoidRects ?? []).some(conflictsWithFootprint)) continue;
+    const park: TLDistrict = {
+      id: `district-${dSeq++}`, kind: 'park', center: c, radius: pr, zone: 'circle',
+    };
+    placedParks.push(park);
+    districts.push(park);
   }
 
   const arterialSamples = arterials.flatMap((a) =>
