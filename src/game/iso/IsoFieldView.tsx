@@ -949,6 +949,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
               `dirt:${dkey}`,
             );
             paths = buildDirtPath2D(geo);
+            // Keep nearby path geometry warm while bounding memory in long sessions.
+            while (dirtPathCache.size >= DIRT_PATH_CACHE_MAX) {
+              const oldest = dirtPathCache.keys().next();
+              if (oldest.done) break;
+              dirtPathCache.delete(oldest.value);
+            }
             dirtPathCache.set(dkey, paths);
           }
           if (!skipDirt) {
