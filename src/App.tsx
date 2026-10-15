@@ -10428,7 +10428,7 @@ if (active) {
             const enter = npcEnterProps('npcstate-' + npc.name, npc.position, npc.facing as NpcFacing);
             return (
             <button
-              className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
+              className={'town-npc npc-' + npc.role + (npc.moving ? ' is-moving' : '') + (targetNpcId === npc.id ? ' is-targeted' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => talkToNpc(npc)}
               style={{ ...npcAppearanceStyle('npcstate-' + npc.name, npc.role), left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role={npc.role}
