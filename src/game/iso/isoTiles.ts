@@ -249,11 +249,19 @@ const decorImgs = new Map<number, HTMLImageElement>();
 const warnedUrls = new Set<string>();
 const failedImgs = new Set<HTMLImageElement>();
 let preloadStarted = false;
+let pendingImages = 0;
 
 function loadImg(url: string, onDone: () => void): HTMLImageElement {
   const im = new Image();
-  im.onload = onDone;
-  im.onerror = () => { if (!warnedUrls.has(url)) { warnedUrls.add(url); console.warn(`[isoTiles] missing: ${url}`); } failedImgs.add(im); onDone(); };
+  let settled = false;
+  const done = () => {
+    if (settled) return;
+    settled = true;
+    pendingImages = Math.max(0, pendingImages - 1);
+    onDone();
+  };
+  im.onload = done;
+  im.onerror = () => { if (!warnedUrls.has(url)) { warnedUrls.add(url); console.warn(`[isoTiles] missing: ${url}`); } failedImgs.add(im); done(); };
   im.src = url;
   return im;
 }
@@ -265,12 +273,14 @@ export function preloadIsoTiles(): void {
   const base = (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
   const seen = new Set<number>();
   for (const list of Object.values(GROUND_TILES)) for (const n of list) seen.add(n);
+  const dseen = new Set<number>();
+  for (const list of Object.values(DECOR_TILES)) for (const n of list) dseen.add(n);
+  // Count first so cached images cannot complete before the total is known.
+  pendingImages = seen.size + dseen.size;
   for (const n of seen) {
     const url = `${base}${ISO_TILES_BASE}/ground/tile_${String(n).padStart(3, '0')}.png`;
     groundImgs.set(n, loadImg(url, () => {}));
   }
-  const dseen = new Set<number>();
-  for (const list of Object.values(DECOR_TILES)) for (const n of list) dseen.add(n);
   for (const n of dseen) {
     const url = `${base}${ISO_TILES_BASE}/decor/decor_${String(n).padStart(3, '0')}.png`;
     decorImgs.set(n, loadImg(url, () => {}));
@@ -283,17 +293,15 @@ function imgReady(im: HTMLImageElement | undefined): im is HTMLImageElement {
 
 /** True once every tile image has pixels (or failed). */
 export function isoTilesReady(): boolean {
-  if (!preloadStarted) return false;
-  for (const im of groundImgs.values()) {
-    if (!imgReady(im) && !failedImgs.has(im)) return false;
-  }
-  for (const im of decorImgs.values()) {
-    if (!imgReady(im) && !failedImgs.has(im)) return false;
-  }
-  return true;
+  // O(1) per frame: load/error handlers maintain this counter instead of
+  // rescanning every ground and decor image on every animation frame.
+  return preloadStarted && pendingImages === 0;
 }
 
 function withCrisp(g: CanvasRenderingContext2D, fn: () => void): void {
+  // The iso renderer keeps smoothing disabled for its whole frame. Avoid two
+  // canvas state writes for every tiny tile draw in that hot path.
+  if (!g.imageSmoothingEnabled) { fn(); return; }
   const s = g.imageSmoothingEnabled;
   g.imageSmoothingEnabled = false;
   try { fn(); } finally { g.imageSmoothingEnabled = s; }
