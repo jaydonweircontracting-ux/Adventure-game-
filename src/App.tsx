@@ -34,6 +34,8 @@ import { stallShopDef, stallBuyList, createStallStock, restockStall, buyFromStal
 import { findTalkTarget } from './game/talkTarget';
 import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cellarRats';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds, type TouchHoldState, type TouchEventKind } from './game/touchInput';
+// BUILD 704: stamina/energy for sprinting.
+import { createStamina, tickStamina, canRun, staminaFrac, type StaminaState } from './game/stamina';
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, type GeneratedItem } from './game/items';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, applyPersonalityTone, type DialogueTopicId } from './game/dialogue';
@@ -260,6 +262,7 @@ function formatWorldClock(clock: WorldClockState) {
 }
 
 const WALK_SPEED = 16; // Deliberately slow exploration pace (BUILD 377: user asked for a lot slower)
+const RUN_SPEED = 28; // BUILD 704: 1.75x walk — same ratio as the horse, tuned to feel good.
 const HORSE_SPEED = 28; // BUILD 666: 1.75x walking speed (was 180, far too fast).
 const HORSE_MOUNT_DISTANCE = 4.5;
 const initialHorseState: HorseState = { chunk: { x: 4, y: 7 }, position: { x: 58, y: 52 } };
@@ -1697,6 +1700,8 @@ type SaveGameData = {
   bounty?: BountyState;
   // BUILD 595: Skill XP (levels recalculated from XP on load).
   skills?: Record<string, { xp: number }>;
+  // BUILD 704: player stamina (0-100).
+  stamina?: number;
 };
 
 const SAVE_FILE_VERSION = CURRENT_SAVE_VERSION;
@@ -4566,6 +4571,19 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [areaFlash, setAreaFlash] = useState<{ id: string; label: string } | null>(null);
   const [moving, setMoving] = useState(false);
   const [facing, setFacing] = useState<Direction>('down');
+  // BUILD 704: run toggle + stamina. runToggleRef is the input source of truth
+  // (button tap toggles, Shift holds); runToggleUi mirrors it for the button
+  // highlight. staminaRef is authoritative; staminaUi throttles re-renders.
+  const runToggleRef = useRef(false);
+  const shiftHeldRef = useRef(false);
+  const staminaRef = useRef<StaminaState>(createStamina());
+  const playerRunningRef = useRef(false);
+  const [runToggleUi, setRunToggleUi] = useState(false);
+  const [staminaUi, setStaminaUi] = useState(100);
+  const lastStaminaUiRef = useRef(100);
+  // BUILD 704: mirrors playerRunningRef for the iso views (updates only on
+  // walk<->run transitions, so no render spam).
+  const [playerRunningUi, setPlayerRunningUi] = useState(false);
   // BUILD 668: 8-direction facing state for mounted horse (triggers re-render).
   const [mountedFacing8, setMountedFacing8] = useState<EightDirection>('down');
   const [attackFacing, setAttackFacing] = useState<Direction | null>(null);
@@ -5350,6 +5368,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     skills: Object.fromEntries(
       Object.entries(skillsRef.current).map(([id, s]) => [id, { xp: s.xp }])
     ),
+    // BUILD 704: Persist player stamina.
+    stamina: Math.round(staminaRef.current.value),
   });
   saveStateRef.current = createSaveData;
 
@@ -5391,6 +5411,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         }
       }
       skillsRef.current = restored; setSkills({ ...restored });
+      // BUILD 704: restore player stamina (clamped, never exhausted on load).
+      if (typeof loadState.stamina === 'number' && Number.isFinite(loadState.stamina)) {
+        staminaRef.current = createStamina(loadState.stamina);
+        const pct = Math.round(staminaFrac(staminaRef.current) * 100);
+        lastStaminaUiRef.current = pct;
+        setStaminaUi(pct);
+      }
     }
     targetGoatIdRef.current = null; setTargetGoatId(null);
     droppedLootRef.current = loadState.droppedLoot || []; setDroppedLoot(droppedLootRef.current);
@@ -6239,6 +6266,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const clearInput = () => {
       keysRef.current = {};
       clearTouchHolds(touchHoldsRef.current);
+      shiftHeldRef.current = false;
       setMoving(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -6246,12 +6274,16 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (isTextInputActive(event)) return;
       if (inputLocked || optionsOpen || waitingRef.current) return;
       if (event.code === 'Space' || event.code === 'KeyF') { event.preventDefault(); attackGoat(); return; }
+      // BUILD 704: Shift hold-to-run (works alongside the touch toggle).
+      if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') { shiftHeldRef.current = true; return; }
       const direction = directionKeys[event.code];
       if (!direction) return;
       event.preventDefault();
       keysRef.current[direction] = true;
     };
     const onKeyUp = (event: KeyboardEvent) => {
+      // BUILD 704: release Shift hold-to-run.
+      if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') { shiftHeldRef.current = false; return; }
       const direction = directionKeys[event.code];
       if (!direction) return;
       event.preventDefault();
@@ -6413,6 +6445,31 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const length = Math.hypot(effInput.x, effInput.y);
       const active = length > 0;
       setMoving(active);
+
+      // BUILD 704: run toggle (touch button) or Shift hold = sprint intent.
+      // Computed here (before the interior early-return) so stamina drains
+      // and the run animation applies in interiors too. Stamina drains while
+      // actually running; exhaustion forces walk until it regenerates past
+      // the relock threshold (no flicker). Mounted overrides — the horse
+      // sets its own pace. Regen runs whenever not sprinting.
+      let playerRunning = false;
+      {
+        const wantRun = active && !mountedRef.current && (runToggleRef.current || shiftHeldRef.current);
+        const next = tickStamina(staminaRef.current, wantRun && canRun(staminaRef.current), active, elapsed);
+        if (next !== staminaRef.current) {
+          staminaRef.current = next;
+          const pct = Math.round(staminaFrac(next) * 100);
+          if (Math.abs(pct - lastStaminaUiRef.current) >= 2 || (pct === 100 && lastStaminaUiRef.current !== 100)) {
+            lastStaminaUiRef.current = pct;
+            setStaminaUi(pct);
+          }
+        }
+        playerRunning = wantRun && canRun(staminaRef.current);
+      }
+      if (playerRunningRef.current !== playerRunning) {
+        playerRunningRef.current = playerRunning;
+        setPlayerRunningUi(playerRunning);
+      }
 
       
        playerAttackCooldownRef.current = Math.max(0, playerAttackCooldownRef.current - elapsed * 1000);
@@ -7093,6 +7150,9 @@ if (active) {
           setMountedFacing8(facing8);
         }
         let speed = mountedRef.current ? HORSE_SPEED : WALK_SPEED;
+        // BUILD 704: playerRunning computed earlier (before the interior
+        // early-return); sprint speed applies to field movement here.
+        if (playerRunningRef.current) speed = RUN_SPEED;
         // BUILD 406: uniform on-screen speed in the 2.5D iso view. The 2:1
         // dimetric projection stretches tile-diagonal moves unevenly, so
         // screen-left/right covered ~2x the pixels of screen-up/down per
@@ -8250,6 +8310,7 @@ if (active) {
               // BUILD 571: store tile for tile-based melee range
               isoPlayerTileRef.current = { tx: Math.round(tx), ty: Math.round(ty) };
             }}
+            playerRunning={playerRunningUi}
           />
         ) : <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onEnterCellar={enterCellar} onTavernSleep={tavernSleepUntilMorning} cellarRats={cellarRats} onStrikeCellarRat={strikeCellarRat} questStates={questStates} interiorTownsfolk={interiorTownsfolk} onTalkToTownsfolk={talkToTownsfolk} />) : (
         <div className={'pixel-field world-field has-ground-detail world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
@@ -9295,7 +9356,8 @@ if (active) {
               barbWeapon={equippedSword ? 'sword' : equippedBow ? 'bow' : 'none'}
               barbHair={barbHair}
               barbAttackSequence={attackSequence}
-              debugFacing={dirTestMode ? (dirTestFacing?.face ?? null) : null} />
+              debugFacing={dirTestMode ? (dirTestFacing?.face ?? null) : null}
+              playerRunning={playerRunningUi} />
           )}
           {/* BUILD 422: debug direction test — red numbered arrows, one per
               movement direction. Tapping an arrow shows that direction's sprite
@@ -11170,6 +11232,14 @@ if (active) {
              <button className="icon-button field-talk-button" onClick={() => talkTarget.talk()} aria-label={'Talk to ' + talkTarget.name} title={'Talk to ' + talkTarget.name} data-testid="button-talk"><MessageCircle size={16} /></button>
            )}
            <button className="icon-button field-attack-button" onClick={() => attackGoat()} disabled={attackCooldownMs > 0 || attacking || inputLocked || (Boolean(interior) && interior?.roomType !== 'cellar') || (mounted && !equippedBow)} aria-label={equippedBow ? (selectedGoat ? 'Loose arrow at target' : 'Loose arrow') : (selectedGoat ? 'Strike selected goat' : 'Strike nearest goat')} title={equippedBow ? 'Fire bow · Space' : (selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space')} aria-disabled={attackCooldownMs > 0 || attacking} data-testid="button-attack">{equippedBow ? '🏹' : <Sword size={16} />}{attackCooldownMs > 0 && <span className="attack-cooldown-ring" style={{ background: 'conic-gradient(rgba(219, 120, 94, .95) ' + ((attackCooldownMs / PLAYER_ATTACK_COOLDOWN_MS) * 100) + '%, rgba(19, 43, 34, .2) 0)' }} aria-hidden="true" />}</button>
+          {/* BUILD 704: run toggle + stamina bar. Tapping toggles sprint;
+              Shift on keyboard holds to run. Stamina drains while running. */}
+          <button className={'icon-button field-run-button' + (runToggleUi ? ' is-running' : '')} onClick={() => { const next = !runToggleRef.current; runToggleRef.current = next; setRunToggleUi(next); }} aria-label={runToggleUi ? 'Stop running' : 'Run (toggle)'} title="Toggle run · Shift" data-testid="button-run-toggle" style={runToggleUi ? { background: 'rgba(120, 200, 120, .35)', borderColor: '#7cc47c' } : undefined}>🏃</button>
+          {(staminaUi < 100 || playerRunningUi) && (
+            <div className="field-stamina-bar" role="status" aria-label={'Stamina ' + staminaUi + '%'} data-testid="hud-stamina" style={{ position: 'absolute', right: 12, bottom: 76, width: 110, height: 7, background: 'rgba(0,0,0,.45)', borderRadius: 4, overflow: 'hidden', zIndex: 10 }}>
+              <div style={{ width: staminaUi + '%', height: '100%', background: staminaUi > 30 ? '#7cc47c' : '#d46a5a', borderRadius: 4, transition: 'width .15s' }} />
+            </div>
+          )}
          </div>
       </div>
       <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? (mounted ? 'Riding through Mosslight Crossing' : 'Moving through Mosslight Crossing') : (mounted ? 'Mounted and ready' : 'Standing still')}</div>

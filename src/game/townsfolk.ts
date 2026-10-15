@@ -85,6 +85,11 @@ export type Townsperson = {
   fleeUntilTick?: number;
   /** Position of the threat to run away from. */
   fleeFrom?: TownsfolkPoint;
+  /**
+   * BUILD 704: true while the NPC is actively running (fleeing). Walk is the
+   * default; the renderer picks the run cycle only when this is true.
+   */
+  running?: boolean;
   // --- Health (BUILD 441): NPCs can be damaged and killed. ---
   /** Current HP (undefined = full). */
   hp?: number;
@@ -878,6 +883,7 @@ export function damageNpc(npc: Townsperson, damage: number, from: TownsfolkPoint
       deadUntilTick: tick + NPC_RESPAWN_TICKS,
       fleeUntilTick: undefined,
       fleeFrom: undefined,
+      running: false,
     };
   }
   return {
@@ -999,13 +1005,18 @@ function advanceOne(
 
   // --- FLEEING (BUILD 436): run away from the attacker, skip schedule. ---
   // Only outdoors — indoor NPCs cower in place (don't path through walls).
-  // BUILD 443: slowed to 0.5x walk (was 1.5x) so the player can catch them.
+  // BUILD 704: fleeing NPCs now genuinely RUN (1.5x walk, run animation).
+  // BUILD 443 had slowed flee to 0.5x so the player could catch them; that
+  // tradeoff is obsolete now that the player can sprint (1.75x walk) — a
+  // sprinting player still catches a fleeing NPC. Flee lasts
+  // NPC_FLEE_DURATION_TICKS, which is the natural stamina bound: after that
+  // the NPC drops back to a walk.
   if (!npc.indoors && npc.fleeUntilTick !== undefined && npc.fleeFrom) {
     if (clock.tick < npc.fleeUntilTick) {
       const dx = npc.position.x - npc.fleeFrom.x;
       const dy = npc.position.y - npc.fleeFrom.y;
       const dist = Math.hypot(dx, dy) || 1;
-      const fleeStep = step * 0.5;
+      const fleeStep = step * 1.5;
       const nx = dx / dist, ny = dy / dist;
       const facing: TownsfolkFacing = Math.abs(nx) >= Math.abs(ny)
         ? (nx >= 0 ? 'right' : 'left')
@@ -1015,11 +1026,12 @@ function advanceOne(
         position: { x: npc.position.x + nx * fleeStep, y: npc.position.y + ny * fleeStep },
         facing,
         moving: true,
+        running: true,
         activity: 'Fleeing!',
       };
     }
-    // Flee expired: clear the state and resume schedule.
-    npc = { ...npc, fleeUntilTick: undefined, fleeFrom: undefined };
+    // Flee expired: clear the state and resume schedule (back to a walk).
+    npc = { ...npc, fleeUntilTick: undefined, fleeFrom: undefined, running: false };
   }
 
   const want = resolveTarget(npc, anchors, clock);

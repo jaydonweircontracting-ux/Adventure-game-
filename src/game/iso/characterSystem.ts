@@ -131,6 +131,12 @@ export interface AnimUpdate {
   y: number;
   /** Authoritative from the simulation: is the character moving? */
   moving: boolean;
+  /**
+   * Explicit run hint (BUILD 704). When set, it overrides the speed
+   * heuristic: true forces the run cycle, false forces walk. When omitted
+   * the animator falls back to measured speed (run above 6 units/sec).
+   */
+  running?: boolean;
   /** Authoritative from the simulation: which way is it facing? */
   facing: Face8;
   nowMs: number;
@@ -192,9 +198,22 @@ export class CharacterAnimator {
         }
       }
     } else if (u.moving) {
+      // BUILD 704: explicit run hint (player sprint, NPC flee) wins and
+      // allows walk<->run transitions with phase preservation (no leg pop).
+      // Without a hint, keep the original behavior: pick walk/run once on
+      // entry via the speed heuristic, then stick (stable for crowds).
       if (this.state !== 'walk' && this.state !== 'run') {
-        this.state = this.speed > 6 ? 'run' : 'walk';
+        const wantRun = u.running ?? this.speed > 6;
+        this.state = wantRun ? 'run' : 'walk';
         this.phase = 0;
+      } else if (u.running !== undefined) {
+        const wantState: CharAnimState = u.running ? 'run' : 'walk';
+        if (this.state !== wantState) {
+          const oldFrames = RPG_ANIM_FRAMES[CHAR_CLIPS[this.state].anim];
+          this.state = wantState;
+          const newFrames = RPG_ANIM_FRAMES[CHAR_CLIPS[this.state].anim];
+          this.phase = oldFrames > 0 ? (this.phase / oldFrames) * newFrames : 0;
+        }
       }
       const rate = walkFpsForSpeed(this.speed);
       const wframes = RPG_ANIM_FRAMES[CHAR_CLIPS[this.state].anim];

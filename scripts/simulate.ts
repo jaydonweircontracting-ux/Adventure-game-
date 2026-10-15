@@ -26,6 +26,8 @@ import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_
 import { landscapeSeed, moistureAt, forestDensityAt, rockDensityAt, macroLandformAt, regionForChunk, roadCorridorsFor, pointInCorridors, townInfluenceAt, landUseAt, landscapeSitesFor, checkFieldContinuity, riverChannelAt, riverAt, lakesForChunk, waterAt, bridgeAt } from '../src/game/landscape';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText, EDITOR_LOG_MAX } from '../src/game/worldEditor';
 import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE } from '../src/game/mapBuilder';
+// BUILD 704: stamina system for sprinting.
+import { createStamina, tickStamina, canRun, staminaFrac, STAMINA_MAX, STAMINA_DRAIN_RUN, STAMINA_REGEN_WALK, STAMINA_REGEN_IDLE, STAMINA_RUN_RELOCK } from '../src/game/stamina';
 import { organicTownSpecs } from '../src/game/organicTowns';
 import { mosslightSettlementDecor } from '../src/game/settlements';
 import { mosslightEngineProps } from '../src/game/mosslightLayout';
@@ -993,6 +995,12 @@ console.log('Testing townsfolk living-town simulation...');
   const done = advanceTownsfolk([stepped], anchors, fleeClock(1000 + NPC_FLEE_DURATION_TICKS + 1), navCtx)[0];
   assert(done.fleeUntilTick === undefined, 'Flee state not cleared after expiry');
   assert(done.activity !== 'Fleeing!', 'NPC still fleeing after expiry');
+  // BUILD 704: fleeing NPCs RUN (run animation + 1.5x speed); walk is default.
+  assert(stepped.running === true, 'Fleeing NPC should have running=true');
+  assert(done.running === false, 'NPC should drop back to walk after flee expires');
+  // Flee speed is 1.5x the normal step (0.22 base) — faster than walk.
+  const fleeDist = Math.hypot(stepped.position.x - 50, stepped.position.y - 50);
+  assert(fleeDist > 0.22, `Flee step should exceed walk step 0.22, got ${fleeDist}`);
   // Indoor NPCs do not flee (they're behind walls) — the flee branch is
   // skipped and they follow their normal indoor schedule instead.
   const indoorVictim = { ...victim, indoors: true, location: 'INTERIOR' as const, activity: 'At home' };
@@ -1002,6 +1010,42 @@ console.log('Testing townsfolk living-town simulation...');
   // Screams are deterministic per NPC.
   assert(screamFor(victim) === screamFor(victim), 'Scream not deterministic');
   assert(typeof screamFor(victim) === 'string' && screamFor(victim).length > 0, 'Scream empty');
+  // BUILD 704: stamina — drain while running, regen walking/idle, exhaustion
+  // hysteresis (no flicker at the boundary).
+  {
+    const full = createStamina();
+    assert(full.value === STAMINA_MAX && !full.exhausted, 'Stamina should start full');
+    assert(canRun(full), 'Should be able to run at full stamina');
+    // Drain: 1s of running removes STAMINA_DRAIN_RUN.
+    const drained = tickStamina(full, true, true, 1);
+    assert(Math.abs(drained.value - (STAMINA_MAX - STAMINA_DRAIN_RUN)) < 1e-9, 'Run drain rate wrong');
+    assert(canRun(drained), 'Should still run after 1s');
+    // Regen while walking is slower than idle.
+    const walkRegen = tickStamina(createStamina(50), false, true, 1);
+    const idleRegen = tickStamina(createStamina(50), false, false, 1);
+    assert(Math.abs(walkRegen.value - (50 + STAMINA_REGEN_WALK)) < 1e-9, 'Walk regen rate wrong');
+    assert(Math.abs(idleRegen.value - (50 + STAMINA_REGEN_IDLE)) < 1e-9, 'Idle regen rate wrong');
+    assert(idleRegen.value > walkRegen.value, 'Idle should regen faster than walking');
+    // Regen clamps at max.
+    const topped = tickStamina(createStamina(99), false, false, 10);
+    assert(topped.value === STAMINA_MAX, 'Stamina should clamp at max');
+    // Exhaustion: drain to zero locks running until relock threshold.
+    let s = createStamina();
+    s = tickStamina(s, true, true, STAMINA_MAX / STAMINA_DRAIN_RUN + 1);
+    assert(s.value === 0 && s.exhausted, 'Should be exhausted at zero stamina');
+    assert(!canRun(s), 'Exhausted runner must be forced to walk');
+    // Partial regen below the threshold does NOT unlock.
+    s = tickStamina(s, false, false, (STAMINA_RUN_RELOCK - 1) / STAMINA_REGEN_IDLE);
+    assert(s.exhausted && !canRun(s), 'Must not unlock before relock threshold');
+    // Regen past the threshold unlocks.
+    s = tickStamina(s, false, false, 10);
+    assert(!s.exhausted && canRun(s), 'Should unlock after relock threshold');
+    // Zero/negative dt is a no-op (identity preserved).
+    assert(tickStamina(full, true, true, 0) === full, 'Zero dt should be identity');
+    // Fraction helper.
+    assert(staminaFrac(createStamina()) === 1, 'Full stamina frac should be 1');
+    assert(staminaFrac(createStamina(50)) === 0.5, 'Half stamina frac should be 0.5');
+  }
   // BUILD 441: damage and death — NPCs have HP, die at 0, respawn later.
   const healthy = { ...victim, hp: undefined, deadUntilTick: undefined };
   assert(npcHp(healthy) === npcMaxHp(healthy), 'NPC should start at full HP');
@@ -3544,6 +3588,18 @@ console.log('Testing examine system...');
   anim.update({ x: 10.5, y: 20, moving: false, facing: 'right', nowMs: 2000 });
   assert(anim.state === 'idle', 'animator must idle when the sim reports stopped');
   assert(anim.facing === 'right', 'stopping must keep the last facing direction');
+  // BUILD 704: explicit run hint — forces run even at low measured speed,
+  // and walk<->run transitions preserve phase proportionally (no pop).
+  const sprinter = new cs.CharacterAnimator('sprinter');
+  sprinter.update({ x: 0, y: 0, moving: true, running: true, facing: 'down', nowMs: 3000 });
+  sprinter.update({ x: 0.1, y: 0, moving: true, running: true, facing: 'down', nowMs: 3016 });
+  assert(sprinter.state === 'run', 'explicit running=true must force the run cycle');
+  const runPhase = sprinter.phase;
+  sprinter.update({ x: 0.2, y: 0, moving: true, running: false, facing: 'down', nowMs: 3032 });
+  assert(sprinter.state === 'walk', 'explicit running=false must drop to walk');
+  // Phase preserved proportionally across the 10-frame run / 11-frame walk.
+  const expectedPhase = (runPhase / 10) * 11;
+  assert(Math.abs(sprinter.phase - expectedPhase) < 1.5, `walk/run transition should preserve phase (got ${sprinter.phase}, expected ~${expectedPhase})`);
   // Faster ground speed => faster phase advance (animation tied to movement).
   const slow = new cs.CharacterAnimator('slow'), fast = new cs.CharacterAnimator('fast');
   for (let i = 0; i < 10; i++) {

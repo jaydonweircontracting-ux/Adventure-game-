@@ -99,6 +99,9 @@ interface IsoInteriorViewProps {
   onStrikeRat?: (id: number) => void;
   // BUILD 569: sync iso player position to App for combat calculations
   onPlayerMove?: (tx: number, ty: number) => void;
+  // BUILD 704: player run state from App's stamina system. Running shortens
+  // the tile step (faster movement) and selects the run animation.
+  playerRunning?: boolean;
 }
 
 const ROOM_W = 12;
@@ -216,7 +219,7 @@ function faceForMove(ax: number, ay: number, bx: number, by: number, current: Fa
   return isoPlayerFaceForScreenDeltaSticky(bx - ax, by - ay, current);
 }
 
-export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair, debugFacing, groundItems, onPickupItem, rats, onStrikeRat, onPlayerMove }: IsoInteriorViewProps): React.JSX.Element {
+export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair, debugFacing, groundItems, onPickupItem, rats, onStrikeRat, onPlayerMove, playerRunning }: IsoInteriorViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // BUILD 565: expose tile->screen for test automation (localhost only)
   const toScreenRef = useRef<((tx: number, ty: number) => { x: number; y: number }) | null>(null);
@@ -240,6 +243,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
   playerMoveRef.current = onPlayerMove;
   const heldDirRef = useRef(getHeldDir);
   heldDirRef.current = getHeldDir;
+  // BUILD 704: run state ref so the frame loop sees fresh values.
+  const playerRunningRef = useRef(playerRunning);
+  playerRunningRef.current = playerRunning;
 
   useEffect(() => { preloadCharacterSprites(); preloadDungeonKit(); }, []);
 
@@ -368,6 +374,8 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     let raf = 0;
     let last = performance.now();
     const STEP_MS = 280;
+    // BUILD 704: running shortens the tile step (faster indoor movement).
+    const STEP_MS_RUN = 160;
 
     const drawFurniture = (g: CanvasRenderingContext2D, f: Furniture, nowMs: number, kit: boolean) => {
       const c = toScreen(f.tx + f.w / 2, f.ty + f.h / 2);
@@ -645,13 +653,14 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
 
     // Shared character renderer: one animator per character id (pruned per
     // frame); the draw is feet-anchored with speed-tied walk phase.
-    const drawCharacter = (g: CanvasRenderingContext2D, fx: number, fy: number, facing: Face8, moving: boolean, look: LookRef, nowMs: number, animKey: string) => {
+    // BUILD 704: explicit `running` overrides the animator's speed heuristic.
+    const drawCharacter = (g: CanvasRenderingContext2D, fx: number, fy: number, facing: Face8, moving: boolean, look: LookRef, nowMs: number, animKey: string, running?: boolean) => {
       const c = toScreen(fx, fy);
       const depth = depthKey(Math.round(fx), Math.round(fy));
       let anim = charAnims.get(animKey);
       if (!anim) { anim = new CharacterAnimator(animKey); charAnims.set(animKey, anim); }
       seenAnims.add(animKey);
-      anim.update({ x: fx, y: fy, moving, facing, nowMs });
+      anim.update({ x: fx, y: fy, moving, facing, nowMs, running });
       const draw = (g2: CanvasRenderingContext2D) => {
         drawIsoCharacter({
           g: g2, x: c.x, y: c.y, look, nowMs, animator: anim,
@@ -686,7 +695,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       // movement interpolation
       if (state.moving && state.path.length > 0) {
         const target = state.path[0];
-        const speed = dt / STEP_MS;
+        // BUILD 704: running = faster tile steps indoors.
+        const stepMs = playerRunningRef.current === true ? STEP_MS_RUN : STEP_MS;
+        const speed = dt / stepMs;
         const dx = target.tx - state.fx, dy = target.ty - state.fy;
         const dist = Math.hypot(dx, dy);
         if (dist <= speed) {
@@ -984,7 +995,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       // player
       // BUILD 422: debug direction test overrides facing + forces walk cycle.
       const dbgFace = debugFacing ?? null;
-      drawables.push(drawCharacter(g, state.fx, state.fy, dbgFace ?? state.facing, dbgFace ? true : state.moving, 0, nowMs, 'player'));
+      drawables.push(drawCharacter(g, state.fx, state.fy, dbgFace ?? state.facing, dbgFace ? true : state.moving, 0, nowMs, 'player', playerRunningRef.current === true));
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
 
       drawables.sort((a, b) => a.depth - b.depth);

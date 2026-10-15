@@ -142,6 +142,9 @@ interface IsoFieldViewProps {
   // BUILD 422: debug direction test — when set, the player shows this facing's
   // sprite sheet with the walk cycle playing, ignoring movement deltas.
   debugFacing?: Face8 | null;
+  // BUILD 704: explicit player run state (from the stamina system in App).
+  // When set, overrides the animator's speed heuristic for the player.
+  playerRunning?: boolean;
   // BUILD 459: collision box debug — red = current box, green = draggable proposed box
   collisionDebug?: boolean;
 }
@@ -261,11 +264,11 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
   return e.fill;
 }
 
-export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, onShopStall, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, onShopStall, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts });
-  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts };
+  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning });
+  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning };
   // BUILD 684: first-seen timestamps for floating combat text (float-up anim).
   const dmgSeenRef = useRef(new Map<number, number>());
   // BUILD 624: Preload all building/prop sprites on mount so there's no
@@ -403,12 +406,14 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
 
     // Shared character renderer: one animator per character id drives facing,
     // walk/idle state and speed-tied walk phase; the draw is feet-anchored.
-    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, size?: number) => {
+    // BUILD 704: explicit `running` overrides the animator's speed heuristic
+    // (NPC fleeing, player sprinting). Undefined = heuristic as before.
+    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, size?: number, running?: boolean) => {
       const c = isoToScreen(tx, ty);
       let anim = charAnims.get(animKey);
       if (!anim) { anim = new CharacterAnimator(animKey); charAnims.set(animKey, anim); }
       seenAnims.add(animKey);
-      anim.update({ x: tx, y: ty, moving, facing, nowMs: now });
+      anim.update({ x: tx, y: ty, moving, facing, nowMs: now, running });
       d.push({
         depth: tx + ty + 0.01, draw: (g2) => {
           drawIsoCharacter({
@@ -1222,7 +1227,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         if (nc.x < cam.x - npcVhw - 50 || nc.x > cam.x + npcVhw + 50 || nc.y < cam.y - npcVhh - 100 || nc.y > cam.y + npcVhh + 64) continue;
         drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id,
           // BUILD 699: children are smaller (70% scale).
-          npc.archetype === 'child' ? 36 : undefined);
+          // BUILD 704: fleeing NPCs run (explicit), everyone else walks.
+          npc.archetype === 'child' ? 36 : undefined, npc.running === true);
       }
       // BUILD 451: goats in the iso view — simple canvas goat (body, head,
       // BUILD 457: deer (stag sprite) replaces the canvas goat. Uses the
@@ -1378,7 +1384,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // on top. When the player is behind a house (smaller x+y than the
       // house's front corner), the house draws over them; when in front,
       // the player draws over the house.
-      drawPerson(drawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs, 'player');
+      drawPerson(drawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs, 'player',
+        undefined, live.playerRunning === true);
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
 
       drawables.sort((a, b) => a.depth - b.depth);
