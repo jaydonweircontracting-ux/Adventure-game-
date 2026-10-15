@@ -146,7 +146,13 @@ interface IsoFieldViewProps {
   goats?: Array<{ id: number; kind: string; position: Point; facing: string; disposition: string }>; // BUILD 458: critter kinds
   onExit: () => void; // back to the 2D field
   onTapMove?: (point: Point) => void; // BUILD 366: tap-to-move target
-  onTalkTo?: (npc: Townsperson) => void; // BUILD 366: tap an NPC to talk
+  onTalkTo?: (npc: Townsperson) => void;
+  // BUILD 719: target selection is separate from interaction. Talking is only
+  // triggered by the visible chat affordance once the selected NPC is in range.
+  selectedNpcId?: string | null;
+  onSelectNpc?: (npc: Townsperson | null) => void;
+  selectedGoatId?: number | null;
+  onSelectGoat?: (goat: { id: number; kind: string; position: Point; facing: string; disposition: string } | null) => void;
   // BUILD 697: tap a market stall to open its shop UI (stall index into
   // marketStallsFromDecor(decor.props) — stable decor order, never hardcoded).
   onShopStall?: (stallIndex: number) => void;
@@ -329,8 +335,8 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
 export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, onShopStall, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning });
-  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning };
+  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, selectedNpcId, selectedGoatId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning });
+  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, selectedNpcId, selectedGoatId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -386,8 +392,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   const [selectedCritterId, setSelectedCritterId] = useState<number | null>(null);
   const greenBoxRef = useRef({ dx: 0, dy: 0, hw: 0.35, hh: 0.4 }); // offset and size in world units
   // tap callbacks via ref so the canvas listener always calls the latest
-  const tapRef = useRef({ onTapMove, onTalkTo, onPickupDrop, onShopStall });
-  tapRef.current = { onTapMove, onTalkTo, onPickupDrop, onShopStall };
+  const tapRef = useRef({ onTapMove, onTalkTo, onSelectNpc, onSelectGoat, onPickupDrop, onShopStall });
+  tapRef.current = { onTapMove, onTalkTo, onSelectNpc, onSelectGoat, onPickupDrop, onShopStall };
 
   const R = ISO_CHUNK_RENDER_RADIUS;
   const GRID = 2 * R + 1;
