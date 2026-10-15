@@ -16,7 +16,7 @@ import type { Face4, Face8 } from './isoSprites';
 
 export type BarbarianOutfit = 'bare' | 'blue';
 export type BarbarianWeapon = 'none' | 'sword' | 'bow';
-export type BarbarianView = 'down' | 'side' | 'up' | 'upright' | 'upleft' | 'downright' | 'downleft';
+export type BarbarianView = 'down' | 'side' | 'left' | 'right' | 'up' | 'upright' | 'upleft' | 'downright' | 'downleft';
 export type BarbarianAnim = 'idle' | 'walk' | 'attack';
 
 /** Milliseconds an attack swing takes to play once. */
