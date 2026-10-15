@@ -346,6 +346,14 @@ function drawVectorPlaceholder(
   g.restore();
 }
 
+// Per-animator last-good frame prevents visible placeholder flicker when
+// asynchronous PNG loads lag behind the animation clock.
+const lastCharacterSprite = new WeakMap<CharacterAnimator, {
+  key: string;
+  image: HTMLImageElement;
+  frame: number;
+}>();
+
 /**
  * Draw one character. Feet-anchored: the frame's content ground point
  * (per-frame anchor from rpgAnchorFor) lands on (x, y); the root never
@@ -373,7 +381,28 @@ export function drawIsoCharacter(o: DrawCharacterOptions): void {
   // the feet stay planted even though the artist shifted the body inside
   // the canvas between frames. Equipment layers use the same origin so
   // they stay aligned with the base.
-  const anchor = rpgAnchorFor(base, anim, face, frame);
+  // Keep the last valid frame visible while the next frame loads or if an
+  // individual PNG is missing. Without this, the renderer alternates between
+  // the real animated model and the flat vector placeholder every few frames.
+  const spriteKey = `${base}:${anim}:${face}`;
+  let spriteFrame = frame;
+  let im = rpgSprite(base, anim, face, spriteFrame);
+  if (!im) {
+    const cached = lastCharacterSprite.get(o.animator);
+    if (cached?.key === spriteKey) {
+      im = cached.image;
+      spriteFrame = cached.frame;
+    } else {
+      // Prefer a stable frame from the same animation/direction over a
+      // different-looking placeholder while the requested frame is loading.
+      im = rpgSprite(base, anim, face, 0);
+      if (im) spriteFrame = 0;
+    }
+  } else {
+    lastCharacterSprite.set(o.animator, { key: spriteKey, image: im, frame: spriteFrame });
+  }
+
+  const anchor = rpgAnchorFor(base, anim, face, spriteFrame);
   const scale = size / RPG_H;
   const dw = RPG_W * scale;
   const dh = size;
@@ -381,13 +410,12 @@ export function drawIsoCharacter(o: DrawCharacterOptions): void {
   const dy = o.y - anchor.cb * scale - lift;
 
   let drew = false;
-  const im = rpgSprite(base, anim, face, frame);
   if (im) {
     g.drawImage(im, dx, dy, dw, dh);
     drew = true;
     // Equipment layers (future customization; currently empty by default).
     for (const eq of L.equipment) {
-      const eim = rpgSprite(eq, anim, face, frame);
+      const eim = rpgSprite(eq, anim, face, spriteFrame);
       if (eim) g.drawImage(eim, dx, dy, dw, dh);
     }
   }
