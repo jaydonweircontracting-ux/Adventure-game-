@@ -150,6 +150,8 @@ function isoMonsterDef(kind: string): MonsterSpriteDef | undefined {
 }
 
 interface IsoFieldViewProps {
+  // BUILD 722: render lightweight ambient speech above visible NPCs when enabled.
+  npcSpeechEnabled?: boolean;
   chunk: Point;
   position: Point; // player, field units (0..FIELD_SIZE)
   townsfolk: Townsperson[];
@@ -355,11 +357,11 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
   return e.fill;
 }
 
-export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning, playerLook });
-  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning, playerLook };
+  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning, playerLook, npcSpeechEnabled });
+  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning, playerLook, npcSpeechEnabled };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -1551,6 +1553,38 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           // BUILD 699: children are smaller (70% scale).
           // BUILD 704: fleeing NPCs run (explicit), everyone else walks.
           npc.archetype === 'child' ? 36 : undefined, npc.running === true);
+
+        // BUILD 722: optional, unobtrusive ambient chatter above each visible NPC.
+        if (live.npcSpeechEnabled) {
+          const chatter = ['Lovely day!', 'Any news?', 'Fair prices!', 'Stay safe.', 'Busy today…', 'Heard the rumors?', 'Need supplies?', 'Good morning!', 'Fine weather.', 'Safe travels!'];
+          let speechSeed = 0;
+          for (let si = 0; si < npc.id.length; si++) speechSeed = (speechSeed * 31 + npc.id.charCodeAt(si)) >>> 0;
+          const line = chatter[Math.floor(nowMs / 4600 + speechSeed) % chatter.length];
+          drawables.push({
+            depth: ix + iy + 0.04,
+            draw: (g2) => {
+              g2.save();
+              g2.font = '10px sans-serif';
+              const textWidth = g2.measureText(line).width;
+              const bw = Math.max(46, textWidth + 14);
+              const bx = nc.x, by = nc.y - (npc.archetype === 'child' ? 57 : 65);
+              g2.fillStyle = 'rgba(255, 250, 231, 0.96)';
+              g2.strokeStyle = 'rgba(82, 66, 45, 0.92)';
+              g2.lineWidth = 1;
+              g2.beginPath();
+              g2.roundRect(bx - bw / 2, by - 10, bw, 20, 6);
+              g2.fill(); g2.stroke();
+              g2.beginPath();
+              g2.moveTo(bx - 4, by + 9); g2.lineTo(bx, by + 14); g2.lineTo(bx + 4, by + 9);
+              g2.closePath(); g2.fill(); g2.stroke();
+              g2.fillStyle = '#40372b';
+              g2.textAlign = 'center';
+              g2.textBaseline = 'middle';
+              g2.fillText(line, bx, by);
+              g2.restore();
+            },
+          });
+        }
       }
       // BUILD 451: goats in the iso view — simple canvas goat (body, head,
       // BUILD 457: deer (stag sprite) replaces the canvas goat. Uses the
