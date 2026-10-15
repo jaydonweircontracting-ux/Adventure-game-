@@ -129,6 +129,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '709': 'Movement: smooth isometric player interpolation, stable walk animation, and reduced facing jitter',
   '708': 'Performance: reduce unnecessary React rerenders from attack cooldown updates and isometric movement state publication',
   '701': 'Zoom-out perf + sprite stability + grass LOD: chunk-LOD ground path memoized (3-10x faster, pixel-identical), critter double-zoom-scale fixed (36*zm in world units under zm canvas scale = zm^2 on screen), culling margins hardened, grass LOD hash-noise replaced with smooth 3-octave value noise',
   '700': 'NPC shop transactions: townsfolk now complete real purchases at market stalls through the shared shop ledger — gold moves from NPC purse to merchant, stock decrements for everyone (player sees NPC-bought items gone), merchants keep earned gold across restocks; role-appropriate buying (guards buy potions, farmers buy food), ~35% chance per market visit, one decision per visit, all persisted in saves',
