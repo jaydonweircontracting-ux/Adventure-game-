@@ -62,6 +62,19 @@ const dirtPathCache = new Map<string, DirtPathCacheEntry>();
 // These were being rebuilt/reselected inside the 60 Hz draw loop.
 const settlementDecorCache = new Map<string, ReturnType<typeof settlementDecorFor>>();
 const buildingKindCache = new WeakMap<object, string>();
+const ambientCritterCache = new Map<string, AmbientCritter[]>();
+function cachedCrittersForChunk(
+  cx: number, cy: number, fieldSize: number,
+  isLand: (lx: number, ly: number) => boolean,
+): AmbientCritter[] {
+  const key = `${cx},${cy},${fieldSize}`;
+  const cached = ambientCritterCache.get(key);
+  if (cached) return cached;
+  const critters = crittersForChunk(cx, cy, fieldSize, isLand);
+  ambientCritterCache.set(key, critters);
+  if (ambientCritterCache.size > 32) ambientCritterCache.delete(ambientCritterCache.keys().next().value!);
+  return critters;
+}
 function cachedSettlementDecorFor(chunk: { x: number; y: number }): ReturnType<typeof settlementDecorFor> {
   const key = `${chunk.x},${chunk.y}`;
   const cached = settlementDecorCache.get(key);
@@ -1354,7 +1367,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           const wq = waterGridAt(homeScene.water, chunk.x * FIELD_SIZE + lx + 0.5, chunk.y * FIELD_SIZE + ly + 0.5);
           return wq.depth <= 0.25;
         };
-        for (const c of crittersForChunk(chunk.x, chunk.y, N, isLand)) {
+        for (const c of cachedCrittersForChunk(chunk.x, chunk.y, N, isLand)) {
           const pose = critterPose(c, nowMs);
           // BUILD 712: avoid pose and draw-queue work for unseen wildlife.
           if (!anchorVisible(isoToScreen(pose.x, pose.y), 48, 60, 24)) continue;
