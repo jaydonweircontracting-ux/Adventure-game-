@@ -37,16 +37,14 @@ function Preview({ look }: { look: RpgLook }) {
     if (!canvas || !g) return;
     const animator = new CharacterAnimator('character-creator-preview');
     let raf = 0;
-    let start = 0;
     const frame = (now: number) => {
-      if (!start) start = now;
       canvas.width = Math.max(1, Math.floor(canvas.clientWidth * Math.min(2, window.devicePixelRatio || 1)));
       canvas.height = Math.max(1, Math.floor(canvas.clientHeight * Math.min(2, window.devicePixelRatio || 1)));
       g.setTransform(canvas.width / 220, 0, 0, canvas.height / 200, 0, 0);
       g.clearRect(0, 0, 220, 200);
       animator.update({ x: 0, y: 0, moving: false, facing: 'down', nowMs: now });
       drawIsoCharacter({ g, x: 110, y: 176, look, nowMs: now, animator, size: 154, shadow: true });
-      if (now - start < 1200) raf = requestAnimationFrame(frame);
+      raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
