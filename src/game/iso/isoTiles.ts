@@ -253,6 +253,8 @@ let pendingImages = 0;
 
 function loadImg(url: string, onDone: () => void): HTMLImageElement {
   const im = new Image();
+  // Decode large batches of pixel-art assets off the critical rendering path.
+  im.decoding = 'async';
   let settled = false;
   const done = () => {
     if (settled) return;
