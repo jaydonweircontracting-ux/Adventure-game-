@@ -69,3 +69,22 @@ The existing paths remain valid during migration: extract a module, then re-expo
 - Off-screen props, trees, ores, and wildlife remain culled before they enter the depth-sort queue.
 
 These are targeted hot-path improvements, not a claim that all lag is solved. The next major step is profiling and caching static terrain/render layers while keeping dynamic entities and gameplay logic separate.
+
+
+## BUILD 716 implementation progress
+
+- `src/game/iso/boundedCache.ts` now owns the bounded insertion-order cache policy used by the isometric renderer. It is independent of React and world-generation imports.
+- `src/game/iso/frameMetrics.ts` provides a fixed-size rolling frame-time window (average, p95, and estimated FPS).
+- The isometric renderer can display live measurements when opened with `?perf=1`. The overlay is opt-in; normal gameplay does not allocate metric snapshots or draw the overlay.
+- The renderer uses the shared bounded-cache helper for deterministic settlement decor and ambient wildlife. Cache capacity remains 32 entries and eviction remains oldest-inserted-first.
+- No existing source, asset, backup, save, or test files were removed.
+
+## Safe migration sequence (active)
+
+1. Extract renderer utilities behind small, dependency-light modules while keeping visible behavior unchanged.
+2. Add repeatable measurements before changing rendering architecture.
+3. Move the terrain draw pass behind a dedicated renderer boundary. Only then add a viewport-sized terrain surface cache with explicit invalidation for zoom, chunk/scene, tile-asset readiness, and terrain mode. Do not allocate one enormous full-chunk bitmap; the world chunks are too large for that to be safe on mobile.
+4. Split `App.tsx` by domain. Move a complete dependency cluster at a time, and preserve the old exports as compatibility re-exports until all imports and tests are migrated.
+5. Validate direction mapping, world-generation determinism, collision, save migration, simulation suites, type checking, and the production build after each stage.
+
+The current changes are an instrumented refactor stage, not a claim that the entire engine has already been decomposed or that frame rate has been proven faster. Record before/after measurements in `docs/PERFORMANCE_BASELINE.md` on the same device, zoom, and scene.
