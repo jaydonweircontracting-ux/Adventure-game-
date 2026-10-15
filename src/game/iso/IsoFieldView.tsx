@@ -1319,9 +1319,14 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           // BUILD 707: teleport guard — a jump > 5 units is a respawn/teleport,
           // not a walk step; snap instead of sliding across the map.
           const jumped = prev && Math.hypot(npc.position.x - prev.cx, npc.position.y - prev.cy) > 5;
+          // Critical interpolation fix: on the sample-change frame, render from
+          // the previous sample (t=0), not at the new target. The old branch
+          // left ix/iy at the raw target for one frame, then moved backwards to
+          // the previous sample on the next frame — visible NPC footstep jitter.
+          ix = prev && !jumped ? prev.cx : npc.position.x;
+          iy = prev && !jumped ? prev.cy : npc.position.y;
           npcInterp.set(npc.id, {
-            px: prev && !jumped ? prev.cx : npc.position.x,
-            py: prev && !jumped ? prev.cy : npc.position.y,
+            px: ix, py: iy,
             cx: npc.position.x, cy: npc.position.y, t: nowMs,
           });
         } else {
