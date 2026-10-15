@@ -45,6 +45,7 @@ import { mosslightFillerLots, fillerVariantForLot } from '../mosslightLayout';
 // kind->path maps duplicated in this file). Anchor/scale conventions documented
 // in src/game/buildingRig.ts.
 import { BUILDING_ASSET_META } from '../buildingRig';
+import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, type MonsterAnim, type MonsterSpriteDef } from '../monsterSprites';
 // BUILD 369 (Phase 2b): authoritative water/bridges in the iso field.
 import { waterGridForChunk, waterDepthAt, waterGridAt, type WaterGrid } from '../landscape';
 // BUILD 376: multi-chunk rendering so generated terrain fills the whole
@@ -139,11 +140,23 @@ function farmFenceSprite(): HTMLCanvasElement {
   return c;
 }
 
+type IsoMonster = { id: number; kind: string; position: Point; facing: string; disposition: string; hp: number; maxHp: number; variant?: string; moving?: boolean; attacking?: boolean; hitFlash?: boolean };
+const isoMonsterDefCache = new Map<string, MonsterSpriteDef | undefined>();
+function isoMonsterDef(kind: string): MonsterSpriteDef | undefined {
+  if (isoMonsterDefCache.has(kind)) return isoMonsterDefCache.get(kind);
+  const def = spriteDefFor(kind);
+  isoMonsterDefCache.set(kind, def);
+  return def;
+}
+
 interface IsoFieldViewProps {
   chunk: Point;
   position: Point; // player, field units (0..FIELD_SIZE)
   townsfolk: Townsperson[];
   goats?: Array<{ id: number; kind: string; position: Point; facing: string; disposition: string }>; // BUILD 458: critter kinds
+  monsters?: IsoMonster[];
+  selectedMonsterId?: number | null;
+  onSelectMonster?: (monster: IsoMonster | null) => void;
   onExit: () => void; // back to the 2D field
   onTapMove?: (point: Point) => void; // BUILD 366: tap-to-move target
   onTalkTo?: (npc: Townsperson) => void;
@@ -342,11 +355,11 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
   return e.fill;
 }
 
-export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, onShopStall, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, selectedNpcId, selectedGoatId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning, playerLook });
-  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, selectedNpcId, selectedGoatId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning, playerLook };
+  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning, playerLook });
+  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning, playerLook };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -402,8 +415,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   const [selectedCritterId, setSelectedCritterId] = useState<number | null>(null);
   const greenBoxRef = useRef({ dx: 0, dy: 0, hw: 0.35, hh: 0.4 }); // offset and size in world units
   // tap callbacks via ref so the canvas listener always calls the latest
-  const tapRef = useRef({ onTapMove, onTalkTo, onSelectNpc, onSelectGoat, onPickupDrop, onShopStall });
-  tapRef.current = { onTapMove, onTalkTo, onSelectNpc, onSelectGoat, onPickupDrop, onShopStall };
+  const tapRef = useRef({ onTapMove, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onShopStall });
+  tapRef.current = { onTapMove, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onShopStall };
 
   const R = ISO_CHUNK_RENDER_RADIUS;
   const GRID = 2 * R + 1;
@@ -1642,6 +1655,43 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           });
         }
       }
+      // BUILD 720: full monster sheets are rendered in the iso scene and share the same target lock as combat.
+      const liveMonsters = live.monsters || [];
+      const monsterImgs = (window as unknown as { __isoMonsterImgs?: Record<string, HTMLImageElement> }).__isoMonsterImgs || {};
+      for (const monster of liveMonsters) {
+        const def = isoMonsterDef(monster.kind);
+        if (!def) continue;
+        let img = monsterImgs[def.spriteSheet];
+        if (!img) { img = new Image(); img.src = artUrl(def.spriteSheet); monsterImgs[def.spriteSheet] = img; }
+        if (!img.complete || img.naturalWidth === 0) continue;
+        const mx = monster.position.x, my = monster.position.y;
+        const c = isoToScreen(mx, my);
+        const vhw = (wpx / 2) / zm, vhh = (hpx / 2) / zm;
+        if (c.x < cam.x - vhw - 48 || c.x > cam.x + vhw + 48 || c.y < cam.y - vhh - 80 || c.y > cam.y + vhh + 36) continue;
+        const anim: MonsterAnim = animForMonsterState({ dead: monster.disposition === 'defeated', hitFlash: !!monster.hitFlash, attacking: !!monster.attacking, moving: !!monster.moving });
+        const animDef = def.animations[anim];
+        const col = monsterAnimFrameFor(def, anim, nowMs, monster.id);
+        const row = animDef.row === 'facing' ? (def.facingRows[monster.facing] ?? def.facingRows.down) : animDef.row;
+        const size = def.displaySize * (def.variants[monster.variant || 'default']?.scale ?? 1);
+        const left = c.x - size * def.anchor.x, top = c.y - size * def.anchor.y;
+        const isSelected = live.selectedMonsterId === monster.id;
+        if (isSelected) {
+          drawables.push({ depth: mx + my - 0.03, draw: (g) => { g.save(); g.strokeStyle = '#ffd34d'; g.fillStyle = 'rgba(255, 197, 45, 0.16)'; g.lineWidth = 2.5; g.beginPath(); g.ellipse(c.x, c.y - 2, 22, 8, 0, 0, Math.PI * 2); g.fill(); g.stroke(); g.restore(); } });
+        }
+        drawables.push({ depth: mx + my, draw: (g) => {
+          g.save();
+          const variantFilter = def.variants[monster.variant || 'default']?.filter;
+          if (variantFilter) g.filter = variantFilter;
+          g.globalAlpha = monster.disposition === 'defeated' ? 0.55 : 1;
+          g.fillStyle = `rgba(0,0,0,${def.shadow.alpha})`; g.beginPath(); g.ellipse(c.x + def.shadow.dx, c.y + def.shadow.dy, size * 0.28, size * 0.09, 0, 0, Math.PI * 2); g.fill();
+          g.drawImage(img, col * def.cell, row * def.cell, def.cell, def.cell, left, top, size, size);
+          g.filter = 'none'; g.globalAlpha = 1;
+          if (monster.hp < monster.maxHp && monster.disposition !== 'defeated') {
+            const bw = 26, bh = 3; g.fillStyle = 'rgba(20,10,10,0.8)'; g.fillRect(c.x - bw / 2, top - 5, bw, bh); g.fillStyle = '#e34b4b'; g.fillRect(c.x - bw / 2, top - 5, bw * Math.max(0, monster.hp / Math.max(1, monster.maxHp)), bh);
+          }
+          g.restore();
+        } });
+      }
       // BUILD 459: collision box debug — red rectangles show current boxes
       if (collisionDebug && liveGoats) {
         const boxSizes: Record<string, { hw: number; hh: number }> = {
@@ -1848,9 +1898,25 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         selectGoat(liveRef.current.selectedGoatId === bestEnemy.id ? null : bestEnemy);
         return;
       }
+      // Hostile monster sheets share the same tap-to-target and clear-on-repeat behavior.
+      const { onSelectMonster: selectMonster } = tapRef.current;
+      let bestMonster: IsoMonster | null = null; let bestMonsterD = 38;
+      for (const monster of liveRef.current.monsters || []) {
+        if (monster.disposition === 'defeated' || monster.hp <= 0) continue;
+        const w = isoToScreen(monster.position.x, monster.position.y);
+        const px = (w.x - cam.x) * zm + wpx / 2;
+        const py = (w.y - cam.y) * zm + hpx / 2 - 18;
+        const d = Math.hypot(px - sx, py - sy);
+        if (d < bestMonsterD) { bestMonsterD = d; bestMonster = monster; }
+      }
+      if (bestMonster && selectMonster) {
+        selectMonster(liveRef.current.selectedMonsterId === bestMonster.id ? null : bestMonster);
+        return;
+      }
       // Empty-field taps release entity lock before movement or world interactions.
       tapRef.current.onSelectNpc?.(null);
       tapRef.current.onSelectGoat?.(null);
+      tapRef.current.onSelectMonster?.(null);
       // BUILD 721: stall hit test — only taps directly on the stall open its shop.
       // Keep the touch target tight so nearby paths, props, and open ground
       // remain normal movement targets. NPC hit-testing still takes priority.
