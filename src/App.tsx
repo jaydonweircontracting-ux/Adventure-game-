@@ -11808,6 +11808,9 @@ function Home() {
     setCharacterChoices(null);
     setPlayerSpriteUrl(null);
     setPlayerAttackSpriteUrl(null);
+    // New-model characters must render through the isometric RPG renderer, never the legacy 2D sprite sheet.
+    setIsoFieldBeta(true);
+    try { localStorage.setItem('ag-view-mode', '2.5d'); } catch { /* renderer state still updates */ }
     try { localStorage.setItem('ag-rpg-character-look-v1', JSON.stringify(look)); } catch { /* session remains valid */ }
     setCreatingCharacter(false);
     startNewGame();
