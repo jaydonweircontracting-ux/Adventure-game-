@@ -401,7 +401,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     preloadCritters(); // BUILD 389: ambient critters
     const canvas = canvasRef.current!;
     const wrap = wrapRef.current!;
-    const g = canvas.getContext('2d')!;
+    // BUILD 710: favor low-latency opaque canvas composition on mobile GPUs.
+    const g = canvas.getContext('2d', { alpha: false, desynchronized: true })!;
     const N = FIELD_SIZE;
     // BUILD 376: map bounds in world px (tile space == field units, 1:1)
     // covering the whole rendered chunk grid, so the camera never reveals
@@ -452,7 +453,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
 
     const resize = () => {
       const r = wrap.getBoundingClientRect();
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      // Cap backing-store resolution to avoid 4x pixel fill on high-DPR phones.
+      const dpr = Math.min(1.5, window.devicePixelRatio || 1);
       canvas.width = Math.max(1, Math.round(r.width * dpr));
       canvas.height = Math.max(1, Math.round(r.height * dpr));
     };
@@ -496,7 +498,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       const dt = Math.min(100, nowMs - last); last = nowMs;
       const zm = zoomRef.current;
       const wpx = canvas.clientWidth || 1, hpx = canvas.clientHeight || 1;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      // Keep draw resolution aligned with the capped canvas backing store.
+      const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+      // BUILD 710: don't burn CPU/GPU redrawing a hidden game tab.
+      if (document.hidden) { last = nowMs; return; }
       // Perf-debug hook (?nodirt=1): skip textured dirt paths for A/B timing.
       const skipDirt = (frame as unknown as { __skipDirt?: boolean }).__skipDirt
         ?? ((frame as unknown as { __skipDirt?: boolean }).__skipDirt =
