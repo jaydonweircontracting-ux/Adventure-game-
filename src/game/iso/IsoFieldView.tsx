@@ -187,9 +187,47 @@ function lodDesertRgb(): [number, number, number] {
   if (!LOD_DESERT_RGB_LAZY.v) LOD_DESERT_RGB_LAZY.v = lodHexRgb(fieldPalettes.desert.field);
   return LOD_DESERT_RGB_LAZY.v;
 }
+// BUILD 707: static critter source entries (was rebuilt per frame).
+const CRITTER_SRC_ENTRIES: Array<[string, string]> = [
+  ['deer', 'critters/stag/critter_stag_SE_idle.png'],
+  ['boar', 'critters/boar/boar_SE_idle_strip.png'],
+  ['badger', 'critters/badger/critter_badger_SE_idle.png'],
+  ['direwolf', 'critters/wolf/wolf-idle.png'],
+  // BUILD 575: goat uses deer sprite as placeholder (similar quadruped)
+  ['goat', 'critters/stag/critter_stag_SE_idle.png'],
+];
+
+// BUILD 707: static building source entries (was rebuilt per frame).
+const BLD_SRC_ENTRIES: Array<[string, string]> = Object.entries(BUILDING_ASSET_META).map(
+  ([variant, meta]) => [variant, meta.file] as [string, string],
+);
+
 const LOD_FARM_RGB: Array<[number, number, number]> = FARM_BASE_COLORS.map(
   (fc) => [parseInt(fc.slice(1, 3), 16), parseInt(fc.slice(3, 5), 16), parseInt(fc.slice(5, 7), 16)] as [number, number, number],
 );
+
+// BUILD 707: shade palettes hoisted from the per-frame loop (were rebuilt
+// every frame — static data). Same TDZ constraint as lodDesertRgb above:
+// fieldPalettes comes from App.tsx's circular import, so defer to first use.
+let SAND_SHADES_LAZY: string[] | null = null;
+let FARM_SHADES_LAZY: string[][] | null = null;
+function getSandShades(): string[] {
+  if (!SAND_SHADES_LAZY) {
+    SAND_SHADES_LAZY = [];
+    for (let i = 0; i < 8; i++) SAND_SHADES_LAZY.push(shadeOf(fieldPalettes.desert.field, 0.98 + (i / 7) * 0.04));
+  }
+  return SAND_SHADES_LAZY;
+}
+function getFarmShades(): string[][] {
+  if (!FARM_SHADES_LAZY) {
+    FARM_SHADES_LAZY = FARM_BASE_COLORS.map((hex) => {
+      const arr: string[] = [];
+      for (let i = 0; i < 4; i++) arr.push(shadeOf(hex, 0.95 + (i / 3) * 0.10));
+      return arr;
+    });
+  }
+  return FARM_SHADES_LAZY;
+}
 
 // BUILD 701: memoized final fill strings for chunk-LOD subtiles. The
 // classification (lodGroundClassAt) is already cached, but the per-frame
@@ -378,6 +416,14 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     // render loop; pruned each frame so removed NPCs don't leak).
     const charAnims = new Map<string, CharacterAnimator>();
     const seenAnims = new Set<string>(); // reset each frame; prunes charAnims
+    // BUILD 707: NPC render-position interpolation. The AI ticks at 8Hz
+    // (120ms) but the canvas renders at 60fps — drawing NPCs at their raw
+    // sim position made them move in visible steps ("glitchy walking" near
+    // the village where all 40 NPCs are). We track each NPC's previous and
+    // current sim position plus the tick timestamp, and lerp between them
+    // per frame. The animator also receives the interpolated position, so
+    // its speed measurement stays smooth instead of spiky.
+    const npcInterp = new Map<string, { px: number; py: number; cx: number; cy: number; t: number }>();
     // BUILD 390: track the player's attack sequence -> swing start time so the
     // barbarian attack clip plays once per swing.
     let lastAttackSeq = -1;
@@ -442,15 +488,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           new URLSearchParams(location.search).get('nofarm') === '1');
       // BUILD 698: precomputed shade palettes — seeded per-tile brightness
       // variation for sand (±2%, subtle like the reference) and farmland
-      // plots (±5%). Built once per frame so the per-tile ground loop does
-      // zero allocation.
-      const sandShades: string[] = [];
-      for (let i = 0; i < 8; i++) sandShades.push(shadeOf(fieldPalettes.desert.field, 0.98 + (i / 7) * 0.04));
-      const farmShades: string[][] = FARM_BASE_COLORS.map((hex) => {
-        const arr: string[] = [];
-        for (let i = 0; i < 4; i++) arr.push(shadeOf(hex, 0.95 + (i / 3) * 0.10));
-        return arr;
-      });
+      // plots (±5%). BUILD 707: hoisted to lazy module scope (was rebuilt
+      // every frame — static data, zero reason for per-frame allocation).
+      const sandShades = getSandShades();
+      const farmShades = getFarmShades();
       // BUILD 698: farmstead building sites (farmhouse/barn) spotted in the
       // ground pass; drawn as depth-sorted drawables after the building pass.
       const farmsteadQueue: Array<{ x: number; y: number; barn: boolean }> = [];
@@ -774,10 +815,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // BUILD 601: Building sprites — Exiled Kingdoms style.
       // Cache building images on window.
       // BUILD 684: paths from the single asset catalog (no duplicated map).
+      // BUILD 707: bldSrc hoisted to module scope (was rebuilt from
+      // BUILDING_ASSET_META every frame — static data).
       const bldImgs = (window as unknown as { __bldImgs?: Record<string, HTMLImageElement> }).__bldImgs || {};
-      const bldSrc: Record<string, string> = {};
-      for (const [variant, meta] of Object.entries(BUILDING_ASSET_META)) bldSrc[variant] = meta.file;
-      for (const [kind, src] of Object.entries(bldSrc)) {
+      for (const [kind, src] of BLD_SRC_ENTRIES) {
         if (!bldImgs[kind]) {
           const img = new Image();
           img.src = artUrl(src);
@@ -1219,13 +1260,32 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       seenAnims.clear();
       // BUILD 597: Viewport culling for NPCs — only draw when in sight.
       const npcVhw = (wpx / 2) / zm, npcVhh = (hpx / 2) / zm;
+      // BUILD 707: interpolate NPC sim positions (8Hz AI) to render rate.
+      const NPC_TICK_MS = 120;
       for (const npc of live.folk) {
-        const nc = isoToScreen(npc.position.x, npc.position.y);
+        // Track prev/current sim position per NPC; lerp by time since tick.
+        let ix = npc.position.x, iy = npc.position.y;
+        const prev = npcInterp.get(npc.id);
+        if (!prev || prev.cx !== npc.position.x || prev.cy !== npc.position.y) {
+          // BUILD 707: teleport guard — a jump > 5 units is a respawn/teleport,
+          // not a walk step; snap instead of sliding across the map.
+          const jumped = prev && Math.hypot(npc.position.x - prev.cx, npc.position.y - prev.cy) > 5;
+          npcInterp.set(npc.id, {
+            px: prev && !jumped ? prev.cx : npc.position.x,
+            py: prev && !jumped ? prev.cy : npc.position.y,
+            cx: npc.position.x, cy: npc.position.y, t: nowMs,
+          });
+        } else {
+          const k = Math.min(1, (nowMs - prev.t) / NPC_TICK_MS);
+          ix = prev.px + (prev.cx - prev.px) * k;
+          iy = prev.py + (prev.cy - prev.py) * k;
+        }
+        const nc = isoToScreen(ix, iy);
         // BUILD 701: bottom margin 64 covers the full character sprite above
         // the feet anchor (52 * 62/64 ~= 50.4 world units); the old 50 let
         // NPCs pop out while their head was still visible at the edge.
         if (nc.x < cam.x - npcVhw - 50 || nc.x > cam.x + npcVhw + 50 || nc.y < cam.y - npcVhh - 100 || nc.y > cam.y + npcVhh + 64) continue;
-        drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id,
+        drawPerson(drawables, ix, iy, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id,
           // BUILD 699: children are smaller (70% scale).
           // BUILD 704: fleeing NPCs run (explicit), everyone else walks.
           npc.archetype === 'child' ? 36 : undefined, npc.running === true);
@@ -1235,16 +1295,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // provided critter sprites from public/critters/stag/.
       const liveGoats = (live as { goats?: Array<{ id: number; kind: string; position: Point; facing: string; disposition: string }> }).goats;
       // BUILD 458: critter sprites per kind. Cache images.
+      // BUILD 707: static entries (was rebuilt + Object.entries per frame).
       const critterImgs = (window as unknown as { __critterImgs?: Record<string, HTMLImageElement> }).__critterImgs || {};
-      const critterSrc: Record<string, string> = {
-        deer: 'critters/stag/critter_stag_SE_idle.png',
-        boar: 'critters/boar/boar_SE_idle_strip.png',
-        badger: 'critters/badger/critter_badger_SE_idle.png',
-        direwolf: 'critters/wolf/wolf-idle.png',
-        // BUILD 575: goat uses deer sprite as placeholder (similar quadruped)
-        goat: 'critters/stag/critter_stag_SE_idle.png',
-      };
-      for (const [kind, src] of Object.entries(critterSrc)) {
+      for (const [kind, src] of CRITTER_SRC_ENTRIES) {
         if (!critterImgs[kind]) {
           const img = new Image();
           img.src = artUrl(src);
@@ -1387,6 +1440,8 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       drawPerson(drawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs, 'player',
         undefined, live.playerRunning === true);
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
+      // BUILD 707: prune interpolation entries for NPCs no longer drawn.
+      for (const k of npcInterp.keys()) if (!seenAnims.has(k)) npcInterp.delete(k);
 
       drawables.sort((a, b) => a.depth - b.depth);
       for (const d of drawables) d.draw(g, nowMs);
