@@ -11,7 +11,9 @@
     "start": "node server.js",
     "world-server": "node server.js",
     "prebuild": "node scripts/prepare-build-entry.cjs",
-    "test:iso-directions": "node tests/iso-direction-mapping.mjs"
+    "test:iso-directions": "node tests/iso-direction-mapping.mjs",
+    "rpg:assets:check": "node scripts/install-rpg-equipment.mjs --check",
+    "rpg:assets:install": "node scripts/install-rpg-equipment.mjs --install"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
