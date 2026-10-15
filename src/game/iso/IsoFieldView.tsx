@@ -671,7 +671,6 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // Cache covers 1.5 viewports and is rebuilt only when the camera leaves
       // it or a render-affecting input changes. Resolution is capped to avoid
       // enormous per-chunk bitmaps on high-DPI and zoomed-out devices.
-      const useChunkLOD = zm < 0.14;
       const showDetail = zm > 0.20;
       const tilesOn = isoTilesReady();
       const hedgeImage = (window as unknown as { __propImgs?: Record<string, HTMLImageElement> })
