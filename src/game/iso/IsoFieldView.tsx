@@ -66,6 +66,19 @@ const dirtPathCache = createBoundedCache<string, DirtPathCacheEntry>(64);
 const settlementDecorCache = createBoundedCache<string, ReturnType<typeof settlementDecorFor>>(32);
 const buildingKindCache = new WeakMap<object, string>();
 const ambientCritterCache = createBoundedCache<string, AmbientCritter[]>(32);
+
+// BUILD 723: speech lines and per-NPC deterministic seeds are stable data; keep
+// them outside the animation loop to avoid rebuilding arrays and re-hashing IDs
+// on every frame. The cache is bounded because generated towns can be endless.
+const NPC_CHATTER_LINES = ['Lovely day!', 'Any news?', 'Fair prices!', 'Stay safe.', 'Busy today…', 'Heard the rumors?', 'Need supplies?', 'Good morning!', 'Fine weather.', 'Safe travels!'] as const;
+const npcSpeechSeedCache = createBoundedCache<string, number>(512);
+function npcSpeechSeedFor(id: string): number {
+  const cached = npcSpeechSeedCache.get(id);
+  if (cached !== undefined) return cached;
+  let seed = 0;
+  for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) >>> 0;
+  return npcSpeechSeedCache.set(id, seed);
+}
 function cachedCrittersForChunk(
   cx: number, cy: number, fieldSize: number,
   isLand: (lx: number, ly: number) => boolean,
@@ -1556,10 +1569,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
 
         // BUILD 722: optional, unobtrusive ambient chatter above each visible NPC.
         if (live.npcSpeechEnabled) {
-          const chatter = ['Lovely day!', 'Any news?', 'Fair prices!', 'Stay safe.', 'Busy today…', 'Heard the rumors?', 'Need supplies?', 'Good morning!', 'Fine weather.', 'Safe travels!'];
-          let speechSeed = 0;
-          for (let si = 0; si < npc.id.length; si++) speechSeed = (speechSeed * 31 + npc.id.charCodeAt(si)) >>> 0;
-          const line = chatter[Math.floor(nowMs / 4600 + speechSeed) % chatter.length];
+          const line = NPC_CHATTER_LINES[Math.floor(nowMs / 4600 + npcSpeechSeedFor(npc.id)) % NPC_CHATTER_LINES.length];
           drawables.push({
             depth: ix + iy + 0.04,
             draw: (g2) => {
