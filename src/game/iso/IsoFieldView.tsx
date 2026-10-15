@@ -346,7 +346,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, selectedNpcId, selectedGoatId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning, playerLook });
-  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, selectedNpcId, selectedGoatId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning };
+  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, selectedNpcId, selectedGoatId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning, playerLook };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
