@@ -131,15 +131,30 @@ const imgs = new Map<string, HTMLImageElement>();
 const warned = new Set<string>();
 const failedImgs = new Set<HTMLImageElement>();
 let preloadStarted = false;
+let pendingImages = 0;
 
 export function preloadCritters(): void {
   if (preloadStarted || typeof window === 'undefined') return;
   preloadStarted = true;
   const base = (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
-  for (const key of Object.keys(CRITTER_CELLS)) {
+  const keys = Object.keys(CRITTER_CELLS);
+  pendingImages = keys.length;
+  for (const key of keys) {
     const url = `${base}iso-critters/${key}`;
     const im = new Image();
-    im.onerror = () => { if (!warned.has(url)) { warned.add(url); console.warn(`[critters] missing: ${url}`); } failedImgs.add(im); };
+    im.decoding = 'async';
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      pendingImages = Math.max(0, pendingImages - 1);
+    };
+    im.onload = done;
+    im.onerror = () => {
+      if (!warned.has(url)) { warned.add(url); console.warn(`[critters] missing: ${url}`); }
+      failedImgs.add(im);
+      done();
+    };
     im.src = url;
     imgs.set(key, im);
   }
@@ -150,11 +165,8 @@ function imgReady(im: HTMLImageElement | undefined): im is HTMLImageElement {
 }
 
 export function crittersReady(): boolean {
-  if (!preloadStarted) return false;
-  for (const im of imgs.values()) {
-    if (!imgReady(im) && !failedImgs.has(im)) return false;
-  }
-  return true;
+  // Keep the renderer's per-frame readiness check constant-time.
+  return preloadStarted && pendingImages === 0;
 }
 
 /**
