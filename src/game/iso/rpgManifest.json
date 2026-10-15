@@ -1,0 +1,9855 @@
+{
+ "folders": {
+  "AhoulArmBand": {
+   "type": "equipment",
+   "slot": "arms",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulArmGuards": {
+   "type": "equipment",
+   "slot": "arms",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulArmguards1": {
+   "type": "equipment",
+   "slot": "arms",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulArmguards2": {
+   "type": "equipment",
+   "slot": "arms",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulBoots1": {
+   "type": "equipment",
+   "slot": "legs",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulChestpiece1": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulChestpiece2": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulGreenTatoo1": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulGreenTatoo2": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulHeadGreen": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulHeadTan": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulKilt1": {
+   "type": "equipment",
+   "slot": "legs",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulKilt2": {
+   "type": "equipment",
+   "slot": "legs",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulKilt3": {
+   "type": "equipment",
+   "slot": "legs",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulLeatherBreastplate": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulLeatherPlateKilt": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulLeatherShoulderpads": {
+   "type": "equipment",
+   "slot": "arms",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulLeatherWrapPants": {
+   "type": "equipment",
+   "slot": "legs",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulMetalBreastplate": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulMetalShoulderpads": {
+   "type": "equipment",
+   "slot": "arms",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulScale1": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulShoulderpads1": {
+   "type": "equipment",
+   "slot": "arms",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulShoulderpads2": {
+   "type": "equipment",
+   "slot": "arms",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulShoulderpads3": {
+   "type": "equipment",
+   "slot": "arms",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulShoulderpads4": {
+   "type": "equipment",
+   "slot": "arms",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulShoulderpads5": {
+   "type": "equipment",
+   "slot": "arms",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulSpikedKneepads": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulSteelPlatedBelt": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulTan": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulTanTatoo1": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "AhoulTanTatoo2": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "ArcaneDrk": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "ArcaneMystic": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "ArcanePyro": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "ArcaneRed": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "ArcaneWht": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "Axe": {
+   "type": "equipment",
+   "slot": "weapon",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "Bandolier": {
+   "type": "equipment",
+   "slot": "accessory",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BaseAhoul": {
+   "type": "base",
+   "slot": "base",
+   "file_count": 489,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BaseDwarf": {
+   "type": "base",
+   "slot": "base",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BaseElf": {
+   "type": "base",
+   "slot": "base",
+   "file_count": 489,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BaseHumanBlank": {
+   "type": "base",
+   "slot": "base",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BaseHumanMale": {
+   "type": "base",
+   "slot": "base",
+   "file_count": 489,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BaseShaman": {
+   "type": "base",
+   "slot": "base",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BaseSkeleton": {
+   "type": "base",
+   "slot": "base",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BastardSword": {
+   "type": "equipment",
+   "slot": "weapon",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BattleAxe": {
+   "type": "equipment",
+   "slot": "weapon",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BeardDark": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BeardGrey": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BeardLight": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BeardRed": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BlackBoots": {
+   "type": "equipment",
+   "slot": "legs",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BloodyAhoul": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BloodyLayer": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BloodyShaman": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BluePants": {
+   "type": "equipment",
+   "slot": "legs",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BlueVest": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BoneBow": {
+   "type": "equipment",
+   "slot": "weapon",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BoneClub": {
+   "type": "equipment",
+   "slot": "weapon",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BoneQuiverBelt": {
+   "type": "equipment",
+   "slot": "accessory",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BreastPlate1": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BreastPlateGold": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "Breastplate2": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BroadSword": {
+   "type": "equipment",
+   "slot": "weapon",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BroadSword2": {
+   "type": "equipment",
+   "slot": "weapon",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BrownPants": {
+   "type": "equipment",
+   "slot": "legs",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BrvHrtTunic": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BrvHrtVest": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BucklerNisos": {
+   "type": "equipment",
+   "slot": "shield",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "BucklerWood": {
+   "type": "equipment",
+   "slot": "shield",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "CanvasHood": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "ChainCoif": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "ChainMace": {
+   "type": "equipment",
+   "slot": "weapon",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "ChaliceOfLife": {
+   "type": "equipment",
+   "slot": "accessory",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "ChestPiece1": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "ChestPiece2": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "CoifFelious": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "CoifMudam": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "CurvedHandRazor": {
+   "type": "equipment",
+   "slot": "weapon",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "Cutlass": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "Dagger": {
+   "type": "equipment",
+   "slot": "weapon",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DaggerWand": {
+   "type": "equipment",
+   "slot": "weapon",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DreamWalkerHair1": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DreamWalkerHair2": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DreamWalkerHair3": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkArcaneBoot": {
+   "type": "equipment",
+   "slot": "legs",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkArcaneGluv": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkArcaneKilt": {
+   "type": "equipment",
+   "slot": "legs",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkArcanePant": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkArcaneShirt": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkArmPlat": {
+   "type": "equipment",
+   "slot": "arms",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkBoot": {
+   "type": "equipment",
+   "slot": "legs",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkChainTunic": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkChestPlat": {
+   "type": "equipment",
+   "slot": "torso",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkCloakBACK": {
+   "type": "equipment",
+   "slot": "accessory",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkCloakFRONT": {
+   "type": "equipment",
+   "slot": "accessory",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkCoif": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkGluv": {
+   "type": "equipment",
+   "slot": "unknown",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkHelm": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  },
+  "DrkHood": {
+   "type": "equipment",
+   "slot": "head",
+   "file_count": 488,
+   "animations": [
+    "Attack",
+    "Bow",
+    "Cast",
+    "Death",
+    "Idle",
+    "Run",
+    "Walk"
+   ],
+   "frame_counts": {
+    "Idle": 4,
+    "Attack": 10,
+    "Bow": 9,
+    "Cast": 9,
+    "Walk": 11,
+    "Run": 10,
+    "Death": 8
+   },
+   "direction_coverage": {
+    "Idle": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Attack": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Bow": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Cast": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Walk": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Run": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "Death": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   },
+   "complete": true,
+   "unparsed_files": []
+  }
+ },
+ "bases": [
+  "BaseAhoul",
+  "BaseDwarf",
+  "BaseElf",
+  "BaseHumanBlank",
+  "BaseHumanMale",
+  "BaseShaman",
+  "BaseSkeleton"
+ ],
+ "equipment": [
+  "AhoulArmBand",
+  "AhoulArmGuards",
+  "AhoulArmguards1",
+  "AhoulArmguards2",
+  "AhoulBoots1",
+  "AhoulChestpiece1",
+  "AhoulChestpiece2",
+  "AhoulGreenTatoo1",
+  "AhoulGreenTatoo2",
+  "AhoulHeadGreen",
+  "AhoulHeadTan",
+  "AhoulKilt1",
+  "AhoulKilt2",
+  "AhoulKilt3",
+  "AhoulLeatherBreastplate",
+  "AhoulLeatherPlateKilt",
+  "AhoulLeatherShoulderpads",
+  "AhoulLeatherWrapPants",
+  "AhoulMetalBreastplate",
+  "AhoulMetalShoulderpads",
+  "AhoulScale1",
+  "AhoulShoulderpads1",
+  "AhoulShoulderpads2",
+  "AhoulShoulderpads3",
+  "AhoulShoulderpads4",
+  "AhoulShoulderpads5",
+  "AhoulSpikedKneepads",
+  "AhoulSteelPlatedBelt",
+  "AhoulTan",
+  "AhoulTanTatoo1",
+  "AhoulTanTatoo2",
+  "ArcaneDrk",
+  "ArcaneMystic",
+  "ArcanePyro",
+  "ArcaneRed",
+  "ArcaneWht",
+  "Axe",
+  "Bandolier",
+  "BastardSword",
+  "BattleAxe",
+  "BeardDark",
+  "BeardGrey",
+  "BeardLight",
+  "BeardRed",
+  "BlackBoots",
+  "BloodyAhoul",
+  "BloodyLayer",
+  "BloodyShaman",
+  "BluePants",
+  "BlueVest",
+  "BoneBow",
+  "BoneClub",
+  "BoneQuiverBelt",
+  "BreastPlate1",
+  "BreastPlateGold",
+  "Breastplate2",
+  "BroadSword",
+  "BroadSword2",
+  "BrownPants",
+  "BrvHrtTunic",
+  "BrvHrtVest",
+  "BucklerNisos",
+  "BucklerWood",
+  "CanvasHood",
+  "ChainCoif",
+  "ChainMace",
+  "ChaliceOfLife",
+  "ChestPiece1",
+  "ChestPiece2",
+  "CoifFelious",
+  "CoifMudam",
+  "CurvedHandRazor",
+  "Cutlass",
+  "Dagger",
+  "DaggerWand",
+  "DreamWalkerHair1",
+  "DreamWalkerHair2",
+  "DreamWalkerHair3",
+  "DrkArcaneBoot",
+  "DrkArcaneGluv",
+  "DrkArcaneKilt",
+  "DrkArcanePant",
+  "DrkArcaneShirt",
+  "DrkArmPlat",
+  "DrkBoot",
+  "DrkChainTunic",
+  "DrkChestPlat",
+  "DrkCloakBACK",
+  "DrkCloakFRONT",
+  "DrkCoif",
+  "DrkGluv",
+  "DrkHelm",
+  "DrkHood"
+ ],
+ "animations": {
+  "Idle": {
+   "folders_with": 100,
+   "min_frames": 4,
+   "max_frames": 4
+  },
+  "Attack": {
+   "folders_with": 100,
+   "min_frames": 10,
+   "max_frames": 10
+  },
+  "Bow": {
+   "folders_with": 100,
+   "min_frames": 9,
+   "max_frames": 9
+  },
+  "Cast": {
+   "folders_with": 100,
+   "min_frames": 9,
+   "max_frames": 9
+  },
+  "Walk": {
+   "folders_with": 100,
+   "min_frames": 11,
+   "max_frames": 11
+  },
+  "Run": {
+   "folders_with": 100,
+   "min_frames": 10,
+   "max_frames": 10
+  },
+  "Death": {
+   "folders_with": 100,
+   "min_frames": 8,
+   "max_frames": 8
+  }
+ },
+ "directions": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7
+ ]
+}

@@ -1,75 +1,70 @@
 // Shared character animation + asset pipeline for the isometric renderer.
+// BUILD 702: replaced the LPC paper-doll system with the user-supplied RPG
+// sprite pack (public/rpg/, registry in rpgSprites.ts).
 //
 // One module owns the whole character visual system so the three canvas
 // consumers (IsoFieldView, IsoInteriorView, IsoRoom) render characters
 // identically:
 //
-//   appearance   — the fixed PLAYER_LOOK + deterministic per-NPC variants
-//                  (same NPC id => same look, forever)
-//   state machine — idle, walk, attack (slash), and hurt have dedicated art;
-//                  interact / dead fall back to idle so new states slot in
-//                  without touching the renderer
-//   timing       — walk-cycle rate is driven by each character's measured
-//                  ground speed (fast attack / slow release, so the 120ms
-//                  NPC sim ticks don't make the animation stutter)
-//   assets       — chibi LPC paper-doll layers (body + head + legs + torso
-//                  + hair + hat) with per-layer fallbacks: requested sheet ->
-//                  player's sheet for that layer -> vector placeholder.
-//                  Missing assets warn once, never per frame.
-//   draw         — one canvas draw: shadow, feet-anchored paper-doll layers,
-//                  subtle idle breathing, vector fallback while loading.
+//   appearance   — RpgLook: base body + equipment layers (currently everyone
+//                  uses the bald/naked BaseHumanMale default; equipment is
+//                  indexed in rpgManifest.json for future customization)
+//   state machine — idle, walk, run, attack, bow, cast, dead map to real art;
+//                  hurt has no pain art in the pack -> idle + red flash;
+//                  interact falls back to idle
+//   timing       — delta-time playback; one-shot anims (attack, death) play
+//                  through once; death holds the last frame (never loops)
+//   assets       — on-demand cached loading per (base, anim, face, frame);
+//                  missing assets warn once and fall back to vector placeholder
+//   draw         — one canvas draw: shadow, feet-anchored sprite, vector
+//                  fallback while loading.
 //
 // No React state: each consumer keeps a Map<string, CharacterAnimator>
 // (pruned per frame) inside its render loop.
 
+import type { Face8 } from './isoSprites';
 import {
-  type Face4, type Face8, type LpcLook, type LpcLayer, type LpcAnim, PLAYER_LOOK,
-  LPC_CELL, LPC_FEET_ROW, LPC_FRAMES,
-  lpcLayerKeys, lpcClip, lpcReady, lpcSprite,
-  LPC_BODY_TONES, LPC_SHIRTS, LPC_PANTS, LPC_HAIR_POOL, LPC_HATS,
-} from './isoSprites';
-import {
-  type BarbarianOutfit, type BarbarianWeapon, type BarbarianHair,
-  BARBARIAN_ATTACK_MS, barbarianReady, drawBarbarian, preloadBarbarian,
-} from './barbarian';
+  type RpgAnim, type RpgBase, type RpgLook,
+  RPG_DEFAULT_BASE, RPG_DEFAULT_LOOK, RPG_ANIM_FRAMES,
+  RPG_W, RPG_H, RPG_FEET_ROW,
+  rpgSprite, preloadRpgBase, rpgCacheStats,
+} from './rpgSprites';
 
 // ---------------------------------------------------------------------------
 // Animation state machine
 // ---------------------------------------------------------------------------
 
-/** Character animation states. Interact/dead have no dedicated art yet and
- *  render the idle clip (placeholder: true) until art exists. */
-export type CharAnimState = 'idle' | 'walk' | 'interact' | 'attack' | 'hurt' | 'dead';
+/** Character animation states. */
+export type CharAnimState =
+  | 'idle' | 'walk' | 'run' | 'interact'
+  | 'attack' | 'bow' | 'cast' | 'hurt' | 'dead';
 
 export interface CharAnimClip {
-  /** Which per-animation sprite file the state plays. */
-  anim: LpcAnim;
+  /** Which RPG sprite animation the state plays. */
+  anim: RpgAnim;
   loop: boolean;
-  /** True when the state has no dedicated art yet (falls back to idle). */
-  placeholder?: boolean;
+  /** One-shot: plays through once then transitions (attack->idle, dead holds). */
+  oneShot?: boolean;
 }
 
 export const CHAR_CLIPS: Record<CharAnimState, CharAnimClip> = {
-  idle: { anim: 'idle', loop: true },
-  walk: { anim: 'walk', loop: true },
-  interact: { anim: 'idle', loop: true, placeholder: true },
-  attack: { anim: 'slash', loop: true },
-  hurt: { anim: 'hurt', loop: true },
-  dead: { anim: 'idle', loop: true, placeholder: true },
+  idle: { anim: 'Idle', loop: true },
+  walk: { anim: 'Walk', loop: true },
+  run: { anim: 'Run', loop: true },
+  interact: { anim: 'Idle', loop: true },
+  attack: { anim: 'Attack', loop: false, oneShot: true },
+  bow: { anim: 'Bow', loop: false, oneShot: true },
+  cast: { anim: 'Cast', loop: false, oneShot: true },
+  // No pain art in the pack — idle + red flash overlay (see drawIsoCharacter).
+  hurt: { anim: 'Idle', loop: true },
+  dead: { anim: 'Death', loop: false, oneShot: true },
 };
 
 export const CHAR_STATES = Object.keys(CHAR_CLIPS) as CharAnimState[];
 
-// Walk-cycle rate bounds (frames/sec). Tied to measured ground speed:
-// stopped => no cycling, faster => faster cycling, always smooth.
+// Walk-cycle rate bounds (frames/sec). Tied to measured ground speed.
 export const WALK_FPS_MIN = 2;
 export const WALK_FPS_MAX = 12;
-/**
- * BUILD 386: the up/down (back/front) walk rows read as a slow foot-shuffle
- * next to the side rows at the same ground speed, so the feet cycle faster on
- * those facings to match the stride visually.
- */
-export const WALK_FPS_UPDOWN_MULT = 1.5;
 
 /** Walk-cycle frames/sec for a measured ground speed (field units/sec). */
 export function walkFpsForSpeed(unitsPerSec: number): number {
@@ -81,11 +76,11 @@ export function walkFpsForSpeed(unitsPerSec: number): number {
 export function walkFrameAt(nowMs: number, unitsPerSec: number): number {
   const fps = walkFpsForSpeed(unitsPerSec);
   if (fps <= 0) return 0;
-  return Math.floor((nowMs / 1000) * fps) % LPC_FRAMES.walk;
+  return Math.floor((nowMs / 1000) * fps) % RPG_ANIM_FRAMES.Walk;
 }
 
 // ---------------------------------------------------------------------------
-// Appearance: the player look + deterministic NPC variants
+// Appearance
 // ---------------------------------------------------------------------------
 
 /** FNV-1a 32-bit hash — deterministic across sessions (unlike Math.random). */
@@ -99,34 +94,31 @@ export function hashSeed(str: string): number {
 }
 
 /**
- * Deterministic NPC appearance: same seed string => same body/legs/torso/
- * hair/hat forever (chunk reloads, save/load, new sessions). Picks from the
- * packed chibi LPC wardrobe; ~9% are bald; ~25% get a headband.
+ * Deterministic NPC appearance. BUILD 702: everyone uses the bald/naked
+ * BaseHumanMale default (user directive — no auto-equipped items). The seed
+ * is retained for future per-NPC customization (base variants, equipment).
  */
-export function variantLook(seed: string): LpcLook {
-  const h = hashSeed(seed);
-  const body = LPC_BODY_TONES[h % LPC_BODY_TONES.length];
-  const legs = LPC_PANTS[(h >>> 7) % LPC_PANTS.length];
-  const torso = LPC_SHIRTS[(h >>> 13) % LPC_SHIRTS.length];
-  const hair = LPC_HAIR_POOL[(h >>> 19) % LPC_HAIR_POOL.length];
-  const hat = h % 4 === 0 ? LPC_HATS[(h >>> 27) % LPC_HATS.length] : undefined;
-  return hat ? { body, legs, torso, hair, hat } : { body, legs, torso, hair };
+export function variantLook(_seed: string): RpgLook {
+  return { ...RPG_DEFAULT_LOOK };
 }
 
 /**
  * Anything that identifies a character's appearance:
- *  - number: 0 = the player look, other values => deterministic legacy variant
- *  - LpcLook: explicit paper-doll layers
- *  - string: NPC id/seed => deterministic variant
+ *  - RpgLook: explicit base + equipment layers
+ *  - string: NPC id/seed => deterministic default (currently all identical)
+ *  - number: 0 = player default, other => deterministic default
  */
-export type LookRef = number | LpcLook | string;
+export type LookRef = number | RpgLook | string;
 
-export function resolveLook(look: LookRef): LpcLook {
+export function resolveLook(look: LookRef): RpgLook {
   if (typeof look === 'string') return variantLook(look);
-  if (typeof look === 'number') {
-    return look === 0 ? PLAYER_LOOK : variantLook(`legacy-look-${look}`);
-  }
+  if (typeof look === 'number') return { ...RPG_DEFAULT_LOOK };
   return look;
+}
+
+/** Preload the default base's full animation set. Call once at startup. */
+export function preloadCharacterSprites(): void {
+  preloadRpgBase(RPG_DEFAULT_BASE);
 }
 
 // ---------------------------------------------------------------------------
@@ -144,100 +136,87 @@ export interface AnimUpdate {
   nowMs: number;
 }
 
-/**
- * Per-character animation state. The simulation stays authoritative for
- * moving/facing; the animator derives the visual state (idle/walk), measures
- * ground speed (fast attack / slow release, smoothing the 120ms sim ticks),
- * and advances the walk phase at a speed-tied rate. No timers, no React
- * state — the consumer calls update() once per rendered frame.
- */
 export class CharacterAnimator {
   facing: Face8 = 'down';
   state: CharAnimState = 'idle';
   /** Measured ground speed, field units/sec (smoothed). */
   speed = 0;
-  /** Walk phase in frames (float); each character also gets a deterministic
-   *  initial offset so crowds don't march in lockstep. */
-  phase: number;
+  /** Animation phase in frames (float). */
+  phase = 0;
+  /** For one-shot anims: ms elapsed since the state started. */
+  private stateT = 0;
   private lx = 0;
   private ly = 0;
   private lastNow = 0;
   private init = false;
 
   constructor(seedStr = '') {
-    this.phase = (hashSeed(seedStr) % LPC_FRAMES.walk);
+    // Deterministic initial offset so crowds don't animate in lockstep.
+    this.phase = hashSeed(seedStr) % RPG_ANIM_FRAMES.Idle;
   }
 
-  /** Force an animation state (e.g. a future interact/attack). Placeholder
-   *  states render their idle fallback until dedicated art exists. */
+  /** Force an animation state (attack, hurt, dead, etc.). One-shot states
+   *  play through once; dead holds its final frame. */
   setState(s: CharAnimState): void {
+    if (this.state === s) return;
+    // Don't interrupt death.
+    if (this.state === 'dead') return;
     this.state = s;
+    this.phase = 0;
+    this.stateT = 0;
   }
 
   update(u: AnimUpdate): void {
     const dt = this.init ? Math.max(1, u.nowMs - this.lastNow) : 16.7;
     const dist = this.init ? Math.hypot(u.x - this.lx, u.y - this.ly) : 0;
     const inst = dist / (dt / 1000);
-    // Fast attack, slow release: picks up motion instantly, rides through
-    // the gaps between sim ticks without the walk stuttering.
     this.speed = Math.max(inst, this.speed * Math.exp(-dt / 450));
-    // Sim is authoritative for direction; stopping keeps the last facing.
     this.facing = u.facing;
-    if (u.moving) {
-      this.state = 'walk';
-      // BUILD 386: faster feet on up/down facings (back/front rows shuffle
-      // slowly at the side-row rate). BUILD 414: the up-right/up-left
-      // diagonals use the up art, so they get the up rate too. BUILD 423:
-      // the down-right/down-left diagonals get it as well.
-      const upDown = this.facing === 'up' || this.facing === 'down'
-        || this.facing === 'upright' || this.facing === 'upleft'
-        || this.facing === 'downright' || this.facing === 'downleft';
-      const rate = walkFpsForSpeed(this.speed) * (upDown ? WALK_FPS_UPDOWN_MULT : 1);
-      this.phase = (this.phase + (dt / 1000) * rate) % LPC_FRAMES.walk;
+
+    const clip = CHAR_CLIPS[this.state];
+    const frames = RPG_ANIM_FRAMES[clip.anim];
+
+    if (clip.oneShot) {
+      // One-shot: advance at a fixed cinematic rate (~12fps), hold or exit.
+      this.stateT += dt;
+      const fps = 12;
+      this.phase = Math.min(frames - 1, (this.stateT / 1000) * fps);
+      if (this.stateT / 1000 * fps >= frames) {
+        if (this.state === 'dead') {
+          this.phase = frames - 1; // hold final death frame forever
+        } else {
+          // Attack/bow/cast done -> back to walk/idle per movement.
+          this.state = u.moving ? 'walk' : 'idle';
+          this.phase = 0;
+          this.stateT = 0;
+        }
+      }
+    } else if (u.moving) {
+      if (this.state !== 'walk' && this.state !== 'run') {
+        this.state = this.speed > 6 ? 'run' : 'walk';
+        this.phase = 0;
+      }
+      const rate = walkFpsForSpeed(this.speed);
+      const wframes = RPG_ANIM_FRAMES[CHAR_CLIPS[this.state].anim];
+      this.phase = (this.phase + (dt / 1000) * rate) % wframes;
     } else {
-      this.state = 'idle';
+      if (this.state === 'walk' || this.state === 'run') {
+        this.state = 'idle';
+        this.phase = 0;
+      } else if (this.state === 'idle' || this.state === 'interact' || this.state === 'hurt') {
+        // Idle breathing: slow cycle through the 4 idle frames.
+        this.phase = (this.phase + (dt / 1000) * 2) % frames;
+      }
     }
     this.lx = u.x; this.ly = u.y; this.lastNow = u.nowMs; this.init = true;
   }
 
-  /** Current sprite-sheet frame index for the active clip. */
+  /** Current sprite frame index for the active clip. */
   frameIndex(): number {
-    const frames = LPC_FRAMES[CHAR_CLIPS[this.state].anim];
+    const frames = RPG_ANIM_FRAMES[CHAR_CLIPS[this.state].anim];
     if (frames <= 1) return 0;
     return Math.floor(this.phase) % frames;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Asset resolution with fallbacks (warn once, never per frame)
-// ---------------------------------------------------------------------------
-
-const missingWarned = new Set<string>();
-function warnMissingAsset(file: string): void {
-  if (missingWarned.has(file)) return;
-  missingWarned.add(file);
-  console.warn(`[characterSystem] sheet missing/unloaded, using fallback: ${file}`);
-}
-
-/**
- * Resolve one paper-doll layer image. Fallback chain:
- *   1. the requested sheet
- *   2. the player look's sheet for the same layer + animation + facing
- *   3. undefined -> the caller draws the vector placeholder
- */
-function layerImage(file: string, layer: LpcLayer, look: LpcLook, anim: LpcAnim, face: Face4): HTMLImageElement | undefined {
-  const direct = lpcSprite(file);
-  if (direct) return direct;
-  warnMissingAsset(file);
-  const baseKey = lpcLayerKeys(PLAYER_LOOK).find((l) => l.layer === layer)?.key;
-  if (baseKey) {
-    const baseClip = lpcClip(layer, baseKey, anim, face);
-    if (baseClip.file !== file) {
-      const base = lpcSprite(baseClip.file);
-      if (base) return base;
-    }
-  }
-  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,19 +232,16 @@ export interface DrawCharacterOptions {
   nowMs: number;
   /** Owns facing/state/phase — call update() before drawing each frame. */
   animator: CharacterAnimator;
-  /** Drawn sprite size in px (default 52). Root anchor never moves. */
+  /** Drawn sprite height in px (default 64). Width scales proportionally.
+   *  Root anchor never moves. */
   size?: number;
   /** Ground shadow (default true). */
   shadow?: boolean;
-  // BUILD 390: barbarian player equipment (player only, look === 0).
-  barbOutfit?: BarbarianOutfit;
-  barbWeapon?: BarbarianWeapon;
-  barbHair?: BarbarianHair | string;
-  /** ms since the player's attack swing started (plays the attack clip). */
-  barbAttackT?: number;
+  /** Base body override (e.g. skeleton enemies). */
+  base?: RpgBase;
 }
 
-/** Simple placeholder when no sprite art is available (tier-3 fallback). */
+/** Simple placeholder when no sprite art is available (fallback). */
 function drawVectorPlaceholder(
   g: CanvasRenderingContext2D, x: number, y: number, moving: boolean, nowMs: number,
 ): void {
@@ -289,68 +265,55 @@ function drawVectorPlaceholder(
 }
 
 /**
- * BUILD 390: draw the player (look === 0) from the user-supplied barbarian
- * sheets instead of the LPC paper doll. Feet-anchored; the right facing
- * mirrors the side art; hair overlays composite from the hair pack.
- * Falls back to the LPC path while the art is still loading.
- */
-function drawBarbarianCharacter(o: DrawCharacterOptions): boolean {
-  return drawBarbarian({
-    g: o.g, x: o.x, y: o.y, size: o.size ?? 60,
-    facing: o.animator.facing,
-    moving: o.animator.state === 'walk',
-    attackT: o.barbAttackT,
-    outfit: o.barbOutfit ?? 'bare',
-    weapon: o.barbWeapon ?? 'none',
-    hair: o.barbHair ?? 'bald',
-    phase: o.animator.phase,
-    nowMs: o.nowMs,
-    shadow: o.shadow,
-  });
-}
-
-/**
- * Draw one character. Feet-anchored: LPC_FEET_ROW of the sprite cell lands on
+ * Draw one character. Feet-anchored: RPG_FEET_ROW of the sprite lands on
  * (x, y); the root never moves between frames — only the body animates.
- * Walking adds a small step bob; idling adds a subtle ±1px breath.
+ * Equipment layers (when configured) draw over the base in order.
  */
 export function drawIsoCharacter(o: DrawCharacterOptions): void {
-  // BUILD 390: the player uses the barbarian sprite pack when it's loaded.
-  if (o.look === 0 && barbarianReady()) {
-    if (drawBarbarianCharacter(o)) return;
-  }
   const g = o.g;
-  const size = o.size ?? 52;
+  const size = o.size ?? 64;
   const L = resolveLook(o.look);
-  const layers = lpcLayerKeys(L);
-  const walking = o.animator.state === 'walk';
+  const base = o.base ?? L.base;
   const anim = CHAR_CLIPS[o.animator.state].anim;
+  const frame = o.animator.frameIndex();
+  const face = o.animator.facing;
+  const walking = o.animator.state === 'walk' || o.animator.state === 'run';
   const lift = walking ? Math.abs(Math.sin(o.nowMs / 130)) * 2 : 0;
-  const breathe = walking ? 0 : Math.sin(o.nowMs / 1100); // ±1px idle breath
+
   if (o.shadow !== false) {
     g.fillStyle = 'rgba(0,0,0,0.22)';
     g.beginPath(); g.ellipse(o.x, o.y + 3, 12, 5, 0, 0, 7); g.fill();
   }
-  const frame = o.animator.frameIndex();
-  const dx = o.x - size / 2;
-  const dy = o.y - (LPC_FEET_ROW / LPC_CELL) * size - lift + breathe;
+
+  // Sprite is 148x130; scale so height = size, anchor feet at (x, y).
+  const scale = size / RPG_H;
+  const dw = RPG_W * scale;
+  const dh = size;
+  const dx = o.x - dw / 2;
+  const dy = o.y - (RPG_FEET_ROW / RPG_H) * dh - lift;
+
   let drew = false;
-  // BUILD 414: the LPC paper-doll fallback has no diagonal rows; the
-  // up-right/up-left facings fall back to the up (back) row there.
-  // BUILD 423: down-right/down-left fall back to the down (front) row.
-  const lpcFace: Face4 =
-    (o.animator.facing === 'upright' || o.animator.facing === 'upleft') ? 'up'
-    : (o.animator.facing === 'downright' || o.animator.facing === 'downleft') ? 'down'
-    : o.animator.facing;
-  const clips = layers.map(({ key, layer }) => ({ layer, clip: lpcClip(layer, key, anim, lpcFace) }));
-  if (lpcReady(clips.map((c) => c.clip.file))) {
-    for (const { layer, clip } of clips) {
-      const im = layerImage(clip.file, layer, L, anim, lpcFace);
-      if (!im) continue;
-      const f = Math.min(frame, clip.frames - 1);
-      g.drawImage(im, f * LPC_CELL, clip.row * LPC_CELL, LPC_CELL, LPC_CELL, dx, dy, size, size);
-      drew = true;
+  const im = rpgSprite(base, anim, face, frame);
+  if (im) {
+    g.drawImage(im, dx, dy, dw, dh);
+    drew = true;
+    // Equipment layers (future customization; currently empty by default).
+    for (const eq of L.equipment) {
+      const eim = rpgSprite(eq, anim, face, frame);
+      if (eim) g.drawImage(eim, dx, dy, dw, dh);
     }
   }
-  if (!drew) drawVectorPlaceholder(g, o.x, o.y - lift + breathe, walking, o.nowMs);
+  // Hurt flash: no pain art in the pack, so tint red briefly.
+  if (o.animator.state === 'hurt' && drew) {
+    g.save();
+    g.globalAlpha = 0.35;
+    g.globalCompositeOperation = 'source-atop';
+    g.fillStyle = '#ff2222';
+    g.fillRect(dx, dy, dw, dh);
+    g.restore();
+  }
+  if (!drew) drawVectorPlaceholder(g, o.x, o.y - lift, walking, o.nowMs);
 }
+
+/** Re-export cache stats for the debug tool. */
+export { rpgCacheStats };

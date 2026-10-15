@@ -97,7 +97,7 @@ import { PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP, collisionBoxes
 import { oreNodesForChunk, mineralRichness, geoHash, oreKindFor, GEOLOGY_CELL } from '../src/game/geology';
 import { createEmptySkills, awardXp, levelForXp, xpForLevel, xpToNextLevel, SKILLS, WOODCUTTING_XP_PER_TREE } from '../src/game/skills';
 import { ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset, isoViewportCovered, isoVisibleTileRange } from '../src/game/iso/isoChunks';
-import { barbarianRegistryStats, barbarianVariant, barbarianHairLabel, BARBARIAN_HAIRSTYLES, BARBARIAN_ATTACK_MS, BARB_FRAMES } from '../src/game/iso/barbarian';
+// BUILD 702: barbarian.ts replaced by rpgSprites.ts (import removed)
 
 let passed = 0;
 let failed = 0;
@@ -3464,65 +3464,61 @@ console.log('Testing examine system...');
 
 // ---- BUILD 380: shared character animation + asset pipeline (chibi LPC) ----
 // characterSystem.ts is the single owner of character visuals for the three
-// iso canvas consumers: appearance (player look + deterministic NPC
-// variants), the animation state machine, speed-tied walk timing, and asset
-// fallbacks. Art is the packed chibi LPC paper-doll set (public/lpc/).
+// iso canvas consumers: appearance (RPG base + equipment layers), the
+// animation state machine, speed-tied walk timing, and asset fallbacks.
+// BUILD 702: art is the user-supplied RPG sprite pack (public/rpg/).
 {
   const cs = await import('../src/game/iso/characterSystem');
-  const iso = await import('../src/game/iso/isoSprites');
+  const rpg = await import('../src/game/iso/rpgSprites');
 
   // hashSeed: deterministic, distributes.
   assert(cs.hashSeed('townsfolk-3') === cs.hashSeed('townsfolk-3'), 'hashSeed must be deterministic');
   assert(cs.hashSeed('townsfolk-3') !== cs.hashSeed('townsfolk-4'), 'hashSeed should differ across NPC ids');
 
-  // variantLook: same seed => identical look (chunk reloads / save-load safe).
+  // variantLook: same seed => identical look. BUILD 702: everyone gets the
+  // bald/naked BaseHumanMale default (no auto-equipped items).
   const v1 = cs.variantLook('townsfolk-3');
   const v2 = cs.variantLook('townsfolk-3');
   assert(JSON.stringify(v1) === JSON.stringify(v2), 'variantLook must be deterministic per seed');
-  assert(iso.LPC_BODY_TONES.includes(v1.body), `variant body must come from the pool, got ${v1.body}`);
-  assert(iso.LPC_PANTS.includes(v1.legs), `variant legs must come from the pool, got ${v1.legs}`);
-  assert(iso.LPC_SHIRTS.includes(v1.torso), `variant torso must come from the pool, got ${v1.torso}`);
-  assert(iso.LPC_HAIR_POOL.includes(v1.hair), `variant hair must come from the pool, got ${v1.hair}`);
-  if (v1.hat !== undefined) assert(iso.LPC_HATS.includes(v1.hat), `variant hat must come from the pool, got ${v1.hat}`);
-  // Variety: 12 townsfolk should not all look alike.
-  const seen = new Set(Array.from({ length: 12 }, (_, i) => JSON.stringify(cs.variantLook('townsfolk-' + i))));
-  assert(seen.size >= 10, `expected >= 10 distinct looks for 12 NPCs, got ${seen.size}`);
-  // At least one of 20 wears a headband (25% hat rate sanity check).
-  const hats = Array.from({ length: 20 }, (_, i) => cs.variantLook('townsfolk-' + i).hat).filter(Boolean);
-  assert(hats.length >= 1, 'expected at least one hatted NPC among 20 variants');
+  assert(v1.base === 'BaseHumanMale', `default base must be BaseHumanMale, got ${v1.base}`);
+  assert(Array.isArray(v1.equipment) && v1.equipment.length === 0, 'default must have no equipment');
 
-  // resolveLook: 0 = player, numbers seed legacy variants, strings seed
-  // variants, explicit looks pass through.
-  assert(JSON.stringify(cs.resolveLook(0)) === JSON.stringify(iso.PLAYER_LOOK), 'resolveLook(0) must be the player look');
-  assert(JSON.stringify(cs.resolveLook(3)) === JSON.stringify(cs.variantLook('legacy-look-3')),
-    'resolveLook(n) must be a deterministic legacy variant');
+  // resolveLook: 0 = player default, numbers/strings => deterministic default.
+  assert(JSON.stringify(cs.resolveLook(0)) === JSON.stringify(rpg.RPG_DEFAULT_LOOK),
+    'resolveLook(0) must be the default RPG look');
   assert(JSON.stringify(cs.resolveLook('townsfolk-7')) === JSON.stringify(cs.variantLook('townsfolk-7')),
     'resolveLook(string) must equal variantLook');
-  const explicit = { body: 'tan', legs: 'red', torso: 'green', hair: 'none' };
-  assert(cs.resolveLook(explicit) === explicit, 'resolveLook(LpcLook) must pass through untouched');
+  const explicit = { base: 'BaseSkeleton' as const, equipment: [] };
+  assert(cs.resolveLook(explicit) === explicit, 'resolveLook(RpgLook) must pass through untouched');
 
-  // CHAR_CLIPS: state -> animation file. Attack/hurt have dedicated art
-  // now (slash/hurt); interact/dead fall back to idle (placeholder).
-  assert(cs.CHAR_CLIPS.idle.anim === 'idle', 'idle must play the idle file');
-  assert(cs.CHAR_CLIPS.walk.anim === 'walk', 'walk must play the walk file');
-  assert(cs.CHAR_CLIPS.attack.anim === 'slash' && !cs.CHAR_CLIPS.attack.placeholder,
-    'attack must play the real slash clip');
-  assert(cs.CHAR_CLIPS.hurt.anim === 'hurt' && !cs.CHAR_CLIPS.hurt.placeholder,
-    'hurt must play the real hurt clip');
-  for (const s of ['interact', 'dead'] as const) {
-    assert(cs.CHAR_CLIPS[s].placeholder === true, `${s} must be marked placeholder`);
-    assert(cs.CHAR_CLIPS[s].anim === 'idle', `${s} must fall back to the idle file`);
-  }
-  assert(cs.CHAR_STATES.length === 6, 'state machine must expose all 6 states');
-  assert(iso.LPC_FRAMES.walk === 9 && iso.LPC_FRAMES.idle === 2 &&
-    iso.LPC_FRAMES.slash === 6 && iso.LPC_FRAMES.hurt === 6, 'LPC frame counts must be 9/2/6/6');
+  // CHAR_CLIPS: state -> RPG animation. All 7 anims have real art now
+  // (no placeholders); hurt falls back to Idle + red flash (no pain art).
+  assert(cs.CHAR_CLIPS.idle.anim === 'Idle', 'idle must play the Idle clip');
+  assert(cs.CHAR_CLIPS.walk.anim === 'Walk', 'walk must play the Walk clip');
+  assert(cs.CHAR_CLIPS.attack.anim === 'Attack' && cs.CHAR_CLIPS.attack.oneShot,
+    'attack must play the Attack clip as one-shot');
+  assert(cs.CHAR_CLIPS.bow.anim === 'Bow' && cs.CHAR_CLIPS.bow.oneShot, 'bow must be one-shot');
+  assert(cs.CHAR_CLIPS.cast.anim === 'Cast' && cs.CHAR_CLIPS.cast.oneShot, 'cast must be one-shot');
+  assert(cs.CHAR_CLIPS.dead.anim === 'Death' && cs.CHAR_CLIPS.dead.oneShot,
+    'dead must play the Death clip as one-shot');
+  assert(cs.CHAR_CLIPS.hurt.anim === 'Idle', 'hurt must fall back to Idle (no pain art)');
+  assert(cs.CHAR_CLIPS.interact.anim === 'Idle', 'interact must fall back to Idle');
+  assert(rpg.RPG_ANIM_FRAMES.Walk === 11 && rpg.RPG_ANIM_FRAMES.Idle === 4 &&
+    rpg.RPG_ANIM_FRAMES.Attack === 10 && rpg.RPG_ANIM_FRAMES.Death === 8,
+    'RPG frame counts must be Walk=11/Idle=4/Attack=10/Death=8');
+
+  // RPG direction mapping: all 8 Face8 values map to distinct CAMs.
+  const cams = new Set(Object.values(rpg.RPG_CAM_FOR_FACE));
+  assert(cams.size === 8, 'all 8 facings must map to distinct CAMs');
+  assert(rpg.RPG_CAM_FOR_FACE.up === 4 && rpg.RPG_CAM_FOR_FACE.down === 0,
+    'up must be CAM4 (back), down must be CAM0 (front)');
 
   // walkFpsForSpeed: 0 => 0 (no cycling when stopped), monotonic, clamped.
   assert(cs.walkFpsForSpeed(0) === 0, 'stopped speed must give 0 fps');
   assert(cs.walkFpsForSpeed(-3) === 0, 'negative speed must give 0 fps');
-  const fpsSlow = cs.walkFpsForSpeed(1.5);   // ambling NPC (~0.22u / 120ms tick)
-  const fpsWalk = cs.walkFpsForSpeed(11.5);  // player on foot
-  const fpsHorse = cs.walkFpsForSpeed(129);  // mounted
+  const fpsSlow = cs.walkFpsForSpeed(1.5);
+  const fpsWalk = cs.walkFpsForSpeed(11.5);
+  const fpsHorse = cs.walkFpsForSpeed(129);
   assert(fpsSlow >= 2 && fpsSlow < fpsWalk, `NPC fps ${fpsSlow} must be >= min and below player fps`);
   assert(fpsWalk > fpsSlow && fpsWalk <= 12, `player fps ${fpsWalk} must exceed NPC fps and be clamped`);
   assert(fpsHorse === 12, `horse fps must clamp at 12, got ${fpsHorse}`);
@@ -3530,382 +3526,92 @@ console.log('Testing examine system...');
   // walkFrameAt: in-range, 0 when stopped, advances with time.
   assert(cs.walkFrameAt(1000, 0) === 0, 'walkFrameAt must be 0 when stopped');
   const fr1 = cs.walkFrameAt(0, 11.5), fr2 = cs.walkFrameAt(500, 11.5);
-  assert(fr1 >= 0 && fr1 < 9 && fr2 >= 0 && fr2 < 9, 'walkFrameAt must stay in [0,9)');
+  assert(fr1 >= 0 && fr1 < 11 && fr2 >= 0 && fr2 < 11, 'walkFrameAt must stay in [0,11)');
   assert(fr2 !== fr1, 'walkFrameAt must advance over 500ms at walk speed');
-
-  // BUILD 386: up/down facings cycle the feet faster than left/right at the
-  // same ground speed (the back/front rows shuffle slowly at the side rate).
-  assert(cs.WALK_FPS_UPDOWN_MULT > 1, 'up/down walk multiplier must exceed 1');
-  const phaseAfter = (facing: 'up' | 'down' | 'left' | 'right'): number => {
-    const a = new cs.CharacterAnimator('rate-probe');
-    a.phase = 0;
-    // prime, then two steady 500ms steps at 4 units/sec (no phase wrap)
-    a.update({ x: 0, y: 0, moving: true, facing, nowMs: 0 });
-    a.update({ x: 2, y: 0, moving: true, facing, nowMs: 500 });
-    a.update({ x: 4, y: 0, moving: true, facing, nowMs: 1000 });
-    return a.phase;
-  };
-  const upPhase = phaseAfter('up'), downPhase = phaseAfter('down');
-  const leftPhase = phaseAfter('left'), rightPhase = phaseAfter('right');
-  assert(Math.abs(upPhase - downPhase) < 1e-9, 'up and down must cycle at the same rate');
-  assert(Math.abs(leftPhase - rightPhase) < 1e-9, 'left and right must cycle at the same rate');
-  assert(upPhase > leftPhase, 'up/down feet must cycle faster than left/right');
-  assert(Math.abs(upPhase / leftPhase - cs.WALK_FPS_UPDOWN_MULT) < 1e-9,
-    `up/down rate must be exactly the multiplier over left/right, got ${upPhase / leftPhase}`);
 
   // CharacterAnimator: sim stays authoritative for moving/facing.
   const anim = new cs.CharacterAnimator('townsfolk-3');
   assert(anim.state === 'idle' && anim.facing === 'down', 'animator must start idle facing down');
-  assert(anim.phase >= 0 && anim.phase < 9, 'animator phase seed must be in [0,9)');
+  assert(anim.phase >= 0 && anim.phase < 4, 'animator phase seed must be in [0,4)');
   anim.update({ x: 10, y: 20, moving: true, facing: 'right', nowMs: 1000 });
   anim.update({ x: 10.5, y: 20, moving: true, facing: 'right', nowMs: 1016 });
   assert(anim.state === 'walk', 'animator must be walking while the sim reports moving');
   assert(anim.facing === 'right', 'animator facing must follow the sim');
   assert(anim.speed > 0, 'animator must measure a positive ground speed');
   const fi = anim.frameIndex();
-  assert(fi >= 0 && fi < 9, `walk frame must be in [0,9), got ${fi}`);
+  assert(fi >= 0 && fi < 11, `walk frame must be in [0,11), got ${fi}`);
   // Stopping keeps the last facing and idles.
   anim.update({ x: 10.5, y: 20, moving: false, facing: 'right', nowMs: 2000 });
   assert(anim.state === 'idle', 'animator must idle when the sim reports stopped');
   assert(anim.facing === 'right', 'stopping must keep the last facing direction');
-  assert(anim.frameIndex() === 0, 'idle must show frame 0');
   // Faster ground speed => faster phase advance (animation tied to movement).
   const slow = new cs.CharacterAnimator('slow'), fast = new cs.CharacterAnimator('fast');
   for (let i = 0; i < 10; i++) {
     slow.update({ x: i * 0.02, y: 0, moving: true, facing: 'down', nowMs: 1000 + i * 16 });
     fast.update({ x: i * 0.2, y: 0, moving: true, facing: 'down', nowMs: 1000 + i * 16 });
   }
-  assert(fast.phase % 9 !== slow.phase % 9 || fast.speed > slow.speed,
-    'faster movement must advance the walk phase more than slower movement');
   assert(fast.speed > slow.speed, `measured speed must reflect distance: fast=${fast.speed} slow=${slow.speed}`);
-  // Attack/hurt states are settable and render their real clips (no crash).
+  // Attack is one-shot: plays through then returns to idle/walk. Death holds.
   anim.setState('attack');
   assert(anim.state === 'attack', 'setState must switch the animation state');
-  assert(anim.frameIndex() >= 0 && anim.frameIndex() < 6, 'attack must show a slash frame');
-  anim.setState('hurt');
-  assert(anim.frameIndex() >= 0 && anim.frameIndex() < 6, 'hurt must show a hurt frame');
+  assert(anim.frameIndex() >= 0 && anim.frameIndex() < 10, 'attack must show an Attack frame');
+  // Simulate the attack playing through (10 frames at 12fps = ~833ms).
+  for (let t = 0; t < 10; t++) {
+    anim.update({ x: 10.5, y: 20, moving: false, facing: 'right', nowMs: 2000 + t * 100 });
+  }
+  assert(anim.state === 'idle', 'attack must return to idle after playing through');
+  anim.setState('dead');
+  for (let t = 0; t < 15; t++) {
+    anim.update({ x: 10.5, y: 20, moving: false, facing: 'right', nowMs: 3000 + t * 100 });
+  }
+  assert(anim.state === 'dead', 'dead must stay dead');
+  assert(anim.frameIndex() === 7, 'dead must hold the final Death frame');
+  // Death cannot be interrupted.
+  anim.setState('attack');
+  assert(anim.state === 'dead', 'death must not be interruptible');
 }
 
-// ---- BUILD 390: barbarian sprite registry + hair + equipment mapping ----
+// ---- BUILD 702: RPG sprite registry (replaces barbarian/LPC) ----
 {
-  const stats = barbarianRegistryStats();
-  assert(stats.variants.length === 4 && ['bare', 'blue', 'sword', 'bow'].every((v) => stats.variants.includes(v)),
-    `barbarian registry must have bare/blue/sword/bow variants, got ${stats.variants.join(',')}`);
-  assert(stats.views.length === 3 && ['down', 'side', 'up'].every((v) => stats.views.includes(v)),
-    'barbarian registry must expose down/side/up views (dedicated left/right sets are per-anim extras)');
-  // BUILD 404: every variant's dedicated left set must be complete for
-  // idle + walk + attack (blue/sword/bow attacks use dedicated per-variant
-  // left art; bare's left attacks reuse the side set, mirrored).
-  // BUILD 409: the sword variant's left/right walks are 9 frames (sampled
-  // from the user's 36-frame sheets to fill the LPC walk phase cycle).
-  // BUILD 425: the bare variant's left/right walks are 9 frames sampled
-  // every 4th from the user's new 36-frame basic left/right sheets.
-  for (const v of ['bare', 'blue', 'sword', 'bow'] as const) {
-    const wantWalk = v === 'sword' || v === 'bare' ? 9 : 2;
-    assert(BARB_FRAMES[v]?.['left']?.['idle']?.length === 1 &&
-      BARB_FRAMES[v]?.['left']?.['walk']?.length === wantWalk &&
-      (BARB_FRAMES[v]?.['left']?.['attack']?.length ?? 0) >= 2,
-      `${v} dedicated left set must have idle + ${wantWalk} walk + attack frames`);
+  const rpg = await import('../src/game/iso/rpgSprites');
+  // All 7 bases registered.
+  assert(rpg.RPG_BASES.length === 7, `must have 7 bases, got ${rpg.RPG_BASES.length}`);
+  assert(rpg.RPG_BASES.includes('BaseHumanMale'), 'must include BaseHumanMale');
+  assert(rpg.RPG_BASES.includes('BaseSkeleton'), 'must include BaseSkeleton');
+  assert(!rpg.RPG_BASES.includes('BaseHumanFemale' as never), 'must NOT claim a female base (none in pack)');
+  // Animation metadata matches verified file structure.
+  assert(rpg.RPG_ANIM_FRAMES.Idle === 4, 'Idle must be 4 frames');
+  assert(rpg.RPG_ANIM_FRAMES.Walk === 11, 'Walk must be 11 frames');
+  assert(rpg.RPG_ANIM_FRAMES.Run === 10, 'Run must be 10 frames');
+  assert(rpg.RPG_ANIM_FRAMES.Attack === 10, 'Attack must be 10 frames');
+  assert(rpg.RPG_ANIM_FRAMES.Bow === 9, 'Bow must be 9 frames');
+  assert(rpg.RPG_ANIM_FRAMES.Cast === 9, 'Cast must be 9 frames');
+  assert(rpg.RPG_ANIM_FRAMES.Death === 8, 'Death must be 8 frames');
+  // Frame number arrays match animation frame counts.
+  for (const [anim, frames] of Object.entries(rpg.RPG_ANIM_FRAMES)) {
+    const nums = rpg.RPG_ANIM_FRAME_NUMS[anim as rpg.RpgAnim];
+    assert(nums.length === frames, `${anim} frame numbers must match frame count`);
   }
-  // BUILD 404: every variant's dedicated right set must be complete for
-  // idle + walk + attack (blue/sword/bow attacks use dedicated per-variant
-  // right art; bare's right attacks reuse the side set).
-  for (const v of ['bare', 'blue', 'sword', 'bow'] as const) {
-    const wantWalk = v === 'sword' || v === 'bare' ? 9 : 2;
-    assert(BARB_FRAMES[v]?.['right']?.['idle']?.length === 1 &&
-      BARB_FRAMES[v]?.['right']?.['walk']?.length === wantWalk &&
-      (BARB_FRAMES[v]?.['right']?.['attack']?.length ?? 0) >= 2,
-      `${v} dedicated right set must have idle + ${wantWalk} walk + attack frames`);
-  }
-  // BUILD 413: bare/blue/bow up walk is 9 frames sampled (every 4th) from the
-  // user's 36-frame back-view sheet, filling the LPC walk phase cycle;
-  // sword keeps its 9 sword-in-hand up frames (BUILD 409).
-  for (const v of ['bare', 'blue', 'bow'] as const) {
-    assert(BARB_FRAMES[v]?.['up']?.['walk']?.length === 9,
-      `${v} up walk must be the 9 sampled back-view frames`);
-  }
-  assert(BARB_FRAMES['sword']?.['up']?.['walk']?.length === 9,
-    'sword up walk must keep its 9 sword-in-hand frames');
-  assert(stats.anims.length === 3 && ['idle', 'walk', 'attack'].every((a) => stats.anims.includes(a)),
-    'barbarian registry must expose idle/walk/attack animations');
-  assert(stats.missingFrames.length === 0,
-    `barbarian registry must have no missing frames, got ${stats.missingFrames.slice(0, 5).join(',')}`);
-  // Hair registry: bald + 17 extracted styles.
-  assert(BARBARIAN_HAIRSTYLES.length === 18 && BARBARIAN_HAIRSTYLES[0] === 'bald',
-    `must have 18 hairstyles starting with bald, got ${BARBARIAN_HAIRSTYLES.length}`);
-  assert(stats.hairstyles.length === 18, 'registry stats must report all 18 hairstyles');
-  for (const id of BARBARIAN_HAIRSTYLES) {
-    const label = barbarianHairLabel(id);
-    assert(typeof label === 'string' && label.length > 0, `hairstyle ${id} must have a display label`);
-  }
-  assert(barbarianHairLabel('nope-not-real') === 'Bald', 'unknown hairstyle id must fall back to Bald');
-  // Outfit/weapon -> sprite variant mapping.
-  assert(barbarianVariant('bare', 'none') === 'bare', 'bare + no weapon must use bare sprites');
-  assert(barbarianVariant('blue', 'none') === 'blue', 'blue shirt must use blue sprites');
-  assert(barbarianVariant('bare', 'sword') === 'sword', 'sword must use sword sprites regardless of shirt');
-  assert(barbarianVariant('blue', 'sword') === 'sword', 'sword must beat shirt in the variant pick');
-  assert(barbarianVariant('bare', 'bow') === 'bow', 'bow must use bow sprites');
-  assert(barbarianVariant('blue', 'bow') === 'bow', 'bow must beat shirt in the variant pick');
-  assert(BARBARIAN_ATTACK_MS === 480, 'barbarian attack clip window must be 480ms');
+  // Sprite dimensions and anchor.
+  assert(rpg.RPG_W === 148 && rpg.RPG_H === 130, 'sprite must be 148x130');
+  assert(rpg.RPG_FEET_ROW === 105, 'feet anchor must be row 105');
+  // URL builder produces the verified filename pattern.
+  const url = rpg.rpgSpriteUrl('BaseHumanMale', 'Idle', 'down', 0);
+  assert(url.includes('rpg/BaseHumanMale/1_Idle_CAM0_20.png'),
+    `URL must match pattern, got ${url}`);
+  const urlWalk = rpg.rpgSpriteUrl('BaseSkeleton', 'Walk', 'up', 5);
+  assert(urlWalk.includes('rpg/BaseSkeleton/5_Walk_CAM4_190.png'),
+    `walk URL must match, got ${urlWalk}`);
+  // Default look is bald/naked.
+  assert(rpg.RPG_DEFAULT_LOOK.base === 'BaseHumanMale', 'default base must be BaseHumanMale');
+  assert(rpg.RPG_DEFAULT_LOOK.equipment.length === 0, 'default must have no equipment');
 }
 
-// ---- BUILD 391: side-view facing convention (pixel regression) ----
-// All barbarian side frames natively face screen-right (visually audited,
-// recorded per-frame in the manifest's sideFacing map); the renderer mirrors
-// the side art when facing=left. BUILD 393 fixed reversed left/right: the art
-// always faced right but drawBarbarian only mirrored when facing=right, so
-// walking left showed right-facing art. A pixel heuristic cannot reliably see
-// facing direction, so this test locks the two things that must agree: the
-// audited per-frame facing record, and the renderer's flip condition.
-// BUILD 392: fixed four mislabeled walk/idle frames (sword_side_walk_1 was a
-// front view, blue_up_walk_0 / blue_up_idle_0 were side views, blue_side_idle_0
-// was a front view). frameViews below locks the audited view of every
-// idle/walk frame.
-import { inflateSync } from 'node:zlib';
+// ---- BUILD 702: RPG sprite system (barbarian/LPC art tests removed) ----
+// The barbarian pixel-regression tests (BUILD 391-427) covered the old
+// barbarian/LPC art which was replaced by the RPG sprite pack. The
+// structural invariants below are preserved.
 {
-  function readPngRgba(path: string): { w: number; h: number; px: Uint8Array } {
-    const buf: Buffer = readFileSyncSprites(path);
-    let pos = 8, w = 0, h = 0, bitDepth = 0, colorType = 0;
-    const idat: Buffer[] = [];
-    while (pos + 8 <= buf.length) {
-      const len = buf.readUInt32BE(pos);
-      const type = buf.toString('ascii', pos + 4, pos + 8);
-      const data = buf.subarray(pos + 8, pos + 8 + len);
-      if (type === 'IHDR') {
-        w = data.readUInt32BE(0); h = data.readUInt32BE(4);
-        bitDepth = data[8]; colorType = data[9];
-      } else if (type === 'IDAT') idat.push(Buffer.from(data));
-      else if (type === 'IEND') break;
-      pos += 12 + len;
-    }
-    if (bitDepth !== 8 || colorType !== 6) throw new Error(`unsupported PNG ${path}`);
-    const raw = inflateSync(Buffer.concat(idat));
-    const stride = w * 4;
-    const px = new Uint8Array(w * h * 4);
-    const prev = new Uint8Array(stride), cur = new Uint8Array(stride);
-    let p = 0;
-    for (let y = 0; y < h; y++) {
-      const f = raw[p++];
-      for (let x = 0; x < stride; x++) {
-        const v = raw[p++];
-        const left = x >= 4 ? cur[x - 4] : 0;
-        const up = prev[x];
-        const upLeft = x >= 4 ? prev[x - 4] : 0;
-        let r: number;
-        if (f === 0) r = v;
-        else if (f === 1) r = (v + left) & 255;
-        else if (f === 2) r = (v + up) & 255;
-        else if (f === 3) r = (v + ((left + up) >> 1)) & 255;
-        else if (f === 4) {
-          const pa = Math.abs(up - upLeft), pb = Math.abs(left - upLeft), pc = Math.abs(left + up - 2 * upLeft);
-          r = (v + (pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft)) & 255;
-        } else throw new Error(`bad PNG filter ${f} in ${path}`);
-        cur[x] = r;
-      }
-      px.set(cur, y * stride);
-      prev.set(cur);
-    }
-    return { w, h, px };
-  }
-  function sideCentroidX(px: Uint8Array, w: number, h: number): number {
-    let sx = 0, n = 0;
-    for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
-      const i = (y * w + x) * 4;
-      if (px[i + 3] > 40 && px[i] + px[i + 1] + px[i + 2] < 380) { sx += x; n++; }
-    }
-    return n === 0 ? 0.5 : sx / n / w;
-  }
-  const barbManifest = JSON.parse(readFileSyncSprites('public/barbarian/manifest.json', 'utf8'));
-  const sigs = barbManifest._conventions?.sideCentroidX as Record<string, number> | undefined;
-  assert(sigs && Object.keys(sigs).length >= 20,
-    'barbarian manifest must record side-view facing signatures for every side frame');
-  for (const [file, recorded] of Object.entries(sigs)) {
-    const { w, h, px } = readPngRgba(`public/barbarian/${file}`);
-    const cx = sideCentroidX(px, w, h);
-    assert(Math.abs(cx - recorded) < 0.015,
-      `${file}: facing signature drifted (recorded ${recorded}, now ${cx.toFixed(4)}) — side art may be reversed again`);
-  }
-  // BUILD 393: the audited facing record — every side frame must have a
-  // human-verified facing, and it must be "right" (the pack convention).
-  const sideFacing = barbManifest._conventions?.sideFacing as Record<string, string> | undefined;
-  assert(sideFacing && Object.keys(sideFacing).length >= 20,
-    'barbarian manifest must record the audited facing of every side frame');
-  for (const file of Object.keys(sigs)) {
-    assert(sideFacing[file] === 'right',
-      `${file}: audited side facing must be "right" (pack convention)`);
-  }
-  // BUILD 393: the renderer must mirror the (right-facing) side art exactly
-  // when facing=left — this is the condition that was backwards.
-  // BUILD 400: the bare variant gained a dedicated left-facing idle/walk set,
-  // which is never mirrored; only the shared side art is mirrored.
-  const barbSrc = readFileSyncSprites('src/game/iso/barbarian.ts', 'utf8');
-  assert(/const flip = o\.facing === 'left' && fview !== 'left'/.test(barbSrc),
-    'drawBarbarian must mirror shared side art when facing=left (dedicated left set is never mirrored)');
-  // BUILD 398: the bare variant's dedicated right-facing idle/walk set must be
-  // selected when facing=right (per-anim, falling back to the side set).
-  assert(/\?\.\['right'\]\?\.\[anim\]/.test(barbSrc),
-    'drawBarbarian must select the dedicated right frame set when facing=right');
-  // BUILD 400: the bare variant's dedicated left-facing idle/walk set must be
-  // selected when facing=left (per-anim, falling back to the side set).
-  assert(/\?\.\['left'\]\?\.\[anim\]/.test(barbSrc),
-    'drawBarbarian must select the dedicated left frame set when facing=left');
-  // BUILD 400: the dedicated left frames face screen-left (the pack's new
-  // convention for the left set); lock the audited facing and the centroid
-  // signature so a reversed/mislabeled left frame fails.
-  const leftSigs = barbManifest._conventions?.leftCentroidX as Record<string, number> | undefined;
-  assert(leftSigs && Object.keys(leftSigs).length >= 3,
-    'barbarian manifest must record left-view facing signatures for the dedicated left set');
-  for (const [file, recorded] of Object.entries(leftSigs)) {
-    const { w, h, px } = readPngRgba(`public/barbarian/${file}`);
-    const cx = sideCentroidX(px, w, h);
-    assert(Math.abs(cx - recorded) < 0.015,
-      `${file}: left facing signature drifted (recorded ${recorded}, now ${cx.toFixed(4)})`);
-  }
-  const leftFacing = barbManifest._conventions?.leftFacing as Record<string, string> | undefined;
-  assert(leftFacing && Object.keys(leftFacing).length >= 3,
-    'barbarian manifest must record the audited facing of every dedicated left frame');
-  for (const file of Object.keys(leftSigs)) {
-    assert(leftFacing[file] === 'left',
-      `${file}: audited left facing must be "left" (pack convention)`);
-  }
-  // BUILD 404: the dedicated right frames face screen-right; lock the audited
-  // facing and the centroid signature so a reversed/mislabeled right frame
-  // fails. Mirrors the left-view audit above.
-  const rightSigs = barbManifest._conventions?.rightCentroidX as Record<string, number> | undefined;
-  assert(rightSigs && Object.keys(rightSigs).length >= 9,
-    'barbarian manifest must record right-view facing signatures for the dedicated right set');
-  for (const [file, recorded] of Object.entries(rightSigs)) {
-    const { w, h, px } = readPngRgba(`public/barbarian/${file}`);
-    const cx = sideCentroidX(px, w, h);
-    assert(Math.abs(cx - recorded) < 0.015,
-      `${file}: right facing signature drifted (recorded ${recorded}, now ${cx.toFixed(4)})`);
-  }
-  const rightFacing = barbManifest._conventions?.rightFacing as Record<string, string> | undefined;
-  assert(rightFacing && Object.keys(rightFacing).length >= 9,
-    'barbarian manifest must record the audited facing of every dedicated right frame');
-  for (const file of Object.keys(rightSigs)) {
-    assert(rightFacing[file] === 'right',
-      `${file}: audited right facing must be "right" (pack convention)`);
-  }
-  // BUILD 392: frameViews locks the visually-audited view (up/side/down/right/left/upright/upleft) of
-  // every idle/walk frame, so a mislabeled crop (e.g. a front view saved as
-  // *_up_walk_*) fails even if its pixels never change again.
-  const frameViews = barbManifest._conventions?.frameViews as Record<string, string> | undefined;
-  assert(frameViews && Object.keys(frameViews).length >= 30,
-    'barbarian manifest must record audited views for every idle/walk frame');
-  for (const [file, view] of Object.entries(frameViews)) {
-    const m = /^(bare|blue|sword|bow)_(down|side|upright|upleft|downright|downleft|up|right|left)_(idle|walk)_\d+\.png$/.exec(file);
-    assert(m, `${file}: unexpected frameViews key`);
-    assert(m[2] === view,
-      `${file}: audited view is "${view}" but the filename says "${m[2]}" — frame is mislabeled`);
-    readPngRgba(`public/barbarian/${file}`); // must exist and decode
-  }
-  // BUILD 414: dedicated up-right/up-left diagonal art. bare/blue/bow gain
-  // BUILD 418: diagonal art. bare/blue/bow have a dedicated NW (upleft,
-  // back-3/4) view from the user's sheet (9 walk + 1 idle); NE (upright) is
-  // the exact horizontal mirror of NW (same convention as left/right).
-  // Attacks share the up frames (no diagonal attack sheets provided).
-  // The renderer selects them per-anim with fallback to up; sword has no
-  // diagonal art and must fall back to its up frames.
-  {
-    const { BARB_FRAMES, BARB_BOX } = await import('../src/game/iso/barbarian');
-    for (const v of ['bare', 'blue', 'bow']) {
-      const up = BARB_FRAMES[v]?.['up'];
-      const ur = BARB_FRAMES[v]?.['upright'];
-      const ul = BARB_FRAMES[v]?.['upleft'];
-      assert(ur && ul, `${v} must have upright/upleft views`);
-      assert(ur['walk'].length === 9 && ur['walk'].every((f) => f.includes(`${v}_upright_walk_`)),
-        `${v} upright walk must be the 9 dedicated NE frames`);
-      assert(ul['walk'].length === 9 && ul['walk'].every((f) => f.includes(`${v}_upleft_walk_`)),
-        `${v} upleft walk must be the 9 dedicated NW frames`);
-      assert(JSON.stringify(ur['idle']) === JSON.stringify([`barbarian/${v}_upright_idle_0.png`]),
-        `${v} upright idle must be the dedicated NE idle`);
-      assert(JSON.stringify(ul['idle']) === JSON.stringify([`barbarian/${v}_upleft_idle_0.png`]),
-        `${v} upleft idle must be the dedicated NW idle`);
-      assert(JSON.stringify(ur['attack']) === JSON.stringify(up['attack'])
-        && JSON.stringify(ul['attack']) === JSON.stringify(up['attack']),
-        `${v} upright/upleft attack must share the up attack`);
-      assert(BARB_BOX[v]?.['upright'] && BARB_BOX[v]?.['upleft'],
-        `${v} must have upright/upleft layout boxes`);
-      for (const f of [...ur['walk'], ...ul['walk'], ...ur['idle'], ...ul['idle']])
-        readPngRgba(`public/${f}`);
-      // Pixel lock: NE frames are the horizontal mirror of the NW frames.
-      for (let i = 0; i < 9; i++) {
-        const a = readPngRgba(`public/barbarian/${v}_upleft_walk_${i}.png`);
-        const b = readPngRgba(`public/barbarian/${v}_upright_walk_${i}.png`);
-        assert(a.w === b.w && a.h === b.h, `${v}_upright_walk_${i}.png size mismatch`);
-        let bad = 0;
-        for (let y = 0; y < a.h && bad < 5; y++) for (let x = 0; x < a.w; x++) {
-          const ia = (y * a.w + x) * 4, ib = (y * b.w + (b.w - 1 - x)) * 4;
-          for (let k = 0; k < 4; k++) if (a.px[ia + k] !== b.px[ib + k]) { bad++; break; }
-        }
-        assert(bad === 0, `${v}_upright_walk_${i}.png is not the mirror of ${v}_upleft_walk_${i}.png`);
-      }
-    }
-    assert(!BARB_FRAMES['sword']?.['upright'] && !BARB_FRAMES['sword']?.['upleft'] ||
-      (BARB_FRAMES['sword']?.['upright']?.['walk']?.length === 9 && BARB_FRAMES['sword']?.['upleft']?.['walk']?.length === 9),
-      'sword either lacks diagonal art (falls back to up) or has the dedicated 9-frame sets');
-    assert(/const uf = BARB_FRAMES\[variant\]\?\.\['upright'\]\?\.\[anim\]/.test(barbSrc),
-      'drawBarbarian must select the dedicated up-right frame set when facing=upright');
-    assert(/const uf = BARB_FRAMES\[variant\]\?\.\['upleft'\]\?\.\[anim\]/.test(barbSrc),
-      'drawBarbarian must select the dedicated up-left frame set when facing=upleft');
-    assert(/fview = \(uf && uf\.length > 0\) \? 'upright' : 'up'/.test(barbSrc),
-      'drawBarbarian must fall back to the up view when a variant lacks up-right art');
-  }
-  // BUILD 426: southward diagonal art. bare has dedicated SE (downright) and
-  // SW (downleft) views from the user's 36-frame sheets (9 walk sampled every
-  // 4th + 1 idle each); attacks share the down frames. Other variants lack
-  // them and fall back per-anim to the side views. The renderer selects them
-  // per-anim with fallback to right/left.
-  {
-    const { BARB_FRAMES, BARB_BOX } = await import('../src/game/iso/barbarian');
-    const dr = BARB_FRAMES['bare']?.['downright'];
-    const dl = BARB_FRAMES['bare']?.['downleft'];
-    assert(dr && dl, 'bare must have downright/downleft views');
-    assert(dr['walk'].length === 9 && dr['walk'].every((f) => f.includes('bare_downright_walk_')),
-      'bare downright walk must be the 9 dedicated SE frames');
-    assert(dl['walk'].length === 9 && dl['walk'].every((f) => f.includes('bare_downleft_walk_')),
-      'bare downleft walk must be the 9 dedicated SW frames');
-    assert(JSON.stringify(dr['idle']) === JSON.stringify(['barbarian/bare_downright_idle_0.png']),
-      'bare downright idle must be the dedicated SE idle');
-    assert(JSON.stringify(dl['idle']) === JSON.stringify(['barbarian/bare_downleft_idle_0.png']),
-      'bare downleft idle must be the dedicated SW idle');
-    assert(JSON.stringify(dr['attack']) === JSON.stringify(BARB_FRAMES['bare']['down']['attack']),
-      'bare downright attack must share the down attack');
-    assert(BARB_BOX['bare']?.['downright'] && BARB_BOX['bare']?.['downleft'],
-      'bare must have downright/downleft layout boxes');
-    for (const f of [...dr['walk'], ...dl['walk'], ...dr['idle'], ...dl['idle']])
-      readPngRgba(`public/${f}`);
-    for (const v of ['blue', 'bow'])
-      assert(!BARB_FRAMES[v]?.['downright'] && !BARB_FRAMES[v]?.['downleft'],
-        `${v} has no southward diagonal art — it must fall back to the side views`);
-    // BUILD 433: sword now has dedicated southward diagonal art (user's sheets).
-    for (const v of ['downright', 'downleft']) {
-      const sw = BARB_FRAMES['sword']?.[v]?.['walk'];
-      assert(sw && sw.length === 9 && sw.every((f) => f.includes(`sword_${v}_walk_`)),
-        `sword ${v} walk must be the 9 dedicated frames`);
-    }
-    assert(/fview = \(uf && uf\.length > 0\) \? 'downright' : 'right'/.test(barbSrc),
-      'drawBarbarian must fall back to the right view when a variant lacks down-right art');
-    assert(/fview = \(uf && uf\.length > 0\) \? 'downleft' : 'left'/.test(barbSrc),
-      'drawBarbarian must fall back to the left view when a variant lacks down-left art');
-  }
-  // BUILD 409: the sword variant's up/right/left sets are the user's real
-  // sword art (9-frame walks sampled from the 36-frame sheets, neutral-frame
-  // idles so the sword never pops in/out). Lock the wiring: 9 walk frames
-  // each (matches the LPC walk phase cycle), 1 idle frame each, boxes match
-  // the extracted canvas sizes, and every listed file decodes.
-  for (const view of ['up', 'right', 'left']) {
-    const walk = barbManifest.sword[view].walk as string[];
-    const idle = barbManifest.sword[view].idle as string[];
-    assert(walk.length === 9, `sword ${view} walk must have 9 frames (got ${walk.length})`);
-    assert(idle.length === 1, `sword ${view} idle must have 1 frame`);
-    for (const f of [...walk, ...idle]) readPngRgba(`public/barbarian/${f}`);
-    const box = barbManifest.sword[view]._box;
-    const { w, h } = readPngRgba(`public/barbarian/${walk[0]}`);
-    assert(box.w === w && box.h === h,
-      `sword ${view} box ${box.w}x${box.h} must match frame canvas ${w}x${h}`);
-  }
   // Player layering invariant (BUILD 427): the iso field depth-sorts the
   // player with the world — when behind a house the house covers them, when
   // in front the player covers the house. No separate top-most pass.
@@ -3923,14 +3629,10 @@ import { inflateSync } from 'node:zlib';
     'isFieldPositionBlocked must carve the doorway out of building collision');
   assert(/same doorway carve-out as town buildings/.test(appSrc),
     'isFieldPositionBlocked must carve the doorway out of farmhouse collision');
-  // BUILD 430: tutorial-house sword. Both sprites keyed (RGBA), ground item
-  // wired in the iso interior, pickup grants a sword, inventory uses the art.
-  for (const f of ['public/items/sword-inventory.png', 'public/items/sword-ground.png']) {
-    const img = readPngRgba(f);
-    assert(img.w > 0 && img.h > 0 && img.px.length === img.w * img.h * 4,
-      f + ' must be a valid RGBA PNG (blue keyed out)');
-  }
-  assert(/IsoGroundItem/.test(readFileSyncSprites('src/game/iso/IsoInteriorView.tsx', 'utf8')),
+  // BUILD 430: tutorial-house sword. Ground item wired in the iso interior,
+  // pickup grants a sword, inventory uses the art.
+  const interiorSrc = readFileSyncSprites('src/game/iso/IsoInteriorView.tsx', 'utf8');
+  assert(/IsoGroundItem/.test(interiorSrc),
     'IsoInteriorView must support ground items');
   assert(/TUTORIAL_SWORD_ITEM/.test(appSrc),
     'App must define the tutorial-house sword ground item');

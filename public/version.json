@@ -1,6 +1,6 @@
 {
   "build": "701",
   "note": "Zoom-out perf + sprite stability + grass LOD: chunk-LOD ground path memoized (3-10x faster, pixel-identical), critter double-zoom-scale fixed (36*zm in world units under zm canvas scale = zm^2 on screen), culling margins hardened, grass LOD hash-noise replaced with smooth 3-octave value noise",
-  "timestamp": "2026-10-15T02:36:46.568Z",
-  "cacheBuster": "mv8xgvhk"
+  "timestamp": "2026-10-15T02:58:06.934Z",
+  "cacheBuster": "mv8y8bfa"
 }

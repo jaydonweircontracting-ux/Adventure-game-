@@ -5,7 +5,8 @@
 // refetch on every build. Use for public/ image assets only; code bundles
 // already have content hashes.
 export function artUrl(path: string): string {
-  const base = import.meta.env.BASE_URL;
+  // BUILD 702: safe for Node (sim tests) where import.meta.env is undefined.
+  const base = (typeof import.meta !== 'undefined' && (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL) || '/';
   const build =
     (typeof window !== 'undefined' &&
       (window as unknown as { __AG_BUILD?: string }).__AG_BUILD) || '690';

@@ -13,17 +13,14 @@ import {
   type TilePoint,
 } from './projection';
 import {
-  preloadLpcSprites,
   isoPlayerFaceForScreenDeltaSticky,
   type Face4, type Face8,
 } from './isoSprites';
-import { preloadBarbarian } from './barbarian';
 // BUILD 674: Per-house interior layouts.
 // BUILD 675: House-type mapping for resident archetypes.
 import { generateInteriorLayout, type HouseType } from '../interiors';
 import { houseTypeForBuilding } from '../houseTypes';
-import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
-import type { BarbarianOutfit, BarbarianWeapon } from './barbarian';
+import { CharacterAnimator, drawIsoCharacter, preloadCharacterSprites, type LookRef } from './characterSystem';
 import {
   preloadDungeonKit, dungeonKitReady,
   drawWallPanel, drawKitBillboard, drawKitFloor,
@@ -87,8 +84,9 @@ interface IsoInteriorViewProps {
   // tap-to-move. Screen up = tile north, matching the iso demo.
   getHeldDir?: () => { x: number; y: number };
   // BUILD 390: barbarian player equipment (player is look 0).
-  barbOutfit?: BarbarianOutfit;
-  barbWeapon?: BarbarianWeapon;
+  // BUILD 702: deprecated (RPG sprite system) — kept for App.tsx compat, ignored.
+  barbOutfit?: unknown;
+  barbWeapon?: unknown;
   barbHair?: string;
   // BUILD 422: debug direction test — when set, the player shows this facing's
   // sprite sheet with the walk cycle playing, ignoring movement deltas.
@@ -243,7 +241,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
   const heldDirRef = useRef(getHeldDir);
   heldDirRef.current = getHeldDir;
 
-  useEffect(() => { preloadLpcSprites(); preloadBarbarian(); preloadDungeonKit(); }, []);
+  useEffect(() => { preloadCharacterSprites(); preloadDungeonKit(); }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -657,7 +655,6 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       const draw = (g2: CanvasRenderingContext2D) => {
         drawIsoCharacter({
           g: g2, x: c.x, y: c.y, look, nowMs, animator: anim,
-          barbOutfit, barbWeapon, barbHair,
         });
       };
       return { depth, draw };

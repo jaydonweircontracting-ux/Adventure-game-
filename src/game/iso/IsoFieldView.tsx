@@ -13,12 +13,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import {
-  preloadLpcSprites, isoPlayerFaceForScreenDeltaSticky, type Face4, type Face8,
+  isoPlayerFaceForScreenDeltaSticky, type Face4, type Face8,
 } from './isoSprites';
-import { preloadBarbarian } from './barbarian';
-import type { BarbarianOutfit, BarbarianWeapon } from './barbarian';
-import { BARBARIAN_ATTACK_MS } from './barbarian';
-import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
+import { CharacterAnimator, drawIsoCharacter, preloadCharacterSprites, type LookRef } from './characterSystem';
 import { artUrl } from '../artCache';
 import { computeDirtPathGeometry, buildDirtPath2D, DIRT_LAYER_STYLE } from './dirtPaths';
 // BUILD 389: user-supplied landscape tileset + ambient critters.
@@ -137,8 +134,9 @@ interface IsoFieldViewProps {
   zoom: number; // BUILD 372: zoom is owned by App so the main zoom buttons drive it
   onZoomChange: (z: number) => void;
   // BUILD 390: barbarian player equipment -> iso sprite variant + attack anim.
-  barbOutfit?: BarbarianOutfit;
-  barbWeapon?: BarbarianWeapon;
+  // BUILD 702: deprecated (RPG sprite system) — kept for App.tsx compat, ignored.
+  barbOutfit?: unknown;
+  barbWeapon?: unknown;
   barbHair?: string;
   barbAttackSequence?: number;
   // BUILD 422: debug direction test — when set, the player shows this facing's
@@ -344,8 +342,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   zoomRef.current = zoom;
 
   useEffect(() => {
-    preloadLpcSprites();
-    preloadBarbarian(); // BUILD 389: user-supplied player sprite
+    preloadCharacterSprites(); // BUILD 702: RPG character sprite pack
     preloadIsoTiles(); // BUILD 389: landscape tileset
     preloadCritters(); // BUILD 389: ambient critters
     const canvas = canvasRef.current!;
@@ -381,7 +378,6 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     // BUILD 390: track the player's attack sequence -> swing start time so the
     // barbarian attack clip plays once per swing.
     let lastAttackSeq = -1;
-    let attackStartMs = -1e9;
 
     let raf = 0;
     let last = performance.now();
@@ -407,7 +403,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
 
     // Shared character renderer: one animator per character id drives facing,
     // walk/idle state and speed-tied walk phase; the draw is feet-anchored.
-    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, barb?: { attackT?: number }, size?: number) => {
+    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, size?: number) => {
       const c = isoToScreen(tx, ty);
       let anim = charAnims.get(animKey);
       if (!anim) { anim = new CharacterAnimator(animKey); charAnims.set(animKey, anim); }
@@ -417,11 +413,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         depth: tx + ty + 0.01, draw: (g2) => {
           drawIsoCharacter({
             g: g2, x: c.x, y: c.y, look, nowMs: now, animator: anim,
-            barbOutfit: liveRef.current.barbOutfit,
-            barbWeapon: liveRef.current.barbWeapon,
-            barbHair: liveRef.current.barbHair,
-            barbAttackT: barb?.attackT,
-            // BUILD 699: children render smaller (same chibi LPC sprites, scaled).
+            // BUILD 699: children render smaller.
             size,
           });
         },
@@ -460,11 +452,14 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const live = liveRef.current;
-      // BUILD 390: a new attack sequence starts the barbarian swing timer.
+      // BUILD 702: a new attack sequence triggers the RPG attack animation
+      // via the animator state machine (one-shot, returns to idle/walk).
       const seq = live.barbAttackSequence ?? 0;
-      if (seq !== lastAttackSeq) { lastAttackSeq = seq; attackStartMs = nowMs; }
-      const swingT = nowMs - attackStartMs;
-      const playerAttackT = swingT < BARBARIAN_ATTACK_MS ? swingT : -1;
+      if (seq !== lastAttackSeq) {
+        lastAttackSeq = seq;
+        const pa = charAnims.get('player');
+        if (pa) pa.setState('attack');
+      }
       // player facing from movement delta
       const mdx = live.px - prevP.x, mdy = live.py - prevP.y;
       // BUILD 422: debug direction test overrides facing and forces the walk
@@ -1225,7 +1220,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         // the feet anchor (52 * 62/64 ~= 50.4 world units); the old 50 let
         // NPCs pop out while their head was still visible at the edge.
         if (nc.x < cam.x - npcVhw - 50 || nc.x > cam.x + npcVhw + 50 || nc.y < cam.y - npcVhh - 100 || nc.y > cam.y + npcVhh + 64) continue;
-        drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id, undefined,
+        drawPerson(drawables, npc.position.x, npc.position.y, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id,
           // BUILD 699: children are smaller (70% scale).
           npc.archetype === 'child' ? 36 : undefined);
       }
@@ -1383,7 +1378,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // on top. When the player is behind a house (smaller x+y than the
       // house's front corner), the house draws over them; when in front,
       // the player draws over the house.
-      drawPerson(drawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs, 'player', { attackT: playerAttackT });
+      drawPerson(drawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs, 'player');
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
 
       drawables.sort((a, b) => a.depth - b.depth);

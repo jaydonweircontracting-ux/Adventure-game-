@@ -36,10 +36,10 @@ type SelKind = 'tree' | 'rock' | 'crate' | 'npc' | 'stall' | 'hut' | 'wall' | 's
 interface Selection { kind: SelKind; index: number }
 
 import {
-  preloadLpcSprites,
   preloadFoodSprites, foodReady, foodSprite, FOOD_KEYS,
   type Face4,
 } from './isoSprites';
+import { preloadCharacterSprites } from './characterSystem';
 import { CharacterAnimator, drawIsoCharacter, type LookRef } from './characterSystem';
 
 interface CharState { tx: number; ty: number; fx: number; fy: number }
@@ -79,7 +79,7 @@ export default function IsoRoom(): React.JSX.Element {
   const [worldSize, setWorldSize] = useState('56×56');
   const [infoOpen, setInfoOpen] = useState(false);
 
-  useEffect(() => { preloadLpcSprites(); preloadFoodSprites(); }, []);
+  useEffect(() => { preloadCharacterSprites(); preloadFoodSprites(); }, []);
 
   const showToast = (msg: string) => {
     setToast(msg);
