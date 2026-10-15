@@ -31,6 +31,8 @@ function loadInitialLook(): RpgLook {
 
 function Preview({ look }: { look: RpgLook }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lookRef = useRef(look);
+  lookRef.current = look;
   useEffect(() => {
     const canvas = canvasRef.current;
     const g = canvas?.getContext('2d');
@@ -43,12 +45,12 @@ function Preview({ look }: { look: RpgLook }) {
       g.setTransform(canvas.width / 220, 0, 0, canvas.height / 200, 0, 0);
       g.clearRect(0, 0, 220, 200);
       animator.update({ x: 0, y: 0, moving: false, facing: 'down', nowMs: now });
-      drawIsoCharacter({ g, x: 110, y: 176, look, nowMs: now, animator, size: 154, shadow: true });
+      drawIsoCharacter({ g, x: 110, y: 176, look: lookRef.current, nowMs: now, animator, size: 154, shadow: true });
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [look]);
+  }, []);
   return <canvas ref={canvasRef} className="rpg-creator-preview" aria-label="Live preview of the selected RPG model" />;
 }
 
