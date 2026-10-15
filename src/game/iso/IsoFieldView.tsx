@@ -1660,7 +1660,24 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       const monsterImgs = (window as unknown as { __isoMonsterImgs?: Record<string, HTMLImageElement> }).__isoMonsterImgs || {};
       for (const monster of liveMonsters) {
         const def = isoMonsterDef(monster.kind);
-        if (!def) continue;
+        if (!def) {
+          // Legacy monster kinds still need a visible, targetable iso presence.
+          const c = isoToScreen(monster.position.x, monster.position.y);
+          const mx = monster.position.x, my = monster.position.y;
+          const selected = live.selectedMonsterId === monster.id;
+          const tone = monster.kind === 'dragon' ? '#5f9b43' : monster.kind === 'snake' ? '#6d9142' : monster.kind === 'soldier' ? '#8a9ba8' : '#8b6349';
+          drawables.push({ depth: mx + my - (selected ? 0.03 : 0), draw: (g) => {
+            g.save();
+            g.fillStyle = 'rgba(0,0,0,0.24)'; g.beginPath(); g.ellipse(c.x, c.y + 2, 13, 4, 0, 0, Math.PI * 2); g.fill();
+            if (selected) { g.strokeStyle = '#ffd34d'; g.fillStyle = 'rgba(255,197,45,0.16)'; g.lineWidth = 2.5; g.beginPath(); g.ellipse(c.x, c.y - 2, 22, 8, 0, 0, Math.PI * 2); g.fill(); g.stroke(); }
+            g.fillStyle = tone; g.beginPath(); g.ellipse(c.x, c.y - 13, monster.kind === 'dragon' ? 14 : 9, monster.kind === 'dragon' ? 9 : 12, 0, 0, Math.PI * 2); g.fill();
+            g.fillStyle = '#d8c7aa'; g.beginPath(); g.arc(c.x, c.y - 23, monster.kind === 'dragon' ? 7 : 6, 0, Math.PI * 2); g.fill();
+            g.fillStyle = '#c83232'; g.beginPath(); g.arc(c.x - 2, c.y - 24, 1.2, 0, Math.PI * 2); g.arc(c.x + 2, c.y - 24, 1.2, 0, Math.PI * 2); g.fill();
+            if (monster.hp < monster.maxHp && monster.disposition !== 'defeated') { g.fillStyle = '#271b1b'; g.fillRect(c.x - 13, c.y - 34, 26, 3); g.fillStyle = '#e34b4b'; g.fillRect(c.x - 13, c.y - 34, 26 * Math.max(0, monster.hp / Math.max(1, monster.maxHp)), 3); }
+            g.restore();
+          } });
+          continue;
+        }
         let img = monsterImgs[def.spriteSheet];
         if (!img) { img = new Image(); img.src = artUrl(def.spriteSheet.replace(/^\/+/, '')); monsterImgs[def.spriteSheet] = img; }
         if (!img.complete || img.naturalWidth === 0) continue;
