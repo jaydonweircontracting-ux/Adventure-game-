@@ -26,8 +26,8 @@ import type { Face8 } from './isoSprites';
 import {
   type RpgAnim, type RpgBase, type RpgLook,
   RPG_DEFAULT_BASE, RPG_DEFAULT_LOOK, RPG_ANIM_FRAMES,
-  RPG_W, RPG_H, RPG_FEET_ROW,
-  rpgSprite, preloadRpgBase, rpgCacheStats,
+  RPG_W, RPG_H,
+  rpgSprite, rpgAnchorFor, preloadRpgBase, rpgCacheStats,
 } from './rpgSprites';
 
 // ---------------------------------------------------------------------------
@@ -284,8 +284,9 @@ function drawVectorPlaceholder(
 }
 
 /**
- * Draw one character. Feet-anchored: RPG_FEET_ROW of the sprite lands on
- * (x, y); the root never moves between frames — only the body animates.
+ * Draw one character. Feet-anchored: the frame's content ground point
+ * (per-frame anchor from rpgAnchorFor) lands on (x, y); the root never
+ * moves between frames — only the body animates.
  * Equipment layers (when configured) draw over the base in order.
  */
 export function drawIsoCharacter(o: DrawCharacterOptions): void {
@@ -304,12 +305,17 @@ export function drawIsoCharacter(o: DrawCharacterOptions): void {
     g.beginPath(); g.ellipse(o.x, o.y + 3, 12, 5, 0, 0, 7); g.fill();
   }
 
-  // Sprite is 148x130; scale so height = size, anchor feet at (x, y).
+  // Sprite is 148x130; scale so height = size. BUILD 706: anchor by the
+  // frame's own content ground point (bottom-center of opaque pixels), so
+  // the feet stay planted even though the artist shifted the body inside
+  // the canvas between frames. Equipment layers use the same origin so
+  // they stay aligned with the base.
+  const anchor = rpgAnchorFor(base, anim, face, frame);
   const scale = size / RPG_H;
   const dw = RPG_W * scale;
   const dh = size;
-  const dx = o.x - dw / 2;
-  const dy = o.y - (RPG_FEET_ROW / RPG_H) * dh - lift;
+  const dx = o.x - anchor.cx * scale;
+  const dy = o.y - anchor.cb * scale - lift;
 
   let drew = false;
   const im = rpgSprite(base, anim, face, frame);

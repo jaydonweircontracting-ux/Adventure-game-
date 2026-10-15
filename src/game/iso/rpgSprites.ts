@@ -50,6 +50,106 @@ export const RPG_H = 130;
 export const RPG_FEET_ROW = 105;
 
 // ---------------------------------------------------------------------------
+// Per-frame anchor normalization (BUILD 706)
+// ---------------------------------------------------------------------------
+// The artist's frames do NOT keep the character at a fixed position inside
+// the 148x130 canvas: measured ground-point jitter is up to 8px horizontal /
+// 12px vertical between frames of one animation (Run CAM1). Anchoring by
+// fixed image center + fixed row 105 made characters visibly jump every
+// frame ("flashy/glitchy" walking). Instead we anchor each frame by its own
+// content: bottom-center of the opaque pixels = the ground contact point.
+//
+// Anchors are computed once per unique frame, in the browser, from the
+// loaded image (pure helper anchorFromAlpha is sim-testable). Until an
+// image's anchor is computed, the default (old behavior) is used.
+
+/** Per-frame ground anchor, in source-pixel coordinates (148x130 space). */
+export interface RpgAnchor {
+  /** Content horizontal center (opaque bbox). */
+  cx: number;
+  /** One past the lowest opaque row = ground contact row. */
+  cb: number;
+}
+
+/** Fallback anchor = the old fixed assumption (image center, row 105). */
+export const RPG_DEFAULT_ANCHOR: RpgAnchor = { cx: RPG_W / 2, cb: RPG_FEET_ROW };
+
+/**
+ * Pure: compute the ground anchor from an alpha channel.
+ * `alpha` is row-major, length w*h, values 0-255. Threshold ignores
+ * near-invisible fringe. Returns the default anchor when fully transparent.
+ */
+export function anchorFromAlpha(
+  alpha: ArrayLike<number>, w: number, h: number, threshold = 8,
+): RpgAnchor {
+  let minx = w, maxx = -1, maxy = -1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      if (alpha[row + x] > threshold) {
+        if (x < minx) minx = x;
+        if (x > maxx) maxx = x;
+        if (y > maxy) maxy = y;
+      }
+    }
+  }
+  if (maxx < 0) return { ...RPG_DEFAULT_ANCHOR };
+  return { cx: (minx + maxx + 1) / 2, cb: maxy + 1 };
+}
+
+const rpgAnchorCache: Record<string, RpgAnchor> = {};
+let rpgScanCanvas: HTMLCanvasElement | null = null;
+
+/** Compute and cache the anchor for a loaded image (browser only). */
+function computeAnchorForImage(url: string, im: HTMLImageElement): RpgAnchor {
+  const cached = rpgAnchorCache[url];
+  if (cached) return cached;
+  let anchor: RpgAnchor = { ...RPG_DEFAULT_ANCHOR };
+  try {
+    if (!rpgScanCanvas) {
+      rpgScanCanvas = document.createElement('canvas');
+      rpgScanCanvas.width = RPG_W;
+      rpgScanCanvas.height = RPG_H;
+    }
+    const g = rpgScanCanvas.getContext('2d', { willReadFrequently: true });
+    if (g && im.naturalWidth > 0) {
+      g.clearRect(0, 0, RPG_W, RPG_H);
+      g.drawImage(im, 0, 0);
+      const data = g.getImageData(0, 0, RPG_W, RPG_H).data;
+      const alpha = new Uint8Array(RPG_W * RPG_H);
+      for (let i = 0, j = 3; i < alpha.length; i++, j += 4) alpha[i] = data[j];
+      anchor = anchorFromAlpha(alpha, RPG_W, RPG_H);
+    }
+  } catch {
+    // Canvas tainted or unavailable — keep the default anchor.
+  }
+  rpgAnchorCache[url] = anchor;
+  return anchor;
+}
+
+/**
+ * Ground anchor for (base, anim, face, frameIndex). Returns the cached
+ * per-frame anchor once the image is loaded; the default anchor otherwise
+ * (including non-browser environments like the sim).
+ */
+export function rpgAnchorFor(base: string, anim: RpgAnim, face: Face8, frameIndex: number): RpgAnchor {
+  const url = rpgSpriteUrl(base, anim, face, frameIndex);
+  const cached = rpgAnchorCache[url];
+  if (cached) return cached;
+  if (typeof document === 'undefined') return { ...RPG_DEFAULT_ANCHOR };
+  const im = rpgCache[url];
+  if (im && im.complete && im.naturalWidth > 0) {
+    return computeAnchorForImage(url, im);
+  }
+  return { ...RPG_DEFAULT_ANCHOR };
+}
+
+/** Anchor cache stats for the debug tool. */
+export function rpgAnchorStats(): { computed: number } {
+  return { computed: Object.keys(rpgAnchorCache).length };
+}
+
+// ---------------------------------------------------------------------------
 // Base bodies (verified: these 7 exist in public/rpg/, no female base)
 // ---------------------------------------------------------------------------
 

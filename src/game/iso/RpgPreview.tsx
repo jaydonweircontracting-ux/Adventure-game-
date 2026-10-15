@@ -6,8 +6,8 @@ import { useEffect, useRef, useState } from 'react';
 import {
   type RpgAnim, type RpgBase,
   RPG_BASES, RPG_ANIM_FRAMES, RPG_CAM_FOR_FACE,
-  RPG_W, RPG_H, RPG_FEET_ROW,
-  rpgSprite, preloadRpgBase, rpgCacheStats,
+  RPG_W, RPG_H,
+  rpgSprite, rpgAnchorFor, preloadRpgBase, rpgCacheStats,
 } from './rpgSprites';
 import type { Face8 } from './isoSprites';
 
@@ -71,9 +71,10 @@ export default function RpgPreview(): React.JSX.Element {
           const cy = Math.floor(i / 4) * ch + ch * 0.75;
           const im = rpgSprite(base, anim, f, fi);
           if (im) {
+            const a = rpgAnchorFor(base, anim, f, fi);
             const scale = (ch * 0.7) / RPG_H;
             const dw = RPG_W * scale, dh = RPG_H * scale;
-            g.drawImage(im, cx - dw / 2, cy - (RPG_FEET_ROW / RPG_H) * dh, dw, dh);
+            g.drawImage(im, cx - a.cx * scale, cy - a.cb * scale, dw, dh);
           }
           g.fillStyle = '#fff';
           g.font = '12px sans-serif';
@@ -85,9 +86,10 @@ export default function RpgPreview(): React.JSX.Element {
         const cx = W / 2, cy = H * 0.8;
         const im = rpgSprite(base, anim, face, fi);
         if (im) {
+          const a = rpgAnchorFor(base, anim, face, fi);
           const scale = (H * 0.6) / RPG_H;
           const dw = RPG_W * scale, dh = RPG_H * scale;
-          g.drawImage(im, cx - dw / 2, cy - (RPG_FEET_ROW / RPG_H) * dh, dw, dh);
+          g.drawImage(im, cx - a.cx * scale, cy - a.cb * scale, dw, dh);
         } else {
           g.fillStyle = '#ff0';
           g.font = '14px sans-serif';

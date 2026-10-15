@@ -3663,6 +3663,43 @@ console.log('Testing examine system...');
   assert(rpg.RPG_DEFAULT_LOOK.equipment.length === 0, 'default must have no equipment');
 }
 
+// ---- BUILD 706: per-frame anchor normalization ----
+// The artist shifts the body inside the 148x130 canvas between frames
+// (measured: up to 8px dx / 12px dy jitter in Run). anchorFromAlpha finds
+// the content ground point so the renderer can keep feet planted.
+{
+  const rpg = await import('../src/game/iso/rpgSprites');
+  const W = 148, H = 130;
+  const buf = (fn: (x: number, y: number) => number) => {
+    const a = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) a[y * W + x] = fn(x, y);
+    return a;
+  };
+  // Opaque rect x:[10,19], y:[90,99] -> cx=15, cb=100.
+  const a1 = rpg.anchorFromAlpha(buf((x, y) => (x >= 10 && x <= 19 && y >= 90 && y <= 99) ? 255 : 0), W, H);
+  assert(a1.cx === 15 && a1.cb === 100, `rect anchor must be (15,100), got (${a1.cx},${a1.cb})`);
+  // Fully transparent -> default anchor (no crash, no NaN).
+  const a2 = rpg.anchorFromAlpha(buf(() => 0), W, H);
+  assert(a2.cx === rpg.RPG_DEFAULT_ANCHOR.cx && a2.cb === rpg.RPG_DEFAULT_ANCHOR.cb,
+    'transparent frame must fall back to default anchor');
+  assert(Number.isFinite(a2.cx) && Number.isFinite(a2.cb), 'fallback anchor must be finite');
+  // Single opaque pixel at (74,105) -> cx=74.5? (minx==maxx==74 -> (74+74+1)/2=74.5), cb=106.
+  const a3 = rpg.anchorFromAlpha(buf((x, y) => (x === 74 && y === 105) ? 255 : 0), W, H);
+  assert(a3.cx === 74.5 && a3.cb === 106, `single pixel anchor must be (74.5,106), got (${a3.cx},${a3.cb})`);
+  // Threshold: alpha <= 8 ignored (fringe), 255 kept.
+  const a4 = rpg.anchorFromAlpha(buf((x, y) => (x === 0 && y === 0) ? 8 : (x === 100 && y === 100) ? 255 : 0), W, H);
+  assert(a4.cx === 100.5 && a4.cb === 101, `threshold must ignore alpha<=8, got (${a4.cx},${a4.cb})`);
+  // Asymmetric content: wide stance x:[40,109] -> cx=75 (not image center 74).
+  const a5 = rpg.anchorFromAlpha(buf((x, y) => (x >= 40 && x <= 109 && y === 100) ? 255 : 0), W, H);
+  assert(a5.cx === 75 && a5.cb === 101, `wide stance cx must be 75, got ${a5.cx}`);
+  // rpgAnchorFor in Node (no document): default anchor, never throws.
+  const a6 = rpg.rpgAnchorFor('BaseHumanMale', 'Walk', 'down', 0);
+  assert(a6.cx === rpg.RPG_DEFAULT_ANCHOR.cx && a6.cb === rpg.RPG_DEFAULT_ANCHOR.cb,
+    'Node rpgAnchorFor must return default anchor');
+  // Anchor stats helper exists.
+  assert(typeof rpg.rpgAnchorStats().computed === 'number', 'rpgAnchorStats must work');
+}
+
 // ---- BUILD 702: RPG sprite system (barbarian/LPC art tests removed) ----
 // The barbarian pixel-regression tests (BUILD 391-427) covered the old
 // barbarian/LPC art which was replaced by the RPG sprite pack. The
