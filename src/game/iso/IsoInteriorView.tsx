@@ -660,7 +660,11 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       let anim = charAnims.get(animKey);
       if (!anim) { anim = new CharacterAnimator(animKey); charAnims.set(animKey, anim); }
       seenAnims.add(animKey);
-      anim.update({ x: fx, y: fy, moving, facing, nowMs, running });
+      // BUILD 705: the animator's walk-cycle rate is tuned for field units
+      // (16 units/sec -> ~11fps). Interior tiles move at 3.57 tiles/sec,
+      // which measured as ~4fps — slow-motion legs vs outside. Scale tile
+      // coords to field-equivalent units so the walk cycle matches.
+      anim.update({ x: fx * 4.5, y: fy * 4.5, moving, facing, nowMs, running });
       const draw = (g2: CanvasRenderingContext2D) => {
         drawIsoCharacter({
           g: g2, x: c.x, y: c.y, look, nowMs, animator: anim,
