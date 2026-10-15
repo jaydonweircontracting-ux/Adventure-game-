@@ -9673,6 +9673,11 @@ if (active) {
                     setTargetGoatId(null);
                     return;
                   }
+                  targetNpcIdRef.current = null;
+                  targetNpcModeRef.current = null;
+                  setTargetNpcId(null);
+                  targetMonsterIdRef.current = null;
+                  setTargetMonsterId(null);
                   const dx = goat.position.x - position.x;
                   const dy = goat.position.y - position.y;
                   const nextFacing: Direction = Math.abs(dx) >= Math.abs(dy)
