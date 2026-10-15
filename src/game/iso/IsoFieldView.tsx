@@ -1089,8 +1089,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
               // Draw sprite anchored at building base center
               const cx = (p00.x + p11.x) / 2;
               const baseY = Math.max(p00.y, p10.y, p11.y, p01.y);
-              // BUILD 602: Scale to fit building footprint (was 1.2x, caused overlap)
-              const targetW = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 0.95;
+              // BUILD 720: size sprite against the full projected footprint,
+              // not a single isometric edge. The previous width-only edge
+              // measurement undersized buildings because it ignored their
+              // north/south footprint extent. A small inset preserves gutters
+              // between neighboring lots and keeps the base inside its lot.
+              const targetW = (maxX - minX) * 0.78;
               const scale = targetW / sprite.naturalWidth;
               const sw = sprite.naturalWidth * scale;
               const sh = sprite.naturalHeight * scale;
