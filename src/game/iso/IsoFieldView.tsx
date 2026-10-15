@@ -940,6 +940,20 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           g.beginPath();
           g.ellipse(c.x, c.y, p.r * 29, p.r * 14.5, 0, 0, Math.PI * 2);
           g.stroke();
+          // A quiet central medallion gives the square a deliberate focal
+          // detail without introducing a solid prop or changing navigation.
+          g.fillStyle = 'rgba(123, 87, 49, 0.10)';
+          g.beginPath();
+          g.ellipse(c.x, c.y, p.r * 5.2, p.r * 2.6, 0, 0, Math.PI * 2);
+          g.fill();
+          g.strokeStyle = 'rgba(111, 78, 44, 0.30)';
+          g.lineWidth = 1.2;
+          g.beginPath();
+          g.ellipse(c.x, c.y, p.r * 4.2, p.r * 2.1, 0, 0, Math.PI * 2);
+          g.stroke();
+          g.beginPath();
+          g.ellipse(c.x, c.y, p.r * 2.3, p.r * 1.15, 0, 0, Math.PI * 2);
+          g.stroke();
           // Clip the subtle diagonal paving joints to the plaza edge so no
           // seams spill into the surrounding road or terrain.
           g.save();
@@ -1156,13 +1170,13 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
               // Draw sprite anchored at building base center
               const cx = (p00.x + p11.x) / 2;
               const baseY = Math.max(p00.y, p10.y, p11.y, p01.y);
-              // BUILD 723: size against the longer projected footprint edge.
-              // Summing both isometric axes makes the sprite far too wide for
-              // square lots; using the longer edge keeps varied lot shapes
-              // consistent while a slight overscan gives roof eaves room.
+              // BUILD 724: keep the sprite inside the projected lot envelope.
+              // Use the longer isometric edge for varied parcel shapes, with
+              // a modest inset to preserve visual gutters between neighboring
+              // roofs. Ground shadow remains separate from the sprite bounds.
               const edgeX = Math.hypot(p10.x - p00.x, p10.y - p00.y);
               const edgeY = Math.hypot(p01.x - p00.x, p01.y - p00.y);
-              const targetW = Math.max(edgeX, edgeY) * 1.04;
+              const targetW = Math.max(edgeX, edgeY) * 0.94;
               const scale = targetW / sprite.naturalWidth;
               const sw = sprite.naturalWidth * scale;
               const sh = sprite.naturalHeight * scale;
