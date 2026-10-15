@@ -146,7 +146,13 @@ function cachedWaterGrid(chunkX: number, chunkY: number, roadPiece?: string): Wa
   const ck = chunkX + ',' + chunkY + ',' + (roadPiece ?? '');
   let g = _waterGridCache.get(ck);
   if (!g) {
-    if (_waterGridCache.size >= 12) _waterGridCache.clear();
+    // Evict only the oldest entry instead of clearing every cached chunk.
+    // This keeps nearby NPC replans warm while bounding memory during exploration.
+    while (_waterGridCache.size >= 12) {
+      const oldest = _waterGridCache.keys().next();
+      if (oldest.done) break;
+      _waterGridCache.delete(oldest.value);
+    }
     g = buildWaterGrid(chunkX, chunkY, roadPiece);
     _waterGridCache.set(ck, g);
   }
