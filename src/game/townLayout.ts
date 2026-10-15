@@ -590,14 +590,13 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     const angle = rngD() * Math.PI * 2;
     const radial = R * (0.32 + rngD() * 0.43);
     return {
-      angle,
       center: { x: Math.cos(angle) * radial, y: Math.sin(angle) * radial },
       radius: 8 + rngD() * 3.5,
     };
   }).sort((a, b) => b.radius - a.radius);
   for (const candidate of parkCandidates) {
     if (placedParks.length >= desiredParks) break;
-    const { center: c, radius: pr, angle: a } = candidate;
+    const { center: c, radius: pr } = candidate;
     if (!pointInPolygon(c, boundary) || distToPolygonEdge(c, boundary) < pr + 3) continue;
     if (dist(c, plazaC) < plazaR + pr + 5) continue;
     if (placedParks.some((p) => dist(c, p.center) < pr + p.radius + 5)) continue;
@@ -615,7 +614,6 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     // Reserve a comfortable buffer from the civic center and commercial
     // corridor so the park remains a distinct neighborhood destination.
     if (dist(c, { x: 0, y: 0 }) < civicR + pr + 4) continue;
-    if (Math.abs(Math.atan2(c.y, c.x) - a) > Math.PI) continue;
     const park: TLDistrict = {
       id: `district-${dSeq++}`, kind: 'park', center: c, radius: pr, zone: 'circle',
     };
