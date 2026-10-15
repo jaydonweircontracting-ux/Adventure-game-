@@ -594,9 +594,11 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // background — BUILD 376: dark neutral fallback. Generated terrain now
       // covers the whole viewport at every zoom, so this should never show;
       // the old light blue is what used to read as "not generated".
-      // BUILD 620: green base when in chunk-LOD mode (max zoom-out), so the
-      // screen isn't black beyond the 3x3 chunk diamonds.
-      const useChunkLOD = zm < 0.35;
+      // BUILD 713: keep the real textured tile terrain active through normal
+      // zooming. The coarse green chunk-LOD is only a last-resort fallback at
+      // extreme zoom-out, where individual tile textures are sub-pixel.
+      // This avoids the abrupt green-world switch at the old 0.35 threshold.
+      const useChunkLOD = zm < 0.14;
       g.fillStyle = useChunkLOD ? '#3a6a3a' : '#0e1713';
       g.fillRect(0, 0, wpx, hpx);
       g.save();
@@ -625,8 +627,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // BUILD 376: tile detail is sub-pixel when zoomed out, so skip it there.
       // BUILD 389: user-supplied landscape tileset replaces the procedural
       // diamond fill (falls back to it while tiles load).
-      // BUILD 608: LOD — when max zoomed out, draw per-chunk instead of per-tile.
-      const showDetail = zm > 0.45;
+      // BUILD 713: retain terrain accents/decor at smaller zoom levels too;
+      // only omit these when they are effectively sub-pixel.
+      const showDetail = zm > 0.20;
       const tilesOn = isoTilesReady();
       if (useChunkLOD) {
         // BUILD 682: Chunk LOD with grass texture. Instead of one flat diamond
