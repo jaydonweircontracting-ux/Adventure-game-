@@ -307,6 +307,18 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning });
   liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning };
+  // BUILD 709: interpolate between throttled React position samples in the
+  // canvas loop. Simulation/collision stay authoritative in App; only visual
+  // coordinates are interpolated, eliminating the 30 Hz stepping introduced
+  // by the performance throttle without re-rendering the full React tree.
+  const playerRenderRef = useRef({ fromX: position.x, fromY: position.y, toX: position.x, toY: position.y, changedAt: 0 });
+  if (playerRenderRef.current.toX !== position.x || playerRenderRef.current.toY !== position.y) {
+    playerRenderRef.current = {
+      fromX: playerRenderRef.current.toX, fromY: playerRenderRef.current.toY,
+      toX: position.x, toY: position.y,
+      changedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+    };
+  }
   // BUILD 684: first-seen timestamps for floating combat text (float-up anim).
   const dmgSeenRef = useRef(new Map<number, number>());
   // BUILD 624: Preload all building/prop sprites on mount so there's no
@@ -412,6 +424,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     }
     const playerFace = { f: 'down' as Face8 };
     const prevP = { x: liveRef.current.px, y: liveRef.current.py };
+    // BUILD 709: props publish player coordinates at 30 Hz to keep React cheap,
+    // but the canvas runs at display refresh. Hold the walk state briefly after
+    // each real movement sample so the animator does not alternate walk/idle
+    // on the 30 Hz update boundary. Ignore tiny collision/deceleration noise
+    // when changing facing, which was causing wrong-way sprite flicker.
+    let lastPlayerMovementAt = 0;
     // Per-character animation controllers (no React state — plain map in the
     // render loop; pruned each frame so removed NPCs don't leak).
     const charAnims = new Map<string, CharacterAnimator>();
@@ -498,6 +516,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const live = liveRef.current;
+      const interp = playerRenderRef.current;
+      const renderT = Math.min(1, Math.max(0, (nowMs - interp.changedAt) / 33));
+      const playerX = interp.fromX + (interp.toX - interp.fromX) * renderT;
+      const playerY = interp.fromY + (interp.toY - interp.fromY) * renderT;
       // BUILD 702: a new attack sequence triggers the RPG attack animation
       // via the animator state machine (one-shot, returns to idle/walk).
       const seq = live.barbAttackSequence ?? 0;
@@ -507,17 +529,25 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         if (pa) pa.setState('attack');
       }
       // player facing from movement delta
-      const mdx = live.px - prevP.x, mdy = live.py - prevP.y;
+      const mdx = playerX - prevP.x, mdy = playerY - prevP.y;
       // BUILD 422: debug direction test overrides facing and forces the walk
       // cycle so each numbered arrow shows its direction's sprite sheet.
       const dbgFace = live.debugFacing ?? null;
-      let playerMoving = Math.abs(mdx) + Math.abs(mdy) > 0.01;
+      const movedX = Math.abs(mdx) > 0.025;
+      const movedY = Math.abs(mdy) > 0.025;
+      const hasMovementSample = movedX || movedY;
+      if (hasMovementSample) {
+        lastPlayerMovementAt = nowMs;
+        playerFace.f = isoPlayerFaceForScreenDeltaSticky(mdx, mdy, playerFace.f);
+      }
+      // Continue the walk cycle between throttled React position publishes;
+      // settle to idle only after movement has genuinely stopped.
+      let playerMoving = nowMs - lastPlayerMovementAt < 110;
       if (dbgFace) { playerFace.f = dbgFace; playerMoving = true; }
-      else if (playerMoving) playerFace.f = isoPlayerFaceForScreenDeltaSticky(mdx, mdy, playerFace.f);
-      prevP.x = live.px; prevP.y = live.py;
+      prevP.x = playerX; prevP.y = playerY;
 
       // camera follows the player
-      const target = isoToScreen(live.px, live.py);
+      const target = isoToScreen(playerX, playerY);
       target.y -= 24;
       const k = Math.min(1, dt / 90);
       cam.x += (target.x - cam.x) * k;
@@ -890,7 +920,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         // when standing at the door, so the wall covered the sprite.
         // Use a small tolerance so players standing in the doorway (at the
         // south edge) also get the building drawn behind them.
-        const playerSouthOfBuilding = live.py > r.bottom - 1;
+        const playerSouthOfBuilding = playerY > r.bottom - 1;
         const buildingDepth = playerSouthOfBuilding ? (r.left + r.top - 10) : (r.right + r.bottom);
         drawables.push({
           depth: buildingDepth, draw: (g2) => {
@@ -1437,7 +1467,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // on top. When the player is behind a house (smaller x+y than the
       // house's front corner), the house draws over them; when in front,
       // the player draws over the house.
-      drawPerson(drawables, live.px, live.py, playerFace.f, playerMoving, 0, nowMs, 'player',
+      drawPerson(drawables, playerX, playerY, playerFace.f, playerMoving, 0, nowMs, 'player',
         undefined, live.playerRunning === true);
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
       // BUILD 707: prune interpolation entries for NPCs no longer drawn.
