@@ -527,6 +527,33 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     const frameMetrics = perfEnabled ? new FrameMetrics() : null;
     let perfOverlayTick = 0;
 
+    // Static prop asset registry: build once per renderer mount, not on every
+    // animation frame. The previous loop recreated this object and its entries
+    // array at display refresh rate even though the asset list never changes.
+    const propSrc: Record<string, string> = {
+      'props/well.png': 'props/well.png',
+      'props/barrel.png': 'props/barrel.png',
+      'props/lamp.png': 'props/lamp.png',
+      'buildings/gatehouse.png': 'buildings/gatehouse.png',
+      'props/fountain.png': 'props/fountain.png',
+      'props/stall-red.png': 'props/stall-red.png',
+      'props/stall-blue.png': 'props/stall-blue.png',
+      'props/stall-green.png': 'props/stall-green.png',
+      'props/market-stall.png': 'props/market-stall.png',
+      'props/statue-angel.png': 'props/statue-angel.png',
+      'props/hedge-straight.png': 'props/hedge-straight.png',
+      'props/cart-wood.png': 'props/cart-wood.png',
+    };
+    const propWindow = window as unknown as { __propImgs?: Record<string, HTMLImageElement> };
+    const propImgs = propWindow.__propImgs || {};
+    for (const [key, src] of Object.entries(propSrc)) {
+      if (propImgs[key]) continue;
+      const img = new Image();
+      img.src = artUrl(src);
+      propImgs[key] = img;
+    }
+    propWindow.__propImgs = propImgs;
+
     const resize = () => {
       const r = wrap.getBoundingClientRect();
       // Cap backing-store resolution to avoid 4x pixel fill on high-DPR phones.
@@ -1292,44 +1319,17 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // offset into current-chunk-relative tile space.
       // BUILD 683: settlement props (wells, barrels) — billboard sprites,
       // depth-sorted like trees. Only chunk (4,7) has any.
-      const propImgs = (window as unknown as { __propImgs?: Record<string, HTMLImageElement> }).__propImgs || {};
-      const propSrc: Record<string, string> = {
-        'props/well.png': 'props/well.png',
-        'props/barrel.png': 'props/barrel.png',
-        // BUILD 686: town plan assets (lamps, garden well, gatehouse).
-        'props/lamp.png': 'props/lamp.png',
-        'buildings/gatehouse.png': 'buildings/gatehouse.png',
-        // BUILD 690: engine market assets (fountain + stalls from the
-        // procedural layout; the 613 hardcoded block is retired).
-        'props/fountain.png': 'props/fountain.png',
-        'props/stall-red.png': 'props/stall-red.png',
-        'props/stall-blue.png': 'props/stall-blue.png',
-        'props/stall-green.png': 'props/stall-green.png',
-        'props/market-stall.png': 'props/market-stall.png',
-        // BUILD 694: storybook props (angel statue, hedge maze wall, cart).
-        'props/statue-angel.png': 'props/statue-angel.png',
-        'props/hedge-straight.png': 'props/hedge-straight.png',
-        'props/cart-wood.png': 'props/cart-wood.png',
-      };
-      for (const [key, src] of Object.entries(propSrc)) {
-        if (!propImgs[key]) {
-          const img = new Image();
-          img.src = artUrl(src);
-          propImgs[key] = img;
-        }
-      }
-      (window as unknown as { __propImgs?: Record<string, HTMLImageElement> }).__propImgs = propImgs;
+      const propViewHalfW = (wpx / 2) / zm, propViewHalfH = (hpx / 2) / zm;
       for (const sc of scenes) {
         const decor = cachedSettlementDecorFor({ x: chunk.x + sc.ox, y: chunk.y + sc.oy });
         if (!decor.props.length) continue;
         const bx = sc.ox * N, by = sc.oy * N;
-        const pvhw = (wpx / 2) / zm, pvhh = (hpx / 2) / zm;
         for (const pr of decor.props) {
           const px = pr.x + bx, py = pr.y + by;
           const c = isoToScreen(px, py);
           // BUILD 701: bottom margin 128 covers the tallest prop sprite above
           // its base anchor (r=1.5 -> sw=96, up to ~96 tall at 1:1 aspect).
-          if (c.x < cam.x - pvhw - 100 || c.x > cam.x + pvhw + 100 || c.y < cam.y - pvhh - 150 || c.y > cam.y + pvhh + 128) continue;
+          if (c.x < cam.x - propViewHalfW - 100 || c.x > cam.x + propViewHalfW + 100 || c.y < cam.y - propViewHalfH - 150 || c.y > cam.y + propViewHalfH + 128) continue;
           const img = propImgs[pr.asset];
           drawables.push({
             depth: px + py,
