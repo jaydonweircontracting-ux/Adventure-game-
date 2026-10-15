@@ -412,6 +412,12 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     }
     const playerFace = { f: 'down' as Face8 };
     const prevP = { x: liveRef.current.px, y: liveRef.current.py };
+    // BUILD 709: props publish player coordinates at 30 Hz to keep React cheap,
+    // but the canvas runs at display refresh. Hold the walk state briefly after
+    // each real movement sample so the animator does not alternate walk/idle
+    // on the 30 Hz update boundary. Ignore tiny collision/deceleration noise
+    // when changing facing, which was causing wrong-way sprite flicker.
+    let lastPlayerMovementAt = 0;
     // Per-character animation controllers (no React state — plain map in the
     // render loop; pruned each frame so removed NPCs don't leak).
     const charAnims = new Map<string, CharacterAnimator>();
@@ -511,9 +517,17 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       // BUILD 422: debug direction test overrides facing and forces the walk
       // cycle so each numbered arrow shows its direction's sprite sheet.
       const dbgFace = live.debugFacing ?? null;
-      let playerMoving = Math.abs(mdx) + Math.abs(mdy) > 0.01;
+      const movedX = Math.abs(mdx) > 0.025;
+      const movedY = Math.abs(mdy) > 0.025;
+      const hasMovementSample = movedX || movedY;
+      if (hasMovementSample) {
+        lastPlayerMovementAt = nowMs;
+        playerFace.f = isoPlayerFaceForScreenDeltaSticky(mdx, mdy, playerFace.f);
+      }
+      // Continue the walk cycle between throttled React position publishes;
+      // settle to idle only after movement has genuinely stopped.
+      let playerMoving = nowMs - lastPlayerMovementAt < 110;
       if (dbgFace) { playerFace.f = dbgFace; playerMoving = true; }
-      else if (playerMoving) playerFace.f = isoPlayerFaceForScreenDeltaSticky(mdx, mdy, playerFace.f);
       prevP.x = live.px; prevP.y = live.py;
 
       // camera follows the player
