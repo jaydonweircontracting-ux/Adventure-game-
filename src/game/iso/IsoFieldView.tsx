@@ -490,6 +490,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     // frame. This reduces garbage collection pauses while walking through town.
     const drawables: Drawable[] = [];
     const farmsteadQueue: Array<{ x: number; y: number; barn: boolean }> = [];
+    // BUILD 716: reusable membership set avoids O(n²) damage-text pruning and
+    // a per-frame spread allocation while keeping the seen-time Map intact.
+    const activeDamageIds = new Set<number>();
     // BUILD 390: track the player's attack sequence -> swing start time so the
     // barbarian attack clip plays once per swing.
     let lastAttackSeq = -1;
@@ -1583,11 +1586,13 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       {
         const texts = liveRef.current.damageTexts || [];
         const seen = dmgSeenRef.current;
+        activeDamageIds.clear();
         for (const t of texts) {
+          activeDamageIds.add(t.id);
           if (!seen.has(t.id)) seen.set(t.id, nowMs);
         }
-        for (const id of [...seen.keys()]) {
-          if (!texts.some((t) => t.id === id)) seen.delete(id);
+        for (const id of seen.keys()) {
+          if (!activeDamageIds.has(id)) seen.delete(id);
         }
         for (const t of texts) {
           const born = seen.get(t.id) ?? nowMs;
