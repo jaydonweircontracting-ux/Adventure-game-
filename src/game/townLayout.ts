@@ -586,7 +586,7 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
   // the same seed/config still produces identical layouts.
   const desiredParks = size === 'town' ? 2 : size === 'village' ? 1 : (rngD() < 0.5 ? 1 : 0);
   const placedParks: TLDistrict[] = [];
-  const parkCandidates = Array.from({ length: 56 }, (_, i) => {
+  const parkCandidates = Array.from({ length: 56 }, () => {
     const angle = rngD() * Math.PI * 2;
     const radial = R * (0.32 + rngD() * 0.43);
     return {
