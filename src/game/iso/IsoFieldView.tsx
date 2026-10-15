@@ -976,20 +976,58 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
           }
           }
         }
-        // BUILD 686: town walls — stone grey strokes with a lighter cap.
+        // BUILD 721: gatehouse flanking walls use layered masonry instead
+        // of two flat grey strokes. Keep this as decoration only: the town
+        // layout's existing collision/solid props remain the gameplay source.
         for (const w of decor.walls || []) {
           if (w.points.length < 2) continue;
-          g.lineWidth = Math.max(3, w.width * 16);
-          g.strokeStyle = 'rgba(105, 105, 115, 0.9)';
-          g.beginPath();
-          w.points.forEach((pt, i) => {
-            const s = isoToScreen(pt.x + bx, pt.y + by);
-            if (i === 0) g.moveTo(s.x, s.y); else g.lineTo(s.x, s.y);
-          });
+          const pts = w.points.map((pt) => isoToScreen(pt.x + bx, pt.y + by));
+          const path = () => {
+            g.beginPath();
+            pts.forEach((p, i) => {
+              if (i === 0) g.moveTo(p.x, p.y);
+              else g.lineTo(p.x, p.y);
+            });
+          };
+          const wallWidth = Math.max(5, w.width * 12);
+          g.lineCap = 'square';
+          g.lineJoin = 'round';
+          // Ground-side shadow anchors the wall to the terrain.
+          g.strokeStyle = 'rgba(39, 35, 32, 0.52)';
+          g.lineWidth = wallWidth + 3;
+          path();
           g.stroke();
-          g.lineWidth = Math.max(1.5, w.width * 8);
-          g.strokeStyle = 'rgba(150, 150, 160, 0.9)';
+          // Main stone face.
+          g.strokeStyle = '#716b63';
+          g.lineWidth = wallWidth;
+          path();
           g.stroke();
+          // Light top coping catches light without washing out the stone.
+          g.strokeStyle = '#c0b6a3';
+          g.lineWidth = Math.max(2, wallWidth * 0.22);
+          path();
+          g.stroke();
+          // Short dark joints make the wall read as fitted blocks rather than
+          // a continuous pipe. Segment count is bounded by actual wall length.
+          g.strokeStyle = 'rgba(48, 45, 41, 0.68)';
+          g.lineWidth = Math.max(1, wallWidth * 0.045);
+          let walked = 0;
+          for (let i = 1; i < pts.length; i++) {
+            const a = pts[i - 1], b = pts[i];
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const len = Math.hypot(dx, dy);
+            const count = Math.floor(len / Math.max(12, wallWidth * 0.8));
+            for (let j = 1; j <= count; j++) {
+              const t = j / (count + 1);
+              const x = a.x + dx * t, y = a.y + dy * t;
+              g.beginPath();
+              g.moveTo(x, y - wallWidth * 0.42);
+              g.lineTo(x, y + wallWidth * 0.42);
+              g.stroke();
+            }
+            walked += len;
+          }
+          void walked;
         }
       }
 
