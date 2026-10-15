@@ -326,8 +326,16 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
     const gg = Math.min(255, Math.round(cg * v));
     const b2 = Math.min(255, Math.round(cb * v));
     e = { fill: `rgb(${r},${gg},${b2})`, pal: baseHex, sf: skipFarm };
-    if (!row) { row = new Map(); lodFillCache.set(ty0, row); }
-    if (lodFillCache.size > LOD_FILL_CACHE_MAX_ROWS) lodFillCache.clear();
+    if (!row) {
+      // Evict one old scanline at a time instead of invalidating the whole LOD cache.
+      while (lodFillCache.size >= LOD_FILL_CACHE_MAX_ROWS) {
+        const oldest = lodFillCache.keys().next();
+        if (oldest.done) break;
+        lodFillCache.delete(oldest.value);
+      }
+      row = new Map();
+      lodFillCache.set(ty0, row);
+    }
     row.set(tx0, e);
   }
   return e.fill;
