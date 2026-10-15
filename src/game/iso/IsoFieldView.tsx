@@ -58,6 +58,7 @@ import {
 // static world geometry (seed-pinned town), so the Path2D layers are built
 // once per chunk key and re-stroked every frame — zero per-frame allocation.
 type DirtPathCacheEntry = ReturnType<typeof buildDirtPath2D>;
+const DIRT_PATH_CACHE_MAX = 64;
 const dirtPathCache = new Map<string, DirtPathCacheEntry>();
 
 // BUILD 715: cache deterministic settlement geometry and sprite variants.
