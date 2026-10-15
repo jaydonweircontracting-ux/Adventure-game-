@@ -12,6 +12,8 @@
 // talk buttons) stay on the 2D renderer for now.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
+import { createBoundedCache } from './boundedCache';
+import { FrameMetrics } from './frameMetrics';
 import {
   isoPlayerFaceForScreenDeltaSticky, type Face4, type Face8,
 } from './isoSprites';
@@ -60,9 +62,9 @@ const dirtPathCache = new Map<string, DirtPathCacheEntry>();
 
 // BUILD 715: cache deterministic settlement geometry and sprite variants.
 // These were being rebuilt/reselected inside the 60 Hz draw loop.
-const settlementDecorCache = new Map<string, ReturnType<typeof settlementDecorFor>>();
+const settlementDecorCache = createBoundedCache<string, ReturnType<typeof settlementDecorFor>>(32);
 const buildingKindCache = new WeakMap<object, string>();
-const ambientCritterCache = new Map<string, AmbientCritter[]>();
+const ambientCritterCache = createBoundedCache<string, AmbientCritter[]>(32);
 function cachedCrittersForChunk(
   cx: number, cy: number, fieldSize: number,
   isLand: (lx: number, ly: number) => boolean,
@@ -70,20 +72,14 @@ function cachedCrittersForChunk(
   const key = `${cx},${cy},${fieldSize}`;
   const cached = ambientCritterCache.get(key);
   if (cached) return cached;
-  const critters = crittersForChunk(cx, cy, fieldSize, isLand);
-  ambientCritterCache.set(key, critters);
-  if (ambientCritterCache.size > 32) ambientCritterCache.delete(ambientCritterCache.keys().next().value!);
-  return critters;
+  return ambientCritterCache.set(key, crittersForChunk(cx, cy, fieldSize, isLand));
 }
 function cachedSettlementDecorFor(chunk: { x: number; y: number }): ReturnType<typeof settlementDecorFor> {
   const key = `${chunk.x},${chunk.y}`;
   const cached = settlementDecorCache.get(key);
   if (cached) return cached;
-  const decor = settlementDecorFor(chunk);
-  settlementDecorCache.set(key, decor);
   // Bound cache size as the player explores an effectively unbounded world.
-  if (settlementDecorCache.size > 32) settlementDecorCache.delete(settlementDecorCache.keys().next().value!);
-  return decor;
+  return settlementDecorCache.set(key, settlementDecorFor(chunk));
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +496,11 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
 
     let raf = 0;
     let last = performance.now();
+    // BUILD 716: opt-in frame timing; no summary allocation or overlay unless
+    // ?perf=1 is enabled. Use the same loop users actually play.
+    const perfEnabled = new URLSearchParams(location.search).get('perf') === '1';
+    const frameMetrics = perfEnabled ? new FrameMetrics() : null;
+    let perfOverlayTick = 0;
 
     const resize = () => {
       const r = wrap.getBoundingClientRect();
@@ -545,6 +546,7 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
     const frame = () => {
       raf = requestAnimationFrame(frame);
       const nowMs = performance.now();
+      const frameStartedAt = nowMs;
       const dt = Math.min(100, nowMs - last); last = nowMs;
       const zm = zoomRef.current;
       const wpx = canvas.clientWidth || 1, hpx = canvas.clientHeight || 1;
@@ -1609,6 +1611,26 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       }
 
       g.restore();
+
+      // BUILD 716: measure actual renderer work and expose a compact on-canvas
+      // readout for repeatable A/B profiling in crowded scenes.
+      if (frameMetrics) {
+        frameMetrics.record(performance.now() - frameStartedAt);
+        if (++perfOverlayTick % 30 === 0) {
+          const m = frameMetrics.snapshot();
+          g.save();
+          g.setTransform(dpr, 0, 0, dpr, 0, 0);
+          g.fillStyle = 'rgba(0,0,0,0.78)';
+          g.fillRect(8, 8, 196, 58);
+          g.font = '12px monospace';
+          g.textAlign = 'left';
+          g.fillStyle = '#9fffb2';
+          g.fillText(`Render avg: ${m.averageMs.toFixed(1)} ms`, 16, 25);
+          g.fillText(`P95: ${m.p95Ms.toFixed(1)} ms`, 16, 42);
+          g.fillText(`FPS est.: ${m.estimatedFps.toFixed(0)}`, 16, 59);
+          g.restore();
+        }
+      }
     };
     raf = requestAnimationFrame(frame);
 
