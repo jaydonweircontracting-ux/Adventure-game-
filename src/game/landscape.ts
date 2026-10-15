@@ -586,6 +586,14 @@ export function waterGridAt(
   return { depth: grid.depths[i], kind: grid.kinds[i] as 0 | 1 | 2 };
 }
 
+/** Allocation-free depth-only lookup for hot rendering loops. */
+export function waterDepthAt(grid: WaterGrid, wx: number, wy: number): number {
+  const gx = Math.floor((wx - grid.originX) / grid.cellSize);
+  const gy = Math.floor((wy - grid.originY) / grid.cellSize);
+  if (gx < 0 || gy < 0 || gx >= grid.cells || gy >= grid.cells) return 0;
+  return grid.depths[gy * grid.cells + gx];
+}
+
 // ---------------------------------------------------------------------------
 // Continuity self-check (developer-only, no player-facing score)
 // ---------------------------------------------------------------------------
