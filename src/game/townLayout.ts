@@ -235,9 +235,12 @@ interface SizeParams {
   plazaR: number;
 }
 const SIZE_PARAMS: Record<TownSize, SizeParams> = {
-  hamlet:  { radius: 52, targetLots: [8, 14],   maxStreets: 6,  maxLanes: 2,  plazaR: 5 },
-  village: { radius: 72, targetLots: [18, 30],  maxStreets: 12, maxLanes: 4,  plazaR: 7 },
-  town:    { radius: 92, targetLots: [35, 60],  maxStreets: 18, maxLanes: 4,  plazaR: 9 },
+  // Keep a readable road hierarchy: a few continuous streets, with only
+  // occasional connectors. Door spurs are generated separately, so pinned
+  // gameplay buildings retain access without filling the town with shortcuts.
+  hamlet:  { radius: 52, targetLots: [8, 14],   maxStreets: 4,  maxLanes: 1, plazaR: 5 },
+  village: { radius: 72, targetLots: [18, 30],  maxStreets: 8,  maxLanes: 3, plazaR: 7 },
+  town:    { radius: 92, targetLots: [35, 60],  maxStreets: 12, maxLanes: 3, plazaR: 9 },
 };
 
 // ---------------------------------------------------------------- generation
