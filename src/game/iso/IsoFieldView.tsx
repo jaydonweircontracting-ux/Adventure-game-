@@ -307,18 +307,36 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning });
   liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning };
-  // BUILD 709: interpolate between throttled React position samples in the
-  // canvas loop. Simulation/collision stay authoritative in App; only visual
-  // coordinates are interpolated, eliminating the 30 Hz stepping introduced
-  // by the performance throttle without re-rendering the full React tree.
-  const playerRenderRef = useRef({ fromX: position.x, fromY: position.y, toX: position.x, toY: position.y, changedAt: 0 });
-  if (playerRenderRef.current.toX !== position.x || playerRenderRef.current.toY !== position.y) {
-    // Keep the currently rendered coordinates as the interpolation origin.
-    // Resetting fromX/fromY to the previous target here creates a visible snap
-    // whenever a new 30 Hz simulation sample arrives.
-    playerRenderRef.current.toX = position.x;
-    playerRenderRef.current.toY = position.y;
-    playerRenderRef.current.changedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  // BUILD 711: render-time interpolation between the 30 Hz authoritative
+  // position samples. A render buffer (previous/current sample + timestamps)
+  // lets the canvas draw intermediate positions at the display refresh rate,
+  // instead of applying a lagging exponential filter to every new sample.
+  // This affects presentation only: movement, collision, and pathfinding in
+  // App remain authoritative and unchanged.
+  const playerRenderRef = useRef({
+    previousX: position.x, previousY: position.y,
+    currentX: position.x, currentY: position.y,
+    previousAt: 0, currentAt: 0,
+  });
+  if (playerRenderRef.current.currentX !== position.x || playerRenderRef.current.currentY !== position.y) {
+    const sample = playerRenderRef.current;
+    const sampleAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const dx = position.x - sample.currentX;
+    const dy = position.y - sample.currentY;
+    // Large changes are teleports/chunk restores, not walk movement. Snap
+    // both endpoints so interpolation never slides across the entire map.
+    if (Math.abs(dx) + Math.abs(dy) > 8 || sample.currentAt === 0) {
+      sample.previousX = position.x;
+      sample.previousY = position.y;
+      sample.previousAt = sampleAt;
+    } else {
+      sample.previousX = sample.currentX;
+      sample.previousY = sample.currentY;
+      sample.previousAt = sample.currentAt;
+    }
+    sample.currentX = position.x;
+    sample.currentY = position.y;
+    sample.currentAt = sampleAt;
   }
   // BUILD 684: first-seen timestamps for floating combat text (float-up anim).
   const dmgSeenRef = useRef(new Map<number, number>());
@@ -526,23 +544,19 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       const live = liveRef.current;
-      // BUILD 710: use a bounded, delta-time-independent presentation smoother.
-      // A 33 ms one-shot interpolation reached the target then stopped; if React
-      // published at 30 Hz that still produced visible stepping. Exponential
-      // convergence runs every canvas frame while simulation/collision remain
-      // authoritative in App. Large teleports snap to avoid cross-map sliding.
+      // BUILD 711: render 1 simulation sample (~33 ms) behind real time and
+      // interpolate linearly between the two most recent positions. This is
+      // the correct reconstruction for 30 Hz snapshots on a 60 Hz canvas:
+      // constant-speed movement stays constant-speed instead of easing/lagging
+      // at every snapshot boundary. Large teleports were snapped above.
       const interp = playerRenderRef.current;
-      const targetDX = interp.toX - interp.fromX;
-      const targetDY = interp.toY - interp.fromY;
-      const playerX = Math.abs(targetDX) + Math.abs(targetDY) > 8
-        ? interp.toX
-        : interp.fromX + targetDX * Math.min(1, 1 - Math.exp(-dt / 45));
-      const playerY = Math.abs(targetDX) + Math.abs(targetDY) > 8
-        ? interp.toY
-        : interp.fromY + targetDY * Math.min(1, 1 - Math.exp(-dt / 45));
-      // Advance the render-only origin so the next frame continues smoothly.
-      interp.fromX = playerX;
-      interp.fromY = playerY;
+      const renderAt = nowMs - 34;
+      const sampleSpan = interp.currentAt - interp.previousAt;
+      const alpha = sampleSpan > 0
+        ? Math.max(0, Math.min(1, (renderAt - interp.previousAt) / sampleSpan))
+        : 1;
+      const playerX = interp.previousX + (interp.currentX - interp.previousX) * alpha;
+      const playerY = interp.previousY + (interp.currentY - interp.previousY) * alpha;
       // BUILD 702: a new attack sequence triggers the RPG attack animation
       // via the animator state machine (one-shot, returns to idle/walk).
       const seq = live.barbAttackSequence ?? 0;
