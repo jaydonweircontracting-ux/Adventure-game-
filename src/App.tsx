@@ -113,7 +113,8 @@ import { createEmptySkills, awardXp, levelForXp, xpToNextLevel, SKILLS, WOODCUTT
 import { cornStalksForChunk, type CornStalk } from '@/game/cornfield';
 import { getSpriteState } from '@/game/animation';
 import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/persistence';
-import CharacterCreator from '@/components/CharacterCreator';
+import RpgCharacterCreator from '@/components/RpgCharacterCreator';
+import { RPG_DEFAULT_LOOK, type RpgLook } from '@/game/iso/rpgSprites';
 import { compositeAttackSprite, compositeCharacterSheet, sanitizeCharacterChoices, type CharacterChoices } from '@/game/characterCreator';
 import { artUrl } from '@/game/artCache';
 import { initWorldNoise, shouldPlaceVegetation, vegetationDensity } from '@/game/noise';
@@ -9320,7 +9321,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
+            <IsoFieldView playerLook={rpgPlayerLook} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {
@@ -11617,6 +11618,22 @@ function Home() {
   const [menuOpen, setMenuOpen] = useState(true);
   // Character creation: custom player sprite composited from Mana Seed parts.
   const [creatingCharacter, setCreatingCharacter] = useState(false);
+  // BUILD 720: selected character uses the new animated RPG model system.
+  const [rpgPlayerLook, setRpgPlayerLook] = useState<RpgLook>(() => {
+    try {
+      const raw = localStorage.getItem('ag-rpg-character-look-v1');
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<RpgLook>;
+        const validBases = ['BaseHumanMale', 'BaseHumanBlank', 'BaseElf', 'BaseDwarf', 'BaseAhoul', 'BaseShaman', 'BaseSkeleton'];
+        const validParts = ['BluePants', 'BrownPants', 'BlackBoots', 'DrkBoot', 'AhoulBoots1', 'AhoulKilt1', 'BlueVest', 'BrvHrtTunic', 'BrvHrtVest', 'ChestPiece1', 'ChestPiece2', 'BreastPlate1', 'BreastPlateGold', 'Breastplate2', 'DrkChestPlat', 'AhoulChestpiece1', 'AhoulLeatherBreastplate', 'AhoulArmBand', 'AhoulArmGuards', 'DrkArmPlat', 'AhoulShoulderpads1', 'AhoulLeatherShoulderpads', 'AhoulMetalShoulderpads', 'CanvasHood', 'ChainCoif', 'CoifFelious', 'CoifMudam', 'DrkCoif', 'DrkHelm', 'DrkHood', 'DreamWalkerHair1', 'DreamWalkerHair2', 'DreamWalkerHair3', 'BeardDark', 'BeardGrey', 'BeardLight', 'BeardRed', 'Dagger', 'BroadSword', 'BroadSword2', 'BastardSword', 'BattleAxe', 'Axe', 'BoneBow', 'BoneClub', 'ChainMace', 'BucklerNisos', 'BucklerWood'];
+        return {
+          base: validBases.includes(String(parsed.base)) ? parsed.base as RpgLook['base'] : RPG_DEFAULT_LOOK.base,
+          equipment: Array.isArray(parsed.equipment) ? parsed.equipment.filter((part): part is string => typeof part === 'string' && validParts.includes(part)) : [],
+        };
+      }
+    } catch { /* default to a valid model */ }
+    return { ...RPG_DEFAULT_LOOK, equipment: [] };
+  });
   const [characterChoices, setCharacterChoices] = useState<CharacterChoices | null>(null);
   const [playerSpriteUrl, setPlayerSpriteUrl] = useState<string | null>(null);
   const [playerAttackSpriteUrl, setPlayerAttackSpriteUrl] = useState<string | null>(null);
@@ -11783,17 +11800,15 @@ function Home() {
     setMapOpen(false); setInventoryOpen(false); setSaveNotice(null); setMenuOpen(false);
   };
 
-  // Character creation confirm: build the custom sprite sheet, then start.
-  // Falls back to the default sprite if compositing fails.
-  const confirmCharacter = (choices: CharacterChoices) => {
-    setCharacterChoices(choices);
+  // BUILD 720: confirm a look made from the new animated RPG models only.
+  // Do not composite or route this character through the legacy 2D sprite sheets.
+  const confirmCharacter = (look: RpgLook) => {
+    setRpgPlayerLook(look);
+    setCharacterChoices(null);
+    setPlayerSpriteUrl(null);
+    setPlayerAttackSpriteUrl(null);
+    try { localStorage.setItem('ag-rpg-character-look-v1', JSON.stringify(look)); } catch { /* session remains valid */ }
     setCreatingCharacter(false);
-    compositeCharacterSheet(choices, PLAYER_SPRITE_URL)
-      .then((url) => setPlayerSpriteUrl(url))
-      .catch(() => setPlayerSpriteUrl(null));
-    compositeAttackSprite(choices, PLAYER_ATTACK_SPRITE_URL)
-      .then((url) => setPlayerAttackSpriteUrl(url))
-      .catch(() => setPlayerAttackSpriteUrl(null));
     startNewGame();
   };
   // Prison opening interactions
@@ -12013,7 +12028,7 @@ function Home() {
       } as CSSProperties}
     >
       {creatingCharacter ? (
-        <CharacterCreator onConfirm={confirmCharacter} onCancel={() => setCreatingCharacter(false)} />
+        <RpgCharacterCreator onConfirm={confirmCharacter} onCancel={() => setCreatingCharacter(false)} />
       ) : inPrison ? (
           <section className="prison-scene" aria-label="Prison cell" data-testid="prison-scene">
             <div className="prison-cell">
@@ -12080,7 +12095,7 @@ function Home() {
             <p>Follow the roads, learn the first hunt, and choose the path that carries you beyond Mosslight Crossing.</p>
             <div className="main-menu-actions">
               {/* BUILD 455: character creation removed for now — New Game starts directly */}
-              <button className="main-menu-button" onClick={() => { setCreatingCharacter(false); startNewGame(); }} data-testid="button-new-game">New Game</button>
+              <button className="main-menu-button" onClick={() => setCreatingCharacter(true)} data-testid="button-new-game">New Game</button>
               {/* BUILD 650: World Editor in starting menu — opens Map Builder directly. */}
               <button className="main-menu-button" onClick={() => { try { sessionStorage.setItem('ag-start-in-editor', '1'); } catch {} setCreatingCharacter(false); startNewGame(); }} data-testid="button-world-editor-menu">🗺️ World Editor</button>
               <button className="main-menu-button" onClick={loadLocalSave} disabled={!hasLocalSave} data-testid="button-load-game-menu">{hasLocalSave ? 'Load Game' : 'Load Game · No Save Yet'}</button>
