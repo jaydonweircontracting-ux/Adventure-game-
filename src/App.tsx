@@ -1208,7 +1208,7 @@ export function buildingDoorwaysFor(chunk: Point): Doorway[] {
             : isStartingArea(chunk) && index === 2 ? 'Lanterns glow beneath old roots in the quiet town chapel.'
             : isStartingArea(chunk) && index === 3 ? 'A cozy tavern with a long oak bar. Mira serves ale and gossip.'
             : 'A simple brown room waiting to be furnished.',
-          roomType: (isStartingArea(chunk) && index === 0 ? 'inn' : isStartingArea(chunk) && index === 1 ? 'guild' : isStartingArea(chunk) && index === 2 ? 'chapel' : isStartingArea(chunk) && index === 3 ? 'tavern' : 'building') as const,
+          roomType: (isStartingArea(chunk) && index === 0 ? 'inn' : isStartingArea(chunk) && index === 1 ? 'guild' : isStartingArea(chunk) && index === 2 ? 'chapel' : isStartingArea(chunk) && index === 3 ? 'tavern' : 'building') as 'inn' | 'guild' | 'chapel' | 'tavern' | 'building',
           exteriorPosition: doorwayExteriorPosition(rect, position),
         },
       };
@@ -2115,7 +2115,7 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  cons
     spawn('troll', 0, 10000, 2.5);
   }
   // Dragons: extremely remote territories (danger 3), rare. Endgame.
-  if (danger >= 3 && terrain !== 'ocean' && Math.abs(chunk.x * 29 + chunk.y * 31) % 4 === 0) {
+  if (danger >= 3 && (terrain as string) !== 'ocean' && Math.abs(chunk.x * 29 + chunk.y * 31) % 4 === 0) {
     spawn('dragon', 0, 11000, 5);
   }
   // Orcs: brutes roaming the deep wilderness (danger 2+).
@@ -10018,7 +10018,7 @@ if (active) {
                   return;
                 }
                 // Stamp tools: place a new object at the tap.
-                if (editorTool !== 'select' && editorTool !== 'rotate') {
+                if (editorTool !== 'select' && (editorTool as string) !== 'rotate') {
                   setPlacedObjects((prev) => editorPlaceObject(prev, editorTool, fx, fy, chunkKey));
                   logEditorChange('stamp', 'stamped ' + editorTool, fx, fy);
                   return;
