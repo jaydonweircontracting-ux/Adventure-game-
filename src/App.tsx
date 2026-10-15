@@ -11,6 +11,7 @@ import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './
 import { pickpocketChance, resolvePickpocket } from './game/pickpocket';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { isRecord, isFiniteNumber } from '@/game/shared/guards';
 import { Backpack, BookOpen, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
 import { type ChangeEvent, type PointerEvent, type ReactNode, type TouchEvent } from 'react';
@@ -1717,14 +1718,6 @@ const savePlayerClasses = ['Beginner', 'Warrior', 'Mage', 'Rogue'];
 const saveNpcRoles = ['mage', 'warrior', 'guide', 'rogue'];
 const saveGoatDispositions = ['calm', 'aggressive', 'defeated'];
 const saveAdventurerClasses = ['Beginner', 'Ranger', 'Mage', 'Rogue', 'Warrior'];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
 
 function isSavePoint(value: unknown): value is Point {
   return isRecord(value) && isFiniteNumber(value.x) && isFiniteNumber(value.y);
