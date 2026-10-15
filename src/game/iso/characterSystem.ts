@@ -98,8 +98,71 @@ export function hashSeed(str: string): number {
  * BaseHumanMale default (user directive — no auto-equipped items). The seed
  * is retained for future per-NPC customization (base variants, equipment).
  */
-export function variantLook(_seed: string): RpgLook {
-  return { ...RPG_DEFAULT_LOOK };
+/**
+ * BUILD 713: stable paper-doll loadout selection.
+ *
+ * Every selected item uses the same verified animation/direction/frame
+ * contract as its base. Layer order matters: legs -> torso -> arms -> head
+ * protection -> hair -> weapon/shield. Asset failures are isolated per layer
+ * by rpgSprite(), so a missing optional item never hides the body or other
+ * working layers. Keep the selection deterministic: the same NPC id always
+ * resolves to the same appearance after chunk changes and save/load.
+ *
+ * These are folder names from rpgManifest.json. Equipment PNGs must be present
+ * under public/rpg/<folder>/ for each layer to render; absent files gracefully
+ * fall back to the layers that are available.
+ */
+const LOOK_PARTS = {
+  legs: ['BluePants', 'BrownPants', 'BlackBoots', 'DrkBoot', 'AhoulBoots1', 'AhoulKilt1'],
+  clothing: ['BlueVest', 'BrvHrtTunic', 'BrvHrtVest', 'ChestPiece1', 'ChestPiece2'],
+  armor: ['BreastPlate1', 'BreastPlateGold', 'Breastplate2', 'DrkChestPlat', 'AhoulChestpiece1', 'AhoulLeatherBreastplate'],
+  arms: ['AhoulArmBand', 'AhoulArmGuards', 'DrkArmPlat', 'AhoulShoulderpads1'],
+  headwear: ['CanvasHood', 'ChainCoif', 'CoifFelious', 'CoifMudam', 'DrkCoif', 'DrkHelm', 'DrkHood'],
+  hair: ['DreamWalkerHair1', 'DreamWalkerHair2', 'DreamWalkerHair3'],
+  beard: ['BeardDark', 'BeardGrey', 'BeardLight', 'BeardRed'],
+  weapons: ['Dagger', 'BroadSword', 'BroadSword2', 'BastardSword', 'BattleAxe', 'Axe', 'BoneBow', 'BoneClub', 'ChainMace'],
+  shields: ['BucklerNisos', 'BucklerWood'],
+} as const;
+
+function choosePart(seed: number, parts: readonly string[], salt: number): string | null {
+  // Salt each slot so outfit choices don't correlate with one another.
+  const value = (Math.imul(seed ^ salt, 0x45d9f3b) >>> 0);
+  return parts[value % parts.length] ?? null;
+}
+
+/** Stable, varied RPG loadout for an NPC id/seed. */
+export function variantLook(seedStr: string): RpgLook {
+  const seed = hashSeed(seedStr || 'adventurer');
+  const role = seed % 5;
+  const equipment: string[] = [];
+  const add = (part: string | null) => { if (part && !equipment.includes(part)) equipment.push(part); };
+
+  // Every outfit has a basic leg layer and a torso layer.
+  add(choosePart(seed, LOOK_PARTS.legs, 0x1a2b3c));
+  if (role === 0 || role === 2) {
+    // Light civilian/traveller clothing.
+    add(choosePart(seed, LOOK_PARTS.clothing, 0x2b3c4d));
+  } else {
+    // Armoured archetypes: chest armour replaces (rather than duplicates) a shirt.
+    add(choosePart(seed, LOOK_PARTS.armor, 0x3c4d5e));
+    if (role === 1 || role === 4) add(choosePart(seed, LOOK_PARTS.arms, 0x4d5e6f));
+  }
+
+  // Hair is common; head protection takes priority on helmeted loadouts.
+  if (role === 1 || role === 4) {
+    add(choosePart(seed, LOOK_PARTS.headwear, 0x5e6f70));
+  } else {
+    add(choosePart(seed, LOOK_PARTS.hair, 0x6f7081));
+    if (role === 3 && seed % 2 === 0) add(choosePart(seed, LOOK_PARTS.beard, 0x708192));
+  }
+
+  // Weapon/shield layers are cosmetic; combat logic and inventory remain authoritative.
+  if (role === 1 || role === 2 || role === 4) {
+    add(choosePart(seed, LOOK_PARTS.weapons, 0x8192a3));
+    if (role === 4 && seed % 3 === 0) add(choosePart(seed, LOOK_PARTS.shields, 0x92a3b4));
+  }
+
+  return { base: RPG_DEFAULT_BASE, equipment };
 }
 
 /**
