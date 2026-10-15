@@ -131,6 +131,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '723': 'Reduced NPC chatter render-loop work by caching fixed dialogue lines and bounded deterministic speaker seeds',
   '722': 'Added an on/off NPC communication toggle with small rotating speech bubbles above visible townsfolk; preference is saved',
   '720': 'Restored character creation for the new animated RPG models; selectable body types and appearance layers feed the live isometric player without legacy 2D sprite compositing',
   '713': 'RPG appearance layers: deterministic hairstyles, clothing, armor, weapons and shields for NPCs; missing art safely falls back per layer',
