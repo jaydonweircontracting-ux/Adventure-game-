@@ -1837,6 +1837,9 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
         selectGoat(liveRef.current.selectedGoatId === bestEnemy.id ? null : bestEnemy);
         return;
       }
+      // Empty-field taps release entity lock before movement or world interactions.
+      tapRef.current.onSelectNpc?.(null);
+      tapRef.current.onSelectGoat?.(null);
       // BUILD 697: stall hit test — tap a market stall to open its shop.
       // Runs after the NPC test (an NPC standing at a stall still wins) and
       // before the door test (market stalls sit near buildings). Screen
