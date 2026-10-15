@@ -4362,6 +4362,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       // BUILD 442: target the NPC — auto-follow and auto-attack.
       const npcTarget = m.target;
       targetNpcIdRef.current = npcTarget.npc.id;
+      targetNpcModeRef.current = 'attack';
+      targetGoatIdRef.current = null;
+      setTargetGoatId(null);
       setTargetNpcId(npcTarget.npc.id);
       setLogs((currentLogs) => [{ text: `Targeting ${npcTarget.npc.name} — chasing!`, color: 'red' }, ...currentLogs].slice(0, 3));
     }
@@ -4925,6 +4928,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const tapMovePathRef = useRef<Point[] | null>(null);
   // BUILD 442: NPC target system — tap an NPC's Attack action to chase them.
   const targetNpcIdRef = useRef<string | null>(null);
+  // BUILD 719: tapping an NPC selects an interaction target; the context-menu
+  // Attack action explicitly switches that target into combat mode.
+  const targetNpcModeRef = useRef<'talk' | 'attack' | null>(null);
   const [targetNpcId, setTargetNpcId] = useState<string | null>(null);
   // BUILD 337: immortal-loop diagnostics. If a frame throws, the message is
   // recorded here and shown as a small on-screen badge (tap to dismiss) so
@@ -6378,6 +6384,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const targetId = targetNpcIdRef.current;
       if (targetId && (input.x !== 0 || input.y !== 0)) {
         targetNpcIdRef.current = null;
+        targetNpcModeRef.current = null;
         setTargetNpcId(null);
       } else if (targetId && !inputLocked && !optionsOpen && !waitingRef.current) {
         const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
@@ -6385,6 +6392,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         if (!targetNpc || targetNpc.indoors || isNpcDead(targetNpc, tick)) {
           // Target lost (died, went inside, or gone) — stop chasing.
           targetNpcIdRef.current = null;
+          targetNpcModeRef.current = null;
           setTargetNpcId(null);
         } else {
           const dx = targetNpc.position.x - positionRef.current.x;
@@ -6401,14 +6409,46 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               facingRef.current = faceDir;
               setFacing(faceDir);
             }
-            // Auto-attack: swing when cooldown is ready.
-            if (!playerAttackStateRef.current.active && playerAttackCooldownRef.current <= 0) {
+            // BUILD 719: a normal tap is an interaction target, never an
+            // implicit attack. Only the explicit Attack action auto-swings.
+            if (targetNpcModeRef.current === 'attack' && !playerAttackStateRef.current.active && playerAttackCooldownRef.current <= 0) {
               const inCellar = interiorRef.current?.roomType === 'cellar';
               if (!inCellar && !interiorRef.current) {
                 playerAttackStateRef.current = { active: true, direction: faceDir, targetId: null, elapsed: 0, hitApplied: false, ranged: false };
                 playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS;
                 setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS);
               }
+            }
+          }
+        }
+      }
+      // BUILD 719: selected hostile critters use the same chase/facing/range
+      // behavior as NPCs. In range, attackGoat uses the selected ID, so a
+      // swing cannot silently switch to a nearby unselected creature.
+      const selectedGoatId = targetGoatIdRef.current;
+      if (!targetId && selectedGoatId != null && (input.x !== 0 || input.y !== 0)) {
+        targetGoatIdRef.current = null;
+        setTargetGoatId(null);
+      } else if (!targetId && selectedGoatId != null && !inputLocked && !optionsOpen && !waitingRef.current) {
+        const targetGoat = goatsRef.current.find((goat) => goat.id === selectedGoatId && goat.disposition === 'aggressive');
+        if (!targetGoat || targetGoat.hp <= 0) {
+          targetGoatIdRef.current = null;
+          setTargetGoatId(null);
+        } else {
+          const dx = targetGoat.position.x - positionRef.current.x;
+          const dy = targetGoat.position.y - positionRef.current.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > PLAYER_MELEE_REACH * 0.8) {
+            tapSteer = { x: dx / dist, y: dy / dist };
+          } else {
+            const absDx = Math.abs(dx), absDy = Math.abs(dy);
+            const faceDir: Direction = absDx >= absDy ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'down' : 'up');
+            if (facingRef.current !== faceDir) {
+              facingRef.current = faceDir;
+              setFacing(faceDir);
+            }
+            if (!playerAttackStateRef.current.active && playerAttackCooldownRef.current <= 0) {
+              attackGoat(selectedGoatId);
             }
           }
         }
@@ -6712,8 +6752,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           // closest one (not a goat/corn that happens to be nearer).
           const npcOnly = [...npcCandidates, ...fieldNpcCandidates]
             .sort((a, b) => goatDistance(a as unknown as GoatState, attackerPos) - goatDistance(b as unknown as GoatState, attackerPos));
+          const lockedNpcTargetId = targetNpcIdRef.current;
           const attackTarget = playerAttack.targetId == null
-            ? (npcOnly[0] ?? attackCandidates[0])
+            ? (lockedNpcTargetId
+                ? npcOnly.find((npc) => npc.id === lockedNpcTargetId)
+                : (npcOnly[0] ?? attackCandidates[0]))
             : attackCandidates.find((goat) => goat.id === playerAttack.targetId);
           if (!swingDamageDealt && attackTarget && (attackTarget.entityKind === 'townsfolk' || attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler' || attackTarget.entityKind === 'cellar-rat' || attackTarget.entityKind === 'wildlife' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
             swingDamageDealt = true;
@@ -9359,6 +9402,30 @@ if (active) {
           {isoFieldBeta && (
             <IsoFieldView chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom}
+              selectedNpcId={targetNpcId}
+              onSelectNpc={(npc) => {
+                targetGoatIdRef.current = null;
+                setTargetGoatId(null);
+                tapMoveTargetRef.current = null;
+                if (!npc) {
+                  targetNpcIdRef.current = null;
+                  targetNpcModeRef.current = null;
+                  setTargetNpcId(null);
+                } else {
+                  targetNpcIdRef.current = npc.id;
+                  targetNpcModeRef.current = 'talk';
+                  setTargetNpcId(npc.id);
+                }
+              }}
+              selectedGoatId={targetGoatId}
+              onSelectGoat={(goat) => {
+                targetNpcIdRef.current = null;
+                targetNpcModeRef.current = null;
+                setTargetNpcId(null);
+                tapMoveTargetRef.current = null;
+                targetGoatIdRef.current = goat?.id ?? null;
+                setTargetGoatId(goat?.id ?? null);
+              }}
               onTapMove={(point) => { tapMoveTargetRef.current = point; }}
               onTalkTo={(npc) => talkToTownsfolk(npc)}
               onShopStall={(stallIndex) => openShopStall(stallIndex)}
