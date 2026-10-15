@@ -542,6 +542,10 @@ export default function IsoFieldView({ chunk, position, townsfolk, goats, onExit
       drawables.length = 0;
       farmsteadQueue.length = 0;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // BUILD 714: keep pixel-art sampling mode set once per frame. Tile
+      // helpers now fast-path this state instead of toggling canvas smoothing
+      // off/on for every single ground and decor sprite.
+      g.imageSmoothingEnabled = false;
 
       const live = liveRef.current;
       // BUILD 711: render 1 simulation sample (~33 ms) behind real time and
