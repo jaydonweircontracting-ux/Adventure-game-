@@ -46,7 +46,7 @@ import { mosslightFillerLots, fillerVariantForLot } from '../mosslightLayout';
 // in src/game/buildingRig.ts.
 import { BUILDING_ASSET_META } from '../buildingRig';
 // BUILD 369 (Phase 2b): authoritative water/bridges in the iso field.
-import { waterGridForChunk, waterDepthAt, type WaterGrid } from '../landscape';
+import { waterGridForChunk, waterDepthAt, waterGridAt, type WaterGrid } from '../landscape';
 // BUILD 376: multi-chunk rendering so generated terrain fills the whole
 // screen at every zoom level — no blue void where nothing was generated.
 import {
