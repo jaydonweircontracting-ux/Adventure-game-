@@ -130,6 +130,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '713': 'RPG appearance layers: deterministic hairstyles, clothing, armor, weapons and shields for NPCs; missing art safely falls back per layer',
   '712': 'Sprite fallback fix: every direction resolves to available outfit/weapon art and mirrors compatible left-facing fallbacks',
   '711': 'Facing fix: forward and down movement keep the straight-facing sprite despite small horizontal drift',
   '710': 'Performance overhaul: smoother player/NPC interpolation, lower mobile canvas GPU load, and reduced frame-loop garbage collection',
