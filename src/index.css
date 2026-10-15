@@ -2323,7 +2323,8 @@ body {
 .goat:hover, .goat:focus-visible { filter: drop-shadow(0 0 4px rgba(255, 224, 147, .9)) drop-shadow(2px 3px 0 rgba(43, 61, 41, .2)); outline: none; }
 .goat.is-targeted { z-index: 7; }
 .goat-target-ring { position: absolute; z-index: 1; left: -7px; top: -7px; width: 36px; height: 36px; border: 2px solid rgba(255, 215, 123, .95); border-radius: 50%; box-shadow: 0 0 0 2px rgba(112, 54, 44, .42), inset 0 0 8px rgba(255, 207, 106, .22); opacity: 0; pointer-events: none; }
-.goat.is-targeted .goat-target-ring { opacity: 1; animation: target-pulse .9s ease-in-out infinite; }
+.goat.is-targeted .goat-target-ring, .monster.is-targeted .goat-target-ring { opacity: 1; animation: target-pulse .9s ease-in-out infinite; }
+.monster.is-targeted { z-index: 7; }
 .goat-sprite {
   position: absolute;
   left: 0;
@@ -2857,6 +2858,22 @@ body {
 .npc-bark { position: absolute; bottom: calc(100% - 6px); left: 50%; transform: translateX(-50%); padding: 3px 8px; background: var(--paper-bright); border: 2px solid var(--ink); box-shadow: 2px 2px 0 rgba(25, 56, 47, .25); font-size: 10px; line-height: 1.3; white-space: nowrap; z-index: 3; pointer-events: none; }
 .npc-bark::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: var(--ink); }
 .npc-target-marker { position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); font-size: 16px; z-index: 4; pointer-events: none; animation: target-bob 0.8s ease-in-out infinite; }
+.town-npc.is-targeted::after {
+  content: ''; position: absolute; z-index: 0; left: 50%; top: 50%;
+  width: 42px; height: 42px; border: 2px solid rgba(255, 215, 123, .96);
+  border-radius: 50%; transform: translate(-50%, -45%);
+  box-shadow: 0 0 0 2px rgba(112, 54, 44, .38), inset 0 0 8px rgba(255, 207, 106, .2);
+  pointer-events: none; animation: target-pulse .9s ease-in-out infinite;
+}
+.npc-chat-prompt {
+  position: absolute; z-index: 8; left: 50%; bottom: calc(100% + 17px);
+  transform: translateX(-50%); display: grid; place-items: center;
+  width: 25px; height: 22px; border-radius: 7px;
+  border: 1px solid #8b6822; background: #fff4c8; color: #5a4318;
+  font-size: 15px; line-height: 1; cursor: pointer; pointer-events: auto;
+  box-shadow: 0 2px 5px rgba(0,0,0,.32); animation: target-bob .9s ease-in-out infinite;
+}
+.npc-chat-prompt:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 @keyframes target-bob { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-4px); } }
 .npc-healthbar { position: absolute; bottom: calc(100% + 18px); left: 50%; transform: translateX(-50%); width: 36px; height: 5px; background: rgba(0,0,0,0.6); border: 1px solid var(--ink); z-index: 4; pointer-events: none; }
 .npc-healthbar-fill { display: block; height: 100%; background: linear-gradient(to bottom, #7CFC00, #32CD32); transition: width 0.2s; }
