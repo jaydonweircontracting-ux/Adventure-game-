@@ -1,7 +1,7 @@
 import { getDirection, isAdjacentAndFacing, type CombatDirection, type CombatPoint } from './combat';
 
 export type GoatAIState = 'idle' | 'chase' | 'attack' | 'hurt' | 'die';
-export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; wanderPhase?: number; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean; spawnPosition?: CombatPoint; roamRadius?: number; level?: number; provoked?: boolean; threatLevel?: number };
+export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean; spawnPosition?: CombatPoint; roamRadius?: number; level?: number; provoked?: boolean; threatLevel?: number };
 export const GOAT_CHASE_RANGE = 24;
 // Keep hostile goats close enough that sprites nearly touch the player:
 // melee happens up close, and the player's 5-unit swing reach connects.
@@ -137,20 +137,7 @@ export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint,
 
   const distance = Math.hypot(player.x - goat.position.x, player.y - goat.position.y);
   if (goat.disposition !== 'aggressive') {
-    // BUILD 743: peaceful wildlife still wanders. Previously every calm animal
-    // was forced into a permanently stationary idle state.
-    const wanderPhase = (goat.wanderPhase ?? 0) + deltaMs / 1000;
-    const speed = 1.2;
-    const desired = {
-      x: goat.position.x + Math.cos(wanderPhase * 0.73) * speed * deltaMs / 1000,
-      y: goat.position.y + Math.sin(wanderPhase * 0.91) * speed * deltaMs / 1000,
-    };
-    const homeBounded = clampToHomeRange(desired, goat.spawnPosition, goat.roamRadius);
-    const { position, moved } = resolveCollisionMove(goat.position, homeBounded, opts?.isBlocked);
-    return {
-      goat: { ...goat, position, wanderPhase, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: moved, attacking: false },
-      attackHit: false,
-    };
+    return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false }, attackHit: false };
   }
   // Common sense: don't pick fights you can't win. An unprovoked creature
   // won't start a fight with a foe far above its own level — it holds still
