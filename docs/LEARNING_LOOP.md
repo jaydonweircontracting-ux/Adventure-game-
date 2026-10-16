@@ -435,3 +435,27 @@ not just assertions.
 **Deployment:** Pending merge and Pages deployment. Do not call BUILD 728 live until the Pages workflow succeeds and the published version manifest/build marker are checked.
 
 **Lesson:** Use the build script as the version source of truth. Never hand-edit generated HTML/manifest files; wire the generator into the correct lifecycle hooks and verify the deployed artifact.
+
+
+## 2026-10-16 — Dead NPC Speech Suppression (BUILD 732)
+
+**Task:** Stop dead townsfolk from continuing ambient chatter or showing a talk prompt.
+
+**Expected:** Once death is recorded, no speech bubble or talk affordance appears over the corpse; both can return after respawn clears the death state.
+
+**Files:**
+- `src/game/iso/IsoFieldView.tsx` — gate ambient speech and talk prompt on authoritative death state / zero HP
+- `src/App.tsx` — build changelog note
+- `scripts/prepare-build-entry.cjs` — build marker 732
+
+**Tests:** Not run in this connector-only session. CI/deployment and real-game death/respawn verification are pending.
+
+**Result:** Source patch committed; not yet verified live.
+
+**Defect / Cause:** The renderer generated ambient speech bubbles whenever the speech option was enabled, without checking whether the townsfolk record represented a corpse. The talk affordance also needed an explicit same-frame death guard.
+
+**Fix:** Compute `npcIsDead` from `deadUntilTick != null` or `hp <= 0`; require `!npcIsDead` before drawing chatter and the talk bubble. Respawn can restore chatter when death state is cleared.
+
+**Regression:** Pending.
+
+**Lesson:** Death behavior must be guarded in the presentation layer as well as interaction handlers; otherwise stale or transitioning entity state can leave living-only UI attached to a corpse.
