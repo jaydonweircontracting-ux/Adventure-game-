@@ -11594,7 +11594,7 @@ function Home() {
         const base = import.meta.env.BASE_URL;
         const cacheBust = Date.now();
         // The manifest proves what the deployed artifact reports.
-        const manifestResponse = await fetch(`${base}version.json?t=${cacheBust}`, { cache: 'no-store' });
+        const manifestResponse = await fetch(`${base}version.json?t=${cacheBust}-${Math.random().toString(36).slice(2)}`, { cache: 'no-store' });
         if (!manifestResponse.ok) throw new Error('deployed version manifest unavailable');
         const manifest = await manifestResponse.json();
         const deployedBuild = Number(manifest.build);
@@ -11606,7 +11606,7 @@ function Home() {
         // The current main-branch source marker detects commits that are newer
         // than the deployed artifact, even when their commit message lacks BUILD N.
         const sourceResponse = await fetch(
-          `https://raw.githubusercontent.com/jaydonweircontracting-ux/Adventure-game-/main/scripts/prepare-build-entry.cjs?t=${cacheBust}`,
+          `https://raw.githubusercontent.com/jaydonweircontracting-ux/Adventure-game-/main/scripts/prepare-build-entry.cjs?t=${cacheBust}-${Math.random().toString(36).slice(2)}`,
           { cache: 'no-store' },
         );
         if (!sourceResponse.ok) throw new Error('latest source version unavailable');
@@ -12179,7 +12179,7 @@ function Home() {
               </div>
             )}
             {updateStatus === 'current' && (
-              <div style={{ background: '#27ae60', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
+              <div style={{ background: '#f39c12', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
                 ✓ No update available — you're on the latest build
                 {lastChecked && <div style={{ fontSize: 10, fontWeight: 'normal', opacity: 0.8 }}>Checked {lastChecked.toLocaleTimeString()} · live</div>}
               </div>
