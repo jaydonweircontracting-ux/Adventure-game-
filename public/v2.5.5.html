@@ -79,7 +79,7 @@ ctx.globalAlpha=1;drawGlyph('ASHFALL / 2.5.5',12,h-14,'#7e9b8e',10,'left',.8);
 }
 function screenToTile(sx,sy){const {w,h}=dimsCached;let tw=Math.min(w/(W+5),h/(H*.57+6))*1.28*zoom,th=tw*.52;let xx=sx-w*.5-camX,yy=sy-h*.49-camY;let a=xx/tw*2,b=yy/th*2;let x=Math.round((a+b)/2),y=Math.round((b-a)/2);return {x,y}}
 function clickAt(e){let r=canvas.getBoundingClientRect(),x=(e.clientX-r.left)*(dimsCached.w/r.width),y=(e.clientY-r.top)*(dimsCached.h/r.height),t=screenToTile(x,y);if(t.x<0||t.y<0||t.x>=W||t.y>=H)return;
-if(tool==='explore'){player.x=t.x;player.y=t.y;player.walk=1;player.face=Math.atan2(t.y-player.y,t.x-player.x);say('Moved to sector '+t.x+','+t.y+'.');return}
+if(tool==='explore'){let dx=t.x-player.x,dy=t.y-player.y;player.x=t.x;player.y=t.y;player.walk=1;if(dx||dy)player.face=Math.atan2(dy,dx);say('Moved to sector '+t.x+','+t.y+'.');return}
 let tileObj=tile(t.x,t.y);if(!tileObj)return;if(tool==='path'){if(tileObj.t==='~'||tileObj.t==='^'||tileObj.build){say('That tile cannot take a path.');return}if(gold<prices.path){say('Not enough gold.');return}if(!tileObj.path){tileObj.path=true;gold-=prices.path;uiUpdate()}else say('There is already a path here.')}
 else if(prices[tool]){if(place(t.x,t.y,tool))say(tool==='ride'?'Lookout built. The view is lovely from up there.':tool==='home'?'Cottage built. New settlers may arrive.':'Market built. Trade is coming to town.');else if(!tileObj.build)say('Build on clear, dry ground.')}
 }
