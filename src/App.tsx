@@ -5486,7 +5486,16 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       image.src = src;
     });
   }, []);
-  useEffect(() => { positionRef.current = position; }, [position]);
+  useEffect(() => {
+    // React position is published less often than the RAF simulation. Do not
+    // overwrite a newer live position with a nearby, stale UI sample: that
+    // can make held movement snap backward between frames.
+    const live = positionRef.current;
+    if (Math.abs(position.x - live.x) + Math.abs(position.y - live.y) > 8) {
+      // Large deltas represent teleports, respawns, or chunk restores.
+      positionRef.current = position;
+    }
+  }, [position]);
   useEffect(() => { chunkRef.current = chunk; }, [chunk]);
   useEffect(() => { mountedRef.current = mounted; }, [mounted]);
   useEffect(() => { horseRef.current = horse; }, [horse]);
