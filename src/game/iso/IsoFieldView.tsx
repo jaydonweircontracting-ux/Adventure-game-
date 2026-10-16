@@ -12,6 +12,7 @@
 // talk buttons) stay on the 2D renderer for now.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { startBrowserGameLoop, type BrowserGameLoop } from '../engine/browserGameEngine';
+import { drawProceduralGroundAccent } from '../engine/proceduralWorldArt';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import { createBoundedCache } from '../rendering/boundedCache';
 import { FrameMetrics } from '../rendering/frameMetrics';
@@ -946,6 +947,11 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
             // soil read wrong; plots get hedge/fence boundaries instead.
             const dn = (sandy || farmCode > 0) ? -1 : decorTileFor(terr, lx, ly, sc.ox, sc.oy);
             if (dn >= 0) drawDecor(groundCacheG, dn, p.x, p.y);
+            else if (!sandy && farmCode === 0) {
+              // HTML5 canvas accents add warm, storybook ground detail without
+              // new image assets or per-frame drawing cost (this is cached).
+              drawProceduralGroundAccent(groundCacheG, terr, wxW, wyW, p.x, p.y);
+            }
             // BUILD 698: farmland plot boundaries (hedges/fences) and
             // farmstead building sites (drawn as drawables after the pass).
             if (farmCode > 0 && farmCode !== FARM_TRACK) {
