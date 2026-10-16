@@ -5,6 +5,7 @@ import {
   settlementWorkerIds,
 } from '../src/game/settlementEconomy';
 import type { Townsperson } from '../src/game/townsfolk';
+import { createCivilization, serializeCivilization, deserializeCivilization } from '../src/game/civilization';
 
 const roster = [
   { id: 'worker-a', seed: 101, archetype: 'farmer', position: { x: 0, y: 0 }, indoors: false },
@@ -50,4 +51,8 @@ assert.ok(state.totalMined >= state.totalDelivered, 'delivery cannot exceed gath
 
 const paused = advanceSettlementEconomy(state, currentRoster, quarry, stockpile, storage, 1000, false, true, 100);
 assert.equal(paused.mined, 0, 'workers stop mining while the deposit is unavailable');
-console.log('Settlement economy tests passed (stable jobs, walking, hauling, stock cap, depleted-node pause).');
+const savedCiv = createCivilization(12345);
+(savedCiv as typeof savedCiv & { settlementWork?: Record<string, unknown> }).settlementWork = { mosslight: state };
+const restoredCiv = deserializeCivilization(serializeCivilization(savedCiv)) as typeof savedCiv & { settlementWork?: Record<string, unknown> };
+assert.deepEqual(restoredCiv.settlementWork?.mosslight, state, 'worker cargo and quarry state survive civilization save/load');
+console.log('Settlement economy tests passed (stable jobs, walking, hauling, stock cap, depleted-node pause, save/load).');

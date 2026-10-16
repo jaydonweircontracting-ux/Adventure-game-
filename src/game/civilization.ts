@@ -746,6 +746,8 @@ export type CivilizationState = {
   units: MilitaryUnit[];
   events: WorldEvent[];
   lastSimDay: number;
+  /** Optional persisted local work state; old saves omit it safely. */
+  settlementWork?: Record<string, unknown>;
 };
 
 type SettlementDef = {

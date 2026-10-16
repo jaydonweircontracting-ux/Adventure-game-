@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '737': 'Persist mining workers, carried stone, quarry cooldown and stockpile progress across saves',
   '736': 'Assign villagers autonomous mining and hauling jobs; deliver stone into the settlement stockpile',
   '735': 'Move the mineable starting-house boulder clear of the house sprite so it is visible and reachable',
   '734': 'Make the starting-house stone boulder visible and mineable; add stone inventory',
@@ -4715,6 +4716,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const townsfolkRef = useRef<Townsperson[]>([]);
   // BUILD 736: autonomous stone workers share the existing Mosslight resource ledger.
   const settlementEconomyRef = useRef<SettlementEconomyState>(createSettlementEconomyState());
+  const settlementEconomyLoadedRef = useRef(false);
   const stoneQuarryPointRef = useRef<TownsfolkPoint | null>(null);
   const townsfolkAnchorsRef = useRef<TownsfolkAnchors | null>(null);
   // Physical NPC navigation: housing registry, cottage doors, obstacles.
@@ -5695,6 +5697,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         }
         const quarryPoint = stoneQuarryPointRef.current;
         const stockpilePoint = folkAnchors.points.guild ?? folkAnchors.plaza;
+        const civEconomy = ensureCiv() as CivilizationState & { settlementWork?: Record<string, unknown> };
+        if (!settlementEconomyLoadedRef.current) {
+          const savedWork = civEconomy.settlementWork?.mosslight as SettlementEconomyState | undefined;
+          if (savedWork && savedWork.workers && typeof savedWork.depositRemaining === 'number') {
+            settlementEconomyRef.current = savedWork;
+          }
+          settlementEconomyLoadedRef.current = true;
+        }
         const economy = localSettlement && quarryPoint
           ? advanceSettlementEconomy(
               settlementEconomyRef.current,
@@ -5708,7 +5718,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               50 + localSettlement.population,
             )
           : null;
-        if (economy) settlementEconomyRef.current = economy.state;
+        if (economy) {
+          settlementEconomyRef.current = economy.state;
+          // Civilization serialization already persists arbitrary optional state;
+          // keep worker assignments, cargo, work progress and quarry cooldown in saves.
+          civEconomy.settlementWork = { ...(civEconomy.settlementWork ?? {}), mosslight: economy.state };
+        }
         const economyTargets = new Map((economy?.targets ?? []).map((target) => [target.npcId, target]));
         const resolveVillageTarget = (npc: Townsperson, anchors: TownsfolkAnchors, clock: WorldClockState) => {
           const work = economyTargets.get(npc.id);

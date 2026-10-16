@@ -526,3 +526,9 @@ not just assertions.
 **Limitations still tracked:** Worker cargo/progress is transient across reloads. The shared economy is now connected for stone, while broad resource hauling, settlement construction consumption and shortage/starvation consequences remain follow-up work; do not mark the whole economy task complete yet.
 
 **Verification:** Await CI typecheck, isometric regression test, build and settlement economy test. The browser game still needs a live deployed visual check for the boulder and worker routes.
+
+## 2026-10-16 — Persist settlement work state (BUILD 737)
+
+The active Mosslight economy now stores worker assignments, carried stone, mining progress, deposit remaining and quarry cooldown inside the existing civilization save object. Loading a legacy save without this optional field initializes a clean economy state; new saves restore it. Stone inventory remains in the settlement's existing storage ledger.
+
+**Verification:** CI must pass typecheck, the isometric regression, the settlement economy test, and the production build. Live gameplay still needs visual inspection of worker routing and save/reload behavior.
