@@ -1,6 +1,6 @@
 # Current Project State
 
-**Last updated:** 2026-10-12 (BUILD 634)
+**Last updated:** 2026-10-16 (BUILD 727 proposed)
 **Latest verified build:** 633 (66eec15) — confirmed live via curl
 **Git HEAD:** 66eec15 (main)
 
@@ -56,9 +56,9 @@ npm run build                # production build
 ## Active task — 2026-10-16: restore update checker and release verification
 
 - User reports the main-menu live update indicator no longer reliably turns orange, polls, or warns when the running build is stale.
-- Source inspection found BUILD_NUMBER in src/App.tsx is 724, public/version.json in main is 707, and root index.html marker is 712. These are not synchronized in source.
+- Source inspection found mismatched markers (public/version.json 707, root index.html 712, prepare-build-entry.cjs 726). BUILD 727 synchronizes the root HTML marker, public manifest, and build script.
 - Current update checker trusts version.json and only checks GitHub's latest commit message for a `BUILD N` string; commits without that format can be incorrectly shown as current.
 - docs/index.html points at a fixed old asset pair and docs/version.json is absent. The exact production Pages source must be confirmed; repository brain rules require checking the deployed artifact, not assuming src/ changes are live.
-- Plan: restore authoritative source-build comparison, retain 10-second polling and orange Update action, add a manual Check now control, version the build, run CI/typecheck/build/regressions, merge only after checks pass, and verify the deployed game before claiming completion.
+- BUILD 725 restored orange checking/current status and stale-manifest errors; BUILD 726 addressed house outline artifacts. BUILD 727 adds authoritative source-build comparison and manual Check now while preserving both concurrent changes.
 - User also expects a fresh playable link with every update; include the production play URL with cache busting and label deployment status honestly.
-- Status: diagnosis recorded; implementation and deployment verification pending.
+- Status: implementation committed to `fix/live-update-version-checker-727`; CI, merge, and live artifact verification pending.
