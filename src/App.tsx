@@ -134,7 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
   '730': 'Lock movement and combat while the wanted-guard arrest dialogue is open; retain NPC death, loot, disposition and guard choices',
-  '729': 'NPC death closes dialogue, attacks change disposition, corpses loot correctly, and wanted guards pursue with flee/jail/fine choices'
+  '729': 'NPC death closes dialogue, attacks change disposition, corpses loot correctly, and wanted guards pursue with flee/jail/fine choices',
   '728': 'Compare live, deployed, and latest source versions; add manual real-time update checks',
   '727': 'Fix dagger/equipment layer disappearing when switching into attack animation; preserve last valid weapon sprite across animation states',
   '726': 'Remove static CSS border and outline artifacts around house sprites while preserving building art and gameplay',
