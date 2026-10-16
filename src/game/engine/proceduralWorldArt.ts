@@ -211,3 +211,107 @@ export function drawBuildingGroundDress(
   }
   ctx.restore();
 }
+
+
+/**
+ * BUILD 730: complete storybook building finish pass. The source sprites remain
+ * the canonical building art, but receive a consistent architectural treatment:
+ * warm roof ridge, small shingle seams, glowing framed windows, timber trim,
+ * chimney and a planted frontage. Every mark is pinned to the building's
+ * world coordinates so it cannot shimmer while the camera moves.
+ */
+export function drawBuildingRenovation(
+  ctx: CanvasRenderingContext2D,
+  centerX: number,
+  baseY: number,
+  width: number,
+  height: number,
+  worldX: number,
+  worldY: number,
+): void {
+  if (!(width > 12 && height > 12)) return;
+  const h = tileHash(worldX, worldY, 0x730);
+  const left = centerX - width * 0.5;
+  const top = baseY - height;
+  const scale = Math.max(0.45, Math.min(2.2, width / 180));
+  const warmRoof = ['#a85e3d', '#5b7180', '#7d6648', '#a47a43'][h % 4];
+  const roofLight = ['#d38a58', '#9eb1b1', '#c5a16b', '#e0bb72'][h % 4];
+
+  ctx.save();
+  // Fine, warm pixel-art outline gives every roof a coherent silhouette.
+  ctx.strokeStyle = 'rgba(48, 39, 30, 0.72)';
+  ctx.lineWidth = Math.max(1, 1.25 * scale);
+  ctx.beginPath();
+  ctx.moveTo(left + width * 0.08, top + height * 0.42);
+  ctx.lineTo(left + width * 0.50, top + height * 0.06);
+  ctx.lineTo(left + width * 0.92, top + height * 0.42);
+  ctx.stroke();
+
+  // Roof ridge and sparse tile seams. The light side is subtly sunlit.
+  ctx.strokeStyle = roofLight;
+  ctx.lineWidth = Math.max(1, 1.5 * scale);
+  ctx.beginPath();
+  ctx.moveTo(left + width * 0.18, top + height * 0.35);
+  ctx.lineTo(left + width * 0.50, top + height * 0.11);
+  ctx.lineTo(left + width * 0.82, top + height * 0.35);
+  ctx.stroke();
+  ctx.strokeStyle = warmRoof;
+  ctx.lineWidth = Math.max(1, scale);
+  for (let i = 1; i <= 4; i++) {
+    const t = i / 5;
+    const y = top + height * (0.17 + t * 0.21);
+    ctx.beginPath();
+    ctx.moveTo(left + width * (0.20 + t * 0.25), y);
+    ctx.lineTo(left + width * (0.47 + t * 0.04), y + height * 0.025);
+    ctx.stroke();
+  }
+
+  // A pair of warm, framed windows placed on the upper front facade.
+  const windowY = top + height * 0.57;
+  for (const wx of [left + width * 0.27, left + width * 0.72]) {
+    const ww = Math.max(4, width * 0.045);
+    const wh = Math.max(5, height * 0.105);
+    ctx.fillStyle = '#4b3528';
+    ctx.fillRect(Math.round(wx - ww / 2 - scale), Math.round(windowY - scale), ww + 2 * scale, wh + 2 * scale);
+    ctx.fillStyle = (h & 1) ? '#f4d68a' : '#ffe5a6';
+    ctx.fillRect(Math.round(wx - ww / 2), Math.round(windowY), ww, wh);
+    ctx.fillStyle = '#8b5738';
+    ctx.fillRect(Math.round(wx - scale / 2), Math.round(windowY), Math.max(1, scale), wh);
+    ctx.fillRect(Math.round(wx - ww / 2), Math.round(windowY + wh / 2), ww, Math.max(1, scale));
+    ctx.fillStyle = '#8a6545';
+    ctx.fillRect(Math.round(wx - ww / 2 - scale), Math.round(windowY + wh + scale), ww + 2 * scale, Math.max(1, scale));
+  }
+
+  // A small chimney with a highlight and a single drifting wisp, all static.
+  const chimneyX = left + width * (0.67 + ((h >>> 6) % 8) / 100);
+  const chimneyY = top + height * 0.18;
+  const cw = Math.max(4, width * 0.035);
+  const ch = Math.max(8, height * 0.15);
+  ctx.fillStyle = '#704a38';
+  ctx.fillRect(Math.round(chimneyX), Math.round(chimneyY), cw, ch);
+  ctx.fillStyle = '#bd7651';
+  ctx.fillRect(Math.round(chimneyX - scale), Math.round(chimneyY), Math.max(2, cw * 0.32), ch);
+  ctx.fillStyle = '#4e3a30';
+  ctx.fillRect(Math.round(chimneyX - scale), Math.round(chimneyY - scale), cw + 2 * scale, Math.max(2, scale * 2));
+
+  // Extra timber corner accents unify the facade without hiding the entrance.
+  ctx.fillStyle = 'rgba(84, 54, 34, 0.76)';
+  ctx.fillRect(Math.round(left + width * 0.19), Math.round(top + height * 0.52), Math.max(1, scale * 1.5), height * 0.20);
+  ctx.fillRect(Math.round(left + width * 0.81), Math.round(top + height * 0.52), Math.max(1, scale * 1.5), height * 0.20);
+
+  // Low garden edging and seeded flowers soften the building footprint.
+  const gardenY = baseY - Math.max(3, height * 0.025);
+  ctx.fillStyle = '#6b4a31';
+  ctx.fillRect(Math.round(left + width * 0.12), Math.round(gardenY), Math.max(3, width * 0.17), Math.max(2, scale * 2));
+  ctx.fillRect(Math.round(left + width * 0.71), Math.round(gardenY), Math.max(3, width * 0.17), Math.max(2, scale * 2));
+  const flowerColors = ['#f1d58b', '#e9a6a0', '#f6e8c2'];
+  for (let i = 0; i < 6; i++) {
+    const fx = left + width * 0.14 + ((h >>> (i % 16)) % 13) / 100 * width + i * width * 0.022;
+    const fy = gardenY - (i % 2 ? 2 : 4) * scale;
+    ctx.fillStyle = '#527e45';
+    ctx.fillRect(Math.round(fx), Math.round(fy), Math.max(1, scale), Math.max(2, scale * 2));
+    ctx.fillStyle = flowerColors[(h + i) % flowerColors.length];
+    ctx.fillRect(Math.round(fx - scale), Math.round(fy - scale), Math.max(2, scale * 2), Math.max(2, scale * 2));
+  }
+  ctx.restore();
+}
