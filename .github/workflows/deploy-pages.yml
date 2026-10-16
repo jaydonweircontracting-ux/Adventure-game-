@@ -31,6 +31,8 @@ jobs:
         run: npm run typecheck
       - name: Isometric direction regression test
         run: npm run test:iso-directions
+      - name: Settlement economy regression test
+        run: npm run test:settlement-economy
       - name: Build site
         run: npm run build
       - name: Configure Pages artifact
