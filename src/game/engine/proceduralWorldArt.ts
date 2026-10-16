@@ -178,7 +178,6 @@ export function drawProceduralPathDetail(
   ctx.restore();
 }
 
-/** Small doorstep, flower boxes and warm window accents around a building sprite. */
 /**
  * Minimal, world-pinned doorstep dressing for authored building sprites.
  *
