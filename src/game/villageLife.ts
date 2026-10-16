@@ -186,7 +186,7 @@ export function villageTarget(
 
   // Starving (missed meals — e.g. a long player-triggered conversation kept
   // them out): detour for food at the tavern/stall.
-  if (needs.hunger < 20 && !base.activity.includes('lunch') && !base.activity.includes('Lunch')) {
+  if (needs.hunger < 20 && (!foodAvailable || (!base.activity.includes('lunch') && !base.activity.includes('Lunch')))) {
     const food = anchors.points.tavern ?? anchors.stalls[0] ?? anchors.plaza;
     return {
       activity: foodAvailable ? 'Grabbing a bite' : 'Looking for food',
