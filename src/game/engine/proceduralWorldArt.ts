@@ -284,3 +284,83 @@ export function drawProceduralTreeLod(
   ctx.fillStyle = '#8dbb59';
   ctx.fillRect(Math.round(x - 6 * s), Math.round(y - 29 * s), Math.max(1, 4 * s), Math.max(1, 3 * s));
 }
+
+
+/**
+ * Large landmark boulder near the starting town. Deterministic vector art
+ * keeps it crisp at every zoom and avoids image loading or per-frame assets.
+ */
+export function drawProceduralBoulder(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale = 1,
+): void {
+  const s = Math.max(0.55, Math.min(1.8, scale));
+  ctx.save();
+  // Broad contact shadow anchors the stone to the ground plane.
+  ctx.fillStyle = 'rgba(16, 23, 19, 0.32)';
+  ctx.beginPath();
+  ctx.ellipse(x + 2 * s, y + 1 * s, 31 * s, 11 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Main angular silhouette, with a dark lower edge for readable volume.
+  ctx.fillStyle = '#454b4c';
+  ctx.beginPath();
+  ctx.moveTo(x - 27 * s, y - 2 * s);
+  ctx.lineTo(x - 22 * s, y - 20 * s);
+  ctx.lineTo(x - 9 * s, y - 34 * s);
+  ctx.lineTo(x + 9 * s, y - 37 * s);
+  ctx.lineTo(x + 25 * s, y - 23 * s);
+  ctx.lineTo(x + 31 * s, y - 7 * s);
+  ctx.lineTo(x + 21 * s, y + 2 * s);
+  ctx.lineTo(x - 18 * s, y + 3 * s);
+  ctx.closePath();
+  ctx.fill();
+
+  // Facets use muted slate colors rather than a flat gray blob.
+  ctx.fillStyle = '#697273';
+  ctx.beginPath();
+  ctx.moveTo(x - 22 * s, y - 20 * s);
+  ctx.lineTo(x - 9 * s, y - 34 * s);
+  ctx.lineTo(x + 1 * s, y - 18 * s);
+  ctx.lineTo(x - 7 * s, y - 6 * s);
+  ctx.lineTo(x - 27 * s, y - 2 * s);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#828989';
+  ctx.beginPath();
+  ctx.moveTo(x - 9 * s, y - 34 * s);
+  ctx.lineTo(x + 9 * s, y - 37 * s);
+  ctx.lineTo(x + 25 * s, y - 23 * s);
+  ctx.lineTo(x + 9 * s, y - 17 * s);
+  ctx.lineTo(x + 1 * s, y - 18 * s);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#555d5e';
+  ctx.beginPath();
+  ctx.moveTo(x + 1 * s, y - 18 * s);
+  ctx.lineTo(x + 9 * s, y - 17 * s);
+  ctx.lineTo(x + 31 * s, y - 7 * s);
+  ctx.lineTo(x + 21 * s, y + 2 * s);
+  ctx.lineTo(x - 7 * s, y - 6 * s);
+  ctx.closePath();
+  ctx.fill();
+
+  // Small mineral flecks and cracks give the landmark scale and texture.
+  ctx.strokeStyle = 'rgba(38, 44, 45, 0.8)';
+  ctx.lineWidth = 1.5 * s;
+  ctx.beginPath();
+  ctx.moveTo(x + 9 * s, y - 17 * s);
+  ctx.lineTo(x + 5 * s, y - 8 * s);
+  ctx.lineTo(x + 10 * s, y - 3 * s);
+  ctx.moveTo(x - 17 * s, y - 13 * s);
+  ctx.lineTo(x - 10 * s, y - 9 * s);
+  ctx.stroke();
+  ctx.fillStyle = '#a6aaa4';
+  ctx.fillRect(Math.round(x - 13 * s), Math.round(y - 25 * s), Math.max(1, 4 * s), Math.max(1, 2 * s));
+  ctx.fillRect(Math.round(x + 12 * s), Math.round(y - 26 * s), Math.max(1, 3 * s), Math.max(1, 2 * s));
+  ctx.restore();
+}
