@@ -162,3 +162,11 @@
 - **Files:** `src/App.tsx`
 - **Checkpoint:** BUILD 730 adds the arrest prompt to the shared input-lock conditions so keyboard/touch movement and attack/interact paths cannot continue behind the modal.
 - **Verification:** Pending CI, typecheck, production build, and real-game Playwright checks; do not mark done until evidence is available.
+
+### TASK-015: Suppress dead NPC speech
+- **Status:** `in_progress`
+- **Priority:** P1
+- **Objective:** Prevent dead NPCs from displaying ambient chatter or talk affordances; restore speech only after respawn clears death state.
+- **Files:** `src/game/iso/IsoFieldView.tsx`, `src/App.tsx`, `scripts/prepare-build-entry.cjs`
+- **Checkpoint:** BUILD 732 source patch committed. Renderer suppresses ambient speech when `deadUntilTick` is set or HP is zero and hides the talk prompt in the same state.
+- **Verification:** Pending CI, deployed version marker, and real-game death/respawn regression check. Do not mark done until verified.
