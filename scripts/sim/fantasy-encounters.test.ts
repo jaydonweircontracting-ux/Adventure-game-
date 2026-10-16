@@ -26,11 +26,10 @@ for (const encounter of expected) {
   check(encounter.kind + ' uses its intended biomes', JSON.stringify(spec?.biomes) === JSON.stringify(encounter.biomes));
   const resolved = resolveMonsterSprite(encounter.kind);
   check(encounter.kind + ' resolves to its own registered sprite kind', resolved.kind === encounter.kind);
-  check(encounter.kind + ' has a valid animated sprite definition', spriteDefFor(encounter.kind)?.animations.attack.frames >= 1);
+  const def = spriteDefFor(encounter.kind);
+  check(encounter.kind + ' has a valid animated sprite definition', !!def && def.animations.attack.frames >= 1);
 }
 
-// These are encounter mobs, not ambient road-walker roles.
-check('green guide/tracker-like road walkers are disabled', true);
 check('ogre is the high-danger heavy encounter', (MONSTER_SPAWN_TABLE.find((entry) => entry.kind === 'ogre')?.hpMult ?? 0) >= 2);
 
 console.log(`Fantasy encounter tests: ${passed} passed, ${failed} failed.`);
