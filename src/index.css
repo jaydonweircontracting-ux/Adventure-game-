@@ -5585,3 +5585,56 @@ body {
   .creator-options { grid-template-columns: minmax(0, 1fr); }
   .creator-actions .main-menu-button { flex-basis: 100%; }
 }
+
+
+/* Character creator mobile scroll fix: use ONE scroll container (the overlay).
+   Nested scrolling inside the card was trapping touch scroll before the action row. */
+.character-creator {
+  height: 100vh;
+  height: 100dvh;
+  max-height: none;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  align-items: flex-start;
+  padding-top: max(8px, env(safe-area-inset-top));
+  padding-bottom: max(24px, calc(env(safe-area-inset-bottom) + 24px));
+}
+.character-creator .character-creator-card {
+  flex: 0 0 auto;
+  max-height: none;
+  min-height: min-content;
+  overflow: visible;
+  overflow-x: visible;
+  overflow-y: visible;
+  margin-bottom: 8px;
+}
+.character-creator .creator-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 12px 8px max(12px, env(safe-area-inset-bottom));
+  margin: 12px -8px -8px;
+  background: rgba(243, 235, 213, .99);
+  border-top: 1px solid rgba(25, 56, 47, .18);
+  box-shadow: 0 -8px 14px rgba(25, 56, 47, .08);
+}
+.character-creator .creator-actions .main-menu-button {
+  flex: 1 1 145px;
+  min-width: 0;
+  min-height: 48px;
+  touch-action: manipulation;
+}
+.character-creator .rpg-character-creator-card {
+  max-height: none !important;
+  overflow: visible !important;
+}
+@media (max-width: 640px) {
+  .character-creator { padding-left: 8px; padding-right: 8px; }
+  .character-creator .character-creator-card { width: 100%; }
+  .character-creator .creator-actions { margin-left: -4px; margin-right: -4px; }
+}
