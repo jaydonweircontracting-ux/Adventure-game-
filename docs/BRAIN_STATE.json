@@ -21,7 +21,7 @@
     {
       "id": "live-update-checker",
       "priority": "P1",
-      "description": "Restore authoritative source/deployment version comparison and manual main-menu update refresh",
+      "description": "Synchronize source build markers and compare running, deployed, and latest main versions; add manual main-menu refresh",
       "system": "release-checker",
       "status": "IN_PROGRESS",
       "createdAt": "2026-10-16T21:45:00Z",
