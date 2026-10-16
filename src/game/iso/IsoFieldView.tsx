@@ -156,6 +156,24 @@ function farmFenceSprite(): HTMLCanvasElement {
 }
 
 type IsoMonster = { id: number; kind: string; position: Point; facing: string; disposition: string; hp: number; maxHp: number; variant?: string; moving?: boolean; attacking?: boolean; hitFlash?: boolean };
+
+/**
+ * The live monster array belongs to the player's active chunk and stores
+ * chunk-local field coordinates. Do not replicate these entities into each
+ * terrain scene in the 3x3 render grid. Keep one drawable per entity ID and
+ * reject invalid/out-of-chunk coordinates before both drawing and hit tests.
+ */
+function liveMonstersForActiveChunk(monsters: readonly IsoMonster[] | undefined, chunk: Point): IsoMonster[] {
+  if (isStartingArea(chunk)) return [];
+  const seenIds = new Set<number>();
+  return (monsters ?? []).filter((monster) => {
+    const { x, y } = monster.position;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= FIELD_SIZE || y >= FIELD_SIZE) return false;
+    if (seenIds.has(monster.id)) return false;
+    seenIds.add(monster.id);
+    return true;
+  });
+}
 const isoMonsterDefCache = new Map<string, MonsterSpriteDef | undefined>();
 function isoMonsterDef(kind: string): MonsterSpriteDef | undefined {
   if (isoMonsterDefCache.has(kind)) return isoMonsterDefCache.get(kind);
@@ -1776,7 +1794,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       // BUILD 742: hard-block hostile entities at render time in the starter settlement.
       // This also hides stale/cached monster state and malformed sprites that can
       // survive the spawn filter and appear as skeletons or invisible humanoids.
-      const liveMonsters = isStartingArea(chunk) ? [] : (live.monsters || []);
+      const liveMonsters = liveMonstersForActiveChunk(live.monsters, chunk);
       const monsterImgs = (window as unknown as { __isoMonsterImgs?: Record<string, HTMLImageElement> }).__isoMonsterImgs || {};
       for (const monster of liveMonsters) {
         const def = isoMonsterDef(monster.kind);
