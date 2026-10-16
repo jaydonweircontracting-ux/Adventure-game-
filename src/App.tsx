@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '741': 'Keep hostile encounters out of the starting settlement and remove floating NPC bark text over missing sprites',
   '740': 'Keep the starting boulder permanently visible and mineable while awarding stone and Mining XP on every hit',
   '739': 'Award one stone and Mining XP on every mining hit instead of only when the boulder is depleted',
   '738': 'Tap the starting boulder to walk over and auto-mine; stone goes straight to inventory and mining grants XP/levels',
@@ -1965,8 +1966,12 @@ function monsterLootForKind(kind: MonsterKind): GoatLoot {
     default: return {};
   }
 }
-function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  const terrain = mapTileFor(chunk).terrain;
-  if (terrain === 'ocean') return [];
+function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {
+  const terrain = mapTileFor(chunk).terrain;
+  // BUILD 741: the tutorial settlement and its surrounding starter chunks are safe.
+  // Prevent hostile skeletons and malformed green humanoid encounters from
+  // wandering through the starting town; wilderness encounters remain intact.
+  if (terrain === 'ocean' || isStartingArea(chunk)) return [];
   const danger = dangerForChunk(chunk);
   const monsters: MonsterState[] = [];
   let id = 0;
@@ -9606,7 +9611,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView playerLook={rpgConfig.look} npcSpeechEnabled={npcSpeechEnabled} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={monsters.map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
+            <IsoFieldView playerLook={rpgConfig.look} npcSpeechEnabled={false} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={monsters.map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {
@@ -10811,7 +10816,7 @@ if (active) {
                 <strong>{npc.name}</strong>
                 <small>{npc.activity}</small>
               </span>
-              {barks[npc.id] && <span className="npc-bark" aria-hidden="true">{barks[npc.id]}</span>}
+              {/* BUILD 741: suppress floating bark/scream text that could appear over a missing NPC sprite. */}
               {targetNpcId === npc.id && <span className="npc-target-marker" aria-hidden="true">🎯</span>}
               {!attacking && attackCooldownMs <= 0 && targetNpcId === npc.id && Math.hypot(npc.position.x - position.x, npc.position.y - position.y) <= 8.5 && (
                 <span className="npc-chat-prompt" role="button" tabIndex={0} aria-label={'Talk to ' + npc.name}
