@@ -19,7 +19,8 @@
     "test:procedural-world-art": "npx tsx tests/procedural-world-art.test.ts",
     "test:building-art": "npx tsx tests/building-art.test.ts",
     "test:town-production": "npx tsx tests/town-production.test.ts",
-    "test:village-food-needs": "npx tsx tests/village-food-needs.test.ts"
+    "test:village-food-needs": "npx tsx tests/village-food-needs.test.ts",
+    "test:caravan-trade": "npx tsx tests/caravan-trade.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
