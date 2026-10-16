@@ -52,3 +52,13 @@ npm run build                # production build
 - `project-memory/ISSUES.json` — issue tracker
 - `project-memory/BUILD_HISTORY.json` — build log
 - `project-memory/CURRENT_STATE.md` — this file
+
+## Active task — 2026-10-16: restore update checker and release verification
+
+- User reports the main-menu live update indicator no longer reliably turns orange, polls, or warns when the running build is stale.
+- Source inspection found BUILD_NUMBER in src/App.tsx is 724, public/version.json in main is 707, and root index.html marker is 712. These are not synchronized in source.
+- Current update checker trusts version.json and only checks GitHub's latest commit message for a `BUILD N` string; commits without that format can be incorrectly shown as current.
+- docs/index.html points at a fixed old asset pair and docs/version.json is absent. The exact production Pages source must be confirmed; repository brain rules require checking the deployed artifact, not assuming src/ changes are live.
+- Plan: restore authoritative source-build comparison, retain 10-second polling and orange Update action, add a manual Check now control, version the build, run CI/typecheck/build/regressions, merge only after checks pass, and verify the deployed game before claiming completion.
+- User also expects a fresh playable link with every update; include the production play URL with cache busting and label deployment status honestly.
+- Status: diagnosis recorded; implementation and deployment verification pending.
