@@ -95,7 +95,7 @@
         "package.json",
         "tests/update-version.test.ts"
       ],
-      "verification": "BUILD 728 CI and deployed artifact verification pending."
+      "verification": "GitHub Actions run 38972057977: typecheck, update-version regression (11 assertions), existing regression suite, and production build all passed. Deployment verification pending."
     }
   ],
   "lastUpdated": "2026-10-16",
