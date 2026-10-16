@@ -61,4 +61,4 @@ npm run build                # production build
 - docs/index.html points at a fixed old asset pair and docs/version.json is absent. The exact production Pages source must be confirmed; repository brain rules require checking the deployed artifact, not assuming src/ changes are live.
 - BUILD 725 restored orange checking/current status and stale-manifest errors; BUILD 726 cleaned house outlines; BUILD 727 fixed dagger visibility. BUILD 728 adds authoritative source-build comparison and manual Check now while preserving those changes.
 - User also expects a fresh playable link with every update; include the production play URL with cache busting and label deployment status honestly.
-- Status: implementation committed to `fix/live-update-version-checker-728`; CI, merge, and live artifact verification pending.
+- Status: BUILD 728 implementation passes CI on run 38972057977 (typecheck, 8 regression steps including 11 update-version assertions, production build). Merge and live artifact verification pending.
