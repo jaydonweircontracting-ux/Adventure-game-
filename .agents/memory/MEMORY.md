@@ -67,3 +67,12 @@ The successful deployment required declaring @tanstack/react-query and wouter as
 
 - After every requested fix, confirm the change was committed to GitHub main, confirm the exact deployed artifact serves it, and report any deployment or cache delay.
 - Do not stop after an attempted patch or call the work complete until the user confirms satisfaction; if the problem remains, continue tracing, fixing, and rechecking it.
+
+
+## Release and play-test communication (2026-10-16)
+
+- The user expects a fresh playable game URL with every game update.
+- Always include the production play URL with a cache-busting build query after a release; clearly label it as production/current or as a preview if it does not contain the proposed changes.
+- Never call a change live until the deployed build/artifact is independently checked.
+- For update-checker work, compare the running build against both the deployed version manifest and the latest main-branch source build marker. A commit-message-only fallback is not authoritative.
+- Preserve the existing 10-second live polling, visible checked time, orange update action, and explicit red error state. Do not say “latest” when the source/deployment check is incomplete.
