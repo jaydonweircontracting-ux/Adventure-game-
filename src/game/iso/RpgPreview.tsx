@@ -57,7 +57,6 @@ export default function RpgPreview(): React.JSX.Element {
         phase = (phase + (dt / 1000) * 8 * speed) % frames;
       }
       const fi = playing ? Math.floor(phase) : frame;
-      setFrame(fi);
 
       const W = canvas.width, H = canvas.height;
       g.fillStyle = BACKGROUNDS[bg].color;
