@@ -6143,24 +6143,27 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       autoMineBestDistanceRef.current = distance;
       tapMoveTargetRef.current = null;
       const hits = (oreHitsRef.current[target.id] || 0) + 1;
-      const hitsNeeded = target.id === 'tutorial-stone-deposit-4-7' ? 8 : (ORE_HITS[target.kind] || 3);
+      // BUILD 739: every successful swing grants one stone and Mining XP.
+      // The starting boulder lasts for its full richness count (12 hits), rather
+      // than withholding all rewards until the final hit.
+      const hitsNeeded = target.id === 'tutorial-stone-deposit-4-7'
+        ? Math.max(1, target.richness)
+        : (ORE_HITS[target.kind] || 3);
+      onLoot({ stone: 1 });
+      awardSkillXp('mining', MINING_XP[target.kind] || 10);
+      spawnCombatText('+1 stone', { x: target.fx, y: target.fy }, 'reward');
+      playCombatSound('shing', muted);
+      setLogs((logs) => [{ text: 'Mining hit ' + hits + '/' + hitsNeeded + ': +1 stone and Mining XP.', color: 'blue' }, ...logs].slice(0, 3));
       if (hits >= hitsNeeded) {
         delete oreHitsRef.current[target.id];
         depletedOresRef.current[target.id] = Date.now() + ORE_RESPAWN_MS;
         (window as unknown as { __depletedOres?: Set<string> }).__depletedOres = new Set(Object.keys(depletedOresRef.current));
-        const amount = target.richness;
-        onLoot({ stone: amount });
-        spawnCombatText('+' + amount + ' stone', { x: target.fx, y: target.fy }, 'reward');
-        playCombatSound('shing', muted);
-        setLogs((logs) => [{ text: 'You mine ' + amount + ' stone. Added directly to inventory.', color: 'blue' }, ...logs].slice(0, 3));
-        awardSkillXp('mining', MINING_XP[target.kind] || 10);
+        setLogs((logs) => [{ text: 'The boulder is depleted. You collected ' + hitsNeeded + ' stone.', color: 'blue' }, ...logs].slice(0, 3));
         autoMineTargetRef.current = null;
         autoMineStartedRef.current = false;
         autoMineBestDistanceRef.current = Number.POSITIVE_INFINITY;
       } else {
         oreHitsRef.current[target.id] = hits;
-        spawnCombatText('clang', { x: target.fx, y: target.fy }, 'damage');
-        playCombatSound('shing', muted);
       }
     }, 700);
     return () => window.clearInterval(timer);
