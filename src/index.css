@@ -5658,3 +5658,25 @@ body {
 .field-house.sprite-house.new-house::after,
 .field-house.farm-house::before,
 .field-house.farm-house::after { display: none !important; }
+
+/* BUILD 726: remove persistent CSS borders/outlines around house footprints.
+   Building silhouettes come from the PNG art; selection highlighting is
+   applied only by the world-editor interaction, not as a static frame. */
+.field-house,
+.field-house.sprite-house,
+.field-house.farm-house,
+.field-house-art {
+  border: 0 !important;
+  outline: 0 !important;
+}
+.field-house:not(:focus-visible) {
+  outline: 0 !important;
+}
+.field-house.sprite-house::before,
+.field-house.sprite-house::after,
+.field-house.farm-house::before,
+.field-house.farm-house::after {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
