@@ -134,7 +134,8 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
-  '744': 'Remove the two broken ambient animals beside the starting house and restore original wilderness wildlife behaviour',
+  '745': 'Hard-block hostile monster rendering in the starting town across both field renderers',
+    '744': 'Remove the two broken ambient animals beside the starting house and restore original wilderness wildlife behaviour',
   '743': 'Remove deer aggro marker',
   '742': 'Hard-block hostile and malformed monster sprites from rendering in the starting settlement',
   '741': 'Keep hostile encounters out of the starting settlement and remove floating NPC bark text over missing sprites',
@@ -9616,7 +9617,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView playerLook={rpgConfig.look} npcSpeechEnabled={false} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={monsters.map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
+            <IsoFieldView playerLook={rpgConfig.look} npcSpeechEnabled={false} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingArea(chunk) ? [] : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {
@@ -9917,7 +9918,7 @@ if (active) {
             ))}
           </div>
           <div className="field-monsters" aria-label="Hostile monsters">
-            {monsters.map((monster) => {
+            {(isStartingArea(chunk) ? [] : monsters).map((monster) => {
               const dead = monster.disposition === 'defeated';
               const anim = animForMonsterState({ dead, hitFlash: monster.hitFlash, attacking: monster.attacking, moving: monster.moving });
               const sprite = resolveMonsterSprite(monster.kind);
