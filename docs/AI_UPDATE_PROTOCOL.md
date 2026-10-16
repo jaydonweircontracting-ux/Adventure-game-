@@ -24,3 +24,7 @@ This is the standing short path for future game-change commands. Follow the auth
 
 ## Learned renderer regression
 Equipment sprites must retain their last-good image across animation-state transitions. A cache key that includes the animation name isolates Walk and Attack caches, allowing a weapon layer to disappear while the Attack asset loads or when it is missing. Cache the last-good layer by equipment item and facing; update it as valid frames arrive.
+
+
+## NPC combat regression
+NPC combat has multiple melee target pathways. When changing NPC damage/death, inspect each `damageNpc` call and ensure every path applies disposition changes, closes dead dialogue, records witnessed crime, and creates a corpse exactly once. Keep corpse loot field names aligned with `GameInventory` (`coins`, `healthPotion`), not generator labels (`gold`, `potions`). Test assault and murder with and without witnesses, then verify guard pursuit and each legal choice.
