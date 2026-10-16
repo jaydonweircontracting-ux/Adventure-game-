@@ -6410,7 +6410,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const effInput = (input.x !== 0 || input.y !== 0) ? input : tapSteer;
       const length = Math.hypot(effInput.x, effInput.y);
       const active = length > 0;
-      if (moving !== active) setMoving(active);
+      setMoving(active);
 
       // BUILD 704: run toggle (touch button) or Shift hold = sprint intent.
       // Computed here (before the interior early-return) so stamina drains
