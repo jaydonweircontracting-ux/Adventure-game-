@@ -4862,6 +4862,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // Simulation/collision still run every RAF using positionRef; the canvas
   // redraws at display refresh, while avoiding 60 full App-tree renders/sec.
   const lastIsoPositionUiAtRef = useRef(0);
+  // Keep the simulation at display cadence, but cap expensive React tree updates
+  // for moving entities to ~30 Hz. Refs remain frame-accurate for collisions/AI.
+  const lastEntityUiAtRef = useRef(0);
   const facingRef = useRef(facing);
   // BUILD 668: 8-direction facing for mounted horse.
   const mountedFacing8Ref = useRef<EightDirection>('down');
@@ -6270,6 +6273,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (gameOverRef.current) return;
       const elapsed = Math.min(50, now - lastFrame) / 1000;
       lastFrame = now;
+      const publishEntityUi = now - lastEntityUiAtRef.current >= 33;
+      if (publishEntityUi) lastEntityUiAtRef.current = now;
       // BUILD 307: attacks no longer root the player. The swing animation,
       // hit timing and cooldown still pace combat, but movement input stays
       // live during the swing so fighting never feels like a freeze.
@@ -6405,7 +6410,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const effInput = (input.x !== 0 || input.y !== 0) ? input : tapSteer;
       const length = Math.hypot(effInput.x, effInput.y);
       const active = length > 0;
-      setMoving(active);
+      if (moving !== active) setMoving(active);
 
       // BUILD 704: run toggle (touch button) or Shift hold = sprint intent.
       // Computed here (before the interior early-return) so stamina drains
@@ -6986,7 +6991,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           setLogs((currentLogs) => [{ text: 'A hostile goat rams you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
           if (nextHp <= 0 && !gameOverRef.current) { gameOverRef.current = true; setGameOver(true); }
         }
-        goatsRef.current = nextGoats; setGoats(nextGoats);
+        goatsRef.current = nextGoats; if (publishEntityUi) setGoats(nextGoats);
       }
       // Hostile monsters (goblins, bandits): same combat AI as goats.
       if (!interiorRef.current && monstersRef.current.length > 0) {
@@ -7022,7 +7027,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           setLogs((currentLogs) => [{ text: 'A hostile creature strikes you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
           if (nextHp <= 0 && !gameOverRef.current) { gameOverRef.current = true; setGameOver(true); }
         }
-        monstersRef.current = nextMonsters; setMonsters(nextMonsters);
+        monstersRef.current = nextMonsters; if (publishEntityUi) setMonsters(nextMonsters);
       }
       // Arrows in flight: player bow shots and bandit-archer volleys.
       if (!interiorRef.current && arrowsRef.current.length > 0) {
@@ -7059,30 +7064,30 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           playCombatSound('shing', muted);
           if (nextHp <= 0 && !gameOverRef.current) { gameOverRef.current = true; setGameOver(true); }
         }
-        arrowsRef.current = nextArrows; setArrows(nextArrows);
+        arrowsRef.current = nextArrows; if (publishEntityUi) setArrows(nextArrows);
       }
       // Ambient birds: lightweight, tick alongside goats.
       if (!interiorRef.current && birdsRef.current.length > 0) {
         const nowMs = performance.now();
         const nextBirds = birdsRef.current.map((bird) => updateBird(bird, nowMs, elapsed * 1000, chunkRef.current, positionRef.current));
-        birdsRef.current = nextBirds; setBirds(nextBirds);
+        birdsRef.current = nextBirds; if (publishEntityUi) setBirds(nextBirds);
       }
       // Wildlife wander: simple home-range movement, tick-throttled.
       if (!interiorRef.current && wildlifeRef.current.length > 0) {
         const tick = Math.floor(performance.now() / 500);
         const nextWildlife = wildlifeRef.current.map((animal) => updateWildlife(animal, tick, chunkRef.current));
-        wildlifeRef.current = nextWildlife; setWildlife(nextWildlife);
+        wildlifeRef.current = nextWildlife; if (publishEntityUi) setWildlife(nextWildlife);
       }
       // BUILD 355: the hermit mage wanders too (cliff-aware).
       if (!interiorRef.current && wanderMageRef.current) {
         const tick = Math.floor(performance.now() / 500);
         const nextMage = updateWanderMage(wanderMageRef.current, tick, chunkRef.current);
-        wanderMageRef.current = nextMage; setWanderMage(nextMage);
+        wanderMageRef.current = nextMage; if (publishEntityUi) setWanderMage(nextMage);
       }
       // Water life: fish and frogs swim/hop near home.
       if (!interiorRef.current && waterLifeRef.current.length > 0) {
         const nextWaterLife = waterLifeRef.current.map((animal) => updateWaterLife(animal, elapsed * 1000));
-        waterLifeRef.current = nextWaterLife; setWaterLife(nextWaterLife);
+        waterLifeRef.current = nextWaterLife; if (publishEntityUi) setWaterLife(nextWaterLife);
       }
       const currentInterior = interiorRef.current;
        if (active && currentInterior) {
