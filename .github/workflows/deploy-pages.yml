@@ -35,7 +35,7 @@ jobs:
           node <<'NODE' >> "$GITHUB_OUTPUT"
           const fs = require('node:fs');
           const source = fs.readFileSync('scripts/prepare-build-entry.cjs', 'utf8');
-          const match = source.match(/__AG_BUILD.{0,8}?(\\d{3,})/);
+          const match = source.match(/__AG_BUILD.{0,8}?(\d{3,})/);
           if (!match) throw new Error('Unable to read expected build marker');
           console.log(`build=${match[1]}`);
           NODE
@@ -75,7 +75,7 @@ jobs:
             if curl -fsSL "${PAGE_URL%/}/version.json?verify=${cache_bust}" -o /tmp/live-version.json &&
                curl -fsSL "${PAGE_URL%/}/?verify=${cache_bust}" -o /tmp/live-index.html; then
               actual="$(node -e "const fs=require('node:fs'); console.log(JSON.parse(fs.readFileSync('/tmp/live-version.json','utf8')).build ?? '')")"
-              html_build="$(node -e "const fs=require('node:fs'); const s=fs.readFileSync('/tmp/live-index.html','utf8'); const m=s.match(/__AG_BUILD.{0,8}?(\\d{3,})/); console.log(m ? m[1] : '')")"
+              html_build="$(node -e "const fs=require('node:fs'); const s=fs.readFileSync('/tmp/live-index.html','utf8'); const m=s.match(/__AG_BUILD.{0,8}?(\d{3,})/); console.log(m ? m[1] : '')")"
               if [ "${actual}" = "${EXPECTED_BUILD}" ] && [ "${html_build}" = "${EXPECTED_BUILD}" ]; then
                 echo "Verified deployed BUILD ${actual} (manifest and HTML marker) at ${PAGE_URL}"
                 exit 0
