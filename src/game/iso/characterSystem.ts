@@ -25,7 +25,7 @@
 import type { Face8 } from './isoSprites';
 import {
   type RpgAnim, type RpgBase, type RpgLook,
-  RPG_DEFAULT_BASE, RPG_DEFAULT_LOOK, RPG_ANIM_FRAMES,
+  RPG_DEFAULT_BASE, RPG_DEFAULT_LOOK, RPG_BASES, RPG_ANIM_FRAMES,
   RPG_W, RPG_H,
   rpgSprite, rpgAnchorFor, preloadRpgBase, rpgCacheStats,
 } from './rpgSprites';
@@ -162,13 +162,17 @@ export function variantLook(seedStr: string): RpgLook {
     if (role === 4 && seed % 3 === 0) add(choosePart(seed, LOOK_PARTS.shields, 0x92a3b4));
   }
 
-  return { base: RPG_DEFAULT_BASE, equipment };
+  // All seven installed base rigs are valid for every animation, including
+  // Death. Pick by stable NPC seed so crowds use the supplied race/body art
+  // without random changes when chunks unload or the game rerenders.
+  const base = RPG_BASES[seed % RPG_BASES.length] ?? RPG_DEFAULT_BASE;
+  return { base, equipment };
 }
 
 /**
  * Anything that identifies a character's appearance:
  *  - RpgLook: explicit base + equipment layers
- *  - string: NPC id/seed => deterministic default (currently all identical)
+ *  - string: NPC id/seed => deterministic base-rig and outfit variation
  *  - number: 0 = player default, other => deterministic default
  */
 export type LookRef = number | RpgLook | string;
