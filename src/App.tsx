@@ -133,8 +133,8 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '729': 'NPC death closes dialogue, attacks change disposition, corpses loot correctly, and wanted guards pursue with flee/jail/fine choices',
   '728': 'Compare live, deployed, and latest source versions; add manual real-time update checks',
-  '728': 'NPC death closes dialogue, attacks change disposition, corpses loot correctly, and wanted guards pursue with flee/jail/fine choices',
   '727': 'Fix dagger/equipment layer disappearing when switching into attack animation; preserve last valid weapon sprite across animation states',
   '726': 'Remove static CSS border and outline artifacts around house sprites while preserving building art and gameplay',
   '725': 'Repair live update checker, restore orange current status, and validate version metadata consistency',
@@ -9542,7 +9542,7 @@ if (active) {
       <h2 id="guard-encounter-title" style={{ margin: '8px 0', fontSize: 22 }}>{guardEncounter.guardName} steps in your path</h2>
       <p style={{ lineHeight: 1.45 }}>“You are wanted in Mosslight Crossing. Your current bounty is {guardEncounter.bounty} gold. Come quietly, pay your fine, or try to run.”</p>
       <div style={{ display: 'grid', gap: 8, marginTop: 16 }}>
-        <button type="button" data-testid="guard-flee" onClick={() => { guardCooldownUntilRef.current = Date.now() + 12000; setGuardEncounter(null); setLogs((cur) => [{ text: 'You break away from the town guard. The pursuit continues.', color: 'orange' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #8d9b8f', background: '#293a31', color: '#fff', fontWeight: 700 }}>🏃 Flee</button>
+        <button type="button" data-testid="guard-flee" onClick={() => { guardCooldownUntilRef.current = Date.now() + 12000; const guard = townsfolkRef.current.find((npc) => npc.id === guardEncounter.guardId); const player = positionRef.current; const awayX = guard ? player.x - guard.position.x : 1; const awayY = guard ? player.y - guard.position.y : 0; const length = Math.hypot(awayX, awayY) || 1; const escaped = { x: Math.max(3, Math.min(FIELD_SIZE - 3, player.x + awayX / length * 14)), y: Math.max(3, Math.min(FIELD_SIZE - 3, player.y + awayY / length * 14)) }; positionRef.current = escaped; setPosition(escaped); tapMoveTargetRef.current = null; setGuardEncounter(null); setLogs((cur) => [{ text: 'You break away from the town guard. The pursuit continues.', color: 'orange' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #8d9b8f', background: '#293a31', color: '#fff', fontWeight: 700 }}>🏃 Flee</button>
         <button type="button" data-testid="guard-jail" onClick={() => { setGuardEncounter(null); onResolveBounty(); setTownsfolkDialogue(null); setDialogueTopic(null); setWantedMosslight(0); onRestorePrison(true, { foundShiv: false, talkedToPrisoner: false, helpedPrisoner: false, escapeRoute: null }); setLogs((cur) => [{ text: 'The guard arrests you. You are taken to the town jail; your bounty is cleared.', color: 'red' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #8d9b8f', background: '#293a31', color: '#fff', fontWeight: 700 }}>⛓ Go to jail</button>
         <button type="button" data-testid="guard-pay-fine" disabled={inventoryRef.current.coins < guardEncounter.bounty} onClick={() => { const fine = guardEncounter.bounty; if (inventoryRef.current.coins < fine) return; onLoot({ coins: -fine } as GoatLoot); onResolveBounty(); setGuardEncounter(null); setWantedMosslight(0); onRestoreReputation({ ...reputation, guards: reputation.guards + 2, mosslight: reputation.mosslight + 1 }); setLogs((cur) => [{ text: `You paid the ${fine} gold fine. The guard lets you go.`, color: 'gold' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #c99b49', background: inventoryRef.current.coins < guardEncounter.bounty ? '#414741' : '#c99b49', color: inventoryRef.current.coins < guardEncounter.bounty ? '#a8b0aa' : '#1c211b', fontWeight: 800, opacity: inventoryRef.current.coins < guardEncounter.bounty ? 0.6 : 1 }}>💰 Pay fine ({guardEncounter.bounty}g){inventoryRef.current.coins < guardEncounter.bounty ? ' — not enough gold' : ''}</button>
       </div>
@@ -12498,52 +12498,3 @@ const NEIGHBOR_OFFSETS: Array<[number, number]> = [
   [-1, 0], [1, 0],
   [-1, 1], [0, 1], [1, 1],
 ];
-
-function ChunkSurroundings({ chunk, gameZoom, hiddenRoadChunks, mapPaints }: {
-  chunk: Point;
-  gameZoom: number;
-  hiddenRoadChunks: string[];
-  mapPaints: MapPaints;
-}) {
-  const neighbors = useMemo(() => {
-    if (gameZoom >= 1) return [];
-    return NEIGHBOR_OFFSETS.map(([dx, dy]) => {
-      const nChunk = { x: chunk.x + dx, y: chunk.y + dy };
-      const nTile = mapTileFor(nChunk);
-      const nPalette = fieldPalettes[nTile.terrain];
-      const nKey = nChunk.x + ',' + nChunk.y;
-      const spec: GroundDetailSpec = {
-        terrain: nTile.terrain,
-        field: nPalette.field,
-        path: nPalette.path,
-        road: (nTile.road !== 'none' && !hiddenRoadChunks.includes(nKey) && !nTile.bridge) ? nTile.road : 'none',
-        roadRect: { x: 0.47, y: 0.47, w: 0.09, h: 0.09 },
-        sea: nTile.waterFeature === 'sea',
-        seed: ((nChunk.x * 73856093) ^ (nChunk.y * 19349663)) >>> 0,
-        paints: mapPaints[nKey] ?? [],
-        // BUILD 355: keep hills continuous across chunk borders.
-        hills: buildGroundHills(nChunk),
-        // BUILD 369 (Phase 2b): authoritative rivers/lakes/bridges.
-        chunkX: nChunk.x,
-        chunkY: nChunk.y,
-      };
-      return { dx, dy, key: nKey, spec };
-    });
-  }, [chunk.x, chunk.y, gameZoom, hiddenRoadChunks, mapPaints]);
-  if (neighbors.length === 0) return null;
-  return (
-    <div className="chunk-surroundings" aria-hidden="true">
-      {neighbors.map((n) => (
-        <div key={n.key} className="chunk-neighbor" style={{ left: (n.dx * 100) + '%', top: (n.dy * 100) + '%' }}>
-          <FieldGroundLayer spec={n.spec} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function App() {
-  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
-}
-
-export default App;
