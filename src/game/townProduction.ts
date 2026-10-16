@@ -1,9 +1,9 @@
-// Town production: NPC work â real resources (BUILD 661).
+// Town production: NPC work → real resources (BUILD 661).
 // Connects individual NPC schedules to settlement storage.
 // Farmers tending crops produce grain; the amount is deterministic,
 // bounded, and tied to actual work activity (not just schedule existence).
 //
-// Pure â no React, no App dependency. Uses existing:
+// Pure — no React, no App dependency. Uses existing:
 // - townsfolkTarget() for activity resolution
 // - CivilizationState settlement storage
 // - townsfolkHash for deterministic variation
@@ -48,7 +48,7 @@ export function applyNPCProduction(
   for (const npc of townsfolk) {
     if (npc.archetype === 'farmer') {
       // Deterministic: farmer works unless hash says they're sick/off.
-      // 90% work rate â occasionally a farmer can't work.
+      // 90% work rate — occasionally a farmer can't work.
       const worksToday = townsfolkHash(npc.seed, day * 7919 + 6601) > 0.1;
       if (worksToday) workingFarmers++;
     }

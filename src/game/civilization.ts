@@ -16,7 +16,7 @@
 //   Port, Fenmere Hamlet, Seabreak, Dunewatch, Stormhaven.
 // - Caravans and traveling military units are FULLY ANALYTIC: position is
 //   interpolated from (departureDay, travelDays, clock), so the world keeps
-//   moving while the player is absent â no per-frame AI, no stored positions.
+//   moving while the player is absent — no per-frame AI, no stored positions.
 // - advanceCivilization() runs once per in-game day (never per frame) and is
 //   cheap: ~27 settlements x 19 resources.
 // - All state is plain JSON-serializable for save/load.
@@ -29,7 +29,7 @@ import type { WorldClockState } from './worldCore';
 import { SeededRng } from './worldCore';
 import { townsfolkHash } from './townsfolk';
 
-/** Field coordinate units per chunk â matches the game's field system (0-280). */
+/** Field coordinate units per chunk — matches the game's field system (0-280). */
 export const CIV_FIELD_UNITS = 280;
 
 export type CivPoint = { x: number; y: number };
@@ -387,7 +387,7 @@ export type CaravanPosition = {
 
 /**
  * CRITICAL: fully analytic caravan position. A pure function of
- * (caravan, clock) â the merchant who leaves on Day 10 and arrives Day 11
+ * (caravan, clock) — the merchant who leaves on Day 10 and arrives Day 11
  * is simply *computed* at the later clock; nothing is simulated or stored
  * per frame, so the world continues while the player is absent.
  * Visible caravans are never teleported: they render at the computed spot.
@@ -459,7 +459,7 @@ export function militaryTarget(unit: MilitaryUnit, clock: WorldClockState, civ: 
     if (elapsed > 0 && elapsed < unit.journey.travelDays) {
       const from = unit.journey.stops[0]?.label ?? unit.homeSettlementId;
       const to = unit.journey.stops[unit.journey.stops.length - 1]?.label ?? unit.homeSettlementId;
-      return { activity: `${unit.journey.purpose}: ${from} â ${to}`, indoors: false };
+      return { activity: `${unit.journey.purpose}: ${from} → ${to}`, indoors: false };
     }
     if (elapsed >= unit.journey.travelDays) {
       return { activity: `${unit.journey.purpose}: arrived, regrouping`, indoors: false };
@@ -489,7 +489,7 @@ export type MilitaryPosition = {
   position: CivPoint;
 };
 
-/** Analytic military position â same pattern as caravans (pure of clock). */
+/** Analytic military position — same pattern as caravans (pure of clock). */
 export function militaryPosition(unit: MilitaryUnit, clock: WorldClockState, civ: CivilizationState): MilitaryPosition {
   const home = civ.settlements.find((s) => s.id === unit.homeSettlementId);
   const homePos = {
@@ -715,7 +715,7 @@ type SettlementDef = {
 };
 
 const SETTLEMENT_DEFS: SettlementDef[] = [
-  // Kingdom of Aldoria â home 31x31 region (chunks anchored to real landmarks).
+  // Kingdom of Aldoria — home 31x31 region (chunks anchored to real landmarks).
   { id: 'aldor', kind: 'capital', name: 'Ironwood Southhold', kingdomId: 'aldoria', region: 'Heartlands', chunk: { x: 8, y: 7 } },
   { id: 'ravenhold', kind: 'town', name: 'Eastmarch', kingdomId: 'aldoria', region: 'Eastmarch', chunk: { x: 17, y: 7 } },
   { id: 'stonewatch', kind: 'town', name: 'Sunwash Port', kingdomId: 'aldoria', region: 'Sunwash Hills', chunk: { x: 3, y: 12 } },
@@ -734,7 +734,7 @@ const SETTLEMENT_DEFS: SettlementDef[] = [
   { id: 'greenfield-farm-2', kind: 'farm', name: 'Greenfield East Farm', kingdomId: 'aldoria', region: 'Fenmere Vale', chunk: { x: 0, y: 7 } },
   { id: 'riverbend-farm-1', kind: 'farm', name: 'Riverbend Farm', kingdomId: 'aldoria', region: 'Dunewatch Reach', chunk: { x: 4, y: 19 } },
   { id: 'westhold-farm-1', kind: 'farm', name: 'Westhold Farm', kingdomId: 'aldoria', region: 'Westermarch', chunk: { x: -7, y: 7 } },
-  // Kingdom of Thalara â far 80x80 continent (chunks anchored to real landmarks).
+  // Kingdom of Thalara — far 80x80 continent (chunks anchored to real landmarks).
   { id: 'valdris', kind: 'capital', name: 'Stormhaven', kingdomId: 'thalara', region: 'Stormlands', chunk: { x: 130, y: -16 } },
   { id: 'emberhold', kind: 'town', name: 'Emberhold', kingdomId: 'thalara', region: 'Emberlands', chunk: { x: 184, y: 15 } },
   { id: 'oakfield', kind: 'village', name: 'Oakfield', kingdomId: 'thalara', region: 'Oakvale', chunk: { x: 155, y: 0 } },
@@ -1511,7 +1511,7 @@ function simulateDay(civ: CivilizationState, day: number, rng: SeededRng): void 
 
 /**
  * Advance the civilization simulation. Runs the daily economy, world events,
- * caravan arrivals and military turnarounds ONCE PER IN-GAME DAY â never per
+ * caravan arrivals and military turnarounds ONCE PER IN-GAME DAY — never per
  * frame. Safe to call every tick: it no-ops when the day hasn't changed, and
  * catches up across multi-day jumps (waiting, fast-forward) day by day.
  * Mutates and returns `civ`.
