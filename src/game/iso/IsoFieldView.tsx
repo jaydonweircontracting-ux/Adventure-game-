@@ -189,6 +189,9 @@ interface IsoFieldViewProps {
   // BUILD 684: loot drops — rendered in iso (were 2D-DOM only, invisible here).
   droppedLoot?: Array<{ id: number; position: Point }>;
   onPickupDrop?: (drop: { id: number; position: Point }) => void;
+  // BUILD 731: lootable NPC corpses are also rendered/interacted with in iso mode.
+  lootableBodies?: Array<{ id: string; npcName: string; position: Point }>;
+  onLootBody?: (body: { id: string; position: Point }) => void;
   // BUILD 684: floating combat text — rendered in iso (were 2D-DOM only).
   damageTexts?: Array<{ id: number; text: string; position: Point; kind: string }>;
   zoom: number; // BUILD 372: zoom is owned by App so the main zoom buttons drive it
@@ -375,8 +378,8 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
 export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position, townsfolk, goats, onExit, onTapMove, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning, playerLook, npcSpeechEnabled });
-  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, damageTexts, playerRunning, playerLook, npcSpeechEnabled };
+  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled });
+  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -432,8 +435,8 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
   const [selectedCritterId, setSelectedCritterId] = useState<number | null>(null);
   const greenBoxRef = useRef({ dx: 0, dy: 0, hw: 0.35, hh: 0.4 }); // offset and size in world units
   // tap callbacks via ref so the canvas listener always calls the latest
-  const tapRef = useRef({ onTapMove, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onShopStall });
-  tapRef.current = { onTapMove, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onShopStall };
+  const tapRef = useRef({ onTapMove, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onLootBody, onShopStall });
+  tapRef.current = { onTapMove, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onLootBody, onShopStall };
 
   const R = ISO_CHUNK_RENDER_RADIUS;
   const GRID = 2 * R + 1;
@@ -1476,6 +1479,30 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
           });
         }
 
+        // BUILD 731: lootable NPC corpses — searchable in the default isometric view.
+        if (sc.ox === 0 && sc.oy === 0) {
+          for (const body of liveRef.current.lootableBodies || []) {
+            const bx2 = body.position.x + bx, by2 = body.position.y + by;
+            const bc = isoToScreen(bx2, by2);
+            drawables.push({
+              depth: bx2 + by2 + 0.002,
+              draw: (g2) => {
+                g2.save();
+                g2.fillStyle = 'rgba(0,0,0,0.28)';
+                g2.beginPath(); g2.ellipse(bc.x, bc.y - 1, 9, 4, 0, 0, Math.PI * 2); g2.fill();
+                g2.fillStyle = '#d6cdb6';
+                g2.beginPath(); g2.arc(bc.x, bc.y - 8, 5, 0, Math.PI * 2); g2.fill();
+                g2.fillStyle = '#4b4035';
+                g2.fillRect(bc.x - 3, bc.y - 9, 2, 2); g2.fillRect(bc.x + 1, bc.y - 9, 2, 2);
+                g2.fillRect(bc.x - 2, bc.y - 5, 4, 2);
+                g2.strokeStyle = '#a99b7e'; g2.lineWidth = 2;
+                g2.beginPath(); g2.moveTo(bc.x - 7, bc.y - 3); g2.lineTo(bc.x + 7, bc.y + 1); g2.stroke();
+                g2.restore();
+              },
+            });
+          }
+        }
+
         // BUILD 684: loot drops — visible in iso (were 2D-DOM only, invisible
         // in the default view). Pulsing gold diamond, depth-sorted. Drops are
         // pre-filtered to the home chunk by the caller.
@@ -2062,6 +2089,25 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
           if (d < bestD) { bestD = d; bestDoor = b.position; }
         }
         if (bestDoor) { tapMove({ x: bestDoor.x, y: bestDoor.y }); return; }
+        // BUILD 731: corpse hit test — walk to a body, then tap again to loot it.
+        {
+          const bodies = liveRef.current.lootableBodies || [];
+          const { onLootBody: lootBodyAt } = tapRef.current;
+          let bestBody: { id: string; npcName: string; position: Point } | null = null; let bestBodyD = 48;
+          for (const body of bodies) {
+            const w = isoToScreen(body.position.x, body.position.y);
+            const bxScreen = (w.x - cam.x) * zm + wpx / 2;
+            const byScreen = (w.y - cam.y) * zm + hpx / 2;
+            const d = Math.hypot(bxScreen - sx, byScreen - sy);
+            if (d < bestBodyD) { bestBodyD = d; bestBody = body; }
+          }
+          if (bestBody && lootBodyAt) {
+            const player = liveRef.current;
+            const dist = Math.hypot(bestBody.position.x - player.px, bestBody.position.y - player.py);
+            if (dist <= 16) { lootBodyAt(bestBody); return; }
+            tapMove({ x: bestBody.position.x, y: bestBody.position.y }); return;
+          }
+        }
         // BUILD 684: loot drop hit test — tap a drop to pick it up when close
         // (same 16-unit rule as the 2D pickup button), else walk toward it.
         {
