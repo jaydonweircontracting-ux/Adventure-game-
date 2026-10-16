@@ -21,6 +21,7 @@ export function buildingArtFor(chunk: { x: number; y: number }, index: number, r
     const pool = index % 7 === 5 || index % 7 === 6 ? SHOP_VARIANTS : HOUSE_VARIANTS;
     variant = pool[hash % pool.length];
   }
+  if (variant === 'hut-thatched') variant = 'green-cottage';
   if (!AUDITED.has(variant)) variant = 'blue-cottage';
   return { variant, file: 'buildings/' + variant + '.png', aspectRatio: variant === 'hut-thatched' ? '1 / 1' : '2 / 1' };
 }
