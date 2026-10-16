@@ -817,7 +817,6 @@ export interface FieldOre extends OreNode {
   fy: number;
 }
 export function fieldOresFor(chunk: Point): FieldOre[] {
-  // Terrain lookup: world tile -> terrain kind string
   const terrainKindAt = (wx: number, wy: number): string => {
     const cx = Math.floor(wx / 280);
     const cy = Math.floor(wy / 280);
@@ -825,12 +824,23 @@ export function fieldOresFor(chunk: Point): FieldOre[] {
     return tile.terrain || 'meadow';
   };
   const nodes = oreNodesForChunk(DEFAULT_WORLD_SEED, chunk.x, chunk.y, 280, terrainKindAt);
-  // Convert world coords to field coords (0..280 within chunk)
-  return nodes.map(n => ({
-    ...n,
-    fx: n.wx - chunk.x * 280,
-    fy: n.wy - chunk.y * 280,
+  const fieldNodes: FieldOre[] = nodes.map(n => ({
+    ...n, fx: n.wx - chunk.x * 280, fy: n.wy - chunk.y * 280,
   }));
+  // BUILD 734: one authoritative, mineable node anchored to the actual house.
+  if (chunk.x === 4 && chunk.y === 7) {
+    const house = buildingDoorwaysFor(chunk).find((doorway) => doorway.id === 'tutorial-house-door');
+    if (house) {
+      const fx = Math.max(5, Math.min(FIELD_SIZE - 6, (house.rect.left + house.rect.right) / 2 + 3));
+      const fy = Math.max(5, house.rect.top - 5);
+      fieldNodes.push({
+        id: 'tutorial-stone-deposit-4-7', kind: 'stone',
+        wx: chunk.x * FIELD_SIZE + fx, wy: chunk.y * FIELD_SIZE + fy,
+        fx, fy, richness: 12,
+      });
+    }
+  }
+  return fieldNodes;
 }
 // Mining: hits to deplete by ore kind (harder ores take more hits)
 export const ORE_HITS: Record<OreKind, number> = {
@@ -1345,7 +1355,7 @@ const statDetails: Record<StatKey, { label: string; description: string }> = {
   luk: { label: 'Luck', description: 'Improves critical hits and loot rolls.' },
 };
 const initialPlayerStats: PlayerStats = { str: 4, dex: 4, int: 4, luk: 4 };
-type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number; wood: number; silk: number; bow: number; beer: number; lockpicks: number; shirts: number; swords: number; healthPotion: number };
+type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number; wood: number; stone: number; silk: number; bow: number; beer: number; lockpicks: number; shirts: number; swords: number; healthPotion: number };
 type GoatLoot = Partial<GameInventory>;
 type DroppedLoot = { id: number; chunk: Point; position: Point; loot: GoatLoot };
 // Ranged combat: arrows fired by the player's bow and by bandit archers.
@@ -1524,7 +1534,7 @@ const PLAYER_MAX_HP = 88;
 const PLAYER_BASE_ATTACK_DAMAGE = 5;
 const PLAYER_STAT_POINTS_PER_LEVEL = 5;
 const GOAT_LOOT_TYPES: Array<keyof GameInventory> = ['goatHorns', 'fabric', 'coins'];
-const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0, wood: 0, silk: 0, bow: 0, beer: 0, lockpicks: 0, shirts: 0, swords: 0, healthPotion: 0 };
+const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0, wood: 0, stone: 0, silk: 0, bow: 0, beer: 0, lockpicks: 0, shirts: 0, swords: 0, healthPotion: 0 };
 
 function playerMaxHpForStats(stats: PlayerStats) {
   return PLAYER_MAX_HP + stats.int * 3;
@@ -3333,7 +3343,7 @@ function WorldMap({ chunk, onClose, kingdomLabels, tradeRoutes, visitedChunks }:
 }
 function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion, equippedDagger, onToggleDagger, equippedBow, onToggleBow, equippedShirt, onToggleShirt, equippedSword, onToggleSword, barbHair, onCycleHair, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, questPlayerLevel, onAcceptQuest, onWeaveBowstring, onOpenSkills }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; onDrinkPotion: () => void; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; equippedShirt: boolean; onToggleShirt: () => void; equippedSword: boolean; onToggleSword: () => void; barbHair: string; onCycleHair: (dir: 1 | -1) => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onWeaveBowstring: () => void; onOpenSkills?: () => void }) {
   const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats' | 'quests'>('inventory');
-  const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn + inventory.wood + inventory.silk + inventory.bow + inventory.beer + inventory.healthPotion + inventory.lockpicks + inventory.shirts + inventory.swords;
+  const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn + inventory.wood + (inventory.stone || 0) + inventory.silk + inventory.bow + inventory.beer + inventory.healthPotion + inventory.lockpicks + inventory.shirts + inventory.swords;
   const visibleItems = [
     { key: 'goatHorns', label: 'Goat horns', detail: 'Crafting material', mark: '✦', className: 'horn-mark' },
     { key: 'fabric', label: 'Fabric', detail: 'Useful cloth', mark: '▤', className: 'fabric-mark' },
@@ -3344,6 +3354,7 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
     { key: 'fang', label: 'Fang', detail: 'Sharp monster fang', mark: '⸙', className: 'fang-mark' },
     { key: 'corn', label: 'Corn', detail: 'Harvested crop', mark: '🌽', className: 'corn-mark' },
     { key: 'wood', label: 'Wood', detail: 'Chopped from trees', mark: '🪵', className: 'wood-mark' },
+    { key: 'stone', label: 'Stone', detail: 'Mined from stone deposits', mark: '🪨', className: 'stone-mark' },
     { key: 'silk', label: 'Silk', detail: 'Spider silk for bowstrings', mark: '🕸', className: 'silk-mark' },
     { key: 'bow', label: 'Hunting bow', detail: 'Ranged weapon', mark: '🏹', className: 'bow-mark' },
     { key: 'shirts', label: 'Blue shirt', detail: 'Crafted shirt — equip to wear', mark: '👕', className: 'shirt-mark' },
@@ -3383,7 +3394,7 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
               <div className="inventory-grid">
                 <div className="inventory-item" data-testid="inventory-coins"><span className="inventory-item-mark coin-mark" aria-hidden="true" /><span><strong>Coins</strong><small>Spendable gold</small></span><b>{inventory.coins}</b></div>
                 {visibleItems.map((item) => {
-                  const count = inventory[item.key as keyof GameInventory] as number;
+                  const count = (inventory[item.key as keyof GameInventory] as number) || 0;
                   return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className} aria-hidden="true">{(item as { img?: string }).img ? <img src={(item as { img?: string }).img} alt="" className="inventory-item-img" /> : item.mark}</span><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}{item.key === 'bow' && <button className={'item-action ' + (equippedBow ? 'is-equipped' : '')} onClick={onToggleBow} data-testid="button-toggle-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}{item.key === 'shirts' && <button className={'item-action ' + (equippedShirt ? 'is-equipped' : '')} onClick={onToggleShirt} data-testid="button-toggle-shirt">{equippedShirt ? 'Unequip' : 'Equip'}</button>}{item.key === 'swords' && <button className={'item-action ' + (equippedSword ? 'is-equipped' : '')} onClick={onToggleSword} data-testid="button-toggle-sword">{equippedSword ? 'Unequip' : 'Equip'}</button>}{item.key === 'beer' && <button className="item-action" onClick={onDrinkBeer} data-testid="button-drink-beer">Drink</button>}{item.key === 'healthPotion' && <button className="item-action" onClick={onDrinkPotion} data-testid="button-drink-potion">Drink</button>}</div>;
                 })}
               </div>
@@ -7031,7 +7042,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               });
               if (oreTarget) {
                 const hits = (oreHitsRef.current[oreTarget.id] || 0) + 1;
-                const hitsNeeded = ORE_HITS[oreTarget.kind] || 3;
+                const hitsNeeded = oreTarget.id === 'tutorial-stone-deposit-4-7' ? 8 : (ORE_HITS[oreTarget.kind] || 3);
                 const hitPosition = { x: oreTarget.fx, y: oreTarget.fy };
                 if (hits >= hitsNeeded) {
                   delete oreHitsRef.current[oreTarget.id];
@@ -7041,7 +7052,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                   const oreCount = oreTarget.richness;
                   const oreName = oreTarget.kind;
                   // Add ore to inventory (as generic item)
-                  const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot: { [oreName + '_ore']: oreCount } };
+                  const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot: oreTarget.id === 'tutorial-stone-deposit-4-7' ? { stone: oreCount } : { [oreName + '_ore']: oreCount } };
                   droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
                   spawnCombatText('+' + oreCount + ' ' + oreName + ' ore', hitPosition, 'reward');
                   playCombatSound('shing', muted);
@@ -11948,6 +11959,7 @@ function Home() {
     fang: Math.max(0, current.fang + (loot.fang || 0)),
     corn: Math.max(0, current.corn + (loot.corn || 0)),
     wood: Math.max(0, current.wood + (loot.wood || 0)),
+    stone: Math.max(0, (current.stone || 0) + (loot.stone || 0)),
     silk: Math.max(0, current.silk + (loot.silk || 0)),
     bow: Math.max(0, current.bow + (loot.bow || 0)),
     beer: Math.max(0, current.beer + (loot.beer || 0)),
