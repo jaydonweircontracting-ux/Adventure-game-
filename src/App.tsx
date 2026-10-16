@@ -6462,7 +6462,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               let nearestNpc: Townsperson | null = null;
               let nearestDist = PLAYER_MELEE_REACH;
               const losBlocked = (pos: Point) => isFieldPositionBlocked(pos, chunkRef.current);
+              // Target lock: a swing may damage only the selected NPC. If the
+              // player selected a creature instead, never let the NPC-first
+              // fallback silently redirect the hit to a bystander.
+              const lockedNpcId = targetNpcIdRef.current;
+              const hasLockedCreature = targetGoatIdRef.current != null || targetMonsterIdRef.current != null;
               for (const n of townsfolkRef.current) {
+                if (lockedNpcId != null && n.id !== lockedNpcId) continue;
+                if (lockedNpcId == null && hasLockedCreature) continue;
                 if (n.indoors) continue;
                 if (isNpcDead(n, tick)) continue;
                 if (!isInMeleeArc(attackerPos, n.position, playerAttack.direction, PLAYER_MELEE_REACH)) continue;
