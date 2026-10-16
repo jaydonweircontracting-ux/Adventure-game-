@@ -5011,7 +5011,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         getObjectiveBanner: () => tutorialObjectiveText({
           dismissed: tutorialBannerDismissedRef.current,
           inTutorialHouse: interiorRef.current?.id === 'tutorial-house',
-          swordPickedUp: pickedUpGroundItemsRef.current.includes('tutorial-house-sword'),
+          daggerPickedUp: pickedUpGroundItemsRef.current.includes(TUTORIAL_DAGGER_ITEM),
         }),
         // BUILD 554: teleport player to deterministic position for test isolation.
         // LOCALHOST ONLY. Resets tap-move target to avoid interference.
