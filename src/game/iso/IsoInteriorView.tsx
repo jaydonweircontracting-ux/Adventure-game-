@@ -917,18 +917,39 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         });
       }
 
-      // BUILD 430: ground items (e.g. the tutorial-house sword).
+      // BUILD 724: ground pickups; the starter dagger is drawn directly so it
+      // needs no missing external bitmap and stays crisp on every device.
       for (const item of groundItemsRef.current) {
-        const img = groundItemImg(item.sprite);
-        if (!img) continue;
+        const isDagger = item.sprite === 'procedural:dagger';
+        const img = isDagger ? undefined : groundItemImg(item.sprite);
+        if (!isDagger && !img) continue;
         const c = toScreen(item.tx, item.ty);
         drawables.push({
           depth: depthKey(item.tx, item.ty) + 0.05,
           draw: (g2) => {
-            // Draw lying flat: about a third of a tile wide, anchored at tile center.
-            const w = TILE_W * 0.35;
-            const h = w * (img.naturalHeight / img.naturalWidth);
-            g2.drawImage(img, c.x - w / 2, c.y - h / 2, w, h);
+            const w = TILE_W * (isDagger ? 0.30 : 0.35);
+            if (isDagger) {
+              // Small metal dagger lying diagonally on the floor, with a dark
+              // grip, brass guard, and a bright steel blade.
+              g2.save();
+              g2.translate(c.x, c.y);
+              g2.rotate(-Math.PI / 4);
+              g2.lineCap = 'round';
+              g2.strokeStyle = 'rgba(0,0,0,0.42)'; g2.lineWidth = 6;
+              g2.beginPath(); g2.moveTo(-w * 0.38, 0); g2.lineTo(w * 0.42, 0); g2.stroke();
+              g2.strokeStyle = '#4b2e1c'; g2.lineWidth = 4;
+              g2.beginPath(); g2.moveTo(-w * 0.34, 0); g2.lineTo(-w * 0.02, 0); g2.stroke();
+              g2.strokeStyle = '#c79a43'; g2.lineWidth = 3;
+              g2.beginPath(); g2.moveTo(-w * 0.04, -5); g2.lineTo(-w * 0.04, 5); g2.stroke();
+              g2.fillStyle = '#c8d7df';
+              g2.beginPath(); g2.moveTo(0, -3); g2.lineTo(w * 0.46, 0); g2.lineTo(0, 3); g2.closePath(); g2.fill();
+              g2.strokeStyle = '#f2f6f8'; g2.lineWidth = 1;
+              g2.beginPath(); g2.moveTo(0, -1); g2.lineTo(w * 0.40, 0); g2.stroke();
+              g2.restore();
+            } else if (img) {
+              const h = w * (img.naturalHeight / img.naturalWidth);
+              g2.drawImage(img, c.x - w / 2, c.y - h / 2, w, h);
+            }
             // Label
             g2.font = '600 10px system-ui';
             g2.textAlign = 'center';
