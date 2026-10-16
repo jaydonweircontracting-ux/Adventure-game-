@@ -29,7 +29,7 @@
 
 **Behavior added:** Dead NPC dialogue/topic/free-text paths are guarded and active dialogue/barks are closed/cleared when death is observed. Each attack reduces per-NPC disposition; injured NPCs give a hostile greeting. All NPC melee damage paths now record assault/murder when witnessed and the additional death paths create lootable bodies. Corpse gold and potions map to coins and health potions; the `BodyLoot.items` extension point feeds recovered future gear into the existing equipment list. Wanted players in Mosslight are approached by a guard and offered flee, jail, or pay-fine choices; fleeing moves the player away and keeps the bounty, jail clears the bounty and enters the existing prison scene, and paying deducts the full fine and improves guard/town reputation.
 
-**Verification:** Not run in this GitHub-only editing session. CI, typecheck, production build, and Playwright verification remain required. The task stays `in_progress` until those checks pass.
+**Local verification:** No local Muse Bridge/Playwright runtime was available. **CI verification:** GitHub Actions run `38972899139` passed TypeScript typecheck, the isometric direction regression suite, production build, artifact upload, and GitHub Pages deployment. Dedicated real-game Playwright coverage for the new NPC/arrest interactions was not run; the task stays `in_progress` until those interactions are playtested.
 
 **Regression lessons:** Ensure all alternate combat pathways share equivalent NPC death/crime/loot consequences; align loot field names with the inventory ledger; use the live NPC state rather than a stale dialogue snapshot to prevent talking to dead characters.
 
