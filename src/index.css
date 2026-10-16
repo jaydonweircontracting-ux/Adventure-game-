@@ -5554,3 +5554,34 @@ body {
 .shop-section-title { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-soft); margin: 12px 0 2px; }
 .shop-empty { font-size: 12px; color: var(--ink-soft); font-style: italic; margin: 6px 0; }
 .shop-stall-card .buy-options, .shop-stall-card .sell-options { max-height: 30vh; overflow-y: auto; }
+
+/* Responsive creator dialog: keep the confirmation action reachable on phones. */
+.character-creator { align-items: flex-start; padding: max(8px, env(safe-area-inset-top)) 10px max(12px, env(safe-area-inset-bottom)); }
+.character-creator-card { max-height: calc(100dvh - max(20px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom))); overflow-y: auto; overscroll-behavior: contain; padding: clamp(12px, 3vw, 24px); }
+.creator-actions { position: sticky; bottom: -1px; z-index: 2; flex-wrap: wrap; padding: 10px 0 max(6px, env(safe-area-inset-bottom)); margin-top: 12px; background: rgba(243, 235, 213, .98); }
+.creator-actions .main-menu-button { min-height: 44px; flex: 1 1 150px; }
+@media (max-height: 760px) {
+  .character-creator-card h1 { font-size: clamp(24px, 4vh, 34px); margin: 5px 0; }
+  .creator-sub { margin-bottom: 8px; }
+  .creator-body { gap: 10px; }
+  .creator-preview-pane { padding: 8px 4px; gap: 6px; }
+  .creator-portrait { width: 76px; height: 76px; }
+  .creator-walk { width: 44px; height: 44px; }
+  .creator-facings { gap: 4px; }
+  .creator-facing { width: 24px; height: 24px; }
+  .creator-options { gap: 8px; }
+  .creator-group { gap: 5px; }
+  .creator-thumb { width: 30px; height: 30px; }
+}
+@media (max-width: 640px) {
+  .character-creator { padding-left: 8px; padding-right: 8px; }
+  .character-creator-card { width: 100%; }
+  .creator-body { grid-template-columns: minmax(0, 1fr); }
+  .creator-preview-pane { flex-direction: row; justify-content: center; align-items: center; flex-wrap: wrap; }
+  .creator-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .creator-actions { margin-top: 10px; }
+}
+@media (max-width: 380px) {
+  .creator-options { grid-template-columns: minmax(0, 1fr); }
+  .creator-actions .main-menu-button { flex-basis: 100%; }
+}
