@@ -40,7 +40,9 @@ export type RoadLink = {
 
 const TRAVELER_NAMES_MALE = ['Odo', 'Fen', 'Corb', 'Pell', 'Bramm', 'Ost'];
 const TRAVELER_NAMES_FEMALE = ['Rhea', 'Asha', 'Linnet', 'Sorrel', 'Tilda', 'Wrenna'];
-const TRAVELER_KINDS: TravelerKind[] = ['merchant', 'traveler', 'traveler', 'courier'];
+// Disable the green guide/tracker-like road walkers for now. Road encounters
+// are handled by the hostile monster system; merchants and couriers remain ambient.
+const TRAVELER_KINDS: TravelerKind[] = ['merchant', 'merchant', 'courier'];
 const TRAVELER_ROLES: Record<TravelerKind, Traveler['role']> = { merchant: 'mage', traveler: 'guide', courier: 'rogue' };
 
 const DIRS = {
