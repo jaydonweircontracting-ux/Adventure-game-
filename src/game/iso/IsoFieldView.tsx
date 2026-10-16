@@ -12,7 +12,7 @@
 // talk buttons) stay on the 2D renderer for now.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { startBrowserGameLoop, type BrowserGameLoop } from '../engine/browserGameEngine';
-import { drawProceduralGroundAccent, drawProceduralTree, drawProceduralPathDetail, drawBuildingGroundDress } from '../engine/proceduralWorldArt';
+import { drawProceduralGroundAccent, drawProceduralTree, drawProceduralPathDetail, drawBuildingGroundDress, drawBuildingRenovation } from '../engine/proceduralWorldArt';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import { createBoundedCache } from '../rendering/boundedCache';
 import { FrameMetrics } from '../rendering/frameMetrics';
@@ -1181,6 +1181,8 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               g2.ellipse(cx, baseY, sw * 0.45, sw * 0.16, 0, 0, Math.PI * 2);
               g2.fill();
               g2.drawImage(sprite, cx - sw / 2, baseY - sh, sw, sh);
+              // BUILD 730: consistent architectural reskin pass across every building.
+              drawBuildingRenovation(g2, cx, baseY, sw, sh, r.left + r.right, r.top + r.bottom);
               // Visual-only porch/planter details; sprite art and building logic stay intact.
               drawBuildingGroundDress(g2, cx, baseY, sw, r.left + r.right, r.top + r.bottom);
               return;
