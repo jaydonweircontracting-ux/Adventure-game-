@@ -1592,6 +1592,7 @@
 .field-house.sprite-house,
 .field-house.farm-house { border: 0; background: transparent; box-shadow: none; }
 .field-house-art {
+  display: block;
   position: absolute;
   z-index: 0;
   left: -40%;
