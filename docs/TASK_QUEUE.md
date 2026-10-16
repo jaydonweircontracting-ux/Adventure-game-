@@ -174,10 +174,10 @@
 ### TASK-016: Starting-house stone deposit
 - **Status:** `in_progress`
 - **Priority:** P2
-- **Objective:** Add a large stone boulder behind the starting house in Mosslight Crossing.
+- **Objective:** Keep a large boulder visibly anchored behind the tutorial house and connect it to mining, depletion, and stone inventory.
 - **Files:** `src/game/iso/IsoFieldView.tsx`, `src/App.tsx`, `scripts/prepare-build-entry.cjs`
-- **Checkpoint:** BUILD 733 draws a large boulder at a fixed anchor behind the tutorial house in chunk (4, 7). This is currently visual-only; mining/collision integration is not included.
-- **Verification:** Pending CI, deployed version marker, and in-game visual check.
+- **Checkpoint:** BUILD 734 replaces the guessed visual-only prop with an authoritative ore node derived from the tutorial-house rect. The node renders as a large boulder, can be mined through the existing melee mining path, yields 12 stone, and supports inventory pickup.
+- **Verification:** Pending CI, deployed version marker, and in-game visual/mining check.
 
 
 ### TASK-017: Autonomous settlement work and local economies
