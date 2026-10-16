@@ -12144,6 +12144,11 @@ function Home() {
         <section className="main-menu" aria-label="Main menu" data-testid="main-menu">
           <div className="main-menu-card">
             {/* BUILD 631: Tri-color update status banner — always visible above build title. */}
+            {updateStatus === 'checking' && (
+              <div style={{ background: '#f39c12', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
+                ↻ Checking for the latest build…
+              </div>
+            )}
             {updateStatus === 'available' && updateAvailable && (
               <div style={{ background: '#f39c12', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
                 <span>🎮 BUILD {updateAvailable}{updateNote ? ` (${updateNote})` : ''} available!</span>
