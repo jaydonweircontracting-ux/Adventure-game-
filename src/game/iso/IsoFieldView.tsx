@@ -1605,7 +1605,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               g2.beginPath();
               g2.ellipse(nc.x, nc.y - 2, 20, 7, 0, 0, Math.PI * 2);
               g2.fill(); g2.stroke();
-              if (canTalk) {
+              if (canTalk && !npcIsDead) {
                 const bx = nc.x, by = nc.y - 58;
                 g2.fillStyle = '#fff4c8';
                 g2.strokeStyle = '#8b6822';
@@ -1629,8 +1629,12 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
           // BUILD 704: fleeing NPCs run (explicit), everyone else walks.
           npc.archetype === 'child' ? 36 : undefined, npc.running === true, npc.hp != null && npc.hp <= 0);
 
-        // BUILD 722: optional, unobtrusive ambient chatter above each visible NPC.
-        if (live.npcSpeechEnabled) {
+        // BUILD 732: dead NPCs are corpses, not conversational actors.
+        // Check both authoritative death state and zero HP so ambient chatter
+        // cannot survive a death transition while state updates are settling.
+        const npcIsDead = npc.deadUntilTick != null || (npc.hp != null && npc.hp <= 0);
+        // BUILD 722: optional, unobtrusive ambient chatter above each living NPC.
+        if (live.npcSpeechEnabled && !npcIsDead) {
           const line = NPC_CHATTER_LINES[Math.floor(nowMs / 4600 + npcSpeechSeedFor(npc.id)) % NPC_CHATTER_LINES.length];
           drawables.push({
             depth: ix + iy + 0.04,
