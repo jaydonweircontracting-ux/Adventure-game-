@@ -529,7 +529,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
     // current sim position plus the tick timestamp, and lerp between them
     // per frame. The animator also receives the interpolated position, so
     // its speed measurement stays smooth instead of spiky.
-    const npcInterp = new Map<string, { px: number; py: number; cx: number; cy: number; t: number }>();
+    const npcInterp = new Map<string, { px: number; py: number; cx: number; cy: number; t: number; duration: number }>();
     // BUILD 710: reuse hot-loop buffers instead of allocating new arrays every
     // frame. This reduces garbage collection pauses while walking through town.
     const drawables: Drawable[] = [];
@@ -697,14 +697,14 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       }
       // Continue the walk cycle between throttled React position publishes;
       // settle to idle only after movement has genuinely stopped.
-      let playerMoving = nowMs - lastPlayerMovementAt < 110;
+      let playerMoving = nowMs - lastPlayerMovementAt < 170;
       if (dbgFace) { playerFace.f = dbgFace; playerMoving = true; }
       prevP.x = playerX; prevP.y = playerY;
 
       // camera follows the player
       const target = isoToScreen(playerX, playerY);
       target.y -= 24;
-      const k = Math.min(1, dt / 90);
+      const k = 1 - Math.exp(-dt / 78);
       cam.x += (target.x - cam.x) * k;
       cam.y += (target.y - cam.y) * k;
       clampCam(cam, zm, wpx, hpx);
@@ -1500,27 +1500,26 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       // BUILD 597: Viewport culling for NPCs — only draw when in sight.
       const npcVhw = (wpx / 2) / zm, npcVhh = (hpx / 2) / zm;
       // BUILD 707: interpolate NPC sim positions (8Hz AI) to render rate.
-      const NPC_TICK_MS = 120;
-      for (const npc of live.folk) {
-        // Track prev/current sim position per NPC; lerp by time since tick.
+        for (const npc of live.folk) {
+        // Track previous/current simulation positions and interpolate over the
+        // *observed* AI tick interval. A fixed 120ms duration causes a tiny
+        // speed snap whenever mobile frame scheduling makes AI ticks drift.
         let ix = npc.position.x, iy = npc.position.y;
         const prev = npcInterp.get(npc.id);
         if (!prev || prev.cx !== npc.position.x || prev.cy !== npc.position.y) {
-          // BUILD 707: teleport guard — a jump > 5 units is a respawn/teleport,
-          // not a walk step; snap instead of sliding across the map.
+          // A jump > 5 units is a respawn/teleport, not a walk step.
           const jumped = prev && Math.hypot(npc.position.x - prev.cx, npc.position.y - prev.cy) > 5;
-          // Critical interpolation fix: on the sample-change frame, render from
-          // the previous sample (t=0), not at the new target. The old branch
-          // left ix/iy at the raw target for one frame, then moved backwards to
-          // the previous sample on the next frame — visible NPC footstep jitter.
           ix = prev && !jumped ? prev.cx : npc.position.x;
           iy = prev && !jumped ? prev.cy : npc.position.y;
+          const observedTick = prev ? nowMs - prev.t : 120;
+          const duration = Math.max(70, Math.min(180, observedTick));
           npcInterp.set(npc.id, {
             px: ix, py: iy,
             cx: npc.position.x, cy: npc.position.y, t: nowMs,
+            duration: jumped ? 0 : duration,
           });
         } else {
-          const k = Math.min(1, (nowMs - prev.t) / NPC_TICK_MS);
+          const k = prev.duration === 0 ? 1 : Math.min(1, Math.max(0, (nowMs - prev.t) / prev.duration));
           ix = prev.px + (prev.cx - prev.px) * k;
           iy = prev.py + (prev.cy - prev.py) * k;
         }
