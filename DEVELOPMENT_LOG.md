@@ -380,3 +380,21 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Corrected simulation: the player exits at (30, 48), reaches (17, 43), lands 3 valid hits on the level-2 goat, defeats it, and survives with 92 HP after 2 counterattacks.
 - Corrected behavior: an invalid or cooldown strike deals no damage and now shows feedback without playing a false attack animation.
 - Verification: source-order readback passed and deterministic combat simulation passed. Browser playtest/build/typecheck remain NOT_RUN because this session is GitHub-only and the game was not mounted.
+
+
+## 2026-10-16 — BUILD 728 proposed: reliable source-aware update checking
+
+**Context:** Followed `docs/AI_UPDATE_PROTOCOL.md` and reread the latest main state before editing. Preserved concurrent BUILD 725 (orange update status), BUILD 726 (house outline cleanup), and BUILD 727 (dagger visibility) work.
+
+**Root cause:** The update checker trusted the deployed manifest and parsed a `BUILD N` pattern from the latest commit message. That message convention is not guaranteed, so it could miss a newer source build. The tracked root HTML/version manifest were stale because they are generated during build.
+
+**Changes on `fix/live-update-version-checker-728`:**
+- Compare the running client against deployed `version.json` and the authoritative marker in `main/scripts/prepare-build-entry.cjs`.
+- Preserve orange checking/available/deploying/current states, live polling, timestamps, and backoff.
+- Add manual Check now, cache-busted Update reload, and source/deployed mismatch detail.
+- If the source-marker fetch fails but the deployed manifest already proves a newer build, keep the Update action available; otherwise show an explicit error instead of claiming current.
+- Add `predev` so `prepare-build-entry.cjs` regenerates generated markers in development; keep `prebuild` for production. Do not hand-edit generated output.
+- Add 11 regression assertions and wire them into CI.
+- Advance the release marker to BUILD 728.
+
+**Verification:** GitHub Actions run 38972057977 passed typecheck, isometric directions, update-version regression (11 assertions), fantasy encounters, landscape coherence, procedural world art, building art, town production, village food-needs, and production build. The first attempt failed typecheck because the manifest variable was nullable outside the try block; switched to a typed local manifest plus a separate note variable, then reran the full workflow successfully. Deployment verification is pending. The local Muse Bridge/Playwright runtime is not available through this tool session, so visual gameplay testing cannot be claimed here.

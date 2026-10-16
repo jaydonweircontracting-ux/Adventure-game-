@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/prepare-build-entry.cjs",
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "node node_modules/vite/bin/vite.js build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
@@ -12,6 +13,7 @@
     "world-server": "node server.js",
     "prebuild": "node scripts/prepare-build-entry.cjs",
     "test:iso-directions": "node tests/iso-direction-mapping.mjs",
+    "test:update-version": "npx tsx tests/update-version.test.ts",
     "rpg:assets:check": "node scripts/install-rpg-equipment.mjs --check",
     "rpg:assets:install": "node scripts/install-rpg-equipment.mjs --install",
     "test:fantasy-encounters": "npx tsx scripts/sim/fantasy-encounters.test.ts",

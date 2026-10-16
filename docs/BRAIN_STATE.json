@@ -17,6 +17,15 @@
       "status": "PROPOSED",
       "createdAt": "2026-10-12T04:50:04.146Z",
       "retryCount": 0
+    },
+    {
+      "id": "live-update-checker",
+      "priority": "P1",
+      "description": "Compare running, deployed, and latest main versions; add manual menu refresh and regenerate version metadata in dev",
+      "system": "release-checker",
+      "status": "IN_PROGRESS",
+      "createdAt": "2026-10-16T21:50:00Z",
+      "retryCount": 0
     }
   ],
   "completedTasks": [],
