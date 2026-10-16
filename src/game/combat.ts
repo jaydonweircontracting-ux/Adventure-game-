@@ -43,18 +43,18 @@ export function isEntityInHitbox(entity: CombatPoint, hitbox: CombatRect): boole
 }
 
 // Near-contact melee: require the attacker to be almost touching the target's body.
-export const PLAYER_MELEE_REACH = 0.35;
-export const PLAYER_MELEE_BEHIND_TOLERANCE = 0.2;
-const MELEE_TARGET_HALF_SIZE = 1.2;
-const MELEE_SWING_HALF_WIDTH = 0.35;
+export const PLAYER_MELEE_REACH = 0.1;
+export const PLAYER_MELEE_BEHIND_TOLERANCE = 0;
+const MELEE_TARGET_HALF_SIZE = 0.55;
+const MELEE_SWING_HALF_WIDTH = 0.15;
 
 export function isInMeleeArc(attacker: CombatPoint, target: CombatPoint, facing: CombatDirection, reach = PLAYER_MELEE_REACH): boolean {
   const dx = target.x - attacker.x;
   const dy = target.y - attacker.y;
   const forward = facing === 'right' ? dx : facing === 'left' ? -dx : facing === 'down' ? dy : -dy;
   const lateral = facing === 'left' || facing === 'right' ? Math.abs(dy) : Math.abs(dx);
-  // Intersect a narrow forward swing with the visible body bounds. The target
-  // must be directly in front and close enough that the sprites appear to touch.
+  // Intersect a very short forward swing with a conservative body-bound estimate.
+  // Keep the reach small so hits only register when the sprites are nearly touching.
   return forward >= -PLAYER_MELEE_BEHIND_TOLERANCE
     && forward <= reach + MELEE_TARGET_HALF_SIZE
     && lateral <= MELEE_SWING_HALF_WIDTH + MELEE_TARGET_HALF_SIZE;
