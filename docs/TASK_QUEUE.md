@@ -144,4 +144,4 @@
 - **Files:** `src/App.tsx`, `src/game/updateVersion.ts`, `scripts/prepare-build-entry.cjs`, `package.json`, `tests/update-version.test.ts`
 - **Checkpoint:** 2026-10-16 — BUILD 725 restored orange checking/current status; BUILD 728 compares running, deployed, and latest source builds, adds Check now, and regenerates version markers through predev/prebuild.
 - **Acceptance:** CI passes; deployment succeeds; source/deployed/running markers are checked; fresh play link is provided.
-- **Evidence:** Pending BUILD 728 CI and live Pages verification.
+- **Evidence:** CI run 38972057977 passed typecheck, update-version regression (11 assertions), existing regression suite, and production build; live Pages verification pending.
