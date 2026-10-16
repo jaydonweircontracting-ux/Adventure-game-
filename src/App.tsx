@@ -11594,13 +11594,14 @@ function Home() {
     let cancelled = false;
     const checkForUpdate = async () => {
       let deployedBuild: number | null = null;
-      let manifest: { build?: string | number; note?: string } | null = null;
+      let manifestNote: string | undefined;
       try {
         const base = import.meta.env.BASE_URL;
         const cacheBust = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         const manifestResponse = await fetch(`${base}version.json?t=${cacheBust}`, { cache: 'no-store' });
         if (!manifestResponse.ok) throw new Error('deployed version manifest unavailable');
-        manifest = await manifestResponse.json();
+        const manifest = await manifestResponse.json() as { build?: string | number; note?: string };
+        manifestNote = manifest.note;
         deployedBuild = Number(manifest.build);
         if (!Number.isSafeInteger(deployedBuild) || deployedBuild <= 0) {
           throw new Error('invalid deployed build marker');
@@ -11626,13 +11627,13 @@ function Home() {
 
         if (status === 'available') {
           setUpdateAvailable(String(targetBuild));
-          setUpdateNote(manifest.note || buildNoteFor(String(targetBuild)) || '');
+          setUpdateNote(manifestNote || buildNoteFor(String(targetBuild)) || '');
           setUpdateStatus('available');
         } else if (status === 'in-progress') {
           setUpdateAvailable(String(targetBuild));
           setUpdateNote(latestSourceBuild > deployedBuild
             ? `Source build ${latestSourceBuild}; deployed build ${deployedBuild}`
-            : buildNoteFor(String(targetBuild)) || manifest.note || '');
+            : buildNoteFor(String(targetBuild)) || manifestNote || '');
           setUpdateStatus('in-progress');
         } else {
           setUpdateAvailable(null);
@@ -11646,7 +11647,7 @@ function Home() {
         const runningBuild = Number(BUILD_NUMBER);
         if (deployedBuild !== null && deployedBuild > runningBuild) {
           setUpdateAvailable(String(deployedBuild));
-          setUpdateNote(manifest?.note || buildNoteFor(String(deployedBuild)) || '');
+          setUpdateNote(manifestNote || buildNoteFor(String(deployedBuild)) || '');
           setUpdateStatus('available');
         } else {
           // Never claim the app is current if an authoritative version source fails.
