@@ -12157,11 +12157,17 @@ function Home() {
       ) : menuOpen ? (
         <section className="main-menu" aria-label="Main menu" data-testid="main-menu">
           <div className="main-menu-card">
+            {/* BUILD 725: Keep version status visible from the first menu frame. */}
+            {updateStatus === 'checking' && (
+              <div style={{ background: '#f39c12', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
+                ⟳ Checking live game version…
+              </div>
+            )}
             {/* BUILD 631: Tri-color update status banner — always visible above build title. */}
             {updateStatus === 'available' && updateAvailable && (
               <div style={{ background: '#f39c12', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
                 <span>🎮 BUILD {updateAvailable}{updateNote ? ` (${updateNote})` : ''} available!</span>
-                <button onClick={() => window.location.href = `${import.meta.env.BASE_URL}?v=${updateAvailable}`} style={{ background: '#fff', color: '#f39c12', border: 'none', borderRadius: 4, padding: '4px 12px', fontWeight: 'bold', cursor: 'pointer' }}>
+                <button onClick={() => window.location.href = `${import.meta.env.BASE_URL}?v=${updateAvailable}&t=${Date.now()}`} style={{ background: '#fff', color: '#f39c12', border: 'none', borderRadius: 4, padding: '4px 12px', fontWeight: 'bold', cursor: 'pointer' }}>
                   Update
                 </button>
               </div>
@@ -12180,9 +12186,15 @@ function Home() {
             )}
             {updateStatus === 'error' && (
               <div style={{ background: '#e74c3c', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
-                ⚠ Update check failed — couldn't reach server
+                ⚠ Update check failed — version source unavailable
+                {lastChecked && <div style={{ fontSize: 10, fontWeight: 'normal', opacity: 0.85 }}>Last attempt {lastChecked.toLocaleTimeString()} · retrying automatically</div>}
               </div>
             )}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+              <button type="button" onClick={triggerUpdateCheck} disabled={updateStatus === 'checking'} style={{ background: '#fff8e8', color: '#6c4b12', border: '1px solid #d7a345', borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: updateStatus === 'checking' ? 'wait' : 'pointer', opacity: updateStatus === 'checking' ? 0.7 : 1 }}>
+                {updateStatus === 'checking' ? 'Checking version…' : 'Check now'}
+              </button>
+            </div>
             <div className="main-menu-swords" aria-hidden="true">
               <Sword className="menu-sword sword-left" size={44} strokeWidth={1.75} />
               <Sword className="menu-sword sword-right" size={44} strokeWidth={1.75} />
