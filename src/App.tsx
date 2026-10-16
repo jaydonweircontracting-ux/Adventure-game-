@@ -133,6 +133,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '730': 'Restore missing ChunkSurroundings and App exports so the latest world and NPC systems compile',
   '729': 'NPC death closes dialogue, attacks change disposition, corpses loot correctly, and wanted guards pursue with flee/jail/fine choices',
   '728': 'Compare live, deployed, and latest source versions; add manual real-time update checks',
   '727': 'Fix dagger/equipment layer disappearing when switching into attack animation; preserve last valid weapon sprite across animation states',
