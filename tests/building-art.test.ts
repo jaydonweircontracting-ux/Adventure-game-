@@ -1,7 +1,12 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
 import { buildingArtFor } from '../src/game/buildingArt';
 import { BUILDING_VARIANTS, mosslightCottageRects280 } from '../src/game/settlements';
 import { mosslightPinnedRects, mosslightFillerLots } from '../src/game/mosslightLayout';
+for (const variant of BUILDING_VARIANTS) {
+  assert.ok(existsSync(resolve(process.cwd(), 'public', 'buildings', variant + '.png')), 'missing audited building sprite: ' + variant);
+}
 const pinned = mosslightPinnedRects();
 assert.equal(pinned.length, 18, 'Mosslight pinned building order must remain stable');
 const fixedVariants = ['blue-house', 'story-tower', 'plaster-house', 'tavern'];
