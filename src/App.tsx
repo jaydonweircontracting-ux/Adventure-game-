@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '739': 'Award one stone and Mining XP on every mining hit instead of only when the boulder is depleted',
   '738': 'Tap the starting boulder to walk over and auto-mine; stone goes straight to inventory and mining grants XP/levels',
   '737': 'Persist mining workers, carried stone, quarry cooldown and stockpile progress across saves',
   '736': 'Assign villagers autonomous mining and hauling jobs; deliver stone into the settlement stockpile',
