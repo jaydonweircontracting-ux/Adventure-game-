@@ -109,7 +109,7 @@ const SOCIAL_ACTIVITIES = [
  * drains across the waking day. Social/comfort derive from the current
  * activity plus personality — no stored state, so time-skips stay correct.
  */
-export function npcNeeds(npc: Townsperson, clock: WorldClockState): NPCNeeds {
+export function npcNeeds(npc: Townsperson, clock: WorldClockState, foodAvailable = true): NPCNeeds {
   const mins = minutesOf(clock);
   const p = npcPersonality(npc);
   const age = npcAge(npc);
@@ -117,10 +117,13 @@ export function npcNeeds(npc: Townsperson, clock: WorldClockState): NPCNeeds {
 
   // --- Hunger: 100 right after each meal, decaying ~8/hr between meals. ---
   const wake = 360; // ~6:00 (matches schedule jitter range 5:30–6:30)
-  const meals = [wake, 735, 1110]; // breakfast, lunch ~12:15, dinner ~18:30
-  let lastMeal = meals[0];
+  // If the settlement has no edible stock, scheduled meals are missed. Treat
+  // yesterday's dinner as the last possible meal until supplies recover.
+  const meals = foodAvailable ? [wake, 735, 1110] : [];
+  // Before breakfast, the previous day's dinner is the most recent meal.
+  let lastMeal = foodAvailable && mins >= wake ? wake : 1110 - 1440;
   for (const m of meals) if (mins >= m) lastMeal = m;
-  // Overnight: dinner was yesterday.
+  // Overnight: dinner was yesterday (also handles the negative previous-day timestamp).
   const hoursSinceMeal = mins >= lastMeal ? (mins - lastMeal) / 60 : (mins + 1440 - lastMeal) / 60;
   const hunger = Math.max(0, Math.min(100, 100 - hoursSinceMeal * 9));
 
@@ -174,17 +177,22 @@ export function villageTarget(
   npc: Townsperson,
   anchors: TownsfolkAnchors,
   clock: WorldClockState,
+  foodAvailable = true,
 ): TownsfolkTarget {
   const base = townsfolkTarget(npc, anchors, clock);
   // Never override sleep — the schedule owns the night.
   if (base.activity === 'Sleeping') return base;
-  const needs = npcNeeds(npc, clock);
+  const needs = npcNeeds(npc, clock, foodAvailable);
 
   // Starving (missed meals — e.g. a long player-triggered conversation kept
   // them out): detour for food at the tavern/stall.
-  if (needs.hunger < 20 && !base.activity.includes('lunch') && !base.activity.includes('Lunch')) {
+  if (needs.hunger < 20 && (!foodAvailable || (!base.activity.includes('lunch') && !base.activity.includes('Lunch')))) {
     const food = anchors.points.tavern ?? anchors.stalls[0] ?? anchors.plaza;
-    return { activity: 'Grabbing a bite', target: { ...food }, indoors: false };
+    return {
+      activity: foodAvailable ? 'Grabbing a bite' : 'Looking for food',
+      target: { ...food },
+      indoors: false,
+    };
   }
   // Exhausted (young/elderly drain faster): head home to rest.
   if (needs.energy < 12) {
@@ -462,6 +470,7 @@ export function npcLifeSummary(
   npc: Townsperson,
   folk: Townsperson[],
   clock: WorldClockState,
+  foodAvailable = true,
 ): NPCLifeSummary {
   return {
     name: npc.name,
@@ -469,7 +478,7 @@ export function npcLifeSummary(
     ageYears: npcAgeYears(npc),
     archetype: npc.archetype,
     personality: npcPersonality(npc),
-    needs: npcNeeds(npc, clock),
+    needs: npcNeeds(npc, clock, foodAvailable),
     gold: npcGold(npc, clock),
     wage: npcWage(npc.archetype),
     relationships: npcRelationships(npc, folk, clock),
