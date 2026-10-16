@@ -119,8 +119,9 @@ export function npcNeeds(npc: Townsperson, clock: WorldClockState, foodAvailable
   const wake = 360; // ~6:00 (matches schedule jitter range 5:30–6:30)
   // If the settlement has no edible stock, scheduled meals are missed. Treat
   // yesterday's dinner as the last possible meal until supplies recover.
-  const meals = foodAvailable ? [wake, 735, 1110] : [1110 - 1440];
-  let lastMeal = meals[0];
+  const meals = foodAvailable ? [wake, 735, 1110] : [];
+  // Before breakfast, the previous day's dinner is the most recent meal.
+  let lastMeal = foodAvailable && mins >= wake ? wake : 1110 - 1440;
   for (const m of meals) if (mins >= m) lastMeal = m;
   // Overnight: dinner was yesterday (also handles the negative previous-day timestamp).
   const hoursSinceMeal = mins >= lastMeal ? (mins - lastMeal) / 60 : (mins + 1440 - lastMeal) / 60;
