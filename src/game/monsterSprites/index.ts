@@ -14,6 +14,9 @@
  */
 import bat from './bat.json';
 import goblin from './goblin.json';
+import dwarf from './dwarf.json';
+import elf from './elf.json';
+import ogre from './ogre.json';
 import orc from './orc.json';
 import rat from './rat.json';
 import skeleton from './skeleton.json';
@@ -54,6 +57,9 @@ export interface MonsterSpriteDef {
 const DEFS: Record<string, MonsterSpriteDef> = {
   bat: bat as MonsterSpriteDef,
   goblin: goblin as MonsterSpriteDef,
+  dwarf: dwarf as MonsterSpriteDef,
+  elf: elf as MonsterSpriteDef,
+  ogre: ogre as MonsterSpriteDef,
   orc: orc as MonsterSpriteDef,
   rat: rat as MonsterSpriteDef,
   skeleton: skeleton as MonsterSpriteDef,
@@ -71,7 +77,7 @@ const LEGACY_KINDS: ReadonlySet<string> = new Set(['bandit', 'snake', 'dragon', 
 
 /** Same-category siblings, used when a kind's own def is invalid. */
 const SPRITE_CATEGORIES: Record<string, string[]> = {
-  humanoid: ['goblin', 'skeleton', 'orc', 'troll'],
+  humanoid: ['goblin', 'skeleton', 'orc', 'troll', 'ogre', 'elf', 'dwarf'],
   beast: ['wolf', 'bat', 'rat'],
   crawler: ['spider', 'slime'],
 };

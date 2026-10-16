@@ -13,7 +13,8 @@
     "prebuild": "node scripts/prepare-build-entry.cjs",
     "test:iso-directions": "node tests/iso-direction-mapping.mjs",
     "rpg:assets:check": "node scripts/install-rpg-equipment.mjs --check",
-    "rpg:assets:install": "node scripts/install-rpg-equipment.mjs --install"
+    "rpg:assets:install": "node scripts/install-rpg-equipment.mjs --install",
+    "test:fantasy-encounters": "npx tsx scripts/sim/fantasy-encounters.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

@@ -23,6 +23,23 @@ export interface MonsterSpawnSpec {
 }
 
 export const MONSTER_SPAWN_TABLE: MonsterSpawnSpec[] = [
+  // Hostile fantasy peoples are wilderness encounters, never ambient town NPCs.
+  // These use existing monster sheets with distinct filters/scales until dedicated art is installed.
+  {
+    kind: 'ogre', biomes: ['forest', 'rock', 'tundra'], minDanger: 3,
+    packBase: 1, packVar: 1, hpMult: 2.6, seedSalt: 18000, seedMulX: 37, seedMulY: 43,
+    variants: ['default'],
+  },
+  {
+    kind: 'elf', biomes: ['forest', 'meadow'], minDanger: 2,
+    packBase: 1, packVar: 2, hpMult: 1.0, seedSalt: 19000, seedMulX: 41, seedMulY: 47,
+    variants: ['default', 'scout'],
+  },
+  {
+    kind: 'dwarf', biomes: ['rock', 'tundra'], minDanger: 2,
+    packBase: 1, packVar: 2, hpMult: 1.25, seedSalt: 20000, seedMulX: 43, seedMulY: 53,
+    variants: ['default', 'veteran'],
+  },
   {
     kind: 'wolf', biomes: ['forest', 'meadow'], minDanger: 1,
     packBase: 2, packVar: 2, hpMult: 0.9, seedSalt: 14000, seedMulX: 19, seedMulY: 29,

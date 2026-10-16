@@ -1380,7 +1380,7 @@ type GoatState = {
   isBoss?: boolean; // BUILD 477: boss (named, 10x HP, epic+ loot)
 };
 // Hostile mobs: goblins and bandits. Reuse the goat combat AI shape.
-type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'snake' | 'spider' | 'dragon' | 'orc' | 'soldier' | 'wolf' | 'slime' | 'bat' | 'rat';
+type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'ogre' | 'elf' | 'dwarf' | 'snake' | 'spider' | 'dragon' | 'orc' | 'soldier' | 'wolf' | 'slime' | 'bat' | 'rat';
 type MonsterState = GoatState & { kind: MonsterKind; variant?: string; ranged?: boolean; gear: GoatLoot };
 const GOAT_STEP = 0.5;
 // Ambient birds: lightweight wildlife, deterministic per chunk, not persisted.
