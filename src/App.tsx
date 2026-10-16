@@ -6452,22 +6452,20 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           // BUILD 450: NPC-FIRST — check for NPCs in range BEFORE anything else.
           // Simple, direct, no candidate filtering. If an NPC is within 8 units,
           // they get hit. Period.
-          // BUILD 531: respect attack geometry. The NPC must be inside the
-          // swing arc (facing + reach), not just within a radius — a sword
-          // swing cannot hit someone standing behind the player. Keeps the
-          // generous PLAYER_MELEE_REACH + 2 range so chasing still connects.
+          // BUILD 531/723: melee uses the same short, directional reach as the
+          // visible weapon swing. No extra invisible radius beyond the hit area.
           {
             const inCellar = interiorRef.current?.roomType === 'cellar';
             if (!inCellar && !playerAttack.ranged) {
               const attackerPos = positionRef.current;
               const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
               let nearestNpc: Townsperson | null = null;
-              let nearestDist = PLAYER_MELEE_REACH + 2;
+              let nearestDist = PLAYER_MELEE_REACH;
               const losBlocked = (pos: Point) => isFieldPositionBlocked(pos, chunkRef.current);
               for (const n of townsfolkRef.current) {
                 if (n.indoors) continue;
                 if (isNpcDead(n, tick)) continue;
-                if (!isInMeleeArc(attackerPos, n.position, playerAttack.direction, PLAYER_MELEE_REACH + 2)) continue;
+                if (!isInMeleeArc(attackerPos, n.position, playerAttack.direction, PLAYER_MELEE_REACH)) continue;
                 // BUILD 531: solid geometry blocks the swing — cannot hit
                 // through walls/buildings.
                 if (traceLineBlocked(attackerPos, n.position, losBlocked)) continue;
@@ -6568,7 +6566,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             const targetNpc = townsfolkRef.current.find((n) => n.id === targetedId);
             if (targetNpc && !targetNpc.indoors && !isNpcDead(targetNpc, tick)) {
               const dist = Math.hypot(targetNpc.position.x - attackerPos.x, targetNpc.position.y - attackerPos.y);
-              if (dist <= PLAYER_MELEE_REACH + 3) {
+              if (dist <= PLAYER_MELEE_REACH) {
                 swingDamageDealt = true;
                 const stats = playerStatsRef.current;
                 const critical = Math.random() < playerCriticalChanceForStats(stats);
@@ -6645,7 +6643,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
               if (isNpcDead(npc, tick)) return false;
               const dist = Math.hypot(npc.position.x - attackerPos.x, npc.position.y - attackerPos.y);
-              return dist <= PLAYER_MELEE_REACH + 2;
+              return dist <= PLAYER_MELEE_REACH;
             })
             .map((npc) => ({ ...npc, entityKind: 'townsfolk' as const }));
           // BUILD 445: field NPCs (adventurers, travelers) can also be attacked.
@@ -6654,13 +6652,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               .filter((adv) => {
                 if ((adv.location || 'field') !== 'field') return false;
                 const dist = Math.hypot(adv.position.x - attackerPos.x, adv.position.y - attackerPos.y);
-                return dist <= PLAYER_MELEE_REACH + 2;
+                return dist <= PLAYER_MELEE_REACH;
               })
               .map((adv) => ({ ...adv, entityKind: 'adventurer' as const })),
             ...(travelersRef.current as (Traveler & { entityKind?: string })[])
               .filter((t) => {
                 const dist = Math.hypot(t.position.x - attackerPos.x, t.position.y - attackerPos.y);
-                return dist <= PLAYER_MELEE_REACH + 2;
+                return dist <= PLAYER_MELEE_REACH;
               })
               .map((t) => ({ ...t, entityKind: 'traveler' as const })),
           ];
