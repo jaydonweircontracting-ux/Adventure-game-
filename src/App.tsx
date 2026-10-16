@@ -6665,13 +6665,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               .filter((adv) => {
                 if ((adv.location || 'field') !== 'field') return false;
                 const dist = Math.hypot(adv.position.x - attackerPos.x, adv.position.y - attackerPos.y);
-                return dist <= PLAYER_MELEE_REACH;
+                return dist <= PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS;
               })
               .map((adv) => ({ ...adv, entityKind: 'adventurer' as const })),
             ...(travelersRef.current as (Traveler & { entityKind?: string })[])
               .filter((t) => {
                 const dist = Math.hypot(t.position.x - attackerPos.x, t.position.y - attackerPos.y);
-                return dist <= PLAYER_MELEE_REACH;
+                return dist <= PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS;
               })
               .map((t) => ({ ...t, entityKind: 'traveler' as const })),
           ];
@@ -7232,7 +7232,7 @@ if (active) {
         gameFrame.removeEventListener('gestureend', blockIOSGesture);
       }
     };
-  }, [onChunkChange, interior, inputLocked, optionsOpen]);
+  }, [onChunkChange, interior, inputLocked, optionsOpen, gameZoom]);
 
 
 
