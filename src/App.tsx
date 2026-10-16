@@ -8193,7 +8193,8 @@ if (active) {
       {/* BUILD 663: Hide minimap when Options is open (mandatory UI fix). */}
       {/* BUILD 691: Hide minimap when the world map is open. */}
       {/* BUILD 697: Hide minimap while a market stall shop is open. */}
-      {!interior && !optionsOpen && !mapOpen && shopStallIndex === null && (
+      {/* inputLocked covers the bag, journal, dungeon and world-map overlays. */}
+      {!interior && !optionsOpen && !inputLocked && !mapOpen && shopStallIndex === null && (
         <MiniMap
           chunk={chunk}
           position={position}
