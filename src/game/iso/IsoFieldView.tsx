@@ -12,7 +12,7 @@
 // talk buttons) stay on the 2D renderer for now.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { startBrowserGameLoop, type BrowserGameLoop } from '../engine/browserGameEngine';
-import { drawProceduralGroundAccent } from '../engine/proceduralWorldArt';
+import { drawProceduralGroundAccent, drawProceduralTree, drawProceduralPathDetail, drawBuildingGroundDress } from '../engine/proceduralWorldArt';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import { createBoundedCache } from '../rendering/boundedCache';
 import { FrameMetrics } from '../rendering/frameMetrics';
@@ -929,6 +929,10 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
             groundCacheG.fillStyle = col;
             groundCacheG.fill();
           }
+          // Add cached road gravel and soft verge marks after the base tile, so roads feel worn rather than flat.
+          if (roadHere && !isOcean && !wet) {
+            drawProceduralPathDetail(groundCacheG, wxW, wyW, p.x, p.y, sandy);
+          }
           // BUILD 366: deterministic per-tile detail (chunk-gen video techniques).
           // (chunk offset mixed into the hash so neighbor chunks don't repeat
           // the home chunk's pattern; home chunk hash is unchanged.)
@@ -1177,6 +1181,8 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               g2.ellipse(cx, baseY, sw * 0.45, sw * 0.16, 0, 0, Math.PI * 2);
               g2.fill();
               g2.drawImage(sprite, cx - sw / 2, baseY - sh, sw, sh);
+              // Visual-only porch/planter details; sprite art and building logic stay intact.
+              drawBuildingGroundDress(g2, cx, baseY, sw, r.left + r.right, r.top + r.bottom);
               return;
             }
             // shadow (fallback procedural)
@@ -1399,22 +1405,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         const s = 0.7 + t.scale * 0.6;
         drawables.push({
           depth: tx2 + ty2, draw: (g2) => {
-            g2.fillStyle = 'rgba(0,0,0,0.15)';
-            g2.beginPath(); g2.ellipse(c.x, c.y + 2, 10 * s, 4 * s, 0, 0, 7); g2.fill();
-            g2.fillStyle = '#5a4128';
-            g2.fillRect(c.x - 3 * s, c.y - 18 * s, 6 * s, 18 * s);
-            g2.fillStyle = '#3f7a35';
-            g2.beginPath();
-            g2.moveTo(c.x, c.y - 58 * s);
-            g2.lineTo(c.x + 20 * s, c.y - 14 * s);
-            g2.lineTo(c.x - 20 * s, c.y - 14 * s);
-            g2.closePath(); g2.fill();
-            g2.fillStyle = '#4c8a3f';
-            g2.beginPath();
-            g2.moveTo(c.x, c.y - 48 * s);
-            g2.lineTo(c.x + 14 * s, c.y - 14 * s);
-            g2.lineTo(c.x - 14 * s, c.y - 14 * s);
-            g2.closePath(); g2.fill();
+            drawProceduralTree(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
           },
         });
         } // end neighbor-chunk tree loop
