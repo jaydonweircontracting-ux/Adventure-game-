@@ -353,6 +353,9 @@ const lastCharacterSprite = new WeakMap<CharacterAnimator, {
   image: HTMLImageElement;
   frame: number;
 }>();
+// Keep each equipped layer visible while the next animation frame loads.
+// This avoids a weapon blinking out on walk/run cycles with asynchronous PNGs.
+const lastEquipmentSprites = new WeakMap<CharacterAnimator, Map<string, HTMLImageElement>>();
 
 /**
  * Draw one character. Feet-anchored: the frame's content ground point
@@ -417,9 +420,17 @@ export function drawIsoCharacter(o: DrawCharacterOptions): void {
     g.drawImage(im, dx, dy, dw, dh);
     drew = true;
     // Equipment layers (future customization; currently empty by default).
+    let equipmentCache = lastEquipmentSprites.get(o.animator);
+    if (!equipmentCache) {
+      equipmentCache = new Map<string, HTMLImageElement>();
+      lastEquipmentSprites.set(o.animator, equipmentCache);
+    }
     for (const eq of L.equipment) {
-      const eim = rpgSprite(eq, anim, face, spriteFrame);
-      if (eim) g.drawImage(eim, dx, dy, dw, dh);
+      const cacheKey = `${eq}:${anim}:${face}`;
+      const loadedLayer = rpgSprite(eq, anim, face, spriteFrame);
+      if (loadedLayer) equipmentCache.set(cacheKey, loadedLayer);
+      const layer = loadedLayer ?? equipmentCache.get(cacheKey);
+      if (layer) g.drawImage(layer, dx, dy, dw, dh);
     }
   }
   // Hurt flash: no pain art in the pack, so tint red briefly.
