@@ -75,6 +75,7 @@ import {
   type WorldEvent,
 } from '@/game/civilization';
 import { applyNPCProduction } from '@/game/townProduction';
+import { createSettlementEconomyState, advanceSettlementEconomy, type SettlementEconomyState } from '@/game/settlementEconomy';
 import { createWheatField, advanceWheatGrowth, harvestWheatCrop, harvestableCrops, type WheatField } from '@/game/wheatFields';
 import { createMill, addWheatToMill, advanceMill, takeFlourFromMill, type Mill } from '@/game/mills';
 import { isTextInputActive } from '@/game/textInputGuard';
@@ -133,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '736': 'Assign villagers autonomous mining and hauling jobs; deliver stone into the settlement stockpile',
   '735': 'Move the mineable starting-house boulder clear of the house sprite so it is visible and reachable',
   '734': 'Make the starting-house stone boulder visible and mineable; add stone inventory',
   '733': 'Add a large stone boulder behind the starting house in Mosslight Crossing',
@@ -4711,6 +4713,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // player is in Mosslight Crossing (simulation LOD).
   const [townsfolk, setTownsfolk] = useState<Townsperson[]>([]);
   const townsfolkRef = useRef<Townsperson[]>([]);
+  // BUILD 736: autonomous stone workers share the existing Mosslight resource ledger.
+  const settlementEconomyRef = useRef<SettlementEconomyState>(createSettlementEconomyState());
+  const stoneQuarryPointRef = useRef<TownsfolkPoint | null>(null);
   const townsfolkAnchorsRef = useRef<TownsfolkAnchors | null>(null);
   // Physical NPC navigation: housing registry, cottage doors, obstacles.
   // Built once — the 12 townsfolk ids are stable (townsfolk-0..11).
@@ -5682,8 +5687,34 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         const localSettlement = ensureCiv().settlements.find((settlement) => settlement.id === 'mosslight');
         const localStock = localSettlement?.storage as Record<string, number> | undefined;
         const foodAvailable = !!localStock && ['food', 'grain', 'flour'].some((resource) => (localStock[resource] ?? 0) > 0);
-        const resolveVillageTarget = (npc: Townsperson, anchors: TownsfolkAnchors, clock: WorldClockState) =>
-          villageTarget(npc, anchors, clock, foodAvailable);
+        // BUILD 736: two persistent villagers physically walk between the stone
+        // deposit and the settlement stockpile. Mining only advances on arrival.
+        if (!stoneQuarryPointRef.current) {
+          const quarryNode = fieldOresFor({ x: 4, y: 7 }).find((ore) => ore.id === 'tutorial-stone-deposit-4-7');
+          if (quarryNode) stoneQuarryPointRef.current = { x: quarryNode.fx, y: quarryNode.fy };
+        }
+        const quarryPoint = stoneQuarryPointRef.current;
+        const stockpilePoint = folkAnchors.points.guild ?? folkAnchors.plaza;
+        const economy = localSettlement && quarryPoint
+          ? advanceSettlementEconomy(
+              settlementEconomyRef.current,
+              townsfolkRef.current,
+              quarryPoint,
+              stockpilePoint,
+              localStock ?? (localSettlement.storage as Record<string, number>),
+              120,
+              !depletedOresRef.current['tutorial-stone-deposit-4-7'],
+              folkClock.hour >= 7 && folkClock.hour < 17,
+              50 + localSettlement.population,
+            )
+          : null;
+        if (economy) settlementEconomyRef.current = economy.state;
+        const economyTargets = new Map((economy?.targets ?? []).map((target) => [target.npcId, target]));
+        const resolveVillageTarget = (npc: Townsperson, anchors: TownsfolkAnchors, clock: WorldClockState) => {
+          const work = economyTargets.get(npc.id);
+          if (work) return { activity: work.activity, target: work.target, indoors: false };
+          return villageTarget(npc, anchors, clock, foodAvailable);
+        };
         const next = advanceTownsfolk(townsfolkRef.current, folkAnchors, folkClock, townsfolkNavRef.current!, 0.22, resolveVillageTarget);
         if (next.some((npc, index) => npc !== townsfolkRef.current[index])) {
           townsfolkRef.current = next;
