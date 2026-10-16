@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { drawProceduralGroundAccent, drawProceduralPathDetail } from '../src/game/engine/proceduralWorldArt';
+import { drawProceduralGroundAccent, drawProceduralPathDetail, drawProceduralTreeLod } from '../src/game/engine/proceduralWorldArt';
 
 function mockContext() {
   const calls: Array<[number, number, number, number, string]> = [];
@@ -83,3 +83,23 @@ const emptyHouse = buildingContext();
 drawBuildingRenovation(emptyHouse.ctx, 100, 200, 0, 0, 24, 71);
 assert.equal(emptyHouse.calls.length, 0, 'invalid building dimensions should be ignored safely');
 console.log(`Building visual overhaul regression passed (${houseA.calls.length} stable drawing operations).`);
+
+
+// BUILD 731: distant-tree LOD is stable and uses a compact drawing sequence.
+function treeLodContext() {
+  const calls: string[] = [];
+  const ctx = {
+    fillStyle: '', beginPath() { calls.push('begin'); },
+    ellipse(x: number, y: number, rx: number, ry: number) { calls.push(`ellipse:${x},${y},${rx},${ry}`); },
+    fill() { calls.push(`fill:${this.fillStyle}`); },
+    fillRect(x: number, y: number, w: number, h: number) { calls.push(`rect:${x},${y},${w},${h},${this.fillStyle}`); },
+  };
+  return { ctx: ctx as unknown as CanvasRenderingContext2D, calls };
+}
+const treeA = treeLodContext();
+const treeB = treeLodContext();
+drawProceduralTreeLod(treeA.ctx, 30, 60, 1, -42, 71);
+drawProceduralTreeLod(treeB.ctx, 30, 60, 1, -42, 71);
+assert.deepEqual(treeA.calls, treeB.calls, 'distant tree silhouette must be deterministic');
+assert.ok(treeA.calls.length <= 10, 'distant tree should use a small drawing operation budget');
+console.log(`Tree LOD regression passed (${treeA.calls.length} drawing operations).`);
