@@ -430,8 +430,8 @@ not just assertions.
 
 **Fix:** Compare running, deployed, and latest source markers; add manual Check now; cache-bust Update reload; add a predev lifecycle hook to generate current markers in development; preserve the concurrent BUILD 725–727 changes.
 
-**Tests:** Pending CI typecheck, update-version regression tests, existing regression suite, and production build.
+**Tests:** GitHub Actions run 38972057977 passed `npm run typecheck`, isometric directions, update-version regression (11 assertions), fantasy encounters, landscape coherence, procedural world art, building art, town production, village food-needs, and production build. First attempt failed typecheck because a manifest variable was nullable outside the try block; changed to a typed local manifest and separate note variable, then reran the full workflow successfully.
 
-**Deployment:** Pending. Do not call BUILD 728 live until the Pages workflow succeeds and the published version manifest/build marker are checked.
+**Deployment:** Pending merge and Pages deployment. Do not call BUILD 728 live until the Pages workflow succeeds and the published version manifest/build marker are checked.
 
 **Lesson:** Use the build script as the version source of truth. Never hand-edit generated HTML/manifest files; wire the generator into the correct lifecycle hooks and verify the deployed artifact.
