@@ -287,7 +287,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
 
     const resize = () => {
       const r = wrap.getBoundingClientRect();
-      state.dpr = Math.min(2, window.devicePixelRatio || 1);
+      state.dpr = Math.min(window.innerWidth < 900 ? 1.25 : 1.5, window.devicePixelRatio || 1);
       state.w = Math.max(1, r.width); state.h = Math.max(1, r.height);
       canvas.width = state.w * state.dpr;
       canvas.height = state.h * state.dpr;
@@ -682,9 +682,12 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     };
 
     const frame = (nowMs: number) => {
+      // Schedule from the start so render work does not add another frame of delay.
+      raf = requestAnimationFrame(frame);
+      if (document.hidden) { last = nowMs; return; }
       // Carry through longer frame intervals instead of discarding movement time
       // after a hitch; the old 50ms cap made movement feel sluggish under load.
-      const dt = Math.min(50, Math.max(0, nowMs - last));
+      const dt = Math.min(100, Math.max(0, nowMs - last));
       last = nowMs;
       // Dungeon kit once its images have pixels; otherwise procedural.
       const kit = isDungeon && dungeonKitReady();
@@ -1049,7 +1052,6 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       g.fillStyle = '#ffd98a';
       g.fillText('🚪 tap the door to exit', dp.x, dp.y + 34);
 
-      raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
 
