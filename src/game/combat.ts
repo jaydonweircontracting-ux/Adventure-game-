@@ -43,18 +43,19 @@ export function isEntityInHitbox(entity: CombatPoint, hitbox: CombatRect): boole
 }
 
 // Near-contact melee: require the attacker to be almost touching the target's body.
-export const PLAYER_MELEE_REACH = 0.05;
+export const PLAYER_MELEE_REACH = 0.72;
 export const PLAYER_MELEE_BEHIND_TOLERANCE = 0;
-export const PLAYER_MELEE_TARGET_RADIUS = 0.18;
-const MELEE_SWING_HALF_WIDTH = 0.10;
+export const PLAYER_MELEE_TARGET_RADIUS = 0.34;
+const MELEE_SWING_HALF_WIDTH = 0.30;
 
 export function isInMeleeArc(attacker: CombatPoint, target: CombatPoint, facing: CombatDirection, reach = PLAYER_MELEE_REACH): boolean {
   const dx = target.x - attacker.x;
   const dy = target.y - attacker.y;
   const forward = facing === 'right' ? dx : facing === 'left' ? -dx : facing === 'down' ? dy : -dy;
   const lateral = facing === 'left' || facing === 'right' ? Math.abs(dy) : Math.abs(dx);
-  // Intersect a very short forward swing with a conservative body-bound estimate.
-  // Keep the reach small so hits only register when the sprites are nearly touching.
+  // The reach represents the visible weapon arc from the player's body anchor.
+  // Combined with the target body radius, this lets adjacent sprites connect
+  // without allowing the old near-zero range to make every swing miss.
   return forward >= -PLAYER_MELEE_BEHIND_TOLERANCE
     && forward <= reach + PLAYER_MELEE_TARGET_RADIUS
     && lateral <= MELEE_SWING_HALF_WIDTH + PLAYER_MELEE_TARGET_RADIUS;
