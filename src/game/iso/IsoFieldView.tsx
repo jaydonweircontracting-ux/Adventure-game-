@@ -12,7 +12,7 @@
 // talk buttons) stay on the 2D renderer for now.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { startBrowserGameLoop, type BrowserGameLoop } from '../engine/browserGameEngine';
-import { drawProceduralGroundAccent, drawProceduralTree, drawProceduralPathDetail, drawBuildingGroundDress, drawBuildingRenovation } from '../engine/proceduralWorldArt';
+import { drawProceduralGroundAccent, drawProceduralTree, drawProceduralTreeLod, drawProceduralPathDetail, drawBuildingGroundDress, drawBuildingRenovation } from '../engine/proceduralWorldArt';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import { createBoundedCache } from '../rendering/boundedCache';
 import { FrameMetrics } from '../rendering/frameMetrics';
@@ -629,8 +629,9 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       });
     };
 
-    const frame = () => {
-      const nowMs = performance.now();
+    const frame = (scheduledNowMs?: number) => {
+      // Reuse the RAF timestamp from the browser engine instead of sampling the clock twice per frame.
+      const nowMs = scheduledNowMs ?? performance.now();
       const frameStartedAt = nowMs;
       const dt = Math.min(50, Math.max(0, nowMs - last)); last = nowMs;
       const zm = zoomRef.current;
@@ -1407,7 +1408,8 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         const s = 0.7 + t.scale * 0.6;
         drawables.push({
           depth: tx2 + ty2, draw: (g2) => {
-            drawProceduralTree(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
+            if (zm < 0.42) drawProceduralTreeLod(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
+            else drawProceduralTree(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
           },
         });
         } // end neighbor-chunk tree loop
@@ -1887,7 +1889,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         // Keep the renderer's established timing behavior while the browser
         // engine owns RAF scheduling and hidden-tab lifecycle.
         last = nowMs - deltaMs;
-        frame();
+        frame(nowMs);
       },
     });
 
