@@ -552,6 +552,11 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
 
     let gameLoop: BrowserGameLoop | null = null;
     let last = performance.now();
+    // Adaptive quality governor: lower tree-detail cost only when sustained frame work is high,
+    // then restore full canopies after the renderer has headroom again.
+    let adaptiveTreeLod = false;
+    let qualityProbeFrames = 0;
+    let renderCostEma = 16;
     // BUILD 716: opt-in frame timing; no summary allocation or overlay unless
     // ?perf=1 is enabled. Use the same loop users actually play.
     const perfEnabled = new URLSearchParams(location.search).get('perf') === '1';
@@ -1408,7 +1413,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         const s = 0.7 + t.scale * 0.6;
         drawables.push({
           depth: tx2 + ty2, draw: (g2) => {
-            if (zm < 0.42) drawProceduralTreeLod(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
+            if (zm < 0.42 || adaptiveTreeLod) drawProceduralTreeLod(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
             else drawProceduralTree(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
           },
         });
@@ -1863,10 +1868,19 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
 
       g.restore();
 
+      // Measure real renderer cost for the adaptive quality governor. Hysteresis avoids
+      // quality toggling: reduce tree detail above 18ms, restore it below 13ms.
+      const renderCostMs = performance.now() - frameStartedAt;
+      renderCostEma += (renderCostMs - renderCostEma) * 0.12;
+      if (++qualityProbeFrames >= 15) {
+        if (renderCostEma > 18) adaptiveTreeLod = true;
+        else if (renderCostEma < 13) adaptiveTreeLod = false;
+        qualityProbeFrames = 0;
+      }
       // BUILD 716: measure actual renderer work and expose a compact on-canvas
       // readout for repeatable A/B profiling in crowded scenes.
       if (frameMetrics) {
-        frameMetrics.record(performance.now() - frameStartedAt);
+        frameMetrics.record(renderCostMs);
         if (++perfOverlayTick % 30 === 0) {
           const m = frameMetrics.snapshot();
           g.save();
