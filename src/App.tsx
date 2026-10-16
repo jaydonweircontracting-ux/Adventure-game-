@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
   '728': 'Compare live, deployed, and latest source versions; add manual real-time update checks',
+  '728': 'NPC death closes dialogue, attacks change disposition, corpses loot correctly, and wanted guards pursue with flee/jail/fine choices',
   '727': 'Fix dagger/equipment layer disappearing when switching into attack animation; preserve last valid weapon sprite across animation states',
   '726': 'Remove static CSS border and outline artifacts around house sprites while preserving building art and gameplay',
   '725': 'Repair live update checker, restore orange current status, and validate version metadata consistency',
@@ -3792,7 +3793,7 @@ function MiniMap({ chunk, position, onTap }: { chunk: Point; position: Point; on
   );
 }
 
-function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, bounty, muted, onToggleMute, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
+function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, onResolveBounty, bounty, muted, onToggleMute, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number) => void; onResolveBounty: () => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
   // BUILD 476: equipment damage bonus from found items.
   const equipmentDamageBonus = totalEquipmentStats(equipment).damage ?? 0;
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
@@ -4649,6 +4650,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // per-NPC disposition (0-100) and the Mosslight wanted level. Both persist
   // in the save under the optional `dialogue` field.
   const [townsfolkDialogue, setTownsfolkDialogue] = useState<Townsperson | null>(null);
+  const [guardEncounter, setGuardEncounter] = useState<{ guardId: string; guardName: string; bounty: number } | null>(null);
+  const guardCooldownUntilRef = useRef(0);
   const [dialogueTopic, setDialogueTopic] = useState<DialogueTopicId | null>(null);
   // BUILD 654: Free-text dialogue input.
   const [dialogueInput, setDialogueInput] = useState('');
@@ -4759,6 +4762,26 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 522: Lootable NPC bodies.
   const [bodies, setBodies] = useState<LootableBody[]>([]);
   const bodiesRef = useRef<LootableBody[]>([]);
+  // BUILD 728: create one lootable body per death; the loot model supports future gear IDs.
+  const dropTownspersonBody = (npc: Townsperson) => {
+    const clock = brainRef.current?.worldCore.getClock();
+    const day = clock ? clock.day : 1;
+    const existing = bodiesRef.current.some((body) => !body.looted && body.npcId === npc.id && body.chunk.x === chunkRef.current.x && body.chunk.y === chunkRef.current.y);
+    if (existing) return;
+    const body = createBody('body-' + npc.id + '-' + Date.now().toString(36), npc.id, npc.name, npc.role || npc.archetype || 'citizen', chunkRef.current, { x: npc.position.x, y: npc.position.y }, day, Math.abs(npc.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)));
+    const nextBodies = [...bodiesRef.current, body]; bodiesRef.current = nextBodies; setBodies(nextBodies);
+  };
+  const recordTownspersonCrime = (npc: Townsperson, type: 'assault' | 'murder') => {
+    try {
+      const clock = brainRef.current?.worldCore.getClock(); const day = clock ? Math.floor(clock.day) : 1; const tick = clock?.tick ?? 0;
+      const crime = createCrime('crime-' + Date.now().toString(36), type, chunkRef.current, { x: npc.position.x, y: npc.position.y }, day, npc.id);
+      const witnesses = findWitnesses({ position: { x: npc.position.x, y: npc.position.y } }, townsfolkRef.current.filter((w) => !isNpcDead(w, tick) && !(type === 'murder' && w.id === npc.id)).map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } })));
+      const event = crimeMemoryEvent(crime); const importance = crimeMemoryImportance(crime);
+      const updated = townsfolkRef.current.map((w) => (w.id === npc.id || witnesses.some((wit) => wit.npcId === w.id)) ? addNPCMemory(w, event, day, importance) : w);
+      townsfolkRef.current = updated; setTownsfolk(updated);
+      if (witnesses.length > 0) onCrimeCommitted(crime.id, crime.severity, witnesses.length, day);
+    } catch { /* crime consequences must not interrupt combat */ }
+  };
   const [cornStalks, setCornStalks] = useState<CornStalk[]>(() => {
     const startChunk = { x: 4, y: 7 };
     const all = cornStalksForChunk(startChunk, mapTileFor(startChunk).terrain, (pos) => isFieldPositionBlocked(pos, startChunk));
@@ -5508,6 +5531,33 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   useEffect(() => { horseRef.current = horse; }, [horse]);
   useEffect(() => { goatsRef.current = goats; }, [goats]);
   useEffect(() => { bodiesRef.current = bodies; }, [bodies]);
+
+  // BUILD 728: dialogue and ambient speech must never outlive an NPC.
+  useEffect(() => {
+    const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+    if (townsfolkDialogue) {
+      const live = townsfolk.find((npc) => npc.id === townsfolkDialogue.id);
+      if (!live || isNpcDead(live, tick)) { setTownsfolkDialogue(null); setDialogueTopic(null); setDialogueInput(''); setDialogueHistory([]); }
+    }
+    setBarks((previous) => { let changed = false; const next = { ...previous }; for (const npc of townsfolk) if (isNpcDead(npc, tick) && next[npc.id]) { delete next[npc.id]; changed = true; } return changed ? next : previous; });
+  }, [townsfolk, townsfolkDialogue]);
+
+  // BUILD 728: wanted criminals are pursued by the nearest living guard in Mosslight.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (wantedLevel(bounty.amount) <= 0 || inPrison || interiorRef.current || chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) return;
+      const tick = brainRef.current?.worldCore.getClock().tick ?? 0; const player = positionRef.current;
+      const guards = townsfolkRef.current.filter((npc) => npc.archetype === 'guard' && !npc.indoors && !isNpcDead(npc, tick));
+      if (!guards.length) return;
+      guards.sort((a, b) => Math.hypot(a.position.x - player.x, a.position.y - player.y) - Math.hypot(b.position.x - player.x, b.position.y - player.y));
+      const guard = guards[0]; const dx = player.x - guard.position.x; const dy = player.y - guard.position.y; const dist = Math.hypot(dx, dy);
+      if (dist <= 6) { if (Date.now() >= guardCooldownUntilRef.current) { setTownsfolkDialogue(null); setDialogueTopic(null); setGuardEncounter((current) => current || { guardId: guard.id, guardName: guard.name, bounty: bounty.amount }); } return; }
+      if (dist > 38) return; const step = Math.min(1.25, dist - 4.5); if (step <= 0) return;
+      const nextGuard = { ...guard, position: { x: guard.position.x + dx / dist * step, y: guard.position.y + dy / dist * step }, moving: true, running: true, activity: 'Pursuing a wanted criminal', facing: Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' as const : 'left' as const) : (dy > 0 ? 'down' as const : 'up' as const) };
+      const next = townsfolkRef.current.map((npc) => npc.id === guard.id ? nextGuard : npc); townsfolkRef.current = next; setTownsfolk(next);
+    }, 750);
+    return () => window.clearInterval(timer);
+  }, [bounty.amount, inPrison, chunk.x, chunk.y]);
   useEffect(() => { cornStalksRef.current = cornStalks; }, [cornStalks]);
   useEffect(() => { targetGoatIdRef.current = targetGoatId; }, [targetGoatId]);
   useEffect(() => { targetMonsterIdRef.current = targetMonsterId; }, [targetMonsterId]);
@@ -6514,6 +6564,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 const stats = playerStatsRef.current;
                 const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
+                setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
+                if (hurt.deadUntilTick === undefined) recordTownspersonCrime(npc, 'assault');
                 const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
                 townsfolkRef.current = nextFolk;
                 setTownsfolk(nextFolk);
@@ -6610,6 +6662,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
                 const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult);
                 const hurt = damageNpc(targetNpc, damage, attackerPos, tick);
+                setDisposition((prev) => ({ ...prev, [targetNpc.id]: adjustDisposition(prev[targetNpc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
+                recordTownspersonCrime(targetNpc, hurt.deadUntilTick !== undefined ? 'murder' : 'assault');
+                if (hurt.deadUntilTick !== undefined) dropTownspersonBody(targetNpc);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === targetNpc.id ? hurt : n);
                 townsfolkRef.current = nextFolk;
                 setTownsfolk(nextFolk);
@@ -6755,6 +6810,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
                 const damage = playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
+                setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
+                recordTownspersonCrime(npc, hurt.deadUntilTick !== undefined ? 'murder' : 'assault');
+                if (hurt.deadUntilTick !== undefined) dropTownspersonBody(npc);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
                 townsfolkRef.current = nextFolk;
                 setTownsfolk(nextFolk);
@@ -6870,6 +6928,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 if (nearest.kind === 'townsfolk') {
                   const npc = townsfolkRef.current.find((n) => n.id === nearest!.id)!;
                   const hurt = damageNpc(npc, damage, attackerPos, tick);
+                  setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
+                  recordTownspersonCrime(npc, hurt.deadUntilTick !== undefined ? 'murder' : 'assault');
+                  if (hurt.deadUntilTick !== undefined) dropTownspersonBody(npc);
                   const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
                   townsfolkRef.current = nextFolk;
                   setTownsfolk(nextFolk);
@@ -7640,6 +7701,11 @@ if (active) {
   // dialogue window (topics, disposition, town standing). Talking warms them
   // up slightly, capped so quests remain the real way to win hearts.
   const talkToTownsfolk = (npc: Townsperson) => {
+    const currentTick = brainRef.current?.worldCore.getClock().tick ?? 0;
+    const currentNpc = townsfolkRef.current.find((candidate) => candidate.id === npc.id) ?? npc;
+    if (isNpcDead(currentNpc, currentTick)) { setTownsfolkDialogue(null); setDialogueTopic(null); setLogs((cur) => [{ text: `${npc.name} is dead and cannot answer.`, color: 'orange' }, ...cur].slice(0, 3)); return; }
+    const hasBeenAttacked = currentNpc.hp != null || currentNpc.fleeUntilTick != null;
+    npc = currentNpc;
     setNameplateNpc(npc.name);
     if (nameplateTimerRef.current !== null) window.clearTimeout(nameplateTimerRef.current);
     nameplateTimerRef.current = window.setTimeout(() => {
@@ -7648,11 +7714,14 @@ if (active) {
     }, 4000);
     setTownsfolkDialogue(npc);
     setDialogueTopic(null);
-    setDisposition((d) => ({ ...d, [npc.id]: adjustDisposition(d[npc.id] ?? defaultDisposition(), 1) }));
+    if (!hasBeenAttacked) setDisposition((d) => ({ ...d, [npc.id]: adjustDisposition(d[npc.id] ?? defaultDisposition(), 1) }));
+    // BUILD 728: attacked NPCs remember the assault and react coldly.
     // BUILD 368: the greeting remembers you — past conversations change it.
     const pastTalks = (npc.memories ?? []).filter((m) => m.event.startsWith('Talked with the traveler')).length;
     const role = npc.archetype === 'commoner' ? 'a resident of Mosslight' : `the town ${npc.archetype}`;
-    const greeting = pastTalks === 0
+    const greeting = hasBeenAttacked
+      ? `${npc.name} recoils from you: "I remember what you did. Stay back."`
+      : pastTalks === 0
       ? `${npc.name} turns to you: ${role}.`
       : pastTalks < 3
         ? `${npc.name} nods to you: "Back again, traveler."`
@@ -7672,6 +7741,8 @@ if (active) {
   };
 
   const chooseDialogueTopic = (npc: Townsperson, topic: DialogueTopicId) => {
+    const liveNpc = townsfolkRef.current.find((candidate) => candidate.id === npc.id); const tickNow = brainRef.current?.worldCore.getClock().tick ?? 0;
+    if (!liveNpc || isNpcDead(liveNpc, tickNow)) { setTownsfolkDialogue(null); setDialogueTopic(null); return; }
     if (topic === 'bye') {
       setTownsfolkDialogue(null);
       setDialogueTopic(null);
@@ -7714,6 +7785,9 @@ if (active) {
   };
   // BUILD 654: Free-text dialogue — recognize intent, route to existing topic backend.
   const sendDialogueMessage = (npc: Townsperson) => {
+    const liveNpc = townsfolkRef.current.find((candidate) => candidate.id === npc.id); const tickNow = brainRef.current?.worldCore.getClock().tick ?? 0;
+    if (!liveNpc || isNpcDead(liveNpc, tickNow)) { setTownsfolkDialogue(null); setDialogueTopic(null); setDialogueInput(''); setDialogueHistory([]); return; }
+    npc = liveNpc;
     const text = dialogueInput.trim();
     if (!text) return;
     setDialogueHistory((h) => [...h, { speaker: 'player', text }]);
@@ -9461,7 +9535,21 @@ if (active) {
               </div>
             );
           })()}
-          <div className="field-world-layer" style={isoFieldBeta ? { display: 'none' } : (gameZoom !== 1 ? (() => {
+          {guardEncounter && (
+  <div role="dialog" aria-modal="true" aria-labelledby="guard-encounter-title" data-testid="guard-encounter" style={{ position: 'absolute', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18, background: 'rgba(8, 12, 10, 0.72)' }}>
+    <div style={{ width: 'min(360px, 100%)', background: '#18251f', color: '#f5f3e8', border: '2px solid #c99b49', borderRadius: 12, padding: 20, boxShadow: '0 12px 40px rgba(0,0,0,.5)' }}>
+      <div style={{ fontSize: 12, letterSpacing: 2, color: '#f0c46b', fontWeight: 800 }}>MOSSLIGHT TOWN WATCH</div>
+      <h2 id="guard-encounter-title" style={{ margin: '8px 0', fontSize: 22 }}>{guardEncounter.guardName} steps in your path</h2>
+      <p style={{ lineHeight: 1.45 }}>“You are wanted in Mosslight Crossing. Your current bounty is {guardEncounter.bounty} gold. Come quietly, pay your fine, or try to run.”</p>
+      <div style={{ display: 'grid', gap: 8, marginTop: 16 }}>
+        <button type="button" data-testid="guard-flee" onClick={() => { guardCooldownUntilRef.current = Date.now() + 12000; setGuardEncounter(null); setLogs((cur) => [{ text: 'You break away from the town guard. The pursuit continues.', color: 'orange' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #8d9b8f', background: '#293a31', color: '#fff', fontWeight: 700 }}>🏃 Flee</button>
+        <button type="button" data-testid="guard-jail" onClick={() => { setGuardEncounter(null); onResolveBounty(); setTownsfolkDialogue(null); setDialogueTopic(null); setWantedMosslight(0); onRestorePrison(true, { foundShiv: false, talkedToPrisoner: false, helpedPrisoner: false, escapeRoute: null }); setLogs((cur) => [{ text: 'The guard arrests you. You are taken to the town jail; your bounty is cleared.', color: 'red' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #8d9b8f', background: '#293a31', color: '#fff', fontWeight: 700 }}>⛓ Go to jail</button>
+        <button type="button" data-testid="guard-pay-fine" disabled={inventoryRef.current.coins < guardEncounter.bounty} onClick={() => { const fine = guardEncounter.bounty; if (inventoryRef.current.coins < fine) return; onLoot({ coins: -fine } as GoatLoot); onResolveBounty(); setGuardEncounter(null); setWantedMosslight(0); onRestoreReputation({ ...reputation, guards: reputation.guards + 2, mosslight: reputation.mosslight + 1 }); setLogs((cur) => [{ text: `You paid the ${fine} gold fine. The guard lets you go.`, color: 'gold' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #c99b49', background: inventoryRef.current.coins < guardEncounter.bounty ? '#414741' : '#c99b49', color: inventoryRef.current.coins < guardEncounter.bounty ? '#a8b0aa' : '#1c211b', fontWeight: 800, opacity: inventoryRef.current.coins < guardEncounter.bounty ? 0.6 : 1 }}>💰 Pay fine ({guardEncounter.bounty}g){inventoryRef.current.coins < guardEncounter.bounty ? ' — not enough gold' : ''}</button>
+      </div>
+    </div>
+  </div>
+)}
+<div className="field-world-layer" style={isoFieldBeta ? { display: 'none' } : (gameZoom !== 1 ? (() => {
             // BUILD 327: zoom centers the player in the viewport — the layer
             // is scaled around the top-left, then translated so the player's
             // field position lands at 50%/50% of the frame.
@@ -9609,8 +9697,14 @@ if (active) {
                             setBodies(nextBodies);
                             // Add to inventory via the loot callback.
                             const loot: Record<string, number> = {};
-                            if (taken.gold > 0) loot.gold = taken.gold;
-                            if (taken.potions > 0) loot.potions = taken.potions;
+                            // Body fields map to the live inventory ledger.
+                            if (taken.gold > 0) loot.coins = taken.gold;
+                            if (taken.potions > 0) loot.healthPotion = taken.potions;
+                            // BodyLoot.items is the extension point for future NPC armor/weapons.
+                            for (const itemId of taken.items) {
+                              const generated = generateItem(new ItemRng(Date.now() ^ itemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current));
+                              onEquipmentChange((prev) => [...prev, { ...generated, name: itemId.replace(/[-_]/g, ' ') }]);
+                            }
                             onLoot(loot as GoatLoot);
                             setLogs((cur) => [{ text: `Looted ${body.npcName}'s body.`, color: 'gold' }, ...cur].slice(0, 3));
                             spawnCombatText('LOOTED', body.position, 'reward');
@@ -12241,7 +12335,7 @@ function Home() {
         <>
           <div className="game-layout">
             <GameCrashBoundary chunk={chunk}>
-            <GameField rpgConfig={{ look: equippedDagger ? { ...rpgPlayerLook, equipment: Array.from(new Set([...rpgPlayerLook.equipment, 'Dagger'])) } : rpgPlayerLook, forceIso: forceIsoField }} inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} mapOpen={mapOpen} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
+            <GameField rpgConfig={{ look: equippedDagger ? { ...rpgPlayerLook, equipment: Array.from(new Set([...rpgPlayerLook.equipment, 'Dagger'])) } : rpgPlayerLook, forceIso: forceIsoField }} inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} mapOpen={mapOpen} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} onResolveBounty={() => setBounty(emptyBounty())} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
             </GameCrashBoundary>
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
