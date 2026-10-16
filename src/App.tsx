@@ -4873,6 +4873,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const horseRef = useRef(horse);
   const horseIdleAnchorRef = useRef(initialHorseState.position);
   const gameFrameRef = useRef<HTMLDivElement>(null);
+  const playerElementRef = useRef<HTMLDivElement>(null);
   const areaFlashIdRef = useRef(0);
   const goatsRef = useRef(goats);
   const cornStalksRef = useRef<CornStalk[]>(cornStalks);
@@ -6446,7 +6447,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const playerAttack = playerAttackStateRef.current;
       if (playerAttack.active) {
         playerAttack.elapsed += elapsed * 1000;
-        if (!playerAttack.hitApplied && playerAttack.elapsed >= (playerAttack.ranged ? 100 : 220)) {
+        if (!playerAttack.hitApplied && playerAttack.elapsed >= (playerAttack.ranged ? 100 : 325)) {
           playerAttack.hitApplied = true;
           // BUILD 531: exactly-once damage per swing. Multiple historical
           // fallbacks (NPC-FIRST, targeted, candidates, fallback) can all
@@ -6578,7 +6579,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             const targetNpc = townsfolkRef.current.find((n) => n.id === targetedId);
             if (targetNpc && !targetNpc.indoors && !isNpcDead(targetNpc, tick)) {
               const dist = Math.hypot(targetNpc.position.x - attackerPos.x, targetNpc.position.y - attackerPos.y);
-              if (dist <= PLAYER_MELEE_REACH) {
+              if (dist <= PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS) {
                 swingDamageDealt = true;
                 const stats = playerStatsRef.current;
                 const critical = Math.random() < playerCriticalChanceForStats(stats);
@@ -6655,7 +6656,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
               if (isNpcDead(npc, tick)) return false;
               const dist = Math.hypot(npc.position.x - attackerPos.x, npc.position.y - attackerPos.y);
-              return dist <= PLAYER_MELEE_REACH;
+              return dist <= PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS;
             })
             .map((npc) => ({ ...npc, entityKind: 'townsfolk' as const }));
           // BUILD 445: field NPCs (adventurers, travelers) can also be attacked.
@@ -7164,14 +7165,25 @@ if (active) {
         if (resolved) {
           // The current continent is the tutorial world. Its ocean edge is reserved for the future boat route.
           positionRef.current = resolved.position;
-          if (!isoFieldBetaRef.current) {
-            setPosition(resolved.position);
-          } else {
-            const uiNow = performance.now();
-            if (uiNow - lastIsoPositionUiAtRef.current >= 33) {
-              lastIsoPositionUiAtRef.current = uiNow;
-              setPosition(resolved.position);
+          // Keep the 2D player visually smooth at display refresh without
+          // forcing the entire React game tree to render on every animation frame.
+          if (!isoFieldBetaRef.current && !mountedRef.current) {
+            const playerElement = playerElementRef.current;
+            if (playerElement) {
+              playerElement.style.left = gameZoom !== 1
+                ? playerScreenPct(resolved.position.x / FIELD_SIZE, gameZoom) + '%'
+                : fieldPct(resolved.position.x);
+              playerElement.style.top = gameZoom !== 1
+                ? playerScreenPct(resolved.position.y / FIELD_SIZE, gameZoom) + '%'
+                : fieldPct(resolved.position.y);
             }
+          }
+          // Refs/collision stay frame-accurate; publish React position at a
+          // bounded cadence so moving entities do not rerender the full tree 60x/sec.
+          const uiNow = performance.now();
+          if (uiNow - lastIsoPositionUiAtRef.current >= 33) {
+            lastIsoPositionUiAtRef.current = uiNow;
+            setPosition(resolved.position);
           }
           if (resolved.travelLabels.length > 0) {
             brainRef.current?.visitChunk(resolved.chunk, chunkRegion(resolved.chunk), resolved.travelLabels.join(' and '));
@@ -10642,7 +10654,7 @@ if (active) {
             return <button className="dungeon-descend-button" style={{ left: fieldPct((entrance.x + 16)), top: fieldPct(entrance.y) }} onClick={onEnterDungeon} aria-label={'Descend into ' + dungeon.name} data-testid="button-enter-field-dungeon">Descend</button>;
           })()}
           </div>
-          {!mounted && !isoFieldBeta && <div className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
+          {!mounted && !isoFieldBeta && <div ref={playerElementRef} className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
              data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: gameZoom !== 1 ? playerScreenPct(position.x / FIELD_SIZE, gameZoom) + '%' : fieldPct(position.x), top: gameZoom !== 1 ? playerScreenPct(position.y / FIELD_SIZE, gameZoom) + '%' : fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, ...(gameZoom !== 1 ? { transform: `translate(-50%, -50%) scale(${gameZoom})` } : {}) } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
