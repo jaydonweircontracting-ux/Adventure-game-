@@ -19,7 +19,7 @@
 
 import { PerlinNoise } from './noise';
 import { DEFAULT_WORLD_SEED } from './worldCore';
-import { LANDMARK_LIST } from './landmarks';
+import { SETTLEMENT_LIST } from './landmarks';
 import { hillValueAt } from './elevation';
 
 /** Field units per chunk side (matches App FIELD_SIZE). */
@@ -243,32 +243,38 @@ export interface SettlementInfluence {
   distance: number;
 }
 
-const SETTLEMENT_KINDS = new Set(['town', 'village', 'hamlet', 'city']);
-
 /** Influence radius in field units (~2.5 chunks). */
 export const SETTLEMENT_INFLUENCE_RADIUS = 700;
 
+/**
+ * Query settlement influence without allocating intermediate objects or
+ * evaluating square roots for every candidate. This function is called from
+ * water/river sampling, so keep the inner scan small and allocation-free.
+ * SETTLEMENT_LIST is prefiltered once by landmarks.ts; ruins and caves are
+ * intentionally excluded from settlement influence.
+ */
 export function townInfluenceAt(wx: number, wy: number): SettlementInfluence {
-  let best: { x: number; y: number } | null = null;
-  let bestDist = Infinity;
-  for (const lm of LANDMARK_LIST) {
-    if (!SETTLEMENT_KINDS.has(lm.kind)) continue;
-    const lx = (lm.chunk.x + 0.5) * LANDSCAPE_FIELD_SIZE;
-    const ly = (lm.chunk.y + 0.5) * LANDSCAPE_FIELD_SIZE;
-    const d = Math.hypot(wx - lx, wy - ly);
-    if (d < bestDist) {
-      bestDist = d;
-      best = { x: lm.chunk.x, y: lm.chunk.y };
+  let bestX = 0;
+  let bestY = 0;
+  let bestDistanceSquared = Infinity;
+  for (const settlement of SETTLEMENT_LIST) {
+    const dx = wx - (settlement.chunk.x + 0.5) * LANDSCAPE_FIELD_SIZE;
+    const dy = wy - (settlement.chunk.y + 0.5) * LANDSCAPE_FIELD_SIZE;
+    const distanceSquared = dx * dx + dy * dy;
+    if (distanceSquared < bestDistanceSquared) {
+      bestDistanceSquared = distanceSquared;
+      bestX = settlement.chunk.x;
+      bestY = settlement.chunk.y;
     }
   }
-  if (!best) return { influence: 0, nearestChunk: null, distance: Infinity };
-  const influence = Math.max(
-    0,
-    1 - bestDist / SETTLEMENT_INFLUENCE_RADIUS,
-  );
+  if (bestDistanceSquared === Infinity) {
+    return { influence: 0, nearestChunk: null, distance: Infinity };
+  }
+  const bestDist = Math.sqrt(bestDistanceSquared);
+  const influence = Math.max(0, 1 - bestDist / SETTLEMENT_INFLUENCE_RADIUS);
   // Smoothstep for a gentle gradient instead of a linear cone.
   const s = influence * influence * (3 - 2 * influence);
-  return { influence: s, nearestChunk: best, distance: bestDist };
+  return { influence: s, nearestChunk: { x: bestX, y: bestY }, distance: bestDist };
 }
 
 /** Land-use band derived from settlement influence (for farms/pasture/etc). */
