@@ -8224,6 +8224,7 @@ if (active) {
           <IsoInteriorView
             roomId={interior.id}
             roomType={interior.roomType as IsoRoomType}
+            playerLook={rpgConfig.look}
             npcs={[
               ...interiorTownsfolk.map(({ npc, xPct, yPct }): IsoInteriorNpc => ({
                 id: npc.id,
