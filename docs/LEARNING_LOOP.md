@@ -474,3 +474,20 @@ not just assertions.
 **Result:** Source patch committed; not yet verified live.
 
 **Lesson:** Anchor fixed landmarks to authored world landmarks rather than the changing town centroid; depth-sort the prop with other world drawables and keep collision behavior unchanged unless explicitly designed.
+
+
+## 2026-10-16 — Visible Mineable Starting-House Stone Deposit (BUILD 734)
+
+**Task:** Correct the unseen starting-house boulder and connect it to mining.
+
+**Root cause:** BUILD 733 used a guessed fixed field coordinate as a visual-only drawable. It was not anchored to the authored house rect and was not part of the ore-node list, so melee mining could never target it.
+
+**Fix:** Derive a stable deposit position from the tutorial-house rect; include it in `fieldOresFor` with a stable ID and 12-stone yield; render that node as a large boulder; use the existing melee mining/depletion pipeline; add stone to player inventory and loot pickup.
+
+**Files:** `src/App.tsx`, `src/game/iso/IsoFieldView.tsx`, `scripts/prepare-build-entry.cjs`, `docs/TASK_QUEUE.md`.
+
+**Tests:** Not run in this connector-only session. Typecheck, build, CI, deployment, and real-game visual/mining verification are pending.
+
+**NPC economy:** Autonomous mining, hauling, stockpiles, and per-settlement ledgers are tracked as TASK-017; not implemented by this patch.
+
+**Lesson:** A mineable world object must be one authoritative resource node shared by rendering, hit-testing, depletion, and rewards.
