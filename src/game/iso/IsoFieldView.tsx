@@ -631,7 +631,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       raf = requestAnimationFrame(frame);
       const nowMs = performance.now();
       const frameStartedAt = nowMs;
-      const dt = Math.min(100, nowMs - last); last = nowMs;
+      const dt = Math.min(50, Math.max(0, nowMs - last)); last = nowMs;
       const zm = zoomRef.current;
       const wpx = canvas.clientWidth || 1, hpx = canvas.clientHeight || 1;
       // Keep draw resolution aligned with the capped canvas backing store.
@@ -1568,7 +1568,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         drawPerson(drawables, ix, iy, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id,
           // BUILD 699: children are smaller (70% scale).
           // BUILD 704: fleeing NPCs run (explicit), everyone else walks.
-          npc.archetype === 'child' ? 36 : undefined, npc.running === true, npc.hp <= 0);
+          npc.archetype === 'child' ? 36 : undefined, npc.running === true, npc.hp != null && npc.hp <= 0);
 
         // BUILD 722: optional, unobtrusive ambient chatter above each visible NPC.
         if (live.npcSpeechEnabled) {
