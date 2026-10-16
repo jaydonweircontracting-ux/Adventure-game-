@@ -1,6 +1,6 @@
 # Current Project State
 
-**Last updated:** 2026-10-12 (BUILD 634)
+**Last updated:** 2026-10-16 (BUILD 725 proposed)
 **Latest verified build:** 633 (66eec15) — confirmed live via curl
 **Git HEAD:** 66eec15 (main)
 
@@ -61,4 +61,5 @@ npm run build                # production build
 - docs/index.html points at a fixed old asset pair and docs/version.json is absent. The exact production Pages source must be confirmed; repository brain rules require checking the deployed artifact, not assuming src/ changes are live.
 - Plan: restore authoritative source-build comparison, retain 10-second polling and orange Update action, add a manual Check now control, version the build, run CI/typecheck/build/regressions, merge only after checks pass, and verify the deployed game before claiming completion.
 - User also expects a fresh playable link with every update; include the production play URL with cache busting and label deployment status honestly.
-- Status: diagnosis recorded; implementation and deployment verification pending.
+- Implemented on branch `fix/live-update-version-checker`: compare the running build to both the deployed manifest and the latest `main` build marker; add a manual Check now action; keep orange available/in-progress states and explicit errors; advance proposed build marker to 725; add regression tests.
+- Status: implementation committed to branch; CI, merge, and live artifact verification pending.
