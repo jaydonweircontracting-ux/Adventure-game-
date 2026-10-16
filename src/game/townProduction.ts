@@ -1,9 +1,9 @@
-// Town production: NPC work → real resources (BUILD 661).
+// Town production: NPC work â real resources (BUILD 661).
 // Connects individual NPC schedules to settlement storage.
 // Farmers tending crops produce grain; the amount is deterministic,
 // bounded, and tied to actual work activity (not just schedule existence).
 //
-// Pure — no React, no App dependency. Uses existing:
+// Pure â no React, no App dependency. Uses existing:
 // - townsfolkTarget() for activity resolution
 // - CivilizationState settlement storage
 // - townsfolkHash for deterministic variation
@@ -35,6 +35,11 @@ export function applyNPCProduction(
   const mosslight = civ.settlements.find((s) => s.id === 'mosslight');
   if (!mosslight) return civ;
 
+  const lastNpcProductionDay = typeof mosslight.lastNpcProductionDay === 'number' && Number.isFinite(mosslight.lastNpcProductionDay)
+    ? Math.floor(mosslight.lastNpcProductionDay)
+    : 0;
+  if (lastNpcProductionDay >= day) return civ;
+
   // Count farmers who would be working today.
   // We check their archetype (not current activity) because this runs
   // in the daily tick, not during the work hours themselves.
@@ -43,13 +48,16 @@ export function applyNPCProduction(
   for (const npc of townsfolk) {
     if (npc.archetype === 'farmer') {
       // Deterministic: farmer works unless hash says they're sick/off.
-      // 90% work rate — occasionally a farmer can't work.
+      // 90% work rate â occasionally a farmer can't work.
       const worksToday = townsfolkHash(npc.seed, day * 7919 + 6601) > 0.1;
       if (worksToday) workingFarmers++;
     }
   }
 
-  if (workingFarmers === 0) return civ;
+  if (workingFarmers === 0) {
+    mosslight.lastNpcProductionDay = day;
+    return civ;
+  }
 
   // Each farmer produces 2-4 grain per day (deterministic variation).
   let totalGrain = 0;
@@ -66,6 +74,7 @@ export function applyNPCProduction(
   const cap = 50 + mosslight.population;
   const current = mosslight.storage['grain'] ?? 0;
   mosslight.storage['grain'] = Math.round(Math.min(cap, current + totalGrain) * 10) / 10;
+  mosslight.lastNpcProductionDay = day;
 
   return civ;
 }
