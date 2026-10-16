@@ -39,5 +39,7 @@ jobs:
         run: npm run test:procedural-world-art
       - name: Town production regression test
         run: npm run test:town-production
+      - name: Village food-needs regression test
+        run: npm run test:village-food-needs
       - name: Production build
         run: npm run build
