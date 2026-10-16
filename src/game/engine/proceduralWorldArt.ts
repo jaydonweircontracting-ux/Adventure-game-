@@ -202,8 +202,19 @@ export function drawBuildingGroundDress(
   const porchW = Math.max(10, Math.min(24, width * 0.15));
 
   ctx.save();
-  // Small wooden threshold on the ground plane, not painted over the facade.
-  ctx.fillStyle = 'rgba(76, 55, 34, 0.72)';
+  // Soft contact shadow separates the building from the terrain without
+  // drawing over the authored facade or adding expensive per-frame effects.
+  ctx.fillStyle = 'rgba(35, 30, 24, 0.14)';
+  ctx.beginPath();
+  ctx.moveTo(doorX - porchW * 0.72, baseY + 1);
+  ctx.lineTo(doorX, baseY + 6 * scale);
+  ctx.lineTo(doorX + porchW * 0.72, baseY + 1);
+  ctx.lineTo(doorX, baseY - 6 * scale);
+  ctx.closePath();
+  ctx.fill();
+
+  // Small timber threshold on the ground plane, not painted over the facade.
+  ctx.fillStyle = '#59402b';
   ctx.beginPath();
   ctx.moveTo(doorX - porchW * 0.5, baseY - 1);
   ctx.lineTo(doorX, baseY + 4 * scale);
@@ -211,9 +222,21 @@ export function drawBuildingGroundDress(
   ctx.lineTo(doorX, baseY - 5 * scale);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = 'rgba(211, 178, 119, 0.62)';
+  ctx.strokeStyle = 'rgba(224, 193, 139, 0.82)';
   ctx.lineWidth = Math.max(0.8, scale * 0.8);
   ctx.stroke();
+
+  // Three offset flagstones make the entrance legible from the isometric
+  // camera. Their positions and colors are pinned to world coordinates.
+  for (let step = 0; step < 3; step++) {
+    const jitter = ((h >>> (step * 3)) % 5) - 2;
+    const stepX = doorX + jitter * scale;
+    const stepY = baseY + (8 + step * 6) * scale;
+    ctx.fillStyle = step === 1 ? '#9a8a70' : '#81745f';
+    ctx.fillRect(Math.round(stepX - 3.5 * scale), Math.round(stepY), 7 * scale, 2.5 * scale);
+    ctx.fillStyle = 'rgba(226, 211, 177, 0.55)';
+    ctx.fillRect(Math.round(stepX - 3 * scale), Math.round(stepY), 5 * scale, Math.max(1, scale * 0.65));
+  }
 
   // Two restrained garden pots sit beside the entrance at ground level.
   for (const side of [-1, 1]) {
