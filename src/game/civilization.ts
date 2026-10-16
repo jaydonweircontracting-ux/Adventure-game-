@@ -109,6 +109,47 @@ export function recomputePrices(settlement: Settlement): Record<Resource, number
 }
 
 /** Recompute supply/demand records from production/consumption/storage. */
+/** Deliver real cargo into a settlement without exceeding its storage capacity. */
+export function deliverCaravanCargo(
+  destination: Settlement,
+  inventory: Partial<Record<Resource, number>>,
+): void {
+  const cap = 50 + Math.max(0, destination.population || 0);
+  for (const resource of RESOURCES) {
+    const amount = inventory[resource] ?? 0;
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    const rawCurrent = destination.storage[resource];
+    const current = Math.max(0, Number.isFinite(rawCurrent) ? rawCurrent : 0);
+    destination.storage[resource] = Math.round(Math.min(cap, current + amount) * 10) / 10;
+  }
+  recomputeSupplyDemand(destination);
+}
+
+/**
+ * Load a return caravan from actual stockpiles. Cargo is withdrawn immediately,
+ * so trade cannot duplicate resources. Amounts are deterministic for a seed/day.
+ */
+export function loadCaravanCargo(
+  origin: Settlement,
+  goods: Resource[],
+  worldSeed: number,
+  day: number,
+): Partial<Record<Resource, number>> {
+  const inventory: Partial<Record<Resource, number>> = {};
+  const normalizedDay = Math.max(1, Math.floor(day));
+  for (const resource of [...new Set(goods)]) {
+    const rawCurrent = origin.storage[resource];
+    const current = Math.max(0, Number.isFinite(rawCurrent) ? rawCurrent : 0);
+    const desired = 20 + Math.floor(townsfolkHash(worldSeed >>> 0, normalizedDay * 1009 + resource.length * 37) * 60);
+    const amount = Math.round(Math.min(current, desired) * 10) / 10;
+    if (amount <= 0) continue;
+    inventory[resource] = amount;
+    origin.storage[resource] = Math.round((current - amount) * 10) / 10;
+  }
+  recomputeSupplyDemand(origin);
+  return inventory;
+}
+
 export function recomputeSupplyDemand(settlement: Settlement): void {
   for (const resource of RESOURCES) {
     settlement.supply[resource] = Math.round(((settlement.production[resource] || 0) + (settlement.storage[resource] || 0) / 20) * 100) / 100;
@@ -1402,15 +1443,9 @@ function processArrivals(civ: CivilizationState, dayFloat: number, rng: SeededRn
     const route = civ.routes.find((r) => r.id === caravan.routeId);
     const destination = settlementById(civ, caravan.destinationId);
     const origin = settlementById(civ, caravan.originId);
-    // Deliver the goods into the destination's stockpiles.
-    if (destination) {
-      for (const resource of RESOURCES) {
-        const amount = caravan.inventory[resource] || 0;
-        if (amount > 0) destination.storage[resource] = Math.round((destination.storage[resource] + amount) * 10) / 10;
-      }
-      recomputeSupplyDemand(destination);
-    }
     const day = Math.floor(dayFloat) + 1;
+    // Deliver incoming cargo into real stockpiles, respecting storage limits.
+    if (destination) deliverCaravanCargo(destination, caravan.inventory);
     civ.events.push({
       id: `civevt-caravan-${caravan.id}`,
       day,
@@ -1419,14 +1454,12 @@ function processArrivals(civ: CivilizationState, dayFloat: number, rng: SeededRn
       description: `${caravan.merchant}'s caravan arrived in ${destination?.name ?? caravan.destinationId} from ${origin?.name ?? caravan.originId}.`,
       effects: {},
     });
-    // Deterministic return trip: same merchant heads back with new wares.
+    // Return cargo must come from the departing settlement's actual stock.
+    // Withdraw it now so the same units cannot remain in storage and on a cart.
     const travelDays = route ? travelDaysFor(route.waypoints, CARAVAN_UNITS_PER_DAY) : caravan.travelDays;
-    const inventory: Partial<Record<Resource, number>> = {};
-    if (route) {
-      for (const good of route.goods) {
-        inventory[good] = Math.round(20 + rng.nextFloat() * 60);
-      }
-    }
+    const inventory = destination && route
+      ? loadCaravanCargo(destination, route.goods, civ.worldSeed, day)
+      : {};
     civ.caravans.push({
       id: `${caravan.id}-return`,
       routeId: caravan.routeId,
