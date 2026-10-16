@@ -361,8 +361,10 @@ const lastCharacterSprite = new WeakMap<CharacterAnimator, {
   face: Face8;
   frame: number;
 }>();
-// Keep each equipped layer visible while the next animation frame loads.
-// This avoids a weapon blinking out on walk/run cycles with asynchronous PNGs.
+// Keep each equipped layer visible across animation transitions as well as frame loads.
+// The old cache key included drawAnim, so switching Walk -> Attack created an empty
+// cache and made the dagger disappear until an Attack PNG loaded (or permanently if
+// that equipment animation was missing). Cache the last-good layer by item + facing.
 const lastEquipmentSprites = new WeakMap<CharacterAnimator, Map<string, HTMLImageElement>>();
 
 /**
@@ -444,7 +446,7 @@ export function drawIsoCharacter(o: DrawCharacterOptions): void {
       lastEquipmentSprites.set(o.animator, equipmentCache);
     }
     for (const eq of L.equipment) {
-      const cacheKey = `${eq}:${drawAnim}:${drawFace}`;
+      const cacheKey = `${eq}:${drawFace}`;
       const loadedLayer = rpgSprite(eq, drawAnim, drawFace, spriteFrame);
       if (loadedLayer) equipmentCache.set(cacheKey, loadedLayer);
       const layer = loadedLayer ?? equipmentCache.get(cacheKey);
