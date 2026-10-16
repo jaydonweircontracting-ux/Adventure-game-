@@ -416,6 +416,23 @@ export function riverAt(wx: number, wy: number): WaterSample {
   return depth <= 0.01 ? DRY : { kind: 'river', depth };
 }
 
+// Bounded LRU for deterministic per-chunk lake layouts. waterAt is queried
+// repeatedly by movement and render paths; without this cache each sample
+// rebuilds the same neighboring chunk lakes. Cache entries are seed-scoped
+// and immutable by convention, and eviction bounds memory during exploration.
+const LAKE_LAYOUT_CACHE_LIMIT = 512;
+const lakeLayoutCache = new Map<string, Lake[]>();
+
+function rememberLakeLayout(key: string, lakes: Lake[]): Lake[] {
+  lakeLayoutCache.delete(key);
+  lakeLayoutCache.set(key, lakes);
+  if (lakeLayoutCache.size > LAKE_LAYOUT_CACHE_LIMIT) {
+    const oldest = lakeLayoutCache.keys().next().value;
+    if (oldest !== undefined) lakeLayoutCache.delete(oldest);
+  }
+  return lakes;
+}
+
 export interface Lake {
   /** World-coordinate center. */
   x: number;
@@ -434,11 +451,19 @@ export function lakesForChunk(
   cy: number,
   worldSeed: number = DEFAULT_WORLD_SEED,
 ): Lake[] {
+  const cacheKey = `${worldSeed >>> 0}:${cx}:${cy}`;
+  const cached = lakeLayoutCache.get(cacheKey);
+  if (cached) {
+    // Refresh recency without changing the deterministic layout.
+    lakeLayoutCache.delete(cacheKey);
+    lakeLayoutCache.set(cacheKey, cached);
+    return cached;
+  }
   const wx = (cx + 0.5) * LANDSCAPE_FIELD_SIZE;
   const wy = (cy + 0.5) * LANDSCAPE_FIELD_SIZE;
-  if (moistureAt(wx, wy) < 0.78) return [];
-  if (macroLandformAt(wx, wy) > 0.38) return [];
-  if (townInfluenceAt(wx, wy).influence > 0.35) return [];
+  if (moistureAt(wx, wy) < 0.78) return rememberLakeLayout(cacheKey, []);
+  if (macroLandformAt(wx, wy) > 0.38) return rememberLakeLayout(cacheKey, []);
+  if (townInfluenceAt(wx, wy).influence > 0.35) return rememberLakeLayout(cacheKey, []);
   const rng = landscapeSeed(worldSeed, cx, cy, 'water');
   const lakes: Lake[] = [];
   const count = rng() < 0.35 ? 2 : 1;
@@ -451,7 +476,7 @@ export function lakesForChunk(
     const r = 20 + rng() * 40;
     lakes.push({ x: gx, y: gy, r });
   }
-  return lakes;
+  return rememberLakeLayout(cacheKey, lakes);
 }
 
 function lakeDepthAt(wx: number, wy: number, lake: Lake): number {
