@@ -459,3 +459,18 @@ not just assertions.
 **Regression:** Pending.
 
 **Lesson:** Death behavior must be guarded in the presentation layer as well as interaction handlers; otherwise stale or transitioning entity state can leave living-only UI attached to a corpse.
+
+
+## 2026-10-16 — Starting-house Stone Deposit (BUILD 733)
+
+**Task:** Place a large stone boulder behind the starting house in Mosslight Crossing.
+
+**Implementation:** Added a depth-sorted procedural boulder at a fixed anchor just behind the authored tutorial-house exterior position in chunk (4, 7). Kept it visual-only to avoid changing movement or collision without a stone-mining interaction design.
+
+**Files:** `src/game/iso/IsoFieldView.tsx`, `src/App.tsx`, `scripts/prepare-build-entry.cjs`.
+
+**Tests:** Not run in this connector-only session. CI/deployment and in-game visual verification are pending.
+
+**Result:** Source patch committed; not yet verified live.
+
+**Lesson:** Anchor fixed landmarks to authored world landmarks rather than the changing town centroid; depth-sort the prop with other world drawables and keep collision behavior unchanged unless explicitly designed.
