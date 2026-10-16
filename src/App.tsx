@@ -133,6 +133,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '732': 'Prevent dead NPCs from showing ambient speech or talk prompts; speech resumes after respawn',
   '731': 'Show lootable NPC corpses in isometric view and allow tap-to-loot alongside the existing 2D body interaction',
   '730': 'Lock movement and combat while the wanted-guard arrest dialogue is open; retain NPC death, loot, disposition and guard choices',
   '729': 'NPC death closes dialogue, attacks change disposition, corpses loot correctly, and wanted guards pursue with flee/jail/fine choices',
