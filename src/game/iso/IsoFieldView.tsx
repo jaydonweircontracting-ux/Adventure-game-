@@ -1764,7 +1764,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
                 // whole bounding box is gone.
               }
               // aggro marker
-              if (goat.disposition === 'aggressive') {
+              if (goat.disposition === 'aggressive' && kind !== 'deer') {
                 g.fillStyle = '#ff4444'; g.font = `bold ${Math.max(10, s * 0.4)}px sans-serif`;
                 g.textAlign = 'center'; g.fillText('!', sx, sy - dh - 4);
               }
