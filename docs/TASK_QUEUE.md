@@ -154,3 +154,11 @@
 - **Files:** `src/App.tsx`, `src/game/lootableBodies.ts`, `src/game/bounty.ts`, `src/game/crime.ts`, `docs/LEARNING_LOOP_2026-10-16.md`
 - **Checkpoint:** 2026-10-16 — BUILD 729 committed. Guard prompt and code paths added; local typecheck, browser tests, CI, and live deployment have not yet been verified for this commit.
 - **Acceptance:** Typecheck/build pass; real-game tests confirm dialogue closes on death, attack lowers disposition, corpse gold/potions transfer correctly, witnessed assault/murder creates bounty, guard approaches, flee moves player away, jail enters prison, and fine consumes coins/clears bounty.
+
+### TASK-014: Lock wanted-guard dialogue controls
+- **Status:** `in_progress`
+- **Priority:** P1
+- **Objective:** Ensure player movement, attacks, and world interactions pause while the wanted-guard decision prompt is open.
+- **Files:** `src/App.tsx`
+- **Checkpoint:** BUILD 730 adds the arrest prompt to the shared input-lock conditions so keyboard/touch movement and attack/interact paths cannot continue behind the modal.
+- **Verification:** Pending CI, typecheck, production build, and real-game Playwright checks; do not mark done until evidence is available.
