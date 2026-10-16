@@ -84,7 +84,7 @@
     {
       "id": "ISSUE-007",
       "title": "Live update checker does not reliably detect latest source build",
-      "description": "The checker relied on deployed version.json and a BUILD N commit-message pattern. Source markers were inconsistent (source manifest 707, root index 712, source marker later 725), and commits without the expected message format could be incorrectly treated as current. BUILD 725 restored orange checking/current status and reports stale metadata; BUILD 726 adds authoritative source marker comparison and manual refresh.",
+      "description": "The checker relied on deployed version.json and a BUILD N commit-message pattern. Source markers were inconsistent (source manifest 707, root index 712, source marker later 725), and commits without the expected message format could be incorrectly treated as current. BUILD 725 restored orange checking/current status and reports stale metadata; BUILD 726 adds authoritative source marker comparison and manual refresh. BUILD 726 also synchronizes the tracked root HTML marker and public manifest so development and production agree.",
       "firstBuild": "725",
       "status": "in_progress",
       "severity": "high",
@@ -93,7 +93,8 @@
         "src/game/updateVersion.ts",
         "scripts/prepare-build-entry.cjs",
         "public/version.json",
-        "tests/update-version.test.ts"
+        "tests/update-version.test.ts",
+        "index.html"
       ],
       "verification": "BUILD 726 CI and deployed artifact verification pending."
     }
