@@ -78,7 +78,7 @@ drawBuildingRenovation(houseB.ctx, 100, 200, 120, 90, 24, 71);
 assert.deepEqual(houseA.calls, houseB.calls, 'building facade details must remain stable across redraws');
 assert.ok(houseA.calls.length > 40, 'building renovation should draw a substantial architectural detail pass');
 assert.equal(houseA.calls[0], 'save');
-assert.equal(houseA.calls.at(-1), 'restore');
+assert.equal(houseA.calls[houseA.calls.length - 1], 'restore');
 const emptyHouse = buildingContext();
 drawBuildingRenovation(emptyHouse.ctx, 100, 200, 0, 0, 24, 71);
 assert.equal(emptyHouse.calls.length, 0, 'invalid building dimensions should be ignored safely');
