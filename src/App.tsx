@@ -133,7 +133,8 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
-  '729': 'NPC death closes dialogue, attacks change disposition, corpses loot correctly, and wanted guards pursue with flee/jail/fine choices',
+  '730': 'Lock movement and combat while the wanted-guard arrest dialogue is open; retain NPC death, loot, disposition and guard choices',
+  '729': 'NPC death closes dialogue, attacks change disposition, corpses loot correctly, and wanted guards pursue with flee/jail/fine choices'
   '728': 'Compare live, deployed, and latest source versions; add manual real-time update checks',
   '727': 'Fix dagger/equipment layer disappearing when switching into attack animation; preserve last valid weapon sprite across animation states',
   '726': 'Remove static CSS border and outline artifacts around house sprites while preserving building art and gameplay',
@@ -5572,12 +5573,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   useEffect(() => { interiorPositionRef.current = interiorPosition; }, [interiorPosition]);
   useEffect(() => { simulatedAdventurersRef.current = simulatedAdventurers; }, [simulatedAdventurers]);
   useEffect(() => {
-    if (inputLocked || optionsOpen) {
+    if (inputLocked || optionsOpen || guardEncounter) {
       keysRef.current = {};
       clearTouchHolds(touchHoldsRef.current);
       setMoving(false);
     }
-  }, [inputLocked, optionsOpen]);
+  }, [inputLocked, optionsOpen, guardEncounter]);
 
 
   // Town NPCs amble smoothly toward nearby waypoints instead of teleporting
@@ -6266,7 +6267,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const onKeyDown = (event: KeyboardEvent) => {
       // BUILD 667: Don't steal keys while typing in a text field.
       if (isTextInputActive(event)) return;
-      if (inputLocked || optionsOpen || waitingRef.current) return;
+      if (inputLocked || optionsOpen || guardEncounter || waitingRef.current) return;
       if (event.code === 'Space' || event.code === 'KeyF') { event.preventDefault(); attackGoat(); return; }
       // BUILD 704: Shift hold-to-run (works alongside the touch toggle).
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') { shiftHeldRef.current = true; return; }
@@ -6360,8 +6361,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const heldDown = keysRef.current.down === true || isTouchHeld(touchHoldsRef.current, 'down');
       const heldUp = keysRef.current.up === true || isTouchHeld(touchHoldsRef.current, 'up');
       const input = {
-        x: inputLocked || optionsOpen || waitingRef.current || collisionDebugRef.current ? 0 : (heldRight ? 1 : 0) - (heldLeft ? 1 : 0),
-        y: inputLocked || optionsOpen || waitingRef.current || collisionDebugRef.current ? 0 : (heldDown ? 1 : 0) - (heldUp ? 1 : 0),
+        x: inputLocked || optionsOpen || guardEncounter || waitingRef.current || collisionDebugRef.current ? 0 : (heldRight ? 1 : 0) - (heldLeft ? 1 : 0),
+        y: inputLocked || optionsOpen || guardEncounter || waitingRef.current || collisionDebugRef.current ? 0 : (heldDown ? 1 : 0) - (heldUp ? 1 : 0),
       };
       // BUILD 366: tap-to-move steering. Manual input always wins and cancels
       // an in-flight tap target. Otherwise steer toward the tap target using
@@ -7357,7 +7358,7 @@ if (active) {
 
   // BUILD 326: tap a cellar rat to swing at it (mirrors the field monster tap).
   const strikeCellarRat = (ratId: number) => {
-    if (interiorRef.current?.roomType !== 'cellar' || inputLocked || optionsOpen || waitingRef.current || playerAttackStateRef.current.active) return;
+    if (interiorRef.current?.roomType !== 'cellar' || inputLocked || optionsOpen || guardEncounter || waitingRef.current || playerAttackStateRef.current.active) return;
     const rat = cellarRatsRef.current.find((r) => r.id === ratId && r.hp > 0);
     if (!rat) return;
     // BUILD 571: In iso mode, check tile adjacency. 1 tile = 8.33 units in
@@ -7564,7 +7565,7 @@ if (active) {
   const touchIdentifierOf = (event: TouchEvent<HTMLButtonElement>): number | undefined =>
     event.changedTouches.length > 0 ? event.changedTouches[0].identifier : undefined;
   const pressDirection = (direction: Direction, touchId?: number) => {
-    if (inputLocked || optionsOpen || waitingRef.current) return;
+    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current) return;
     if (touchId === undefined) keysRef.current[direction] = true;
     else pressTouchHold(touchHoldsRef.current, direction, touchId);
     setMoving(true);
@@ -7575,7 +7576,7 @@ if (active) {
   // a finger is down switches direction without lifting.
   const slideToDirection = (direction: Direction) => {
     if (!dpadActiveRef.current) return;
-    if (inputLocked || optionsOpen || waitingRef.current) return;
+    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current) return;
     pressTouchHold(touchHoldsRef.current, direction, 1);
     setMoving(true);
   };
@@ -9689,7 +9690,7 @@ if (active) {
                           style={{ left: fieldPct(body.position.x), top: fieldPct(body.position.y) }}
                           aria-label={'Loot ' + body.npcName + "'s body"}
                           onClick={() => {
-                            if (inputLocked || optionsOpen || waitingRef.current) return;
+                            if (inputLocked || optionsOpen || guardEncounter || waitingRef.current) return;
                             // Open loot UI: transfer loot to inventory via onLoot.
                             const { loot: taken, updatedBody } = lootBody(body);
                             const nextBodies = bodiesRef.current.map((x) => x.id === body.id ? updatedBody : x);
@@ -9727,7 +9728,7 @@ if (active) {
                 aria-pressed={targetGoatId === goat.id}
                 data-testid={'button-target-goat-' + goat.id}
                 onClick={() => {
-                  if (inputLocked || optionsOpen || waitingRef.current || playerAttackStateRef.current.active) return;
+                  if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || playerAttackStateRef.current.active) return;
                   // Tapping the already-targeted goat clears the target.
                   if (targetGoatIdRef.current === goat.id) {
                     targetGoatIdRef.current = null;
@@ -9778,7 +9779,7 @@ if (active) {
                 aria-disabled={dead}
                 data-testid={'button-target-monster-' + monster.id}
                 onClick={dead ? undefined : () => {
-                  if (inputLocked || optionsOpen || waitingRef.current || playerAttackStateRef.current.active) return;
+                  if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || playerAttackStateRef.current.active) return;
                   if (targetMonsterIdRef.current === monster.id) {
                     targetMonsterIdRef.current = null;
                     setTargetMonsterId(null);
