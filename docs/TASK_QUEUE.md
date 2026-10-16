@@ -136,3 +136,12 @@
 - **Checkpoint:** 2026-10-11 — 4/4 pass. Found "🚪 Exit" button in 1 attempt (1.0s). Strategies: UI buttons → canvas clicks → exploration fallback. Proves discoverability without cheating.
 - **Evidence:** discoverability.mjs 4/4, discoverability-interior.png
 - **Commit:** (BUILD 542)
+
+### TASK-013: Restore authoritative live update checker
+- **Status:** `in_progress`
+- **Priority:** P1
+- **Objective:** Ensure the main menu reliably shows orange update/deploy status, polls every 10 seconds, and never falsely claims the running build is current.
+- **Files:** `src/App.tsx`, `src/game/updateVersion.ts`, `scripts/prepare-build-entry.cjs`, `tests/update-version.test.ts`
+- **Checkpoint:** 2026-10-16 — source version marker, deployed manifest, and commit-message-based detection were inconsistent. Added authoritative source marker comparison, manual Check now, visible checking/error states, cache-busted update reload, and regression tests.
+- **Acceptance:** CI passes; deployed `version.json` and running build marker match after release; update banner is verified on the live menu.
+- **Evidence:** Pending PR CI and live Pages verification.
