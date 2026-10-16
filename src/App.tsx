@@ -97,7 +97,7 @@ import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, resolveMonsterS
 import { probeMonsterSheets, isMonsterSheetFailed, onMonsterSheetFailure } from './game/monsterSprites/sheetProbe';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
-import { isInMeleeArc, traceLineBlocked, PLAYER_MELEE_REACH } from '@/game/combat';
+import { isInMeleeArc, traceLineBlocked, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS } from '@/game/combat';
 import { renderGroundDetail, type GroundDetailSpec, type GroundHills } from '@/game/groundDetail';
 // BUILD 355: elevation hills/cliffs (CraftPix island kit tiles).
 import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type ElevContext } from '@/game/elevation';
@@ -6465,7 +6465,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const attackerPos = positionRef.current;
               const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
               let nearestNpc: Townsperson | null = null;
-              let nearestDist = PLAYER_MELEE_REACH;
+              let nearestDist = PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS;
               const losBlocked = (pos: Point) => isFieldPositionBlocked(pos, chunkRef.current);
               // Target lock: a swing may damage only the selected NPC. If the
               // player selected a creature instead, never let the NPC-first
