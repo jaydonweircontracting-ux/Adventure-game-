@@ -470,6 +470,7 @@ export function npcLifeSummary(
   npc: Townsperson,
   folk: Townsperson[],
   clock: WorldClockState,
+  foodAvailable = true,
 ): NPCLifeSummary {
   return {
     name: npc.name,
@@ -477,7 +478,7 @@ export function npcLifeSummary(
     ageYears: npcAgeYears(npc),
     archetype: npc.archetype,
     personality: npcPersonality(npc),
-    needs: npcNeeds(npc, clock),
+    needs: npcNeeds(npc, clock, foodAvailable),
     gold: npcGold(npc, clock),
     wage: npcWage(npc.archetype),
     relationships: npcRelationships(npc, folk, clock),
