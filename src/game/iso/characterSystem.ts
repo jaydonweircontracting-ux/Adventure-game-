@@ -356,7 +356,7 @@ function drawVectorPlaceholder(
 const lastCharacterSprite = new WeakMap<CharacterAnimator, {
   key: string;
   image: HTMLImageElement;
-  base: string;
+  base: RpgBase;
   anim: RpgAnim;
   face: Face8;
   frame: number;
