@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#101a1c">
+<title>Adventure 2.5.5 — Text Isometric World</title>
+<style>
+:root{color-scheme:dark;--bg:#101a1c;--panel:#172629;--line:#355052;--text:#d8e5d8;--muted:#91aaa0;--gold:#e7c878;--green:#91c78c}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#app{height:100dvh;display:grid;grid-template-rows:auto 1fr auto;min-height:0}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 13px;border-bottom:1px solid var(--line);background:#142123;z-index:2}
+.brand{font-weight:800;letter-spacing:.08em;color:var(--gold)}.sub{color:var(--muted);font-size:11px;margin-top:3px}
+.stats{display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end}.stat span{color:var(--muted)}.stat b{color:var(--gold)}
+main{min-height:0;position:relative;overflow:hidden;background:radial-gradient(ellipse at 50% 40%,#243c35 0,#142522 55%,#0d1719 100%)}
+canvas{display:block;width:100%;height:100%;touch-action:none;outline:none}
+#hud{position:absolute;top:10px;left:10px;max-width:min(290px,60vw);padding:10px 12px;background:#101a1cdd;border:1px solid var(--line);border-radius:5px;pointer-events:none;line-height:1.55}
+#hud strong{color:var(--gold)}#toast{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:#0c1515ee;border:1px solid #587365;padding:8px 12px;border-radius:4px;opacity:0;transition:opacity .18s;pointer-events:none;max-width:90%;text-align:center}#toast.show{opacity:1}
+footer{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:8px 10px;border-top:1px solid var(--line);background:#142123;z-index:2}
+button{font:inherit;color:var(--text);background:#203638;border:1px solid #496565;border-radius:4px;padding:8px 10px;cursor:pointer;min-height:34px}button:hover,button.active{border-color:var(--gold);color:var(--gold);background:#2b403b}button:disabled{opacity:.35;cursor:not-allowed}.spacer{flex:1}.hint{color:var(--muted);font-size:11px}
+@media(max-width:600px){header{align-items:flex-start;flex-direction:column;gap:6px}.stats{justify-content:flex-start;gap:10px}.stat{font-size:11px}footer{gap:5px;padding:6px}button{padding:7px 8px;font-size:11px;min-height:32px}#hud{font-size:11px;max-width:68vw}}
+</style>
+</head>
+<body>
+<div id="app">
+<header><div><div class="brand">ASHFALL // 2.5.5 TEXT WORLD</div><div class="sub">Standalone isometric prototype · glyph-rendered · no external assets</div></div><div class="stats"><div class="stat"><span>GOLD </span><b id="gold">120</b></div><div class="stat"><span>DAY </span><b id="day">01</b></div><div class="stat"><span>VISITORS </span><b id="visitors">04</b></div><div class="stat"><span>FPS </span><b id="fps">—</b></div></div></header>
+<main><canvas id="world" tabindex="0" aria-label="Playable isometric text world"></canvas><div id="hud"><strong>THE FRONTIER</strong><br>Walk the world, build a tiny settlement, and watch it come alive.<br><span style="color:#91aaa0">WASD / arrows move · tap tiles to build · +/- zoom</span><br><span id="selected">Tool: Explore</span></div><div id="toast"></div></main>
+<footer>
+<button data-tool="explore" class="active">Explore</button><button data-tool="path">Build path · 4g</button><button data-tool="home">Cottage · 24g</button><button data-tool="stall">Market · 18g</button><button data-tool="ride">Lookout · 32g</button><button id="cycle">Time: Day</button><button id="zoomOut" aria-label="Zoom out">−</button><button id="zoomIn" aria-label="Zoom in">+</button><span class="spacer"></span><button id="reset">Reset world</button><span class="hint">Single HTML file · save/bookmark this page</span>
+</footer></div>
+<script>
+(()=>{'use strict';
+const canvas=document.querySelector('#world'),ctx=canvas.getContext('2d',{alpha:false});
+const ui={gold:document.querySelector('#gold'),day:document.querySelector('#day'),visitors:document.querySelector('#visitors'),fps:document.querySelector('#fps'),selected:document.querySelector('#selected'),toast:document.querySelector('#toast')};
+const W=34,H=34,tiles=[],buildings=[],people=[];
+let gold=120,day=1,tool='explore',zoom=1,camX=0,camY=0,time=0,last=0,frames=0,fpsClock=0,fps=0,toastTimer=0,cycle=0,keys={},player={x:17,y:17,face:0,walk:0},pointer=null;
+const prices={path:4,home:24,stall:18,ride:32};
+const terrain=(x,y)=>{let n=Math.sin(x*.43)*Math.cos(y*.31)+Math.sin((x+y)*.17);return n>.9?'~':n<-.95?'^':'.'};
+function reset(){gold=120;day=1;time=0;cycle=0;zoom=1;camX=0;camY=0;player={x:17,y:17,face:0,walk:0};tiles.length=0;buildings.length=0;people.length=0;
+for(let y=0;y<H;y++)for(let x=0;x<W;x++){let t=terrain(x,y);if(x>9&&x<24&&y>9&&y<24)t='.';tiles.push({x,y,t,build:null,path:false});}
+for(let i=0;i<4;i++)people.push({x:14+i*2,y:15+(i%2)*3,phase:i*.7,kind:i===0?'@':'&',target:null});
+place(14,17,'home',true);place(20,17,'stall',true);place(17,22,'ride',true);uiUpdate();say('Welcome to the frontier. Build carefully — your gold is limited.');}
+function tile(x,y){if(x<0||y<0||x>=W||y>=H)return null;return tiles[y*W+x]}
+function place(x,y,type,free=false){let t=tile(x,y);if(!t||t.build||t.t==='~'||t.t==='^')return false;if(!free&&gold<prices[type]){say('Not enough gold for that.');return false}if(!free)gold-=prices[type];t.build=type;buildings.push({x,y,type,age:0});if(type==='home')people.push({x:x+.25,y:y+.25,phase:Math.random()*6,kind:'&'});uiUpdate();return true}
+function uiUpdate(){ui.gold.textContent=gold;ui.day.textContent=String(day).padStart(2,'0');ui.visitors.textContent=String(people.length).padStart(2,'0')}
+function say(s){ui.toast.textContent=s;ui.toast.classList.add('show');toastTimer=2.4}
+function selectTool(t){tool=t;document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===t));ui.selected.textContent='Tool: '+t[0].toUpperCase()+t.slice(1)+(prices[t]?' · '+prices[t]+' gold':'')}
+document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>selectTool(b.dataset.tool)));
+document.querySelector('#zoomIn').onclick=()=>zoom=Math.min(1.8,zoom*1.12);document.querySelector('#zoomOut').onclick=()=>zoom=Math.max(.55,zoom/1.12);
+document.querySelector('#cycle').onclick=()=>{cycle=(cycle+1)%3;document.querySelector('#cycle').textContent='Time: '+['Day','Dusk','Night'][cycle]};
+document.querySelector('#reset').onclick=()=>reset();
+function dims(){let r=canvas.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,1.5);let w=Math.max(1,Math.floor(r.width*d)),h=Math.max(1,Math.floor(r.height*d));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}return {w,h,d}}
+function iso(x,y){const {w,h}=dimsCached;let tw=Math.min(w/(W+5),h/(H*.57+6))*1.28*zoom,th=tw*.52;return {x:w*.5+(x-y)*tw*.5+camX,y:h*.49+(x+y)*th*.5+camY,tw,th}}
+let dimsCached={w:800,h:600,d:1};
+function drawGlyph(text,x,y,color,size=13,align='center',alpha=1){ctx.globalAlpha=alpha;ctx.fillStyle=color;ctx.font='bold '+size+'px ui-monospace,monospace';ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(text,x,y);ctx.globalAlpha=1}
+function poly(points,fill,stroke){ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke()}}
+function shade(){return cycle===2?{grass:'#182b29',path:'#37413b',water:'#173a48',rock:'#353a3a',ink:'#7d9c8b'}:cycle===1?{grass:'#45513b',path:'#8c7955',water:'#2d6570',rock:'#62605a',ink:'#c0a97b'}:{grass:'#385c43',path:'#9eaa7a',water:'#3b7780',rock:'#5e675e',ink:'#d4dfb3'}}
+function drawTile(t){let p=iso(t.x,t.y),{tw,th}=p;let s=shade();let color=t.t==='~'?s.water:t.t==='^'?s.rock:s.grass;let lift=t.t==='^'?3:0;
+poly([{x:p.x,y:p.y-th*.5-lift},{x:p.x+tw*.5,y:p.y-lift},{x:p.x,y:p.y+th*.5-lift},{x:p.x-tw*.5,y:p.y-lift}],color,'#233d35');
+if(t.t==='~'){drawGlyph(time%1>.5?'≈':'~',p.x,p.y-1,'#91cbd0',Math.max(8,tw*.21));}
+else if(t.t==='^'){drawGlyph('▲',p.x,p.y-3,'#9ca69a',Math.max(8,tw*.19));}
+else if(t.path){drawGlyph('·',p.x,p.y,'#eee2b0',Math.max(8,tw*.24));}
+else if((t.x*7+t.y*3)%11===0){drawGlyph('⁘',p.x,p.y-1,'#72966a',Math.max(7,tw*.16))}
+if(t.build)drawBuilding(t,p);
+}
+function drawBuilding(t,p){let type=t.build,tw=p.tw,th=p.th,x=p.x,y=p.y;
+if(type==='home'){poly([{x:x-tw*.20,y:y-th*.55},{x:x,y:y-th*.75},{x:x+tw*.20,y:y-th*.55},{x:x,y:y-th*.36}], '#bd9b6d','#4b4434');drawGlyph('⌂',x,y-th*.55,'#f1dca9',Math.max(12,tw*.32));drawGlyph('▥',x,y-th*.1,'#d6c69a',Math.max(9,tw*.22));}
+if(type==='stall'){drawGlyph('╱╲',x,y-th*.45,'#e0b56e',Math.max(11,tw*.33));drawGlyph('▤',x,y-th*.1,'#d5d2a3',Math.max(11,tw*.3));}
+if(type==='ride'){drawGlyph('✧',x,y-th*.52,'#e9d68c',Math.max(15,tw*.42));drawGlyph('│',x,y-th*.18,'#a9c4b0',Math.max(13,tw*.28));}
+}
+function drawPerson(p,hero=false){let q=iso(p.x,p.y),breathe=Math.sin(time*5+(p.phase||0))*q.th*.045;let color=hero?'#f4d28a':'#c5ddd0';drawGlyph(hero?(player.walk>.1?['♟','♟','♙','♟'][Math.floor(time*10)%4]:'♟'):(p.kind||'&'),q.x,q.y-q.th*.72+breathe,color,Math.max(10,q.tw*.28));if(hero)drawGlyph('◆',q.x,q.y-q.th*.45,'#f4d28a',Math.max(5,q.tw*.12))}
+function render(){dimsCached=dims();const {w,h}=dimsCached;ctx.fillStyle=cycle===2?'#0d171c':cycle===1?'#28252a':'#152622';ctx.fillRect(0,0,w,h);
+// distant horizon glyphs
+for(let i=0;i<Math.floor(w/20);i++){let x=i*20+((time*2)%20);drawGlyph(cycle===2?'·':cycle===1?'˙':'⁘',x,20+(i%4)*8,cycle===2?'#49615e':'#587764',10, 'center',.55)}
+const ordered=[...tiles].sort((a,b)=>(a.x+a.y)-(b.x+b.y));for(const t of ordered)drawTile(t);
+for(const p of people)drawPerson(p);drawPerson(player,true);
+if(pointer){let t=tile(pointer.x,pointer.y);if(t){let p=iso(t.x,t.y);poly([{x:p.x,y:p.y-p.th*.5},{x:p.x+p.tw*.5,y:p.y},{x:p.x,y:p.y+p.th*.5},{x:p.x-p.tw*.5,y:p.y}], 'rgba(239,214,131,.13)','#e7c878')}}
+ctx.globalAlpha=1;drawGlyph('ASHFALL / 2.5.5',12,h-14,'#7e9b8e',10,'left',.8);
+}
+function screenToTile(sx,sy){const {w,h}=dimsCached;let tw=Math.min(w/(W+5),h/(H*.57+6))*1.28*zoom,th=tw*.52;let xx=sx-w*.5-camX,yy=sy-h*.49-camY;let a=xx/tw*2,b=yy/th*2;let x=Math.round((a+b)/2),y=Math.round((b-a)/2);return {x,y}}
+function clickAt(e){let r=canvas.getBoundingClientRect(),x=(e.clientX-r.left)*(dimsCached.w/r.width),y=(e.clientY-r.top)*(dimsCached.h/r.height),t=screenToTile(x,y);if(t.x<0||t.y<0||t.x>=W||t.y>=H)return;
+if(tool==='explore'){player.x=t.x;player.y=t.y;player.walk=1;player.face=Math.atan2(t.y-player.y,t.x-player.x);say('Moved to sector '+t.x+','+t.y+'.');return}
+let tileObj=tile(t.x,t.y);if(!tileObj)return;if(tool==='path'){if(tileObj.t==='~'||tileObj.t==='^'||tileObj.build){say('That tile cannot take a path.');return}if(gold<prices.path){say('Not enough gold.');return}if(!tileObj.path){tileObj.path=true;gold-=prices.path;uiUpdate()}else say('There is already a path here.')}
+else if(prices[tool]){if(place(t.x,t.y,tool))say(tool==='ride'?'Lookout built. The view is lovely from up there.':tool==='home'?'Cottage built. New settlers may arrive.':'Market built. Trade is coming to town.');else if(!tileObj.build)say('Build on clear, dry ground.')}
+}
+canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture?.(e.pointerId);pointer=screenToTile((e.clientX-canvas.getBoundingClientRect().left)*(dimsCached.w/canvas.getBoundingClientRect().width),(e.clientY-canvas.getBoundingClientRect().top)*(dimsCached.h/canvas.getBoundingClientRect().height));clickAt(e);});
+canvas.addEventListener('pointermove',e=>{if(e.buttons===0){let r=canvas.getBoundingClientRect();pointer=screenToTile((e.clientX-r.left)*(dimsCached.w/r.width),(e.clientY-r.top)*(dimsCached.h/r.height))}});
+canvas.addEventListener('pointerleave',()=>pointer=null);
+window.addEventListener('keydown',e=>{let k=e.key.toLowerCase();if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k))e.preventDefault();keys[k]=true;if(k==='+'||k==='=')zoom=Math.min(1.8,zoom*1.12);if(k==='-')zoom=Math.max(.55,zoom/1.12);if(k==='escape')selectTool('explore')});
+window.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+function update(dt){time+=dt;toastTimer-=dt;if(toastTimer<=0)ui.toast.classList.remove('show');let dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0);if(dx||dy){let mag=Math.hypot(dx,dy);player.x=Math.max(0,Math.min(W-1,player.x+dx/mag*dt*3));player.y=Math.max(0,Math.min(H-1,player.y+dy/mag*dt*3));player.walk=1;player.face=Math.atan2(dy,dx)}else player.walk=Math.max(0,player.walk-dt*3);
+camX+=(Math.max(-W*.4,Math.min(W*.4,(17-player.x)*3))-camX)*Math.min(1,dt*2);camY+=(Math.max(-H*.4,Math.min(H*.4,(17-player.y)*2))-camY)*Math.min(1,dt*2);
+for(let p of people){p.phase+=dt; if(Math.sin(time*.45+p.phase)>.996){p.x=Math.max(1,Math.min(W-2,p.x+(Math.random()-.5)*2));p.y=Math.max(1,Math.min(H-2,p.y+(Math.random()-.5)*2))}}
+if(time>day*95){day++;gold+=buildings.filter(b=>b.type==='stall').length*5+people.length;uiUpdate();say('Day '+day+' begins. Markets earned you gold overnight.')}
+}
+function loop(now){let dt=Math.min(.04,(now-last)/1000||0);last=now;frames++;fpsClock+=dt;if(fpsClock>=.5){fps=Math.round(frames/fpsClock);ui.fps.textContent=fps;frames=0;fpsClock=0}update(dt);render();requestAnimationFrame(loop)}
+reset();requestAnimationFrame(loop);
+})();
+</script>
+</body></html>
