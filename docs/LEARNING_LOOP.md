@@ -491,3 +491,23 @@ not just assertions.
 **NPC economy:** Autonomous mining, hauling, stockpiles, and per-settlement ledgers are tracked as TASK-017; not implemented by this patch.
 
 **Lesson:** A mineable world object must be one authoritative resource node shared by rendering, hit-testing, depletion, and rewards.
+
+## 2026-10-16 — Starting-house boulder visibility repair (BUILD 735)
+
+**Task:** Repair the stone deposit that players could not see, and keep the Cossacks-style settlement economy as the next connected gameplay task.
+
+**Root cause:** The fixed deposit anchor was placed at the top-center of the tutorial-house rectangle. In the isometric renderer, the house sprite/depth layer could occlude the rock, so the node existed in data but was not reliably visible.
+
+**Files changed**
+- `src/App.tsx` — place the deposit just beyond the tutorial house's right edge; add BUILD 735 changelog text.
+- `src/game/iso/IsoFieldView.tsx` — increase the landmark boulder's scale.
+- `scripts/prepare-build-entry.cjs` — bump runtime build marker to 735.
+- `docs/TASK_QUEUE.md` — record the visibility repair and keep economy work explicitly in progress.
+
+**Tests:** Not run in this GitHub-only editing session. No local Muse Bridge/Playwright runtime is available here. CI, deployed version marker, and in-game visibility/mining checks remain pending.
+
+**Result:** Source is committed with the rock moved clear of the house footprint and rendered larger. This is not yet proof that the live game shows it; verify deployment and the actual scene before claiming success.
+
+**Economy scope:** The mineable node/player stone inventory are the resource primitive. Autonomous NPC job selection, walking to the node, mining, hauling to stockpiles, consumption/production, and separate settlement ledgers remain unfinished. Do not describe those behaviors as implemented until the simulation and tests exist.
+
+**Lesson:** A world object can exist in deterministic resource data yet be invisible due to its anchor and depth order. Keep resource placement outside building silhouettes and verify in the actual isometric camera.
