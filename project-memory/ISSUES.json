@@ -96,6 +96,19 @@
         "tests/update-version.test.ts"
       ],
       "verification": "GitHub Actions run 38972057977: typecheck, update-version regression (11 assertions), existing regression suite, and production build all passed. Deployment verification pending."
+    },
+    {
+      "id": "ISSUE-008",
+      "title": "Latest main App.tsx lost ChunkSurroundings and default export",
+      "description": "Main deployment typecheck failed on BUILD 729 with TS2304 `ChunkSurroundings` missing and TS1192 no default export. Commit df49d216 removed the final 52 lines from App.tsx, including ChunkSurroundings and App export. BUILD 730 restores only that known-good tail while preserving the NPC additions above it.",
+      "firstBuild": "729",
+      "status": "in_progress",
+      "severity": "critical",
+      "relatedFiles": [
+        "src/App.tsx",
+        "scripts/prepare-build-entry.cjs"
+      ],
+      "verification": "CI and deployment verification pending."
     }
   ],
   "lastUpdated": "2026-10-16",
