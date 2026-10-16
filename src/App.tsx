@@ -133,7 +133,8 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
-  '730': 'Lock movement and combat while the wanted-guard arrest dialogue is open; retain NPC death, loot, disposition and guard choices',
+  '731': 'Show lootable NPC corpses in isometric view and allow tap-to-loot alongside the existing 2D body interaction',
+  '730': 'Lock movement and combat while the wanted-guard arrest dialogue is open; retain NPC death, loot, disposition and guard choices'
   '729': 'NPC death closes dialogue, attacks change disposition, corpses loot correctly, and wanted guards pursue with flee/jail/fine choices',
   '728': 'Compare live, deployed, and latest source versions; add manual real-time update checks',
   '727': 'Fix dagger/equipment layer disappearing when switching into attack animation; preserve last valid weapon sprite across animation states',
@@ -4771,6 +4772,24 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (existing) return;
     const body = createBody('body-' + npc.id + '-' + Date.now().toString(36), npc.id, npc.name, npc.role || npc.archetype || 'citizen', chunkRef.current, { x: npc.position.x, y: npc.position.y }, day, Math.abs(npc.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)));
     const nextBodies = [...bodiesRef.current, body]; bodiesRef.current = nextBodies; setBodies(nextBodies);
+  };
+  const lootTownspersonBody = (bodyId: string) => {
+    if (inputLocked || optionsOpen || waitingRef.current) return;
+    const body = bodiesRef.current.find((candidate) => candidate.id === bodyId && !candidate.looted);
+    if (!body) return;
+    const { loot: taken, updatedBody } = lootBody(body);
+    const nextBodies = bodiesRef.current.map((candidate) => candidate.id === body.id ? updatedBody : candidate);
+    bodiesRef.current = nextBodies; setBodies(nextBodies);
+    const loot: Record<string, number> = {};
+    if (taken.gold > 0) loot.coins = taken.gold;
+    if (taken.potions > 0) loot.healthPotion = taken.potions;
+    for (const itemId of taken.items) {
+      const generated = generateItem(new ItemRng(Date.now() ^ itemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current));
+      onEquipmentChange((prev) => [...prev, { ...generated, name: itemId.replace(/[-_]/g, ' ') }]);
+    }
+    onLoot(loot as GoatLoot);
+    setLogs((cur) => [{ text: `Looted ${body.npcName}'s body.`, color: 'gold' }, ...cur].slice(0, 3));
+    spawnCombatText('LOOTED', body.position, 'reward');
   };
   const recordTownspersonCrime = (npc: Townsperson, type: 'assault' | 'murder') => {
     try {
@@ -9499,6 +9518,8 @@ if (active) {
               onShopStall={(stallIndex) => openShopStall(stallIndex)}
               droppedLoot={droppedLoot.filter((drop) => drop.chunk.x === chunk.x && drop.chunk.y === chunk.y)}
               onPickupDrop={(d) => { const full = droppedLootRef.current.find((x) => x.id === d.id); if (full) pickupDrop(full); }}
+              lootableBodies={bodies.filter((body) => !body.looted && body.chunk.x === chunk.x && body.chunk.y === chunk.y).map((body) => ({ id: body.id, npcName: body.npcName, position: body.position }))}
+              onLootBody={(body) => lootTownspersonBody(body.id)}
               damageTexts={damageTexts}
               barbOutfit={equippedShirt ? 'blue' : 'bare'}
               barbWeapon={equippedSword ? 'sword' : equippedBow ? 'bow' : 'none'}
