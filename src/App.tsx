@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '738': 'Tap the starting boulder to walk over and auto-mine; stone goes straight to inventory and mining grants XP/levels',
   '737': 'Persist mining workers, carried stone, quarry cooldown and stockpile progress across saves',
   '736': 'Assign villagers autonomous mining and hauling jobs; deliver stone into the settlement stockpile',
   '735': 'Move the mineable starting-house boulder clear of the house sprite so it is visible and reachable',
@@ -6093,6 +6094,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 612: Mining state — hits per ore node, depleted nodes with respawn.
   const oreHitsRef = useRef<Record<string, number>>({});
   const depletedOresRef = useRef<Record<string, number>>({}); // oreId -> respawn timestamp
+  // BUILD 738: cancellable tap-to-mine action.
+  const autoMineTargetRef = useRef<FieldOre | null>(null);
+  const autoMineBestDistanceRef = useRef(Number.POSITIVE_INFINITY);
+  const autoMineStartedRef = useRef(false);
   const ORE_RESPAWN_MS = 5 * 60 * 1000; // 5 minutes
   // BUILD 595: Authoritative skill state. XP is authoritative; levels derive from XP.
   const [skills, setSkills] = useState<Record<string, SkillState>>(() => createEmptySkills());
@@ -6110,6 +6115,56 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     }
     return result;
   };
+  // BUILD 738: tap-to-mine repeats swings while close, then credits inventory
+  // directly. Walking away or tapping another destination cancels the action.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const target = autoMineTargetRef.current;
+      if (!target) return;
+      if (depletedOresRef.current[target.id]) {
+        autoMineTargetRef.current = null;
+        autoMineStartedRef.current = false;
+        return;
+      }
+      const player = positionRef.current;
+      const distance = Math.hypot(player.x - target.fx, player.y - target.fy);
+      if (distance > 15) {
+        if (autoMineStartedRef.current || distance > autoMineBestDistanceRef.current + 5) {
+          autoMineTargetRef.current = null;
+          autoMineStartedRef.current = false;
+          tapMoveTargetRef.current = null;
+          setLogs((logs) => [{ text: 'Mining cancelled.', color: 'gray' }, ...logs].slice(0, 3));
+          return;
+        }
+        autoMineBestDistanceRef.current = Math.min(autoMineBestDistanceRef.current, distance);
+        return;
+      }
+      autoMineStartedRef.current = true;
+      autoMineBestDistanceRef.current = distance;
+      tapMoveTargetRef.current = null;
+      const hits = (oreHitsRef.current[target.id] || 0) + 1;
+      const hitsNeeded = target.id === 'tutorial-stone-deposit-4-7' ? 8 : (ORE_HITS[target.kind] || 3);
+      if (hits >= hitsNeeded) {
+        delete oreHitsRef.current[target.id];
+        depletedOresRef.current[target.id] = Date.now() + ORE_RESPAWN_MS;
+        (window as unknown as { __depletedOres?: Set<string> }).__depletedOres = new Set(Object.keys(depletedOresRef.current));
+        const amount = target.richness;
+        onLoot({ stone: amount });
+        spawnCombatText('+' + amount + ' stone', { x: target.fx, y: target.fy }, 'reward');
+        playCombatSound('shing', muted);
+        setLogs((logs) => [{ text: 'You mine ' + amount + ' stone. Added directly to inventory.', color: 'blue' }, ...logs].slice(0, 3));
+        awardSkillXp('mining', MINING_XP[target.kind] || 10);
+        autoMineTargetRef.current = null;
+        autoMineStartedRef.current = false;
+        autoMineBestDistanceRef.current = Number.POSITIVE_INFINITY;
+      } else {
+        oreHitsRef.current[target.id] = hits;
+        spawnCombatText('clang', { x: target.fx, y: target.fy }, 'damage');
+        playCombatSound('shing', muted);
+      }
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, []);
   const purgeRegrownTrees = () => {
     const now = Date.now();
     let changed = false;
@@ -9577,7 +9632,8 @@ if (active) {
                 targetGoatIdRef.current = goat?.id ?? null;
                 setTargetGoatId(goat?.id ?? null);
               }}
-              onTapMove={(point) => { tapMoveTargetRef.current = point; }}
+              onTapMove={(point) => { autoMineTargetRef.current = null; autoMineStartedRef.current = false; autoMineBestDistanceRef.current = Number.POSITIVE_INFINITY; tapMoveTargetRef.current = point; }}
+              onTapMine={(ore) => { if (ore.id !== 'tutorial-stone-deposit-4-7' || depletedOresRef.current[ore.id]) return; autoMineTargetRef.current = ore; autoMineStartedRef.current = false; autoMineBestDistanceRef.current = Math.hypot(positionRef.current.x - ore.fx, positionRef.current.y - ore.fy); tapMoveTargetRef.current = Math.hypot(positionRef.current.x - ore.fx, positionRef.current.y - ore.fy) > 15 ? { x: Math.max(2, ore.fx - 8), y: Math.max(2, ore.fy - 8) } : null; setLogs((logs) => [{ text: 'Mining stone… tap elsewhere or walk away to cancel.', color: 'blue' }, ...logs].slice(0, 3)); }}
               onTalkTo={(npc) => talkToTownsfolk(npc)}
               onShopStall={(stallIndex) => openShopStall(stallIndex)}
               droppedLoot={droppedLoot.filter((drop) => drop.chunk.x === chunk.x && drop.chunk.y === chunk.y)}
