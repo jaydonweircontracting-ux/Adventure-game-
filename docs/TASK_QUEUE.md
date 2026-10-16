@@ -170,3 +170,11 @@
 - **Files:** `src/game/iso/IsoFieldView.tsx`, `src/App.tsx`, `scripts/prepare-build-entry.cjs`
 - **Checkpoint:** BUILD 732 source patch committed. Renderer suppresses ambient speech when `deadUntilTick` is set or HP is zero and hides the talk prompt in the same state.
 - **Verification:** Pending CI, deployed version marker, and real-game death/respawn regression check. Do not mark done until verified.
+
+### TASK-016: Starting-house stone deposit
+- **Status:** `in_progress`
+- **Priority:** P2
+- **Objective:** Add a large stone boulder behind the starting house in Mosslight Crossing.
+- **Files:** `src/game/iso/IsoFieldView.tsx`, `src/App.tsx`, `scripts/prepare-build-entry.cjs`
+- **Checkpoint:** BUILD 733 draws a large boulder at a fixed anchor behind the tutorial house in chunk (4, 7). This is currently visual-only; mining/collision integration is not included.
+- **Verification:** Pending CI, deployed version marker, and in-game visual check.
