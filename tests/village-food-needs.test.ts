@@ -41,6 +41,10 @@ const shortage = npcNeeds(npc, clock(12), false);
 assert.ok(shortage.hunger < supplied.hunger, `expected shortage hunger ${shortage.hunger} < supplied ${supplied.hunger}`);
 assert.equal(shortage.hunger, 0);
 
+// At 1 AM, hunger is measured from yesterday's dinner, not from a future breakfast.
+const overnight = npcNeeds(npc, clock(1), true);
+assert.ok(overnight.hunger > 0 && overnight.hunger < 100);
+
 // A hungry NPC still uses the existing navigation target, but communicates
 // that food is being sought rather than falsely claiming to eat.
 const hungryTarget = villageTarget(npc, anchors, clock(12), false);
