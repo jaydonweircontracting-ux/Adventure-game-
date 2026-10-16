@@ -440,7 +440,7 @@ type TownsfolkDef = [name: string, gender: 'male' | 'female', archetype: Townsfo
  * BUILD 699: 40 NPCs in households sharing houses (was 13). The first 13
  * entries keep their exact order and ids (townsfolk-0..12) so existing saves
  * restore cleanly; entries 13-39 are new. Households share a homeKey:
- * couples (2 adults) and families (2 adults + 1-2 kids) per house.
+ * couples and household members per house; town visuals use adult NPC archetypes.
  * Home layout:
  *   cottage-1..6: families (3-4 each = 19)
  *   chapel: Father Aldous (1)
@@ -461,8 +461,8 @@ const ROSTER: TownsfolkDef[] = [
   ['Mabel', 'female', 'commoner', 'mage', 'cottage-4'],
   ['Dunstan', 'male', 'commoner', 'guide', 'cottage-5'],
   ['Elsa', 'female', 'commoner', 'mage', 'town-n2'],
-  ['Wren', 'female', 'child', 'guide', 'cottage-4'],
-  ['Pip', 'male', 'child', 'rogue', 'cottage-2'],
+  ['Wren', 'female', 'commoner', 'mage', 'cottage-4'],
+  ['Pip', 'male', 'commoner', 'warrior', 'cottage-2'],
   // BUILD 548: neighbor near tutorial house — visible life at player spawn.
   // Farmer archetype: wakes up outdoors at home (visible at 6am game start).
   // BUILD 555: Renamed from Mira to Bryn — the tavern bartender is already
@@ -470,34 +470,34 @@ const ROSTER: TownsfolkDef[] = [
   // BUILD 699: Bryn's family takes cottage-1 (nearest the tutorial house).
   ['Bryn', 'female', 'farmer', 'guide', 'cottage-1'],
   // --- BUILD 699: 27 new townsfolk in households ---
-  // Cottage-6: Aldric & Brenna's kids
-  ['Ash', 'male', 'child', 'rogue', 'cottage-6'],
-  ['Lily', 'female', 'child', 'guide', 'cottage-6'],
-  // Cottage-2: Cedric's wife (Pip is their son)
+  // Cottage-6: Aldric & Brenna's household
+  ['Ash', 'male', 'commoner', 'warrior', 'cottage-6'],
+  ['Lily', 'female', 'commoner', 'mage', 'cottage-6'],
+  // Cottage-2: Cedric's household
   ['Sella', 'female', 'merchant', 'mage', 'cottage-2'],
   // Cottage-3: Garrick & Hilda's family
   ['Garrick', 'male', 'commoner', 'guide', 'cottage-3'],
   ['Hilda', 'female', 'commoner', 'mage', 'cottage-3'],
-  ['Fen', 'male', 'child', 'rogue', 'cottage-3'],
-  // Cottage-4: Mabel's husband (Wren is their daughter)
+  ['Fen', 'male', 'commoner', 'warrior', 'cottage-3'],
+  // Cottage-4: Mabel's household
   ['Odo', 'male', 'commoner', 'warrior', 'cottage-4'],
-  // Cottage-5: Dunstan's wife and son
+  // Cottage-5: Dunstan's household
   ['Petra', 'female', 'commoner', 'mage', 'cottage-5'],
-  ['Ned', 'male', 'child', 'guide', 'cottage-5'],
-  // Cottage-1: Bryn's husband and daughter (near player spawn)
+  ['Ned', 'male', 'commoner', 'warrior', 'cottage-5'],
+  // Cottage-1: Bryn's household near player spawn
   ['Cole', 'male', 'farmer', 'guide', 'cottage-1'],
-  ['Sage', 'female', 'child', 'mage', 'cottage-1'],
-  // town-s1: Brand's merchant family
+  ['Sage', 'female', 'commoner', 'mage', 'cottage-1'],
+  // town-s1: Brand's merchant household
   ['Brand', 'male', 'merchant', 'warrior', 'town-s1'],
   ['Tilda', 'female', 'commoner', 'mage', 'town-s1'],
-  ['Kit', 'male', 'child', 'rogue', 'town-s1'],
+  ['Kit', 'male', 'commoner', 'warrior', 'town-s1'],
   // town-s2: Finn & Willa
   ['Finn', 'male', 'commoner', 'guide', 'town-s2'],
   ['Willa', 'female', 'commoner', 'mage', 'town-s2'],
-  // town-e1: Ham's farmer family
+  // town-e1: Ham's farmer household
   ['Ham', 'male', 'farmer', 'guide', 'town-e1'],
   ['Rosa', 'female', 'commoner', 'mage', 'town-e1'],
-  ['Bede', 'male', 'child', 'guide', 'town-e1'],
+  ['Bede', 'male', 'commoner', 'mage', 'town-e1'],
   // town-e2: Corb & Liss
   ['Corb', 'male', 'guard', 'warrior', 'town-e2'],
   ['Liss', 'female', 'commoner', 'mage', 'town-e2'],
