@@ -29,8 +29,8 @@ export function drawProceduralGroundAccent(
   if (biome !== 'meadow' && biome !== 'forest' && biome !== 'tundra' && biome !== 'shore') return false;
 
   const h = tileHash(worldX, worldY, 0xCA2A);
-  // About one accent in seven otherwise-empty tiles: readable, not noisy.
-  if (h % 100 >= 14) return false;
+  // Richer cozy ground: about one accent in four otherwise-empty tiles, still sparse enough to avoid a noisy grid.
+  if (h % 100 >= 24) return false;
 
   const px = x + 4 + ((h >>> 8) % 5) * 2;
   const py = y - 3 - ((h >>> 13) % 4) * 2;
@@ -46,6 +46,12 @@ export function drawProceduralGroundAccent(
     ctx.fillRect(Math.round(px), Math.round(py), 3, 2);
     ctx.fillStyle = '#b8a47d';
     ctx.fillRect(Math.round(px + 2), Math.round(py + 2), 2, 1);
+  } else if ((h >>> 4) % 5 === 0) {
+    // Warm earth/stone flecks break up the flat tile fill without drawing a grid.
+    ctx.fillStyle = (h & 1) ? 'rgba(104, 91, 61, 0.48)' : 'rgba(224, 203, 143, 0.65)';
+    ctx.fillRect(Math.round(px - 2), Math.round(py), 4, 2);
+    ctx.fillStyle = 'rgba(255, 244, 203, 0.48)';
+    ctx.fillRect(Math.round(px + 2), Math.round(py - 1), 2, 1);
   } else if ((h >>> 4) % 3 === 0) {
     // Tiny clover/flower: warm cream petals, golden pixel center.
     ctx.fillStyle = '#fff0c5';
@@ -314,4 +320,35 @@ export function drawBuildingRenovation(
     ctx.fillRect(Math.round(fx - scale), Math.round(fy - scale), Math.max(2, scale * 2), Math.max(2, scale * 2));
   }
   ctx.restore();
+}
+
+
+/**
+ * Reduced-cost canopy for distant trees. At small zoom the full layered crown
+ * is sub-pixel detail; this version preserves silhouette and color variation
+ * with far fewer canvas operations, improving frame time in dense forests.
+ */
+export function drawProceduralTreeLod(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+  worldX: number,
+  worldY: number,
+): void {
+  const h = tileHash(worldX, worldY, 0x7AEE);
+  const s = Math.max(0.35, Math.min(1.4, scale));
+  const canopy = ['#397543', '#477e3d', '#326b42', '#557f3b'][h % 4];
+  ctx.fillStyle = 'rgba(29, 43, 25, 0.2)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 1 * s, 10 * s, 4 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#67472b';
+  ctx.fillRect(Math.round(x - 2 * s), Math.round(y - 13 * s), Math.max(1, 4 * s), 13 * s);
+  ctx.fillStyle = canopy;
+  ctx.beginPath();
+  ctx.ellipse(x, y - 22 * s, 13 * s, 14 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#8dbb59';
+  ctx.fillRect(Math.round(x - 6 * s), Math.round(y - 29 * s), Math.max(1, 4 * s), Math.max(1, 3 * s));
 }
