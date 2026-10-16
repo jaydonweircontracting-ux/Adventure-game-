@@ -392,6 +392,7 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Compare the running build against deployed `version.json` and the authoritative build marker in `main/scripts/prepare-build-entry.cjs`.
 - Preserve the orange checking, available, in-progress, and current states from BUILD 725.
 - Add manual Check now, a cache-busted Update action, visible deployed/source mismatch detail, 10-second polling, and bounded backoff.
+- Synchronize the tracked root `index.html` marker and `public/version.json` with the release marker.
 - Add 11 regression assertions and run them in the PR validation workflow.
 - Advance the release marker to BUILD 726.
 
