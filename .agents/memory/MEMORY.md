@@ -5,15 +5,15 @@
 - Repository: jaydonweircontracting-ux/Adventure-game-
 - Source of truth: the GitHub main branch.
 - Make routine game updates in GitHub; do not mount or import the game into a Replit project for routine updates.
-- Production deployment: GitHub Pages publishes the committed `docs/` directory.
+- Production deployment (verified 2026-10-16): `.github/workflows/deploy-pages.yml` runs the Vite build and deploys `dist/public` to GitHub Pages. Check that workflow's latest main-branch run and deployed `version.json` for every release; do not assume the old `docs/` snapshot is active.
 
 ## GitHub Pages rules
 
-- The green `pages build and deployment` check is GitHub's Jekyll publish of the committed `docs/` snapshot; it is not proof that Vite built the source.
-- Do not add or repair the duplicate `.github/workflows/publish-pages.yml` workflow for this project.
-- If that duplicate workflow appears and fails, remove it instead of changing `index.html` or package scripts.
+- The active source deployment is `.github/workflows/deploy-pages.yml`: verify its Build and Deploy jobs and confirm the published `version.json` / `window.__AG_BUILD` marker.
+- The older committed `docs/` snapshot and Jekyll status may be stale; inspect them only if the active Pages configuration or deployment evidence points to that path.
+- Do not add a duplicate Pages workflow. Preserve the current working deployment workflow.
 - Keep GitHub Pages asset paths under the repository base path `/Adventure-game-/`.
-- Keep source and committed `docs/` output synchronized when publishing a source update.
+- Never hand-edit generated `index.html` or `public/version.json`; update `scripts/prepare-build-entry.cjs` and let `predev`/`prebuild` regenerate them.
 - Every package imported by src/ must be declared in package.json; browser/runtime imports belong in dependencies.
 - Do not add Replit workspace catalog dependency markers to package.json.
 - Keep the browser build free of Replit-only plugins or required local-only environment variables.
@@ -28,10 +28,10 @@ The successful deployment required declaring @tanstack/react-query and wouter as
 
 ## Published Pages sync guardrail
 
-- When the user sends the repository link, inspect both the GitHub source and the actual deployed GitHub Pages artifact before making changes.
-- Trace docs/index.html to the exact JS/CSS bundle and cache/build key the live page serves; apply fixes to that version and verify the live result before saying the issue is fixed.
-- Source changes do not affect the live GitHub Pages site until the bundle referenced by docs/index.html is synchronized.
-- Before diagnosing a live visual bug, read docs/index.html and inspect the referenced docs/assets JS/CSS files; do not assume src/ is what Pages is serving.
+- When the user sends the repository link, inspect both GitHub source and the actual deployed artifact before making changes.
+- First identify the active deployment workflow and its artifact path; this repository's current source workflow builds `dist/public`.
+- Source changes are not live until the matching main-branch deployment workflow succeeds and the published build marker/manifest matches.
+- Do not hand-edit generated build output. Use `predev`/`prebuild` and verify the generated artifact. If Pages configuration changes back to `docs/`, then trace `docs/index.html` and its exact bundle before fixing live visuals.
 
 ## Mounted rider/cow layer guardrail
 
