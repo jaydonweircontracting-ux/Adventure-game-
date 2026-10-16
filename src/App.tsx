@@ -1930,6 +1930,7 @@ function monsterLootForKind(kind: MonsterKind): GoatLoot {
     case 'slime': return { coins: Math.random() < 0.4 ? 1 : 0 };
     case 'bat': return { fang: 1, coins: Math.random() < 0.2 ? 1 : 0 };
     case 'rat': return { coins: Math.random() < 0.3 ? 1 : 0 };
+    default: return {};
   }
 }
 function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {  const terrain = mapTileFor(chunk).terrain;
