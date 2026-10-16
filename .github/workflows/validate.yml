@@ -31,6 +31,8 @@ jobs:
         run: npm run typecheck
       - name: Isometric direction regression test
         run: npm run test:iso-directions
+      - name: Live update version regression test
+        run: npm run test:update-version
       - name: Fantasy encounter regression test
         run: npm run test:fantasy-encounters
       - name: Landscape coherence regression test
