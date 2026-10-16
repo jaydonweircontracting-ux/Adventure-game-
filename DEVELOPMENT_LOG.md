@@ -397,4 +397,4 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Add 11 regression assertions and wire them into CI.
 - Advance the release marker to BUILD 728.
 
-**Verification:** Pending PR CI and deployed artifact verification. The local Muse Bridge/Playwright runtime is not available through this tool session, so visual gameplay testing cannot be claimed here.
+**Verification:** GitHub Actions run 38972057977 passed typecheck, isometric directions, update-version regression (11 assertions), fantasy encounters, landscape coherence, procedural world art, building art, town production, village food-needs, and production build. The first attempt failed typecheck because the manifest variable was nullable outside the try block; switched to a typed local manifest plus a separate note variable, then reran the full workflow successfully. Deployment verification is pending. The local Muse Bridge/Playwright runtime is not available through this tool session, so visual gameplay testing cannot be claimed here.
