@@ -29,8 +29,8 @@ export function drawProceduralGroundAccent(
   if (biome !== 'meadow' && biome !== 'forest' && biome !== 'tundra' && biome !== 'shore') return false;
 
   const h = tileHash(worldX, worldY, 0xCA2A);
-  // About one accent in seven otherwise-empty tiles: readable, not noisy.
-  if (h % 100 >= 14) return false;
+  // Richer cozy ground: about one accent in four otherwise-empty tiles, still sparse enough to avoid a noisy grid.
+  if (h % 100 >= 24) return false;
 
   const px = x + 4 + ((h >>> 8) % 5) * 2;
   const py = y - 3 - ((h >>> 13) % 4) * 2;
@@ -46,6 +46,12 @@ export function drawProceduralGroundAccent(
     ctx.fillRect(Math.round(px), Math.round(py), 3, 2);
     ctx.fillStyle = '#b8a47d';
     ctx.fillRect(Math.round(px + 2), Math.round(py + 2), 2, 1);
+  } else if ((h >>> 4) % 5 === 0) {
+    // Warm earth/stone flecks break up the flat tile fill without drawing a grid.
+    ctx.fillStyle = (h & 1) ? 'rgba(104, 91, 61, 0.48)' : 'rgba(224, 203, 143, 0.65)';
+    ctx.fillRect(Math.round(px - 2), Math.round(py), 4, 2);
+    ctx.fillStyle = 'rgba(255, 244, 203, 0.48)';
+    ctx.fillRect(Math.round(px + 2), Math.round(py - 1), 2, 1);
   } else if ((h >>> 4) % 3 === 0) {
     // Tiny clover/flower: warm cream petals, golden pixel center.
     ctx.fillStyle = '#fff0c5';
