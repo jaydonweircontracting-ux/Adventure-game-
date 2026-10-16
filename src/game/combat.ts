@@ -45,8 +45,8 @@ export function isEntityInHitbox(entity: CombatPoint, hitbox: CombatRect): boole
 // Near-contact melee: require the attacker to be almost touching the target's body.
 export const PLAYER_MELEE_REACH = 0.05;
 export const PLAYER_MELEE_BEHIND_TOLERANCE = 0;
-export const PLAYER_MELEE_TARGET_RADIUS = 0.35;
-const MELEE_SWING_HALF_WIDTH = 0.15;
+export const PLAYER_MELEE_TARGET_RADIUS = 0.18;
+const MELEE_SWING_HALF_WIDTH = 0.10;
 
 export function isInMeleeArc(attacker: CombatPoint, target: CombatPoint, facing: CombatDirection, reach = PLAYER_MELEE_REACH): boolean {
   const dx = target.x - attacker.x;
