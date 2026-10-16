@@ -4891,21 +4891,21 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // The chunk the player was in when they entered the current interior, so
   // exit can resolve the same doorway from the same chunk (not hardcoded 4,7).
   const interiorEntryChunkRef = useRef<Point>({ x: 4, y: 7 });
-  // BUILD 430: one-time ground items in interiors. The tutorial-house sword
-  // lies on the floor until picked up (tracked by ID so it never respawns).
-  const TUTORIAL_SWORD_ITEM = 'tutorial-house-sword';
+  // BUILD 724: the tutorial house starts with a dagger on the floor.
+  // Its stable pickup ID is saved so the dagger never respawns after collection.
+  const TUTORIAL_DAGGER_ITEM = 'tutorial-house-dagger';
   const interiorGroundItems = (): Array<{ id: string; tx: number; ty: number; sprite: string; label: string }> => {
     if (!interior || interior.id !== 'tutorial-house') return [];
-    if (pickedUpGroundItemsRef.current.includes(TUTORIAL_SWORD_ITEM)) return [];
-    return [{ id: TUTORIAL_SWORD_ITEM, tx: 8, ty: 6, sprite: '/items/sword-ground.png', label: 'Old sword' }];
+    if (pickedUpGroundItemsRef.current.includes(TUTORIAL_DAGGER_ITEM)) return [];
+    return [{ id: TUTORIAL_DAGGER_ITEM, tx: 8, ty: 6, sprite: 'procedural:dagger', label: 'Old dagger' }];
   };
   const pickupGroundItem = (id: string) => {
     if (pickedUpGroundItemsRef.current.includes(id)) return;
-    if (id === TUTORIAL_SWORD_ITEM) {
+    if (id === TUTORIAL_DAGGER_ITEM) {
       const next = [...pickedUpGroundItemsRef.current, id];
       pickedUpGroundItemsRef.current = next; setPickedUpGroundItems(next);
-      onLoot({ swords: 1 } as GoatLoot);
-      setLogs((c) => [{ text: 'You pick up the old sword. It feels balanced and true.', color: 'green' }, ...c].slice(0, 5));
+      onLoot({ daggers: 1 } as GoatLoot);
+      setLogs((c) => [{ text: 'You pick up the old dagger. Light, quick, and ready to use.', color: 'green' }, ...c].slice(0, 5));
     }
   };
   // BUILD 366: shared interior-exit path (2D doorway walk-out and the 2.5D
