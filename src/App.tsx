@@ -8293,6 +8293,7 @@ if (active) {
             barbOutfit={equippedShirt ? 'blue' : 'bare'}
             barbWeapon={equippedSword ? 'sword' : equippedBow ? 'bow' : 'none'}
             barbHair={barbHair}
+            barbAttackSequence={attackSequence}
             getHeldDir={() => {
               const r = keysRef.current.right === true || isTouchHeld(touchHoldsRef.current, 'right');
               const l = keysRef.current.left === true || isTouchHeld(touchHoldsRef.current, 'left');
