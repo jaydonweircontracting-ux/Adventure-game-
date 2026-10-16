@@ -11587,7 +11587,7 @@ function Home() {
       try {
         const base = import.meta.env.BASE_URL;
         // Check 1: version.json for deployed build.
-        const res = await fetch(`${base}version.json?t=${Date.now()}`);
+        const res = await fetch(`${base}version.json?t=${Date.now()}-${Math.random().toString(36).slice(2)}`, { cache: 'no-store' });
         setLastChecked(new Date());
         if (!res.ok) throw new Error('bad response');
         const data = await res.json();
@@ -11614,8 +11614,15 @@ function Home() {
               }
             }
           } catch { /* GitHub API unavailable — fall through to current */ }
-          setUpdateAvailable(null);
-          setUpdateStatus('current');
+          if (data.build && Number(data.build) < Number(runningBuild)) {
+            setUpdateAvailable(String(runningBuild));
+            setUpdateNote('Version metadata is behind the running game');
+            setUpdateStatus('in-progress');
+          } else {
+            setUpdateAvailable(null);
+            setUpdateNote('');
+            setUpdateStatus('current');
+          }
         }
       } catch {
         setUpdateStatus('error');
@@ -12151,7 +12158,7 @@ function Home() {
               </div>
             )}
             {updateStatus === 'current' && (
-              <div style={{ background: '#27ae60', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
+              <div style={{ background: '#f39c12', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
                 ✓ No update available — you're on the latest build
                 {lastChecked && <div style={{ fontSize: 10, fontWeight: 'normal', opacity: 0.8 }}>Checked {lastChecked.toLocaleTimeString()} · live</div>}
               </div>
