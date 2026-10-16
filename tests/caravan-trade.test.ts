@@ -5,7 +5,7 @@ import {
   recomputeSupplyDemand,
   zeroResources,
 } from '../src/game/civilization';
-import type { Settlement, Resource } from '../src/game/civilization';
+import type { Settlement } from '../src/game/civilization';
 
 function settlement(id: string, population = 10): Settlement {
   const production = zeroResources();
