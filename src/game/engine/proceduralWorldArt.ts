@@ -315,3 +315,34 @@ export function drawBuildingRenovation(
   }
   ctx.restore();
 }
+
+
+/**
+ * Reduced-cost canopy for distant trees. At small zoom the full layered crown
+ * is sub-pixel detail; this version preserves silhouette and color variation
+ * with far fewer canvas operations, improving frame time in dense forests.
+ */
+export function drawProceduralTreeLod(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+  worldX: number,
+  worldY: number,
+): void {
+  const h = tileHash(worldX, worldY, 0x7AEE);
+  const s = Math.max(0.35, Math.min(1.4, scale));
+  const canopy = ['#397543', '#477e3d', '#326b42', '#557f3b'][h % 4];
+  ctx.fillStyle = 'rgba(29, 43, 25, 0.2)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 1 * s, 10 * s, 4 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#67472b';
+  ctx.fillRect(Math.round(x - 2 * s), Math.round(y - 13 * s), Math.max(1, 4 * s), 13 * s);
+  ctx.fillStyle = canopy;
+  ctx.beginPath();
+  ctx.ellipse(x, y - 22 * s, 13 * s, 14 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#8dbb59';
+  ctx.fillRect(Math.round(x - 6 * s), Math.round(y - 29 * s), Math.max(1, 4 * s), Math.max(1, 3 * s));
+}
