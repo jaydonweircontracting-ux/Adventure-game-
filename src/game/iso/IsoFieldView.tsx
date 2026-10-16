@@ -12,7 +12,7 @@
 // talk buttons) stay on the 2D renderer for now.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { startBrowserGameLoop, type BrowserGameLoop } from '../engine/browserGameEngine';
-import { drawProceduralGroundAccent, drawProceduralTree, drawProceduralTreeLod, drawProceduralPathDetail, drawBuildingGroundDress } from '../engine/proceduralWorldArt';
+import { drawProceduralGroundAccent, drawProceduralTree, drawProceduralTreeLod, drawProceduralPathDetail, drawBuildingGroundDress, drawProceduralBoulder } from '../engine/proceduralWorldArt';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import { createBoundedCache } from '../rendering/boundedCache';
 import { FrameMetrics } from '../rendering/frameMetrics';
@@ -1134,7 +1134,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         // Stable hash: absolute chunk + local coords (both stable)
         // BUILD 614: expanded to 10 varieties for town diversity.
         const h = Math.abs(Math.sin((absCx * 1000 + lx) * 12.9898 + (absCy * 1000 + ly) * 78.233) * 43758.5453) % 1;
-        const kinds = ['blue-cottage', 'red-cottage', 'blue-house', 'red-shop', 'hut-thatched', 'shop-awning', 'house-timber', 'inn-large', 'tavern', 'gatehouse'];
+        const kinds = ['blue-cottage', 'red-cottage', 'blue-house', 'red-shop', 'green-cottage', 'shop-awning', 'house-timber', 'inn-large', 'tavern', 'gatehouse'];
         return kinds[Math.floor(h * kinds.length)];
       };
       for (const sc of scenes) {
@@ -1151,7 +1151,11 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         // Use the selected sprite's real aspect ratio for vertical culling.
         // A fixed 64px allowance clipped tall roofs as the camera approached
         // the viewport edge, making buildings pop in/out while still visible.
-        const kind = buildingKindCache.get(b) ?? bldKindForBuilding(b, sc.ox, sc.oy);
+        // Never render the retired straw-hut asset. Normalize the final live-renderer
+        // selection here because pinned settlement variants and legacy hash pools
+        // bypass the standalone buildingArtFor() selector.
+        const selectedKind = buildingKindCache.get(b) ?? bldKindForBuilding(b, sc.ox, sc.oy);
+        const kind = selectedKind === 'hut-thatched' ? 'green-cottage' : selectedKind;
         buildingKindCache.set(b, kind);
         const projectedWidth = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 0.95;
         const spriteHeight = buildingSpriteHeightForWidth(projectedWidth, kind);
@@ -1419,6 +1423,24 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
           },
         });
         } // end neighbor-chunk tree loop
+      }
+
+      // BUILD 724: one large, fixed landmark boulder just off the settlement.
+      // Derive the anchor from authored town buildings so it stays near town
+      // without relying on a magic world coordinate or changing collision.
+      if (scenes.some((scene) => scene.ox === 0 && scene.oy === 0) && homeScene.buildings.length > 0 && zm >= 0.28) {
+        const townBuildings = homeScene.buildings;
+        const townX = townBuildings.reduce((sum, building) => sum + building.position.x, 0) / townBuildings.length;
+        const townY = townBuildings.reduce((sum, building) => sum + building.position.y, 0) / townBuildings.length;
+        const rockX = Math.max(4, Math.min(N - 5, townX + 13));
+        const rockY = Math.max(4, Math.min(N - 5, townY + 8));
+        const rockScreen = isoToScreen(rockX, rockY);
+        if (anchorVisible(rockScreen, 38, 48, 20)) {
+          drawables.push({
+            depth: rockX + rockY,
+            draw: (g2) => drawProceduralBoulder(g2, rockScreen.x, rockScreen.y, zm < 0.42 ? 0.72 : 1),
+          });
+        }
       }
 
       // BUILD 612: ore nodes for mining — rock piles with ore-colored veins.
