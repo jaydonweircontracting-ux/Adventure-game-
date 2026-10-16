@@ -133,6 +133,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '735': 'Move the mineable starting-house boulder clear of the house sprite so it is visible and reachable',
   '734': 'Make the starting-house stone boulder visible and mineable; add stone inventory',
   '733': 'Add a large stone boulder behind the starting house in Mosslight Crossing',
   '732': 'Prevent dead NPCs from showing ambient speech or talk prompts; speech resumes after respawn',
@@ -832,8 +833,11 @@ export function fieldOresFor(chunk: Point): FieldOre[] {
   if (chunk.x === 4 && chunk.y === 7) {
     const house = buildingDoorwaysFor(chunk).find((doorway) => doorway.id === 'tutorial-house-door');
     if (house) {
-      const fx = Math.max(5, Math.min(FIELD_SIZE - 6, (house.rect.left + house.rect.right) / 2 + 3));
-      const fy = Math.max(5, house.rect.top - 5);
+      // BUILD 735: keep the deposit outside the house sprite silhouette.
+      // The previous top-center anchor overlapped the roof/building depth layer,
+      // making the rock effectively invisible in the live isometric scene.
+      const fx = Math.max(5, Math.min(FIELD_SIZE - 8, house.rect.right + 9));
+      const fy = Math.max(5, Math.min(FIELD_SIZE - 8, house.rect.top + 2));
       fieldNodes.push({
         id: 'tutorial-stone-deposit-4-7', kind: 'stone',
         wx: chunk.x * FIELD_SIZE + fx, wy: chunk.y * FIELD_SIZE + fy,
