@@ -11,6 +11,7 @@
 // Beta scope: visual field replacement. DOM interaction overlays (door prompts,
 // talk buttons) stay on the 2D renderer for now.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { startBrowserGameLoop, type BrowserGameLoop } from '../engine/browserGameEngine';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import { createBoundedCache } from '../rendering/boundedCache';
 import { FrameMetrics } from '../rendering/frameMetrics';
@@ -548,7 +549,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
     // barbarian attack clip plays once per swing.
     let lastAttackSeq = -1;
 
-    let raf = 0;
+    let gameLoop: BrowserGameLoop | null = null;
     let last = performance.now();
     // BUILD 716: opt-in frame timing; no summary allocation or overlay unless
     // ?perf=1 is enabled. Use the same loop users actually play.
@@ -628,7 +629,6 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
     };
 
     const frame = () => {
-      raf = requestAnimationFrame(frame);
       const nowMs = performance.now();
       const frameStartedAt = nowMs;
       const dt = Math.min(50, Math.max(0, nowMs - last)); last = nowMs;
@@ -1882,7 +1882,15 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         }
       }
     };
-    raf = requestAnimationFrame(frame);
+    gameLoop = startBrowserGameLoop({
+      maxDeltaMs: 50,
+      onFrame: (nowMs, deltaMs) => {
+        // Keep the renderer's established timing behavior while the browser
+        // engine owns RAF scheduling and hidden-tab lifecycle.
+        last = nowMs - deltaMs;
+        frame();
+      },
+    });
 
     // BUILD 366: tap-to-move + tap-to-talk. Hit-test NPCs first (screen
     // distance), then doors (walk to the doorway — the game loop's existing
@@ -2077,7 +2085,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
     canvas.addEventListener('pointermove', onHoldMove);
     canvas.addEventListener('pointerup', onHoldEnd);
     canvas.addEventListener('pointercancel', onHoldEnd);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); canvas.removeEventListener('pointerdown', onTap); canvas.removeEventListener('pointerdown', onHoldStart); canvas.removeEventListener('pointermove', onHoldMove); canvas.removeEventListener('pointerup', onHoldEnd); canvas.removeEventListener('pointercancel', onHoldEnd); };
+    return () => { gameLoop?.stop(); window.removeEventListener('resize', resize); canvas.removeEventListener('pointerdown', onTap); canvas.removeEventListener('pointerdown', onHoldStart); canvas.removeEventListener('pointermove', onHoldMove); canvas.removeEventListener('pointerup', onHoldEnd); canvas.removeEventListener('pointercancel', onHoldEnd); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenes]);
 
