@@ -607,12 +607,15 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
     // walk/idle state and speed-tied walk phase; the draw is feet-anchored.
     // BUILD 704: explicit `running` overrides the animator's speed heuristic
     // (NPC fleeing, player sprinting). Undefined = heuristic as before.
-    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, size?: number, running?: boolean) => {
+    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, size?: number, running?: boolean, dead = false) => {
       const c = isoToScreen(tx, ty);
       let anim = charAnims.get(animKey);
-      if (!anim) { anim = new CharacterAnimator(animKey); charAnims.set(animKey, anim); }
+      // Dead NPCs play the Death clip and hold its last frame. Recreate the
+      // animator on respawn because the dead state is intentionally terminal.
+      if (!anim || (!dead && anim.state === 'dead')) { anim = new CharacterAnimator(animKey); charAnims.set(animKey, anim); }
       seenAnims.add(animKey);
-      anim.update({ x: tx, y: ty, moving, facing, nowMs: now, running });
+      if (dead) anim.setState('dead');
+      anim.update({ x: tx, y: ty, moving: dead ? false : moving, facing, nowMs: now, running: dead ? false : running });
       d.push({
         depth: tx + ty + 0.01, draw: (g2) => {
           drawIsoCharacter({
@@ -1565,7 +1568,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         drawPerson(drawables, ix, iy, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id,
           // BUILD 699: children are smaller (70% scale).
           // BUILD 704: fleeing NPCs run (explicit), everyone else walks.
-          npc.archetype === 'child' ? 36 : undefined, npc.running === true);
+          npc.archetype === 'child' ? 36 : undefined, npc.running === true, npc.hp === 0);
 
         // BUILD 722: optional, unobtrusive ambient chatter above each visible NPC.
         if (live.npcSpeechEnabled) {
