@@ -380,3 +380,20 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Corrected simulation: the player exits at (30, 48), reaches (17, 43), lands 3 valid hits on the level-2 goat, defeats it, and survives with 92 HP after 2 counterattacks.
 - Corrected behavior: an invalid or cooldown strike deals no damage and now shows feedback without playing a false attack animation.
 - Verification: source-order readback passed and deterministic combat simulation passed. Browser playtest/build/typecheck remain NOT_RUN because this session is GitHub-only and the game was not mounted.
+
+
+## 2026-10-16 — BUILD 727 proposed: authoritative live update checker
+
+**Context:** Concurrent development shipped BUILD 725 (orange checking/current status and stale metadata errors) and BUILD 726 (house outline cleanup). This branch is based on that latest main state and preserves those changes.
+
+**Root cause:** The checker still depended on the deployed manifest and a `BUILD N` commit-message pattern. A normal commit without that exact message could be missed. The tracked source manifest and root HTML marker were also stale.
+
+**Changes on `fix/live-update-version-checker-727`:**
+- Compare the running client against deployed `version.json` and the latest main source marker in `scripts/prepare-build-entry.cjs`.
+- Keep orange checking/available/deploying/current states and the existing live polling/backoff.
+- Add manual Check now, cache-busted Update reload, and explicit source/deployed mismatch text.
+- Synchronize tracked `index.html`, `public/version.json`, and the script marker to BUILD 727.
+- Add 11 regression assertions and run them in CI.
+- Followed `docs/RECOVERY_PROTOCOL.md`: diagnose the failed merge, reread latest main, preserve the concurrent changes, and restart from the current main state. No Muse bridge file or connected Muse tool was present; used the repository's brain/memory/task protocol.
+
+**Verification:** Pending CI and deployed artifact verification. Do not call BUILD 727 live until the deployment workflow succeeds and the refreshed play link is available.
