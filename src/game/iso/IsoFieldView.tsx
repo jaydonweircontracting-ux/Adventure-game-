@@ -12,7 +12,7 @@
 // talk buttons) stay on the 2D renderer for now.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { startBrowserGameLoop, type BrowserGameLoop } from '../engine/browserGameEngine';
-import { drawProceduralGroundAccent, drawProceduralTree, drawProceduralPathDetail, drawBuildingGroundDress, drawBuildingRenovation } from '../engine/proceduralWorldArt';
+import { drawProceduralGroundAccent, drawProceduralTree, drawProceduralTreeLod, drawProceduralPathDetail, drawBuildingGroundDress, drawBuildingRenovation } from '../engine/proceduralWorldArt';
 import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
 import { createBoundedCache } from '../rendering/boundedCache';
 import { FrameMetrics } from '../rendering/frameMetrics';
@@ -552,6 +552,11 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
 
     let gameLoop: BrowserGameLoop | null = null;
     let last = performance.now();
+    // Adaptive quality governor: lower tree-detail cost only when sustained frame work is high,
+    // then restore full canopies after the renderer has headroom again.
+    let adaptiveTreeLod = false;
+    let qualityProbeFrames = 0;
+    let renderCostEma = 16;
     // BUILD 716: opt-in frame timing; no summary allocation or overlay unless
     // ?perf=1 is enabled. Use the same loop users actually play.
     const perfEnabled = new URLSearchParams(location.search).get('perf') === '1';
@@ -629,8 +634,9 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       });
     };
 
-    const frame = () => {
-      const nowMs = performance.now();
+    const frame = (scheduledNowMs?: number) => {
+      // Reuse the RAF timestamp from the browser engine instead of sampling the clock twice per frame.
+      const nowMs = scheduledNowMs ?? performance.now();
       const frameStartedAt = nowMs;
       const dt = Math.min(50, Math.max(0, nowMs - last)); last = nowMs;
       const zm = zoomRef.current;
@@ -1407,7 +1413,8 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         const s = 0.7 + t.scale * 0.6;
         drawables.push({
           depth: tx2 + ty2, draw: (g2) => {
-            drawProceduralTree(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
+            if (zm < 0.42 || adaptiveTreeLod) drawProceduralTreeLod(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
+            else drawProceduralTree(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
           },
         });
         } // end neighbor-chunk tree loop
@@ -1861,10 +1868,19 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
 
       g.restore();
 
+      // Measure real renderer cost for the adaptive quality governor. Hysteresis avoids
+      // quality toggling: reduce tree detail above 18ms, restore it below 13ms.
+      const renderCostMs = performance.now() - frameStartedAt;
+      renderCostEma += (renderCostMs - renderCostEma) * 0.12;
+      if (++qualityProbeFrames >= 15) {
+        if (renderCostEma > 18) adaptiveTreeLod = true;
+        else if (renderCostEma < 13) adaptiveTreeLod = false;
+        qualityProbeFrames = 0;
+      }
       // BUILD 716: measure actual renderer work and expose a compact on-canvas
       // readout for repeatable A/B profiling in crowded scenes.
       if (frameMetrics) {
-        frameMetrics.record(performance.now() - frameStartedAt);
+        frameMetrics.record(renderCostMs);
         if (++perfOverlayTick % 30 === 0) {
           const m = frameMetrics.snapshot();
           g.save();
@@ -1887,7 +1903,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         // Keep the renderer's established timing behavior while the browser
         // engine owns RAF scheduling and hidden-tab lifecycle.
         last = nowMs - deltaMs;
-        frame();
+        frame(nowMs);
       },
     });
 
