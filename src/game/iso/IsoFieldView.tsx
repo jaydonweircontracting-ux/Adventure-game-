@@ -176,6 +176,7 @@ interface IsoFieldViewProps {
   onSelectMonster?: (monster: IsoMonster | null) => void;
   onExit: () => void; // back to the 2D field
   onTapMove?: (point: Point) => void; // BUILD 366: tap-to-move target
+  onTapMine?: (ore: FieldOre) => void; // BUILD 738: tap a rock to approach and auto-mine it
   onTalkTo?: (npc: Townsperson) => void;
   // BUILD 719: target selection is separate from interaction. Talking is only
   // triggered by the visible chat affordance once the selected NPC is in range.
@@ -435,8 +436,8 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
   const [selectedCritterId, setSelectedCritterId] = useState<number | null>(null);
   const greenBoxRef = useRef({ dx: 0, dy: 0, hw: 0.35, hh: 0.4 }); // offset and size in world units
   // tap callbacks via ref so the canvas listener always calls the latest
-  const tapRef = useRef({ onTapMove, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onLootBody, onShopStall });
-  tapRef.current = { onTapMove, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onLootBody, onShopStall };
+  const tapRef = useRef({ onTapMove, onTapMine, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onLootBody, onShopStall });
+  tapRef.current = { onTapMove, onTapMine, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onLootBody, onShopStall };
 
   const R = ISO_CHUNK_RENDER_RADIUS;
   const GRID = 2 * R + 1;
@@ -2084,6 +2085,28 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
             if (d < bestSD) { bestSD = d; bestStall = i; }
           }
           if (bestStall >= 0) { shop(bestStall); return; }
+        }
+      }
+      // BUILD 738: rocks are direct interaction targets. Tapping one starts an
+      // approach-and-mine action instead of sending the player past the rock.
+      {
+        const mine = tapRef.current.onTapMine;
+        if (mine) {
+          let bestOre: FieldOre | null = null;
+          let bestOreD = 38;
+          for (const sc of scenes) {
+            for (const ore of sc.ores) {
+              const depleted = (window as unknown as { __depletedOres?: Set<string> }).__depletedOres;
+              if (depleted?.has(ore.id)) continue;
+              const p = isoToScreen(ore.fx + sc.ox * N, ore.fy + sc.oy * N);
+              const px = (p.x - cam.x) * zm + wpx / 2;
+              const py = (p.y - cam.y) * zm + hpx / 2;
+              const d = Math.hypot(px - sx, py - sy);
+              const hitRadius = ore.id === 'tutorial-stone-deposit-4-7' ? 44 : 25;
+              if (d < Math.min(bestOreD, hitRadius)) { bestOreD = d; bestOre = ore; }
+            }
+          }
+          if (bestOre) { mine(bestOre); return; }
         }
       }
       // door hit test: tap near a doorway walks the player to it.
