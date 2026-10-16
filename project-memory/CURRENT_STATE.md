@@ -59,6 +59,7 @@ npm run build                # production build
 - Source inspection found BUILD_NUMBER in src/App.tsx is 724, public/version.json in main is 707, and root index.html marker is 712. These are not synchronized in source.
 - Current update checker trusts version.json and only checks GitHub's latest commit message for a `BUILD N` string; commits without that format can be incorrectly shown as current.
 - docs/index.html points at a fixed old asset pair and docs/version.json is absent. The exact production Pages source must be confirmed; repository brain rules require checking the deployed artifact, not assuming src/ changes are live.
-- Plan: restore authoritative source-build comparison, retain 10-second polling and orange Update action, add a manual Check now control, version the build, run CI/typecheck/build/regressions, merge only after checks pass, and verify the deployed game before claiming completion.
+- BUILD 725 has been committed to main by the concurrent development pass: it restores orange checking/current status and reports stale version metadata as an error. BUILD 726 adds the missing authoritative source-build comparison and manual Check now action while preserving those changes.
+- Plan: run CI/typecheck/build/regressions, merge only after checks pass, and verify the deployed game before claiming completion.
 - User also expects a fresh playable link with every update; include the production play URL with cache busting and label deployment status honestly.
-- Status: diagnosis recorded; implementation and deployment verification pending.
+- Status: BUILD 726 implementation committed to branch `fix/live-update-version-checker-726`; CI, merge, and live artifact verification pending.
