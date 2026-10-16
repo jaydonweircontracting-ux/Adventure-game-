@@ -112,7 +112,7 @@ export default function RpgCharacterCreator({ onConfirm, onCancel }: Props) {
                 </select>
               </label>
             ))}
-            <p className="rpg-creator-note">Some clothing, hair, armor and weapon PNGs are listed in the asset manifest but are not yet installed in the live asset directory. Those selections will render once their matching animated files are added; the selected base model remains visible.</p>
+            <p className="rpg-creator-note">BaseHumanMale and Dagger are installed with their complete animation sets. Other clothing, hair, armor and weapon selections still require their matching PNGs in public/rpg; unavailable layers never hide the base body.</p>
           </div>
         </div>
         <div className="creator-actions">
