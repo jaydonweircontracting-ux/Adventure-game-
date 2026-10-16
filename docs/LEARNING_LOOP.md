@@ -435,3 +435,16 @@ not just assertions.
 **Deployment:** Pending merge and Pages deployment. Do not call BUILD 728 live until the Pages workflow succeeds and the published version manifest/build marker are checked.
 
 **Lesson:** Use the build script as the version source of truth. Never hand-edit generated HTML/manifest files; wire the generator into the correct lifecycle hooks and verify the deployed artifact.
+
+
+## 2026-10-16 — App export recovery after BUILD 729 typecheck failure
+
+**Task:** Unblock the latest main deployment without reverting the NPC death/loot/guard work or the update-checker repair.
+
+**Observed failure:** GitHub Actions run 38972599188 failed typecheck with `TS2304: Cannot find name 'ChunkSurroundings'` at App.tsx:9568 and `TS1192: Module src/App has no default export`.
+
+**Root cause:** Comparing App.tsx at commits `94c9ddfd` and `df49d216` showed the latter removed 52 lines at EOF: the `ChunkSurroundings` definition and `App` default export.
+
+**Fix:** Restored the exact known-good tail from `94c9ddfd` onto current main's App content, preserving additions above the deletion. Bumped the build marker/changelog to BUILD 730.
+
+**Tests:** Pending PR CI and production build. Do not claim the latest source is live until the deploy workflow succeeds.
