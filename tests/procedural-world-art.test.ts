@@ -51,3 +51,35 @@ for (let y = -15; y < 25; y++) {
 }
 assert.ok(pathMarks > 100, 'road dressing should add a visible but sparse texture');
 console.log(`Path detail regression passed (${pathMarks} deterministic marks sampled).`);
+
+
+// BUILD 730: building re-skin geometry is deterministic and paints the full
+// architectural pass without depending on animation time or random state.
+import { drawBuildingRenovation } from '../src/game/engine/proceduralWorldArt';
+
+function buildingContext() {
+  const calls: string[] = [];
+  const ctx = {
+    fillStyle: '', strokeStyle: '', lineWidth: 1,
+    save() { calls.push('save'); }, restore() { calls.push('restore'); },
+    beginPath() { calls.push('begin'); },
+    moveTo(x: number, y: number) { calls.push(`move:${x},${y}`); },
+    lineTo(x: number, y: number) { calls.push(`line:${x},${y}`); },
+    stroke() { calls.push('stroke'); },
+    fill() { calls.push('fill'); },
+    fillRect(x: number, y: number, w: number, h: number) { calls.push(`rect:${x},${y},${w},${h},${this.fillStyle}`); },
+  };
+  return { ctx: ctx as unknown as CanvasRenderingContext2D, calls };
+}
+const houseA = buildingContext();
+const houseB = buildingContext();
+drawBuildingRenovation(houseA.ctx, 100, 200, 120, 90, 24, 71);
+drawBuildingRenovation(houseB.ctx, 100, 200, 120, 90, 24, 71);
+assert.deepEqual(houseA.calls, houseB.calls, 'building facade details must remain stable across redraws');
+assert.ok(houseA.calls.length > 40, 'building renovation should draw a substantial architectural detail pass');
+assert.equal(houseA.calls[0], 'save');
+assert.equal(houseA.calls[houseA.calls.length - 1], 'restore');
+const emptyHouse = buildingContext();
+drawBuildingRenovation(emptyHouse.ctx, 100, 200, 0, 0, 24, 71);
+assert.equal(emptyHouse.calls.length, 0, 'invalid building dimensions should be ignored safely');
+console.log(`Building visual overhaul regression passed (${houseA.calls.length} stable drawing operations).`);
