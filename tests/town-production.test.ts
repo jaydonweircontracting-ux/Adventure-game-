@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { applyNPCProduction, npcProductionSummary } from '../src/game/townProduction';
+import { applyNPCProduction, npcProductionSummary, npcWorkOutputSummary } from '../src/game/townProduction';
 import type { CivilizationState } from '../src/game/civilization';
 import type { Townsperson } from '../src/game/townsfolk';
 import type { WorldClockState } from '../src/game/worldCore';
@@ -68,5 +68,24 @@ applyNPCProduction(capped, Array.from({ length: 100 }, (_, i) => ({
   id: `farmer-${i}`, seed: i + 1, archetype: 'farmer',
 })) as unknown as Townsperson[], clock(1));
 assert.equal(capped.settlements[0].storage.grain, 51);
+
+
+const workers = [
+  { id: 'farmer', seed: 123, archetype: 'farmer' },
+  { id: 'smith', seed: 234, archetype: 'smith' },
+  { id: 'priest', seed: 345, archetype: 'priest' },
+] as unknown as Townsperson[];
+const workCiv = civ();
+applyNPCProduction(workCiv, workers, clock(2));
+const expectedWork = npcWorkOutputSummary(workers, 1);
+const expectedWorkDayTwo = npcWorkOutputSummary(workers, 2);
+assert.equal(workCiv.settlements[0].storage.grain, expectedWork.grain + expectedWorkDayTwo.grain);
+assert.equal(workCiv.settlements[0].storage.tools, expectedWork.tools + expectedWorkDayTwo.tools);
+assert.equal(workCiv.settlements[0].storage.weapons, expectedWork.weapons + expectedWorkDayTwo.weapons);
+assert.equal(workCiv.settlements[0].storage.medicine, expectedWork.medicine + expectedWorkDayTwo.medicine);
+// Smith/priest output is deterministic and cannot be duplicated by another call on the same day.
+const beforeRepeat = JSON.stringify(workCiv.settlements[0].storage);
+applyNPCProduction(workCiv, workers, clock(2));
+assert.equal(JSON.stringify(workCiv.settlements[0].storage), beforeRepeat);
 
 console.log('Town production tests passed (idempotency, catch-up, storage cap).');

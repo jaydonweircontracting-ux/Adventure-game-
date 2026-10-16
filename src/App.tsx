@@ -4566,7 +4566,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (!clock) return;
     const civ = ensureCiv();
     advanceCivilization(civ, clock);
-    // BUILD 661: NPC-driven production (farmers → grain in settlement storage).
+    // BUILD 711: NPC jobs feed settlement stocks (farmers → grain, smiths → tools/weapons, priests → medicine).
     applyNPCProduction(civ, townsfolkRef.current, clock);
     // BUILD 665: Wheat fields and mills (wheat → flour production chain).
     const day = Math.max(1, Math.floor(clock.day));
