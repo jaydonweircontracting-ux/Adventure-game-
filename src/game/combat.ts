@@ -26,9 +26,9 @@ export function isAdjacentAndFacing(attacker: CombatPoint, target: CombatPoint, 
 }
 
 export function getAttackHitbox(origin: CombatPoint, direction: CombatDirection): CombatRect {
-  // Match the full visible goat sprite and keep contact forgiving at field scale.
-  const size = 5.5;
-  const reach = 3.2;
+  // Keep the weapon hitbox tight to the visible character so attacks read as contact.
+  const size = 4.2;
+  const reach = 2.0;
   const center = { x: origin.x + (direction === 'right' ? reach : direction === 'left' ? -reach : 0), y: origin.y + (direction === 'down' ? reach : direction === 'up' ? -reach : 0) };
   return { x: center.x - size / 2, y: center.y - size / 2, width: size, height: size };
 }
@@ -42,25 +42,19 @@ export function isEntityInHitbox(entity: CombatPoint, hitbox: CombatRect): boole
   return target.x < hitbox.x + hitbox.width && target.x + target.width > hitbox.x && target.y < hitbox.y + hitbox.height && target.y + target.height > hitbox.y;
 }
 
-// Player swing reach: melee means melee — the player must be right up against
-// the target for the swing to connect, so hits look and feel like contact.
-export const PLAYER_MELEE_REACH = 1.5;
-// The character sprite occupies roughly 3.2 world units. Treat that body area
-// as the target hurtbox, but keep the weapon's swing lane narrow so a swing
-// cannot connect with a target well to the side or several steps away.
-export const PLAYER_MELEE_BEHIND_TOLERANCE = 0.45;
-const MELEE_TARGET_HALF_SIZE = 1.6;
-const MELEE_SWING_HALF_WIDTH = 0.7;
+// Near-contact melee: require the attacker to be almost touching the target's body.
+export const PLAYER_MELEE_REACH = 0.35;
+export const PLAYER_MELEE_BEHIND_TOLERANCE = 0.2;
+const MELEE_TARGET_HALF_SIZE = 1.2;
+const MELEE_SWING_HALF_WIDTH = 0.35;
 
 export function isInMeleeArc(attacker: CombatPoint, target: CombatPoint, facing: CombatDirection, reach = PLAYER_MELEE_REACH): boolean {
   const dx = target.x - attacker.x;
   const dy = target.y - attacker.y;
   const forward = facing === 'right' ? dx : facing === 'left' ? -dx : facing === 'down' ? dy : -dy;
   const lateral = facing === 'left' || facing === 'right' ? Math.abs(dy) : Math.abs(dx);
-  // Collision is against the visible target sprite's approximate body bounds,
-  // intersected with a short rectangular weapon hitbox in front of the player.
-  // This makes a hit correspond to contact with the character, not a broad
-  // invisible circle around the attacker.
+  // Intersect a narrow forward swing with the visible body bounds. The target
+  // must be directly in front and close enough that the sprites appear to touch.
   return forward >= -PLAYER_MELEE_BEHIND_TOLERANCE
     && forward <= reach + MELEE_TARGET_HALF_SIZE
     && lateral <= MELEE_SWING_HALF_WIDTH + MELEE_TARGET_HALF_SIZE;
