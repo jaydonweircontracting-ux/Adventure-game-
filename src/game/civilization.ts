@@ -108,7 +108,6 @@ export function recomputePrices(settlement: Settlement): Record<Resource, number
   return prices;
 }
 
-/** Recompute supply/demand records from production/consumption/storage. */
 /** Deliver real cargo into a settlement without exceeding its storage capacity. */
 export function deliverCaravanCargo(
   destination: Settlement,
@@ -150,6 +149,7 @@ export function loadCaravanCargo(
   return inventory;
 }
 
+/** Recompute supply/demand records from production/consumption/storage. */
 export function recomputeSupplyDemand(settlement: Settlement): void {
   for (const resource of RESOURCES) {
     settlement.supply[resource] = Math.round(((settlement.production[resource] || 0) + (settlement.storage[resource] || 0) / 20) * 100) / 100;
