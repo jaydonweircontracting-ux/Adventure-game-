@@ -1401,7 +1401,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
           const tx2 = t.x + bx, ty2 = t.y + by;
           const c = isoToScreen(tx2, ty2);
           // BUILD 712: include canopy height in viewport bounds.
-          if (!anchorVisible(c, 28, 66, 12)) continue;
+          if (!anchorVisible(c, 36, 104, 18)) continue;
         const s = 0.7 + t.scale * 0.6;
         drawables.push({
           depth: tx2 + ty2, draw: (g2) => {
