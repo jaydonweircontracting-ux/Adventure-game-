@@ -398,3 +398,16 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Advance the release marker to BUILD 728.
 
 **Verification:** GitHub Actions run 38972057977 passed typecheck, isometric directions, update-version regression (11 assertions), fantasy encounters, landscape coherence, procedural world art, building art, town production, village food-needs, and production build. The first attempt failed typecheck because the manifest variable was nullable outside the try block; switched to a typed local manifest plus a separate note variable, then reran the full workflow successfully. Deployment verification is pending. The local Muse Bridge/Playwright runtime is not available through this tool session, so visual gameplay testing cannot be claimed here.
+
+
+## 2026-10-16 — BUILD 730 proposed: restore App export and neighbor renderer
+
+**Task:** Unblock the latest main deployment after a concurrent NPC update accidentally removed the tail of `src/App.tsx`.
+
+**Root cause:** GitHub Actions run 38972599188 failed typecheck with `TS2304: Cannot find name 'ChunkSurroundings'` and `TS1192: Module src/App has no default export`. Comparing commits showed commit `df49d216` removed the final 52 lines containing the `ChunkSurroundings` component and `export default App`.
+
+**Fix:** Appended the exact known-good tail from commit `94c9ddfd` to the current App file, restoring `ChunkSurroundings` and `export default App` while preserving the NPC code and the merged BUILD 728 update checker. Bumped the source build marker and changelog to BUILD 730.
+
+**Tests:** Pending PR CI (typecheck, update-version test, existing regression suite, production build).
+
+**Deployment:** Pending. The latest main deployment was blocked before upload; do not give a BUILD 730 live link until deployment succeeds.
