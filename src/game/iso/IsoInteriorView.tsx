@@ -682,7 +682,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     };
 
     const frame = (nowMs: number) => {
-      const dt = Math.min(50, nowMs - last);
+      // Carry through longer frame intervals instead of discarding movement time
+      // after a hitch; the old 50ms cap made movement feel sluggish under load.
+      const dt = Math.min(100, nowMs - last);
       last = nowMs;
       // Dungeon kit once its images have pixels; otherwise procedural.
       const kit = isDungeon && dungeonKitReady();
