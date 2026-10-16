@@ -1,28 +1,24 @@
-// Town production: NPC work → real resources (BUILD 661).
-// Connects individual NPC schedules to settlement storage.
-// Farmers tending crops produce grain; the amount is deterministic,
-// bounded, and tied to actual work activity (not just schedule existence).
+// Town production: NPC work -> real resources (BUILD 661; idempotent daily simulation).
 //
-// Pure — no React, no App dependency. Uses existing:
-// - townsfolkTarget() for activity resolution
-// - CivilizationState settlement storage
-// - townsfolkHash for deterministic variation
+// Connects individual NPC schedules to settlement storage. Farmers produce
+// grain deterministically. The simulation is safe to call every clock update:
+// it catches up missed days once, and never produces the same day twice.
+//
+// Pure with respect to random state: all output derives from NPC seeds + day.
+// The existing CivilizationState owns the production ledger so JSON saves keep
+// the checkpoint and old saves remain compatible (missing field defaults to 0).
 
 import type { CivilizationState } from './civilization';
 import type { Townsperson } from './townsfolk';
 import type { WorldClockState } from './worldCore';
 import { townsfolkHash } from './townsfolk';
 
+type ProductionLedger = CivilizationState & { lastNPCProductionDay?: number };
+
 /**
- * Apply one day of NPC-driven production to settlement storage.
- * Called alongside advanceCivilization() in the daily tick.
- *
- * For each farmer NPC whose schedule puts them at "Tending crops",
- * add grain to their settlement's storage (Mosslight Crossing).
- *
- * Deterministic: same NPC + same day = same output.
- * Bounded: respects settlement storage cap.
- * Idempotent per day: uses day in hash, safe to call once per day.
+ * Apply all outstanding days of NPC-driven production to settlement storage.
+ * Safe to call every tick and after save/load; repeated calls for a day are no-ops.
+ * Deterministic: same NPC roster and day range yields the same total.
  */
 export function applyNPCProduction(
   civ: CivilizationState,
@@ -30,54 +26,41 @@ export function applyNPCProduction(
   clock: WorldClockState,
 ): CivilizationState {
   const day = Math.max(1, Math.floor(clock.day));
-
-  // Find Mosslight settlement (where the farmer NPCs live).
+  const ledger = civ as ProductionLedger;
   const mosslight = civ.settlements.find((s) => s.id === 'mosslight');
   if (!mosslight) return civ;
 
-  // Count farmers who would be working today.
-  // We check their archetype (not current activity) because this runs
-  // in the daily tick, not during the work hours themselves.
-  // A farmer "works" if their schedule includes crop-tending.
-  let workingFarmers = 0;
-  for (const npc of townsfolk) {
-    if (npc.archetype === 'farmer') {
-      // Deterministic: farmer works unless hash says they're sick/off.
-      // 90% work rate — occasionally a farmer can't work.
-      const worksToday = townsfolkHash(npc.seed, day * 7919 + 6601) > 0.1;
-      if (worksToday) workingFarmers++;
+  const lastDay = Math.max(0, Math.floor(ledger.lastNPCProductionDay ?? 0));
+  if (day <= lastDay) return civ;
+
+  let totalGrain = 0;
+  // Catch up missed days deterministically (e.g. fast-forward or loading an
+  // older save). Bound work by the existing civilization catch-up limit.
+  const firstDay = Math.max(1, lastDay + 1, day - 369);
+  for (let productionDay = firstDay; productionDay <= day; productionDay += 1) {
+    for (const npc of townsfolk) {
+      if (npc.archetype !== 'farmer') continue;
+      // 90% work rate; deterministic sick/rest day.
+      if (townsfolkHash(npc.seed, productionDay * 7919 + 6601) <= 0.1) continue;
+      totalGrain += 2 + Math.floor(townsfolkHash(npc.seed, productionDay * 131 + 6602) * 2.99);
     }
   }
 
-  if (workingFarmers === 0) return civ;
-
-  // Each farmer produces 2-4 grain per day (deterministic variation).
-  let totalGrain = 0;
-  for (const npc of townsfolk) {
-    if (npc.archetype !== 'farmer') continue;
-    const worksToday = townsfolkHash(npc.seed, day * 7919 + 6601) > 0.1;
-    if (!worksToday) continue;
-    // 2 + (hash * 2) = 2-4 grain per farmer.
-    const yield_ = 2 + Math.floor(townsfolkHash(npc.seed, day * 131 + 6602) * 2.99);
-    totalGrain += yield_;
-  }
-
-  // Apply to storage with cap.
+  // Respect the settlement storage cap. Even a zero-farmer day is marked
+  // processed so this function remains idempotent.
   const cap = 50 + mosslight.population;
-  const current = mosslight.storage['grain'] ?? 0;
-  mosslight.storage['grain'] = Math.round(Math.min(cap, current + totalGrain) * 10) / 10;
-
+  const current = mosslight.storage.grain ?? 0;
+  mosslight.storage.grain = Math.round(Math.min(cap, current + totalGrain) * 10) / 10;
+  ledger.lastNPCProductionDay = day;
   return civ;
 }
 
-/**
- * Get production summary for debugging/diagnostics.
- * Returns grain produced by NPC farmers on a given day.
- */
+/** Deterministic production summary for diagnostics and tests. */
 export function npcProductionSummary(
   townsfolk: Townsperson[],
   day: number,
 ): { farmers: number; workingFarmers: number; estimatedGrain: number } {
+  const normalizedDay = Math.max(1, Math.floor(day));
   let farmers = 0;
   let workingFarmers = 0;
   let estimatedGrain = 0;
@@ -85,11 +68,9 @@ export function npcProductionSummary(
   for (const npc of townsfolk) {
     if (npc.archetype !== 'farmer') continue;
     farmers++;
-    const worksToday = townsfolkHash(npc.seed, day * 7919 + 6601) > 0.1;
-    if (worksToday) {
-      workingFarmers++;
-      estimatedGrain += 2 + Math.floor(townsfolkHash(npc.seed, day * 131 + 6602) * 2.99);
-    }
+    if (townsfolkHash(npc.seed, normalizedDay * 7919 + 6601) <= 0.1) continue;
+    workingFarmers++;
+    estimatedGrain += 2 + Math.floor(townsfolkHash(npc.seed, normalizedDay * 131 + 6602) * 2.99);
   }
 
   return { farmers, workingFarmers, estimatedGrain };
