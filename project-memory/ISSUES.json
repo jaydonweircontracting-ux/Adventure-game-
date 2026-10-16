@@ -80,8 +80,24 @@
       "title": "Player exits from back of house",
       "fixedBuild": "638",
       "verification": "Robust fallback chain added"
+    },
+    {
+      "id": "ISSUE-007",
+      "title": "Live update checker misses latest source builds",
+      "description": "The checker used deployed version.json and a BUILD N commit-message convention, which can miss newer main builds with other commit messages. Tracked generated markers can be stale unless regenerated. BUILD 728 compares running/deployed/latest source builds, adds manual refresh, and adds predev/prebuild generation for version files.",
+      "firstBuild": "725",
+      "status": "in_progress",
+      "severity": "high",
+      "relatedFiles": [
+        "src/App.tsx",
+        "src/game/updateVersion.ts",
+        "scripts/prepare-build-entry.cjs",
+        "package.json",
+        "tests/update-version.test.ts"
+      ],
+      "verification": "BUILD 728 CI and deployed artifact verification pending."
     }
   ],
-  "lastUpdated": "2026-10-12",
+  "lastUpdated": "2026-10-16",
   "version": 1
 }
