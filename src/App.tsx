@@ -6321,7 +6321,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const dx = targetNpc.position.x - positionRef.current.x;
           const dy = targetNpc.position.y - positionRef.current.y;
           const dist = Math.hypot(dx, dy);
-          if (dist > PLAYER_MELEE_REACH * 0.8) {
+          if (dist > PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS * 0.8) {
             // Chase: steer toward the NPC.
             tapSteer = { x: dx / dist, y: dy / dist };
           } else {
@@ -6372,7 +6372,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const dx = combatTarget.position.x - positionRef.current.x;
           const dy = combatTarget.position.y - positionRef.current.y;
           const dist = Math.hypot(dx, dy);
-          if (dist > PLAYER_MELEE_REACH * 0.8) {
+          if (dist > PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS * 0.8) {
             tapSteer = { x: dx / dist, y: dy / dist };
           } else {
             const absDx = Math.abs(dx), absDy = Math.abs(dy);
