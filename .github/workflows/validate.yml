@@ -37,6 +37,8 @@ jobs:
         run: npm run test:landscape-coherence
       - name: Procedural world art regression test
         run: npm run test:procedural-world-art
+      - name: Building art regression test
+        run: npm run test:building-art
       - name: Town production regression test
         run: npm run test:town-production
       - name: Village food-needs regression test
