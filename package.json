@@ -17,6 +17,7 @@
     "test:fantasy-encounters": "npx tsx scripts/sim/fantasy-encounters.test.ts",
     "test:landscape-coherence": "npx tsx tests/landscape-coherence.test.ts",
     "test:procedural-world-art": "npx tsx tests/procedural-world-art.test.ts",
+    "test:building-art": "npx tsx tests/building-art.test.ts",
     "test:town-production": "npx tsx tests/town-production.test.ts",
     "test:village-food-needs": "npx tsx tests/village-food-needs.test.ts"
   },

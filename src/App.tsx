@@ -50,6 +50,7 @@ import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, pl
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
 import { mosslightEngineChunkLayout, mosslightEngineLanes, mosslightEngineProps, mosslightFillerRects } from '@/game/mosslightLayout';
 import { wallToTownWall } from '@/game/townLayout';
+import { buildingArtFor } from '@/game/buildingArt';
 import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
 import { LANDMARKS } from '@/game/landmarks';
 import {
@@ -10140,11 +10141,15 @@ if (active) {
                 const rect = doorway.rect;
                 const off = houseOffsets[doorway.id] || { x: 0, y: 0 };
                 const isSelected = selectedHouse === doorway.id;
+                const buildingIndex = doorways.indexOf(doorway);
+                const buildingArt = buildingArtFor(chunk, buildingIndex, rect);
                 return (
                 <span
                   key={doorway.id}
-                  className={'field-house' + (isStartingArea(chunk) ? ' new-house' : '')}
+                  className={'field-house sprite-house' + (isStartingArea(chunk) ? ' new-house' : '')}
                   style={{
+                    '--building-art': 'url("' + assetUrl(buildingArt.file) + '")',
+                    '--building-art-ratio': buildingArt.aspectRatio,
                     left: fieldPct(rect.left + off.x),
                     top: fieldPct(rect.top + off.y),
                     width: fieldPct(rect.right - rect.left),
@@ -10153,7 +10158,7 @@ if (active) {
                     touchAction: moverMode ? 'none' : undefined,
                     outline: isSelected ? '3px solid #ff0' : undefined,
                     zIndex: isSelected ? 10 : undefined,
-                  }}
+                  } as CSSProperties}
                   onPointerUp={moverMode ? (e) => {
                     e.stopPropagation();
                     // Flag tool: mark this generated house for removal.
@@ -10180,7 +10185,7 @@ if (active) {
                       setSelectedPlacedId(null);
                     }
                   } : undefined}
-                >{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}{moverMode && (
+                ><span className="field-house-art" aria-hidden="true" />{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}{moverMode && (
                   <span className="editor-coord" aria-hidden="true">
                     {(rect.left + off.x).toFixed(1)}, {(rect.top + off.y).toFixed(1)}
                   </span>
@@ -10313,19 +10318,22 @@ if (active) {
             const farmData = fieldFarmRects(chunk.x, chunk.y);
             return (
               <>
-                {farmData.houses.map((rect, i) => (
-                  <span
+                {farmData.houses.map((rect, i) => {
+                  const buildingArt = buildingArtFor(chunk, i, rect);
+                  return <span
                     key={'farm-house-' + i}
                     className="field-house farm-house"
                     style={{
+                      '--building-art': 'url("' + assetUrl(buildingArt.file) + '")',
+                      '--building-art-ratio': buildingArt.aspectRatio,
                       left: fieldPct(rect.left),
                       top: fieldPct(rect.top),
-                      width: fieldPct((rect.right - rect.left)),
-                      height: fieldPct((rect.bottom - rect.top)),
-                    }}
+                      width: fieldPct(rect.right - rect.left),
+                      height: fieldPct(rect.bottom - rect.top),
+                    } as CSSProperties}
                     aria-label="Farmhouse"
-                  />
-                ))}
+                  ><span className="field-house-art" aria-hidden="true" /></span>;
+                })}
                 {farmData.fields.map((rect, i) => (
                   <span
                     key={'farm-field-' + i}
