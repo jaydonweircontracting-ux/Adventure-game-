@@ -53,7 +53,7 @@ npm run build                # production build
 - `project-memory/BUILD_HISTORY.json` — build log
 - `project-memory/CURRENT_STATE.md` — this file
 
-## Active task — 2026-10-16: restore update checker and release verification
+## Active task — 2026-10-16: recover build after truncated App tail
 
 - User reports the main-menu live update indicator no longer reliably turns orange, polls, or warns when the running build is stale.
 - Source inspection found generated markers were stale in the tracked tree (public/version.json 707, root index.html 712) while the authoritative build script had reached 727. The build script generates both files; BUILD 728 adds `predev` so local dev also regenerates them instead of hand-editing generated output.
