@@ -132,6 +132,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '725': 'Repair live update checker, restore orange current status, and validate version metadata consistency',
   '724': 'Improved seeded town parks: protect plaza, roads, fixed buildings, and boundaries across settlement sizes',
   '723': 'Reduced NPC chatter render-loop work by caching fixed dialogue lines and bounded deterministic speaker seeds',
   '722': 'Added an on/off NPC communication toggle with small rotating speech bubbles above visible townsfolk; preference is saved',
@@ -11615,9 +11616,9 @@ function Home() {
             }
           } catch { /* GitHub API unavailable — fall through to current */ }
           if (data.build && Number(data.build) < Number(runningBuild)) {
-            setUpdateAvailable(String(runningBuild));
-            setUpdateNote('Version metadata is behind the running game');
-            setUpdateStatus('in-progress');
+            setUpdateAvailable(null);
+            setUpdateNote(`Version metadata (${data.build}) is older than the running build (${runningBuild})`);
+            setUpdateStatus('error');
           } else {
             setUpdateAvailable(null);
             setUpdateNote('');
@@ -12165,7 +12166,7 @@ function Home() {
             )}
             {updateStatus === 'error' && (
               <div style={{ background: '#e74c3c', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
-                ⚠ Update check failed — couldn't reach server
+                ⚠ {updateNote || 'Update check failed — couldn’t verify the published version'}
               </div>
             )}
             <div className="main-menu-swords" aria-hidden="true">
