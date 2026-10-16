@@ -80,8 +80,24 @@
       "title": "Player exits from back of house",
       "fixedBuild": "638",
       "verification": "Robust fallback chain added"
+    },
+    {
+      "id": "ISSUE-007",
+      "title": "Live update checker does not reliably detect latest source build",
+      "description": "The checker relied on deployed version.json and a BUILD N commit-message pattern. Source markers were inconsistent (source manifest 707, root index 712, source marker later 725), and commits without the expected message format could be incorrectly treated as current. BUILD 725 restored orange checking/current status and reports stale metadata; BUILD 726 adds authoritative source marker comparison and manual refresh.",
+      "firstBuild": "725",
+      "status": "in_progress",
+      "severity": "high",
+      "relatedFiles": [
+        "src/App.tsx",
+        "src/game/updateVersion.ts",
+        "scripts/prepare-build-entry.cjs",
+        "public/version.json",
+        "tests/update-version.test.ts"
+      ],
+      "verification": "BUILD 726 CI and deployed artifact verification pending."
     }
   ],
-  "lastUpdated": "2026-10-12",
+  "lastUpdated": "2026-10-16",
   "version": 1
 }
