@@ -1773,7 +1773,10 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         }
       }
       // BUILD 720: full monster sheets are rendered in the iso scene and share the same target lock as combat.
-      const liveMonsters = live.monsters || [];
+      // BUILD 742: hard-block hostile entities at render time in the starter settlement.
+      // This also hides stale/cached monster state and malformed sprites that can
+      // survive the spawn filter and appear as skeletons or invisible humanoids.
+      const liveMonsters = isStartingArea(chunk) ? [] : (live.monsters || []);
       const monsterImgs = (window as unknown as { __isoMonsterImgs?: Record<string, HTMLImageElement> }).__isoMonsterImgs || {};
       for (const monster of liveMonsters) {
         const def = isoMonsterDef(monster.kind);
