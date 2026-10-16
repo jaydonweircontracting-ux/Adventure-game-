@@ -10515,7 +10515,7 @@ if (active) {
               </span>
               {barks[npc.id] && <span className="npc-bark" aria-hidden="true">{barks[npc.id]}</span>}
               {targetNpcId === npc.id && <span className="npc-target-marker" aria-hidden="true">🎯</span>}
-              {targetNpcId === npc.id && Math.hypot(npc.position.x - position.x, npc.position.y - position.y) <= 8.5 && (
+              {!attacking && attackCooldownMs <= 0 && targetNpcId === npc.id && Math.hypot(npc.position.x - position.x, npc.position.y - position.y) <= 8.5 && (
                 <span className="npc-chat-prompt" role="button" tabIndex={0} aria-label={'Talk to ' + npc.name}
                   onClick={(event) => { event.stopPropagation(); talkToTownsfolk(npc); }}
                   onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); talkToTownsfolk(npc); } }}>💬</span>
@@ -11292,7 +11292,7 @@ if (active) {
                <div />
              </div>
            )}
-           {talkTarget && targetNpcId && (
+           {!attacking && attackCooldownMs <= 0 && talkTarget && targetNpcId && (
              <button className="icon-button field-talk-button" onClick={() => talkTarget.talk()} aria-label={'Talk to ' + talkTarget.name} title={'Talk to ' + talkTarget.name} data-testid="button-talk"><MessageCircle size={16} /></button>
            )}
            <button className="icon-button field-attack-button" onClick={() => attackGoat()} disabled={attackCooldownMs > 0 || attacking || inputLocked || (Boolean(interior) && interior?.roomType !== 'cellar') || (mounted && !equippedBow)} aria-label={equippedBow ? (selectedGoat ? 'Loose arrow at target' : 'Loose arrow') : (selectedGoat ? 'Strike selected goat' : 'Strike nearest goat')} title={equippedBow ? 'Fire bow · Space' : (selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space')} aria-disabled={attackCooldownMs > 0 || attacking} data-testid="button-attack">{equippedBow ? '🏹' : <Sword size={16} />}{attackCooldownMs > 0 && <span className="attack-cooldown-ring" style={{ background: 'conic-gradient(rgba(219, 120, 94, .95) ' + ((attackCooldownMs / PLAYER_ATTACK_COOLDOWN_MS) * 100) + '%, rgba(19, 43, 34, .2) 0)' }} aria-hidden="true" />}</button>
