@@ -356,6 +356,9 @@ function drawVectorPlaceholder(
 const lastCharacterSprite = new WeakMap<CharacterAnimator, {
   key: string;
   image: HTMLImageElement;
+  base: string;
+  anim: RpgAnim;
+  face: Face8;
   frame: number;
 }>();
 // Keep each equipped layer visible while the next animation frame loads.
@@ -395,26 +398,35 @@ export function drawIsoCharacter(o: DrawCharacterOptions): void {
   // the real animated model and the flat vector placeholder every few frames.
   const spriteKey = `${base}:${anim}:${face}`;
   let spriteFrame = frame;
+  let drawBase = base;
+  let drawAnim = anim;
+  let drawFace = face;
   let im = rpgSprite(base, anim, face, spriteFrame);
   if (!im) {
     const cached = lastCharacterSprite.get(o.animator);
     if (cached) {
-      // Keep the last real model visible while a newly selected base, facing,
-      // animation, or frame finishes loading. A vector placeholder here caused
-      // the character creator to flash between the real RPG art and a 2D figure.
+      // Keep the exact last-good sprite and its matching anchor/animation
+      // metadata together. Using the current clip's anchor for an older cached
+      // frame made the body jump vertically during direction/clip changes.
       im = cached.image;
+      drawBase = cached.base;
+      drawAnim = cached.anim;
+      drawFace = cached.face;
       spriteFrame = cached.frame;
     } else {
       // First-ever frame only: try the stable first frame before using the
       // vector placeholder. Once any real frame has loaded, never flash back.
       im = rpgSprite(base, anim, face, 0);
-      if (im) spriteFrame = 0;
+      if (im) {
+        spriteFrame = 0;
+        lastCharacterSprite.set(o.animator, { key: spriteKey, image: im, base, anim, face, frame: spriteFrame });
+      }
     }
   } else {
-    lastCharacterSprite.set(o.animator, { key: spriteKey, image: im, frame: spriteFrame });
+    lastCharacterSprite.set(o.animator, { key: spriteKey, image: im, base, anim, face, frame: spriteFrame });
   }
 
-  const anchor = rpgAnchorFor(base, anim, face, spriteFrame);
+  const anchor = rpgAnchorFor(drawBase, drawAnim, drawFace, spriteFrame);
   const scale = size / RPG_H;
   const dw = RPG_W * scale;
   const dh = size;
@@ -432,8 +444,8 @@ export function drawIsoCharacter(o: DrawCharacterOptions): void {
       lastEquipmentSprites.set(o.animator, equipmentCache);
     }
     for (const eq of L.equipment) {
-      const cacheKey = `${eq}:${anim}:${face}`;
-      const loadedLayer = rpgSprite(eq, anim, face, spriteFrame);
+      const cacheKey = `${eq}:${drawAnim}:${drawFace}`;
+      const loadedLayer = rpgSprite(eq, drawAnim, drawFace, spriteFrame);
       if (loadedLayer) equipmentCache.set(cacheKey, loadedLayer);
       const layer = loadedLayer ?? equipmentCache.get(cacheKey);
       if (layer) g.drawImage(layer, dx, dy, dw, dh);
