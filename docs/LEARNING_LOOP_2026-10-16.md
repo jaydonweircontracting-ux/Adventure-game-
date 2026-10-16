@@ -32,3 +32,15 @@
 **Verification:** Not run in this GitHub-only editing session. CI, typecheck, production build, and Playwright verification remain required. The task stays `in_progress` until those checks pass.
 
 **Regression lessons:** Ensure all alternate combat pathways share equivalent NPC death/crime/loot consequences; align loot field names with the inventory ledger; use the live NPC state rather than a stale dialogue snapshot to prevent talking to dead characters.
+
+## Wanted-guard modal input lock — BUILD 730
+
+**Task:** Prevent movement, attacks, and world interactions from continuing while the wanted guard is presenting arrest choices.
+
+**Root cause:** The guard encounter modal was rendered above the world, but the shared keyboard/touch input gates only checked inventory/options locks. The player could still move or trigger combat behind the modal.
+
+**Files changed:** `src/App.tsx`, `scripts/prepare-build-entry.cjs`, `docs/TASK_QUEUE.md`.
+
+**Change:** Add the active guard encounter to the central input-reset effect and movement/combat/interaction guards. Flee, jail, and pay-fine buttons remain active because they resolve the encounter explicitly.
+
+**Verification:** Not run in this GitHub-only editing session. CI, typecheck, production build, and real-game Playwright verification remain pending. TASK-014 remains in progress until those checks pass.
