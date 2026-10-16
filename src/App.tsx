@@ -1854,10 +1854,10 @@ function tutorialAmbientGoats(): GoatState[] {
 // BUILD 685: tutorial objective banner text — pure function of existing game
 // state (dismissal flag, interior status, sword pickup). Used by the render
 // and by the ?testmode=1 hook so both can never disagree.
-function tutorialObjectiveText(opts: { dismissed: boolean; inTutorialHouse: boolean; swordPickedUp: boolean }): string | null {
+function tutorialObjectiveText(opts: { dismissed: boolean; inTutorialHouse: boolean; daggerPickedUp: boolean }): string | null {
   if (opts.dismissed) return null;
   if (opts.inTutorialHouse) {
-    return opts.swordPickedUp ? 'Walk to the door to leave' : 'Pick up the Old Sword';
+    return opts.daggerPickedUp ? 'Walk to the door to leave' : 'Pick up the Old Dagger';
   }
   return 'Explore Mosslight Island — follow the road to the Wayfarer Guild';
 }
@@ -8175,7 +8175,7 @@ if (active) {
   const objectiveBannerText = tutorialObjectiveText({
     dismissed: tutorialBannerDismissed,
     inTutorialHouse: interior?.id === 'tutorial-house',
-    swordPickedUp: pickedUpGroundItems.includes(TUTORIAL_SWORD_ITEM),
+    daggerPickedUp: pickedUpGroundItems.includes(TUTORIAL_DAGGER_ITEM),
   });
   return (
     <div className="field-column">
