@@ -9384,7 +9384,10 @@ if (active) {
                   setTargetNpcId(null);
                 } else {
                   targetNpcIdRef.current = npc.id;
-                  targetNpcModeRef.current = 'talk';
+                  // BUILD 724: once a townsfolk has been struck, they are fleeing/hostile
+                  // and must not be re-selected as a conversation target.
+                  const hasBeenAttacked = npc.hp != null || npc.fleeUntilTick != null || npc.deadUntilTick != null;
+                  targetNpcModeRef.current = hasBeenAttacked ? 'combat' : 'talk';
                   setTargetNpcId(npc.id);
                 }
               }}
