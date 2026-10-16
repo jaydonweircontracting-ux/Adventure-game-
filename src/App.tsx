@@ -6144,18 +6144,20 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       autoMineBestDistanceRef.current = distance;
       tapMoveTargetRef.current = null;
       const hits = (oreHitsRef.current[target.id] || 0) + 1;
-      // BUILD 739: every successful swing grants one stone and Mining XP.
-      // The starting boulder lasts for its full richness count (12 hits), rather
-      // than withholding all rewards until the final hit.
-      const hitsNeeded = target.id === 'tutorial-stone-deposit-4-7'
-        ? Math.max(1, target.richness)
+      // BUILD 740: the tutorial starting boulder is a permanent resource node.
+      // Every swing awards stone and Mining XP; it never depletes or disappears.
+      const isPermanentStartingBoulder = target.id === 'tutorial-stone-deposit-4-7';
+      const hitsNeeded = isPermanentStartingBoulder
+        ? Number.POSITIVE_INFINITY
         : (ORE_HITS[target.kind] || 3);
       onLoot({ stone: 1 });
       awardSkillXp('mining', MINING_XP[target.kind] || 10);
       spawnCombatText('+1 stone', { x: target.fx, y: target.fy }, 'reward');
       playCombatSound('shing', muted);
-      setLogs((logs) => [{ text: 'Mining hit ' + hits + '/' + hitsNeeded + ': +1 stone and Mining XP.', color: 'blue' }, ...logs].slice(0, 3));
-      if (hits >= hitsNeeded) {
+      setLogs((logs) => [{ text: isPermanentStartingBoulder
+        ? 'Mining hit ' + hits + ': +1 stone and Mining XP. The boulder is permanent.'
+        : 'Mining hit ' + hits + '/' + hitsNeeded + ': +1 stone and Mining XP.', color: 'blue' }, ...logs].slice(0, 3));
+      if (!isPermanentStartingBoulder && hits >= hitsNeeded) {
         delete oreHitsRef.current[target.id];
         depletedOresRef.current[target.id] = Date.now() + ORE_RESPAWN_MS;
         (window as unknown as { __depletedOres?: Set<string> }).__depletedOres = new Set(Object.keys(depletedOresRef.current));
