@@ -17,6 +17,15 @@
       "status": "PROPOSED",
       "createdAt": "2026-10-12T04:50:04.146Z",
       "retryCount": 0
+    },
+    {
+      "id": "live-update-checker",
+      "priority": "P1",
+      "description": "Synchronize source build markers; compare running, deployed, and latest main versions; add manual menu refresh",
+      "system": "release-checker",
+      "status": "IN_PROGRESS",
+      "createdAt": "2026-10-16T21:47:00Z",
+      "retryCount": 0
     }
   ],
   "completedTasks": [],
