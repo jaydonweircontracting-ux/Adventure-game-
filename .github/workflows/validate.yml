@@ -35,5 +35,7 @@ jobs:
         run: npm run test:fantasy-encounters
       - name: Landscape coherence regression test
         run: npm run test:landscape-coherence
+      - name: Procedural world art regression test
+        run: npm run test:procedural-world-art
       - name: Production build
         run: npm run build
