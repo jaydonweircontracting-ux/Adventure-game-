@@ -141,7 +141,7 @@
 - **Status:** `in_progress`
 - **Priority:** P1
 - **Objective:** Ensure the main menu detects newer source builds, reports deployment lag, polls every 10 seconds, and offers manual refresh.
-- **Files:** `src/App.tsx`, `src/game/updateVersion.ts`, `scripts/prepare-build-entry.cjs`, `tests/update-version.test.ts`
+- **Files:** `src/App.tsx`, `src/game/updateVersion.ts`, `scripts/prepare-build-entry.cjs`, `index.html`, `public/version.json`, `tests/update-version.test.ts`
 - **Checkpoint:** 2026-10-16 — BUILD 725 restored orange checking/current status and stale-metadata errors. BUILD 726 compares the running build to both the deployed manifest and main's source marker, adds Check now, and tests version classification.
 - **Acceptance:** CI passes; deployment succeeds; source/deployed/running markers are independently checked; fresh play link is provided.
 - **Evidence:** Pending BUILD 726 CI and live Pages verification.
