@@ -152,7 +152,7 @@
 - **Priority:** P1
 - **Objective:** Close dialogue and ambient speech when an NPC dies; apply lasting negative disposition after attacks; make all melee NPC death paths create lootable bodies; transfer corpse gold/potions into the correct inventory fields; have witnessed assaults/murders create bounty and guards pursue the player with flee/jail/pay-fine choices.
 - **Files:** `src/App.tsx`, `src/game/lootableBodies.ts`, `src/game/bounty.ts`, `src/game/crime.ts`, `docs/LEARNING_LOOP_2026-10-16.md`
-- **Checkpoint:** 2026-10-16 — BUILD 729 committed. Guard prompt and code paths added; local typecheck, browser tests, CI, and live deployment have not yet been verified for this commit.
+- **Checkpoint:** 2026-10-16 — BUILD 730 committed. CI run `38972899139` passed typecheck, isometric direction regression, production build, artifact upload, and Pages deployment. Dedicated real-game NPC/arrest interaction tests remain unrun.
 - **Acceptance:** Typecheck/build pass; real-game tests confirm dialogue closes on death, attack lowers disposition, corpse gold/potions transfer correctly, witnessed assault/murder creates bounty, guard approaches, flee moves player away, jail enters prison, and fine consumes coins/clears bounty.
 
 ### TASK-014: Lock wanted-guard dialogue controls
