@@ -133,6 +133,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '734': 'Make the starting-house stone boulder visible and mineable; add stone inventory',
   '733': 'Add a large stone boulder behind the starting house in Mosslight Crossing',
   '732': 'Prevent dead NPCs from showing ambient speech or talk prompts; speech resumes after respawn',
   '731': 'Show lootable NPC corpses in isometric view and allow tap-to-loot alongside the existing 2D body interaction',
