@@ -145,3 +145,12 @@
 - **Checkpoint:** 2026-10-16 — BUILD 725 restored orange checking/current status; BUILD 728 compares running, deployed, and latest source builds, adds Check now, and regenerates version markers through predev/prebuild.
 - **Acceptance:** CI passes; deployment succeeds; source/deployed/running markers are checked; fresh play link is provided.
 - **Evidence:** CI run 38972057977 passed typecheck, update-version regression (11 assertions), existing regression suite, and production build; live Pages verification pending.
+
+
+### TASK-014: NPC death, disposition, corpse loot, and guard arrest loop
+- **Status:** `in_progress`
+- **Priority:** P1
+- **Objective:** Close dialogue and ambient speech when an NPC dies; apply lasting negative disposition after attacks; make all melee NPC death paths create lootable bodies; transfer corpse gold/potions into the correct inventory fields; have witnessed assaults/murders create bounty and guards pursue the player with flee/jail/pay-fine choices.
+- **Files:** `src/App.tsx`, `src/game/lootableBodies.ts`, `src/game/bounty.ts`, `src/game/crime.ts`, `docs/LEARNING_LOOP_2026-10-16.md`
+- **Checkpoint:** 2026-10-16 — BUILD 729 committed. Guard prompt and code paths added; local typecheck, browser tests, CI, and live deployment have not yet been verified for this commit.
+- **Acceptance:** Typecheck/build pass; real-game tests confirm dialogue closes on death, attack lowers disposition, corpse gold/potions transfer correctly, witnessed assault/murder creates bounty, guard approaches, flee moves player away, jail enters prison, and fine consumes coins/clears bounty.
