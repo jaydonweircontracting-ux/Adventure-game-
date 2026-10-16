@@ -1534,7 +1534,11 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         if (live.selectedNpcId === npc.id) {
           const selectedX = ix, selectedY = iy;
           const playerDistance = Math.hypot(npc.position.x - live.px, npc.position.y - live.py);
-          const canTalk = playerDistance <= 8.5;
+          // BUILD 724: attacked/fleeing/dead townsfolk never show a talk affordance.
+          // This is data-driven (not proximity-driven), so the icon cannot flicker back
+          // on as the player moves in and out of interaction range during combat.
+          const hasBeenAttacked = npc.hp != null || npc.fleeUntilTick != null || npc.deadUntilTick != null;
+          const canTalk = !hasBeenAttacked && playerDistance <= 8.5;
           drawables.push({
             depth: selectedX + selectedY - 0.025,
             draw: (g2) => {
@@ -1925,7 +1929,8 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       // BUILD 719: chat is a separate affordance. It exists only for the
       // selected NPC and only when the player is within interaction range.
       const selectedNpc = liveRef.current.folk.find((npc) => npc.id === liveRef.current.selectedNpcId && !npc.indoors);
-      if (selectedNpc && talk && Math.hypot(selectedNpc.position.x - liveRef.current.px, selectedNpc.position.y - liveRef.current.py) <= 8.5) {
+      const selectedNpcHasBeenAttacked = !!selectedNpc && (selectedNpc.hp != null || selectedNpc.fleeUntilTick != null || selectedNpc.deadUntilTick != null);
+      if (selectedNpc && !selectedNpcHasBeenAttacked && talk && Math.hypot(selectedNpc.position.x - liveRef.current.px, selectedNpc.position.y - liveRef.current.py) <= 8.5) {
         const w = isoToScreen(selectedNpc.position.x, selectedNpc.position.y);
         const bx = (w.x - cam.x) * zm + wpx / 2;
         const by = (w.y - cam.y) * zm + hpx / 2 - 58 * zm;
