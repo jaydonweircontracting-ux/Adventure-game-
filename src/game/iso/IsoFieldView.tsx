@@ -1134,7 +1134,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         // Stable hash: absolute chunk + local coords (both stable)
         // BUILD 614: expanded to 10 varieties for town diversity.
         const h = Math.abs(Math.sin((absCx * 1000 + lx) * 12.9898 + (absCy * 1000 + ly) * 78.233) * 43758.5453) % 1;
-        const kinds = ['blue-cottage', 'red-cottage', 'blue-house', 'red-shop', 'hut-thatched', 'shop-awning', 'house-timber', 'inn-large', 'tavern', 'gatehouse'];
+        const kinds = ['blue-cottage', 'red-cottage', 'blue-house', 'red-shop', 'green-cottage', 'shop-awning', 'house-timber', 'inn-large', 'tavern', 'gatehouse'];
         return kinds[Math.floor(h * kinds.length)];
       };
       for (const sc of scenes) {
@@ -1151,7 +1151,11 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         // Use the selected sprite's real aspect ratio for vertical culling.
         // A fixed 64px allowance clipped tall roofs as the camera approached
         // the viewport edge, making buildings pop in/out while still visible.
-        const kind = buildingKindCache.get(b) ?? bldKindForBuilding(b, sc.ox, sc.oy);
+        // Never render the retired straw-hut asset. Normalize the final live-renderer
+        // selection here because pinned settlement variants and legacy hash pools
+        // bypass the standalone buildingArtFor() selector.
+        const selectedKind = buildingKindCache.get(b) ?? bldKindForBuilding(b, sc.ox, sc.oy);
+        const kind = selectedKind === 'hut-thatched' ? 'green-cottage' : selectedKind;
         buildingKindCache.set(b, kind);
         const projectedWidth = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 0.95;
         const spriteHeight = buildingSpriteHeightForWidth(projectedWidth, kind);
