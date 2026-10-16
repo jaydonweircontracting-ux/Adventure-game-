@@ -134,7 +134,8 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
-  '743': 'Remove deer aggro marker, randomize wildlife spawns, enable calm animal wandering, and remove animal collision boxes',
+  '744': 'Remove the two broken ambient animals beside the starting house and restore original wilderness wildlife behaviour',
+  '743': 'Remove deer aggro marker',
   '742': 'Hard-block hostile and malformed monster sprites from rendering in the starting settlement',
   '741': 'Keep hostile encounters out of the starting settlement and remove floating NPC bark text over missing sprites',
   '740': 'Keep the starting boulder permanently visible and mineable while awarding stone and Mining XP on every hit',
@@ -969,7 +970,7 @@ function resolveFieldMovement(current: Point, movement: Point, chunk: Point, goa
   ];
   for (const candidate of candidates) {
     const wrapped = wrapFieldPosition(candidate, chunk);
-    if (wrapped && !isFieldPositionBlocked(wrapped.position, wrapped.chunk, houseOffsets)) {
+    if (wrapped && !isFieldPositionBlocked(wrapped.position, wrapped.chunk, houseOffsets) && !isPositionOccupiedByGoat(wrapped.position, goats)) {
       // BUILD 355: cliff faces block UPHILL movement (walking down stays free).
       const wx0 = chunk.x * 280 + current.x;
       const wy0 = chunk.y * 280 + current.y;
@@ -1903,24 +1904,14 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
   // Goats roam meadows and outskirts (danger 1+), RuneScape-style — plus the two
   // calm ambient goats near the tutorial house (BUILD 685).
   if (isTutorialCenter(chunk)) {
-    return tutorialAmbientGoats();
+    // BUILD 744: remove the two broken ambient animals beside the starter house.
+    // Wilderness critters continue using the original spawn and AI systems.
+    return [];
   }
-  const positions = Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, () => {
-    // BUILD 743: wildlife spawn points vary each time a chunk is populated.
-    // Try several random ground positions so animals don't appear in the same
-    // fixed spots or spawn inside buildings/water.
-    for (let attempt = 0; attempt < 24; attempt++) {
-      const candidate = {
-        x: 12 + Math.random() * (FIELD_SIZE - 24),
-        y: 12 + Math.random() * (FIELD_SIZE - 24),
-      };
-      if (!isFieldPositionBlocked(candidate, chunk)) return candidate;
-    }
-    return { x: FIELD_SIZE / 2, y: FIELD_SIZE / 2 };
-  });
+  const positions = Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 20 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % (FIELD_SIZE - 40)), y: 20 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % (FIELD_SIZE - 40)) }));
   const safePositions = positions.filter((position) => !isFieldPositionBlocked(position, chunk));
   return safePositions.map((position, index) => {
-    const wanderSeed = Math.floor(Math.random() * 0x7fffffff);
+    const wanderSeed = Math.abs(chunk.x * 97 + chunk.y * 193 + index * 53 + 17);
     // BUILD 575: Add 'goat' as a spawnable kind. Previously only
     // deer/boar/badger/direwolf spawned — no actual goats existed!
     const kinds = ['goat', 'deer', 'boar', 'badger', 'direwolf'] as const;
@@ -7225,8 +7216,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, threatLevel: playerLevelRef.current }, currentPlayer, facingRef.current, currentGoats, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk) });
           let next = result.goat;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: goat.position, moving: false };
-          // BUILD 743: wildlife has no player collision/separation box.
-          // The player can walk past animals naturally; only terrain/buildings block movement.
+          const separatedPosition = separateGoatFromPlayer(next.position, currentPlayer, next.kind);
+          if (separatedPosition) {
+            next = !isFieldPositionBlocked(separatedPosition, currentChunk)
+              ? { ...next, position: separatedPosition, moving: false }
+              : { ...next, position: goat.position, moving: false };
+          }
           if (result.attackHit) {
             const damage = goatAttackDamageForLevel(goat.level); damageTaken += damage;
             spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted);
