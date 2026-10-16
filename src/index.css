@@ -1581,31 +1581,36 @@
   z-index: 3;
   width: 19%;
   height: 13%;
-  border: 1px solid #613d31;
-  background: #c76c45;
-  box-shadow: 2px 3px 0 rgba(64, 59, 39, .3);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  isolation: isolate;
 }
-.field-house::before {
-  content: '';
+/* Real pixel-art building sprite, anchored to the footprint base. Art can
+   overhang the logical footprint; doors/collision/navigation remain unchanged. */
+.field-house.sprite-house,
+.field-house.farm-house { border: 0; background: transparent; box-shadow: none; }
+.field-house-art {
   position: absolute;
-  left: -3px;
-  top: -7px;
-  width: calc(100% + 6px);
-  height: 35%;
-  min-height: 10px;
-  background: #944839;
-  /* BUILD 519: Removed clip-path triangle (fails on iOS Safari, renders as broken diamond).
-     Using simple roof band instead — robust across browsers. */
-}
-.field-house::after {
-  content: '';
-  position: absolute;
-  left: 43%;
+  z-index: 0;
+  left: -40%;
   bottom: 0;
-  width: 16%;
-  height: 44%;
-  background: #604331;
+  width: 180%;
+  height: auto;
+  aspect-ratio: var(--building-art-ratio, 2 / 1);
+  background-image: var(--building-art);
+  background-repeat: no-repeat;
+  background-position: center bottom;
+  background-size: 100% 100%;
+  image-rendering: pixelated;
+  pointer-events: none;
 }
+.field-house.sprite-house::before,
+.field-house.sprite-house::after,
+.field-house.farm-house::before,
+.field-house.farm-house::after { display: none; }
+.field-house.sprite-house.new-house { background: transparent; border: 0; box-shadow: none; }
 .field-house.house-1 { left: 8%; top: 11%; }
 /* New house: stone cottage with prominent entrance */
 .field-house.new-house {
