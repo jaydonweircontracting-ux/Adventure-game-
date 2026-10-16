@@ -46,7 +46,7 @@ import { mosslightFillerLots, fillerVariantForLot } from '../mosslightLayout';
 // BUILD 684: single authoritative building asset catalog (was: hardcoded
 // kind->path maps duplicated in this file). Anchor/scale conventions documented
 // in src/game/buildingRig.ts.
-import { BUILDING_ASSET_META } from '../buildingRig';
+import { BUILDING_ASSET_META, buildingSpriteHeightForWidth } from '../buildingRig';
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, type MonsterAnim, type MonsterSpriteDef } from '../monsterSprites';
 // BUILD 369 (Phase 2b): authoritative water/bridges in the iso field.
 import { waterGridForChunk, waterDepthAt, waterGridAt, type WaterGrid } from '../landscape';
@@ -1148,7 +1148,15 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         // Visible world rect centered on cam.
         const vhw = (wpx / 2) / zm, vhh = (hpx / 2) / zm;
         const minX = Math.min(p00.x, p10.x, p11.x, p01.x), maxX = Math.max(p00.x, p10.x, p11.x, p01.x);
-        const minY = Math.min(p00.y, p10.y, p11.y, p01.y) - 64, maxY = Math.max(p00.y, p10.y, p11.y, p01.y);
+        // Use the selected sprite's real aspect ratio for vertical culling.
+        // A fixed 64px allowance clipped tall roofs as the camera approached
+        // the viewport edge, making buildings pop in/out while still visible.
+        const kind = buildingKindCache.get(b) ?? bldKindForBuilding(b, sc.ox, sc.oy);
+        buildingKindCache.set(b, kind);
+        const projectedWidth = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 0.95;
+        const spriteHeight = buildingSpriteHeightForWidth(projectedWidth, kind);
+        const minY = Math.min(p00.y, p10.y, p11.y, p01.y) - Math.max(64, spriteHeight);
+        const maxY = Math.max(p00.y, p10.y, p11.y, p01.y);
         if (maxX < cam.x - vhw || minX > cam.x + vhw || maxY < cam.y - vhh || minY > cam.y + vhh) continue;
         const wallH = 64;
         const top = (p: { x: number; y: number }) => ({ x: p.x, y: p.y - wallH });
@@ -1164,11 +1172,6 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         drawables.push({
           depth: buildingDepth, draw: (g2) => {
             // BUILD 603: stable sprite by absolute chunk + local coords.
-            let kind = buildingKindCache.get(b);
-            if (!kind) {
-              kind = bldKindForBuilding(b, sc.ox, sc.oy);
-              buildingKindCache.set(b, kind);
-            }
             const sprite = bldImgs[kind];
             if (sprite && sprite.complete && sprite.naturalWidth > 0) {
               // Draw sprite anchored at building base center

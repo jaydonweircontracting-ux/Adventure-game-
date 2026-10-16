@@ -145,6 +145,19 @@ export function assetMetaFor(variant: string): BuildingAssetMeta | null {
   return BUILDING_ASSET_META[variant] ?? null;
 }
 
+/**
+ * Estimated rendered height for a sprite whose width is already projected to
+ * screen space. Used by viewport culling so tall buildings are not dropped
+ * while their footprint is still off-screen but their roof is visible.
+ * Unknown variants use a square bound as a conservative fallback.
+ */
+export function buildingSpriteHeightForWidth(projectedWidth: number, variant: string): number {
+  if (!Number.isFinite(projectedWidth) || projectedWidth <= 0) return 0;
+  const meta = assetMetaFor(variant);
+  const aspect = meta ? meta.h / meta.w : 1;
+  return projectedWidth * aspect;
+}
+
 // ---------------------------------------------------------------------------
 // Consistency audit — the prompt's 16 checks, adapted to real engine
 // capabilities. Each check returns 0+ error strings with file-grade paths.

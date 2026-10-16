@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { drawProceduralGroundAccent, drawProceduralPathDetail, drawProceduralTreeLod, drawBuildingGroundDress } from '../src/game/engine/proceduralWorldArt';
+import { BUILDING_ASSET_META, buildingSpriteHeightForWidth } from '../src/game/buildingRig';
 
 function mockContext() {
   const calls: Array<[number, number, number, number, string]> = [];
@@ -104,3 +105,19 @@ drawProceduralTreeLod(treeB.ctx, 30, 60, 1, -42, 71);
 assert.deepEqual(treeA.calls, treeB.calls, 'distant tree silhouette must be deterministic');
 assert.ok(treeA.calls.length <= 10, 'distant tree should use a small drawing operation budget');
 console.log(`Tree LOD regression passed (${treeA.calls.length} drawing operations).`);
+
+
+// Building sprite culling uses each asset's real aspect ratio, including the
+// taller thatched huts and gatehouses, so roofs remain visible at viewport edges.
+assert.equal(buildingSpriteHeightForWidth(100, 'blue-cottage'), 50);
+assert.equal(buildingSpriteHeightForWidth(100, 'hut-thatched'), 100);
+assert.equal(buildingSpriteHeightForWidth(80, 'story-tower'), 40);
+assert.equal(buildingSpriteHeightForWidth(0, 'blue-cottage'), 0);
+assert.equal(buildingSpriteHeightForWidth(-10, 'blue-cottage'), 0);
+assert.equal(buildingSpriteHeightForWidth(100, 'missing-variant'), 100, 'unknown sprite should use conservative square bounds');
+for (const [variant, meta] of Object.entries(BUILDING_ASSET_META)) {
+  assert.ok(meta.w > 0 && meta.h > 0, `${variant} must have positive audited dimensions`);
+  const h = buildingSpriteHeightForWidth(120, variant);
+  assert.ok(h > 0 && Number.isFinite(h), `${variant} must produce a valid culling height`);
+}
+console.log(`Building sprite bounds regression passed (${Object.keys(BUILDING_ASSET_META).length} variants checked).`);
