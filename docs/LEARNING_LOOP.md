@@ -511,3 +511,18 @@ not just assertions.
 **Economy scope:** The mineable node/player stone inventory are the resource primitive. Autonomous NPC job selection, walking to the node, mining, hauling to stockpiles, consumption/production, and separate settlement ledgers remain unfinished. Do not describe those behaviors as implemented until the simulation and tests exist.
 
 **Lesson:** A world object can exist in deterministic resource data yet be invisible due to its anchor and depth order. Keep resource placement outside building silhouettes and verify in the actual isometric camera.
+
+## 2026-10-16 — Autonomous stone workers (BUILD 736)
+
+**Task:** Connect townsfolk movement to a real quarry → carry → stockpile resource loop.
+
+**Implementation**
+- `src/game/settlementEconomy.ts` assigns two stable non-child workers, advances timed mining only when physically near the quarry, limits carried stone, routes workers to the stockpile, caps storage, and pauses extraction when the node is unavailable.
+- `src/App.tsx` feeds the workers' destinations into the existing townsfolk navigation pipeline and deposits stone into Mosslight's existing settlement storage ledger.
+- `scripts/prepare-build-entry.cjs` advances the runtime marker to BUILD 736.
+- `tests/settlement-economy.test.ts` covers stable job selection, mining, hauling, storage caps and depleted-node pause.
+- `package.json` adds `test:settlement-economy`.
+
+**Limitations still tracked:** Worker cargo/progress is transient across reloads. The shared economy is now connected for stone, while broad resource hauling, settlement construction consumption and shortage/starvation consequences remain follow-up work; do not mark the whole economy task complete yet.
+
+**Verification:** Await CI typecheck, isometric regression test, build and settlement economy test. The browser game still needs a live deployed visual check for the boulder and worker routes.
