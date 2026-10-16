@@ -586,7 +586,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
     const resize = () => {
       const r = wrap.getBoundingClientRect();
       // Cap backing-store resolution to avoid 4x pixel fill on high-DPR phones.
-      const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+      const dpr = Math.min(window.innerWidth < 900 ? 1 : 1.25, window.devicePixelRatio || 1);
       canvas.width = Math.max(1, Math.round(r.width * dpr));
       canvas.height = Math.max(1, Math.round(r.height * dpr));
     };
@@ -635,7 +635,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       const zm = zoomRef.current;
       const wpx = canvas.clientWidth || 1, hpx = canvas.clientHeight || 1;
       // Keep draw resolution aligned with the capped canvas backing store.
-      const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+      const dpr = Math.min(window.innerWidth < 900 ? 1 : 1.25, window.devicePixelRatio || 1);
       // BUILD 710: don't burn CPU/GPU redrawing a hidden game tab.
       if (document.hidden) { last = nowMs; return; }
       // Perf-debug hook (?nodirt=1): skip textured dirt paths for A/B timing.
