@@ -132,6 +132,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '726': 'Remove static CSS border and outline artifacts around house sprites while preserving building art and gameplay',
   '725': 'Repair live update checker, restore orange current status, and validate version metadata consistency',
   '724': 'Improved seeded town parks: protect plaza, roads, fixed buildings, and boundaries across settlement sizes',
   '723': 'Reduced NPC chatter render-loop work by caching fixed dialogue lines and bounded deterministic speaker seeds',
