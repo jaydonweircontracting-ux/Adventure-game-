@@ -2096,6 +2096,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
           let bestOreD = 38;
           for (const sc of scenes) {
             for (const ore of sc.ores) {
+              if (ore.id !== 'tutorial-stone-deposit-4-7') continue;
               const depleted = (window as unknown as { __depletedOres?: Set<string> }).__depletedOres;
               if (depleted?.has(ore.id)) continue;
               const p = isoToScreen(ore.fx + sc.ox * N, ore.fy + sc.oy * N);
