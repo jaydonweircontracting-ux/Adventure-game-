@@ -5582,7 +5582,15 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (folkAnchors && folkClock && townsfolkRef.current.length > 0) {
         // BUILD 366: village-life target resolution (needs-based overrides on
         // top of the base schedule). Physical movement/doors unchanged.
-        const next = advanceTownsfolk(townsfolkRef.current, folkAnchors, folkClock, townsfolkNavRef.current!, 0.22, villageTarget);
+        // BUILD 710: needs now reflect the live Mosslight food stockpile.
+        // NPCs still walk through the existing navigation pipeline; when stores
+        // are empty they seek food but remain hungry until production/trade recovers.
+        const localSettlement = ensureCiv().settlements.find((settlement) => settlement.id === 'mosslight');
+        const localStock = localSettlement?.storage as Record<string, number> | undefined;
+        const foodAvailable = !!localStock && ['food', 'grain', 'flour'].some((resource) => (localStock[resource] ?? 0) > 0);
+        const resolveVillageTarget = (npc: Townsperson, anchors: TownsfolkAnchors, clock: WorldClockState) =>
+          villageTarget(npc, anchors, clock, foodAvailable);
+        const next = advanceTownsfolk(townsfolkRef.current, folkAnchors, folkClock, townsfolkNavRef.current!, 0.22, resolveVillageTarget);
         if (next.some((npc, index) => npc !== townsfolkRef.current[index])) {
           townsfolkRef.current = next;
           setTownsfolk(next);
