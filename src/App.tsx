@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '742': 'Hard-block hostile and malformed monster sprites from rendering in the starting settlement',
   '741': 'Keep hostile encounters out of the starting settlement and remove floating NPC bark text over missing sprites',
   '740': 'Keep the starting boulder permanently visible and mineable while awarding stone and Mining XP on every hit',
   '739': 'Award one stone and Mining XP on every mining hit instead of only when the boulder is depleted',
