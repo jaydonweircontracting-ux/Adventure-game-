@@ -1,0 +1,39 @@
+name: Validate Adventure Game
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - "feat/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Isometric direction regression test
+        run: npm run test:iso-directions
+      - name: Fantasy encounter regression test
+        run: npm run test:fantasy-encounters
+      - name: Landscape coherence regression test
+        run: npm run test:landscape-coherence
+      - name: Production build
+        run: npm run build
