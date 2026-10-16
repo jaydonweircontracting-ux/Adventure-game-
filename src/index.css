@@ -5650,3 +5650,11 @@ body {
   .character-creator .character-creator-card { width: 100%; }
   .character-creator .creator-actions { margin-left: -4px; margin-right: -4px; }
 }
+
+/* Sprite-rendered buildings must not inherit the legacy CSS roof/door boxes. */
+.field-house.sprite-house::before,
+.field-house.sprite-house::after,
+.field-house.sprite-house.new-house::before,
+.field-house.sprite-house.new-house::after,
+.field-house.farm-house::before,
+.field-house.farm-house::after { display: none !important; }
