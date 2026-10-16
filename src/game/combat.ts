@@ -44,17 +44,26 @@ export function isEntityInHitbox(entity: CombatPoint, hitbox: CombatRect): boole
 
 // Player swing reach: melee means melee — the player must be right up against
 // the target for the swing to connect, so hits look and feel like contact.
-export const PLAYER_MELEE_REACH = 5;
-// Targets slightly behind the attacker still connect (overlap forgiveness);
-// only targets clearly behind the back are excluded.
-export const PLAYER_MELEE_BEHIND_TOLERANCE = 1;
+export const PLAYER_MELEE_REACH = 3.8;
+// The character sprite occupies roughly 3.2 world units. Treat that body area
+// as the target hurtbox, but keep the weapon's swing lane narrow so a swing
+// cannot connect with a target well to the side or several steps away.
+export const PLAYER_MELEE_BEHIND_TOLERANCE = 0.45;
+const MELEE_TARGET_HALF_SIZE = 1.6;
+const MELEE_SWING_HALF_WIDTH = 1.15;
 
 export function isInMeleeArc(attacker: CombatPoint, target: CombatPoint, facing: CombatDirection, reach = PLAYER_MELEE_REACH): boolean {
   const dx = target.x - attacker.x;
   const dy = target.y - attacker.y;
-  if (Math.hypot(dx, dy) > reach) return false;
   const forward = facing === 'right' ? dx : facing === 'left' ? -dx : facing === 'down' ? dy : -dy;
-  return forward >= -PLAYER_MELEE_BEHIND_TOLERANCE;
+  const lateral = facing === 'left' || facing === 'right' ? Math.abs(dy) : Math.abs(dx);
+  // Collision is against the visible target sprite's approximate body bounds,
+  // intersected with a short rectangular weapon hitbox in front of the player.
+  // This makes a hit correspond to contact with the character, not a broad
+  // invisible circle around the attacker.
+  return forward >= -PLAYER_MELEE_BEHIND_TOLERANCE
+    && forward <= reach + MELEE_TARGET_HALF_SIZE
+    && lateral <= MELEE_SWING_HALF_WIDTH + MELEE_TARGET_HALF_SIZE;
 }
 
 // Line-of-sight trace (FOnline-style TraceLine): does solid geometry block
