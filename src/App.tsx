@@ -9250,7 +9250,9 @@ if (active) {
                     const bedId = npcAny.bedId as string | undefined;
                     const disp = disposition[npc.id] ?? defaultDisposition();
                     const lifeClock = brainRef.current?.worldCore.getClock();
-                    const life = lifeClock ? npcLifeSummary(npc, townsfolk, lifeClock) : null;
+                    const lifeStock = ensureCiv().settlements.find((settlement) => settlement.id === 'mosslight')?.storage as Record<string, number> | undefined;
+                    const lifeFoodAvailable = !!lifeStock && ['food', 'grain', 'flour'].some((resource) => (lifeStock[resource] ?? 0) > 0);
+                    const life = lifeClock ? npcLifeSummary(npc, townsfolk, lifeClock, lifeFoodAvailable) : null;
                     const needBar = (v: number) => {
                       const n = Math.max(0, Math.min(10, Math.round(v / 10)));
                       return '█'.repeat(n) + '░'.repeat(10 - n);
