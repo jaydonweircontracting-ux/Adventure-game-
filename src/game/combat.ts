@@ -45,7 +45,7 @@ export function isEntityInHitbox(entity: CombatPoint, hitbox: CombatRect): boole
 // Near-contact melee: require the attacker to be almost touching the target's body.
 export const PLAYER_MELEE_REACH = 0.1;
 export const PLAYER_MELEE_BEHIND_TOLERANCE = 0;
-const MELEE_TARGET_HALF_SIZE = 0.55;
+export const PLAYER_MELEE_TARGET_RADIUS = 0.55;
 const MELEE_SWING_HALF_WIDTH = 0.15;
 
 export function isInMeleeArc(attacker: CombatPoint, target: CombatPoint, facing: CombatDirection, reach = PLAYER_MELEE_REACH): boolean {
@@ -56,8 +56,8 @@ export function isInMeleeArc(attacker: CombatPoint, target: CombatPoint, facing:
   // Intersect a very short forward swing with a conservative body-bound estimate.
   // Keep the reach small so hits only register when the sprites are nearly touching.
   return forward >= -PLAYER_MELEE_BEHIND_TOLERANCE
-    && forward <= reach + MELEE_TARGET_HALF_SIZE
-    && lateral <= MELEE_SWING_HALF_WIDTH + MELEE_TARGET_HALF_SIZE;
+    && forward <= reach + PLAYER_MELEE_TARGET_RADIUS
+    && lateral <= MELEE_SWING_HALF_WIDTH + PLAYER_MELEE_TARGET_RADIUS;
 }
 
 // Line-of-sight trace (FOnline-style TraceLine): does solid geometry block
