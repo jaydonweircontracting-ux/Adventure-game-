@@ -83,6 +83,8 @@ interface IsoInteriorViewProps {
   // direction is held the player steps tile-by-tile; manual input cancels
   // tap-to-move. Screen up = tile north, matching the iso demo.
   getHeldDir?: () => { x: number; y: number };
+  // BUILD 720: use the same RPG paper-doll appearance as the outdoor player.
+  playerLook?: LookRef;
   // BUILD 390: barbarian player equipment (player is look 0).
   // BUILD 702: deprecated (RPG sprite system) — kept for App.tsx compat, ignored.
   barbOutfit?: unknown;
@@ -219,7 +221,7 @@ function faceForMove(ax: number, ay: number, bx: number, by: number, current: Fa
   return isoPlayerFaceForScreenDeltaSticky(bx - ax, by - ay, current);
 }
 
-export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, barbOutfit, barbWeapon, barbHair, debugFacing, groundItems, onPickupItem, rats, onStrikeRat, onPlayerMove, playerRunning }: IsoInteriorViewProps): React.JSX.Element {
+export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, playerLook, barbOutfit, barbWeapon, barbHair, debugFacing, groundItems, onPickupItem, rats, onStrikeRat, onPlayerMove, playerRunning }: IsoInteriorViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // BUILD 565: expose tile->screen for test automation (localhost only)
   const toScreenRef = useRef<((tx: number, ty: number) => { x: number; y: number }) | null>(null);
@@ -1020,7 +1022,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       // player
       // BUILD 422: debug direction test overrides facing + forces walk cycle.
       const dbgFace = debugFacing ?? null;
-      drawables.push(drawCharacter(g, state.fx, state.fy, dbgFace ?? state.facing, dbgFace ? true : state.moving, 0, nowMs, 'player', playerRunningRef.current === true));
+      drawables.push(drawCharacter(g, state.fx, state.fy, dbgFace ?? state.facing, dbgFace ? true : state.moving, playerLook ?? 0, nowMs, 'player', playerRunningRef.current === true));
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
 
       drawables.sort((a, b) => a.depth - b.depth);
