@@ -44,13 +44,13 @@ export function isEntityInHitbox(entity: CombatPoint, hitbox: CombatRect): boole
 
 // Player swing reach: melee means melee — the player must be right up against
 // the target for the swing to connect, so hits look and feel like contact.
-export const PLAYER_MELEE_REACH = 3.8;
+export const PLAYER_MELEE_REACH = 1.5;
 // The character sprite occupies roughly 3.2 world units. Treat that body area
 // as the target hurtbox, but keep the weapon's swing lane narrow so a swing
 // cannot connect with a target well to the side or several steps away.
 export const PLAYER_MELEE_BEHIND_TOLERANCE = 0.45;
 const MELEE_TARGET_HALF_SIZE = 1.6;
-const MELEE_SWING_HALF_WIDTH = 1.15;
+const MELEE_SWING_HALF_WIDTH = 0.7;
 
 export function isInMeleeArc(attacker: CombatPoint, target: CombatPoint, facing: CombatDirection, reach = PLAYER_MELEE_REACH): boolean {
   const dx = target.x - attacker.x;
