@@ -178,3 +178,12 @@
 - **Files:** `src/game/iso/IsoFieldView.tsx`, `src/App.tsx`, `scripts/prepare-build-entry.cjs`
 - **Checkpoint:** BUILD 733 draws a large boulder at a fixed anchor behind the tutorial house in chunk (4, 7). This is currently visual-only; mining/collision integration is not included.
 - **Verification:** Pending CI, deployed version marker, and in-game visual check.
+
+
+### TASK-017: Autonomous settlement work and local economies
+- **Status:** `todo`
+- **Priority:** P1
+- **Objective:** Give settlement NPCs persistent jobs and resource loops inspired by RTS village simulations: workers travel to resource nodes, gather stone/wood/food, haul materials to stockpiles, consume wages/food, and feed settlement construction/crafting/trade budgets. Each settlement owns its own resource ledger and production/consumption history.
+- **Files:** `src/game/townsfolk.ts`, `src/game/civilization.ts`, `src/game/ecoSave.ts`, `src/App.tsx`, resource-node systems and simulation tests.
+- **Checkpoint:** BUILD 734 adds a mineable starting-house stone deposit and player stone inventory as the first shared resource primitive. Autonomous NPC mining, hauling, stockpiles, and independent settlement ledgers remain to be implemented.
+- **Acceptance:** Deterministic headless simulation proves NPCs select jobs, travel to valid resources, gather and haul without teleporting, update the correct settlement ledger, consume/produce goods over time, and persist/reload economic state. Include starvation/shortage and blocked-resource cases.
