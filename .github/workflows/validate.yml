@@ -37,5 +37,7 @@ jobs:
         run: npm run test:landscape-coherence
       - name: Procedural world art regression test
         run: npm run test:procedural-world-art
+      - name: Town production idempotency regression test
+        run: npm run test:town-production
       - name: Production build
         run: npm run build

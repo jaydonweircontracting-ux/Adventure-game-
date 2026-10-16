@@ -88,6 +88,8 @@ export type Settlement = {
   prices: Record<Resource, number>;
   demand: Record<Resource, number>;
   supply: Record<Resource, number>;
+  /** Last world day farmer grain production was applied (persisted for idempotency). */
+  lastNpcProductionDay?: number;
 };
 
 /**

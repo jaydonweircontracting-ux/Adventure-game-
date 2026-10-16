@@ -35,6 +35,11 @@ export function applyNPCProduction(
   const mosslight = civ.settlements.find((s) => s.id === 'mosslight');
   if (!mosslight) return civ;
 
+  const lastNpcProductionDay = typeof mosslight.lastNpcProductionDay === 'number' && Number.isFinite(mosslight.lastNpcProductionDay)
+    ? Math.floor(mosslight.lastNpcProductionDay)
+    : 0;
+  if (lastNpcProductionDay >= day) return civ;
+
   // Count farmers who would be working today.
   // We check their archetype (not current activity) because this runs
   // in the daily tick, not during the work hours themselves.
@@ -49,7 +54,10 @@ export function applyNPCProduction(
     }
   }
 
-  if (workingFarmers === 0) return civ;
+  if (workingFarmers === 0) {
+    mosslight.lastNpcProductionDay = day;
+    return civ;
+  }
 
   // Each farmer produces 2-4 grain per day (deterministic variation).
   let totalGrain = 0;
@@ -66,6 +74,7 @@ export function applyNPCProduction(
   const cap = 50 + mosslight.population;
   const current = mosslight.storage['grain'] ?? 0;
   mosslight.storage['grain'] = Math.round(Math.min(cap, current + totalGrain) * 10) / 10;
+  mosslight.lastNpcProductionDay = day;
 
   return civ;
 }

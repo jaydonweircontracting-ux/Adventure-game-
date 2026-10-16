@@ -16,7 +16,8 @@
     "rpg:assets:install": "node scripts/install-rpg-equipment.mjs --install",
     "test:fantasy-encounters": "npx tsx scripts/sim/fantasy-encounters.test.ts",
     "test:landscape-coherence": "npx tsx tests/landscape-coherence.test.ts",
-    "test:procedural-world-art": "npx tsx tests/procedural-world-art.test.ts"
+    "test:procedural-world-art": "npx tsx tests/procedural-world-art.test.ts",
+    "test:town-production": "npx tsx scripts/sim/town-production.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
