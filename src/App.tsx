@@ -12498,3 +12498,51 @@ const NEIGHBOR_OFFSETS: Array<[number, number]> = [
   [-1, 0], [1, 0],
   [-1, 1], [0, 1], [1, 1],
 ];
+function ChunkSurroundings({ chunk, gameZoom, hiddenRoadChunks, mapPaints }: {
+  chunk: Point;
+  gameZoom: number;
+  hiddenRoadChunks: string[];
+  mapPaints: MapPaints;
+}) {
+  const neighbors = useMemo(() => {
+    if (gameZoom >= 1) return [];
+    return NEIGHBOR_OFFSETS.map(([dx, dy]) => {
+      const nChunk = { x: chunk.x + dx, y: chunk.y + dy };
+      const nTile = mapTileFor(nChunk);
+      const nPalette = fieldPalettes[nTile.terrain];
+      const nKey = nChunk.x + ',' + nChunk.y;
+      const spec: GroundDetailSpec = {
+        terrain: nTile.terrain,
+        field: nPalette.field,
+        path: nPalette.path,
+        road: (nTile.road !== 'none' && !hiddenRoadChunks.includes(nKey) && !nTile.bridge) ? nTile.road : 'none',
+        roadRect: { x: 0.47, y: 0.47, w: 0.09, h: 0.09 },
+        sea: nTile.waterFeature === 'sea',
+        seed: ((nChunk.x * 73856093) ^ (nChunk.y * 19349663)) >>> 0,
+        paints: mapPaints[nKey] ?? [],
+        // BUILD 355: keep hills continuous across chunk borders.
+        hills: buildGroundHills(nChunk),
+        // BUILD 369 (Phase 2b): authoritative rivers/lakes/bridges.
+        chunkX: nChunk.x,
+        chunkY: nChunk.y,
+      };
+      return { dx, dy, key: nKey, spec };
+    });
+  }, [chunk.x, chunk.y, gameZoom, hiddenRoadChunks, mapPaints]);
+  if (neighbors.length === 0) return null;
+  return (
+    <div className="chunk-surroundings" aria-hidden="true">
+      {neighbors.map((n) => (
+        <div key={n.key} className="chunk-neighbor" style={{ left: (n.dx * 100) + '%', top: (n.dy * 100) + '%' }}>
+          <FieldGroundLayer spec={n.spec} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function App() {
+  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
+}
+
+export default App;
