@@ -6441,7 +6441,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const playerAttack = playerAttackStateRef.current;
       if (playerAttack.active) {
         playerAttack.elapsed += elapsed * 1000;
-        if (!playerAttack.hitApplied && playerAttack.elapsed >= 100) {
+        if (!playerAttack.hitApplied && playerAttack.elapsed >= (playerAttack.ranged ? 100 : 220)) {
           playerAttack.hitApplied = true;
           // BUILD 531: exactly-once damage per swing. Multiple historical
           // fallbacks (NPC-FIRST, targeted, candidates, fallback) can all
