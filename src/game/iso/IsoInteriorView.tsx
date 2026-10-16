@@ -90,6 +90,8 @@ interface IsoInteriorViewProps {
   barbOutfit?: unknown;
   barbWeapon?: unknown;
   barbHair?: string;
+  // Same one-shot attack sequence used by the outdoor RPG sprite renderer.
+  barbAttackSequence?: number;
   // BUILD 422: debug direction test — when set, the player shows this facing's
   // sprite sheet with the walk cycle playing, ignoring movement deltas.
   debugFacing?: Face8 | null;
@@ -221,8 +223,10 @@ function faceForMove(ax: number, ay: number, bx: number, by: number, current: Fa
   return isoPlayerFaceForScreenDeltaSticky(bx - ax, by - ay, current);
 }
 
-export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, playerLook, barbOutfit, barbWeapon, barbHair, debugFacing, groundItems, onPickupItem, rats, onStrikeRat, onPlayerMove, playerRunning }: IsoInteriorViewProps): React.JSX.Element {
+export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, playerLook, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, groundItems, onPickupItem, rats, onStrikeRat, onPlayerMove, playerRunning }: IsoInteriorViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const attackSequenceRef = useRef(barbAttackSequence ?? 0);
+  attackSequenceRef.current = barbAttackSequence ?? 0;
   // BUILD 565: expose tile->screen for test automation (localhost only)
   const toScreenRef = useRef<((tx: number, ty: number) => { x: number; y: number }) | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -278,6 +282,8 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     // Per-character animation controllers (pruned each frame).
     const charAnims = new Map<string, CharacterAnimator>();
     const seenAnims = new Set<string>();
+    // Match each attack sequence to exactly one visible Death/Attack sprite clip.
+    let lastAttackSeq = attackSequenceRef.current;
 
     const resize = () => {
       const r = wrap.getBoundingClientRect();
@@ -1020,6 +1026,12 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       }
 
       // player
+      // Start the actual RPG Attack clip once per combat swing indoors too.
+      const attackSeq = attackSequenceRef.current;
+      if (attackSeq !== lastAttackSeq) {
+        lastAttackSeq = attackSeq;
+        charAnims.get('player')?.setState('attack');
+      }
       // BUILD 422: debug direction test overrides facing + forces walk cycle.
       const dbgFace = debugFacing ?? null;
       drawables.push(drawCharacter(g, state.fx, state.fy, dbgFace ?? state.facing, dbgFace ? true : state.moving, playerLook ?? 0, nowMs, 'player', playerRunningRef.current === true));
