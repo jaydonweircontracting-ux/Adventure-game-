@@ -10158,7 +10158,7 @@ if (active) {
                     touchAction: moverMode ? 'none' : undefined,
                     outline: isSelected ? '3px solid #ff0' : undefined,
                     zIndex: isSelected ? 10 : undefined,
-                  }}
+                  } as CSSProperties}
                   onPointerUp={moverMode ? (e) => {
                     e.stopPropagation();
                     // Flag tool: mark this generated house for removal.
