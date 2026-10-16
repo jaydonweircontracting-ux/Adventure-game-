@@ -240,7 +240,8 @@ export class CharacterAnimator {
   }
 
   update(u: AnimUpdate): void {
-    const dt = this.init ? Math.max(1, u.nowMs - this.lastNow) : 16.7;
+    // Ignore long browser/GC pauses so resuming never jumps the animation phase.
+    const dt = this.init ? Math.min(50, Math.max(1, u.nowMs - this.lastNow)) : 16.7;
     const dist = this.init ? Math.hypot(u.x - this.lx, u.y - this.ly) : 0;
     const inst = dist / (dt / 1000);
     this.speed = Math.max(inst, this.speed * Math.exp(-dt / 450));
@@ -376,7 +377,8 @@ export function drawIsoCharacter(o: DrawCharacterOptions): void {
   const frame = o.animator.frameIndex();
   const face = o.animator.facing;
   const walking = o.animator.state === 'walk' || o.animator.state === 'run';
-  const lift = walking ? Math.abs(Math.sin(o.nowMs / 130)) * 2 : 0;
+  const walkFrames = RPG_ANIM_FRAMES[CHAR_CLIPS[o.animator.state].anim];
+  const lift = walking ? Math.abs(Math.sin((o.animator.phase / Math.max(1, walkFrames)) * Math.PI * 2)) * 1.25 : 0;
 
   if (o.shadow !== false) {
     g.fillStyle = 'rgba(0,0,0,0.22)';
