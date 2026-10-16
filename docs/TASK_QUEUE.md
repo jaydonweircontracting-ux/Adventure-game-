@@ -176,14 +176,14 @@
 - **Priority:** P2
 - **Objective:** Keep a large boulder visibly anchored behind the tutorial house and connect it to mining, depletion, and stone inventory.
 - **Files:** `src/game/iso/IsoFieldView.tsx`, `src/App.tsx`, `scripts/prepare-build-entry.cjs`
-- **Checkpoint:** BUILD 734 replaces the guessed visual-only prop with an authoritative ore node derived from the tutorial-house rect. The node renders as a large boulder, can be mined through the existing melee mining path, yields 12 stone, and supports inventory pickup.
-- **Verification:** Pending CI, deployed version marker, and in-game visual/mining check.
+- **Checkpoint:** BUILD 735 moves the mineable node to the right edge of the tutorial-house footprint so it is not occluded by the house sprite, and enlarges its rendered boulder. Existing melee mining yields stone and supports inventory pickup.
+- **Verification:** Pending CI, deployed version marker, and in-game visual/mining check. The GitHub-only editing session has no local Muse Bridge/Playwright runtime, so do not mark done until deployed visual and mining checks pass.
 
 
 ### TASK-017: Autonomous settlement work and local economies
-- **Status:** `todo`
+- **Status:** `in_progress`
 - **Priority:** P1
 - **Objective:** Give settlement NPCs persistent jobs and resource loops inspired by RTS village simulations: workers travel to resource nodes, gather stone/wood/food, haul materials to stockpiles, consume wages/food, and feed settlement construction/crafting/trade budgets. Each settlement owns its own resource ledger and production/consumption history.
 - **Files:** `src/game/townsfolk.ts`, `src/game/civilization.ts`, `src/game/ecoSave.ts`, `src/App.tsx`, resource-node systems and simulation tests.
-- **Checkpoint:** BUILD 734 adds a mineable starting-house stone deposit and player stone inventory as the first shared resource primitive. Autonomous NPC mining, hauling, stockpiles, and independent settlement ledgers remain to be implemented.
+- **Checkpoint:** BUILD 735 makes the starting-house deposit easier to see and reach. The shared stone resource primitive exists, but NPC job assignment, physical mining/hauling, stockpiles, consumption/production, and independent settlement ledgers are still not implemented; this remains a multi-part gameplay task.
 - **Acceptance:** Deterministic headless simulation proves NPCs select jobs, travel to valid resources, gather and haul without teleporting, update the correct settlement ledger, consume/produce goods over time, and persist/reload economic state. Include starvation/shortage and blocked-resource cases.
