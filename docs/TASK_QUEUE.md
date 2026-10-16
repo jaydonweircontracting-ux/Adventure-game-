@@ -154,3 +154,13 @@
 - **Files:** `src/App.tsx`, `src/game/lootableBodies.ts`, `src/game/bounty.ts`, `src/game/crime.ts`, `docs/LEARNING_LOOP_2026-10-16.md`
 - **Checkpoint:** 2026-10-16 — BUILD 729 committed. Guard prompt and code paths added; local typecheck, browser tests, CI, and live deployment have not yet been verified for this commit.
 - **Acceptance:** Typecheck/build pass; real-game tests confirm dialogue closes on death, attack lowers disposition, corpse gold/potions transfer correctly, witnessed assault/murder creates bounty, guard approaches, flee moves player away, jail enters prison, and fine consumes coins/clears bounty.
+
+### TASK-014: Restore App exports after BUILD 729 regression
+- **Status:** `in_progress`
+- **Priority:** P0
+- **Objective:** Restore a buildable App without discarding the NPC death/loot/guard changes or the update-checker fix.
+- **Files:** `src/App.tsx`, `scripts/prepare-build-entry.cjs`
+- **Root cause:** Commit `df49d216` removed the last 52 lines of App.tsx, including `ChunkSurroundings` and `export default App`.
+- **Checkpoint:** 2026-10-16 — restored the known-good tail from commit `94c9ddfd`; bumped proposed build to 730.
+- **Acceptance:** CI typecheck/regressions/build pass; latest main Pages deployment succeeds.
+- **Evidence:** Run 38972599188 failed with TS2304/TS1192; recovery validation pending.
