@@ -1428,6 +1428,23 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         } // end neighbor-chunk tree loop
       }
 
+      // BUILD 733: fixed stone deposit behind the starting house in Mosslight.
+      // The tutorial house is authored in chunk (4, 7), with its exterior
+      // anchor at (44.7, 58.7). Place the boulder north-west of that anchor
+      // in isometric space so it reads as being behind the house. This is a
+      // visual stone deposit only for now; it does not alter movement/collision.
+      if (chunk.x === 4 && chunk.y === 7 && zm >= 0.28) {
+        const stoneX = 39.2;
+        const stoneY = 52.8;
+        const stoneScreen = isoToScreen(stoneX, stoneY);
+        if (anchorVisible(stoneScreen, 56, 62, 26)) {
+          drawables.push({
+            depth: stoneX + stoneY,
+            draw: (g2) => drawProceduralBoulder(g2, stoneScreen.x, stoneScreen.y, zm < 0.42 ? 0.9 : 1.28),
+          });
+        }
+      }
+
       // BUILD 724: one large, fixed landmark boulder just off the settlement.
       // Derive the anchor from authored town buildings so it stays near town
       // without relying on a magic world coordinate or changing collision.
