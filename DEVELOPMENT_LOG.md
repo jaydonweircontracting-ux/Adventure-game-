@@ -380,3 +380,19 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Corrected simulation: the player exits at (30, 48), reaches (17, 43), lands 3 valid hits on the level-2 goat, defeats it, and survives with 92 HP after 2 counterattacks.
 - Corrected behavior: an invalid or cooldown strike deals no damage and now shows feedback without playing a false attack animation.
 - Verification: source-order readback passed and deterministic combat simulation passed. Browser playtest/build/typecheck remain NOT_RUN because this session is GitHub-only and the game was not mounted.
+
+
+## 2026-10-16 — BUILD 726 proposed: authoritative update checks
+
+**Context:** A concurrent main-branch pass shipped BUILD 725 changes to keep the checking/current menu state orange and report stale version metadata. I preserved those changes and built this follow-up on the latest main commit.
+
+**Remaining defect:** The checker still depended on a `BUILD N` commit-message convention when checking for source updates. Commits without that exact message format can be missed, and there was no manual refresh action.
+
+**Changes on `fix/live-update-version-checker-726`:**
+- Compare the running build against deployed `version.json` and the authoritative build marker in `main/scripts/prepare-build-entry.cjs`.
+- Preserve the orange checking, available, in-progress, and current states from BUILD 725.
+- Add manual Check now, a cache-busted Update action, visible deployed/source mismatch detail, 10-second polling, and bounded backoff.
+- Add 11 regression assertions and run them in the PR validation workflow.
+- Advance the release marker to BUILD 726.
+
+**Verification:** Pending CI and deployed-artifact verification. Do not claim BUILD 726 is live until the deployment workflow succeeds and the play link is refreshed.
