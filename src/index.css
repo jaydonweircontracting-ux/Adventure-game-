@@ -446,7 +446,12 @@
 .player.is-attacking, .interior-player.is-attacking { z-index: 8; animation: player-lunge .65s ease-out both; }
 .player.is-attacking .player-dagger, .interior-player.is-attacking .player-dagger { animation: dagger-swing .65s ease-out both; }
 .player.is-attacking::after { content: '✦'; position: absolute; z-index: 5; left: 27px; top: 4px; color: #fff0a8; font: 17px/1 var(--app-font-mono); text-shadow: 2px 2px 0 rgba(85, 50, 38, .45); animation: attack-spark .65s ease-out both; pointer-events: none; }
-@keyframes player-lunge { 0%, 100% { translate: 0 0; } 35% { translate: 5px -2px; } 58% { translate: -2px 1px; } }
+/* The lunge follows the facing direction, making the weapon visibly meet the target. */
+.player[data-facing='up'].is-attacking, .interior-player[data-facing='up'].is-attacking { --attack-lunge-x: 0px; --attack-lunge-y: -12px; }
+.player[data-facing='down'].is-attacking, .interior-player[data-facing='down'].is-attacking { --attack-lunge-x: 0px; --attack-lunge-y: 12px; }
+.player[data-facing='left'].is-attacking, .interior-player[data-facing='left'].is-attacking { --attack-lunge-x: -12px; --attack-lunge-y: 0px; }
+.player[data-facing='right'].is-attacking, .interior-player[data-facing='right'].is-attacking { --attack-lunge-x: 12px; --attack-lunge-y: 0px; }
+@keyframes player-lunge { 0%, 100% { translate: 0 0; } 35%, 50% { translate: var(--attack-lunge-x, 0px) var(--attack-lunge-y, 0px); } 65% { translate: 0 0; } }
 @keyframes dagger-swing { 0% { rotate: 0deg; } 35% { rotate: -78deg; } 65% { rotate: 20deg; } 100% { rotate: 0deg; } }
 @keyframes attack-spark { 0% { opacity: 0; scale: .45; rotate: -18deg; } 35% { opacity: 1; scale: 1.15; rotate: 12deg; } 100% { opacity: 0; scale: 1.4; rotate: 34deg; } }
 .player-sprite {
