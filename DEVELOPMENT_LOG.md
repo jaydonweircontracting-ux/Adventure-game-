@@ -380,3 +380,19 @@ Run the client locally and report four checks: keyboard movement, diagonal movem
 - Corrected simulation: the player exits at (30, 48), reaches (17, 43), lands 3 valid hits on the level-2 goat, defeats it, and survives with 92 HP after 2 counterattacks.
 - Corrected behavior: an invalid or cooldown strike deals no damage and now shows feedback without playing a false attack animation.
 - Verification: source-order readback passed and deterministic combat simulation passed. Browser playtest/build/typecheck remain NOT_RUN because this session is GitHub-only and the game was not mounted.
+
+
+## 2026-10-16 — BUILD 725 proposed: restore live version checking
+
+**User request:** Restore the main-menu orange update banner, live polling, and reliable warning when the current game is behind the latest build; always provide a fresh play link.
+
+**Diagnosis:** `src/App.tsx` trusted `version.json` and a GitHub commit message containing `BUILD N`. Commits without that message format could be misclassified as current. Source markers were inconsistent (source script 724, root index 712, source manifest 707).
+
+**Changes on `fix/live-update-version-checker`:**
+- Compare running build, deployed `version.json`, and authoritative marker from `main/scripts/prepare-build-entry.cjs`.
+- Do not report current if either authoritative version source is unavailable.
+- Preserve 10-second polling/backoff, show a visible checking state, add a manual Check now control, and cache-bust the Update reload URL.
+- Add pure version-classification helper and regression tests; bump proposed build marker to 725.
+- PR #30 was merged separately; its town boulder and live hut-renderer fix have their own passing validation run.
+
+**Verification:** Pending PR CI and deployed-artifact check. Do not call BUILD 725 live until Pages reports the matching build marker.

@@ -80,8 +80,24 @@
       "title": "Player exits from back of house",
       "fixedBuild": "638",
       "verification": "Robust fallback chain added"
+    },
+    {
+      "id": "ISSUE-007",
+      "title": "Live update checker can falsely report current or fail silently",
+      "description": "The checker relied on deployed version.json and a BUILD N commit-message pattern. Version markers are out of sync (source build 724, public manifest 707, root index 712), and a source commit without BUILD N can be incorrectly treated as current. The visible status also had no manual recheck action.",
+      "firstBuild": "725",
+      "status": "in_progress",
+      "severity": "high",
+      "relatedFiles": [
+        "src/App.tsx",
+        "src/game/updateVersion.ts",
+        "scripts/prepare-build-entry.cjs",
+        "public/version.json",
+        "tests/update-version.test.ts"
+      ],
+      "verification": "Automated CI and deployed artifact verification pending."
     }
   ],
-  "lastUpdated": "2026-10-12",
+  "lastUpdated": "2026-10-16",
   "version": 1
 }

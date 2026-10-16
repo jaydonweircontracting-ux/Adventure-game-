@@ -118,6 +118,7 @@ import RpgCharacterCreator from '@/components/RpgCharacterCreator';
 import { RPG_DEFAULT_LOOK, type RpgLook } from '@/game/iso/rpgSprites';
 import { compositeAttackSprite, compositeCharacterSheet, sanitizeCharacterChoices, type CharacterChoices } from '@/game/characterCreator';
 import { artUrl } from '@/game/artCache';
+import { determineUpdateStatus, parseBuildMarker } from '@/game/updateVersion';
 import { initWorldNoise, shouldPlaceVegetation, vegetationDensity } from '@/game/noise';
 const PLAYER_SPRITE_URL = artUrl('assets/cute-fantasy/player.png');
 const PLAYER_ATTACK_SPRITE_URL = artUrl('assets/gameplay/shining-fields/characters/player/attack.png');
@@ -132,6 +133,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '725': 'Restored live version detection, real-time update polling, and manual update checks',
   '724': 'Improved seeded town parks: protect plaza, roads, fixed buildings, and boundaries across settlement sizes',
   '723': 'Reduced NPC chatter render-loop work by caching fixed dialogue lines and bounded deterministic speaker seeds',
   '722': 'Added an on/off NPC communication toggle with small rotating speech bubbles above visible townsfolk; preference is saved',
@@ -11572,68 +11574,81 @@ function Home() {
   const [inventoryOpen, setInventoryOpen] = useState(false);
   // BUILD 626: Changelog panel visibility.
   const [changelogOpen, setChangelogOpen] = useState(false);
-  // BUILD 630: Update checker — fetches version.json, shows banner if newer build available.
-  // BUILD 631: Tri-color status — available (green), current (orange), error (red).
-  // BUILD 633: Real-time — polls every 10s, banner updates live while on menu.
-  // BUILD 634: Backoff on failures — doubles interval up to 5min to avoid flooding GitHub.
+  // BUILD 725: Compare the running app with both the deployed manifest and
+  // the latest source marker. A commit message is not a reliable version source.
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [updateNote, setUpdateNote] = useState<string>('');
   const [updateStatus, setUpdateStatus] = useState<'checking' | 'available' | 'in-progress' | 'current' | 'error'>('checking');
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
+  const [manualCheckToken, setManualCheckToken] = useState(0);
   const backoffRef = useRef(10000);
+  const triggerUpdateCheck = () => {
+    setUpdateStatus('checking');
+    setManualCheckToken((value) => value + 1);
+  };
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
+    let cancelled = false;
     const checkForUpdate = async () => {
       try {
         const base = import.meta.env.BASE_URL;
-        // Check 1: version.json for deployed build.
-        const res = await fetch(`${base}version.json?t=${Date.now()}-${Math.random().toString(36).slice(2)}`, { cache: 'no-store' });
+        const cacheBust = Date.now();
+        // The manifest proves what the deployed artifact reports.
+        const manifestResponse = await fetch(`${base}version.json?t=${cacheBust}-${Math.random().toString(36).slice(2)}`, { cache: 'no-store' });
+        if (!manifestResponse.ok) throw new Error('deployed version manifest unavailable');
+        const manifest = await manifestResponse.json();
+        const deployedBuild = Number(manifest.build);
+        if (!Number.isSafeInteger(deployedBuild) || deployedBuild <= 0) {
+          throw new Error('invalid deployed build marker');
+        }
+        if (cancelled) return;
+
+        // The current main-branch source marker detects commits that are newer
+        // than the deployed artifact, even when their commit message lacks BUILD N.
+        const sourceResponse = await fetch(
+          `https://raw.githubusercontent.com/jaydonweircontracting-ux/Adventure-game-/main/scripts/prepare-build-entry.cjs?t=${cacheBust}-${Math.random().toString(36).slice(2)}`,
+          { cache: 'no-store' },
+        );
+        if (!sourceResponse.ok) throw new Error('latest source version unavailable');
+        const sourceText = await sourceResponse.text();
+        const latestSourceBuild = parseBuildMarker(sourceText);
+        if (latestSourceBuild === null) throw new Error('could not parse latest source build');
+        if (cancelled) return;
+
+        const runningBuild = Number(BUILD_NUMBER);
+        const status = determineUpdateStatus(runningBuild, deployedBuild, latestSourceBuild);
+        const targetBuild = Math.max(deployedBuild, latestSourceBuild);
         setLastChecked(new Date());
-        if (!res.ok) throw new Error('bad response');
-        const data = await res.json();
-        const runningBuild = BUILD_NUMBER;
         backoffRef.current = 10000;
-        if (data.build && Number(data.build) > Number(runningBuild)) {
-          setUpdateAvailable(data.build);
-          setUpdateNote(data.note || '');
+
+        if (status === 'available') {
+          setUpdateAvailable(String(targetBuild));
+          setUpdateNote(manifest.note || buildNoteFor(String(targetBuild)) || '');
           setUpdateStatus('available');
+        } else if (status === 'in-progress') {
+          setUpdateAvailable(String(targetBuild));
+          setUpdateNote(buildNoteFor(String(targetBuild)) || manifest.note || '');
+          setUpdateStatus('in-progress');
         } else {
-          // Check 2: GitHub API for pushed (but not yet deployed) builds.
-          // This signals "update in progress" earlier.
-          try {
-            const ghRes = await fetch('https://api.github.com/repos/jaydonweircontracting-ux/Adventure-game-/commits/main?per_page=1');
-            if (ghRes.ok) {
-              const ghData = await ghRes.json();
-              const msg = ghData.commit?.message || '';
-              const match = msg.match(/BUILD (\d+)/);
-              if (match && Number(match[1]) > Number(runningBuild)) {
-                setUpdateAvailable(match[1]);
-                setUpdateStatus('in-progress');
-                timeout = setTimeout(checkForUpdate, backoffRef.current);
-                return;
-              }
-            }
-          } catch { /* GitHub API unavailable — fall through to current */ }
-          if (data.build && Number(data.build) < Number(runningBuild)) {
-            setUpdateAvailable(String(runningBuild));
-            setUpdateNote('Version metadata is behind the running game');
-            setUpdateStatus('in-progress');
-          } else {
-            setUpdateAvailable(null);
-            setUpdateNote('');
-            setUpdateStatus('current');
-          }
+          setUpdateAvailable(null);
+          setUpdateNote('');
+          setUpdateStatus('current');
         }
       } catch {
+        if (cancelled) return;
+        // Never claim the app is current if either authoritative version source failed.
         setUpdateStatus('error');
         setLastChecked(new Date());
         backoffRef.current = Math.min(backoffRef.current * 2, 300000);
       }
-      timeout = setTimeout(checkForUpdate, backoffRef.current);
+      if (!cancelled) timeout = setTimeout(checkForUpdate, backoffRef.current);
     };
     checkForUpdate();
-    return () => clearTimeout(timeout);
-  }, []);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [manualCheckToken]);
   const menuBridgeRef = useRef<{ openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null>(null);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
@@ -12142,11 +12157,17 @@ function Home() {
       ) : menuOpen ? (
         <section className="main-menu" aria-label="Main menu" data-testid="main-menu">
           <div className="main-menu-card">
+            {/* BUILD 725: Keep version status visible from the first menu frame. */}
+            {updateStatus === 'checking' && (
+              <div style={{ background: '#f39c12', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
+                ⟳ Checking live game version…
+              </div>
+            )}
             {/* BUILD 631: Tri-color update status banner — always visible above build title. */}
             {updateStatus === 'available' && updateAvailable && (
               <div style={{ background: '#f39c12', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
                 <span>🎮 BUILD {updateAvailable}{updateNote ? ` (${updateNote})` : ''} available!</span>
-                <button onClick={() => window.location.href = `${import.meta.env.BASE_URL}?v=${updateAvailable}`} style={{ background: '#fff', color: '#f39c12', border: 'none', borderRadius: 4, padding: '4px 12px', fontWeight: 'bold', cursor: 'pointer' }}>
+                <button onClick={() => window.location.href = `${import.meta.env.BASE_URL}?v=${updateAvailable}&t=${Date.now()}`} style={{ background: '#fff', color: '#f39c12', border: 'none', borderRadius: 4, padding: '4px 12px', fontWeight: 'bold', cursor: 'pointer' }}>
                   Update
                 </button>
               </div>
@@ -12165,9 +12186,15 @@ function Home() {
             )}
             {updateStatus === 'error' && (
               <div style={{ background: '#e74c3c', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>
-                ⚠ Update check failed — couldn't reach server
+                ⚠ Update check failed — version source unavailable
+                {lastChecked && <div style={{ fontSize: 10, fontWeight: 'normal', opacity: 0.85 }}>Last attempt {lastChecked.toLocaleTimeString()} · retrying automatically</div>}
               </div>
             )}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+              <button type="button" onClick={triggerUpdateCheck} disabled={updateStatus === 'checking'} style={{ background: '#fff8e8', color: '#6c4b12', border: '1px solid #d7a345', borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: updateStatus === 'checking' ? 'wait' : 'pointer', opacity: updateStatus === 'checking' ? 0.7 : 1 }}>
+                {updateStatus === 'checking' ? 'Checking version…' : 'Check now'}
+              </button>
+            </div>
             <div className="main-menu-swords" aria-hidden="true">
               <Sword className="menu-sword sword-left" size={44} strokeWidth={1.75} />
               <Sword className="menu-sword sword-right" size={44} strokeWidth={1.75} />
