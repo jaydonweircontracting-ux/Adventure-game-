@@ -1464,7 +1464,8 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
             depth: ox2 + oy2, draw: (g2) => {
               // BUILD 734: render the authoritative starting deposit as a large boulder.
               if (o.id === 'tutorial-stone-deposit-4-7') {
-                drawProceduralBoulder(g2, c.x, c.y, zm < 0.42 ? 1.25 : 1.7);
+                // BUILD 735: deliberately oversized landmark rock, visible at normal zoom.
+                drawProceduralBoulder(g2, c.x, c.y, zm < 0.42 ? 1.7 : 2.25);
                 return;
               }
               // Rock base (gray)
