@@ -135,10 +135,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '834';
+const BUILD_NUMBER = '835';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '835': 'Add local Asset Studio with upload, crop, transforms, placement, and JSON export',
   '834': 'Add hideable Debug workspace controls and mobile clutter recovery',
   '833': 'Add scrollable NPC roster with sprite previews, mood, wealth, reputation, and disposition',
   '832': 'Add resize mode and size controls to the building mover',
@@ -4003,6 +4004,61 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [npcRosterOpen, setNpcRosterOpen] = useState(false);
   const [npcRosterSearch, setNpcRosterSearch] = useState('');
   const [npcRosterSelectedId, setNpcRosterSelectedId] = useState<string | null>(null);
+  // BUILD 835: Asset Studio stores imported sprites locally; export/commit is separate.
+  const [assetStudioOpen, setAssetStudioOpen] = useState(false);
+  const [assetStudioSearch, setAssetStudioSearch] = useState('');
+  const [assetStudioStatus, setAssetStudioStatus] = useState('Imported assets are saved in this browser only.');
+  const [selectedCustomAssetId, setSelectedCustomAssetId] = useState<string | null>(null);
+  const [selectedPlacedCustomId, setSelectedPlacedCustomId] = useState<string | null>(null);
+  const [assetPlacementMode, setAssetPlacementMode] = useState(false);
+  const assetFileInputRef = useRef<HTMLInputElement>(null);
+  const [customAssetLibrary, setCustomAssetLibrary] = useState<DebugCustomAsset[]>(() => {
+    try { const v = JSON.parse(localStorage.getItem('ag-custom-asset-library') || '[]'); return Array.isArray(v) ? v.filter((a) => a && typeof a.id === 'string' && typeof a.src === 'string' && typeof a.name === 'string') : []; } catch { return []; }
+  });
+  const [customPlacedAssets, setCustomPlacedAssets] = useState<DebugPlacedAsset[]>(() => {
+    try { const v = JSON.parse(localStorage.getItem('ag-custom-placed-assets') || '[]'); return Array.isArray(v) ? v.filter((a) => a && typeof a.id === 'string' && typeof a.src === 'string' && typeof a.chunk === 'string' && typeof a.x === 'number' && typeof a.y === 'number') : []; } catch { return []; }
+  });
+  useEffect(() => { try { localStorage.setItem('ag-custom-asset-library', JSON.stringify(customAssetLibrary)); setAssetStudioStatus('Local library saved · ' + customAssetLibrary.length + ' asset(s)'); } catch { setAssetStudioStatus('Storage full. Export/remove large images before adding more.'); } }, [customAssetLibrary]);
+  useEffect(() => { try { localStorage.setItem('ag-custom-placed-assets', JSON.stringify(customPlacedAssets)); } catch { setAssetStudioStatus('Storage full: placed sprite positions could not be saved. Export the library and remove large images.'); } }, [customPlacedAssets]);
+  const selectedCustomAsset = customAssetLibrary.find((a) => a.id === selectedCustomAssetId) ?? null;
+  const selectedPlacedCustomAsset = customPlacedAssets.find((a) => a.id === selectedPlacedCustomId) ?? null;
+  const updateSelectedCustomAsset = (patch: Partial<DebugCustomAsset>) => {
+    if (!selectedCustomAssetId) return;
+    setCustomAssetLibrary((prev) => prev.map((a) => a.id === selectedCustomAssetId ? { ...a, ...patch } : a));
+  };
+  const updateSelectedPlacedCustomAsset = (patch: Partial<DebugPlacedAsset>) => {
+    if (!selectedPlacedCustomId) return;
+    setCustomPlacedAssets((prev) => prev.map((a) => a.id === selectedPlacedCustomId ? { ...a, ...patch } : a));
+  };
+  const handleDebugAssetUpload = (file?: File) => {
+    if (!file) return;
+    if (!['image/png', 'image/webp', 'image/jpeg'].includes(file.type)) { setAssetStudioStatus('Unsupported file. Choose PNG, WebP, or JPEG.'); return; }
+    if (file.size > 1000000) { setAssetStudioStatus('Image is larger than 1 MB. Resize/compress it before importing to protect browser storage.'); return; }
+    const reader = new FileReader();
+    reader.onerror = () => setAssetStudioStatus('Could not read that file.');
+    reader.onload = () => {
+      const src = String(reader.result || '');
+      const img = new Image();
+      img.onerror = () => setAssetStudioStatus('Image preview failed to load.');
+      img.onload = () => {
+        const id = 'asset-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+        const name = file.name.replace(/\\.(png|webp|jpe?g)$/i, '').slice(0, 80) || 'Imported sprite';
+        const asset: DebugCustomAsset = { id, name, src, width: img.naturalWidth, height: img.naturalHeight, scale: 1, rotation: 0, flipX: false, flipY: false, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0 };
+        setCustomAssetLibrary((prev) => [...prev, asset]);
+        setSelectedCustomAssetId(id);
+        setAssetStudioStatus('Imported ' + name + ' (' + img.naturalWidth + '×' + img.naturalHeight + '). Saved locally in this browser; not committed to GitHub.');
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
+  };
+  const exportDebugAssetLibrary = () => {
+    const data = JSON.stringify({ schema: 'adventure-game-debug-assets-v1', build: BUILD_NUMBER, exportedAt: new Date().toISOString(), assets: customAssetLibrary, placements: customPlacedAssets }, null, 2);
+    const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'adventure-game-debug-assets.json'; link.click(); URL.revokeObjectURL(url);
+    setAssetStudioStatus('Exported library and placements as JSON. This is a local export, not a GitHub commit.');
+  };
+
   // BUILD 605: Debug console — black window with coordinates, copyable.
   const [debugConsoleOpen, setDebugConsoleOpen] = useState(false);
   // BUILD 663: World Simulation Control Center.
@@ -4055,6 +4111,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // Debug world editor (BUILD 274): stamp houses/trees/rocks/roads onto the
   // field, flag generated objects for removal, teleport the player.
   type EditorTool = 'select' | 'house' | 'tree' | 'pine' | 'rock' | 'roadH' | 'roadV' | 'flag' | 'erase' | 'player' | 'xmark' | 'rotate';
+  // BUILD 835: user-imported local sprite library and per-placement transforms.
+  type DebugCustomAsset = { id: string; name: string; src: string; width: number; height: number; scale: number; rotation: number; flipX: boolean; flipY: boolean; cropTop: number; cropRight: number; cropBottom: number; cropLeft: number };
+  type DebugPlacedAsset = { id: string; assetId: string; name: string; src: string; chunk: string; x: number; y: number; width: number; height: number; scale: number; rotation: number; flipX: boolean; flipY: boolean; cropTop: number; cropRight: number; cropBottom: number; cropLeft: number };
+
   const [editorTool, setEditorTool] = useState<EditorTool>('select');
   // BUILD 822: let the player hide the minimap without opening another menu.
   const [minimapHidden, setMinimapHidden] = useState(false);
@@ -4331,10 +4391,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 352: undo stack for the map builder. Each entry snapshots the paint
   // map and placed objects before a stroke/stamp/clear, so ↩️ Undo restores
   // the exact state before the last action.
-  const [mapUndo, setMapUndo] = useState<Array<{ paints: MapPaints; placed: PlacedObject[] }>>([]);
+  const [mapUndo, setMapUndo] = useState<Array<{ paints: MapPaints; placed: PlacedObject[]; customPlaced: DebugPlacedAsset[] }>>([]);
   const pushMapUndo = () => {
     setMapUndo((prev) => {
-      const next = [...prev, { paints: mapPaints, placed: placedObjects }];
+      const next = [...prev, { paints: mapPaints, placed: placedObjects, customPlaced: customPlacedAssets }];
       return next.length > 40 ? next.slice(next.length - 40) : next;
     });
   };
@@ -4343,6 +4403,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (!last) return;
     setMapPaints(last.paints);
     setPlacedObjects(last.placed);
+    setCustomPlacedAssets(last.customPlaced ?? []);
     setMapUndo((prev) => prev.slice(0, -1));
     logEditorChange('undo', 'undid last map-builder action (paint/stamp/clear restored)');
   };
@@ -9479,6 +9540,17 @@ if (active) {
               className="map-builder-overlay"
               onPointerDown={(e) => {
                 e.stopPropagation();
+                if (assetPlacementMode && selectedCustomAsset) {
+                  e.preventDefault();
+                  const p = tapToField(e);
+                  pushMapUndo();
+                  const id = 'placed-asset-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+                  setCustomPlacedAssets((prev) => [...prev, { ...selectedCustomAsset, id, assetId: selectedCustomAsset.id, chunk: chunkKey, x: p.x, y: p.y }]);
+                  setSelectedPlacedCustomId(id);
+                  setAssetStudioStatus('Placed ' + selectedCustomAsset.name + ' at (' + p.x.toFixed(1) + ', ' + p.y.toFixed(1) + '). Tap again to place another, or cancel placement in Asset Studio.');
+                  e.stopPropagation();
+                  return;
+                }
                 if (tileEditMode) { paintAtEvent(e, true); return; }
                 try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
                 mapPaintingRef.current = true;
@@ -9741,6 +9813,84 @@ if (active) {
                   </>
                 );
               })()}
+            </div>
+          )}
+          {assetStudioOpen && (
+            <div className="editor-panel inspector-panel asset-studio-panel" role="dialog" aria-label="Asset Studio" style={{ maxHeight: 'min(82vh, 760px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 1250 }}>
+              <div className="editor-panel-title">🖼️ Asset Studio <span className="editor-panel-chunk">{customAssetLibrary.length} local assets</span>
+                <button type="button" className="editor-minimize-btn" onClick={() => setAssetStudioOpen(false)} aria-label="Close Asset Studio">✕</button>
+              </div>
+              <div style={{ display: 'flex', gap: 6, padding: 8, flexShrink: 0 }}>
+                <input aria-label="Search local assets" value={assetStudioSearch} onChange={(e) => setAssetStudioSearch(e.target.value)} placeholder="Search imported assets…" style={{ minWidth: 0, flex: 1, padding: 8, borderRadius: 6 }} />
+                <button type="button" className="editor-btn" onClick={() => assetFileInputRef.current?.click()}>＋ Upload</button>
+                <input ref={assetFileInputRef} type="file" accept="image/png,image/webp,image/jpeg" style={{ display: 'none' }} onChange={(e) => { handleDebugAssetUpload(e.target.files?.[0]); e.currentTarget.value = ''; }} />
+              </div>
+              <div style={{ padding: '0 8px 8px', overflowY: 'auto', minHeight: 0, flex: 1 }}>
+                <p style={{ fontSize: 11, color: '#b7c8bc', margin: '2px 0 8px' }}>Upload accepts PNG, WebP or JPEG up to 1 MB. Imported images and placements are stored in this browser only; use Export JSON to move them. Existing repository assets are not overwritten.</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(94px,1fr))', gap: 7 }}>
+                  {customAssetLibrary.filter((a) => a.name.toLowerCase().includes(assetStudioSearch.toLowerCase())).map((asset) => (
+                    <button key={asset.id} type="button" onClick={() => setSelectedCustomAssetId(asset.id)} style={{ minWidth: 0, border: selectedCustomAssetId === asset.id ? '2px solid #f2d35e' : '1px solid #52645a', borderRadius: 7, padding: 6, background: selectedCustomAssetId === asset.id ? '#35452e' : '#18231e', color: '#fff' }}>
+                      <img src={asset.src} alt="" style={{ width: '100%', height: 64, objectFit: 'contain', imageRendering: 'pixelated' }} />
+                      <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{asset.name}</span>
+                      <small style={{ opacity: 0.75 }}>{asset.width}×{asset.height}</small>
+                    </button>
+                  ))}
+                </div>
+                {customAssetLibrary.length === 0 && <p style={{ color: '#d0d9d2', fontSize: 12 }}>No imported assets yet. Upload an image to begin. Repository sprites are not copied into this local upload library automatically.</p>}
+                {selectedCustomAsset && (
+                  <div style={{ borderTop: '1px solid #53655a', marginTop: 10, paddingTop: 10 }}>
+                    <strong>{selectedCustomAsset.name}</strong> <small>· source {selectedCustomAsset.width}×{selectedCustomAsset.height}</small>
+                    <label style={{ display: 'block', fontSize: 11, marginTop: 8 }}>Name</label>
+                    <input aria-label="Asset name" value={selectedCustomAsset.name} onChange={(e) => updateSelectedCustomAsset({ name: e.target.value.slice(0, 80) })} style={{ width: '100%', boxSizing: 'border-box', padding: 7 }} />
+                    <label style={{ display: 'block', fontSize: 11, marginTop: 8 }}>Scale: {Math.round(selectedCustomAsset.scale * 100)}%</label>
+                    <input aria-label="Asset scale" type="range" min="25" max="300" step="5" value={Math.round(selectedCustomAsset.scale * 100)} onChange={(e) => updateSelectedCustomAsset({ scale: Number(e.target.value) / 100 })} style={{ width: '100%' }} />
+                    <label style={{ display: 'block', fontSize: 11, marginTop: 8 }}>Rotation: {selectedCustomAsset.rotation}°</label>
+                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                      <button type="button" className="editor-btn" onClick={() => updateSelectedCustomAsset({ rotation: (selectedCustomAsset.rotation - 15 + 360) % 360 })}>↶ −15°</button>
+                      <button type="button" className="editor-btn" onClick={() => updateSelectedCustomAsset({ rotation: (selectedCustomAsset.rotation + 15) % 360 })}>↷ +15°</button>
+                      <button type="button" className="editor-btn" onClick={() => updateSelectedCustomAsset({ flipX: !selectedCustomAsset.flipX })}>↔ Flip X {selectedCustomAsset.flipX ? '✓' : ''}</button>
+                      <button type="button" className="editor-btn" onClick={() => updateSelectedCustomAsset({ flipY: !selectedCustomAsset.flipY })}>↕ Flip Y {selectedCustomAsset.flipY ? '✓' : ''}</button>
+                      <button type="button" className="editor-btn" onClick={() => updateSelectedCustomAsset({ scale: 1, rotation: 0, flipX: false, flipY: false, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0 })}>Reset</button>
+                    </div>
+                    <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 5 }}>
+                      {([{ key: 'cropTop', label: 'Crop top' }, { key: 'cropRight', label: 'Crop right' }, { key: 'cropBottom', label: 'Crop bottom' }, { key: 'cropLeft', label: 'Crop left' }] as const).map((item) => (
+                        <label key={item.key} style={{ fontSize: 10 }}>{item.label}<input aria-label={item.label} type="number" min="0" max="40" value={selectedCustomAsset[item.key]} onChange={(e) => updateSelectedCustomAsset({ [item.key]: Math.max(0, Math.min(40, Number(e.target.value) || 0)) })} style={{ width: '100%', boxSizing: 'border-box', padding: 4 }} /></label>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                      <button type="button" className="editor-btn" onClick={() => { setMapBuilderMode(true); setMapBuilderMin(true); setAssetPlacementMode(true); setAssetStudioStatus('Placement active: tap the world to place ' + selectedCustomAsset.name + '. Tap again for duplicates; cancel here when done.'); }}>📍 Place Asset</button>
+                      <button type="button" className="editor-btn" onClick={() => { setCustomAssetLibrary((prev) => [...prev, { ...selectedCustomAsset, id: 'asset-' + Date.now().toString(36), name: selectedCustomAsset.name + ' copy' }]); }}>Duplicate asset</button>
+                      <button type="button" className="editor-btn" onClick={() => { if (confirm('Delete this imported local asset? Existing placed copies remain unchanged.')) { setCustomAssetLibrary((prev) => prev.filter((a) => a.id !== selectedCustomAsset.id)); setSelectedCustomAssetId(null); } }}>Delete asset</button>
+                    </div>
+                  </div>
+                )}
+                <div style={{ borderTop: '1px solid #53655a', marginTop: 10, paddingTop: 8 }}>
+                  <strong>Placed sprites in this chunk ({customPlacedAssets.filter((a) => a.chunk === chunkKey).length})</strong>
+                  {customPlacedAssets.filter((a) => a.chunk === chunkKey).map((asset) => (
+                    <div key={asset.id} style={{ display: 'flex', gap: 5, alignItems: 'center', marginTop: 5 }}>
+                      <button type="button" className="editor-btn" style={{ flex: 1, minWidth: 0, textAlign: 'left' }} onClick={() => setSelectedPlacedCustomId(asset.id)}>{selectedPlacedCustomId === asset.id ? '● ' : ''}{asset.name} · ({asset.x.toFixed(1)}, {asset.y.toFixed(1)})</button>
+                      <button type="button" className="editor-btn" onClick={() => { pushMapUndo(); setCustomPlacedAssets((prev) => [...prev, { ...asset, id: 'placed-asset-' + Date.now().toString(36), x: Math.min(FIELD_SIZE - 1, asset.x + 8), y: Math.min(FIELD_SIZE - 1, asset.y + 8) }]); }}>Copy</button>
+                      <button type="button" className="editor-btn" onClick={() => { pushMapUndo(); setCustomPlacedAssets((prev) => prev.filter((a) => a.id !== asset.id)); if (selectedPlacedCustomId === asset.id) setSelectedPlacedCustomId(null); }}>Delete</button>
+                    </div>
+                  ))}
+                  {selectedPlacedCustomAsset && (
+                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 7 }}>
+                      <button type="button" className="editor-btn" onClick={() => updateSelectedPlacedCustomAsset({ scale: Math.max(0.25, Math.min(3, selectedPlacedCustomAsset.scale - 0.1)) })}>− Size</button>
+                      <button type="button" className="editor-btn" onClick={() => updateSelectedPlacedCustomAsset({ scale: Math.max(0.25, Math.min(3, selectedPlacedCustomAsset.scale + 0.1)) })}>＋ Size</button>
+                      <button type="button" className="editor-btn" onClick={() => updateSelectedPlacedCustomAsset({ rotation: (selectedPlacedCustomAsset.rotation + 15) % 360 })}>Rotate</button>
+                      <button type="button" className="editor-btn" onClick={() => updateSelectedPlacedCustomAsset({ flipX: !selectedPlacedCustomAsset.flipX })}>Flip</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={{ padding: 8, borderTop: '1px solid #53655a', fontSize: 11, flexShrink: 0 }}>
+                {assetPlacementMode && <div style={{ color: '#ffe98a', marginBottom: 6 }}>📍 Placement mode ON — tap the world to place the selected sprite. <button type="button" className="editor-btn" onClick={() => setAssetPlacementMode(false)}>Cancel placement</button></div>}
+                <div>{assetStudioStatus}</div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  <button type="button" className="editor-btn" onClick={exportDebugAssetLibrary}>Export library + placements JSON</button>
+                  <button type="button" className="editor-btn" onClick={() => { setAssetPlacementMode(false); setAssetStudioOpen(false); }}>Close</button>
+                </div>
+              </div>
             </div>
           )}
           {inspectorOpen && (
@@ -10141,6 +10291,16 @@ if (active) {
               shows the world outside the chunk boundary (roads continuing/ending). */}
           <ChunkSurroundings chunk={chunk} gameZoom={gameZoom} hiddenRoadChunks={hiddenRoadChunks} mapPaints={mapPaints} />
           <FieldGroundLayer spec={groundSpec} />
+          {/* BUILD 835: user-imported world sprites render in the active chunk and follow the world camera/zoom. */}
+          {customPlacedAssets.filter((asset) => asset.chunk === chunkKey).map((asset) => (
+            <img key={asset.id} src={asset.src} alt={asset.name} title={asset.name}
+              draggable={false}
+              style={{ position: 'absolute', left: (asset.x / FIELD_SIZE * 100) + '%', top: (asset.y / FIELD_SIZE * 100) + '%',
+                width: Math.max(24, Math.min(260, asset.width * 0.35)) * asset.scale + 'px', height: 'auto',
+                transform: 'translate(-50%, -100%) rotate(' + asset.rotation + 'deg) scale(' + (asset.flipX ? -1 : 1) + ',' + (asset.flipY ? -1 : 1) + ')',
+                transformOrigin: '50% 100%', clipPath: 'inset(' + asset.cropTop + '% ' + asset.cropRight + '% ' + asset.cropBottom + '% ' + asset.cropLeft + '%)',
+                zIndex: 35, pointerEvents: 'none', imageRendering: 'pixelated', opacity: 0.98 }} />
+          ))}
           {/* Marker dots: inside the world layer so they stay locked to field positions when walking/zooming. */}
           {markerMode && debugMarks.map((mark, i) => [
             <span key={'mark-' + i} aria-hidden="true" style={{
@@ -11482,6 +11642,10 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); setInspectorOpen(true); }} data-testid="button-debug-inspector">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: NPC Inspector</strong><small>Townsfolk, travelers, adventurers · go-to</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); setAssetStudioOpen(true); }} data-testid="button-debug-asset-studio">
+                  <span className="options-action-icon"><Settings size={17} /></span>
+                  <span><strong>🖼️ Debug: Asset Studio</strong><small>Import local sprites, crop/transform, place in the world, export JSON</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); setNpcRosterOpen(true); }} data-testid="button-debug-npc-roster">
                   <span className="options-action-icon"><Eye size={17} /></span>
