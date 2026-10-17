@@ -1267,13 +1267,53 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
                 g2.fillRect(p.x - fw / 2, p.y - fh / 2, fw, fh);
                 g2.strokeStyle = 'rgba(35,24,18,0.8)'; g2.lineWidth = 1; g2.strokeRect(p.x - fw / 2, p.y - fh / 2, fw, fh);
               }
-              // Low cutaway walls: a readable outline with the real south doorway left open.
-              const corners = [isoToScreen(r.left, r.top), isoToScreen(r.right, r.top),
-                isoToScreen(r.right, r.bottom), isoToScreen(r.left, r.bottom)];
+              // Type-specific room partitions, rendered on the floor plane.
+              const verticalPartitions: [number, number, number][] = [];
+              const horizontalPartitions: [number, number, number][] = [];
+              switch (layout.houseType) {
+                case 'farmhouse':
+                  verticalPartitions.push([8, 2, 5], [8, 6, 9]);
+                  horizontalPartitions.push([6, 8, 10], [6, 11, 12]);
+                  break;
+                case 'merchant':
+                  horizontalPartitions.push([4, 5, 9], [4, 10, 12]);
+                  verticalPartitions.push([5, 4, 7], [5, 8, 9]);
+                  break;
+                case 'guard':
+                  verticalPartitions.push([7, 2, 6], [7, 7, 9]);
+                  horizontalPartitions.push([7, 7, 10], [7, 11, 12]);
+                  break;
+                case 'craftsman':
+                  verticalPartitions.push([4, 2, 5], [4, 6, 9]);
+                  horizontalPartitions.push([4, 4, 8], [4, 9, 11]);
+                  break;
+                default:
+                  verticalPartitions.push([8, 2, 6], [8, 7, 8]);
+                  horizontalPartitions.push([3, 8, 10], [3, 11, 12]);
+                  break;
+              }
+              g2.strokeStyle = '#5c422d'; g2.lineWidth = 2.5;
+              for (const [x, y1, y2] of verticalPartitions) {
+                const a = isoToScreen(r.left + x * tileW, r.top + y1 * tileH);
+                const b = isoToScreen(r.left + x * tileW, r.top + y2 * tileH);
+                g2.beginPath(); g2.moveTo(a.x, a.y); g2.lineTo(b.x, b.y); g2.stroke();
+              }
+              for (const [y, x1, x2] of horizontalPartitions) {
+                const a = isoToScreen(r.left + x1 * tileW, r.top + y * tileH);
+                const b = isoToScreen(r.left + x2 * tileW, r.top + y * tileH);
+                g2.beginPath(); g2.moveTo(a.x, a.y); g2.lineTo(b.x, b.y); g2.stroke();
+              }
+              // Low cutaway walls. The south/front edge has a real doorway gap.
+              const nw = isoToScreen(r.left, r.top), ne = isoToScreen(r.right, r.top);
+              const se = isoToScreen(r.right, r.bottom), sw = isoToScreen(r.left, r.bottom);
+              const doorHalf = roomW * 0.12;
+              const doorLeft = isoToScreen((r.left + r.right) / 2 - doorHalf, r.bottom);
+              const doorRight = isoToScreen((r.left + r.right) / 2 + doorHalf, r.bottom);
               g2.strokeStyle = '#6b5037'; g2.lineWidth = 3;
-              g2.beginPath(); g2.moveTo(corners[0].x, corners[0].y);
-              g2.lineTo(corners[1].x, corners[1].y); g2.lineTo(corners[2].x, corners[2].y);
-              g2.lineTo(corners[3].x, corners[3].y); g2.closePath(); g2.stroke();
+              g2.beginPath(); g2.moveTo(nw.x, nw.y); g2.lineTo(ne.x, ne.y);
+              g2.lineTo(se.x, se.y); g2.moveTo(sw.x, sw.y); g2.lineTo(nw.x, nw.y);
+              g2.moveTo(se.x, se.y); g2.lineTo(doorRight.x, doorRight.y);
+              g2.moveTo(doorLeft.x, doorLeft.y); g2.lineTo(sw.x, sw.y); g2.stroke();
             },
           });
           continue;
