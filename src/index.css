@@ -648,7 +648,8 @@
   top: 4px;
   width: 32px;
   height: 32px;
-  background-image: var(--player-sprite-url);
+  /* BUILD 755: town residents always use the canonical human NPC sheet. */
+  background-image: var(--npc-sprite-url, var(--player-sprite-url));
   background-position: 0 0;
   background-position-y: 0;
   background-size: 192px 320px;
@@ -2565,7 +2566,8 @@ body {
   top: 24px;
   width: 32px;
   height: 32px;
-  background-image: var(--player-sprite-url);
+  /* BUILD 755: indoor townsfolk use the same canonical human NPC sheet. */
+  background-image: var(--npc-sprite-url, var(--player-sprite-url));
   background-size: 192px 320px;
   background-position: var(--npc-appearance-x, -32px) 0;
   background-repeat: no-repeat;
@@ -2824,7 +2826,7 @@ body {
   border: 1px solid var(--line);
   background: #d8c699;
 }
-.dialogue-portrait .npc-sprite { position: absolute; left: 16px; top: 29px; width: 32px; height: 32px; background-image: var(--player-sprite-url); background-size: 192px 320px; background-position: 0 0; image-rendering: pixelated; transform: var(--npc-appearance-transform, none); transform-origin: 50% 100%; }
+.dialogue-portrait .npc-sprite { position: absolute; left: 16px; top: 29px; width: 32px; height: 32px; background-image: var(--npc-sprite-url, var(--player-sprite-url)); background-size: 192px 320px; background-position: 0 0; image-rendering: pixelated; transform: var(--npc-appearance-transform, none); transform-origin: 50% 100%; }
 .dialogue-portrait[data-facing='up'] .npc-sprite { background-position-y: -64px; }
 .dialogue-portrait[data-facing='left'] .npc-sprite { background-position-y: -128px; transform: var(--npc-appearance-transform, none) scaleX(-1); }
 .dialogue-portrait[data-facing='right'] .npc-sprite { background-position-y: -128px; }
