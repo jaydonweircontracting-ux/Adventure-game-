@@ -10719,14 +10719,13 @@ if (active) {
                     zIndex: isSelected ? 10 : 20 + (houseLayerOffsets[doorway.id] ?? 0),
                     '--building-art': 'url("' + buildingArtUrl + '")',
                     '--building-art-ratio': buildingArt.aspectRatio,
-                    left: fieldPct(rect.left + off.x),
-                    top: fieldPct(rect.top + off.y),
+                    left: fieldPct(rect.left + off.x - ((rect.right - rect.left) * ((houseSizeScales[doorway.id] ?? 1) - 1)) / 2),
+                    top: fieldPct(rect.top + off.y - ((rect.bottom - rect.top) * ((houseSizeScales[doorway.id] ?? 1) - 1))),
                     width: fieldPct((rect.right - rect.left) * (houseSizeScales[doorway.id] ?? 1)),
                     height: fieldPct((rect.bottom - rect.top) * (houseSizeScales[doorway.id] ?? 1)),
                     cursor: moverMode ? 'pointer' : undefined,
                     touchAction: moverMode ? 'none' : undefined,
                     outline: isSelected ? '3px solid #ff0' : undefined,
-                    zIndex: isSelected ? 10 : undefined,
                   } as CSSProperties}
                   onPointerUp={moverMode ? (e) => {
                     e.stopPropagation();
