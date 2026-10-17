@@ -4,7 +4,7 @@
 // ground canvas. Pure helpers live here so scripts/simulate.ts can unit-test
 // them without importing the React app.
 
-export type MapPaintTile = 'grass' | 'dirt' | 'water' | 'sand' | 'forest' | `color:${string}`;
+export type MapPaintTile = 'grass' | 'dirt' | 'water' | 'sand' | 'forest' | 'path' | `color:${string}`;
 
 /** Return a normalized hex color for custom-color tiles, or null for terrain IDs. */
 export function customPaintColor(tile: MapPaintTile): string | null {
