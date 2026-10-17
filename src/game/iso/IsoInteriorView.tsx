@@ -887,8 +887,8 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       const g = ctx;
       g.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
       g.clearRect(0, 0, state.w, state.h);
-      // backdrop
-      g.fillStyle = '#14181f';
+      // BUILD 783: warm room-toned backdrop, so uncovered space never appears black.
+      g.fillStyle = isStarterHouse ? '#a97545' : '#14181f';
       g.fillRect(0, 0, state.w, state.h);
 
       const wood = isStarterHouse || roomType === 'guild' || roomType === 'cellar' || roomType === 'prison';
@@ -899,8 +899,10 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       const starterScene = isStarterHouse ? starterHouseScene() : undefined;
       if (isStarterHouse && starterScene) {
         // Draw the full-size authored image at its native dimensions; panning reveals edges outside the viewport.
-        const imageW = starterScene.naturalWidth;
-        const imageH = starterScene.naturalHeight;
+        // Keep the authored room larger on screen, like the earlier view, while allowing panning.
+        const roomScale = 1.14;
+        const imageW = starterScene.naturalWidth * roomScale;
+        const imageH = starterScene.naturalHeight * roomScale;
         const pan = scenePanRef.current;
         g.globalCompositeOperation = 'source-over';
         g.drawImage(
