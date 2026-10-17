@@ -59,7 +59,7 @@ export const BUILDING_ASSET_META: Record<string, BuildingAssetMeta> = {
   'red-cottage':   { variant: 'red-cottage',   file: 'buildings/red-cottage.png',   w: 2240, h: 1120, anchor: 'base-center', kind: 'cottage' },
   'hut-thatched':  { variant: 'hut-thatched',  file: 'buildings/hut-thatched.png',  w: 1600, h: 1600, anchor: 'base-center', kind: 'cottage' },
   'blue-house':    { variant: 'blue-house',    file: 'buildings/blue-house.png',    w: 2240, h: 1120, anchor: 'base-center', kind: 'stone-house' },
-  'starting-house-exterior': { variant: 'starting-house-exterior', file: 'assets/starting-house/exterior.jpeg', w: 1596, h: 1024, anchor: 'base-center', kind: 'cottage' },
+  'starting-house-exterior': { variant: 'starting-house-exterior', file: 'assets/starting-house/interior-build786.jpeg', w: 1596, h: 1024, anchor: 'base-center', kind: 'cottage' },
   'house-timber':  { variant: 'house-timber',  file: 'buildings/house-timber.png',  w: 1920, h: 1280, anchor: 'base-center', kind: 'stone-house' },
   'red-shop':      { variant: 'red-shop',      file: 'buildings/red-shop.png',      w: 2240, h: 1120, anchor: 'base-center', kind: 'shop' },
   'shop-awning':   { variant: 'shop-awning',   file: 'buildings/shop-awning.png',   w: 1920, h: 1280, anchor: 'base-center', kind: 'shop' },
