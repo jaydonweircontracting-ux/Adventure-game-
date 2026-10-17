@@ -1307,8 +1307,8 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               const nw = isoToScreen(r.left, r.top), ne = isoToScreen(r.right, r.top);
               const se = isoToScreen(r.right, r.bottom), sw = isoToScreen(r.left, r.bottom);
               const doorHalf = roomW * 0.12;
-              const doorLeft = isoToScreen((r.left + r.right) / 2 - doorHalf, r.bottom);
-              const doorRight = isoToScreen((r.left + r.right) / 2 + doorHalf, r.bottom);
+              const doorLeft = isoToScreen(Math.max(r.left, Math.min(r.right, bpos.x - doorHalf)), r.bottom);
+              const doorRight = isoToScreen(Math.max(r.left, Math.min(r.right, bpos.x + doorHalf)), r.bottom);
               g2.strokeStyle = '#6b5037'; g2.lineWidth = 3;
               g2.beginPath(); g2.moveTo(nw.x, nw.y); g2.lineTo(ne.x, ne.y);
               g2.lineTo(se.x, se.y); g2.moveTo(sw.x, sw.y); g2.lineTo(nw.x, nw.y);
