@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '761': 'Replace old house sprites with new buildings and remove the enter button',
   '759': 'Move all market stalls onto the middle east-west town fork',
   '758': 'Move all market stalls into the central town road fork',
   '756': 'Remove broken Tam and Nan town residents and their character-specific sprite overrides',
@@ -11445,7 +11446,7 @@ if (active) {
             ⚠ frame error ×{loopErrorRef.current.count}: {loopErrorRef.current.message}
           </button>
         )}
-        {!interior && (() => { const promptDoor = doorwayNear(position, chunk, houseOffsets); return promptDoor && <button type="button" className="door-prompt" aria-live="polite" onClick={() => enterDoorway(promptDoor, chunk)}>Enter {promptDoor.area.name}</button>; })()}
+        {/* BUILD 761: doorway entry is movement-triggered; no separate Enter button. */}
         {/* BUILD 374: examine system — context menu + result toast. */}
         {contextMenu && (
           <>
