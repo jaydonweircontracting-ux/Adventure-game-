@@ -551,6 +551,22 @@ export function renderGroundDetail(spec: GroundDetailSpec): HTMLCanvasElement {
         for (let i = 0; i < 8; i++) {
           rect(x0 + ri(MAP_TILE_PX - 2), y0 + ri(MAP_TILE_PX - 2), 2, 1, pick([shadeColor(dirt, 0.8), shadeColor(dirt, 1.15)]));
         }
+      } else if (pt.tile === 'path') {
+        // BUILD 836: authored cobblestone walkway tile; distinct from soft dirt paths.
+        const stone = '#918978';
+        rect(x0, y0, MAP_TILE_PX, MAP_TILE_PX, stone);
+        ditherRegion(x0, y0, MAP_TILE_PX, MAP_TILE_PX, '#756e61', '#aaa18d');
+        for (let row = 0; row < 4; row++) {
+          const offset = row % 2 ? 10 : 0;
+          for (let col = 0; col < 3; col++) {
+            const bx = x0 + offset + col * 28;
+            const by = y0 + row * 20;
+            rect(bx + 1, by + 1, 25, 17, row % 2 ? '#9b9381' : '#a29a88');
+            rect(bx + 1, by + 1, 25, 2, '#b9b09b');
+            rect(bx + 1, by + 16, 25, 2, '#6d675b');
+            rect(bx + 1, by + 1, 2, 17, '#777062');
+          }
+        }
       } else if (pt.tile === 'sand') {
         const sand = '#d9c07a';
         rect(x0, y0, MAP_TILE_PX, MAP_TILE_PX, sand);
