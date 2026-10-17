@@ -133,10 +133,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '804';
+const BUILD_NUMBER = '805';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '805': 'Use IMG_5422.png explicitly as the starting-house exterior sprite',
   '804': 'Synchronize the game and deployment build numbers; restore IMG_5422 as the starting-house exterior',
   '803': 'Hide all generated building images; keep only the existing starter house exterior',
   '796': 'Fix Pages typecheck and use the uploaded house sprite on every building exterior',
