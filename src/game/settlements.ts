@@ -314,14 +314,14 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
     });
   }
 
-  // Market stalls are grouped into a compact, orderly row in the town center.
-  // Do not randomize their angle: merchants should read as one shared market
-  // instead of isolated stalls scattered around the plaza.
+  // BUILD 758: put every market stall together at the central road fork,
+  // inside the middle of the town plaza rather than along its outer edge.
+  // Keep the stalls in one fixed row just south of the well/meeting point.
   if (profile !== 'hamlet') {
     const stallAssets = [PROP_ASSETS.stallBlue, PROP_ASSETS.stallGreen, PROP_ASSETS.stallRed];
     const stallCount = Math.min(3, Math.floor(count / 4));
     const stallSpacing = 3;
-    const rowY = center.y + plazaRadius + 2;
+    const rowY = center.y + Math.min(4, plazaRadius * 0.35);
     for (let i = 0; i < stallCount; i++) {
       const rowX = center.x + (i - (stallCount - 1) / 2) * stallSpacing;
       const spot = placePropClear(rowX, rowY, 1.2);
