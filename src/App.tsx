@@ -133,10 +133,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '792';
+const BUILD_NUMBER = '793';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '793': 'Start directly in the outdoor world instead of the starting-house interior',
   '792': 'Use the newly uploaded starting-house exterior and interior sprites',
   '778': 'Fit the new starter-house room art to the walkable floor plan',
   '777': 'Replace the starting house exterior and room with the uploaded house, interior, dresser, and fireplace art',
@@ -4924,7 +4925,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [attacking, setAttacking] = useState(false);
   const [attackSequence, setAttackSequence] = useState(0);
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
-  const [interior, setInterior] = useState<InteriorArea | null>(playtestInteriorArea ?? (playtestMounted || playtestChunk ? null : startingHouse));
+  // BUILD 793: start directly in the outdoor world; interiors are entered only through doors.
+  const [interior, setInterior] = useState<InteriorArea | null>(playtestInteriorArea);
   // BUILD 326: the interior to return to when leaving the tankard cellar
   // (the tavern), and the cellar's rats. Rats persist for the session once
   // spawned so leaving mid-quest and coming back keeps the remaining rats.
