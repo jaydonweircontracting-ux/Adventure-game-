@@ -238,8 +238,7 @@ function faceForMove(ax: number, ay: number, bx: number, by: number, current: Fa
 }
 
 export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, playerLook, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, groundItems, onPickupItem, rats, onStrikeRat, onPlayerMove, playerRunning }: IsoInteriorViewProps): React.JSX.Element {
-  // BUILD 782: preserve the room art's native pixel size; drag to pan around the full image.
-  const scenePanRef = useRef({ x: 0, y: 0 });
+  // BUILD 784: restore the original Build 777 room-image framing; keep the camera fixed.
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const attackSequenceRef = useRef(barbAttackSequence ?? 0);
   attackSequenceRef.current = barbAttackSequence ?? 0;
@@ -450,31 +449,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       }
     };
 
-    // BUILD 781: drag the starter-house image to pan; a tap still interacts/moves.
-    let panPointerId: number | null = null;
-    let panStartX = 0, panStartY = 0, panOriginX = 0, panOriginY = 0;
-    let panMoved = false;
-    const onPointerDown = (e: PointerEvent) => {
-      if (!isStarterHouse) return;
-      panPointerId = e.pointerId;
-      panStartX = e.clientX; panStartY = e.clientY;
-      panOriginX = scenePanRef.current.x; panOriginY = scenePanRef.current.y;
-      panMoved = false;
-      canvas.setPointerCapture?.(e.pointerId);
-    };
-    const onPointerMove = (e: PointerEvent) => {
-      if (!isStarterHouse || panPointerId !== e.pointerId) return;
-      const dx = e.clientX - panStartX, dy = e.clientY - panStartY;
-      if (Math.abs(dx) + Math.abs(dy) > 5) panMoved = true;
-      if (panMoved) scenePanRef.current = { x: panOriginX + dx, y: panOriginY + dy };
-    };
+    // BUILD 784: pointer movement is for walking/interaction only. The old
+    // drag-to-pan handler made the room appear to scroll sideways/down while walking.
     const onPointerUp = (e: PointerEvent) => {
-      if (isStarterHouse && panPointerId === e.pointerId) {
-        const wasPan = panMoved;
-        panPointerId = null;
-        panMoved = false;
-        if (wasPan) return;
-      }
       const r = canvas.getBoundingClientRect();
       const t = fromScreen(e.clientX - r.left, e.clientY - r.top);
       const npc = npcsRef.current.find((n) => Math.round(n.tx) === t.tx && Math.round(n.ty) === t.ty);
@@ -485,8 +462,6 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       if (item && pickupRef.current) { pickupRef.current(item.id); return; }
       if (t.tx >= 0 && t.ty >= 0 && t.tx < ROOM_W && t.ty < ROOM_H && !solidAt(t.tx, t.ty)) goTo(t.tx, t.ty);
     };
-    canvas.addEventListener('pointerdown', onPointerDown);
-    canvas.addEventListener('pointermove', onPointerMove);
     canvas.addEventListener('pointerup', onPointerUp);
     canvas.addEventListener('pointercancel', onPointerUp);
 
@@ -898,20 +873,16 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       // BUILD 777: replace the procedural floor with the uploaded room scene.
       const starterScene = isStarterHouse ? starterHouseScene() : undefined;
       if (isStarterHouse && starterScene) {
-        // Draw the full-size authored image at its native dimensions; panning reveals edges outside the viewport.
-        // Keep the authored room larger on screen, like the earlier view, while allowing panning.
-        const roomScale = 1.14;
-        const imageW = starterScene.naturalWidth * roomScale;
-        const imageH = starterScene.naturalHeight * roomScale;
-        const pan = scenePanRef.current;
+        // Restore the original Build 777 sizing so the whole room is visible
+        // at once. Do not move the art when the player walks.
+        const maxW = state.w * 1.35;
+        const maxH = state.h * 0.78;
+        const scale = Math.min(maxW / starterScene.naturalWidth, maxH / starterScene.naturalHeight);
+        const imageW = starterScene.naturalWidth * scale;
+        const imageH = starterScene.naturalHeight * scale;
+        g.globalCompositeOperation = 'screen';
+        g.drawImage(starterScene, (state.w - imageW) / 2, (state.h - imageH) / 2, imageW, imageH);
         g.globalCompositeOperation = 'source-over';
-        g.drawImage(
-          starterScene,
-          (state.w - imageW) / 2 + pan.x,
-          (state.h - imageH) / 2 + pan.y,
-          imageW,
-          imageH,
-        );
       } else {
       // floor
       for (let ty = 0; ty < ROOM_H; ty++) {
@@ -1287,8 +1258,6 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
-      canvas.removeEventListener('pointerdown', onPointerDown);
-      canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerUp);
     };
