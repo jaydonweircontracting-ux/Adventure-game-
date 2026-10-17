@@ -28,6 +28,7 @@ import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem, EditorXMa
 export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText } from './game/worldEditor';
 import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE, type MapPaints, type MapPaintTile, type PaintedTile } from './game/mapBuilder';
+import ChunkZoneSelector from './game/dev/ChunkZoneSelector';
 import { organicTownSpecs } from './game/organicTowns';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 // BUILD 697: market stall shops — pure defs + guarded transactions.
@@ -4015,6 +4016,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 835: Asset Studio stores imported sprites locally; export/commit is separate.
   // BUILD 838: searchable central launcher and real-data world validation.
   const [debugHubOpen, setDebugHubOpen] = useState(false);
+  // BUILD 836: separate editor inspection target; selecting a chunk never teleports the player.
+  const [chunkSelectorOpen, setChunkSelectorOpen] = useState(false);
+  const [chunkSelectorPoint, setChunkSelectorPoint] = useState<Point>({ x: 4, y: 7 });
   const [debugHubSearch, setDebugHubSearch] = useState('');
   const [debugValidationReport, setDebugValidationReport] = useState<string[]>([]);
   const [assetStudioOpen, setAssetStudioOpen] = useState(false);
@@ -4797,6 +4801,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   // Debug world editor: objects/flags for the current chunk.
   const chunkKey = chunk.x + ',' + chunk.y;
+  const getChunkSelectorInfo = useCallback((x: number, y: number) => {
+    const tile = mapTileFor({ x, y });
+    return { terrain: tile.terrain, biome: tile.worldBiome, road: tile.road, landmark: tile.landmark?.name ?? null };
+  }, []);
   // BUILD 341: merge map-builder painted solids (water/forest tiles) into the
   // module-level collision solids alongside world-editor placed objects.
   useEffect(() => {
@@ -9912,6 +9920,7 @@ if (active) {
               })()}
             </div>
           )}
+          {chunkSelectorOpen && <ChunkZoneSelector selectedChunk={chunkSelectorPoint} onSelectChunk={setChunkSelectorPoint} getChunkInfo={getChunkSelectorInfo} mapPaints={mapPaints} onClose={() => setChunkSelectorOpen(false)} />}
           {debugHubOpen && (
             <div className="editor-panel inspector-panel debug-hub-panel" role="dialog" aria-label="Debug Control Center" style={{ maxHeight: 'min(84vh, 780px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 1260 }}>
               <div className="editor-panel-title">🧰 Debug Control Center <span className="editor-panel-chunk">BUILD {BUILD_NUMBER}</span>
@@ -9928,7 +9937,7 @@ if (active) {
               <div style={{ overflowY: 'auto', padding: 8, minHeight: 0, flex: 1 }}>
                 <strong>World Studio</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
-                  {([{ name: 'World Editor', keywords: 'world map terrain object place', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }, { name: 'Tile Paint', keywords: 'tile ground grass pathway paint', action: () => { setDebugHubOpen(false); if (!tileEditMode) toggleTileEditMode(); else { setMapBuilderMode(true); setMapBuilderMin(false); } } }, { name: 'Asset Studio', keywords: 'asset sprite upload crop rotate flip', action: () => { setDebugHubOpen(false); setAssetStudioOpen(true); } }, { name: 'Building Mover', keywords: 'building house resize move', action: () => { setDebugHubOpen(false); if (!moverMode) toggleMoverMode(); } }, { name: 'Collision Overlay', keywords: 'collision hitbox bounds', action: () => { setCollisionDebugMode((v) => !v); setDebugHubOpen(false); } }, { name: 'Chunk Templates', keywords: 'chunk save template load', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
+                  {([{ name: 'Chunk Zone Selector', keywords: 'chunk zones map coordinates outline red select inspect', action: () => { setChunkSelectorPoint(chunk); setChunkSelectorOpen(true); setDebugHubOpen(false); } }, { name: 'World Editor', keywords: 'world map terrain object place', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }, { name: 'Tile Paint', keywords: 'tile ground grass pathway paint', action: () => { setDebugHubOpen(false); if (!tileEditMode) toggleTileEditMode(); else { setMapBuilderMode(true); setMapBuilderMin(false); } } }, { name: 'Asset Studio', keywords: 'asset sprite upload crop rotate flip', action: () => { setDebugHubOpen(false); setAssetStudioOpen(true); } }, { name: 'Building Mover', keywords: 'building house resize move', action: () => { setDebugHubOpen(false); if (!moverMode) toggleMoverMode(); } }, { name: 'Collision Overlay', keywords: 'collision hitbox bounds', action: () => { setCollisionDebugMode((v) => !v); setDebugHubOpen(false); } }, { name: 'Chunk Templates', keywords: 'chunk save template load', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
                 </div>
                 <strong>Living World & Diagnostics</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
