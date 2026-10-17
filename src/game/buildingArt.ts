@@ -1,7 +1,7 @@
 // Deterministic exterior sprite assignment for world buildings.
 // BUILD 761: Mosslight's replacement buildings use original vector pixel-art
 // sprites so the new vernacular reads consistently at every zoom level.
-import { BUILDING_VARIANTS, mosslightCottageVariantForRect } from './settlements';
+import { BUILDING_VARIANTS } from './settlements';
 import { mosslightFillerLots } from './mosslightLayout';
 import type { Rect } from './settlements';
 export interface BuildingArt { variant: string; file: string; aspectRatio: '2 / 1' | '1 / 1' }
