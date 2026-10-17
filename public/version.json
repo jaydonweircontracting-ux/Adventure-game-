@@ -1,6 +1,6 @@
 {
-  "build": "784",
-  "note": "Restored original starter-house image framing and stopped walk-triggered room panning",
-  "timestamp": "2026-10-17T18:50:00.000Z",
-  "cacheBuster": "build784-original-room-frame-fixed-walk-scroll"
+  "build": "785",
+  "note": "Zoomed starter-house interior out",
+  "timestamp": "2026-10-17T19:00:00.000Z",
+  "cacheBuster": "build785-starter-interior-zoomed-out"
 }
