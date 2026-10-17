@@ -135,10 +135,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '831';
+const BUILD_NUMBER = '832';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '832': 'Add resize mode and size controls to the building mover',
   '831': 'Add a paused building mover with layer controls, copyable placement data, and local save',
   '830': 'Add Save Game to Changelog and a small toggle to remove it from the title menu',
   '829': 'Move World Editor from the starting menu into Debug options',
@@ -3951,8 +3952,18 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     try { const raw = localStorage.getItem('ag-house-layer-offsets'); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
   });
   useEffect(() => { try { localStorage.setItem('ag-house-layer-offsets', JSON.stringify(houseLayerOffsets)); } catch {} }, [houseLayerOffsets]);
+  // BUILD 832: independently scale selected building sprites and persist per-building sizes.
+  const [houseSizeScales, setHouseSizeScales] = useState<Record<string, number>>(() => {
+    try { const raw = localStorage.getItem('ag-house-size-scales'); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+  });
+  const [buildingResizeMode, setBuildingResizeMode] = useState(false);
+  useEffect(() => { try { localStorage.setItem('ag-house-size-scales', JSON.stringify(houseSizeScales)); } catch {} }, [houseSizeScales]);
+  const adjustSelectedBuildingSize = (delta: number) => {
+    if (!selectedHouse) return;
+    setHouseSizeScales((prev) => ({ ...prev, [selectedHouse]: Math.max(0.25, Math.min(3, Math.round(((prev[selectedHouse] ?? 1) + delta) * 100) / 100)) }));
+  };
   const exportBuildingMoverData = () => {
-    const data = { format: 'adventure-game-building-mover-v1', build: BUILD_NUMBER, chunk: chunkKey, houseOffsets, houseLayerOffsets, placedObjects: placedObjects.filter((o) => o.chunk === chunkKey) };
+    const data = { format: 'adventure-game-building-mover-v1', build: BUILD_NUMBER, chunk: chunkKey, houseOffsets, houseLayerOffsets, houseSizeScales, placedObjects: placedObjects.filter((o) => o.chunk === chunkKey) };
     const text = JSON.stringify(data, null, 2);
     try { localStorage.setItem('ag-building-mover-export', text); } catch {}
     if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => setCopiedNotice(true)).catch(() => setCopiedNotice(false));
@@ -8951,6 +8962,13 @@ if (active) {
                 <button type="button" className="editor-btn" onClick={exportBuildingMoverData}>📋 Copy changes</button>
                 <button type="button" className="editor-btn" onClick={() => { const data = JSON.stringify({ format: 'adventure-game-building-mover-v1', build: BUILD_NUMBER, chunk: chunkKey, houseOffsets, houseLayerOffsets, placedObjects: placedObjects.filter((o) => o.chunk === chunkKey) }, null, 2); try { localStorage.setItem('ag-building-mover-export', data); setCopiedNotice(true); } catch { setCopiedNotice(false); } }}>💾 Save locally</button>
               </div>
+              <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', margin: '6px 0' }}>
+                <button type="button" className="editor-btn" onClick={() => setBuildingResizeMode((v) => !v)}>{buildingResizeMode ? '↔ Resize: ON' : '↔ Resize: OFF'}</button>
+                <button type="button" className="editor-btn" disabled={!buildingResizeMode || !selectedHouse} onClick={() => adjustSelectedBuildingSize(-0.1)}>− Smaller</button>
+                <span style={{ fontSize: 11 }}>{selectedHouse ? Math.round((houseSizeScales[selectedHouse] ?? 1) * 100) + '%' : 'Select a building'}</span>
+                <button type="button" className="editor-btn" disabled={!buildingResizeMode || !selectedHouse} onClick={() => adjustSelectedBuildingSize(0.1)}>+ Larger</button>
+                <button type="button" className="editor-btn" disabled={!selectedHouse} onClick={() => selectedHouse && setHouseSizeScales((prev) => ({ ...prev, [selectedHouse]: 1 }))}>Reset size</button>
+              </div>
               <div style={{ fontSize: 10, opacity: 0.8 }}>Player movement is paused while this editor is open. Tap a building to pick it up, then tap the ground to place it. Local data key: ag-building-mover-export{copiedNotice ? ' · saved/copied' : ''}</div>
               <div className="editor-actions">
                 <button type="button" className="editor-btn" onClick={() => {
@@ -10697,14 +10715,14 @@ if (active) {
                 <span
                   key={doorway.id}
                   className={'field-house sprite-house' + (isStartingArea(chunk) ? ' new-house' : '')}
-                  style={{ zIndex: 20 + (houseLayerOffsets[doorway.id] ?? 0) }}
                   style={{
+                    zIndex: isSelected ? 10 : 20 + (houseLayerOffsets[doorway.id] ?? 0),
                     '--building-art': 'url("' + buildingArtUrl + '")',
                     '--building-art-ratio': buildingArt.aspectRatio,
                     left: fieldPct(rect.left + off.x),
                     top: fieldPct(rect.top + off.y),
-                    width: fieldPct(rect.right - rect.left),
-                    height: fieldPct(rect.bottom - rect.top),
+                    width: fieldPct((rect.right - rect.left) * (houseSizeScales[doorway.id] ?? 1)),
+                    height: fieldPct((rect.bottom - rect.top) * (houseSizeScales[doorway.id] ?? 1)),
                     cursor: moverMode ? 'pointer' : undefined,
                     touchAction: moverMode ? 'none' : undefined,
                     outline: isSelected ? '3px solid #ff0' : undefined,
