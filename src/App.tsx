@@ -135,10 +135,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '818';
+const BUILD_NUMBER = '819';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '819': 'Remove the 2D view switch button from the top-level options controls',
   '818': 'Fix the starting-house overlay rendering with a directly layered image',
   '817': 'Show the IMG_5424 starting-house overlay outdoors and hide it indoors',
   '816': 'Add custom-color tiles, manual coordinate selection, and downloadable tile-editor logs',
@@ -11291,10 +11292,6 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMapBuilder(); }} data-testid="button-debug-mapbuilder">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>🗺️ Map Builder{mapBuilderMode ? ' (Exit)' : ''}</strong><small>{mapBuilderMode ? 'Return to normal play' : 'Paint terrain tiles like a tilemap editor'}</small></span>
-                </button>
-                <button className="options-action" onClick={() => { setOptionsOpen(false); toggleIsoFieldBeta(); }} data-testid="button-iso-field-beta">
-                  <span className="options-action-icon">🏔️</span>
-                  <span><strong>{isoFieldBeta ? '2D Field' : '2.5D Field (On)'}</strong><small>{isoFieldBeta ? 'Classic top-down view' : 'Switch to classic 2D view'}</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); onOpenJournal(); }} data-testid="button-options-journal">
                   <span className="options-action-icon"><BookOpen size={17} /></span>
