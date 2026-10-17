@@ -282,9 +282,18 @@ const CRITTER_SRC_ENTRIES: Array<[string, string]> = [
 ];
 
 // BUILD 707: static building source entries (was rebuilt per frame).
-const BLD_SRC_ENTRIES: Array<[string, string]> = Object.entries(BUILDING_ASSET_META).map(
-  ([variant, meta]) => [variant, meta.file] as [string, string],
-);
+const BLD_SRC_ENTRIES: Array<[string, string]> = [
+  ...Object.entries(BUILDING_ASSET_META).map(
+    ([variant, meta]) => [variant, meta.file] as [string, string],
+  ),
+  ['new-stone-house', 'buildings/new-stone-house.svg'],
+  ['new-story-hall', 'buildings/new-story-hall.svg'],
+  ['new-plaster-house', 'buildings/new-plaster-house.svg'],
+  ['new-tavern', 'buildings/new-tavern.svg'],
+  ['new-market-shop', 'buildings/new-market-shop.svg'],
+  ['new-timber-house', 'buildings/new-timber-house.svg'],
+  ['new-green-cottage', 'buildings/new-green-cottage.svg'],
+];
 
 const LOD_FARM_RGB: Array<[number, number, number]> = FARM_BASE_COLORS.map(
   (fc) => [parseInt(fc.slice(1, 3), 16), parseInt(fc.slice(3, 5), 16), parseInt(fc.slice(5, 7), 16)] as [number, number, number],
@@ -1137,10 +1146,10 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         const lx = b.rect.left, ly = b.rect.top;
         // Special buildings: starting chunk (0,0) by local positions
         if (absCx === 0 && absCy === 0) {
-          if (Math.abs(lx - 85.9) < 1 && Math.abs(ly - 108.8) < 1) return 'tavern';
-          if (Math.abs(lx - 192.1) < 1 && Math.abs(ly - 111.0) < 1) return 'blue-house';
-          if (Math.abs(lx - 84.1) < 1 && Math.abs(ly - 172.6) < 1) return 'red-shop';
-          if (Math.abs(lx - 179.7) < 1 && Math.abs(ly - 173.4) < 1) return 'blue-cottage';
+          if (Math.abs(lx - 85.9) < 1 && Math.abs(ly - 108.8) < 1) return 'new-tavern';
+          if (Math.abs(lx - 192.1) < 1 && Math.abs(ly - 111.0) < 1) return 'new-stone-house';
+          if (Math.abs(lx - 84.1) < 1 && Math.abs(ly - 172.6) < 1) return 'new-market-shop';
+          if (Math.abs(lx - 179.7) < 1 && Math.abs(ly - 173.4) < 1) return 'new-green-cottage';
         }
         // BUILD 683: Mosslight cottages (chunk 4,7) use the settlement
         // layout's roof variants, not the position hash.
@@ -1149,14 +1158,42 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         // picked by stable hash so the assignment never flickers.
         if (absCx === 4 && absCy === 7 && b.rect) {
           const v = cottageVariantForRect(b.rect);
-          if (v) return v;
+          if (v) {
+            const replacement: Record<string, string> = {
+              'blue-cottage': 'new-green-cottage',
+              'red-cottage': 'new-plaster-house',
+              'blue-house': 'new-stone-house',
+              'red-shop': 'new-market-shop',
+              'green-cottage': 'new-green-cottage',
+              'shop-awning': 'new-market-shop',
+              'house-timber': 'new-timber-house',
+              'inn-large': 'new-story-hall',
+              tavern: 'new-tavern',
+              gatehouse: 'new-stone-house',
+            };
+            return replacement[v] || 'new-stone-house';
+          }
           const fv = fillerVariantForRect(b.rect);
-          if (fv) return fv;
+          if (fv) {
+            const replacement: Record<string, string> = {
+              'blue-cottage': 'new-green-cottage',
+              'red-cottage': 'new-plaster-house',
+              'blue-house': 'new-stone-house',
+              'red-shop': 'new-market-shop',
+              'green-cottage': 'new-green-cottage',
+              'shop-awning': 'new-market-shop',
+              'house-timber': 'new-timber-house',
+              'inn-large': 'new-story-hall',
+              tavern: 'new-tavern',
+              gatehouse: 'new-stone-house',
+            };
+            return replacement[fv] || 'new-market-shop';
+          }
         }
         // Stable hash: absolute chunk + local coords (both stable)
         // BUILD 614: expanded to 10 varieties for town diversity.
         const h = Math.abs(Math.sin((absCx * 1000 + lx) * 12.9898 + (absCy * 1000 + ly) * 78.233) * 43758.5453) % 1;
-        const kinds = ['blue-cottage', 'red-cottage', 'blue-house', 'red-shop', 'green-cottage', 'shop-awning', 'house-timber', 'inn-large', 'tavern', 'gatehouse'];
+        const kinds = ['new-green-cottage', 'new-plaster-house', 'new-stone-house', 'new-market-shop', 'new-green-cottage', 'new-market-shop', 'new-timber-house', 'new-story-hall', 'new-tavern', 'new-stone-house'];
         return kinds[Math.floor(h * kinds.length)];
       };
       for (const sc of scenes) {
