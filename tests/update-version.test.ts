@@ -19,7 +19,7 @@ assert.equal(determineUpdateStatus(727, 707, 727), 'in-progress');
 const entrySource = readFileSync('scripts/prepare-build-entry.cjs', 'utf8');
 const appSource = readFileSync('src/App.tsx', 'utf8');
 const markerBuild = parseBuildMarker(entrySource);
-const appBuildMatch = appSource.match(/const BUILD_NUMBER = '(\\d+)'/);
+const appBuildMatch = appSource.match(/const BUILD_NUMBER = '(\d+)'/);
 assert.ok(appBuildMatch, 'App.tsx must declare BUILD_NUMBER');
 assert.equal(markerBuild, Number(appBuildMatch[1]), 'HTML boot marker and bundled app build must match');
 
