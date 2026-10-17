@@ -80,7 +80,7 @@ function starterHouseScene(): HTMLImageElement | undefined {
     starterHouseSceneImg = new Image();
     starterHouseSceneImg.onerror = () => console.warn('[iso-interior] failed to load starting-house interior art');
     const base = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
-    starterHouseSceneImg.src = `${base}assets/starting-house/interior-build786.jpeg`;
+    starterHouseSceneImg.src = new URL('../../../game sprites/starting house/IMG_5423.png', import.meta.url).href;
   }
   return starterHouseSceneImg.complete && starterHouseSceneImg.naturalWidth > 0 ? starterHouseSceneImg : undefined;
 }
