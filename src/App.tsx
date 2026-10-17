@@ -1025,6 +1025,32 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
           || position.y <= movedRect.top + wall
           || position.y >= movedRect.bottom - wall;
         if (onPerimeter && !inDoorwayCorridor) return true;
+
+        // BUILD 769: match collision to the interior partition lines rendered
+        // by IsoFieldView. Wall gaps are represented as separate segments.
+        const houseType = houseTypeForBuilding(doorway.id);
+        const vertical: [number, number, number][] = [];
+        const horizontal: [number, number, number][] = [];
+        switch (houseType) {
+          case 'farmhouse':
+            vertical.push([8, 2, 5], [8, 6, 9]); horizontal.push([6, 8, 10], [6, 11, 12]); break;
+          case 'merchant':
+            horizontal.push([4, 5, 9], [4, 10, 12]); vertical.push([5, 4, 7], [5, 8, 9]); break;
+          case 'guard':
+            vertical.push([7, 2, 6], [7, 7, 9]); horizontal.push([7, 7, 10], [7, 11, 12]); break;
+          case 'craftsman':
+            vertical.push([4, 2, 5], [4, 6, 9]); horizontal.push([4, 4, 8], [4, 9, 11]); break;
+          default:
+            vertical.push([8, 2, 6], [8, 7, 8]); horizontal.push([3, 8, 10], [3, 11, 12]); break;
+        }
+        const roomWidth = Math.max(0.1, movedRect.right - movedRect.left);
+        const roomHeight = Math.max(0.1, movedRect.bottom - movedRect.top);
+        const tileX = ((position.x - movedRect.left) / roomWidth) * 14;
+        const tileY = ((position.y - movedRect.top) / roomHeight) * 12;
+        const wallXRadius = Math.max(0.18, (PLAYER_COLLISION_BOX.halfWidth / roomWidth) * 14 + 0.08);
+        const wallYRadius = Math.max(0.18, (PLAYER_COLLISION_BOX.halfHeight / roomHeight) * 12 + 0.08);
+        if (vertical.some(([x, y1, y2]) => Math.abs(tileX - x) <= wallXRadius && tileY >= y1 && tileY <= y2)
+          || horizontal.some(([y, x1, x2]) => Math.abs(tileY - y) <= wallYRadius && tileX >= x1 && tileX <= x2)) return true;
         continue;
       }
       if (!inDoorwayCorridor) return true;
