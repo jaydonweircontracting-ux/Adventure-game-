@@ -3999,7 +3999,6 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 834: Hide Debug panels without disabling the active world-editing tool.
   const [debugUiHidden, setDebugUiHidden] = useState(() => { try { return localStorage.getItem('ag-debug-ui-hidden') === '1'; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem('ag-debug-ui-hidden', debugUiHidden ? '1' : '0'); } catch { /* private browsing */ } }, [debugUiHidden]);
-  const anyDebugToolActive = moverMode || mapBuilderMode || tileEditMode || collisionDebugMode || inspectorOpen || npcRosterOpen || debugConsoleOpen || controlCenterOpen;
   // BUILD 833: Scrollable RCT-style character roster for visual NPC QA.
   const [npcRosterOpen, setNpcRosterOpen] = useState(false);
   const [npcRosterSearch, setNpcRosterSearch] = useState('');
@@ -8678,6 +8677,7 @@ if (active) {
     inTutorialHouse: interior?.id === 'tutorial-house',
     daggerPickedUp: pickedUpGroundItems.includes(TUTORIAL_DAGGER_ITEM),
   });
+  const anyDebugToolActive = moverMode || mapBuilderMode || tileEditMode || collisionDebugMode || inspectorOpen || npcRosterOpen || debugConsoleOpen || controlCenterOpen;
   return (
     <div className="field-column" data-debug-ui-hidden={debugUiHidden ? 'true' : 'false'}>
       <style>{`
