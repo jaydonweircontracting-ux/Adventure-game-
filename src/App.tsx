@@ -135,10 +135,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '828';
+const BUILD_NUMBER = '829';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '829': 'Move World Editor from the starting menu into Debug options',
   '828': 'Make the starting-house overlay 50% larger while keeping its base aligned',
   '827': 'Enlarge the starting-house overlay to cover the underlying sprite edges',
   '826': 'Hide the starting-house overlay whenever an interior is active',
@@ -11300,7 +11301,7 @@ if (active) {
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMoverMode(); }} data-testid="button-debug-mover">
                   <span className="options-action-icon"><Settings size={17} /></span>
-                  <span><strong>Debug: World Editor{moverMode ? ' (Exit)' : ''}</strong><small>{moverMode ? 'Return to normal play' : 'Place houses, trees, rocks, roads · flag removals'}</small></span>
+                  <span><strong>Debug: Object Editor{moverMode ? ' (Exit)' : ''}</strong><small>{moverMode ? 'Return to normal play' : 'Place houses, trees, rocks, roads · flag removals'}</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); setDirTestMode(!dirTestMode); if (dirTestMode) setDirTestFacing(null); }} data-testid="button-debug-dirtest">
                   <span className="options-action-icon"><Settings size={17} /></span>
@@ -11309,6 +11310,10 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); setCollisionDebugMode(!collisionDebugMode); }} data-testid="button-debug-collision">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: Collision Boxes{collisionDebugMode ? ' (On)' : ''}</strong><small>{collisionDebugMode ? 'Tap to hide boxes' : 'Red = current box · tap critter, drag green to propose move'}</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMapBuilder(); }} data-testid="button-debug-world-editor">
+                  <span className="options-action-icon"><Settings size={17} /></span>
+                  <span><strong>🗺️ Debug: World Editor{mapBuilderMode ? ' (Exit)' : ''}</strong><small>{mapBuilderMode ? 'Return to normal play' : 'Open the world terrain and placement editor'}</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleTileEditMode(); }} data-testid="button-debug-tile-edit">
                   <span className="options-action-icon"><Settings size={17} /></span>
@@ -12749,8 +12754,6 @@ function Home() {
             <div className="main-menu-actions">
               {/* BUILD 455: character creation removed for now — New Game starts directly */}
               <button className="main-menu-button" onClick={() => setCreatingCharacter(true)} data-testid="button-new-game">New Game</button>
-              {/* BUILD 650: World Editor in starting menu — opens Map Builder directly. */}
-              <button className="main-menu-button" onClick={() => { try { sessionStorage.setItem('ag-start-in-editor', '1'); } catch {} setCreatingCharacter(false); startNewGame(); }} data-testid="button-world-editor-menu">🗺️ World Editor</button>
               <button className="main-menu-button" onClick={loadLocalSave} disabled={!hasLocalSave} data-testid="button-load-game-menu">{hasLocalSave ? 'Load Game' : 'Load Game · No Save Yet'}</button>
               <button className="main-menu-button" onClick={openLoadPicker} data-testid="button-load-save-menu">Import Save File</button>
               {/* BUILD 632: Save button in main menu. */}
