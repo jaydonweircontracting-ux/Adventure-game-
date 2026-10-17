@@ -1,6 +1,6 @@
 {
-  "build": "707",
-  "note": "",
-  "timestamp": "2026-10-15T04:41:26.214Z",
-  "cacheBuster": "mv91x6tj"
+  "build": "750",
+  "note": "Town skeleton and floating-shadow cleanup",
+  "timestamp": "2026-10-17T00:30:56.355Z",
+  "cacheBuster": "build750-town-cleanup"
 }
