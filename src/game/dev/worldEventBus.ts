@@ -6,7 +6,7 @@
  * the game world itself. Systems subscribe to events and decide how to react.
  */
 export type WorldEventMap = object;
-type EventKey<Events> = Extract<EventKey<Events>, string>;
+type EventKey<Events> = Extract<keyof Events, string>;
 
 export interface WorldEvent<K extends string = string, P = unknown> {
   readonly id: string;
