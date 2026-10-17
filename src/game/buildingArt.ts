@@ -15,7 +15,18 @@ export function buildingArtFor(chunk: { x: number; y: number }, index: number, r
     if (index >= 0 && index < 4) variant = MOSSLIGHT_PINNED_VARIANTS[index];
     else if (index >= 4 && index < 10) variant = HOUSE_VARIANTS[(index + 1) % HOUSE_VARIANTS.length];
     else if (index >= 10 && index < 18) variant = MOSSLIGHT_PINNED_VARIANTS[index];
-    else if (index >= 18) { const filler = mosslightFillerLots()[index - 18]; variant = filler ? (filler.district === 'commercial' ? 'new-market-shop' : filler.district === 'civic' ? 'new-story-hall' : filler.district === 'industrial' ? 'new-timber-house' : HOUSE_VARIANTS[(index + 1) % HOUSE_VARIANTS.length]) : undefined; }
+    else if (index >= 18) {
+      const filler = mosslightFillerLots()[index - 18];
+      // BUILD 769: keep filler lots on audited detailed PNGs. The old new-*
+      // SVG placeholders were not in the audited catalog and collapsed to a
+      // generic fallback, breaking the building-art regression test.
+      variant = filler
+        ? filler.district === 'commercial' ? (index % 2 === 0 ? 'green-shop' : 'brick-shop')
+          : filler.district === 'civic' ? 'story-tower'
+          : filler.district === 'industrial' ? 'house-timber'
+          : HOUSE_VARIANTS[(index + 1) % HOUSE_VARIANTS.length]
+        : undefined;
+    }
   }
   if (!variant) {
     const hash = Math.abs(Math.imul((chunk.x + 4099) | 0, 73856093) ^ Math.imul((chunk.y + 8191) | 0, 19349663) ^ Math.imul(index + 17, 83492791));
