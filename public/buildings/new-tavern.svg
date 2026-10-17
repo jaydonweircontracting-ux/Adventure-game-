@@ -1,1 +1,59 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 128" shape-rendering="crispEdges"><ellipse cx="128" cy="116" rx="98" ry="8" fill="#202b24" opacity=".42"/><path d="M31 54 128 5 225 54 213 67 128 24 43 67Z" fill="#4b352a" stroke="#29251f" stroke-width="5"/><path d="M43 59 128 20 213 59 213 105 43 105Z" fill="#9a6846" stroke="#49372a" stroke-width="4"/><path d="M52 68h152v7H52zM52 88h152v6H52z" fill="#714b35"/><path d="M107 69h42v39h-42z" fill="#39271d" stroke="#2a1d17" stroke-width="4"/><path d="M113 76h30v32h-30z" fill="#6b4329"/><path d="M59 66h29v22H59zM168 66h29v22h-29z" fill="#e4b65d" stroke="#49382a" stroke-width="4"/><path d="M73 66v22M182 66v22" stroke="#5d4530" stroke-width="3"/><path d="M31 54 128 5 145 14 43 61Z" fill="#6a4936"/><path d="M128 5 225 54 213 61 145 25Z" fill="#382a24"/><path d="M94 44h68v9H94z" fill="#d3b36f" stroke="#453124" stroke-width="3"/><path d="M102 44v9M154 44v9" stroke="#453124" stroke-width="2"/><path d="M111 43q17-17 34 0" fill="#d3b36f" stroke="#453124" stroke-width="3"/><path d="M116 45h24v6h-24z" fill="#75482c"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 128" shape-rendering="crispEdges">
+<defs>
+ <pattern id="roofTiles" width="18" height="10" patternUnits="userSpaceOnUse"><path d="M0 1H18M9 1V6" stroke="#2e241e" stroke-width="2" opacity=".72"/><path d="M1 3H8M10 8H17" stroke="#6d4a35" stroke-width="1" opacity=".6"/></pattern>
+ <pattern id="stones" width="20" height="12" patternUnits="userSpaceOnUse"><path d="M0 1H20M10 1V6M3 6H20M3 6V12" fill="none" stroke="#857566" stroke-width="1.5" opacity=".68"/></pattern>
+</defs>
+<ellipse cx="128" cy="116" rx="98" ry="8" fill="#202a23" opacity=".36"/>
+<!-- chimney and cap -->
+<path d="M165 35V14L181 8V43Z" fill="#777066" stroke="#422b20" stroke-width="3"/>
+<path d="M162 15 181 8 186 11 167 19Z" fill="#e7c77d" stroke="#422b20" stroke-width="2"/>
+<path d="M170 23 178 20V31L170 34Z" fill="#825536" opacity=".8"/>
+<!-- deep roof silhouette -->
+<path d="M26 57 128 5 230 57 216 71 128 29 40 71Z" fill="#4a3428" stroke="#422b20" stroke-width="4"/>
+<path d="M26 57 128 5 143 13 40 65Z" fill="#6d4a35"/>
+<path d="M128 5 230 57 216 65 143 22Z" fill="#2e241e"/>
+<path d="M26 57 128 5 230 57 216 71 128 29 40 71Z" fill="url(#roofTiles)"/>
+<path d="M31 55 128 7 225 55" fill="none" stroke="#e7c77d" stroke-width="2" opacity=".72"/>
+<!-- facade with side planes -->
+<path d="M47 59 128 25 209 59 209 105 47 105Z" fill="#a87851" stroke="#422b20" stroke-width="4"/>
+<path d="M47 59 128 25 128 105 47 105Z" fill="#825536" opacity=".2"/>
+<path d="M128 25 209 59 209 105 128 105Z" fill="#825536" opacity=".22"/>
+<!-- foundation stones -->
+<path d="M45 99 128 99 211 99 211 108 45 108Z" fill="#857566" stroke="#422b20" stroke-width="3"/>
+<path d="M46 101H210" stroke="#e7c77d" stroke-width="2"/>
+<path d="M48 101 128 101 208 101 208 108 48 108Z" fill="url(#stones)" opacity=".9"/>
+<!-- plaster seams / timber framing -->
+<path d="M56 75H200M56 91H200" stroke="#825536" stroke-width="2" opacity=".65"/>
+
+<!-- left window, recessed wood frame and divided glass -->
+<path d="M65 66 91 56 91 79 65 89Z" fill="#422b20" stroke="#422b20" stroke-width="3"/>
+<path d="M69 67 87 60 87 77 69 84Z" fill="#e5b95e" stroke="#e7c77d" stroke-width="2"/>
+<path d="M78 63V80M69 75 87 68" stroke="#e7c77d" stroke-width="2"/>
+<path d="M61 64 93 52 96 57 64 70Z" fill="#422b20"/>
+<path d="M62 88 94 76 94 81 62 93Z" fill="#422b20"/>
+<!-- right window -->
+<path d="M165 56 191 66 191 89 165 79Z" fill="#422b20" stroke="#422b20" stroke-width="3"/>
+<path d="M169 60 187 67 187 84 169 77Z" fill="#e5b95e" stroke="#e7c77d" stroke-width="2"/>
+<path d="M178 64V80M169 69 187 76" stroke="#e7c77d" stroke-width="2"/>
+<path d="M162 53 194 64 194 69 162 58Z" fill="#422b20"/>
+<path d="M162 76 194 87 194 92 162 81Z" fill="#422b20"/>
+<!-- centered entrance arch, inset door, planks -->
+<path d="M105 76Q128 62 151 76V107H105Z" fill="#422b20" stroke="#2e241d" stroke-width="3"/>
+<path d="M111 79Q128 69 145 79V105H111Z" fill="#68452e" stroke="#e7c77d" stroke-width="2"/>
+<path d="M117 79V104M128 75V104M139 79V104" stroke="#3e2c21" stroke-width="2"/>
+<path d="M114 83 142 83" stroke="#e7c77d" stroke-width="1.5" opacity=".8"/>
+<circle cx="139" cy="93" r="2" fill="#e7c77d"/>
+<path d="M103 77Q128 60 153 77" fill="none" stroke="#e7c77d" stroke-width="4"/>
+<!-- porch / stone step -->
+<path d="M100 106 128 101 156 106 151 112 105 112Z" fill="#857566" stroke="#422b20" stroke-width="3"/>
+<path d="M105 108 128 104 151 108" fill="none" stroke="#e7c77d" stroke-width="2"/>
+<!-- shop awning / tavern sign -->
+
+<path d="M94 43H162V51H94Z" fill="#e7c77d" stroke="#422b20" stroke-width="3"/><path d="M101 43V51M155 43V51" stroke="#422b20" stroke-width="2"/><path d="M112 43Q128 31 144 43" fill="#e7c77d" stroke="#422b20" stroke-width="3"/><text x="128" y="49" text-anchor="middle" font-family="serif" font-size="7" font-weight="bold" fill="#422b20">TAVERN</text>
+<!-- small wall lantern -->
+<path d="M151 75V68L156 65 161 68V75Z" fill="#e7c77d" stroke="#422b20" stroke-width="2"/>
+<path d="M154 69H158V74H154Z" fill="#f4d27b"/>
+<!-- handcrafted eave ends -->
+<path d="M39 69 47 66V103L39 100ZM209 66 217 69V100L209 103Z" fill="#422b20"/>
+<path d="M43 73 47 71M43 91 47 89M209 71 213 73M209 89 213 91" stroke="#e7c77d" stroke-width="2"/>
+</svg>
