@@ -128,15 +128,18 @@ const queryClient = new QueryClient();
 const assetUrl = (path: string) => artUrl(path);
 // BUILD 792: bundle the uploaded starter-house exterior directly from the repository.
 const ALL_BUILDINGS_SPRITE_URL = new URL('../game sprites/starting house/IMG_5422.png', import.meta.url).href;
+// BUILD 817: the authored house overlay is shown outdoors and naturally unmounts on house entry.
+const STARTING_HOUSE_OVERLAY_URL = new URL('../game sprites/starting house/IMG_5424.png', import.meta.url).href;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '816';
+const BUILD_NUMBER = '817';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '817': 'Show the IMG_5424 starting-house overlay outdoors and hide it indoors',
   '816': 'Add custom-color tiles, manual coordinate selection, and downloadable tile-editor logs',
   '815': 'Add paused tile-edit mode with selectable terrain colors and copyable tile coordinates',
   '814': 'Revert build 813 doorway and house collision changes',
@@ -10681,7 +10684,7 @@ if (active) {
                       setSelectedPlacedId(null);
                     }
                   } : undefined}
-                ><span className="field-house-art" aria-hidden="true" />{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}{moverMode && (
+                ><span className="field-house-art" aria-hidden="true" />{doorway.id === 'tutorial-house-door' && <span className="field-house-overlay-art" style={{ '--house-overlay-art': 'url("' + STARTING_HOUSE_OVERLAY_URL + '")' } as CSSProperties} aria-hidden="true" />}{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}{moverMode && (
                   <span className="editor-coord" aria-hidden="true">
                     {(rect.left + off.x).toFixed(1)}, {(rect.top + off.y).toFixed(1)}
                   </span>

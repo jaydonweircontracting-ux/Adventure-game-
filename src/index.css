@@ -1627,6 +1627,20 @@
   image-rendering: pixelated;
   pointer-events: none;
 }
+.field-house-overlay-art {
+  position: absolute;
+  z-index: 1;
+  left: -40%;
+  bottom: 0;
+  width: 180%;
+  aspect-ratio: var(--building-art-ratio, 2 / 1);
+  background-image: var(--house-overlay-art);
+  background-repeat: no-repeat;
+  background-position: center bottom;
+  background-size: 100% 100%;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
 .field-house.sprite-house::before,
 .field-house.sprite-house::after,
 .field-house.farm-house::before,
