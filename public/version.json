@@ -1,6 +1,6 @@
 {
-  "build": "791",
-  "note": "Remove black matte around starting-house interior sprite",
-  "timestamp": "2026-10-17T21:00:00.000Z",
-  "cacheBuster": "build791-starter-house-black-matte-cutout"
+  "build": "816",
+  "note": "Add custom-color tiles, manual coordinate selection, and downloadable tile-editor logs",
+  "timestamp": "2026-10-17T21:44:00.000Z",
+  "cacheBuster": "build816-tile-editor-custom-colors"
 }
