@@ -1,6 +1,6 @@
 {
-  "build": "779",
-  "note": "Starter house interior fit, centering, and zoom controls",
-  "timestamp": "2026-10-17T17:54:44Z",
-  "cacheBuster": "build779-starter-house-zoom"
+  "build": "780",
+  "note": "Starting-house interior fully fitted with pan and zoom controls",
+  "timestamp": "2026-10-17T18:00:27.693Z",
+  "cacheBuster": "build780-starter-house-fit-pan-zoom"
 }
