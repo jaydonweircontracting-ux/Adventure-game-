@@ -135,10 +135,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '817';
+const BUILD_NUMBER = '818';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '818': 'Fix the starting-house overlay rendering with a directly layered image',
   '817': 'Show the IMG_5424 starting-house overlay outdoors and hide it indoors',
   '816': 'Add custom-color tiles, manual coordinate selection, and downloadable tile-editor logs',
   '815': 'Add paused tile-edit mode with selectable terrain colors and copyable tile coordinates',
@@ -10684,7 +10685,7 @@ if (active) {
                       setSelectedPlacedId(null);
                     }
                   } : undefined}
-                ><span className="field-house-art" aria-hidden="true" />{doorway.id === 'tutorial-house-door' && <span className="field-house-overlay-art" style={{ '--house-overlay-art': 'url("' + STARTING_HOUSE_OVERLAY_URL + '")' } as CSSProperties} aria-hidden="true" />}{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}{moverMode && (
+                ><span className="field-house-art" aria-hidden="true" />{doorway.id === 'tutorial-house-door' && <img className="field-house-overlay-art" src={STARTING_HOUSE_OVERLAY_URL} alt="" draggable={false} aria-hidden="true" />}{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}{moverMode && (
                   <span className="editor-coord" aria-hidden="true">
                     {(rect.left + off.x).toFixed(1)}, {(rect.top + off.y).toFixed(1)}
                   </span>
