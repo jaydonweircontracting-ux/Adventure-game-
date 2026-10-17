@@ -73,14 +73,14 @@ function ratSprite(): HTMLImageElement | undefined {
   return ratSpriteImg.complete && ratSpriteImg.naturalWidth > 0 ? ratSpriteImg : undefined;
 }
 
-// BUILD 777: authored starting-house room diorama.
+// BUILD 786: re-uploaded, versioned starting-house room diorama.
 let starterHouseSceneImg: HTMLImageElement | null = null;
 function starterHouseScene(): HTMLImageElement | undefined {
   if (!starterHouseSceneImg) {
     starterHouseSceneImg = new Image();
     starterHouseSceneImg.onerror = () => console.warn('[iso-interior] failed to load starting-house interior art');
     const base = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
-    starterHouseSceneImg.src = `${base}assets/starting-house/interior.jpeg`;
+    starterHouseSceneImg.src = `${base}assets/starting-house/interior-build786.jpeg`;
   }
   return starterHouseSceneImg.complete && starterHouseSceneImg.naturalWidth > 0 ? starterHouseSceneImg : undefined;
 }
@@ -870,7 +870,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       const f1 = isStarterHouse ? '#b7834e' : wood ? '#8d8fa3' : '#a87f4e';
       const f2 = isStarterHouse ? '#a97545' : wood ? '#83858f' : '#9c7443';
 
-      // BUILD 777: replace the procedural floor with the uploaded room scene.
+      // BUILD 786: use the freshly re-uploaded room scene instead of procedural room art.
       const starterScene = isStarterHouse ? starterHouseScene() : undefined;
       if (isStarterHouse && starterScene) {
         // Restore the original Build 777 sizing so the whole room is visible
@@ -880,9 +880,8 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         const scale = Math.min(maxW / starterScene.naturalWidth, maxH / starterScene.naturalHeight);
         const imageW = starterScene.naturalWidth * scale;
         const imageH = starterScene.naturalHeight * scale;
-        g.globalCompositeOperation = 'screen';
-        g.drawImage(starterScene, (state.w - imageW) / 2, (state.h - imageH) / 2, imageW, imageH);
         g.globalCompositeOperation = 'source-over';
+        g.drawImage(starterScene, (state.w - imageW) / 2, (state.h - imageH) / 2, imageW, imageH);
       } else {
       // floor
       for (let ty = 0; ty < ROOM_H; ty++) {
