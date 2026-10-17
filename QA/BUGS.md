@@ -10,6 +10,19 @@ Each factor is 1–5. Use the score to prioritize, not to hide failures.
 
 ## Open items
 
+### QA-005 — Isometric monster render ownership
+
+- Status: FIXED IN SOURCE; BUILD VERIFICATION PENDING
+- Severity: 3
+- Frequency: 4
+- Player impact: 4
+- Reproduction: In the isometric field, monster state belongs to the active chunk while the terrain renderer draws a 3×3 chunk scene grid.
+- Expected: Each valid active-chunk monster renders once at its chunk-local world position; hostile monsters remain suppressed in starting areas.
+- Actual: Renderer accepted the incoming monster array without validating chunk-local coordinates or duplicate IDs.
+- Fix: Filter live monster drawables to valid active-chunk coordinates and deduplicate by entity ID before rendering. Existing safe-zone suppression remains in place.
+- Verification: Source change committed; CI typecheck/build and browser playtest are pending. No runtime pass is claimed.
+
+
 ### QA-001 — World core is not yet driven by gameplay time
 
 - Status: INCOMPLETE
