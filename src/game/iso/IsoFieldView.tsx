@@ -397,8 +397,8 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
 export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position, townsfolk, goats, onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled });
-  liveRef.current = { px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -2074,7 +2074,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       // Hostile monster sheets share the same tap-to-target and clear-on-repeat behavior.
       const { onSelectMonster: selectMonster } = tapRef.current;
       let bestMonster: IsoMonster | null = null; let bestMonsterD = 38;
-      for (const monster of liveRef.current.monsters || []) {
+      for (const monster of liveMonstersForActiveChunk(liveRef.current.monsters, liveRef.current.chunk)) {
         if (monster.disposition === 'defeated' || monster.hp <= 0) continue;
         const w = isoToScreen(monster.position.x, monster.position.y);
         const px = (w.x - cam.x) * zm + wpx / 2;
