@@ -131,10 +131,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '769';
+const BUILD_NUMBER = '770';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '770': 'Restore reliable house doorway entry and remove blocking interior collision',
   '769': 'Add in-world house floor-plan cutaways and type-specific room partitions',
   '768': 'Pin Mosslight building designs and restore house 12 as the tavern',
   '767': 'Restore detailed medieval building art and tighten exterior collision',
@@ -1010,59 +1011,10 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
       const doorX = doorway.position.x + offset.x;
       const doorY = doorway.position.y + offset.y;
       const { xTol } = doorwayTriggerDims(movedRect);
-      const inDoorwayCorridor = Math.abs(position.x - doorX) <= xTol + PLAYER_COLLISION_BOX.halfWidth
-        && position.y >= doorY - 1.2 - PLAYER_COLLISION_BOX.halfHeight
-        && position.y <= movedRect.bottom + 1.5 + PLAYER_COLLISION_BOX.halfHeight;
+      const inDoorwayCorridor = Math.abs(position.x - doorX) <= Math.max(xTol, INTERIOR_DOORWAY_WIDTH_PX / 2) + PLAYER_COLLISION_BOX.halfWidth + INTERIOR_DOORWAY_PADDING_PX
+        && position.y >= doorY - 2.5 - PLAYER_COLLISION_BOX.halfHeight
+        && position.y <= movedRect.bottom + 2.5 + PLAYER_COLLISION_BOX.halfHeight;
 
-      // BUILD 769: ordinary residential interiors occupy the actual footprint
-      // of the building. Block the perimeter walls, not the entire room, so
-      // once the player passes the doorway they can move on the floor plane.
-      // The floor-plan renderer uses this same doorway rect as its geometry.
-      if (doorway.area.roomType === 'building' && pointInRect(position, movedRect)) {
-        const wall = 0.85;
-        const onPerimeter = position.x <= movedRect.left + wall
-          || position.x >= movedRect.right - wall
-          || position.y <= movedRect.top + wall
-          || position.y >= movedRect.bottom - wall;
-        if (onPerimeter && !inDoorwayCorridor) return true;
-
-        // BUILD 769: match collision to the interior partition lines rendered
-        // by IsoFieldView. Wall gaps are represented as separate segments.
-        const houseType = houseTypeForBuilding(doorway.id);
-        const vertical: [number, number, number][] = [];
-        const horizontal: [number, number, number][] = [];
-        switch (houseType) {
-          case 'farmhouse':
-            vertical.push([8, 2, 5], [8, 6, 9]); horizontal.push([6, 8, 10], [6, 11, 12]); break;
-          case 'merchant':
-            horizontal.push([4, 5, 9], [4, 10, 12]); vertical.push([5, 4, 7], [5, 8, 9]); break;
-          case 'guard':
-            vertical.push([7, 2, 6], [7, 7, 9]); horizontal.push([7, 7, 10], [7, 11, 12]); break;
-          case 'craftsman':
-            vertical.push([4, 2, 5], [4, 6, 9]); horizontal.push([4, 4, 8], [4, 9, 11]); break;
-          default:
-            vertical.push([8, 2, 6], [8, 7, 8]); horizontal.push([3, 8, 10], [3, 11, 12]); break;
-        }
-        const roomWidth = Math.max(0.1, movedRect.right - movedRect.left);
-        const roomHeight = Math.max(0.1, movedRect.bottom - movedRect.top);
-        const tileX = ((position.x - movedRect.left) / roomWidth) * 14;
-        const tileY = ((position.y - movedRect.top) / roomHeight) * 12;
-        const wallXRadius = Math.max(0.18, (PLAYER_COLLISION_BOX.halfWidth / roomWidth) * 14 + 0.08);
-        const wallYRadius = Math.max(0.18, (PLAYER_COLLISION_BOX.halfHeight / roomHeight) * 12 + 0.08);
-        if (vertical.some(([x, y1, y2]) => Math.abs(tileX - x) <= wallXRadius && tileY >= y1 && tileY <= y2)
-          || horizontal.some(([y, x1, x2]) => Math.abs(tileY - y) <= wallYRadius && tileX >= x1 && tileX <= x2)) return true;
-
-        // Furniture uses the same deterministic layout as the floor-plan art.
-        const layout = generateInteriorLayout(doorway.id, houseType, 14, 12);
-        const furnitureRadiusX = Math.max(0.12, (PLAYER_COLLISION_BOX.halfWidth / roomWidth) * 14);
-        const furnitureRadiusY = Math.max(0.12, (PLAYER_COLLISION_BOX.halfHeight / roomHeight) * 12);
-        if (layout.furniture.some((item) => item.solid
-          && tileX + furnitureRadiusX > item.tx
-          && tileX - furnitureRadiusX < item.tx + item.w
-          && tileY + furnitureRadiusY > item.ty
-          && tileY - furnitureRadiusY < item.ty + item.h)) return true;
-        continue;
-      }
       if (!inDoorwayCorridor) return true;
     }
   }
@@ -7531,14 +7483,11 @@ if (active) {
         const attempted = { x: current.x + movement.x, y: current.y + movement.y };
         const nearbyDoor = doorwayNear(attempted, currentChunk, houseOffsetsRef.current);
         if (nearbyDoor && canEnterDoorway(current, attempted, nearbyDoor, direction)) {
-          // BUILD 769: ordinary houses are continuous field geometry. Keep the
-          // field movement loop active instead of swapping to IsoInteriorView.
-          // Special interiors (guild, chapel, tavern services, cellar, prison)
-          // retain their existing interaction flow until migrated individually.
-          if (nearbyDoor.area.roomType !== 'building') {
-            enterDoorway(nearbyDoor, currentChunk);
-            return;
-          }
+          // BUILD 770: restore the established doorway transition for every
+          // house so entrances and exits work consistently without invisible
+          // floor-plan or partition collision trapping the player.
+          enterDoorway(nearbyDoor, currentChunk);
+          return;
         }
         const resolved = resolveFieldMovement(current, movement, currentChunk, goatsRef.current, houseOffsetsRef.current);
         if (resolved) {
