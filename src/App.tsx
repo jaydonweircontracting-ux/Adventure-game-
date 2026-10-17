@@ -133,10 +133,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '812';
+const BUILD_NUMBER = '813';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '813': 'Pin starter-house doorway at world coordinates and restore shared wall collision with door openings',
   '812': 'Force player to render above oversized house sprites',
   '811': 'Keep player visible over the starting-house sprite',
   '810': 'Fix player draw order when walking in front of the starting house',
@@ -1001,11 +1002,22 @@ function fieldTreeBaseRect(tree: FieldTree): FieldRect {
 }
 
 function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Record<string, Point>) {
-  // BUILD 771: disable all house/building footprint collision, including
-  // collision rectangles for houses whose artwork is invisible or missing.
-  // Keep water blocking; doorway interactions remain handled separately.
+  // BUILD 813: House walls are solid, with a narrow walkable opening at each
+  // doorway. The same footprint + door-gap rule applies to every house type,
+  // so sprite type never changes collision behaviour.
   const tile = _memoizedWorldGen(`tile:${chunk.x},${chunk.y}`, () => mapTileFor(chunk));
   if (pointInWater(position, tile)) return true;
+
+  const doorways = buildingDoorwaysFor(chunk);
+  for (const doorway of doorways) {
+    if (!pointInRect(position, doorway.rect)) continue;
+    // The opening is centred on the doorway tile and kept deliberately narrow;
+    // the rest of the footprint (all exterior walls) remains blocked.
+    const inDoorOpening =
+      Math.abs(position.x - doorway.position.x) <= 2.1 &&
+      Math.abs(position.y - doorway.position.y) <= 2.1;
+    if (!inDoorOpening) return true;
+  }
   return false;
 }
 
@@ -1166,7 +1178,12 @@ export function buildingDoorwaysFor(chunk: Point): Doorway[] {
       // BUILD 239: All starting-area houses are the new stone style with
       // prominent entrances. Door position matches the new visual.
       const isNewStyleHouse = isStartingArea(chunk) && index < 4;
-      const position = isNewStyleHouse ? newHouseDoorPosition(rect) : fieldDoorPosition(rect);
+      // BUILD 813: The starter house door is pinned to world (1210.2, 2073.5).
+      // Chunk (4,7) is 280 units wide, so its local doorway is (90.2, 113.5).
+      // Keep the same shared doorway/wall-collision rules for every house.
+      const position = chunk.x === 4 && chunk.y === 7 && index === 0
+        ? { x: 90.2, y: 113.5 }
+        : isNewStyleHouse ? newHouseDoorPosition(rect) : fieldDoorPosition(rect);
       // Stable IDs for the starting-area buildings so save games and the
       // starting interior keep working; positions are always computed.
       const stableId = isStartingArea(chunk) && index === 0 ? 'tutorial-house-door'
