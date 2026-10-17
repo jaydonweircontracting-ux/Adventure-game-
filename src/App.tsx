@@ -133,7 +133,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '801';
+const BUILD_NUMBER = '802';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
@@ -143,6 +143,7 @@ const BUILD_NOTES: Record<string, string> = {
   '799': 'Hide all house and farmhouse sprites from the world',
   '800': 'Restore IMG_5423 as the shared sprite for every house and farmhouse',
   '801': 'Render every building from the same IMG_5423 sprite',
+  '802': 'Refresh all building sprite caches and remove white procedural fallback buildings',
   '795': 'Use the uploaded IMG_5423 sprite for every building exterior',
   '794': 'Keep all house exterior sprites and disable separate house interiors',
   '793': 'Start directly in the outdoor world instead of the starting-house interior',
