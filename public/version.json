@@ -1,6 +1,6 @@
 {
-  "build": "783",
-  "note": "Starter-house room enlarged with warm backdrop",
-  "timestamp": "2026-10-17T18:35:00.000Z",
-  "cacheBuster": "build783-warm-backdrop-larger-room"
+  "build": "784",
+  "note": "Restored original starter-house image framing and stopped walk-triggered room panning",
+  "timestamp": "2026-10-17T18:50:00.000Z",
+  "cacheBuster": "build784-original-room-frame-fixed-walk-scroll"
 }
