@@ -1,6 +1,6 @@
 {
-  "build": "750",
-  "note": "Town skeleton and floating-shadow cleanup",
-  "timestamp": "2026-10-17T00:30:56.355Z",
-  "cacheBuster": "build750-town-cleanup"
+  "build": "752",
+  "note": "Fix Nan's commoner sprite",
+  "timestamp": "2026-10-17T00:38:30.985Z",
+  "cacheBuster": "build752-nan-sprite"
 }
