@@ -135,10 +135,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '832';
+const BUILD_NUMBER = '833';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '833': 'Add scrollable NPC roster with sprite previews, mood, wealth, reputation, and disposition',
   '832': 'Add resize mode and size controls to the building mover',
   '831': 'Add a paused building mover with layer controls, copyable placement data, and local save',
   '830': 'Add Save Game to Changelog and a small toggle to remove it from the title menu',
@@ -3994,6 +3995,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     try { localStorage.setItem('ag-show-dpad-v2', next ? '1' : '0'); } catch { /* ignore */ }
   };
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  // BUILD 833: Scrollable RCT-style character roster for visual NPC QA.
+  const [npcRosterOpen, setNpcRosterOpen] = useState(false);
+  const [npcRosterSearch, setNpcRosterSearch] = useState('');
+  const [npcRosterSelectedId, setNpcRosterSelectedId] = useState<string | null>(null);
   // BUILD 605: Debug console — black window with coordinates, copyable.
   const [debugConsoleOpen, setDebugConsoleOpen] = useState(false);
   // BUILD 663: World Simulation Control Center.
@@ -9636,6 +9641,86 @@ if (active) {
               </div>
             );
           })()}
+          {npcRosterOpen && (
+            <div className="editor-panel inspector-panel" role="dialog" aria-label="NPC roster" data-testid="npc-roster-panel" style={{ maxHeight: 'min(78vh, 720px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 1200 }}>
+              <div className="editor-panel-title">🧑‍🤝‍🧑 NPC Roster <span className="editor-panel-chunk">{townsfolk.length} townsfolk</span></div>
+              <div className="editor-actions" style={{ flexShrink: 0, gap: 6 }}>
+                <input aria-label="Search NPCs" data-testid="input-npc-roster-search" value={npcRosterSearch} onChange={(e) => setNpcRosterSearch(e.target.value)} placeholder="Search name, role, activity…" style={{ minWidth: 0, flex: 1, padding: '7px 9px', borderRadius: 6, border: '1px solid #777', background: '#171717', color: '#fff' }} />
+                <button type="button" className="editor-btn" onClick={() => { setNpcRosterOpen(false); setNpcRosterSelectedId(null); }}>Close</button>
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.85, margin: '2px 0 7px', flexShrink: 0 }}>Sprite audit · click a row for live stats · wealth is calculated from the NPC purse</div>
+              {(() => {
+                const clock = brainRef.current?.worldCore.getClock();
+                const query = npcRosterSearch.trim().toLowerCase();
+                const roster = townsfolk
+                  .filter((npc) => [npc.name, npc.role, npc.archetype, npc.activity, npc.id].some((v) => String(v ?? '').toLowerCase().includes(query)))
+                  .slice()
+                  .sort((a, b) => a.name.localeCompare(b.name));
+                const selected = roster.find((npc) => npc.id === npcRosterSelectedId) ?? townsfolk.find((npc) => npc.id === npcRosterSelectedId) ?? null;
+                const wealthBand = (gold: number) => gold < 15 ? 'Broke' : gold >= 100 ? 'Rich' : 'Average';
+                const moodFor = (npc: Townsperson) => {
+                  if (!clock) return { label: 'Unknown', score: 0 };
+                  const needs = npcLifeSummary(npc, townsfolk, clock).needs;
+                  const score = Math.round((needs.hunger + needs.energy + needs.social + needs.comfort) / 4);
+                  return { label: score >= 75 ? 'Happy' : score >= 50 ? 'Okay' : score >= 30 ? 'Unhappy' : 'Miserable', score };
+                };
+                const statsFor = (npc: Townsperson) => {
+                  const gold = clock ? npcGold(npc, clock) : Math.max(0, npc.goldDelta ?? 0);
+                  const mood = moodFor(npc);
+                  const disp = disposition[npc.id] ?? defaultDisposition();
+                  return { gold, mood, disp, wealth: wealthBand(gold) };
+                };
+                return (
+                  <>
+                    <div data-testid="npc-roster-list" style={{ minHeight: 90, maxHeight: selected ? '30vh' : '48vh', overflowY: 'auto', overscrollBehavior: 'contain', border: '1px solid rgba(255,255,255,.14)', borderRadius: 7, flexShrink: 1 }}>
+                      {roster.map((npc) => {
+                        const stats = statsFor(npc);
+                        const isSelected = npc.id === npcRosterSelectedId;
+                        return (
+                          <button type="button" key={npc.id} data-testid={'npc-roster-row-' + npc.id} onClick={() => setNpcRosterSelectedId(isSelected ? null : npc.id)} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 9, padding: '7px 8px', textAlign: 'left', color: '#f8f4e9', background: isSelected ? 'rgba(246,190,76,.2)' : 'rgba(0,0,0,.18)', border: 0, borderBottom: '1px solid rgba(255,255,255,.09)', outline: isSelected ? '1px solid #eab64d' : 'none', cursor: 'pointer' }}>
+                            <span className={'town-npc npc-' + npc.role} aria-hidden="true" style={{ position: 'relative', display: 'block', flex: '0 0 34px', width: 34, height: 40, left: 'auto', top: 'auto', transform: 'none', pointerEvents: 'none' }}><span className="npc-sprite" /></span>
+                            <span style={{ minWidth: 0, flex: 1 }}>
+                              <strong style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>{npc.name}</strong>
+                              <small style={{ display: 'block', opacity: .78, fontSize: 10 }}>{npc.role} · {npc.archetype}{npc.indoors ? ' · Indoors' : npc.deadUntilTick ? ' · Respawning/dead' : ''}</small>
+                              <small style={{ display: 'block', opacity: .9, fontSize: 10 }}>{stats.mood.label} · {stats.wealth} · disposition {stats.disp}/100</small>
+                            </span>
+                            <span aria-hidden="true" style={{ fontSize: 16, opacity: .7 }}>{isSelected ? '▾' : '›'}</span>
+                          </button>
+                        );
+                      })}
+                      {roster.length === 0 && <div style={{ padding: 12, fontSize: 12 }}>No NPCs match. Clear the search to see everyone.</div>}
+                    </div>
+                    {selected && (() => {
+                      const stats = statsFor(selected);
+                      const pers = npcPersonality(selected);
+                      const needs = clock ? npcLifeSummary(selected, townsfolk, clock).needs : null;
+                      const repRows = [['Mosslight', reputation.mosslight], ['Guards', reputation.guards], ['Merchants', reputation.merchants], ['Wilderness', reputation.wilderness]] as Array<[string, number]>;
+                      return (
+                        <div data-testid="npc-roster-details" style={{ overflowY: 'auto', minHeight: 0, marginTop: 8, padding: 10, borderRadius: 7, background: 'rgba(0,0,0,.28)', fontSize: 11 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                            <span className={'town-npc npc-' + selected.role} aria-hidden="true" style={{ position: 'relative', display: 'block', flex: '0 0 42px', width: 42, height: 48, left: 'auto', top: 'auto', transform: 'none', pointerEvents: 'none' }}><span className="npc-sprite" /></span>
+                            <div style={{ minWidth: 0, flex: 1 }}><strong style={{ fontSize: 15 }}>{selected.name}</strong><div>{selected.role} · {selected.archetype} · {selected.gender} · {selected.age ?? 'age derived'}</div><div style={{ opacity: .8 }}>{selected.id}</div></div>
+                          </div>
+                          <div><strong>Current state:</strong> {selected.activity} · {selected.indoors ? 'Indoors / not rendered in field' : selected.moving ? 'Walking' : 'Stationary'} · HP {selected.hp ?? 'full'} · {Math.round(selected.position.x)}, {Math.round(selected.position.y)}</div>
+                          <div style={{ marginTop: 5 }}><strong>Mood:</strong> {stats.mood.label}{needs ? ' (' + stats.mood.score + '/100)' : ''} · <strong>Wealth:</strong> {stats.wealth} ({stats.gold} gold)</div>
+                          <div style={{ marginTop: 5 }}><strong>Disposition toward player:</strong> {stats.disp}/100 — {dispositionLabel(stats.disp)}</div>
+                          <div style={{ marginTop: 5 }}><strong>Reputation:</strong> {repRows.map(([label, value]) => label + ' ' + (value > 0 ? '+' : '') + value).join(' · ')}</div>
+                          {needs && <div style={{ marginTop: 5 }}><strong>Needs:</strong> Hunger {needs.hunger} · Energy {needs.energy} · Social {needs.social} · Comfort {needs.comfort}</div>}
+                          <div style={{ marginTop: 5 }}><strong>Personality:</strong> {pers.sociability >= .66 ? 'Outgoing' : pers.sociability <= .33 ? 'Reserved' : 'Balanced'} · {pers.diligence >= .66 ? 'Hardworking' : 'Easygoing'} · thrift {Math.round(pers.thrift * 100)}%</div>
+                          <div style={{ marginTop: 5 }}><strong>Home:</strong> {selected.homeKey} · <strong>Location:</strong> {selected.location}</div>
+                          <div style={{ marginTop: 5 }}><strong>Memories:</strong> {(selected.memories ?? []).slice(-3).map((m) => m.event).join(' · ') || 'None recorded'}</div>
+                        </div>
+                      );
+                    })()}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 7, flexShrink: 0 }}>
+                      <button type="button" className="editor-btn" onClick={() => { setNpcRosterSearch(''); setNpcRosterSelectedId(null); }}>Clear filter</button>
+                      <button type="button" className="editor-btn" onClick={() => { const exportData = { build: BUILD_NUMBER, exportedAt: new Date().toISOString(), reputation, npcs: townsfolk.map((npc) => { const s = statsFor(npc); return { id: npc.id, name: npc.name, role: npc.role, archetype: npc.archetype, activity: npc.activity, indoors: npc.indoors, position: npc.position, mood: s.mood, disposition: s.disp, gold: s.gold, wealth: s.wealth }; }) }; const json = JSON.stringify(exportData, null, 2); try { localStorage.setItem('ag-npc-roster-export', json); } catch {} if (navigator.clipboard?.writeText) navigator.clipboard.writeText(json).catch(() => undefined); }}>Copy roster data</button>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
           {inspectorOpen && (
             <div className="editor-panel inspector-panel">
               <div className="editor-panel-title">🔍 NPC Inspector <span className="editor-panel-chunk">{time}</span></div>
@@ -11375,6 +11460,10 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); setInspectorOpen(true); }} data-testid="button-debug-inspector">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: NPC Inspector</strong><small>Townsfolk, travelers, adventurers · go-to</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); setNpcRosterOpen(true); }} data-testid="button-debug-npc-roster">
+                  <span className="options-action-icon"><Eye size={17} /></span>
+                  <span><strong>🧑‍🤝‍🧑 Debug: NPC Roster</strong><small>Scroll every townsfolk sprite, mood, wealth, reputation, and disposition</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); setCarriageDebugOpen(true); }} data-testid="button-debug-carriage">
                   <span className="options-action-icon"><Settings size={17} /></span>
