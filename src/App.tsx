@@ -135,10 +135,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '833';
+const BUILD_NUMBER = '834';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '834': 'Add hideable Debug workspace controls and mobile clutter recovery',
   '833': 'Add scrollable NPC roster with sprite previews, mood, wealth, reputation, and disposition',
   '832': 'Add resize mode and size controls to the building mover',
   '831': 'Add a paused building mover with layer controls, copyable placement data, and local save',
@@ -3995,6 +3996,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     try { localStorage.setItem('ag-show-dpad-v2', next ? '1' : '0'); } catch { /* ignore */ }
   };
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  // BUILD 834: Hide Debug panels without disabling the active world-editing tool.
+  const [debugUiHidden, setDebugUiHidden] = useState(() => { try { return localStorage.getItem('ag-debug-ui-hidden') === '1'; } catch { return false; } });
+  useEffect(() => { try { localStorage.setItem('ag-debug-ui-hidden', debugUiHidden ? '1' : '0'); } catch { /* private browsing */ } }, [debugUiHidden]);
+  const anyDebugToolActive = moverMode || mapBuilderMode || tileEditMode || collisionDebugMode || inspectorOpen || npcRosterOpen || debugConsoleOpen || controlCenterOpen;
   // BUILD 833: Scrollable RCT-style character roster for visual NPC QA.
   const [npcRosterOpen, setNpcRosterOpen] = useState(false);
   const [npcRosterSearch, setNpcRosterSearch] = useState('');
@@ -8674,7 +8679,24 @@ if (active) {
     daggerPickedUp: pickedUpGroundItems.includes(TUTORIAL_DAGGER_ITEM),
   });
   return (
-    <div className="field-column">
+    <div className="field-column" data-debug-ui-hidden={debugUiHidden ? 'true' : 'false'}>
+      <style>{`
+        .field-column[data-debug-ui-hidden="true"] .editor-panel,
+        .field-column[data-debug-ui-hidden="true"] .map-builder-bar,
+        .field-column[data-debug-ui-hidden="true"] .map-builder-min-chip,
+        .field-column[data-debug-ui-hidden="true"] .editor-minimized-chip,
+        .field-column[data-debug-ui-hidden="true"] .inspector-panel,
+        .field-column[data-debug-ui-hidden="true"] .tile-coordinates-window,
+        .field-column[data-debug-ui-hidden="true"] .debug-console-panel { display: none !important; }
+        .ag-debug-reveal { position: fixed; right: 10px; top: 10px; z-index: 20000; border: 1px solid #f5d778; border-radius: 999px; background: #18271f; color: #fff6c7; padding: 9px 12px; font: 700 12px system-ui; box-shadow: 0 3px 12px #0008; touch-action: manipulation; }
+        .ag-debug-clutter-toggle { position: fixed; right: 10px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 19000; border: 1px solid #8da99a; border-radius: 9px; background: #17251fef; color: white; padding: 9px 11px; font: 700 12px system-ui; box-shadow: 0 3px 12px #0007; touch-action: manipulation; }
+        @media (min-width: 700px) { .ag-debug-clutter-toggle { right: 18px; bottom: 18px; } }
+      `}</style>
+      {debugUiHidden ? (
+        <button type="button" className="ag-debug-reveal" onClick={() => setDebugUiHidden(false)} aria-label="Show Debug windows">🛠 Show Debug UI</button>
+      ) : anyDebugToolActive ? (
+        <button type="button" className="ag-debug-clutter-toggle" onClick={() => setDebugUiHidden(true)} aria-label="Hide Debug windows and clear screen">Hide Debug UI ⤵</button>
+      ) : null}
       {/* BUILD 609: Circular minimap in corner */}
       {/* BUILD 663: Hide minimap when Options is open (mandatory UI fix). */}
       {/* BUILD 691: Hide minimap when the world map is open. */}
