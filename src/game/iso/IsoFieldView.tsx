@@ -1278,14 +1278,11 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         const wallH = 64;
         const top = (p: { x: number; y: number }) => ({ x: p.x, y: p.y - wallH });
         const t00 = top(p00), t10 = top(p10), t11 = top(p11), t01 = top(p01);
-        // BUILD 810: Depth-sort the oversized starting-house sprite against
-        // the player's live world position. Its artwork overhangs the footprint,
-        // so the old south-edge-only check let the sprite cover the player along
-        // the sides and while walking around the doorway.
-        const playerInFrontOfBuilding = position.x + position.y > r.right + r.bottom - 1;
-        const buildingDepth = playerInFrontOfBuilding
-          ? position.x + position.y - 0.02
-          : r.right + r.bottom;
+        // BUILD 811: The starting-house artwork is oversized and extends far
+        // beyond its logical footprint. Always draw its sprite before the player
+        // so the player remains visible when walking across/over the house image.
+        // Collision and doorway logic remain tied to the original footprint.
+        const buildingDepth = position.x + position.y - 0.02;
 
         // BUILD 769: ordinary houses become visible top-down floor plans while
         // the player is physically inside their footprint. The roof/exterior
