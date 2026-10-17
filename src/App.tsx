@@ -135,10 +135,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '825';
+const BUILD_NUMBER = '826';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '826': 'Hide the starting-house overlay whenever an interior is active',
   '825': 'Remove the bottom Fists HUD and hide the house overlay indoors',
   '824': 'Make the Hide Map button smaller',
   '823': 'Render the starting-house overlay in the isometric world and hide it indoors',
@@ -9879,7 +9880,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView playerLook={rpgConfig.look} npcSpeechEnabled={false} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? [] : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
+            <IsoFieldView playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? [] : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {

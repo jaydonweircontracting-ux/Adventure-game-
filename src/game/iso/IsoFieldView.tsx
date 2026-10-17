@@ -240,6 +240,8 @@ function isoMonsterDef(kind: string): MonsterSpriteDef | undefined {
 }
 
 interface IsoFieldViewProps {
+  // BUILD 826: explicit interior state gates the exterior house overlay even while iso field stays mounted.
+  inInterior?: boolean;
   // BUILD 722: render lightweight ambient speech above visible NPCs when enabled.
   npcSpeechEnabled?: boolean;
   chunk: Point;
@@ -456,11 +458,11 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
   return e.fill;
 }
 
-export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position, townsfolk, goats, onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, chunk, position, townsfolk, goats, onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled });
-  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -1422,12 +1424,10 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               g2.restore();
               // Keep authored sprite architecture intact; only add entry-aligned ground dressing.
               drawBuildingGroundDress(g2, cx, baseY, sw, r.left + r.right, r.top + r.bottom);
-              // BUILD 823: draw the exact uploaded overlay in the same world-space
-              // rectangle as IMG_5422. Because this is part of the same depth-sorted
-              // drawable, it tracks camera motion/zoom and never drifts or duplicates.
-              // IsoFieldView is only mounted outdoors; the interior view replaces it
-              // on entry, so the exterior overlay disappears automatically indoors.
-              if (b.area.id === 'tutorial-house') {
+              // BUILD 826: draw the authored exterior overlay only while no interior is active.
+              // The iso field can remain mounted during house transitions, so use the
+              // live interior state instead of relying on unmounting the whole view.
+              if (!liveRef.current.inInterior && b.area.id === 'tutorial-house') {
                 const overlay = bldImgs['starting-house-overlay'];
                 if (overlay && overlay.complete && overlay.naturalWidth > 0) {
                   g2.save();
