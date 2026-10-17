@@ -135,13 +135,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '838';
+const BUILD_NUMBER = '839';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '839': 'Add precise move/nudge, visibility, lock, and layer controls for placed sprites',
   '838': 'Add searchable Debug Control Center, live counts, validation, and diagnostics export',
   '837': 'Add one-touch close-all Debug recovery and safer mobile workspace cleanup',
   '836': 'Add stone pathway tile painting and repository sprite browsing in Asset Studio',
@@ -4021,6 +4022,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [selectedCustomAssetId, setSelectedCustomAssetId] = useState<string | null>(null);
   const [selectedPlacedCustomId, setSelectedPlacedCustomId] = useState<string | null>(null);
   const [assetPlacementMode, setAssetPlacementMode] = useState(false);
+  const [assetMoveMode, setAssetMoveMode] = useState(false);
+  const [customAssetSnapToGrid, setCustomAssetSnapToGrid] = useState(false);
   const assetFileInputRef = useRef<HTMLInputElement>(null);
   const [customAssetLibrary, setCustomAssetLibrary] = useState<DebugCustomAsset[]>(() => {
     try { const v = JSON.parse(localStorage.getItem('ag-custom-asset-library') || '[]'); return Array.isArray(v) ? v.filter((a) => a && typeof a.id === 'string' && typeof a.src === 'string' && typeof a.name === 'string') : []; } catch { return []; }
@@ -4123,7 +4126,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   type EditorTool = 'select' | 'house' | 'tree' | 'pine' | 'rock' | 'roadH' | 'roadV' | 'flag' | 'erase' | 'player' | 'xmark' | 'rotate';
   // BUILD 835: user-imported local sprite library and per-placement transforms.
   type DebugCustomAsset = { id: string; name: string; src: string; width: number; height: number; scale: number; rotation: number; flipX: boolean; flipY: boolean; cropTop: number; cropRight: number; cropBottom: number; cropLeft: number };
-  type DebugPlacedAsset = { id: string; assetId: string; name: string; src: string; chunk: string; x: number; y: number; width: number; height: number; scale: number; rotation: number; flipX: boolean; flipY: boolean; cropTop: number; cropRight: number; cropBottom: number; cropLeft: number };
+  type DebugPlacedAsset = { id: string; assetId: string; name: string; src: string; chunk: string; x: number; y: number; width: number; height: number; scale: number; rotation: number; flipX: boolean; flipY: boolean; cropTop: number; cropRight: number; cropBottom: number; cropLeft: number; visible?: boolean; locked?: boolean; layer?: number };
 
   const [editorTool, setEditorTool] = useState<EditorTool>('select');
   // BUILD 822: let the player hide the minimap without opening another menu.
@@ -9603,12 +9606,26 @@ if (active) {
               className="map-builder-overlay"
               onPointerDown={(e) => {
                 e.stopPropagation();
+                if (assetMoveMode) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (selectedPlacedCustomAsset && !selectedPlacedCustomAsset.locked) {
+                    const p = tapToField(e);
+                    const x = Math.max(0, Math.min(FIELD_SIZE - 0.1, customAssetSnapToGrid ? Math.round(p.x / MAP_TILE_UNITS) * MAP_TILE_UNITS : p.x));
+                    const y = Math.max(0, Math.min(FIELD_SIZE - 0.1, customAssetSnapToGrid ? Math.round(p.y / MAP_TILE_UNITS) * MAP_TILE_UNITS : p.y));
+                    pushMapUndo();
+                    setCustomPlacedAssets((prev) => prev.map((a) => a.id === selectedPlacedCustomId ? { ...a, chunk: chunkKey, x, y } : a));
+                    setAssetMoveMode(false);
+                    setAssetStudioStatus('Moved sprite to (' + x.toFixed(1) + ', ' + y.toFixed(1) + ').');
+                  } else setAssetStudioStatus('Select an unlocked placed sprite first.');
+                  return;
+                }
                 if (assetPlacementMode && selectedCustomAsset) {
                   e.preventDefault();
                   const p = tapToField(e);
                   pushMapUndo();
                   const id = 'placed-asset-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
-                  setCustomPlacedAssets((prev) => [...prev, { ...selectedCustomAsset, id, assetId: selectedCustomAsset.id, chunk: chunkKey, x: p.x, y: p.y }]);
+                  setCustomPlacedAssets((prev) => [...prev, { ...selectedCustomAsset, id, assetId: selectedCustomAsset.id, chunk: chunkKey, x: p.x, y: p.y, visible: true, locked: false, layer: 0 }]);
                   setSelectedPlacedCustomId(id);
                   setAssetStudioStatus('Placed ' + selectedCustomAsset.name + ' at (' + p.x.toFixed(1) + ', ' + p.y.toFixed(1) + '). Tap again to place another, or cancel placement in Asset Studio.');
                   e.stopPropagation();
@@ -9994,17 +10011,32 @@ if (active) {
                     </div>
                   ))}
                   {selectedPlacedCustomAsset && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, marginTop: 8 }}>
+                      <label style={{ fontSize: 11 }}>World X<input aria-label="Placed sprite world X" type="number" step="0.1" min="0" max={FIELD_SIZE - 0.1} value={selectedPlacedCustomAsset.x} onChange={(e) => updateSelectedPlacedCustomAsset({ x: Math.max(0, Math.min(FIELD_SIZE - 0.1, Number(e.target.value) || 0)) })} style={{ width: '100%', boxSizing: 'border-box', padding: 6 }} /></label>
+                      <label style={{ fontSize: 11 }}>World Y<input aria-label="Placed sprite world Y" type="number" step="0.1" min="0" max={FIELD_SIZE - 0.1} value={selectedPlacedCustomAsset.y} onChange={(e) => updateSelectedPlacedCustomAsset({ y: Math.max(0, Math.min(FIELD_SIZE - 0.1, Number(e.target.value) || 0)) })} style={{ width: '100%', boxSizing: 'border-box', padding: 6 }} /></label>
+                    </div>
                     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 7 }}>
-                      <button type="button" className="editor-btn" onClick={() => updateSelectedPlacedCustomAsset({ scale: Math.max(0.25, Math.min(3, selectedPlacedCustomAsset.scale - 0.1)) })}>− Size</button>
-                      <button type="button" className="editor-btn" onClick={() => updateSelectedPlacedCustomAsset({ scale: Math.max(0.25, Math.min(3, selectedPlacedCustomAsset.scale + 0.1)) })}>＋ Size</button>
-                      <button type="button" className="editor-btn" onClick={() => updateSelectedPlacedCustomAsset({ rotation: (selectedPlacedCustomAsset.rotation + 15) % 360 })}>Rotate</button>
-                      <button type="button" className="editor-btn" onClick={() => updateSelectedPlacedCustomAsset({ flipX: !selectedPlacedCustomAsset.flipX })}>Flip</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => { setMapBuilderMode(true); setMapBuilderMin(true); setAssetMoveMode(true); setAssetPlacementMode(false); }}>📍 Move: tap world</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ x: Math.max(0, selectedPlacedCustomAsset.x - 1) })}>← 1</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ x: Math.min(FIELD_SIZE - 0.1, selectedPlacedCustomAsset.x + 1) })}>→ 1</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ y: Math.max(0, selectedPlacedCustomAsset.y - 1) })}>↑ 1</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ y: Math.min(FIELD_SIZE - 0.1, selectedPlacedCustomAsset.y + 1) })}>↓ 1</button>
+                      <button type="button" className="editor-btn" onClick={() => setCustomAssetSnapToGrid((v) => !v)}>Snap {customAssetSnapToGrid ? 'ON' : 'OFF'}</button>
+                      <button type="button" className="editor-btn" onClick={() => updateSelectedPlacedCustomAsset({ locked: !selectedPlacedCustomAsset.locked })}>{selectedPlacedCustomAsset.locked ? '🔓 Unlock' : '🔒 Lock'}</button>
+                      <button type="button" className="editor-btn" onClick={() => updateSelectedPlacedCustomAsset({ visible: selectedPlacedCustomAsset.visible === false })}>{selectedPlacedCustomAsset.visible === false ? 'Show' : 'Hide'}</button>
+                      <button type="button" className="editor-btn" onClick={() => updateSelectedPlacedCustomAsset({ layer: Math.max(-20, Math.min(20, (selectedPlacedCustomAsset.layer ?? 0) - 1)) })}>Layer −</button>
+                      <button type="button" className="editor-btn" onClick={() => updateSelectedPlacedCustomAsset({ layer: Math.max(-20, Math.min(20, (selectedPlacedCustomAsset.layer ?? 0) + 1)) })}>Layer +</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ scale: Math.max(0.25, Math.min(3, selectedPlacedCustomAsset.scale - 0.1)) })}>− Size</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ scale: Math.max(0.25, Math.min(3, selectedPlacedCustomAsset.scale + 0.1)) })}>＋ Size</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ rotation: (selectedPlacedCustomAsset.rotation + 15) % 360 })}>Rotate</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ flipX: !selectedPlacedCustomAsset.flipX })}>Flip</button>
                     </div>
                   )}
                 </div>
               </div>
               <div style={{ padding: 8, borderTop: '1px solid #53655a', fontSize: 11, flexShrink: 0 }}>
                 {assetPlacementMode && <div style={{ color: '#ffe98a', marginBottom: 6 }}>📍 Placement mode ON — tap the world to place the selected sprite. <button type="button" className="editor-btn" onClick={() => setAssetPlacementMode(false)}>Cancel placement</button></div>}
+                {assetMoveMode && <div style={{ color: '#ffe98a', marginBottom: 6 }}>📍 Move mode ON — tap the world to move the selected sprite. <button type="button" className="editor-btn" onClick={() => setAssetMoveMode(false)}>Cancel move</button></div>}
                 <div>{assetStudioStatus}</div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                   <button type="button" className="editor-btn" onClick={exportDebugAssetLibrary}>Export library + placements JSON</button>
@@ -10412,14 +10444,14 @@ if (active) {
           <ChunkSurroundings chunk={chunk} gameZoom={gameZoom} hiddenRoadChunks={hiddenRoadChunks} mapPaints={mapPaints} />
           <FieldGroundLayer spec={groundSpec} />
           {/* BUILD 835: user-imported world sprites render in the active chunk and follow the world camera/zoom. */}
-          {customPlacedAssets.filter((asset) => asset.chunk === chunkKey).map((asset) => (
+          {customPlacedAssets.filter((asset) => asset.chunk === chunkKey && asset.visible !== false).map((asset) => (
             <img key={asset.id} src={asset.src} alt={asset.name} title={asset.name}
               draggable={false}
               style={{ position: 'absolute', left: (asset.x / FIELD_SIZE * 100) + '%', top: (asset.y / FIELD_SIZE * 100) + '%',
                 width: Math.max(24, Math.min(260, asset.width * 0.35)) * asset.scale + 'px', height: 'auto',
                 transform: 'translate(-50%, -100%) rotate(' + asset.rotation + 'deg) scale(' + (asset.flipX ? -1 : 1) + ',' + (asset.flipY ? -1 : 1) + ')',
                 transformOrigin: '50% 100%', clipPath: 'inset(' + asset.cropTop + '% ' + asset.cropRight + '% ' + asset.cropBottom + '% ' + asset.cropLeft + '%)',
-                zIndex: 35, pointerEvents: 'none', imageRendering: 'pixelated', opacity: 0.98 }} />
+                zIndex: 35 + Math.max(-20, Math.min(20, asset.layer ?? 0)), pointerEvents: 'none', imageRendering: 'pixelated', opacity: 0.98 }} />
           ))}
           {/* Marker dots: inside the world layer so they stay locked to field positions when walking/zooming. */}
           {markerMode && debugMarks.map((mark, i) => [
