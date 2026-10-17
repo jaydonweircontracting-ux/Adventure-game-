@@ -10631,7 +10631,7 @@ if (active) {
                     key={'farm-house-' + i}
                     className="field-house farm-house"
                     style={{
-                      '--building-art': 'url("' + assetUrl(buildingArt.file) + '")',
+                      '--building-art': 'url("' + ALL_BUILDINGS_SPRITE_URL + '")',
                       '--building-art-ratio': buildingArt.aspectRatio,
                       left: fieldPct(rect.left),
                       top: fieldPct(rect.top),
