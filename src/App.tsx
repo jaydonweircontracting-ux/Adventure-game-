@@ -135,10 +135,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '830';
+const BUILD_NUMBER = '831';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '831': 'Add a paused building mover with layer controls, copyable placement data, and local save',
   '830': 'Add Save Game to Changelog and a small toggle to remove it from the title menu',
   '829': 'Move World Editor from the starting menu into Debug options',
   '828': 'Make the starting-house overlay 50% larger while keeping its base aligned',
@@ -3945,6 +3946,18 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   }, [houseOffsets]);
   // Tap-to-move: selected house ID. Tap a house to pick it up, tap the field to place it.
   const [selectedHouse, setSelectedHouse] = useState<string | null>(null);
+  // BUILD 831: per-building render-layer offsets, editable in the debug mover and persisted locally.
+  const [houseLayerOffsets, setHouseLayerOffsets] = useState<Record<string, number>>(() => {
+    try { const raw = localStorage.getItem('ag-house-layer-offsets'); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+  });
+  useEffect(() => { try { localStorage.setItem('ag-house-layer-offsets', JSON.stringify(houseLayerOffsets)); } catch {} }, [houseLayerOffsets]);
+  const exportBuildingMoverData = () => {
+    const data = { format: 'adventure-game-building-mover-v1', build: BUILD_NUMBER, chunk: chunkKey, houseOffsets, houseLayerOffsets, placedObjects: placedObjects.filter((o) => o.chunk === chunkKey) };
+    const text = JSON.stringify(data, null, 2);
+    try { localStorage.setItem('ag-building-mover-export', text); } catch {}
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => setCopiedNotice(true)).catch(() => setCopiedNotice(false));
+  };
+
   // Mover zoom level.
   // Game zoom (base game feature): +/− buttons on the right side. Min 100%.
   // BUILD 327: default is 225% with the player centered in the viewport.
@@ -8930,6 +8943,15 @@ if (active) {
                 {(editorTool === 'house' || editorTool === 'tree' || editorTool === 'pine' || editorTool === 'rock' || editorTool === 'roadH' || editorTool === 'roadV') && <>Tap the field to stamp a {editorTool === 'roadH' ? 'horizontal road' : editorTool === 'roadV' ? 'vertical road' : editorTool}.</>}
               </div>
               <div className="editor-readout">You: ({position.x.toFixed(1)}, {position.y.toFixed(1)}) · Placed here: {placedHere.length} · Flagged: {flaggedItems.length}</div>
+              <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', margin: '6px 0' }}>
+                <strong style={{ fontSize: 11 }}>Building layer</strong>
+                <button type="button" className="editor-btn" disabled={!selectedHouse} onClick={() => selectedHouse && setHouseLayerOffsets((prev) => ({ ...prev, [selectedHouse]: (prev[selectedHouse] ?? 0) - 1 }))}>− Back</button>
+                <span style={{ fontSize: 11 }}>{selectedHouse ? (houseLayerOffsets[selectedHouse] ?? 0) : 'Select a house'}</span>
+                <button type="button" className="editor-btn" disabled={!selectedHouse} onClick={() => selectedHouse && setHouseLayerOffsets((prev) => ({ ...prev, [selectedHouse]: (prev[selectedHouse] ?? 0) + 1 }))}>+ Front</button>
+                <button type="button" className="editor-btn" onClick={exportBuildingMoverData}>📋 Copy changes</button>
+                <button type="button" className="editor-btn" onClick={() => { const data = JSON.stringify({ format: 'adventure-game-building-mover-v1', build: BUILD_NUMBER, chunk: chunkKey, houseOffsets, houseLayerOffsets, placedObjects: placedObjects.filter((o) => o.chunk === chunkKey) }, null, 2); try { localStorage.setItem('ag-building-mover-export', data); setCopiedNotice(true); } catch { setCopiedNotice(false); } }}>💾 Save locally</button>
+              </div>
+              <div style={{ fontSize: 10, opacity: 0.8 }}>Player movement is paused while this editor is open. Tap a building to pick it up, then tap the ground to place it. Local data key: ag-building-mover-export{copiedNotice ? ' · saved/copied' : ''}</div>
               <div className="editor-actions">
                 <button type="button" className="editor-btn" onClick={() => {
                   setDebugConsoleOpen(!debugConsoleOpen);
@@ -10675,6 +10697,7 @@ if (active) {
                 <span
                   key={doorway.id}
                   className={'field-house sprite-house' + (isStartingArea(chunk) ? ' new-house' : '')}
+                  style={{ zIndex: 20 + (houseLayerOffsets[doorway.id] ?? 0) }}
                   style={{
                     '--building-art': 'url("' + buildingArtUrl + '")',
                     '--building-art-ratio': buildingArt.aspectRatio,
