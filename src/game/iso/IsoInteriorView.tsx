@@ -238,8 +238,7 @@ function faceForMove(ax: number, ay: number, bx: number, by: number, current: Fa
 }
 
 export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, playerLook, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, groundItems, onPickupItem, rats, onStrikeRat, onPlayerMove, playerRunning }: IsoInteriorViewProps): React.JSX.Element {
-  // BUILD 780: fit the complete authored room scene by default; allow zoom and pan.
-  const [sceneZoom, setSceneZoom] = useState(1);
+  // BUILD 781: fit the complete starter-room image and allow direct drag panning.
   const [scenePan, setScenePan] = useState({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const attackSequenceRef = useRef(barbAttackSequence ?? 0);
@@ -451,23 +450,45 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       }
     };
 
-    const onTap = (e: PointerEvent) => {
+    // BUILD 781: drag the starter-house image to pan; a tap still interacts/moves.
+    let panPointerId: number | null = null;
+    let panStartX = 0, panStartY = 0, panOriginX = 0, panOriginY = 0;
+    let panMoved = false;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!isStarterHouse) return;
+      panPointerId = e.pointerId;
+      panStartX = e.clientX; panStartY = e.clientY;
+      panOriginX = scenePan.x; panOriginY = scenePan.y;
+      panMoved = false;
+      canvas.setPointerCapture?.(e.pointerId);
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (!isStarterHouse || panPointerId !== e.pointerId) return;
+      const dx = e.clientX - panStartX, dy = e.clientY - panStartY;
+      if (Math.abs(dx) + Math.abs(dy) > 5) panMoved = true;
+      if (panMoved) setScenePan({ x: panOriginX + dx, y: panOriginY + dy });
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      if (isStarterHouse && panPointerId === e.pointerId) {
+        const wasPan = panMoved;
+        panPointerId = null;
+        panMoved = false;
+        if (wasPan) return;
+      }
       const r = canvas.getBoundingClientRect();
       const t = fromScreen(e.clientX - r.left, e.clientY - r.top);
-      // Tap an NPC -> talk.
       const npc = npcsRef.current.find((n) => Math.round(n.tx) === t.tx && Math.round(n.ty) === t.ty);
       if (npc && talkRef.current) { talkRef.current(npc.id); return; }
-      // BUILD 565: Tap a rat -> strike.
       const rat = ratsRef.current.find((rat) => Math.round(rat.tx) === t.tx && Math.round(rat.ty) === t.ty);
       if (rat && strikeRatRef.current) { strikeRatRef.current(rat.id); return; }
-      // BUILD 430: tap a ground item -> pick up.
       const item = groundItemsRef.current.find((g) => Math.round(g.tx) === t.tx && Math.round(g.ty) === t.ty);
       if (item && pickupRef.current) { pickupRef.current(item.id); return; }
-      if (t.tx >= 0 && t.ty >= 0 && t.tx < ROOM_W && t.ty < ROOM_H && !solidAt(t.tx, t.ty)) {
-        goTo(t.tx, t.ty);
-      }
+      if (t.tx >= 0 && t.ty >= 0 && t.tx < ROOM_W && t.ty < ROOM_H && !solidAt(t.tx, t.ty)) goTo(t.tx, t.ty);
     };
-    canvas.addEventListener('pointerdown', onTap);
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerUp);
 
     let raf = 0;
     let last = performance.now();
@@ -882,7 +903,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         const maxW = state.w * 0.92;
         const maxH = state.h * 0.74;
         const fitScale = Math.min(maxW / starterScene.naturalWidth, maxH / starterScene.naturalHeight);
-        const scale = fitScale * sceneZoom;
+        const scale = fitScale;
         const imageW = starterScene.naturalWidth * scale;
         const imageH = starterScene.naturalHeight * scale;
         g.globalCompositeOperation = 'source-over';
@@ -1268,30 +1289,17 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
-      canvas.removeEventListener('pointerdown', onTap);
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('pointercancel', onPointerUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, roomType, sceneZoom, scenePan]);
+  }, [roomId, roomType, scenePan]);
 
   return (
     <div ref={wrapRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#14181f', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}>
       <canvas ref={canvasRef} style={{ display: 'block' }} />
-      {roomId === 'tutorial-house' && (
-        <div style={{ position: 'absolute', left: 10, bottom: 10, zIndex: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: 8, borderRadius: 10, background: 'rgba(20,30,38,0.92)', border: '1px solid rgba(255,217,138,0.45)', color: '#ffd98a', font: '600 12px system-ui', touchAction: 'manipulation' }}>
-          <span>View • {Math.round(sceneZoom * 100)}%</span>
-          <button type="button" aria-label="Pan up" onClick={() => setScenePan(p => ({ ...p, y: p.y + 55 }))} style={{ width: 38, height: 32, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 20 }}>↑</button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <button type="button" aria-label="Pan left" onClick={() => setScenePan(p => ({ ...p, x: p.x + 55 }))} style={{ width: 38, height: 32, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 20 }}>←</button>
-            <button type="button" aria-label="Pan down" onClick={() => setScenePan(p => ({ ...p, y: p.y - 55 }))} style={{ width: 38, height: 32, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 20 }}>↓</button>
-            <button type="button" aria-label="Pan right" onClick={() => setScenePan(p => ({ ...p, x: p.x - 55 }))} style={{ width: 38, height: 32, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 20 }}>→</button>
-          </div>
-          <div style={{ display: 'flex', gap: 5 }}>
-            <button type="button" aria-label="Zoom out" onClick={() => setSceneZoom(v => Math.max(0.35, +(v - 0.15).toFixed(2)))} style={{ width: 38, height: 32, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 22 }}>−</button>
-            <button type="button" aria-label="Zoom in" onClick={() => setSceneZoom(v => Math.min(3, +(v + 0.15).toFixed(2)))} style={{ width: 38, height: 32, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 20 }}>+</button>
-            <button type="button" onClick={() => { setSceneZoom(1); setScenePan({ x: 0, y: 0 }); }} style={{ height: 32, padding: '0 9px', borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8' }}>Fit</button>
-          </div>
-        </div>
-      )}
       <button
         type="button"
         onClick={onExit}
