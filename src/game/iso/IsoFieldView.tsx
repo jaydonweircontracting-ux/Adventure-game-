@@ -2457,16 +2457,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       <canvas ref={canvasRef} data-testid="iso-field-canvas" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', touchAction: 'none' }} />
       {/* BUILD 372: zoom is driven by the main black zoom buttons (App), so the
           duplicate in-canvas zoom controls were removed. */}
-      {/* BUILD 820: keep the 2.5D status badge; remove the main-screen 2D view exit button. */}
-      <div style={{
-        position: 'absolute', left: 12, top: 12, zIndex: 5, display: 'flex', gap: 8, alignItems: 'center',
-        userSelect: 'none', WebkitUserSelect: 'none',
-      }}>
-        <span style={{
-          background: 'rgba(20,30,38,0.78)', color: '#ffd98a', fontSize: 12, fontWeight: 700,
-          padding: '6px 10px', borderRadius: 10, border: '1px solid rgba(255,217,138,0.4)',
-        }}>2.5D BETA</span>
-      </div>
+      {/* BUILD 821: removed the 2.5D BETA label from the main game screen. */}
       {/* BUILD 460: collision debug controls — move/resize the green box */}
       {collisionDebug && selectedCritterId !== null && (
         <div style={{
