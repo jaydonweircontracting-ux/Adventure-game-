@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '748': 'Stop restoring retired legacy field NPCs and stale starter-cottage corpse markers',
   '747': 'Expand hostile-spawn and render suppression around the green-house settlement into adjacent chunks',
   '746': 'Render each live monster once from active-chunk coordinates; reject duplicate IDs and invalid cross-chunk positions',
   '745': 'Hard-block hostile monster rendering in the starting town across both field renderers',
@@ -5412,9 +5413,18 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // BUILD 529: Filter out the removed tutorial-house deer (id 900) from old saves.
     const restoredGoats = loadState.goats.filter((goat) => goat.id !== 900);
     goatsRef.current = restoredGoats.map((goat) => ({ ...goat, attacking: goat.attacking ?? false, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, hitFlash: false })); setGoats(goatsRef.current);
-    // BUILD 522: Restore lootable bodies.
+    // BUILD 748: discard stale legacy field-NPC corpses in the starter settlement.
+    // Old NPCs were retired from this area; their saved corpse markers must not
+    // reappear beside the green tutorial cottage after a build/save migration.
     if (loadState.bodies && Array.isArray(loadState.bodies)) {
-      bodiesRef.current = loadState.bodies; setBodies(loadState.bodies);
+      const cleanBodies = loadState.bodies.filter((body) => {
+        const inStarterSettlement = body.chunk.x >= 2 && body.chunk.x <= 6 && body.chunk.y >= 5 && body.chunk.y <= 9;
+        const nearTutorialCottage = body.chunk.x === 4 && body.chunk.y === 7
+          && body.position.x >= 70 && body.position.x <= 125
+          && body.position.y >= 90 && body.position.y <= 145;
+        return !(inStarterSettlement && nearTutorialCottage && /^body-(?:Noah|Damon|Shawn|npcstate-|legacy-)/i.test(body.id));
+      });
+      bodiesRef.current = cleanBodies; setBodies(cleanBodies);
     }
     // BUILD 595: Restore skill XP; recalculate levels from XP. Invalid or
     // missing data falls back to level-1 defaults without erasing progress.
@@ -5471,8 +5481,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const restoredStats = loadState.playerStats || initialPlayerStats;
     playerStatsRef.current = restoredStats; onPlayerStatsChange(restoredStats);
     onStatPointsChange(Math.max(0, Math.floor(loadState.statPoints || 0)));
-    // Teachers moved to the Rusty Tankard: drop any saved field copies.
-    setNpcStates((loadState.npcStates || []).filter((npc) => npc.name !== 'Noah' && npc.name !== 'Damon' && npc.name !== 'Shawn'));
+    // BUILD 748: the legacy static field-NPC roster was retired (startingTownNpcs is empty).
+    // Do not resurrect obsolete/reskinned NPCs from older saves; the living-town
+    // roster in townsfolk.ts is now the only source of Mosslight residents.
+    setNpcStates([]);
     const validAdventurerLocations = ['starting-house', 'field', 'tavern', 'guild', 'traveling'];
     const restoredAdventurers = loadState.simulatedAdventurers.length
       ? loadState.simulatedAdventurers.map((adventurer) => ({ ...adventurer, level: adventurer.level || 1, location: validAdventurerLocations.includes(adventurer.location ?? '') ? adventurer.location : 'field', interiorPosition: adventurer.interiorPosition ?? { x: 50, y: 47 } }))
