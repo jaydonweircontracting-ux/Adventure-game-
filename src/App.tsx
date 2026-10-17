@@ -4591,7 +4591,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       'Grid: chunk=' + FIELD_SIZE + ' tile=' + MAP_TILE_UNITS + ' resolution=' + MAP_TILES_PER_SIDE + 'x' + MAP_TILES_PER_SIDE,
       '', 'SELECTED TILES (' + selected.length + ')', ...selected.map((t) => '- ' + t.id + ' world=(' + t.worldX + ',' + t.worldY + ') chunk=(' + t.chunkX + ',' + t.chunkY + ') localTile=(' + t.localTileX + ',' + t.localTileY + ') terrain=' + t.terrain),
       '', 'MODIFIED TILES (' + modified.length + ')', ...modified.map((t) => '- ' + t.id + ' world=(' + t.worldX + ',' + t.worldY + ') color/terrain=' + t.terrainOrColor),
-      '', 'EDITOR OPERATIONS', editorLogText(editorLog), '', 'OBJECT PLACEMENTS', ...placedObjects.map((o) => '- ' + o.id + ' ' + o.kind + ' chunk=' + o.chunk + ' local=(' + o.x + ',' + o.y + ')'), '', 'NOTE: ' + (manualTileNote || '(none)'), ''].join('\\n');
+      '', 'EDITOR OPERATIONS', editorLogText(editorLog), '', 'OBJECT PLACEMENTS', ...placedObjects.map((o) => '- ' + o.id + ' ' + o.kind + ' chunk=' + o.chunk + ' local=(' + o.x + ',' + o.y + ')'), '', 'NOTE: ' + (manualTileNote || '(none)'), ''].join('\n');
     const stamp = exportedAt.replace(/[:.]/g, '-');
     try { localStorage.setItem('tileEditorLatestLog', JSON.stringify({ data, text: txt, savedAt: exportedAt })); setTileEditorSaveStatus('Saved locally at ' + new Date(exportedAt).toLocaleTimeString()); }
     catch { setTileEditorSaveStatus('Local storage failed; downloaded files are still available'); }
