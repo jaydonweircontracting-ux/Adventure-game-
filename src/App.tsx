@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '749': 'Add a toggleable live player coordinate readout (chunk, local grid, and world coordinates)',
   '748': 'Stop restoring retired legacy field NPCs and stale starter-cottage corpse markers',
   '747': 'Expand hostile-spawn and render suppression around the green-house settlement into adjacent chunks',
   '746': 'Render each live monster once from active-chunk coordinates; reject duplicate IDs and invalid cross-chunk positions',
@@ -4544,6 +4545,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [horse, setHorse] = useState<HorseState>(initialHorseState);
   const [horseFacing, setHorseFacing] = useState<EightDirection>('down');
   const [logOpen, setLogOpen] = useState(false);
+  // BUILD 749: optional live coordinate HUD for map debugging and reporting exact locations.
+  const [coordinatesVisible, setCoordinatesVisible] = useState(false);
   // BUILD 722: optional ambient NPC speech bubbles; remember the player's preference.
   const [npcSpeechEnabled, setNpcSpeechEnabled] = useState(() => {
     try { return localStorage.getItem('ag-npc-speech') === 'on'; } catch { return false; }
@@ -11494,10 +11497,18 @@ if (active) {
             <div className="hud-quick-actions">
               <button className="hud-quick-button" onClick={() => setHpBoxHidden(true)} aria-label="Hide HP box" title="Hide HP box" data-testid="button-hide-hp-box"><EyeOff size={15} /></button>
               <button className="hud-quick-button" onClick={onOpenMap} aria-label="Open world map" title="World map" data-testid="button-open-map"><MapIcon size={15} /></button>
+              <button className="hud-quick-button" onClick={() => setCoordinatesVisible((visible) => !visible)} aria-pressed={coordinatesVisible} aria-label={coordinatesVisible ? "Hide coordinates" : "Show coordinates"} title={coordinatesVisible ? "Hide coordinates" : "Show coordinates"} data-testid="button-toggle-coordinates" style={coordinatesVisible ? { color: "#ffe08a", borderColor: "#ffe08a" } : undefined}>XY</button>
               <button className="hud-quick-button" onClick={() => setLogOpen((value) => !value)} aria-expanded={logOpen} aria-controls="field-log-drawer" aria-label={logOpen ? 'Hide field log' : 'Open field log'} title={logOpen ? 'Hide field log' : 'Open field log'} data-testid="button-toggle-field-log"><BookOpen size={15} /></button>
               <button className="hud-quick-button" onClick={toggleNpcSpeech} aria-pressed={npcSpeechEnabled} aria-label={npcSpeechEnabled ? 'Hide NPC speech bubbles' : 'Show NPC speech bubbles'} title={npcSpeechEnabled ? 'NPC speech: on' : 'NPC speech: off'} data-testid="button-toggle-npc-speech" style={npcSpeechEnabled ? { color: '#ffe08a', borderColor: '#ffe08a' } : undefined}><MessageCircle size={15} /></button>
               <button className="hud-quick-button" onClick={() => setWaitSheetOpen(true)} aria-label="Wait / pass time" title="Wait" data-testid="button-wait"><Hourglass size={15} /></button>
             </div>
+            {coordinatesVisible && (
+              <div data-testid="player-coordinate-readout" role="status" aria-live="polite" style={{ marginTop: 6, padding: "6px 9px", borderRadius: 6, background: "rgba(8, 16, 13, 0.88)", border: "1px solid rgba(255, 224, 138, 0.65)", color: "#ffe8ad", font: "11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace", textShadow: "0 1px 2px #000", pointerEvents: "none" }}>
+                <div>CHUNK: {chunk.x}, {chunk.y}</div>
+                <div>LOCAL: X {position.x.toFixed(1)} · Y {position.y.toFixed(1)}</div>
+                <div>WORLD: X {(chunk.x * FIELD_SIZE + position.x).toFixed(1)} · Y {(chunk.y * FIELD_SIZE + position.y).toFixed(1)}</div>
+              </div>
+            )}
             {selectedGoat && (
               <div className="hud-target" data-testid="hud-target">
                 <div className="hud-target-label"><span>Target</span><strong>GOAT · LV {selectedGoat.level}</strong></div>
