@@ -983,13 +983,31 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
     );
     for (const doorway of doorways) {
       const offset = houseOffsets?.[doorway.id] || { x: 0, y: 0 };
-      const rect = {
-        left: doorway.rect.left + offset.x + 0.35,
-        top: doorway.rect.top + offset.y + 0.35,
-        right: doorway.rect.right + offset.x - 0.35,
-        bottom: doorway.rect.bottom + offset.y - 0.35,
+      const movedRect = {
+        left: doorway.rect.left + offset.x,
+        top: doorway.rect.top + offset.y,
+        right: doorway.rect.right + offset.x,
+        bottom: doorway.rect.bottom + offset.y,
       };
-      if (pointInRect(position, rect)) return true;
+      const rect = {
+        left: movedRect.left + 0.35,
+        top: movedRect.top + 0.35,
+        right: movedRect.right - 0.35,
+        bottom: movedRect.bottom - 0.35,
+      };
+      if (!pointInRect(position, rect)) continue;
+
+      // Leave a narrow, door-width corridor through the south/front wall. The
+      // movement loop detects the doorway before resolving collision and opens
+      // the interior as the player reaches the threshold. Without this gap,
+      // the solid footprint would stop the player just before the trigger.
+      const doorX = doorway.position.x + offset.x;
+      const doorY = doorway.position.y + offset.y;
+      const { xTol } = doorwayTriggerDims(movedRect);
+      const inDoorwayCorridor = Math.abs(position.x - doorX) <= xTol
+        && position.y >= doorY - 1.2
+        && position.y <= movedRect.bottom + 1.5;
+      if (!inDoorwayCorridor) return true;
     }
   }
   return false;
