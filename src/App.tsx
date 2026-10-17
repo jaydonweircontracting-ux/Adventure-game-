@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '759': 'Move all market stalls onto the middle east-west town fork',
   '758': 'Move all market stalls into the central town road fork',
   '756': 'Remove broken Tam and Nan town residents and their character-specific sprite overrides',
   '755': 'Separate town NPC rendering from the custom player sprite sheet so Tam and Nan use canonical human sprites',
@@ -10812,9 +10813,9 @@ if (active) {
               {/* Townsfolk workplaces: garden plots + market stalls (decorative, like the fountain) */}
               <span className="farm-field town-garden" style={{ left: fieldPct(18), top: fieldPct(100), width: fieldPct(24), height: fieldPct(16) }} aria-label="Town garden" />
               <span className="farm-field town-garden" style={{ left: fieldPct(98), top: fieldPct(100), width: fieldPct(24), height: fieldPct(16) }} aria-label="Town garden" />
-              {/* BUILD 664: Market stalls moved to plaza (was 58,64 / 82,64). */}
-              <span className="market-stall" style={{ left: fieldPct(128), top: fieldPct(128) }} aria-label="Market stall" />
-              <span className="market-stall" style={{ left: fieldPct(160), top: fieldPct(128) }} aria-label="Market stall" />
+              {/* BUILD 759: visible stalls aligned on the middle east-west fork, not the north side of the plaza. */}
+              <span className="market-stall" style={{ left: fieldPct(128), top: fieldPct(144) }} aria-label="Market stall" />
+              <span className="market-stall" style={{ left: fieldPct(160), top: fieldPct(144) }} aria-label="Market stall" />
             </>
           )}
           {currentWorldTile.landmark?.name === 'Mosslight Crossing' && townsfolk.filter((npc) => {
