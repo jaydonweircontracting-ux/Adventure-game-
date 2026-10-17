@@ -1222,14 +1222,17 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         const playerSouthOfBuilding = playerY > r.bottom - 1;
         const buildingDepth = playerSouthOfBuilding ? (r.left + r.top - 10) : (r.right + r.bottom);
 
-        // BUILD 769: ordinary houses become visible top-down floor plans while
-        // the player is physically inside their footprint. The roof/exterior
-        // sprite is omitted only for the occupied house; outside art is unchanged.
-        const playerInsideHouse = b.area.roomType === 'building'
+        // BUILD 770: Project-Zomboid-style roof cutaway. Reveal the walkable
+        // floor plan as the player approaches a house, not only after crossing
+        // the footprint boundary. This makes the new interior immediately
+        // visible and avoids requiring a doorway button or a scene transition.
+        // Keep the cutaway scoped to the active chunk and the nearest footprint.
+        const cutawayMargin = 4.5;
+        const playerNearHouse = b.area.roomType === 'building'
           && sc.ox === 0 && sc.oy === 0
-          && position.x > b.rect.left + 0.45 && position.x < b.rect.right - 0.45
-          && position.y > b.rect.top + 0.45 && position.y < b.rect.bottom - 0.45;
-        if (playerInsideHouse) {
+          && position.x >= b.rect.left - cutawayMargin && position.x <= b.rect.right + cutawayMargin
+          && position.y >= b.rect.top - cutawayMargin && position.y <= b.rect.bottom + cutawayMargin;
+        if (playerNearHouse) {
           const layout = generateInteriorLayout(b.id, houseTypeForBuilding(b.id), 14, 12);
           const roomW = Math.max(0.1, r.right - r.left);
           const roomH = Math.max(0.1, r.bottom - r.top);
