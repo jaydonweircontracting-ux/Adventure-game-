@@ -620,6 +620,25 @@
   to { background-position-x: -160px; }
 }
 
+/* BUILD 760: Ham's farmer sprite must remain visible even if an inherited
+   appearance variable or role tint resolves badly in the town renderer. */
+.town-npc.npc-ham .npc-sprite {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  background-image: var(--player-sprite-url) !important;
+  background-size: 192px 320px !important;
+  background-repeat: no-repeat !important;
+  background-position: -96px 0 !important;
+  filter: drop-shadow(0 2px 1px rgba(23, 42, 29, .45)) !important;
+  transform: none !important;
+}
+.town-npc.npc-ham .npc-nameplate {
+  display: grid !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
 /* Starting-town teachers and guide use the player sheet at the same pixel size. */
 .town-npc {
   position: absolute;
