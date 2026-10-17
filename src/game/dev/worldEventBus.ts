@@ -5,7 +5,7 @@
  * disposable test simulation. It has no hidden global state and does not mutate
  * the game world itself. Systems subscribe to events and decide how to react.
  */
-export type WorldEventMap = Record<string, unknown>;
+export type WorldEventMap = object;
 
 export interface WorldEvent<K extends string = string, P = unknown> {
   readonly id: string;
