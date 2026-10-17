@@ -42,7 +42,7 @@ import {
 import type { Townsperson } from '../townsfolk';
 import { marketStallsFromDecor } from '../townsfolk';
 // BUILD 692: district-appropriate art variants for the engine's filler lots.
-import { mosslightFillerLots, fillerVariantForLot } from '../mosslightLayout';
+import { mosslightFillerLots, fillerVariantForLot, mosslightPinnedRects } from '../mosslightLayout';
 // BUILD 684: single authoritative building asset catalog (was: hardcoded
 // kind->path maps duplicated in this file). Anchor/scale conventions documented
 // in src/game/buildingRig.ts.
@@ -1150,6 +1150,21 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         // new art variants (commercial -> shops, residential -> cottages),
         // picked by stable hash so the assignment never flickers.
         if (absCx === 4 && absCy === 7 && b.rect) {
+          // BUILD 768: Resolve the fixed Crossing buildings by the same stable
+          // rect list used by doors and NPC homes. House 12 is the tavern.
+          const pinnedRects = mosslightPinnedRects();
+          const pinnedIndex = pinnedRects.findIndex((r) =>
+            Math.abs(r.left - b.rect.left) < 0.01
+            && Math.abs(r.top - b.rect.top) < 0.01
+            && Math.abs(r.right - b.rect.right) < 0.01
+            && Math.abs(r.bottom - b.rect.bottom) < 0.01
+          );
+          if (pinnedIndex >= 0 && pinnedIndex < 4) {
+            return ['blue-house', 'story-tower', 'plaster-house', 'tavern'][pinnedIndex];
+          }
+          if (pinnedIndex >= 10 && pinnedIndex < 18) {
+            return ['blue-house', 'tavern', 'green-shop', 'house-timber', 'shop-awning', 'blue-house', 'brick-shop', 'stone-cottage'][pinnedIndex - 10];
+          }
           const v = cottageVariantForRect(b.rect);
           if (v) {
             // BUILD 767: use authored detailed PNGs; the SVG replacements were crude
