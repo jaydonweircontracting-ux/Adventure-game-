@@ -41,16 +41,16 @@
 <path d="M154 45 180 52 180 56 154 49Z" fill="#422b20"/>
 <!-- timber beams make the facade read as built, not a flat icon -->
 
-<!-- arched heavy door, inset in front wall -->
-<path d="M88 79V63Q103 51 118 61V71L118 82 88 90Z" fill="#422b20" stroke="#2a211b" stroke-width="3"/>
-<path d="M92 77V65Q103 57 114 64V77L92 84Z" fill="#67432c" stroke="#e7c77d" stroke-width="2"/>
-<path d="M99 62V82M107 61V80" stroke="#3d2a20" stroke-width="2"/>
-<circle cx="111" cy="72" r="2" fill="#e7c77d"/>
-<path d="M85 62Q103 48 121 61" fill="none" stroke="#857566" stroke-width="4"/>
-<!-- step and threshold project forward -->
-<path d="M82 91 103 84 125 91 103 99Z" fill="#857566" stroke="#422b20" stroke-width="3"/>
-<path d="M82 91 103 99 103 103 82 95Z" fill="#825536" stroke="#422b20" stroke-width="2"/>
-<path d="M103 99 125 91 125 95 103 103Z" fill="#e7c77d" stroke="#422b20" stroke-width="2"/>
+<!-- centered arched heavy door: aligned to the live doorway trigger -->
+<path d="M112 80V63Q128 51 144 63V82L112 90Z" fill="#422b20" stroke="#2a211b" stroke-width="3"/>
+<path d="M116 78V65Q128 57 140 65V79L116 84Z" fill="#67432c" stroke="#e7c77d" stroke-width="2"/>
+<path d="M123 62V82M133 62V81" stroke="#3d2a20" stroke-width="2"/>
+<circle cx="137" cy="72" r="2" fill="#e7c77d"/>
+<path d="M109 62Q128 48 147 62" fill="none" stroke="#857566" stroke-width="4"/>
+<!-- projecting centered stone step and threshold -->
+<path d="M104 91 128 83 152 91 128 100Z" fill="#857566" stroke="#422b20" stroke-width="3"/>
+<path d="M104 91 128 100 128 104 104 95Z" fill="#825536" stroke="#422b20" stroke-width="2"/>
+<path d="M128 100 152 91 152 95 128 104Z" fill="#e7c77d" stroke="#422b20" stroke-width="2"/>
 <!-- shop awning or tavern sign, physically mounted -->
 
 <path d="M77 39 129 22 129 29 77 46Z" fill="#e7c77d" stroke="#422b20" stroke-width="3"/><path d="M84 37 121 25" stroke="#422b20" stroke-width="2"/><text x="105" y="34" text-anchor="middle" font-family="serif" font-size="7" font-weight="bold" fill="#422b20" transform="rotate(-18 105 34)">TAVERN</text>
