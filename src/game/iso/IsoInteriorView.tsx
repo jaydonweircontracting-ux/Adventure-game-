@@ -7,7 +7,7 @@
 //
 // Room types mirror the 2D InteriorRoom: guild | inn | chapel | building |
 // tavern | cellar | prison. Layouts are deterministic per room id.
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   isoToScreen, screenToTileInt, depthKey, findPath, TILE_W, TILE_H,
   type TilePoint,
@@ -238,6 +238,7 @@ function faceForMove(ax: number, ay: number, bx: number, by: number, current: Fa
 }
 
 export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, playerLook, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, groundItems, onPickupItem, rats, onStrikeRat, onPlayerMove, playerRunning }: IsoInteriorViewProps): React.JSX.Element {
+  const [sceneZoom, setSceneZoom] = useState(0.72);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const attackSequenceRef = useRef(barbAttackSequence ?? 0);
   attackSequenceRef.current = barbAttackSequence ?? 0;
@@ -876,7 +877,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       if (isStarterHouse && starterScene) {
         const maxW = state.w * 1.35;
         const maxH = state.h * 0.78;
-        const scale = Math.max(maxW / starterScene.naturalWidth, maxH / starterScene.naturalHeight);
+        const scale = Math.min(maxW / starterScene.naturalWidth, maxH / starterScene.naturalHeight) * sceneZoom;
         const imageW = starterScene.naturalWidth * scale;
         const imageH = starterScene.naturalHeight * scale;
         g.globalCompositeOperation = 'screen';
@@ -1260,11 +1261,19 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       canvas.removeEventListener('pointerdown', onTap);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, roomType]);
+  }, [roomId, roomType, sceneZoom]);
 
   return (
     <div ref={wrapRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#14181f', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}>
       <canvas ref={canvasRef} style={{ display: 'block' }} />
+      {roomId === 'tutorial-house' && (
+        <div style={{ position: 'absolute', left: 12, bottom: 12, zIndex: 6, display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderRadius: 10, background: 'rgba(20,30,38,0.88)', border: '1px solid rgba(255,217,138,0.35)', color: '#ffd98a', font: '600 13px system-ui' }}>
+          <button type="button" aria-label="Zoom out" onClick={() => setSceneZoom(v => Math.max(0.35, +(v - 0.1).toFixed(2)))} style={{ width: 34, height: 34, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 22 }}>−</button>
+          <span style={{ minWidth: 46, textAlign: 'center' }}>{Math.round(sceneZoom * 100)}%</span>
+          <button type="button" aria-label="Zoom in" onClick={() => setSceneZoom(v => Math.min(1.2, +(v + 0.1).toFixed(2)))} style={{ width: 34, height: 34, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 20 }}>+</button>
+          <button type="button" onClick={() => setSceneZoom(0.72)} style={{ height: 34, padding: '0 9px', borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8' }}>Fit</button>
+        </div>
+      )}
       <button
         type="button"
         onClick={onExit}
