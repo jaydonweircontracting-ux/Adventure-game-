@@ -11883,7 +11883,6 @@ if (active) {
               <div style={{ width: staminaUi + '%', height: '100%', background: staminaUi > 30 ? '#7cc47c' : '#d46a5a', borderRadius: 4, transition: 'width .15s' }} />
             </div>
           )}
-         </div>
       </div>
       <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? (mounted ? 'Riding through Mosslight Crossing' : 'Moving through Mosslight Crossing') : (mounted ? 'Mounted and ready' : 'Standing still')}</div>
       <div className="sr-only" aria-live="polite" data-testid="status-mount">{mounted ? 'Mounted on the horse' : canMount ? 'Horse nearby and ready to mount' : horseHere ? 'Horse is parked in this field' : 'Horse is in another field'}</div>
