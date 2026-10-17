@@ -2301,7 +2301,7 @@ body {
   left: 50%; top: 50%;
   width: 32px; height: 32px;
   margin: -16px 0 0 -16px;
-  background-image: var(--bandit-sprite-url);
+  background-image: var(--player-sprite-url);
   background-size: 192px 320px;
   background-repeat: no-repeat;
   image-rendering: pixelated;
