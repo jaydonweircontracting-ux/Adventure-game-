@@ -133,10 +133,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '815';
+const BUILD_NUMBER = '816';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '816': 'Add custom-color tiles, manual coordinate selection, and downloadable tile-editor logs',
   '815': 'Add paused tile-edit mode with selectable terrain colors and copyable tile coordinates',
   '814': 'Revert build 813 doorway and house collision changes',
   '813': 'Pin starter-house doorway at world coordinates and restore shared wall collision with door openings',
@@ -4181,6 +4182,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [tileEditMode, setTileEditMode] = useState(false);
   const [tileCoordsOpen, setTileCoordsOpen] = useState(false);
   const [selectedPaintTiles, setSelectedPaintTiles] = useState<Array<{ chunk: string; tx: number; ty: number }>>([]);
+  const [customTileColor, setCustomTileColor] = useState('#888888');
+  const [tileCoordFilter, setTileCoordFilter] = useState('');
+  const [manualWorldX, setManualWorldX] = useState('');
+  const [manualWorldY, setManualWorldY] = useState('');
+  const [manualTileNote, setManualTileNote] = useState('');
+  const [tileEditorSaveStatus, setTileEditorSaveStatus] = useState('Not exported yet');
   const toggleTileEditMode = () => {
     const next = !tileEditMode;
     setTileEditMode(next);
@@ -4549,14 +4556,55 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     setMapPaints((prev) => paintTile(prev, chunkKey, tx, ty, mapBrush === 'erase' ? null : mapBrush));
   };
   const mapBrushes: { id: MapBrush; label: string }[] = [
-    { id: 'grass', label: '🌱 Grass' },
-    { id: 'dirt', label: '🟫 Dirt' },
-    { id: 'water', label: '🌊 Water' },
-    { id: 'sand', label: '🏖️ Sand' },
-    { id: 'forest', label: '🌲 Forest' },
-    { id: 'house', label: '🏠 House' },
-    { id: 'erase', label: '🧹 Erase' },
+    { id: 'grass', label: '🟩 Grass' }, { id: 'dirt', label: '🟫 Dirt' }, { id: 'water', label: '🟦 Water' },
+    { id: 'sand', label: '🟨 Sand' }, { id: 'forest', label: '🌲 Forest' }, { id: 'color:#888888', label: '⬜ Stone' },
+    { id: 'color:#ffffff', label: 'White' }, { id: 'color:#000000', label: 'Black' }, { id: 'house', label: '🏠 House' }, { id: 'erase', label: '🧹 Reset' },
   ];
+  const saveTileEditorLog = () => {
+    const exportedAt = new Date().toISOString();
+    const selected = selectedPaintTiles.map((tile) => {
+      const [cx,cy] = tile.chunk.split(',').map(Number);
+      const localX = tile.tx * MAP_TILE_UNITS + MAP_TILE_UNITS / 2;
+      const localY = tile.ty * MAP_TILE_UNITS + MAP_TILE_UNITS / 2;
+      const paint = (mapPaints[tile.chunk] ?? []).find((p) => p.tx === tile.tx && p.ty === tile.ty);
+      return { id: 'tile:' + tile.chunk + ':' + tile.tx + ':' + tile.ty, worldX: cx * FIELD_SIZE + localX, worldY: cy * FIELD_SIZE + localY, chunkX: cx, chunkY: cy, localTileX: tile.tx, localTileY: tile.ty, localX, localY, tileSize: MAP_TILE_UNITS, tilesPerChunkSide: MAP_TILES_PER_SIDE, terrain: paint?.tile ?? 'procedural', painted: Boolean(paint), selected: true };
+    });
+    const modified = Object.entries(mapPaints).flatMap(([key, list]) => list.map((p) => {
+      const [cx,cy] = key.split(',').map(Number);
+      return { id: 'tile:' + key + ':' + p.tx + ':' + p.ty, chunk: key, chunkX: cx, chunkY: cy, tileX: p.tx, tileY: p.ty, worldX: cx * FIELD_SIZE + p.tx * MAP_TILE_UNITS + MAP_TILE_UNITS / 2, worldY: cy * FIELD_SIZE + p.ty * MAP_TILE_UNITS + MAP_TILE_UNITS / 2, terrainOrColor: p.tile };
+    }));
+    const data = { title: 'Adventure Game Tile Editor Log', build: BUILD_NUMBER, exportedAt,
+      player: { chunk: chunkKey, localX: position.x, localY: position.y, worldX: chunk.x * FIELD_SIZE + position.x, worldY: chunk.y * FIELD_SIZE + position.y },
+      grid: { chunkSize: FIELD_SIZE, tileSize: MAP_TILE_UNITS, tilesPerChunkSide: MAP_TILES_PER_SIDE },
+      selectedTiles: selected, modifiedTiles: modified, editorOperations: editorLog.map((e) => ({ ...e, time: new Date(e.t).toISOString() })),
+      objectPlacements: placedObjects, note: manualTileNote };
+    const txt = ['ADVENTURE GAME — TILE EDITOR LOG', 'Build: ' + BUILD_NUMBER, 'Exported: ' + exportedAt,
+      'Player: chunk=' + chunkKey + ' local=(' + position.x + ',' + position.y + ') world=(' + data.player.worldX + ',' + data.player.worldY + ')',
+      'Grid: chunk=' + FIELD_SIZE + ' tile=' + MAP_TILE_UNITS + ' resolution=' + MAP_TILES_PER_SIDE + 'x' + MAP_TILES_PER_SIDE,
+      '', 'SELECTED TILES (' + selected.length + ')', ...selected.map((t) => '- ' + t.id + ' world=(' + t.worldX + ',' + t.worldY + ') chunk=(' + t.chunkX + ',' + t.chunkY + ') localTile=(' + t.localTileX + ',' + t.localTileY + ') terrain=' + t.terrain),
+      '', 'MODIFIED TILES (' + modified.length + ')', ...modified.map((t) => '- ' + t.id + ' world=(' + t.worldX + ',' + t.worldY + ') color/terrain=' + t.terrainOrColor),
+      '', 'EDITOR OPERATIONS', editorLogText(editorLog), '', 'OBJECT PLACEMENTS', ...placedObjects.map((o) => '- ' + o.id + ' ' + o.kind + ' chunk=' + o.chunk + ' local=(' + o.x + ',' + o.y + ')'), '', 'NOTE: ' + (manualTileNote || '(none)'), ''].join('\\n');
+    const stamp = exportedAt.replace(/[:.]/g, '-');
+    try { localStorage.setItem('tileEditorLatestLog', JSON.stringify({ data, text: txt, savedAt: exportedAt })); setTileEditorSaveStatus('Saved locally at ' + new Date(exportedAt).toLocaleTimeString()); }
+    catch { setTileEditorSaveStatus('Local storage failed; downloaded files are still available'); }
+    const download = (name: string, content: string, type: string) => {
+      const url = URL.createObjectURL(new Blob([content], { type })); const a = document.createElement('a'); a.href = url; a.download = name; a.style.display = 'none';
+      document.body.appendChild(a); a.click(); a.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    download('tile-editor-' + stamp + '.txt', txt, 'text/plain;charset=utf-8');
+    download('tile-editor-' + stamp + '.json', JSON.stringify(data, null, 2), 'application/json;charset=utf-8');
+  };
+  const selectManualWorldTile = (applyPaint: boolean) => {
+    const wx = Number(manualWorldX), wy = Number(manualWorldY);
+    if (!manualWorldX.trim() || !manualWorldY.trim() || !Number.isFinite(wx) || !Number.isFinite(wy)) { setTileEditorSaveStatus('Enter valid numeric world X and Y'); return; }
+    const cx = Math.floor(wx / FIELD_SIZE), cy = Math.floor(wy / FIELD_SIZE);
+    const tx = Math.floor((wx - cx * FIELD_SIZE) / MAP_TILE_UNITS), ty = Math.floor((wy - cy * FIELD_SIZE) / MAP_TILE_UNITS);
+    if (tx < 0 || ty < 0 || tx >= MAP_TILES_PER_SIDE || ty >= MAP_TILES_PER_SIDE) { setTileEditorSaveStatus('Coordinates outside tile grid'); return; }
+    const key = cx + ',' + cy;
+    setSelectedPaintTiles((prev) => prev.some((t) => t.chunk === key && t.tx === tx && t.ty === ty) ? prev : [...prev, { chunk: key, tx, ty }]);
+    if (applyPaint) setMapPaints((prev) => paintTile(prev, key, tx, ty, (mapBrush === 'erase' ? null : mapBrush === 'house' ? 'grass' : mapBrush) as MapPaintTile | null));
+    logEditorChange(applyPaint ? 'manual-tile-paint' : 'manual-tile-select', 'world=(' + wx + ',' + wy + ') => chunk=' + key + ' tile=(' + tx + ',' + ty + ')' + (manualTileNote ? '; ' + manualTileNote : ''), wx, wy);
+  };
   // Debug markers (green dots): toggleable from options menu. Syncs with module-level debugDoors.
   const [markerMode, setMarkerMode] = useState(debugDoors);
   // BUILD 365: 2.5D isometric field renderer (beta). Pure visual swap — the sim,
@@ -9028,7 +9076,20 @@ if (active) {
                   <button type="button" onClick={() => setTileCoordsOpen(false)} aria-label="Close tile coordinates" style={{ background: '#2a3a31', color: '#fff', border: 0, borderRadius: 6, padding: '6px 10px' }}>✕</button>
                 </div>
                 <div style={{ padding: 10, overflowY: 'auto', minHeight: 90 }}>
-                  {selectedPaintTiles.length === 0 ? <p style={{ color: '#b5c5b8' }}>No tiles selected. Close this window and tap tiles in Tile Edit Mode.</p> : selectedPaintTiles.map((tile) => {
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
+                    <input aria-label="Filter selected tiles" value={tileCoordFilter} onChange={(e) => setTileCoordFilter(e.target.value)} placeholder="Filter coords/chunk/terrain…" style={{ gridColumn: '1 / -1', minWidth: 0, padding: 7, background: '#1d2a23', color: '#fff', border: '1px solid #53675a', borderRadius: 5 }} />
+                    <input aria-label="Manual world X" value={manualWorldX} onChange={(e) => setManualWorldX(e.target.value)} placeholder="World X" inputMode="decimal" style={{ minWidth: 0, padding: 7, background: '#1d2a23', color: '#fff', border: '1px solid #53675a', borderRadius: 5 }} />
+                    <input aria-label="Manual world Y" value={manualWorldY} onChange={(e) => setManualWorldY(e.target.value)} placeholder="World Y" inputMode="decimal" style={{ minWidth: 0, padding: 7, background: '#1d2a23', color: '#fff', border: '1px solid #53675a', borderRadius: 5 }} />
+                    <input aria-label="Optional placement note" value={manualTileNote} onChange={(e) => setManualTileNote(e.target.value)} placeholder="Optional placement note" style={{ gridColumn: '1 / -1', minWidth: 0, padding: 7, background: '#1d2a23', color: '#fff', border: '1px solid #53675a', borderRadius: 5 }} />
+                    <button type="button" onClick={() => selectManualWorldTile(false)} style={{ background: '#2a3a31', color: '#fff', border: 0, borderRadius: 5, padding: 7 }}>Select world tile</button>
+                    <button type="button" onClick={() => selectManualWorldTile(true)} style={{ background: '#d6b75c', color: '#17170f', border: 0, borderRadius: 5, padding: 7 }}>Apply current brush</button>
+                    <button type="button" onClick={() => { const all = Array.from({ length: MAP_TILES_PER_SIDE * MAP_TILES_PER_SIDE }, (_, n) => ({ chunk: chunkKey, tx: n % MAP_TILES_PER_SIDE, ty: Math.floor(n / MAP_TILES_PER_SIDE) })); setSelectedPaintTiles((prev) => [...prev.filter((t) => t.chunk !== chunkKey), ...all]); }} style={{ gridColumn: '1 / -1', background: '#2a3a31', color: '#fff', border: 0, borderRadius: 5, padding: 7 }}>Select all tiles in visible chunk ({chunkKey})</button>
+                  </div>
+                  <div style={{ fontSize: 11, marginBottom: 8, color: '#b5c5b8' }}>Selected: {selectedPaintTiles.length} · tile size {MAP_TILE_UNITS} · resolution {MAP_TILES_PER_SIDE}×{MAP_TILES_PER_SIDE}</div>
+                  {selectedPaintTiles.length === 0 ? <p style={{ color: '#b5c5b8' }}>No tiles selected. Close this window and tap tiles in Tile Edit Mode.</p> : selectedPaintTiles.filter((t) => {
+                    const p = (mapPaints[t.chunk] ?? []).find((v) => v.tx === t.tx && v.ty === t.ty);
+                    return (t.chunk + ' ' + t.tx + ' ' + t.ty + ' ' + (p?.tile ?? 'procedural')).toLowerCase().includes(tileCoordFilter.toLowerCase());
+                  }).map((tile) => {
                     const [cx, cy] = tile.chunk.split(',').map(Number);
                     const lx = tile.tx * MAP_TILE_UNITS + MAP_TILE_UNITS / 2;
                     const ly = tile.ty * MAP_TILE_UNITS + MAP_TILE_UNITS / 2;
@@ -9040,6 +9101,8 @@ if (active) {
                 </div>
                 <div style={{ padding: 10, display: 'flex', gap: 8, flexWrap: 'wrap', borderTop: '1px solid #35473c' }}>
                   <button type="button" onClick={copySelectedTileCoordinates} disabled={selectedPaintTiles.length === 0} style={{ background: '#d6b75c', color: '#17170f', border: 0, borderRadius: 6, padding: '8px 12px', fontWeight: 700 }}>📋 Copy coordinates</button>
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(JSON.stringify(selectedPaintTiles.map((t) => { const [cx,cy] = t.chunk.split(',').map(Number); return { chunk: t.chunk, chunkX: cx, chunkY: cy, tileX: t.tx, tileY: t.ty, worldX: cx * FIELD_SIZE + t.tx * MAP_TILE_UNITS + MAP_TILE_UNITS / 2, worldY: cy * FIELD_SIZE + t.ty * MAP_TILE_UNITS + MAP_TILE_UNITS / 2, tileSize: MAP_TILE_UNITS, terrain: (mapPaints[t.chunk] ?? []).find((p) => p.tx === t.tx && p.ty === t.ty)?.tile ?? 'procedural' }; }), null, 2)).catch(() => {})} disabled={selectedPaintTiles.length === 0} style={{ background: '#2a3a31', color: '#fff', border: 0, borderRadius: 6, padding: '8px 12px' }}>Copy JSON</button>
+                  <button type="button" onClick={saveTileEditorLog} style={{ background: '#d6b75c', color: '#17170f', border: 0, borderRadius: 6, padding: '8px 12px', fontWeight: 700 }}>Save Editor Log</button>
                   <button type="button" onClick={() => setSelectedPaintTiles([])} disabled={selectedPaintTiles.length === 0} style={{ background: '#2a3a31', color: '#fff', border: 0, borderRadius: 6, padding: '8px 12px' }}>Clear selection</button>
                   <button type="button" onClick={() => setTileCoordsOpen(false)} style={{ background: '#2a3a31', color: '#fff', border: 0, borderRadius: 6, padding: '8px 12px' }}>Done</button>
                 </div>
@@ -9371,12 +9434,19 @@ if (active) {
                   </button>
                 ))}
               </div>
+              {tileEditMode && <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 8px', flexWrap: 'wrap' }}>
+                <label style={{ fontSize: 12, color: '#fff' }}>Custom colour</label>
+                <input aria-label="Custom tile colour" type="color" value={customTileColor} onChange={(e) => { setCustomTileColor(e.target.value); setMapBrush(('color:' + e.target.value) as MapBrush); }} style={{ width: 42, height: 30 }} />
+                <button type="button" className="map-builder-btn" onClick={() => { const brush = ('color:' + customTileColor) as MapBrush; setMapBrush(brush); if (selectedPaintTiles.length) paintSelectedTiles(brush as MapPaintTile); }}>Apply to selection</button>
+              </div>}
               {tileEditMode && <div style={{ padding: '5px 8px', color: '#fff4b0', fontSize: 12 }}>
                 Tap a tile to paint and select it. Tap the highlighted tile again to unselect. Selected: {selectedPaintTiles.length}.
                 <button type="button" className="map-builder-btn" style={{ marginLeft: 8 }} onClick={() => setTileCoordsOpen(true)}>📍 Tile coordinates ({selectedPaintTiles.length})</button>
                 <button type="button" className="map-builder-btn" style={{ marginLeft: 6 }} onClick={() => setSelectedPaintTiles([])}>Clear selection</button>
               </div>}
               <div className="map-builder-actions">
+                <button type="button" className="map-builder-btn" onClick={saveTileEditorLog}>💾 Save Editor Log (TXT + JSON)</button>
+                <button type="button" className="map-builder-btn" onClick={saveTileEditorLog}>Export for GitHub</button>
                 <button
                   type="button"
                   className="map-builder-btn"
@@ -9408,6 +9478,7 @@ if (active) {
                   🎲 Noise {showNoiseGen ? '▲' : '▼'}
                 </button>
               </div>
+              {tileEditMode && <div style={{ padding: '5px 8px', color: '#c9d9cd', fontSize: 11 }}>Log status: {tileEditorSaveStatus}</div>}
               {showNoiseGen && (
                 <div style={{ padding: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: '4px' }}>
                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '6px' }}>
