@@ -6595,7 +6595,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const onKeyDown = (event: KeyboardEvent) => {
       // BUILD 667: Don't steal keys while typing in a text field.
       if (isTextInputActive(event)) return;
-      if (inputLocked || optionsOpen || guardEncounter || waitingRef.current) return;
+      if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode) return;
       if (event.code === 'Space' || event.code === 'KeyF') { event.preventDefault(); attackGoat(); return; }
       // BUILD 704: Shift hold-to-run (works alongside the touch toggle).
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') { shiftHeldRef.current = true; return; }
@@ -7890,7 +7890,7 @@ if (active) {
   const touchIdentifierOf = (event: TouchEvent<HTMLButtonElement>): number | undefined =>
     event.changedTouches.length > 0 ? event.changedTouches[0].identifier : undefined;
   const pressDirection = (direction: Direction, touchId?: number) => {
-    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current) return;
+    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode) return;
     if (touchId === undefined) keysRef.current[direction] = true;
     else pressTouchHold(touchHoldsRef.current, direction, touchId);
     setMoving(true);
@@ -7901,7 +7901,7 @@ if (active) {
   // a finger is down switches direction without lifting.
   const slideToDirection = (direction: Direction) => {
     if (!dpadActiveRef.current) return;
-    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current) return;
+    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode) return;
     pressTouchHold(touchHoldsRef.current, direction, 1);
     setMoving(true);
   };
