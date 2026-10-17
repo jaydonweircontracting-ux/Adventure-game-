@@ -131,10 +131,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '772';
+const BUILD_NUMBER = '773';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '773': 'Fix house entry triggers at the exterior front edge',
   '772': 'Restore reliable entrances for every generated house and farmhouse',
   '771': 'Disable collision on all houses, including invisible building footprints',
   '770': 'Restore reliable house doorway entry and remove blocking interior collision',
@@ -1265,20 +1266,20 @@ function doorwayTriggerDims(rect: { left: number; right: number }): { xTol: numb
 }
 
 function doorwayNear(position: Point, chunk: Point, offsets?: Record<string, Point>) {
-  // All generated building entrances use this shared trigger. Allow a deeper
-  // approach zone so normal movement steps and touch controls cannot skip it.
-  // Entrances remain centered on their visible door positions.
+  // BUILD 773: the rendered door point sits inside the house sprite, while
+  // the player approaches from outside its south/front face. Trigger against
+  // the actual building footprint edge, not the decorative door sprite point.
   const found = buildingDoorwaysFor(chunk).find((doorway) => {
     const off = offsets?.[doorway.id] || { x: 0, y: 0 };
     const dx = doorway.position.x + off.x;
-    const dy = doorway.position.y + off.y;
+    const frontEdgeY = doorway.rect.bottom + off.y;
     const movedRect = {
       left: doorway.rect.left + off.x,
       right: doorway.rect.right + off.x,
     };
     const { xTol } = doorwayTriggerDims(movedRect);
-    return position.y >= dy - 1.0
-      && position.y - dy <= 5.0
+    return position.y >= frontEdgeY - 4.0
+      && position.y <= frontEdgeY + 5.0
       && Math.abs(position.x - dx) <= xTol;
   });
   if (!found) return null;
@@ -1305,12 +1306,14 @@ function doorwayNear(position: Point, chunk: Point, offsets?: Record<string, Poi
 }
 
 function canEnterDoorway(currentPosition: Point, nextPosition: Point, doorway: Doorway, direction: Direction) {
-  // BUILD 772: enter from the south/front of every house by walking north.
-  // Use a swept crossing check so faster movement cannot step over the trigger.
+  // BUILD 773: match the entry crossing to the south/front edge of the house.
+  // The decorative door point is inset into the sprite, so using its y value
+  // prevented the player from ever reaching the trigger outside the footprint.
   const { xTol } = doorwayTriggerDims(doorway.rect);
   const aligned = Math.abs(nextPosition.x - doorway.position.x) <= xTol;
-  const crossedDoorZone = currentPosition.y > doorway.position.y - 1.0
-    && nextPosition.y <= doorway.position.y + 5.0;
+  const frontEdgeY = doorway.rect.bottom;
+  const crossedDoorZone = currentPosition.y > frontEdgeY - 4.0
+    && nextPosition.y <= frontEdgeY + 5.0;
   return direction === 'up' && aligned && crossedDoorZone;
 }
 
