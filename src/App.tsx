@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '756': 'Remove broken Tam and Nan town residents and their character-specific sprite overrides',
   '755': 'Separate town NPC rendering from the custom player sprite sheet so Tam and Nan use canonical human sprites',
   '754': 'Force known-good human sprites for Tam and Nan in every town rendering path',
   '753': 'Restore human commoner sprites for Tam and Nan',
@@ -10841,7 +10842,7 @@ if (active) {
                   setTargetNpcId(npc.id);
                 }
               }}
-              style={{ ...npcAppearanceStyle(npc.id, npc.archetype), ...((npc.name === 'Tam' || npc.name === 'Nan') ? { '--npc-appearance-x': '0px', '--npc-appearance-filter': 'none', '--npc-appearance-transform': 'none' } : {}), left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
+              style={{ ...npcAppearanceStyle(npc.id, npc.archetype), left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role={npc.role}
               data-facing={npc.facing}
               data-gender={npc.gender}
