@@ -578,6 +578,18 @@ export function renderGroundDetail(spec: GroundDetailSpec): HTMLCanvasElement {
           rect(cx - 3, cy - r, 6, 3, shadeColor(leaf, 1.25));
           rect(cx - 1, cy + r - 2, 3, 6, '#5a4028');
         }
+      } else if (typeof pt.tile === 'string' && pt.tile.startsWith('color:')) {
+        const raw = pt.tile.slice(6);
+        if (/^#[0-9a-fA-F]{6}$/.test(raw)) {
+          const color = raw.toLowerCase();
+          rect(x0, y0, MAP_TILE_PX, MAP_TILE_PX, color);
+          ditherRegion(x0, y0, MAP_TILE_PX, MAP_TILE_PX, shadeColor(color, 0.88), shadeColor(color, 1.08));
+          // Tiny highlight pixels retain the game's pixel-art texture while
+          // the chosen base color remains visually dominant.
+          for (let i = 0; i < 7; i++) {
+            rect(x0 + ri(MAP_TILE_PX - 2), y0 + ri(MAP_TILE_PX - 2), 2, 2, shadeColor(color, i % 2 ? 0.82 : 1.16));
+          }
+        }
       }
     }
   }
