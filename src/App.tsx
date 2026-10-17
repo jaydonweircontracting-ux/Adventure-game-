@@ -10011,6 +10011,7 @@ if (active) {
                     </div>
                   ))}
                   {selectedPlacedCustomAsset && (
+                    <>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, marginTop: 8 }}>
                       <label style={{ fontSize: 11 }}>World X<input aria-label="Placed sprite world X" type="number" step="0.1" min="0" max={FIELD_SIZE - 0.1} value={selectedPlacedCustomAsset.x} onChange={(e) => updateSelectedPlacedCustomAsset({ x: Math.max(0, Math.min(FIELD_SIZE - 0.1, Number(e.target.value) || 0)) })} style={{ width: '100%', boxSizing: 'border-box', padding: 6 }} /></label>
                       <label style={{ fontSize: 11 }}>World Y<input aria-label="Placed sprite world Y" type="number" step="0.1" min="0" max={FIELD_SIZE - 0.1} value={selectedPlacedCustomAsset.y} onChange={(e) => updateSelectedPlacedCustomAsset({ y: Math.max(0, Math.min(FIELD_SIZE - 0.1, Number(e.target.value) || 0)) })} style={{ width: '100%', boxSizing: 'border-box', padding: 6 }} /></label>
@@ -10031,6 +10032,7 @@ if (active) {
                       <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ rotation: (selectedPlacedCustomAsset.rotation + 15) % 360 })}>Rotate</button>
                       <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ flipX: !selectedPlacedCustomAsset.flipX })}>Flip</button>
                     </div>
+                    </>
                   )}
                 </div>
               </div>
