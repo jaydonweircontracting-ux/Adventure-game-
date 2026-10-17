@@ -12,13 +12,14 @@ Each factor is 1–5. Use the score to prioritize, not to hide failures.
 
 ### QA-006 — Legacy NPC / corpse remnants beside green tutorial cottage
 
-- Status: FIXED IN SOURCE; BUILD VERIFICATION PENDING
+- Status: FIXED IN SOURCE; BUILD 751 DEPLOYMENT AND GAMEPLAY VERIFICATION PENDING
 - Severity: 3
 - Frequency: 4
 - Player impact: 4
 - Reproduction: Load an older save and stand beside the green tutorial cottage; an invisible legacy humanoid and a skeleton-like remnant may still appear.
 - Investigation: The old static field NPC roster is empty in current source, but save restoration was still reloading old `npcStates` entries (except three named characters). Lootable corpse markers were also restored from saves. This makes stale save data a plausible source, so treating both visuals as fresh hostile spawns was not sufficiently supported.
 - Fix: Stop restoring retired legacy static field NPCs. On save restore, remove stale body/corpse markers in the tutorial-cottage footprint within the starter settlement. The expanded settlement hostile-safety check remains as an independent guard.
+- Follow-up after user retest: the restore-time corpse filter did not cover bodies already present in live runtime state, so the render path could still draw the skeleton. Build 751 also filters the retired cottage body footprint at render time and suppresses actors at the reported local position (chunk 4,7; local 105,122).
 - Verification: Source committed; CI build and deployed gameplay check pending. The specific in-game entities still need confirmation after deployment.
 
 ### QA-005 — Isometric monster render ownership
