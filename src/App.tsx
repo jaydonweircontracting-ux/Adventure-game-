@@ -9008,6 +9008,32 @@ if (active) {
               {renderEditorLogPanel()}
             </div>
           )}
+          {tileCoordsOpen && (
+            <div role="dialog" aria-modal="true" aria-label="Selected tile coordinates" style={{ position: 'fixed', inset: 0, zIndex: 10020, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+              <div style={{ width: 'min(560px, 100%)', maxHeight: '82vh', display: 'flex', flexDirection: 'column', background: '#101a17', color: '#eaf3e9', border: '1px solid #718a78', borderRadius: 10, boxShadow: '0 12px 42px rgba(0,0,0,.5)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                <div style={{ padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #35473c' }}>
+                  <strong>📍 Selected tile coordinates ({selectedPaintTiles.length})</strong>
+                  <button type="button" onClick={() => setTileCoordsOpen(false)} aria-label="Close tile coordinates" style={{ background: '#2a3a31', color: '#fff', border: 0, borderRadius: 6, padding: '6px 10px' }}>✕</button>
+                </div>
+                <div style={{ padding: 10, overflowY: 'auto', minHeight: 90 }}>
+                  {selectedPaintTiles.length === 0 ? <p style={{ color: '#b5c5b8' }}>No tiles selected. Close this window and tap tiles in Tile Edit Mode.</p> : selectedPaintTiles.map((tile) => {
+                    const [cx, cy] = tile.chunk.split(',').map(Number);
+                    const lx = tile.tx * MAP_TILE_UNITS + MAP_TILE_UNITS / 2;
+                    const ly = tile.ty * MAP_TILE_UNITS + MAP_TILE_UNITS / 2;
+                    return <div key={tileSelectionKey(tile.chunk, tile.tx, tile.ty)} style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between', padding: '7px 2px', borderBottom: '1px solid #28372f', fontSize: 11 }}>
+                      <span>chunk ({cx},{cy}) · tile ({tile.tx},{tile.ty})<br />local ({lx},{ly}) · world ({cx * FIELD_SIZE + lx},{cy * FIELD_SIZE + ly})</span>
+                      <button type="button" onClick={() => setSelectedPaintTiles((prev) => prev.filter((t) => tileSelectionKey(t.chunk, t.tx, t.ty) !== tileSelectionKey(tile.chunk, tile.tx, tile.ty)))} style={{ background: '#45322d', color: '#fff', border: 0, borderRadius: 5, padding: '5px 8px', flexShrink: 0 }}>Unselect</button>
+                    </div>;
+                  })}
+                </div>
+                <div style={{ padding: 10, display: 'flex', gap: 8, flexWrap: 'wrap', borderTop: '1px solid #35473c' }}>
+                  <button type="button" onClick={copySelectedTileCoordinates} disabled={selectedPaintTiles.length === 0} style={{ background: '#d6b75c', color: '#17170f', border: 0, borderRadius: 6, padding: '8px 12px', fontWeight: 700 }}>📋 Copy coordinates</button>
+                  <button type="button" onClick={() => setSelectedPaintTiles([])} disabled={selectedPaintTiles.length === 0} style={{ background: '#2a3a31', color: '#fff', border: 0, borderRadius: 6, padding: '8px 12px' }}>Clear selection</button>
+                  <button type="button" onClick={() => setTileCoordsOpen(false)} style={{ background: '#2a3a31', color: '#fff', border: 0, borderRadius: 6, padding: '8px 12px' }}>Done</button>
+                </div>
+              </div>
+            </div>
+          )}
           {/* BUILD 605: Debug console — black window, white monospace, scrollable, copyable */}
           {debugConsoleOpen && (
             <div style={{
