@@ -341,6 +341,8 @@ const BLD_SRC_ENTRIES: Array<[string, string]> = [
   ...Object.keys(BUILDING_ASSET_META).map(
     (variant) => [variant, sharedHouseSpriteUrl] as [string, string],
   ),
+  // Load the starter exterior explicitly so its sprite never depends on a generic variant.
+  ['starting-house-exterior', sharedHouseSpriteUrl],
 ];
 
 const LOD_FARM_RGB: Array<[number, number, number]> = FARM_BASE_COLORS.map(
@@ -1391,7 +1393,9 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         drawables.push({
           depth: buildingDepth, draw: (g2) => {
             // BUILD 603: stable sprite by absolute chunk + local coords.
-            const sprite = bldImgs[kind];
+            const sprite = b.area.id === 'tutorial-house'
+              ? (bldImgs['starting-house-exterior'] ?? bldImgs['blue-house'])
+              : bldImgs[kind];
             if (sprite && sprite.complete && sprite.naturalWidth > 0) {
               // Draw sprite anchored at building base center
               const cx = (p00.x + p11.x) / 2;
