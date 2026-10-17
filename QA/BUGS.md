@@ -10,17 +10,16 @@ Each factor is 1–5. Use the score to prioritize, not to hide failures.
 
 ## Open items
 
-### QA-006 — Hostile sprites at green-house settlement edge
+### QA-006 — Legacy NPC / corpse remnants beside green tutorial cottage
 
 - Status: FIXED IN SOURCE; BUILD VERIFICATION PENDING
 - Severity: 3
 - Frequency: 4
 - Player impact: 4
-- Reproduction: Stand beside the green house near the starter town edge; a skeleton and an invisible humanoid can remain visible beside the building.
-- Expected: The settlement and its immediate approach chunks remain free of hostile monster entities; ordinary wilderness encounters continue outside the safety zone.
-- Actual: The prior safe-zone check covered only the original 3×3 starter area, leaving adjacent chunks eligible for hostile spawns.
-- Fix: Add a dedicated 5×5 settlement safety zone (chunks x=2..6, y=5..9), apply it before monster spawning, and enforce the same zone at the isometric renderer boundary.
-- Verification: Source committed; CI build and deployed gameplay check pending. No runtime pass is claimed.
+- Reproduction: Load an older save and stand beside the green tutorial cottage; an invisible legacy humanoid and a skeleton-like remnant may still appear.
+- Investigation: The old static field NPC roster is empty in current source, but save restoration was still reloading old `npcStates` entries (except three named characters). Lootable corpse markers were also restored from saves. This makes stale save data a plausible source, so treating both visuals as fresh hostile spawns was not sufficiently supported.
+- Fix: Stop restoring retired legacy static field NPCs. On save restore, remove stale body/corpse markers in the tutorial-cottage footprint within the starter settlement. The expanded settlement hostile-safety check remains as an independent guard.
+- Verification: Source committed; CI build and deployed gameplay check pending. The specific in-game entities still need confirmation after deployment.
 
 ### QA-005 — Isometric monster render ownership
 
