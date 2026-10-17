@@ -131,10 +131,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '771';
+const BUILD_NUMBER = '772';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '772': 'Restore reliable entrances for every generated house and farmhouse',
   '771': 'Disable collision on all houses, including invisible building footprints',
   '770': 'Restore reliable house doorway entry and remove blocking interior collision',
   '769': 'Add in-world house floor-plan cutaways and type-specific room partitions',
@@ -1257,19 +1258,16 @@ export let editorSolids: EditorSolid[] = [];
 import { fieldDoorPosition, newHouseDoorPosition } from './game/doorGeometry';
 
 function doorwayTriggerDims(rect: { left: number; right: number }): { xTol: number } {
-  // Hard-lock the trigger to the visual doorway: the CSS door (::after) is
-  // 24% of the house width, centered. Trigger x-tolerance = half the visual
-  // door width plus a tiny padding so it feels precise, not loose.
+  // BUILD 772: make every generated house and farmhouse entrance forgiving
+  // enough for touch controls while keeping the trigger centered on the door.
   const halfDoorWidth = (rect.right - rect.left) * 0.12;
-  return { xTol: halfDoorWidth + 0.3 };
+  return { xTol: Math.max(halfDoorWidth + 0.3, 3.0) };
 }
 
 function doorwayNear(position: Point, chunk: Point, offsets?: Record<string, Point>) {
-  // Only trigger when the player is south of the door (where entry is possible),
-  // not on the sides or north of the house. The trigger is hard-locked to the
-  // visual doorway dimensions — not a loose approximation.
-  // If house offsets are provided (mover mode), the trigger follows the visual —
-  // the entry point is attached to the house, not a stagnant separate position.
+  // All generated building entrances use this shared trigger. Allow a deeper
+  // approach zone so normal movement steps and touch controls cannot skip it.
+  // Entrances remain centered on their visible door positions.
   const found = buildingDoorwaysFor(chunk).find((doorway) => {
     const off = offsets?.[doorway.id] || { x: 0, y: 0 };
     const dx = doorway.position.x + off.x;
@@ -1279,8 +1277,8 @@ function doorwayNear(position: Point, chunk: Point, offsets?: Record<string, Poi
       right: doorway.rect.right + off.x,
     };
     const { xTol } = doorwayTriggerDims(movedRect);
-    return position.y > dy
-      && position.y - dy <= 2.5
+    return position.y >= dy - 1.0
+      && position.y - dy <= 5.0
       && Math.abs(position.x - dx) <= xTol;
   });
   if (!found) return null;
@@ -1307,14 +1305,13 @@ function doorwayNear(position: Point, chunk: Point, offsets?: Record<string, Poi
 }
 
 function canEnterDoorway(currentPosition: Point, nextPosition: Point, doorway: Doorway, direction: Direction) {
-  // Hard-locked to the visual doorway: same x-tolerance as the prompt, and the
-  // player must be moving up from just south of the door into the trigger zone.
-  // The doorway passed in already has mover offsets applied (from doorwayNear).
+  // BUILD 772: enter from the south/front of every house by walking north.
+  // Use a swept crossing check so faster movement cannot step over the trigger.
   const { xTol } = doorwayTriggerDims(doorway.rect);
-  return direction === 'up'
-    && currentPosition.y > doorway.position.y
-    && nextPosition.y <= doorway.position.y + 2.5
-    && Math.abs(nextPosition.x - doorway.position.x) <= xTol;
+  const aligned = Math.abs(nextPosition.x - doorway.position.x) <= xTol;
+  const crossedDoorZone = currentPosition.y > doorway.position.y - 1.0
+    && nextPosition.y <= doorway.position.y + 5.0;
+  return direction === 'up' && aligned && crossedDoorZone;
 }
 
 type InteriorCollisionRect = FieldRect;
