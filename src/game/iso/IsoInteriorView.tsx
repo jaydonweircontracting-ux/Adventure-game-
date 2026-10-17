@@ -264,7 +264,22 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const furn = furnitureFor(roomType, roomId);
+    // BUILD 776: the starting house is a bespoke, cozy first-home layout rather than a random cottage template.
+    const isStarterHouse = roomId === 'tutorial-house';
+    const furn: Furniture[] = isStarterHouse ? [
+      { kind: 'rug', tx: 4, ty: 5, w: 4, h: 3, solid: false },
+      { kind: 'bed', tx: 1, ty: 1, w: 2, h: 1, solid: true },
+      { kind: 'shelf', tx: 4, ty: 1, w: 2, h: 1, solid: true },
+      { kind: 'table', tx: 5, ty: 5, w: 2, h: 1, solid: true },
+      { kind: 'chair', tx: 4, ty: 6, w: 1, h: 1, solid: true },
+      { kind: 'chair', tx: 7, ty: 6, w: 1, h: 1, solid: true },
+      { kind: 'fireplace', tx: 11, ty: 5, w: 1, h: 2, solid: true },
+      { kind: 'shelf', tx: 10, ty: 1, w: 2, h: 1, solid: true },
+      { kind: 'crate', tx: 2, ty: 7, w: 1, h: 1, solid: true },
+      { kind: 'barrel', tx: 11, ty: 9, w: 1, h: 1, solid: true },
+      { kind: 'lamp', tx: 1, ty: 9, w: 1, h: 1, solid: false },
+      { kind: 'plant', tx: 1, ty: 5, w: 1, h: 1, solid: false },
+    ] : furnitureFor(roomType, roomId);
     // BUILD 769: authored, type-specific floor plans. Residential buildings no
     // longer share one generic partition layout: each archetype gets a distinct
     // room arrangement, with explicit gaps so every room remains reachable.
@@ -275,7 +290,10 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       if (tx > 0 && ty > 0 && tx < ROOM_W - 1 && ty < ROOM_H - 1) partitionWalls.push({ tx, ty, axis });
     };
     if (!isDungeon) {
-      if (roomType === 'building') {
+      if (roomType === 'building' && isStarterHouse) {
+        // Keep the starter cottage open and easy to navigate; furniture zones
+        // define the bedroom, hearth corner, and sitting area without partitions.
+      } else if (roomType === 'building') {
         switch (buildingType) {
           case 'farmhouse':
             // Kitchen/store wing plus a broad doorway into the living space.
@@ -474,12 +492,17 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       const yB = c.y;
       switch (f.kind) {
         case 'rug':
-          g.fillStyle = roomType === 'chapel' ? 'rgba(140,40,50,0.55)' : 'rgba(150,60,40,0.45)';
+          g.fillStyle = isStarterHouse ? '#873f32' : roomType === 'chapel' ? 'rgba(140,40,50,0.55)' : 'rgba(150,60,40,0.45)';
           g.beginPath();
           g.moveTo(c.x, yB - hpx / 2); g.lineTo(c.x + wpx / 2, yB);
           g.lineTo(c.x, yB + hpx / 2); g.lineTo(c.x - wpx / 2, yB);
           g.closePath(); g.fill();
-          g.strokeStyle = 'rgba(90,30,20,0.5)'; g.lineWidth = 2; g.stroke();
+          g.strokeStyle = isStarterHouse ? '#d6ad69' : 'rgba(90,30,20,0.5)'; g.lineWidth = isStarterHouse ? 3 * z : 2; g.stroke();
+          if (isStarterHouse) {
+            g.strokeStyle = '#d6ad69'; g.lineWidth = Math.max(1, z);
+            g.beginPath(); g.moveTo(c.x, yB - hpx * 0.32); g.lineTo(c.x + wpx * 0.32, yB); g.lineTo(c.x, yB + hpx * 0.32); g.lineTo(c.x - wpx * 0.32, yB); g.closePath(); g.stroke();
+            g.fillStyle = '#d6ad69'; g.fillRect(c.x - 2 * z, yB - 2 * z, 4 * z, 4 * z);
+          }
           break;
         case 'bed': {
           const bw = wpx, bh = 34 * z;
@@ -500,6 +523,13 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         }
         case 'table':
           box(c.x, yB, wpx, 26 * z, '#9a6a3c', '#7a5230', '#875e35');
+          if (isStarterHouse) {
+            // Small loaf, crock, and mug make the starter table feel lived-in.
+            g.fillStyle = '#d9bd83'; g.beginPath(); g.ellipse(c.x - 8 * z, yB - 31 * z, 8 * z, 4 * z, -0.25, 0, Math.PI * 2); g.fill();
+            g.fillStyle = '#b36d3c'; g.beginPath(); g.ellipse(c.x - 8 * z, yB - 32 * z, 6 * z, 3 * z, -0.25, 0, Math.PI * 2); g.fill();
+            g.fillStyle = '#e4d7bd'; g.fillRect(c.x + 7 * z, yB - 35 * z, 7 * z, 8 * z);
+            g.fillStyle = '#b98b54'; g.fillRect(c.x + 6 * z, yB - 36 * z, 9 * z, 2 * z);
+          }
           break;
         case 'chair':
         case 'stool': {
@@ -646,6 +676,19 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
           const flick = 0.7 + 0.3 * Math.sin(nowMs / 200 + f.tx * 2);
           g.fillStyle = `rgba(255,200,60,${0.9 * flick})`;
           g.beginPath(); g.arc(c.x, yB - 22 * z, 4 * z * flick, 0, 7); g.fill();
+          break;
+        }
+        case 'plant': {
+          // Leafy potted herb beside the bed, with a terracotta pot.
+          g.fillStyle = '#9b5537';
+          g.beginPath(); g.moveTo(c.x - 10 * z, yB - 13 * z); g.lineTo(c.x + 10 * z, yB - 13 * z); g.lineTo(c.x + 7 * z, yB); g.lineTo(c.x - 7 * z, yB); g.closePath(); g.fill();
+          g.fillStyle = '#4d7a42';
+          for (let i = 0; i < 5; i++) {
+            const lx = c.x + (i - 2) * 5 * z;
+            g.beginPath(); g.ellipse(lx, yB - (23 + (i % 2) * 5) * z, 5 * z, 10 * z, (i - 2) * 0.16, 0, Math.PI * 2); g.fill();
+          }
+          g.strokeStyle = '#a4c26d'; g.lineWidth = Math.max(1, z);
+          g.beginPath(); g.moveTo(c.x, yB - 7 * z); g.lineTo(c.x, yB - 29 * z); g.stroke();
           break;
         }
         case 'lamp': {
@@ -812,9 +855,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       g.fillStyle = '#14181f';
       g.fillRect(0, 0, state.w, state.h);
 
-      const wood = roomType === 'guild' || roomType === 'cellar' || roomType === 'prison';
-      const f1 = wood ? '#8d8fa3' : '#a87f4e';
-      const f2 = wood ? '#83858f' : '#9c7443';
+      const wood = isStarterHouse || roomType === 'guild' || roomType === 'cellar' || roomType === 'prison';
+      const f1 = isStarterHouse ? '#b7834e' : wood ? '#8d8fa3' : '#a87f4e';
+      const f2 = isStarterHouse ? '#a97545' : wood ? '#83858f' : '#9c7443';
 
       // floor
       for (let ty = 0; ty < ROOM_H; ty++) {
@@ -829,9 +872,16 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
             g.moveTo(p.x, p.y - hh); g.lineTo(p.x + hw, p.y);
             g.lineTo(p.x, p.y + hh); g.lineTo(p.x - hw, p.y);
             g.closePath();
-            g.fillStyle = (tx + ty) % 2 === 0 ? f1 : f2;
+            g.fillStyle = isStarterHouse ? (ty % 2 === 0 ? ((tx % 3 === 0) ? '#bd8b55' : f1) : ((tx % 3 === 1) ? '#9d6d40' : f2)) : ((tx + ty) % 2 === 0 ? f1 : f2);
             g.fill();
-            if (!wood && tx % 3 === 0) {
+            if (isStarterHouse) {
+              // Warm plank seams, alternating board lengths, and subtle wood grain.
+              g.strokeStyle = 'rgba(63,35,19,0.34)';
+              g.lineWidth = Math.max(0.7, 0.9 * state.zoom);
+              g.beginPath(); g.moveTo(p.x - hw * 0.86, p.y); g.lineTo(p.x + hw * 0.86, p.y); g.stroke();
+              g.strokeStyle = 'rgba(244,194,125,0.20)';
+              g.beginPath(); g.moveTo(p.x - hw * 0.42, p.y - hh * 0.30); g.lineTo(p.x + hw * 0.18, p.y - hh * 0.30); g.stroke();
+            } else if (!wood && tx % 3 === 0) {
               // plank seams
               g.strokeStyle = 'rgba(60,40,20,0.25)';
               g.lineWidth = 1;
@@ -848,12 +898,25 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         }
       }
 
+      if (isStarterHouse) {
+        // Warm daylight and hearth bounce soften the floor without obscuring movement or objects.
+        const glowAt = (tx: number, ty: number, radius: number, alpha: number) => {
+          const p = toScreen(tx, ty);
+          const gr = g.createRadialGradient(p.x, p.y, 2, p.x, p.y, radius * state.zoom);
+          gr.addColorStop(0, `rgba(255,190,105,${alpha})`);
+          gr.addColorStop(1, 'rgba(255,190,105,0)');
+          g.fillStyle = gr; g.fillRect(0, 0, state.w, state.h);
+        };
+        glowAt(11, 6, 150, 0.23);
+        glowAt(3, 2, 125, 0.12);
+      }
+
       interface Drawable { depth: number; draw: (g: CanvasRenderingContext2D) => void }
       const drawables: Drawable[] = [];
 
       // back walls (north ty=0, west tx=0) with windows
-      const wallCol = wood ? '#6e6f7a' : '#b08d5a';
-      const wallDark = wood ? '#54555e' : '#8a6c42';
+      const wallCol = isStarterHouse ? '#c8a578' : wood ? '#6e6f7a' : '#b08d5a';
+      const wallDark = isStarterHouse ? '#765033' : wood ? '#54555e' : '#8a6c42';
       const wh = WALL_H * state.zoom;
       if (kit) {
         // BUILD 388: brick wall panels, one per 2 tiles (panel aspect fits
@@ -884,12 +947,31 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
             g2.lineTo(p.x, p.y + (TILE_H * state.zoom) / 2 - wh);
             g2.lineTo(p.x - hw, p.y - wh);
             g2.closePath(); g2.fill();
-            if (tx % 3 === 1) {
-              // window
-              g2.fillStyle = '#2a3a4a';
-              g2.fillRect(p.x - hw * 0.5, p.y - wh * 0.75, hw * 0.5, wh * 0.4);
-              g2.fillStyle = 'rgba(180,220,255,0.5)';
-              g2.fillRect(p.x - hw * 0.5, p.y - wh * 0.75, hw * 0.5, wh * 0.15);
+            if (isStarterHouse ? tx % 4 === 1 : tx % 3 === 1) {
+              // Framed windows; the starter cottage gets timber trim and divided glass.
+              const wx = p.x - hw * 0.58, wy = p.y - wh * 0.77, ww = hw * 0.58, whi = wh * 0.40;
+              g2.fillStyle = isStarterHouse ? '#54351f' : '#2a3a4a';
+              g2.fillRect(wx - 2 * state.zoom, wy - 2 * state.zoom, ww + 4 * state.zoom, whi + 4 * state.zoom);
+              g2.fillStyle = isStarterHouse ? '#7198a1' : '#2a3a4a';
+              g2.fillRect(wx, wy, ww, whi);
+              g2.fillStyle = 'rgba(210,239,242,0.55)';
+              g2.fillRect(wx, wy, ww, whi * 0.18);
+              g2.strokeStyle = isStarterHouse ? '#4b2e1b' : '#172633';
+              g2.lineWidth = Math.max(1, 2 * state.zoom);
+              g2.beginPath(); g2.moveTo(wx + ww / 2, wy); g2.lineTo(wx + ww / 2, wy + whi);
+              g2.moveTo(wx, wy + whi * 0.56); g2.lineTo(wx + ww, wy + whi * 0.56); g2.stroke();
+              if (isStarterHouse) {
+                g2.fillStyle = '#a95f48';
+                g2.fillRect(wx - 3 * state.zoom, wy, 4 * state.zoom, whi);
+                g2.fillRect(wx + ww - state.zoom, wy, 4 * state.zoom, whi);
+                g2.fillStyle = '#d8b27d';
+                g2.fillRect(wx - 3 * state.zoom, wy + whi, ww + 6 * state.zoom, 3 * state.zoom);
+              }
+            }
+            if (isStarterHouse && tx % 3 === 0) {
+              // Exposed timber beam across the plaster wall.
+              g2.strokeStyle = '#795033'; g2.lineWidth = Math.max(2, 3 * state.zoom);
+              g2.beginPath(); g2.moveTo(p.x - hw, p.y - wh * 0.10); g2.lineTo(p.x, p.y + (TILE_H * state.zoom) / 2 - wh * 0.10); g2.stroke();
             }
           },
         });
