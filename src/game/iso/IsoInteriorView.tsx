@@ -108,8 +108,10 @@ interface IsoInteriorViewProps {
   playerRunning?: boolean;
 }
 
-const ROOM_W = 12;
-const ROOM_H = 10;
+// BUILD 764: larger walkable floorplans; door, movement bounds, rendering,
+// and pathfinding all derive from these shared room dimensions.
+const ROOM_W = 14;
+const ROOM_H = 12;
 const WALL_H = 64;
 
 interface Furniture {
@@ -131,7 +133,7 @@ function furnitureFor(roomType: IsoRoomType, roomId?: string): Furniture[] {
   // Uses the interior layout system for deterministic per-building furniture.
   if (roomType === 'building' && roomId) {
     const houseType = houseTypeForBuilding(roomId);
-    const layout = generateInteriorLayout(roomId, houseType, 12, 10);
+    const layout = generateInteriorLayout(roomId, houseType, ROOM_W, ROOM_H);
     // Convert to iso Furniture format.
     return layout.furniture.map((f) => ({
       kind: f.kind,
