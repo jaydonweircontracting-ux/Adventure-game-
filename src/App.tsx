@@ -135,10 +135,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '835';
+const BUILD_NUMBER = '836';
+const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
+  .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
+  .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '836': 'Add stone pathway tile painting and repository sprite browsing in Asset Studio',
   '835': 'Add local Asset Studio with upload, crop, transforms, placement, and JSON export',
   '834': 'Add hideable Debug workspace controls and mobile clutter recovery',
   '833': 'Add scrollable NPC roster with sprite previews, mood, wealth, reputation, and disposition',
@@ -4677,7 +4681,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   };
   const mapBrushes: { id: MapBrush; label: string }[] = [
     { id: 'grass', label: '🟩 Grass' }, { id: 'dirt', label: '🟫 Dirt' }, { id: 'water', label: '🟦 Water' },
-    { id: 'sand', label: '🟨 Sand' }, { id: 'forest', label: '🌲 Forest' }, { id: 'color:#888888', label: '⬜ Stone' },
+    { id: 'sand', label: '🟨 Sand' }, { id: 'forest', label: '🌲 Forest' }, { id: 'path', label: '🪨 Stone path' }, { id: 'color:#888888', label: '⬜ Stone' },
     { id: 'color:#ffffff', label: 'White' }, { id: 'color:#000000', label: 'Black' }, { id: 'house', label: '🏠 House' }, { id: 'erase', label: '🧹 Reset' },
   ];
   const saveTileEditorLog = () => {
@@ -8738,7 +8742,7 @@ if (active) {
     inTutorialHouse: interior?.id === 'tutorial-house',
     daggerPickedUp: pickedUpGroundItems.includes(TUTORIAL_DAGGER_ITEM),
   });
-  const anyDebugToolActive = moverMode || mapBuilderMode || tileEditMode || collisionDebugMode || inspectorOpen || npcRosterOpen || debugConsoleOpen || controlCenterOpen;
+  const anyDebugToolActive = moverMode || mapBuilderMode || tileEditMode || collisionDebugMode || inspectorOpen || npcRosterOpen || assetStudioOpen || debugConsoleOpen || controlCenterOpen;
   return (
     <div className="field-column" data-debug-ui-hidden={debugUiHidden ? 'true' : 'false'}>
       <style>{`
@@ -9827,6 +9831,31 @@ if (active) {
               </div>
               <div style={{ padding: '0 8px 8px', overflowY: 'auto', minHeight: 0, flex: 1 }}>
                 <p style={{ fontSize: 11, color: '#b7c8bc', margin: '2px 0 8px' }}>Upload accepts PNG, WebP or JPEG up to 1 MB. Imported images and placements are stored in this browser only; use Export JSON to move them. Existing repository assets are not overwritten.</p>
+                <strong style={{ display: 'block', margin: '8px 0' }}>Repository sprites ({DEBUG_REPOSITORY_ASSETS.length})</strong>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(94px,1fr))', gap: 7 }}>
+                  {DEBUG_REPOSITORY_ASSETS.filter((a) => (a.name + ' ' + a.path).toLowerCase().includes(assetStudioSearch.toLowerCase())).slice(0, 240).map((asset) => (
+                    <button key={asset.id} type="button" onClick={() => {
+                      const existing = customAssetLibrary.find((a) => a.src === asset.src);
+                      if (existing) { setSelectedCustomAssetId(existing.id); return; }
+                      const id = 'asset-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+                      const img = new Image();
+                      img.onerror = () => setAssetStudioStatus('Could not load repository sprite: ' + asset.path);
+                      img.onload = () => {
+                        const imported: DebugCustomAsset = { id, name: asset.name.replace(/\\.[^.]+$/, ''), src: asset.src, width: img.naturalWidth, height: img.naturalHeight, scale: 1, rotation: 0, flipX: false, flipY: false, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0 };
+                        setCustomAssetLibrary((prev) => [...prev, imported]); setSelectedCustomAssetId(id);
+                        setAssetStudioStatus('Added repository sprite ' + asset.path + ' to the local working library.');
+                      };
+                      img.src = asset.src;
+                    }} style={{ minWidth: 0, border: '1px solid #52645a', borderRadius: 7, padding: 6, background: '#18231e', color: '#fff' }}>
+                      <img src={asset.src} alt="" loading="lazy" style={{ width: '100%', height: 64, objectFit: 'contain', imageRendering: 'pixelated' }} />
+                      <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{asset.name}</span>
+                      <small style={{ opacity: 0.65 }}>Add to library</small>
+                    </button>
+                  ))}
+                </div>
+                {DEBUG_REPOSITORY_ASSETS.length === 0 && <p style={{ color: '#d0d9d2', fontSize: 12 }}>No images were discovered in the game sprites directory by the asset scan.</p>}
+                {DEBUG_REPOSITORY_ASSETS.length > 240 && <small>Showing first 240 matches. Search by filename or folder to narrow the list.</small>}
+                <strong style={{ display: 'block', margin: '12px 0 8px' }}>Local working library ({customAssetLibrary.length})</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(94px,1fr))', gap: 7 }}>
                   {customAssetLibrary.filter((a) => a.name.toLowerCase().includes(assetStudioSearch.toLowerCase())).map((asset) => (
                     <button key={asset.id} type="button" onClick={() => setSelectedCustomAssetId(asset.id)} style={{ minWidth: 0, border: selectedCustomAssetId === asset.id ? '2px solid #f2d35e' : '1px solid #52645a', borderRadius: 7, padding: 6, background: selectedCustomAssetId === asset.id ? '#35452e' : '#18231e', color: '#fff' }}>
