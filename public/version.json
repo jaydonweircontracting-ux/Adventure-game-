@@ -1,6 +1,6 @@
 {
-  "build": "790",
-  "note": "Refresh starting-house interior sprite and neutral rendering",
-  "timestamp": "2026-10-17T20:45:00.000Z",
-  "cacheBuster": "build790-neutral-starter-house-colour-cache"
+  "build": "791",
+  "note": "Remove black matte around starting-house interior sprite",
+  "timestamp": "2026-10-17T21:00:00.000Z",
+  "cacheBuster": "build791-starter-house-black-matte-cutout"
 }
