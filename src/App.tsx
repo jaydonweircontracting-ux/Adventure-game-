@@ -133,10 +133,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '814';
+const BUILD_NUMBER = '815';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '815': 'Add paused tile-edit mode with selectable terrain colors and copyable tile coordinates',
   '814': 'Revert build 813 doorway and house collision changes',
   '813': 'Pin starter-house doorway at world coordinates and restore shared wall collision with door openings',
   '812': 'Force player to render above oversized house sprites',
@@ -4176,6 +4177,32 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     return false;
   });
   const [mapBrush, setMapBrush] = useState<MapBrush>('dirt');
+  // BUILD 815: paused tile-edit mode; tapping paints + selects a tile, tapping it again deselects it.
+  const [tileEditMode, setTileEditMode] = useState(false);
+  const [tileCoordsOpen, setTileCoordsOpen] = useState(false);
+  const [selectedPaintTiles, setSelectedPaintTiles] = useState<Array<{ chunk: string; tx: number; ty: number }>>([]);
+  const toggleTileEditMode = () => {
+    const next = !tileEditMode;
+    setTileEditMode(next);
+    if (next) { setMapBuilderMode(true); setMapBuilderMin(false); }
+    else { setMapBuilderMode(false); mapPaintingRef.current = false; }
+  };
+  const tileSelectionKey = (chunkName: string, tx: number, ty: number) => chunkName + ':' + tx + ':' + ty;
+  const selectedTileKeys = new Set(selectedPaintTiles.map((tile) => tileSelectionKey(tile.chunk, tile.tx, tile.ty)));
+  const paintSelectedTiles = (tile: MapPaintTile | 'erase') => {
+    if (selectedPaintTiles.length === 0) return;
+    pushMapUndo();
+    setMapPaints((prev) => selectedPaintTiles.reduce((next, selected) =>
+      paintTile(next, selected.chunk, selected.tx, selected.ty, tile === 'erase' ? null : tile), prev));
+    logEditorChange('tile-edit-paint', (tile === 'erase' ? 'erased ' : 'recolored ') + selectedPaintTiles.length + ' selected tile(s) as ' + tile);
+  };
+  const copySelectedTileCoordinates = () => {
+    const rows = selectedPaintTiles.map((tile) => {
+      const [cx, cy] = tile.chunk.split(',').map(Number);
+      return `chunk=${tile.chunk} tile=(${tile.tx},${tile.ty}) local=(${tile.tx * MAP_TILE_UNITS + MAP_TILE_UNITS / 2},${tile.ty * MAP_TILE_UNITS + MAP_TILE_UNITS / 2}) world=(${cx * FIELD_SIZE + tile.tx * MAP_TILE_UNITS + MAP_TILE_UNITS / 2},${cy * FIELD_SIZE + tile.ty * MAP_TILE_UNITS + MAP_TILE_UNITS / 2})`;
+    }).join('\\n');
+    if (navigator.clipboard) navigator.clipboard.writeText(rows).catch(() => {});
+  };
   // BUILD 651: Noise generator state.
   const [noiseSeed, setNoiseSeed] = useState('1');
   const [showNoiseGen, setShowNoiseGen] = useState(false);
@@ -4494,6 +4521,19 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     }
     const tx = Math.floor(fx / MAP_TILE_UNITS);
     const ty = Math.floor(fy / MAP_TILE_UNITS);
+    if (tileEditMode) {
+      if (!isTap) return;
+      const key = tileSelectionKey(chunkKey, tx, ty);
+      if (selectedTileKeys.has(key)) {
+        setSelectedPaintTiles((prev) => prev.filter((tile) => tileSelectionKey(tile.chunk, tile.tx, tile.ty) !== key));
+        return;
+      }
+      pushMapUndo();
+      setSelectedPaintTiles((prev) => [...prev, { chunk: chunkKey, tx, ty }]);
+      setMapPaints((prev) => paintTile(prev, chunkKey, tx, ty, mapBrush === 'erase' ? null : (mapBrush === 'house' ? 'grass' : mapBrush)));
+      logEditorChange('tile-select', 'selected tile (' + tx + ',' + ty + ') in chunk ' + chunkKey + ' and applied ' + mapBrush);
+      return;
+    }
     setMapPaints((prev) => paintTile(prev, chunkKey, tx, ty, mapBrush === 'erase' ? null : mapBrush));
   };
   const mapBrushes: { id: MapBrush; label: string }[] = [
@@ -9231,6 +9271,7 @@ if (active) {
               className="map-builder-overlay"
               onPointerDown={(e) => {
                 e.stopPropagation();
+                if (tileEditMode) { paintAtEvent(e, true); return; }
                 try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
                 mapPaintingRef.current = true;
                 pushMapUndo();
@@ -9238,7 +9279,7 @@ if (active) {
                 paintAtEvent(e, true);
               }}
               onPointerMove={(e) => {
-                if (!mapPaintingRef.current) return;
+                if (!mapPaintingRef.current || tileEditMode) return;
                 e.stopPropagation();
                 // Re-assert capture: if another element grabbed the pointer,
                 // the stroke would leak into pan/scroll instead of painting.
@@ -9251,6 +9292,7 @@ if (active) {
               onPointerUp={(e) => {
                 e.stopPropagation();
                 mapPaintingRef.current = false;
+                if (tileEditMode) return;
                 const start = mapStrokeStartRef.current;
                 mapStrokeStartRef.current = null;
                 if (start && start.brush !== 'house') {
@@ -9264,11 +9306,15 @@ if (active) {
               onPointerCancel={() => { mapPaintingRef.current = false; }}
               onLostPointerCapture={() => { mapPaintingRef.current = false; }}
               onContextMenu={(e) => e.preventDefault()}
-            />
+            >
+              {tileEditMode && selectedPaintTiles.filter((tile) => tile.chunk === chunkKey).map((tile) => (
+                <div key={tileSelectionKey(tile.chunk, tile.tx, tile.ty)} aria-label={'Selected tile ' + tile.tx + ',' + tile.ty} style={{ position: 'absolute', left: ((tile.tx * MAP_TILE_UNITS) / FIELD_SIZE * 100) + '%', top: ((tile.ty * MAP_TILE_UNITS) / FIELD_SIZE * 100) + '%', width: (MAP_TILE_UNITS / FIELD_SIZE * 100) + '%', height: (MAP_TILE_UNITS / FIELD_SIZE * 100) + '%', boxSizing: 'border-box', border: '2px solid #fff36b', background: 'rgba(255,243,107,0.16)', boxShadow: 'inset 0 0 0 1px #222', pointerEvents: 'none' }} />
+              ))}
+            </div>
           )}
           {mapBuilderMode && !mapBuilderMin && (
             <div className="map-builder-bar">
-              <div className="map-builder-title">🗺️ Map Builder <span className="map-builder-chunk">chunk {chunkKey}</span>
+              <div className="map-builder-title">{tileEditMode ? '🎨 Tile Edit Mode — movement paused' : '🗺️ Map Builder'} <span className="map-builder-chunk">chunk {chunkKey}</span>
                 <button type="button" className="map-builder-min" onClick={() => setMapBuilderMin(true)} aria-label="Minimize map builder">—</button>
                 <button type="button" className="map-builder-exit" onClick={toggleMapBuilder} aria-label="Exit map builder">✕</button>
               </div>
@@ -9278,12 +9324,20 @@ if (active) {
                     key={b.id}
                     type="button"
                     className={'map-brush' + (mapBrush === b.id ? ' is-active' : '')}
-                    onClick={() => setMapBrush(b.id)}
+                    onClick={() => {
+                      setMapBrush(b.id);
+                      if (tileEditMode && b.id !== 'house') paintSelectedTiles(b.id as MapPaintTile | 'erase');
+                    }}
                   >
                     {b.label}
                   </button>
                 ))}
               </div>
+              {tileEditMode && <div style={{ padding: '5px 8px', color: '#fff4b0', fontSize: 12 }}>
+                Tap a tile to paint and select it. Tap the highlighted tile again to unselect. Selected: {selectedPaintTiles.length}.
+                <button type="button" className="map-builder-btn" style={{ marginLeft: 8 }} onClick={() => setTileCoordsOpen(true)}>📍 Tile coordinates ({selectedPaintTiles.length})</button>
+                <button type="button" className="map-builder-btn" style={{ marginLeft: 6 }} onClick={() => setSelectedPaintTiles([])}>Clear selection</button>
+              </div>}
               <div className="map-builder-actions">
                 <button
                   type="button"
@@ -11108,6 +11162,10 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); setCollisionDebugMode(!collisionDebugMode); }} data-testid="button-debug-collision">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: Collision Boxes{collisionDebugMode ? ' (On)' : ''}</strong><small>{collisionDebugMode ? 'Tap to hide boxes' : 'Red = current box · tap critter, drag green to propose move'}</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); toggleTileEditMode(); }} data-testid="button-debug-tile-edit">
+                  <span className="options-action-icon"><Settings size={17} /></span>
+                  <span><strong>🎨 Tile Edit Mode{tileEditMode ? ' (On)' : ''}</strong><small>{tileEditMode ? 'Movement paused · tap a tile to deselect' : 'Pause the player, paint tiles, and capture coordinates'}</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMapBuilder(); }} data-testid="button-debug-mapbuilder">
                   <span className="options-action-icon"><Settings size={17} /></span>
