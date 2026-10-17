@@ -238,8 +238,8 @@ function faceForMove(ax: number, ay: number, bx: number, by: number, current: Fa
 }
 
 export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, playerLook, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, groundItems, onPickupItem, rats, onStrikeRat, onPlayerMove, playerRunning }: IsoInteriorViewProps): React.JSX.Element {
-  // BUILD 781: fit the complete starter-room image and allow direct drag panning.
-  const [scenePan, setScenePan] = useState({ x: 0, y: 0 });
+  // BUILD 782: preserve the room art's native pixel size; drag to pan around the full image.
+  const scenePanRef = useRef({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const attackSequenceRef = useRef(barbAttackSequence ?? 0);
   attackSequenceRef.current = barbAttackSequence ?? 0;
@@ -458,7 +458,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       if (!isStarterHouse) return;
       panPointerId = e.pointerId;
       panStartX = e.clientX; panStartY = e.clientY;
-      panOriginX = scenePan.x; panOriginY = scenePan.y;
+      panOriginX = scenePanRef.current.x; panOriginY = scenePanRef.current.y;
       panMoved = false;
       canvas.setPointerCapture?.(e.pointerId);
     };
@@ -466,7 +466,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       if (!isStarterHouse || panPointerId !== e.pointerId) return;
       const dx = e.clientX - panStartX, dy = e.clientY - panStartY;
       if (Math.abs(dx) + Math.abs(dy) > 5) panMoved = true;
-      if (panMoved) setScenePan({ x: panOriginX + dx, y: panOriginY + dy });
+      if (panMoved) scenePanRef.current = { x: panOriginX + dx, y: panOriginY + dy };
     };
     const onPointerUp = (e: PointerEvent) => {
       if (isStarterHouse && panPointerId === e.pointerId) {
@@ -898,19 +898,15 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       // BUILD 777: replace the procedural floor with the uploaded room scene.
       const starterScene = isStarterHouse ? starterHouseScene() : undefined;
       if (isStarterHouse && starterScene) {
-        // Always fit the complete image inside a safe viewport on first open.
-        // Zoom is applied after fit; pan offsets then let players inspect every edge.
-        const maxW = state.w * 0.92;
-        const maxH = state.h * 0.74;
-        const fitScale = Math.min(maxW / starterScene.naturalWidth, maxH / starterScene.naturalHeight);
-        const scale = fitScale;
-        const imageW = starterScene.naturalWidth * scale;
-        const imageH = starterScene.naturalHeight * scale;
+        // Draw the full-size authored image at its native dimensions; panning reveals edges outside the viewport.
+        const imageW = starterScene.naturalWidth;
+        const imageH = starterScene.naturalHeight;
+        const pan = scenePanRef.current;
         g.globalCompositeOperation = 'source-over';
         g.drawImage(
           starterScene,
-          (state.w - imageW) / 2 + scenePan.x,
-          (state.h - imageH) / 2 + scenePan.y,
+          (state.w - imageW) / 2 + pan.x,
+          (state.h - imageH) / 2 + pan.y,
           imageW,
           imageH,
         );
@@ -1295,7 +1291,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       canvas.removeEventListener('pointercancel', onPointerUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, roomType, scenePan]);
+  }, [roomId, roomType]);
 
   return (
     <div ref={wrapRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#14181f', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}>
