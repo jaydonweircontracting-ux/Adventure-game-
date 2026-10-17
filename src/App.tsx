@@ -131,10 +131,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '776';
+const BUILD_NUMBER = '777';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '777': 'Replace the starting house exterior and room with the uploaded house, interior, dresser, and fireplace art',
   '776': 'Overhaul the starting house with a cozy authored floor plan, warm plank flooring, timber-trimmed windows, a patterned rug, table details, plants, and hearth lighting',
   '775': 'Tighten the house-entry trigger and move a compact Enter label above the doorway',
   '774': 'Restore a visible Enter button when near any building entrance',

@@ -1203,7 +1203,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         // selection here because pinned settlement variants and legacy hash pools
         // bypass the standalone buildingArtFor() selector.
         const selectedKind = buildingKindCache.get(b) ?? bldKindForBuilding(b, sc.ox, sc.oy);
-        const kind = selectedKind.startsWith('new-') ? 'blue-house' : (selectedKind === 'hut-thatched' ? 'green-cottage' : selectedKind);
+        const kind = b.area.id === 'tutorial-house' ? 'starting-house-exterior' : (selectedKind.startsWith('new-') ? 'blue-house' : (selectedKind === 'hut-thatched' ? 'green-cottage' : selectedKind));
         buildingKindCache.set(b, kind);
         const projectedWidth = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 0.95;
         const spriteHeight = buildingSpriteHeightForWidth(projectedWidth * (1.32 / 0.95), kind);
@@ -1349,7 +1349,9 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               g2.beginPath();
               g2.ellipse(cx, baseY, sw * 0.45, sw * 0.16, 0, 0, Math.PI * 2);
               g2.fill();
+              if (kind === 'starting-house-exterior') g2.globalCompositeOperation = 'screen';
               g2.drawImage(sprite, cx - sw / 2, baseY - sh, sw, sh);
+              if (kind === 'starting-house-exterior') g2.globalCompositeOperation = 'source-over';
               // Keep authored sprite architecture intact; only add entry-aligned ground dressing.
               drawBuildingGroundDress(g2, cx, baseY, sw, r.left + r.right, r.top + r.bottom);
               return;

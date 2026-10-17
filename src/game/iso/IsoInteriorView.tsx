@@ -73,6 +73,18 @@ function ratSprite(): HTMLImageElement | undefined {
   return ratSpriteImg.complete && ratSpriteImg.naturalWidth > 0 ? ratSpriteImg : undefined;
 }
 
+// BUILD 777: authored starting-house room diorama.
+let starterHouseSceneImg: HTMLImageElement | null = null;
+function starterHouseScene(): HTMLImageElement | undefined {
+  if (!starterHouseSceneImg) {
+    starterHouseSceneImg = new Image();
+    starterHouseSceneImg.onerror = () => console.warn('[iso-interior] failed to load starting-house interior art');
+    const base = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
+    starterHouseSceneImg.src = `${base}assets/starting-house/interior.jpeg`;
+  }
+  return starterHouseSceneImg.complete && starterHouseSceneImg.naturalWidth > 0 ? starterHouseSceneImg : undefined;
+}
+
 interface IsoInteriorViewProps {
   roomId: string;
   roomType: IsoRoomType;
@@ -859,6 +871,18 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       const f1 = isStarterHouse ? '#b7834e' : wood ? '#8d8fa3' : '#a87f4e';
       const f2 = isStarterHouse ? '#a97545' : wood ? '#83858f' : '#9c7443';
 
+      // BUILD 777: replace the procedural floor with the uploaded room scene.
+      const starterScene = isStarterHouse ? starterHouseScene() : undefined;
+      if (isStarterHouse && starterScene) {
+        const maxW = state.w * 1.35;
+        const maxH = state.h * 0.78;
+        const scale = Math.min(maxW / starterScene.naturalWidth, maxH / starterScene.naturalHeight);
+        const imageW = starterScene.naturalWidth * scale;
+        const imageH = starterScene.naturalHeight * scale;
+        g.globalCompositeOperation = 'screen';
+        g.drawImage(starterScene, (state.w - imageW) / 2, (state.h - imageH) / 2, imageW, imageH);
+        g.globalCompositeOperation = 'source-over';
+      } else {
       // floor
       for (let ty = 0; ty < ROOM_H; ty++) {
         for (let tx = 0; tx < ROOM_W; tx++) {
@@ -898,6 +922,8 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         }
       }
 
+      }
+
       if (isStarterHouse) {
         // Warm daylight and hearth bounce soften the floor without obscuring movement or objects.
         const glowAt = (tx: number, ty: number, radius: number, alpha: number) => {
@@ -914,6 +940,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       interface Drawable { depth: number; draw: (g: CanvasRenderingContext2D) => void }
       const drawables: Drawable[] = [];
 
+      if (!isStarterHouse) {
       // back walls (north ty=0, west tx=0) with windows
       const wallCol = isStarterHouse ? '#c8a578' : wood ? '#6e6f7a' : '#b08d5a';
       const wallDark = isStarterHouse ? '#765033' : wood ? '#54555e' : '#8a6c42';
@@ -1092,8 +1119,10 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         });
       }
 
+      }
+
       // furniture
-      for (const f of furn) {
+      if (!isStarterHouse) for (const f of furn) {
         drawables.push({
           depth: depthKey(f.tx + f.w - 1, f.ty + f.h - 1) + 0.1,
           draw: (g2) => drawFurniture(g2, f, nowMs, kit),
