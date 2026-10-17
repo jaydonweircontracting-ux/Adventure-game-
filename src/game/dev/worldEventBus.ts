@@ -6,6 +6,7 @@
  * the game world itself. Systems subscribe to events and decide how to react.
  */
 export type WorldEventMap = object;
+type EventKey<Events> = Extract<EventKey<Events>, string>;
 
 export interface WorldEvent<K extends string = string, P = unknown> {
   readonly id: string;
@@ -37,8 +38,8 @@ const MAX_HISTORY_LIMIT = 10_000;
 
 /** A typed event channel shared by simulation systems, diagnostics and replay tools. */
 export class WorldEventBus<Events extends WorldEventMap> {
-  private readonly listeners = new Map<keyof Events, Set<WorldEventHandler<WorldEvent<keyof Events, Events[keyof Events]>>>>();
-  private readonly history: Array<WorldEvent<keyof Events, Events[keyof Events]>> = [];
+  private readonly listeners = new Map<EventKey<Events>, Set<WorldEventHandler<WorldEvent<EventKey<Events>, Events[EventKey<Events>]>>>>();
+  private readonly history: Array<WorldEvent<EventKey<Events>, Events[EventKey<Events>]>> = [];
   private readonly maxHistory: number;
   private readonly now: () => number;
   private readonly createId: () => string;
@@ -51,7 +52,7 @@ export class WorldEventBus<Events extends WorldEventMap> {
     this.createId = options.createId ?? (() => `world-event-${++this.sequence}`);
   }
 
-  publish<K extends keyof Events & string>(
+  publish<K extends EventKey<Events> & string>(
     type: K,
     payload: Events[K],
     options: WorldEventOptions = {},
@@ -63,16 +64,16 @@ export class WorldEventBus<Events extends WorldEventMap> {
       at: Number.isFinite(options.at) ? options.at as number : this.now(),
       payload,
     });
-    this.history.push(event as WorldEvent<keyof Events, Events[keyof Events]>);
+    this.history.push(event as WorldEvent<EventKey<Events>, Events[EventKey<Events>]>);
     if (this.history.length > this.maxHistory) this.history.splice(0, this.history.length - this.maxHistory);
 
     // Snapshot listeners so subscribe/unsubscribe during dispatch is safe.
     const handlers = [...(this.listeners.get(type) ?? [])];
-    for (const handler of handlers) handler(event as WorldEvent<keyof Events, Events[keyof Events]>);
+    for (const handler of handlers) handler(event as WorldEvent<EventKey<Events>, Events[EventKey<Events>]>);
     return event;
   }
 
-  subscribe<K extends keyof Events & string>(
+  subscribe<K extends EventKey<Events> & string>(
     type: K,
     handler: WorldEventHandler<WorldEvent<K, Events[K]>>,
   ): () => void {
@@ -81,14 +82,14 @@ export class WorldEventBus<Events extends WorldEventMap> {
       handlers = new Set();
       this.listeners.set(type, handlers);
     }
-    handlers.add(handler as WorldEventHandler<WorldEvent<keyof Events, Events[keyof Events]>>);
+    handlers.add(handler as WorldEventHandler<WorldEvent<EventKey<Events>, Events[EventKey<Events>]>>);
     return () => {
-      handlers?.delete(handler as WorldEventHandler<WorldEvent<keyof Events, Events[keyof Events]>>);
+      handlers?.delete(handler as WorldEventHandler<WorldEvent<EventKey<Events>, Events[EventKey<Events>]>>);
       if (handlers?.size === 0) this.listeners.delete(type);
     };
   }
 
-  getHistory(options: { type?: keyof Events; sinceTick?: number; limit?: number } = {}): ReadonlyArray<WorldEvent<keyof Events, Events[keyof Events]>> {
+  getHistory(options: { type?: EventKey<Events>; sinceTick?: number; limit?: number } = {}): ReadonlyArray<WorldEvent<EventKey<Events>, Events[EventKey<Events>]>> {
     const limit = Math.max(0, Math.min(this.maxHistory, Math.floor(options.limit ?? this.maxHistory)));
     return this.history
       .filter((event) =>
@@ -101,7 +102,7 @@ export class WorldEventBus<Events extends WorldEventMap> {
     this.history.length = 0;
   }
 
-  listenerCount(type?: keyof Events): number {
+  listenerCount(type?: EventKey<Events>): number {
     if (type !== undefined) return this.listeners.get(type)?.size ?? 0;
     let total = 0;
     for (const handlers of this.listeners.values()) total += handlers.size;
