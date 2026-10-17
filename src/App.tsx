@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '753': 'Restore human commoner sprites for Tam and Nan',
   '751': 'Correct Nan’s commoner sprite so he no longer appears as a skeleton',
   '750': 'Suppress stale hostile sprites across the full starter-town safety zone',
   '749': 'Add a toggleable live player coordinate readout (chunk, local grid, and world coordinates)',
@@ -10838,7 +10839,7 @@ if (active) {
                   setTargetNpcId(npc.id);
                 }
               }}
-              style={{ ...npcAppearanceStyle(npc.id, npc.archetype), ...(npc.name === 'Nan' ? { '--npc-appearance-x': '0px', '--npc-appearance-filter': 'saturate(1.1) brightness(1)' } : {}), left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
+              style={{ ...npcAppearanceStyle(npc.id, npc.archetype), ...((npc.name === 'Tam' || npc.name === 'Nan') ? { '--npc-appearance-x': '0px', '--npc-appearance-filter': 'saturate(1.1) brightness(1)' } : {}), left: fieldPct(npc.position.x), top: fieldPct(npc.position.y), pointerEvents: (moverMode || markerMode) ? 'none' : undefined, ...(enter ? enter.style : {}) }}
               data-role={npc.role}
               data-facing={npc.facing}
               data-gender={npc.gender}
