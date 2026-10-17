@@ -1038,23 +1038,18 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
   // fountain it replaces — the north-south street passes ~1u east of the
   // center, so a solid centerpiece would block the path).
   addProp('statue', plazaC.x, plazaC.y, 2.0, false, 'props/statue-angel.png');
-  // Market stalls in denser rows around the plaza (decor only). Candidates
-  // form full rows/columns; the lane/door/footprint guards carve the gaps
-  // where streets cross, so no stall ever sits on a path.
+  // BUILD 759: consolidate every generated market stall into one compact
+  // row at the central town fork, just beyond the south edge of the plaza.
+  // Do not scatter stalls around the plaza perimeter or down side streets.
+  // Keep the existing road/door/footprint guards so the row never blocks travel.
   const stallAssets = ['props/stall-red.png', 'props/stall-blue.png',
-    'props/stall-green.png', 'props/market-stall.png'];
-  const stallCands: [number, number][] = [];
-  for (let i = 0; i < 7; i++) stallCands.push([-16 + i * (40 / 6), -18]);  // north row
-  for (let i = 0; i < 8; i++) stallCands.push([-18 + i * (44 / 7), 17]);  // south row
-  for (let i = 0; i < 4; i++) stallCands.push([-19, -10 + i * (20 / 3)]);  // west column
-  for (let i = 0; i < 4; i++) stallCands.push([27, -10 + i * (20 / 3)]);   // east column
-  for (let i = 0; i < 4; i++) stallCands.push([-4 + i * 4, -26]);          // north row 2 (short)
-  for (let i = 0; i < 10; i++) stallCands.push([-22 + i * (48 / 9), 25]);  // south row 2 (full)
-  let stallAssetIdx = 0;
-  for (const [dx, dy] of stallCands) {
-    const x = plazaC.x + dx, y = plazaC.y + dy;
+    'props/stall-green.png'];
+  const stallRowY = plazaC.y + plazaR + 3;
+  const stallOffsets: number[] = [-6, 0, 6];
+  for (let i = 0; i < stallOffsets.length; i++) {
+    const x = plazaC.x + stallOffsets[i], y = stallRowY;
     if (!propSpotOk(x, y, 1.5)) continue;
-    addProp('stall', x, y, 1.4, false, stallAssets[stallAssetIdx++ % stallAssets.length]);
+    addProp('stall', x, y, 1.4, false, stallAssets[i]);
   }
   // BUILD 695: wooden carts near the market edge (solid, like barrels).
   for (const [dx, dy] of [[-28, -8], [-14, 22], [-8, -24]] as [number, number][]) {
