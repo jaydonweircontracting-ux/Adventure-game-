@@ -9944,7 +9944,8 @@ if (active) {
             ))}
           </div>
           <div className="field-monsters" aria-label="Hostile monsters">
-            {(isStartingArea(chunk) ? [] : monsters).map((monster) => {
+            {/* BUILD 750: suppress stale/previously spawned hostile sprites throughout the full town safety zone, even if an old runtime state survives after chunk entry. */}
+            {(isStartingSettlementSafetyZone(chunk) ? [] : monsters).map((monster) => {
               const dead = monster.disposition === 'defeated';
               const anim = animForMonsterState({ dead, hitFlash: monster.hitFlash, attacking: monster.attacking, moving: monster.moving });
               const sprite = resolveMonsterSprite(monster.kind);
