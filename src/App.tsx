@@ -133,10 +133,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '793';
+const BUILD_NUMBER = '794';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '794': 'Keep all house exterior sprites and disable separate house interiors',
   '793': 'Start directly in the outdoor world instead of the starting-house interior',
   '792': 'Use the newly uploaded starting-house exterior and interior sprites',
   '778': 'Fit the new starter-house room art to the walkable floor plan',
@@ -4926,7 +4927,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [attackSequence, setAttackSequence] = useState(0);
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
   // BUILD 793: start directly in the outdoor world; interiors are entered only through doors.
-  const [interior, setInterior] = useState<InteriorArea | null>(playtestInteriorArea);
+  // BUILD 794: house interiors are disabled; always begin in the outdoor world.
+  const [interior, setInterior] = useState<InteriorArea | null>(null);
   // BUILD 326: the interior to return to when leaving the tankard cellar
   // (the tavern), and the cellar's rats. Rats persist for the session once
   // spawned so leaving mid-quest and coming back keeps the remaining rats.
@@ -7449,14 +7451,8 @@ if (active) {
         const current = positionRef.current;
         const currentChunk = chunkRef.current;
         const attempted = { x: current.x + movement.x, y: current.y + movement.y };
-        const nearbyDoor = doorwayNear(attempted, currentChunk, houseOffsetsRef.current);
-        if (nearbyDoor && canEnterDoorway(current, attempted, nearbyDoor, direction)) {
-          // BUILD 770: restore the established doorway transition for every
-          // house so entrances and exits work consistently without invisible
-          // floor-plan or partition collision trapping the player.
-          enterDoorway(nearbyDoor, currentChunk);
-          return;
-        }
+        // BUILD 794: do not switch into separate house interior scenes.
+        // Normal field collision still keeps the exterior building solid.
         const resolved = resolveFieldMovement(current, movement, currentChunk, goatsRef.current, houseOffsetsRef.current);
         if (resolved) {
           // The current continent is the tutorial world. Its ocean edge is reserved for the future boat route.
@@ -8439,16 +8435,11 @@ if (active) {
     setNpcDialogue({ name, title, role, position: { x: 50, y: 50 }, facing: 'down', moving: false, target: null });
     setLogs((currentLogs) => [{ text: `${name} turns to you: ${title}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
   };
-  const enterDoorway = (doorway: Doorway, entryChunk: Point) => {
-    tapMoveTargetRef.current = null; // a tap-walk ends at the door
-    interiorDoorwayIdRef.current = doorway.id;
-    interiorEntryChunkRef.current = { x: entryChunk.x, y: entryChunk.y };
-    interiorRef.current = doorway.area; setInterior(doorway.area);
-    interiorPositionRef.current = { x: 50, y: 89 }; setInteriorPosition({ x: 50, y: 89 });
-    setMoving(false);
-    setLogs((currentLogs) => [{ text: 'You enter the ' + doorway.area.name + '.', color: 'blue' }, ...currentLogs].slice(0, 3));
-    // BUILD 685: visiting the Wayfarer Guild retires the tutorial objective banner.
-    if (doorway.area.id === 'wayfarer-guild') dismissTutorialBanner();
+  // BUILD 794: houses remain visible as exterior sprites; no separate room scene.
+  // Keep a small feedback message if an old interaction/save still invokes this.
+  const enterDoorway = (doorway: Doorway, _entryChunk: Point) => {
+    setContextMenu(null);
+    setLogs((currentLogs) => [{ text: doorway.area.name + ' has no separate interior.', color: 'blue' }, ...currentLogs].slice(0, 3));
   };
   // BUILD 326: descend into the Tankard Cellar through the tavern hatch.
   // Unlike field doorways, the cellar exits back up to the tavern (tracked in
@@ -11466,29 +11457,7 @@ if (active) {
             ⚠ frame error ×{loopErrorRef.current.count}: {loopErrorRef.current.message}
           </button>
         )}
-        {/* BUILD 775: tight doorway-only trigger; compact label anchored just above that house. */}
-        {!interior && !moverMode && !markerMode && !mapBuilderMode && (() => {
-          const entrance = buildingDoorwaysFor(chunk).find((doorway) => {
-            const dx = Math.abs(position.x - doorway.position.x);
-            const frontY = doorway.rect.bottom;
-            const nearFront = position.y >= frontY - 2 && position.y <= frontY + 4;
-            return dx <= Math.max((doorway.rect.right - doorway.rect.left) * 0.2, 3.5) && nearFront;
-          });
-          if (!entrance) return null;
-          const doorX = (entrance.rect.left + entrance.rect.right) / 2;
-          const labelY = Math.max(2, entrance.rect.top - 3);
-          return (
-            <button
-              type="button"
-              className="building-enter-button"
-              data-testid="button-enter-building"
-              onClick={() => enterDoorway(entrance, chunk)}
-              style={{ position: 'absolute', zIndex: 120, left: fieldPct(doorX), top: fieldPct(labelY), transform: 'translate(-50%, -100%)', padding: '4px 8px', whiteSpace: 'nowrap', borderRadius: '6px', border: '1px solid #e8d6a0', background: '#253d2e', color: '#fff5d6', fontWeight: 750, fontSize: '11px', lineHeight: 1.2, boxShadow: '0 2px 6px #0008', touchAction: 'manipulation' }}
-            >
-              Enter
-            </button>
-          );
-        })()}
+        {/* BUILD 794: exterior-only houses; no Enter button for separate interiors. */}
         {/* BUILD 374: examine system — context menu + result toast. */}
         {contextMenu && (
           <>
