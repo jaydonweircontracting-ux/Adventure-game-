@@ -349,7 +349,10 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     // Center camera on room.
     const rc = isoToScreen(ROOM_W / 2, ROOM_H / 2);
     state.camX = rc.x; state.camY = rc.y;
-    state.zoom = Math.min(state.w / (ROOM_W * TILE_W * 0.62), state.h / (ROOM_H * TILE_H * 1.7), 1.4);
+    // BUILD 765: keep the expanded floorplan visibly larger instead of fitting
+    // every extra tile into the same tiny on-screen footprint. The room can
+    // approach the viewport edges, but remains centered and fully interactive.
+    state.zoom = Math.min(Math.min(state.w / (ROOM_W * TILE_W * 0.62), state.h / (ROOM_H * TILE_H * 1.7), 1.4) * 1.18, 1.5);
 
     const walkable = (tx: number, ty: number) => !solidAt(tx, ty);
     const goTo = (tx: number, ty: number) => {
