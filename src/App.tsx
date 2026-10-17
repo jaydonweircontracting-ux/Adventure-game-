@@ -4542,7 +4542,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       }
       pushMapUndo();
       setSelectedPaintTiles((prev) => [...prev, { chunk: chunkKey, tx, ty }]);
-      setMapPaints((prev) => paintTile(prev, chunkKey, tx, ty, mapBrush === 'erase' ? null : (mapBrush === 'house' ? 'grass' : mapBrush)));
+      setMapPaints((prev) => paintTile(prev, chunkKey, tx, ty, mapBrush === 'erase' ? null : mapBrush));
       logEditorChange('tile-select', 'selected tile (' + tx + ',' + ty + ') in chunk ' + chunkKey + ' and applied ' + mapBrush);
       return;
     }
