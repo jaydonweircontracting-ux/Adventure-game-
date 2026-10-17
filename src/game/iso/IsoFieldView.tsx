@@ -1245,6 +1245,9 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       for (const sc of scenes) {
         const bx = sc.ox * N, by = sc.oy * N;
         for (const b of sc.buildings) {
+          // BUILD 803: show only the authored starter house; hide every other building exterior.
+          // Doorway/collision data remains intact in the world simulation.
+          if (b.area.id !== 'tutorial-house') continue;
           const r = { left: b.rect.left + bx, top: b.rect.top + by, right: b.rect.right + bx, bottom: b.rect.bottom + by };
           const bpos = { x: b.position.x + bx, y: b.position.y + by };
         const p00 = isoToScreen(r.left, r.top), p10 = isoToScreen(r.right, r.top);
