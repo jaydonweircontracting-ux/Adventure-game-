@@ -135,10 +135,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '823';
+const BUILD_NUMBER = '824';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '824': 'Make the Hide Map button smaller',
   '823': 'Render the starting-house overlay in the isometric world and hide it indoors',
   '822': 'Add a button to hide and show the minimap',
   '821': 'Remove the 2.5D BETA label from the main game screen',
@@ -8652,8 +8653,8 @@ if (active) {
           onClick={() => setMinimapHidden((hidden) => !hidden)}
           style={{
             position: 'fixed', top: minimapHidden ? 10 : 138, right: 10, zIndex: 101,
-            padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.35)',
-            background: 'rgba(20,30,38,0.9)', color: '#fff', fontSize: 12, fontWeight: 700,
+            padding: '4px 7px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.35)',
+            background: 'rgba(20,30,38,0.9)', color: '#fff', fontSize: 10, fontWeight: 600,
             cursor: 'pointer', touchAction: 'manipulation',
           }}
         >{minimapHidden ? 'Show map' : 'Hide map'}</button>
