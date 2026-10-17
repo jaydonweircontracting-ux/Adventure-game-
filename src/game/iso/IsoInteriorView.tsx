@@ -238,7 +238,9 @@ function faceForMove(ax: number, ay: number, bx: number, by: number, current: Fa
 }
 
 export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalkTo, getHeldDir, playerLook, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, groundItems, onPickupItem, rats, onStrikeRat, onPlayerMove, playerRunning }: IsoInteriorViewProps): React.JSX.Element {
-  const [sceneZoom, setSceneZoom] = useState(0.72);
+  // BUILD 780: fit the complete authored room scene by default; allow zoom and pan.
+  const [sceneZoom, setSceneZoom] = useState(1);
+  const [scenePan, setScenePan] = useState({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const attackSequenceRef = useRef(barbAttackSequence ?? 0);
   attackSequenceRef.current = barbAttackSequence ?? 0;
@@ -875,14 +877,22 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       // BUILD 777: replace the procedural floor with the uploaded room scene.
       const starterScene = isStarterHouse ? starterHouseScene() : undefined;
       if (isStarterHouse && starterScene) {
-        const maxW = state.w * 1.35;
-        const maxH = state.h * 0.78;
-        const scale = Math.min(maxW / starterScene.naturalWidth, maxH / starterScene.naturalHeight) * sceneZoom;
+        // Always fit the complete image inside a safe viewport on first open.
+        // Zoom is applied after fit; pan offsets then let players inspect every edge.
+        const maxW = state.w * 0.92;
+        const maxH = state.h * 0.74;
+        const fitScale = Math.min(maxW / starterScene.naturalWidth, maxH / starterScene.naturalHeight);
+        const scale = fitScale * sceneZoom;
         const imageW = starterScene.naturalWidth * scale;
         const imageH = starterScene.naturalHeight * scale;
-        g.globalCompositeOperation = 'screen';
-        g.drawImage(starterScene, (state.w - imageW) / 2, (state.h - imageH) / 2, imageW, imageH);
         g.globalCompositeOperation = 'source-over';
+        g.drawImage(
+          starterScene,
+          (state.w - imageW) / 2 + scenePan.x,
+          (state.h - imageH) / 2 + scenePan.y,
+          imageW,
+          imageH,
+        );
       } else {
       // floor
       for (let ty = 0; ty < ROOM_H; ty++) {
@@ -1261,17 +1271,25 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       canvas.removeEventListener('pointerdown', onTap);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, roomType, sceneZoom]);
+  }, [roomId, roomType, sceneZoom, scenePan]);
 
   return (
     <div ref={wrapRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#14181f', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}>
       <canvas ref={canvasRef} style={{ display: 'block' }} />
       {roomId === 'tutorial-house' && (
-        <div style={{ position: 'absolute', left: 12, bottom: 12, zIndex: 6, display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderRadius: 10, background: 'rgba(20,30,38,0.88)', border: '1px solid rgba(255,217,138,0.35)', color: '#ffd98a', font: '600 13px system-ui' }}>
-          <button type="button" aria-label="Zoom out" onClick={() => setSceneZoom(v => Math.max(0.35, +(v - 0.1).toFixed(2)))} style={{ width: 34, height: 34, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 22 }}>−</button>
-          <span style={{ minWidth: 46, textAlign: 'center' }}>{Math.round(sceneZoom * 100)}%</span>
-          <button type="button" aria-label="Zoom in" onClick={() => setSceneZoom(v => Math.min(1.2, +(v + 0.1).toFixed(2)))} style={{ width: 34, height: 34, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 20 }}>+</button>
-          <button type="button" onClick={() => setSceneZoom(0.72)} style={{ height: 34, padding: '0 9px', borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8' }}>Fit</button>
+        <div style={{ position: 'absolute', left: 10, bottom: 10, zIndex: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: 8, borderRadius: 10, background: 'rgba(20,30,38,0.92)', border: '1px solid rgba(255,217,138,0.45)', color: '#ffd98a', font: '600 12px system-ui', touchAction: 'manipulation' }}>
+          <span>View • {Math.round(sceneZoom * 100)}%</span>
+          <button type="button" aria-label="Pan up" onClick={() => setScenePan(p => ({ ...p, y: p.y + 55 }))} style={{ width: 38, height: 32, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 20 }}>↑</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <button type="button" aria-label="Pan left" onClick={() => setScenePan(p => ({ ...p, x: p.x + 55 }))} style={{ width: 38, height: 32, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 20 }}>←</button>
+            <button type="button" aria-label="Pan down" onClick={() => setScenePan(p => ({ ...p, y: p.y - 55 }))} style={{ width: 38, height: 32, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 20 }}>↓</button>
+            <button type="button" aria-label="Pan right" onClick={() => setScenePan(p => ({ ...p, x: p.x - 55 }))} style={{ width: 38, height: 32, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 20 }}>→</button>
+          </div>
+          <div style={{ display: 'flex', gap: 5 }}>
+            <button type="button" aria-label="Zoom out" onClick={() => setSceneZoom(v => Math.max(0.35, +(v - 0.15).toFixed(2)))} style={{ width: 38, height: 32, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 22 }}>−</button>
+            <button type="button" aria-label="Zoom in" onClick={() => setSceneZoom(v => Math.min(3, +(v + 0.15).toFixed(2)))} style={{ width: 38, height: 32, borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8', fontSize: 20 }}>+</button>
+            <button type="button" onClick={() => { setSceneZoom(1); setScenePan({ x: 0, y: 0 }); }} style={{ height: 32, padding: '0 9px', borderRadius: 7, border: '1px solid #8b795b', background: '#26313a', color: '#fff0c8' }}>Fit</button>
+          </div>
         </div>
       )}
       <button
