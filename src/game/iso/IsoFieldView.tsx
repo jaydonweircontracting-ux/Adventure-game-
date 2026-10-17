@@ -1271,7 +1271,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         const kind = b.area.id === 'tutorial-house' ? 'starting-house-exterior' : (selectedKind.startsWith('new-') ? 'blue-house' : (selectedKind === 'hut-thatched' ? 'green-cottage' : selectedKind));
         buildingKindCache.set(b, kind);
         const projectedWidth = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 0.95;
-        const spriteHeight = buildingSpriteHeightForWidth(projectedWidth * (1.65 / 0.95), kind);
+        const spriteHeight = buildingSpriteHeightForWidth(projectedWidth * (3.3 / 0.95), kind);
         const minY = Math.min(p00.y, p10.y, p11.y, p01.y) - Math.max(64, spriteHeight);
         const maxY = Math.max(p00.y, p10.y, p11.y, p01.y);
         if (maxX < cam.x - vhw || minX > cam.x + vhw || maxY < cam.y - vhh || minY > cam.y + vhh) continue;
@@ -1403,10 +1403,10 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               // Draw sprite anchored at building base center
               const cx = (p00.x + p11.x) / 2;
               const baseY = Math.max(p00.y, p10.y, p11.y, p01.y);
-              // BUILD 807: Enlarge the uploaded starting-house sprite without changing
+              // BUILD 809: Make house sprites twice their previous size without changing
               // their shared logical footprint, door trigger, or collision data.
               // The slight overhang is intentional; culling above uses the same scale.
-              const targetW = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 1.65;
+              const targetW = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 3.3;
               const scale = targetW / sprite.naturalWidth;
               const sw = sprite.naturalWidth * scale;
               const sh = sprite.naturalHeight * scale;
@@ -1429,7 +1429,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
             if (sharedFallback && sharedFallback.complete && sharedFallback.naturalWidth > 0) {
               const cx = (p00.x + p11.x) / 2;
               const baseY = Math.max(p00.y, p10.y, p11.y, p01.y);
-              const targetW = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 1.65;
+              const targetW = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 3.3;
               const scale = targetW / sharedFallback.naturalWidth;
               const sw = sharedFallback.naturalWidth * scale;
               const sh = sharedFallback.naturalHeight * scale;
