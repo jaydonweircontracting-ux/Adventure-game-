@@ -1,6 +1,6 @@
 {
-  "build": "787",
-  "note": "Fix starting-house image tint and transparency",
-  "timestamp": "2026-10-17T20:00:00.000Z",
-  "cacheBuster": "build787-neutral-starter-house-render"
+  "build": "789",
+  "note": "Swap starting-house world sprite to interior artwork",
+  "timestamp": "2026-10-17T20:30:00.000Z",
+  "cacheBuster": "build789-starter-house-interior-world-sprite"
 }
