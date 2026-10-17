@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '755': 'Separate town NPC rendering from the custom player sprite sheet so Tam and Nan use canonical human sprites',
   '754': 'Force known-good human sprites for Tam and Nan in every town rendering path',
   '753': 'Restore human commoner sprites for Tam and Nan',
   '751': 'Correct Nan’s commoner sprite so he no longer appears as a skeleton',
