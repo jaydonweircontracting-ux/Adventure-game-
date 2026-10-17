@@ -1225,7 +1225,8 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         // BUILD 769: ordinary houses become visible top-down floor plans while
         // the player is physically inside their footprint. The roof/exterior
         // sprite is omitted only for the occupied house; outside art is unchanged.
-        const playerInsideHouse = b.area.roomType === 'building'
+        const playerInsideHouse = b.area.id !== 'tutorial-house'
+          && b.area.roomType === 'building'
           && sc.ox === 0 && sc.oy === 0
           && position.x > b.rect.left + 0.45 && position.x < b.rect.right - 0.45
           && position.y > b.rect.top + 0.45 && position.y < b.rect.bottom - 0.45;
@@ -1349,9 +1350,12 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               g2.beginPath();
               g2.ellipse(cx, baseY, sw * 0.45, sw * 0.16, 0, 0, Math.PI * 2);
               g2.fill();
-              if (kind === 'starting-house-exterior') g2.globalCompositeOperation = 'screen';
+              g2.save();
+              g2.globalAlpha = 1;
+              g2.globalCompositeOperation = 'source-over';
+              g2.filter = 'none';
               g2.drawImage(sprite, cx - sw / 2, baseY - sh, sw, sh);
-              if (kind === 'starting-house-exterior') g2.globalCompositeOperation = 'source-over';
+              g2.restore();
               // Keep authored sprite architecture intact; only add entry-aligned ground dressing.
               drawBuildingGroundDress(g2, cx, baseY, sw, r.left + r.right, r.top + r.bottom);
               return;
