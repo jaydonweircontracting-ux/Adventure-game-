@@ -135,13 +135,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '836';
+const BUILD_NUMBER = '837';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '837': 'Add one-touch close-all Debug recovery and safer mobile workspace cleanup',
   '836': 'Add stone pathway tile painting and repository sprite browsing in Asset Studio',
   '835': 'Add local Asset Studio with upload, crop, transforms, placement, and JSON export',
   '834': 'Add hideable Debug workspace controls and mobile clutter recovery',
@@ -8742,7 +8743,7 @@ if (active) {
     inTutorialHouse: interior?.id === 'tutorial-house',
     daggerPickedUp: pickedUpGroundItems.includes(TUTORIAL_DAGGER_ITEM),
   });
-  const anyDebugToolActive = moverMode || mapBuilderMode || tileEditMode || collisionDebugMode || inspectorOpen || npcRosterOpen || assetStudioOpen || debugConsoleOpen || controlCenterOpen;
+  const anyDebugToolActive = moverMode || mapBuilderMode || tileEditMode || collisionDebugMode || inspectorOpen || npcRosterOpen || assetStudioOpen || carriageDebugOpen || debugConsoleOpen || controlCenterOpen;
   return (
     <div className="field-column" data-debug-ui-hidden={debugUiHidden ? 'true' : 'false'}>
       <style>{`
@@ -8754,13 +8755,42 @@ if (active) {
         .field-column[data-debug-ui-hidden="true"] .tile-coordinates-window,
         .field-column[data-debug-ui-hidden="true"] .debug-console-panel { display: none !important; }
         .ag-debug-reveal { position: fixed; right: 10px; top: 10px; z-index: 20000; border: 1px solid #f5d778; border-radius: 999px; background: #18271f; color: #fff6c7; padding: 9px 12px; font: 700 12px system-ui; box-shadow: 0 3px 12px #0008; touch-action: manipulation; }
-        .ag-debug-clutter-toggle { position: fixed; right: 10px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 19000; border: 1px solid #8da99a; border-radius: 9px; background: #17251fef; color: white; padding: 9px 11px; font: 700 12px system-ui; box-shadow: 0 3px 12px #0007; touch-action: manipulation; }
-        @media (min-width: 700px) { .ag-debug-clutter-toggle { right: 18px; bottom: 18px; } }
+        .ag-debug-quick-actions { position: fixed; right: 10px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 19000; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 20px); }
+        .ag-debug-clutter-toggle { position: static; border: 1px solid #8da99a; border-radius: 9px; background: #17251fef; color: white; padding: 9px 11px; font: 700 12px system-ui; box-shadow: 0 3px 12px #0007; touch-action: manipulation; }
+        .ag-debug-close-all { border: 1px solid #c88b7b; border-radius: 9px; background: #40221eef; color: #fff; padding: 9px 11px; font: 700 12px system-ui; box-shadow: 0 3px 12px #0007; touch-action: manipulation; }
+        @media (min-width: 700px) { .ag-debug-quick-actions { right: 18px; bottom: 18px; } }
       `}</style>
       {debugUiHidden ? (
         <button type="button" className="ag-debug-reveal" onClick={() => setDebugUiHidden(false)} aria-label="Show Debug windows">🛠 Show Debug UI</button>
       ) : anyDebugToolActive ? (
-        <button type="button" className="ag-debug-clutter-toggle" onClick={() => setDebugUiHidden(true)} aria-label="Hide Debug windows and clear screen">Hide Debug UI ⤵</button>
+        <div className="ag-debug-quick-actions">
+          <button type="button" className="ag-debug-clutter-toggle" onClick={() => setDebugUiHidden(true)} aria-label="Hide Debug windows and clear screen">Hide Debug UI ⤵</button>
+          <button type="button" className="ag-debug-close-all" onClick={() => {
+            setDebugUiHidden(false);
+            setAssetStudioOpen(false);
+            setAssetPlacementMode(false);
+            setNpcRosterOpen(false);
+            setInspectorOpen(false);
+            setDebugConsoleOpen(false);
+            setControlCenterOpen(false);
+            setCarriageDebugOpen(false);
+            setCollisionDebugMode(false);
+            setTileEditMode(false);
+            tileEditModeRef.current = false;
+            setMapBuilderMode(false);
+            setMapBuilderMin(false);
+            setMoverMode(false);
+            setSelectedHouse(null);
+            setSelectedPlacedId(null);
+            setSelectedPlacedCustomId(null);
+            mapPaintingRef.current = false;
+            keysRef.current = {};
+            clearTouchHolds(touchHoldsRef.current);
+            tapMoveTargetRef.current = null;
+            tapMovePathRef.current = null;
+            setMoving(false);
+          }} aria-label="Close all Debug tools">Close all</button>
+        </div>
       ) : null}
       {/* BUILD 609: Circular minimap in corner */}
       {/* BUILD 663: Hide minimap when Options is open (mandatory UI fix). */}
