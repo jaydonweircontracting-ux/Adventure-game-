@@ -964,14 +964,35 @@ function fieldTreeBaseRect(tree: FieldTree): FieldRect {
 }
 
 function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Record<string, Point>) {
-  // TEMPORARY DEVELOPMENT MODE: physical collision is disabled for world
-  // props, trees, houses/buildings, editor solids, and NPCs. Keep water
-  // blocking intact so the player cannot walk across impassable water.
-  // Doorway triggers, interaction logic, combat, rendering, and navigation
-  // data remain available. Restore the original checks when collision is re-enabled.
+  // BUILD 762: building footprints are solid again. The previous temporary
+  // development bypass let the player walk through every house. Doorway entry
+  // is handled before this test by doorwayNear/canEnterDoorway, so blocking the
+  // footprint here cannot close a legitimate entrance. The exit spawn remains
+  // just outside the footprint. Respect offsets while the house editor is active.
   const chunkKey = `${chunk.x},${chunk.y}`;
   const tile = _memoizedWorldGen(`tile:${chunkKey}`, () => mapTileFor(chunk));
-  return pointInWater(position, tile);
+  if (pointInWater(position, tile)) return true;
+
+  // Keep the editor's free-placement workflow, but enforce the actual generated
+  // house rectangles during normal play. Use the exact doorway source of truth
+  // so collision, art, entry triggers, and house movement share coordinates.
+  if (!moveHouses) {
+    const doorways = _memoizedWorldGen(
+      `building-collision:${chunkKey}`,
+      () => buildingDoorwaysFor(chunk),
+    );
+    for (const doorway of doorways) {
+      const offset = houseOffsets?.[doorway.id] || { x: 0, y: 0 };
+      const rect = {
+        left: doorway.rect.left + offset.x + 0.35,
+        top: doorway.rect.top + offset.y + 0.35,
+        right: doorway.rect.right + offset.x - 0.35,
+        bottom: doorway.rect.bottom + offset.y - 0.35,
+      };
+      if (pointInRect(position, rect)) return true;
+    }
+  }
+  return false;
 }
 
 function wrapFieldPosition(position: Point, chunk: Point) {
