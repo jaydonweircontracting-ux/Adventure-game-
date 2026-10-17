@@ -124,7 +124,12 @@ export function appearanceForNpc(id: string, archetype: string, opts: NpcAppeara
   // different settlements dress differently while individuals stay stable.
   const palette = OUTFIT_PALETTES[arch];
   const offset = opts.region ? hashString(opts.region) % palette.length : 0;
-  const column = palette[Math.floor(rand() * palette.length + offset) % palette.length];
+  // BUILD 752: Nan (townsfolk-36) was resolving to the broken-looking mage
+  // sheet column. Pin this one resident to the known-good blue outfit column;
+  // this shared appearance function covers both outdoor and indoor rendering.
+  const column = id === 'townsfolk-36'
+    ? 0
+    : palette[Math.floor(rand() * palette.length + offset) % palette.length];
 
   // Subtle per-NPC tint jitter — tasteful, never garish.
   const hueJitter = Math.round((rand() * 2 - 1) * 7);          // ±7deg
