@@ -4184,8 +4184,19 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const toggleTileEditMode = () => {
     const next = !tileEditMode;
     setTileEditMode(next);
-    if (next) { setMapBuilderMode(true); setMapBuilderMin(false); }
-    else { setMapBuilderMode(false); mapPaintingRef.current = false; }
+    if (next) {
+      // Stop every player-controlled/tap-to-move route immediately while editing.
+      keysRef.current = {};
+      clearTouchHolds(touchHoldsRef.current);
+      tapMoveTargetRef.current = null;
+      tapMovePathRef.current = null;
+      setMoving(false);
+      setMapBuilderMode(true);
+      setMapBuilderMin(false);
+    } else {
+      setMapBuilderMode(false);
+      mapPaintingRef.current = false;
+    }
   };
   const tileSelectionKey = (chunkName: string, tx: number, ty: number) => chunkName + ':' + tx + ':' + ty;
   const selectedTileKeys = new Set(selectedPaintTiles.map((tile) => tileSelectionKey(tile.chunk, tile.tx, tile.ty)));
