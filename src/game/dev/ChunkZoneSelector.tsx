@@ -34,14 +34,16 @@ const keyOf = ({ x, y }: ChunkMapPoint) => x + ',' + y;
  * grid shows the selected chunk's saved paint edits over its generated biome. */
 export default function ChunkZoneSelector({ selectedChunk, onSelectChunk, getChunkInfo, mapPaints, onClose }: Props) {
   const [zonesVisible, setZonesVisible] = useState(true);
+  const [region, setRegion] = useState<'main' | 'second'>('main');
   const [searchX, setSearchX] = useState(String(selectedChunk.x));
   const [searchY, setSearchY] = useState(String(selectedChunk.y));
-  const minX = -10, maxX = 20, minY = -8, maxY = 22;
+  const minX = region === 'main' ? -10 : 117, maxX = region === 'main' ? 20 : 196, minY = region === 'main' ? -8 : -28, maxY = region === 'main' ? 22 : 51;
+  const columns = maxX - minX + 1, rows = maxY - minY + 1;
   const points = useMemo(() => {
     const out: Array<{ x: number; y: number; info: ChunkMapInfo }> = [];
     for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) out.push({ x, y, info: getChunkInfo(x, y) });
     return out;
-  }, [getChunkInfo]);
+  }, [getChunkInfo, minX, maxX, minY, maxY]);
   const selectedInfo = getChunkInfo(selectedChunk.x, selectedChunk.y);
   const paints = mapPaints[keyOf(selectedChunk)] ?? [];
   const paintByTile = new Map(paints.map(p => [p.tx + ',' + p.ty, p.tile]));
@@ -64,7 +66,8 @@ export default function ChunkZoneSelector({ selectedChunk, onSelectChunk, getChu
             <input type="checkbox" checked={zonesVisible} onChange={e => setZonesVisible(e.target.checked)} />
             Show chunk zones
           </label>
-          <span style={{ color: '#c9d7ce' }}>Red outline = selected chunk</span>
+          <span style={{ color: '#c9d7ce' }}>Red lines = chunk boundaries · selected chunk is labelled</span>
+          <label style={{ display: 'flex', gap: 5, alignItems: 'center' }}>Map region <select value={region} onChange={e => setRegion(e.target.value as 'main' | 'second')} style={{ background: '#202d28', color: 'white', border: '1px solid #53685c', borderRadius: 5, padding: 6 }}><option value="main">Main world</option><option value="second">Second continent</option></select></label>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <label htmlFor="chunk-x">X</label><input id="chunk-x" inputMode="numeric" value={searchX} onChange={e => setSearchX(e.target.value)} style={{ width: 54, background: '#202d28', color: 'white', border: '1px solid #53685c', borderRadius: 5, padding: 6 }} />
             <label htmlFor="chunk-y">Y</label><input id="chunk-y" inputMode="numeric" value={searchY} onChange={e => setSearchY(e.target.value)} style={{ width: 54, background: '#202d28', color: 'white', border: '1px solid #53685c', borderRadius: 5, padding: 6 }} />
@@ -73,13 +76,13 @@ export default function ChunkZoneSelector({ selectedChunk, onSelectChunk, getChu
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: 6 }}>
           <strong>World chunk map · select a square</strong>
-          <div style={{ width: '100%', maxWidth: 650, margin: '0 auto', aspectRatio: '31 / 31', display: 'grid', gridTemplateColumns: 'repeat(31,minmax(0,1fr))', gridTemplateRows: 'repeat(31,minmax(0,1fr))', border: '1px solid #82968a', background: '#17251f', gap: 0 }}>
+          <div style={{ width: '100%', maxWidth: 650, margin: '0 auto', aspectRatio: columns + ' / ' + rows, display: 'grid', gridTemplateColumns: 'repeat(' + columns + ',minmax(0,1fr))', gridTemplateRows: 'repeat(' + rows + ',minmax(0,1fr))', border: '1px solid #82968a', background: '#17251f', gap: 0 }}>
             {points.map(({ x, y, info }) => {
               const selected = x === selectedChunk.x && y === selectedChunk.y;
-              return <button key={x + ',' + y} type="button" title={'Chunk ' + x + ',' + y + ' · ' + info.biome + (info.landmark ? ' · ' + info.landmark : '')} aria-label={'Select chunk ' + x + ',' + y} onClick={() => { onSelectChunk({ x, y }); setSearchX(String(x)); setSearchY(String(y)); }} style={{ position: 'relative', minWidth: 0, minHeight: 0, padding: 0, background: BIOME_COLORS[info.biome] ?? '#4b6954', border: selected ? '2px solid #ff3030' : zonesVisible ? '1px solid #e34444' : '1px solid #ffffff12', outline: selected ? '1px solid #ff3030' : 'none', zIndex: selected ? 2 : 1 }} />;
+              return <button key={x + ',' + y} type="button" title={'Chunk ' + x + ',' + y + ' · ' + info.biome + (info.landmark ? ' · ' + info.landmark : '')} aria-label={'Select chunk ' + x + ',' + y} onClick={() => { onSelectChunk({ x, y }); setSearchX(String(x)); setSearchY(String(y)); }} style={{ position: 'relative', minWidth: 0, minHeight: 0, padding: 0, background: BIOME_COLORS[info.biome] ?? '#4b6954', border: selected ? '2px solid #ff3030' : zonesVisible ? '1px solid #e34444' : '1px solid #ffffff12', outline: selected ? '1px solid #ff3030' : 'none', zIndex: selected ? 2 : 1, overflow: 'visible' }}>{selected && <span style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', zIndex: 4, whiteSpace: 'nowrap', color: 'white', background: '#a71919', border: '1px solid #ffd0d0', borderRadius: 3, padding: '2px 4px', fontSize: 10, fontWeight: 900, pointerEvents: 'none' }}>{x},{y}</span>}</button>;
             })}
           </div>
-          <div style={{ color: '#c2d0c6', textAlign: 'center' }}>Overview covers chunks X {minX}–{maxX}, Y {minY}–{maxY}. Use coordinate jump for chunks outside this region.</div>
+          <div style={{ color: '#c2d0c6', textAlign: 'center' }}>Showing {region === 'main' ? 'main world' : 'second continent'} · chunks X {minX}–{maxX}, Y {minY}–{maxY}. Select a region or use coordinate jump for any chunk.</div>
         </div>
         <div style={{ border: '2px solid #ff3030', borderRadius: 8, padding: 8, background: '#19251f' }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'start', justifyContent: 'space-between', flexWrap: 'wrap', marginBottom: 8 }}>
