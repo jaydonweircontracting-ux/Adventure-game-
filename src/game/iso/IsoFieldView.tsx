@@ -1169,7 +1169,10 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       // BUILDING_ASSET_META every frame — static data).
       const bldImgs = (window as unknown as { __bldImgs?: Record<string, HTMLImageElement> }).__bldImgs || {};
       for (const [kind, src] of BLD_SRC_ENTRIES) {
-        const resolvedSrc = artUrl(src);
+        // Imported Vite asset URLs already include the GitHub Pages base path.
+        // Do not pass them through artUrl(), which prepends the base a second time
+        // and makes IMG_5422 fail to load (leaving the procedural white house visible).
+        const resolvedSrc = src === sharedHouseSpriteUrl ? src : artUrl(src);
         let img = bldImgs[kind];
         // BUILD 802: replace stale cached variant images too; every building
         // must display the same uploaded IMG_5423 sprite, not legacy art.
@@ -1424,8 +1427,10 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               drawBuildingGroundDress(g2, cx, baseY, sw, r.left + r.right, r.top + r.bottom);
               return;
             }
-            // BUILD 802: draw the shared house sprite even if the renderer's
-            // cached variant was unavailable; never fall back to white box art.
+            // BUILD 806: if the starting-house sprite is still loading, skip this
+            // frame rather than briefly drawing the procedural white house.
+            if (b.area.id === 'tutorial-house') return;
+            // Other buildings use their shared uploaded sprite as a fallback.
             const sharedFallback = bldImgs['blue-house'];
             if (sharedFallback && sharedFallback.complete && sharedFallback.naturalWidth > 0) {
               const cx = (p00.x + p11.x) / 2;
