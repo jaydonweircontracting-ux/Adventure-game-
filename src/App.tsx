@@ -135,13 +135,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '839';
+const BUILD_NUMBER = '840';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '840': 'Save and restore placed custom sprites in named chunk templates',
   '839': 'Add precise move/nudge, visibility, lock, and layer controls for placed sprites',
   '838': 'Add searchable Debug Control Center, live counts, validation, and diagnostics export',
   '837': 'Add one-touch close-all Debug recovery and safer mobile workspace cleanup',
@@ -4084,7 +4085,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   };
   // BUILD 606: Named chunk saves — { name: { placedObjects, timestamp } }
   // BUILD 652: Now includes terrain paints (mapPaints) for unified chunk templates.
-  const [chunkSaves, setChunkSaves] = useState<Record<string, { objects: PlacedObject[]; paints: PaintedTile[]; timestamp: number }>>(() => {
+  const [chunkSaves, setChunkSaves] = useState<Record<string, { objects: PlacedObject[]; paints: PaintedTile[]; customAssets?: DebugPlacedAsset[]; sourceChunk?: string; timestamp: number }>>(() => {
     try {
       return JSON.parse(localStorage.getItem('ag-chunk-saves') || '{}');
     } catch { return {}; }
@@ -4093,6 +4094,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const data = {
       objects: placedObjects,
       paints: mapPaints[chunkKey] ?? [],
+      customAssets: customPlacedAssets.filter((asset) => asset.chunk === chunkKey),
+      sourceChunk: chunkKey,
       timestamp: Date.now(),
     };
     const next = { ...chunkSaves, [name]: data };
@@ -4103,13 +4106,27 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const loadNamedChunk = (name: string) => {
     const saved = chunkSaves[name];
     if (!saved) { logDebug(`Chunk "${name}" not found`); return; }
+    pushMapUndo();
     setPlacedObjects(saved.objects);
-    // BUILD 652: Restore terrain paints too.
-    if (saved.paints && saved.paints.length > 0) {
-      pushMapUndo();
-      setMapPaints((prev) => ({ ...prev, [chunkKey]: saved.paints }));
+    // BUILD 652: Restore terrain paints, including an intentionally empty chunk.
+    setMapPaints((prev) => {
+      const next = { ...prev };
+      if (saved.paints && saved.paints.length > 0) next[chunkKey] = saved.paints;
+      else delete next[chunkKey];
+      return next;
+    });
+    // BUILD 840: chunk templates also restore custom sprites, with unique IDs
+    // when stamping a template into a different chunk.
+    if (Array.isArray(saved.customAssets)) {
+      const stampId = saved.sourceChunk === chunkKey;
+      const assets = saved.customAssets.map((asset) => ({
+        ...asset,
+        id: stampId ? asset.id : 'placed-asset-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
+        chunk: chunkKey,
+      }));
+      setCustomPlacedAssets((prev) => [...prev.filter((asset) => asset.chunk !== chunkKey), ...assets]);
     }
-    logDebug(`Loaded chunk "${name}": ${saved.objects.length} objects, ${saved.paints?.length ?? 0} painted tiles`);
+    logDebug(`Loaded chunk "${name}": ${saved.objects.length} objects, ${saved.paints?.length ?? 0} painted tiles, ${saved.customAssets?.length ?? 0} custom sprites`);
   };
   const toggleMoverMode = () => {
     const next = !moverMode;
