@@ -47,6 +47,9 @@ import { mosslightFillerLots, fillerVariantForLot, mosslightPinnedRects } from '
 // kind->path maps duplicated in this file). Anchor/scale conventions documented
 // in src/game/buildingRig.ts.
 import { BUILDING_ASSET_META, buildingSpriteHeightForWidth } from '../buildingRig';
+// BUILD 769: shared deterministic layouts for in-world residential cutaways.
+import { generateInteriorLayout } from '../interiors';
+import { houseTypeForBuilding } from '../houseTypes';
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, type MonsterAnim, type MonsterSpriteDef } from '../monsterSprites';
 // BUILD 369 (Phase 2b): authoritative water/bridges in the iso field.
 import { waterGridForChunk, waterDepthAt, waterGridAt, type WaterGrid } from '../landscape';
@@ -1218,6 +1221,112 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         // south edge) also get the building drawn behind them.
         const playerSouthOfBuilding = playerY > r.bottom - 1;
         const buildingDepth = playerSouthOfBuilding ? (r.left + r.top - 10) : (r.right + r.bottom);
+
+        // BUILD 769: ordinary houses become visible top-down floor plans while
+        // the player is physically inside their footprint. The roof/exterior
+        // sprite is omitted only for the occupied house; outside art is unchanged.
+        const playerInsideHouse = b.area.roomType === 'building'
+          && sc.ox === 0 && sc.oy === 0
+          && position.x > b.rect.left + 0.45 && position.x < b.rect.right - 0.45
+          && position.y > b.rect.top + 0.45 && position.y < b.rect.bottom - 0.45;
+        if (playerInsideHouse) {
+          const layout = generateInteriorLayout(b.id, houseTypeForBuilding(b.id), 14, 12);
+          const roomW = Math.max(0.1, r.right - r.left);
+          const roomH = Math.max(0.1, r.bottom - r.top);
+          const tileW = roomW / layout.width;
+          const tileH = roomH / layout.height;
+          drawables.push({
+            depth: r.left + r.top - 30,
+            draw: (g2) => {
+              // Actual world-space floor tiles, aligned to the building footprint.
+              const floorPalettes: Record<string, [string, string]> = {
+                cottage: ['#aa8961', '#9a7952'],
+                farmhouse: ['#ad8b5c', '#977347'],
+                merchant: ['#98704b', '#815a39'],
+                guard: ['#8b8170', '#756b5d'],
+                craftsman: ['#806343', '#6e5036'],
+              };
+              const floorColors = floorPalettes[layout.houseType] ?? floorPalettes.cottage;
+              for (let ty = 0; ty < layout.height; ty++) for (let tx = 0; tx < layout.width; tx++) {
+                const x0 = r.left + tx * tileW, y0 = r.top + ty * tileH;
+                const p0 = isoToScreen(x0, y0), p1 = isoToScreen(x0 + tileW, y0);
+                const p2 = isoToScreen(x0 + tileW, y0 + tileH), p3 = isoToScreen(x0, y0 + tileH);
+                g2.beginPath(); g2.moveTo(p0.x, p0.y); g2.lineTo(p1.x, p1.y);
+                g2.lineTo(p2.x, p2.y); g2.lineTo(p3.x, p3.y); g2.closePath();
+                g2.fillStyle = (tx + ty) % 2 ? floorColors[1] : floorColors[0];
+                g2.fill();
+                g2.strokeStyle = 'rgba(48,35,23,0.22)'; g2.lineWidth = 0.7; g2.stroke();
+              }
+              // Furnishings use the same deterministic placements as the interior system.
+              const furnitureColors: Record<string, string> = {
+                bed: '#665b91', table: '#76502f', chair: '#805c38', shelf: '#5a3b25',
+                fireplace: '#45434a', lamp: '#d8a84b', rug: '#9a5145', chest: '#68452c',
+                workbench: '#62432c', barrel: '#7d5632', crate: '#90663b', plant: '#426c3f',
+              };
+              for (const item of layout.furniture) {
+                const cx = r.left + (item.tx + item.w / 2) * tileW;
+                const cy = r.top + (item.ty + item.h / 2) * tileH;
+                const p = isoToScreen(cx, cy);
+                const fw = Math.max(3, TILE_W * tileW * item.w * 0.34);
+                const fh = Math.max(2, TILE_H * tileH * item.h * 0.3);
+                g2.fillStyle = 'rgba(0,0,0,0.24)';
+                g2.fillRect(p.x - fw / 2 + 1.5, p.y - fh / 2 + 2, fw, fh);
+                g2.fillStyle = furnitureColors[item.kind] ?? '#70523a';
+                g2.fillRect(p.x - fw / 2, p.y - fh / 2, fw, fh);
+                g2.strokeStyle = 'rgba(35,24,18,0.8)'; g2.lineWidth = 1; g2.strokeRect(p.x - fw / 2, p.y - fh / 2, fw, fh);
+              }
+              // Type-specific room partitions, rendered on the floor plane.
+              const verticalPartitions: [number, number, number][] = [];
+              const horizontalPartitions: [number, number, number][] = [];
+              switch (layout.houseType) {
+                case 'farmhouse':
+                  verticalPartitions.push([8, 2, 5], [8, 6, 9]);
+                  horizontalPartitions.push([6, 8, 10], [6, 11, 12]);
+                  break;
+                case 'merchant':
+                  horizontalPartitions.push([4, 5, 9], [4, 10, 12]);
+                  verticalPartitions.push([5, 4, 7], [5, 8, 9]);
+                  break;
+                case 'guard':
+                  verticalPartitions.push([7, 2, 6], [7, 7, 9]);
+                  horizontalPartitions.push([7, 7, 10], [7, 11, 12]);
+                  break;
+                case 'craftsman':
+                  verticalPartitions.push([4, 2, 5], [4, 6, 9]);
+                  horizontalPartitions.push([4, 4, 8], [4, 9, 11]);
+                  break;
+                default:
+                  verticalPartitions.push([8, 2, 6], [8, 7, 8]);
+                  horizontalPartitions.push([3, 8, 10], [3, 11, 12]);
+                  break;
+              }
+              g2.strokeStyle = '#5c422d'; g2.lineWidth = 2.5;
+              for (const [x, y1, y2] of verticalPartitions) {
+                const a = isoToScreen(r.left + x * tileW, r.top + y1 * tileH);
+                const b = isoToScreen(r.left + x * tileW, r.top + y2 * tileH);
+                g2.beginPath(); g2.moveTo(a.x, a.y); g2.lineTo(b.x, b.y); g2.stroke();
+              }
+              for (const [y, x1, x2] of horizontalPartitions) {
+                const a = isoToScreen(r.left + x1 * tileW, r.top + y * tileH);
+                const b = isoToScreen(r.left + x2 * tileW, r.top + y * tileH);
+                g2.beginPath(); g2.moveTo(a.x, a.y); g2.lineTo(b.x, b.y); g2.stroke();
+              }
+              // Low cutaway walls. The south/front edge has a real doorway gap.
+              const nw = isoToScreen(r.left, r.top), ne = isoToScreen(r.right, r.top);
+              const se = isoToScreen(r.right, r.bottom), sw = isoToScreen(r.left, r.bottom);
+              const doorHalf = roomW * 0.12;
+              const doorLeft = isoToScreen(Math.max(r.left, Math.min(r.right, bpos.x - doorHalf)), r.bottom);
+              const doorRight = isoToScreen(Math.max(r.left, Math.min(r.right, bpos.x + doorHalf)), r.bottom);
+              g2.strokeStyle = '#6b5037'; g2.lineWidth = 3;
+              g2.beginPath(); g2.moveTo(nw.x, nw.y); g2.lineTo(ne.x, ne.y);
+              g2.lineTo(se.x, se.y); g2.moveTo(sw.x, sw.y); g2.lineTo(nw.x, nw.y);
+              g2.moveTo(se.x, se.y); g2.lineTo(doorRight.x, doorRight.y);
+              g2.moveTo(doorLeft.x, doorLeft.y); g2.lineTo(sw.x, sw.y); g2.stroke();
+            },
+          });
+          continue;
+        }
+
         drawables.push({
           depth: buildingDepth, draw: (g2) => {
             // BUILD 603: stable sprite by absolute chunk + local coords.

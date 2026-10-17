@@ -265,17 +265,45 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     if (!ctx) return;
 
     const furn = furnitureFor(roomType, roomId);
-    // BUILD 766: multi-room floorplans with walkable door gaps between rooms.
+    // BUILD 769: authored, type-specific floor plans. Residential buildings no
+    // longer share one generic partition layout: each archetype gets a distinct
+    // room arrangement, with explicit gaps so every room remains reachable.
     const isDungeon = roomType === 'cellar' || roomType === 'prison';
+    const buildingType = roomType === 'building' ? houseTypeForBuilding(roomId) : null;
     const partitionWalls: { tx: number; ty: number; axis: 'north' | 'west' }[] = [];
     const addWall = (tx: number, ty: number, axis: 'north' | 'west') => {
       if (tx > 0 && ty > 0 && tx < ROOM_W - 1 && ty < ROOM_H - 1) partitionWalls.push({ tx, ty, axis });
     };
     if (!isDungeon) {
       if (roomType === 'building') {
-        // Main room, bedroom wing, and rear storage/kitchen room.
-        for (let ty = 2; ty <= 9; ty++) if (ty !== 6) addWall(9, ty, 'west');
-        for (let tx = 9; tx <= 12; tx++) if (tx !== 11) addWall(tx, 4, 'north');
+        switch (buildingType) {
+          case 'farmhouse':
+            // Kitchen/store wing plus a broad doorway into the living space.
+            for (let ty = 2; ty <= 9; ty++) if (ty !== 5 && ty !== 9) addWall(8, ty, 'west');
+            for (let tx = 8; tx <= 12; tx++) if (tx !== 10) addWall(tx, 6, 'north');
+            break;
+          case 'merchant':
+            // Front shop, rear stockroom, and a side office.
+            for (let tx = 5; tx <= 12; tx++) if (tx !== 9) addWall(tx, 4, 'north');
+            for (let ty = 4; ty <= 9; ty++) if (ty !== 7) addWall(5, ty, 'west');
+            break;
+          case 'guard':
+            // Sleeping quarters separated from the equipment/store room.
+            for (let ty = 2; ty <= 9; ty++) if (ty !== 6) addWall(7, ty, 'west');
+            for (let tx = 7; tx <= 12; tx++) if (tx !== 10) addWall(tx, 7, 'north');
+            break;
+          case 'craftsman':
+            // Workbench room, household room, and a rear tool store.
+            for (let ty = 2; ty <= 9; ty++) if (ty !== 5) addWall(4, ty, 'west');
+            for (let tx = 4; tx <= 12; tx++) if (tx !== 8 && tx !== 11) addWall(tx, 4, 'north');
+            break;
+          case 'cottage':
+          default:
+            // Compact cottage with a bedroom nook and a small rear pantry.
+            for (let ty = 2; ty <= 8; ty++) if (ty !== 6) addWall(8, ty, 'west');
+            for (let tx = 8; tx <= 12; tx++) if (tx !== 10) addWall(tx, 3, 'north');
+            break;
+        }
       } else if (roomType === 'tavern' || roomType === 'inn') {
         // Public taproom separated from the staff/store room.
         for (let ty = 1; ty <= 4; ty++) if (ty !== 3) addWall(8, ty, 'west');
