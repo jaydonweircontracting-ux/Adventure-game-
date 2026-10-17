@@ -314,15 +314,17 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
     });
   }
 
-  // Market stalls near plaza edge (village+ only, max 3).
+  // Market stalls are grouped into a compact, orderly row in the town center.
+  // Do not randomize their angle: merchants should read as one shared market
+  // instead of isolated stalls scattered around the plaza.
   if (profile !== 'hamlet') {
     const stallAssets = [PROP_ASSETS.stallBlue, PROP_ASSETS.stallGreen, PROP_ASSETS.stallRed];
     const stallCount = Math.min(3, Math.floor(count / 4));
+    const stallSpacing = 3;
+    const rowY = center.y + plazaRadius + 2;
     for (let i = 0; i < stallCount; i++) {
-      const angle = rng() * Math.PI * 2;
-      const dist = plazaRadius + 2;
-      const spot = placePropClear(
-        center.x + Math.cos(angle) * dist, center.y + Math.sin(angle) * dist, 1.2);
+      const rowX = center.x + (i - (stallCount - 1) / 2) * stallSpacing;
+      const spot = placePropClear(rowX, rowY, 1.2);
       if (spot) {
         props.push({ id: nextPropId(), asset: stallAssets[i % stallAssets.length],
           x: spot.x, y: spot.y, radius: 1.2 });
