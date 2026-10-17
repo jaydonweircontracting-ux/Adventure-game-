@@ -5422,7 +5422,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         const nearTutorialCottage = body.chunk.x === 4 && body.chunk.y === 7
           && body.position.x >= 70 && body.position.x <= 125
           && body.position.y >= 90 && body.position.y <= 145;
-        return !(inStarterSettlement && nearTutorialCottage && /^body-(?:Noah|Damon|Shawn|npcstate-|legacy-)/i.test(body.id));
+        return !(inStarterSettlement && nearTutorialCottage);
       });
       bodiesRef.current = cleanBodies; setBodies(cleanBodies);
     }
