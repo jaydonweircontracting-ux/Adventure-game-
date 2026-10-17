@@ -10,6 +10,18 @@ Each factor is 1–5. Use the score to prioritize, not to hide failures.
 
 ## Open items
 
+### QA-006 — Hostile sprites at green-house settlement edge
+
+- Status: FIXED IN SOURCE; BUILD VERIFICATION PENDING
+- Severity: 3
+- Frequency: 4
+- Player impact: 4
+- Reproduction: Stand beside the green house near the starter town edge; a skeleton and an invisible humanoid can remain visible beside the building.
+- Expected: The settlement and its immediate approach chunks remain free of hostile monster entities; ordinary wilderness encounters continue outside the safety zone.
+- Actual: The prior safe-zone check covered only the original 3×3 starter area, leaving adjacent chunks eligible for hostile spawns.
+- Fix: Add a dedicated 5×5 settlement safety zone (chunks x=2..6, y=5..9), apply it before monster spawning, and enforce the same zone at the isometric renderer boundary.
+- Verification: Source committed; CI build and deployed gameplay check pending. No runtime pass is claimed.
+
 ### QA-005 — Isometric monster render ownership
 
 - Status: FIXED IN SOURCE; BUILD VERIFICATION PENDING
