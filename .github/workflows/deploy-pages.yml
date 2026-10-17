@@ -12,7 +12,9 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  # Do not cancel a deployment just because the follow-up build-marker commit lands.
+  # Each queued run must finish so the deployed manifest cannot stay behind main.
+  cancel-in-progress: false
 
 jobs:
   build:
