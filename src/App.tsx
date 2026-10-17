@@ -135,10 +135,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '829';
+const BUILD_NUMBER = '830';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '830': 'Add Save Game to Changelog and a small toggle to remove it from the title menu',
   '829': 'Move World Editor from the starting menu into Debug options',
   '828': 'Make the starting-house overlay 50% larger while keeping its base aligned',
   '827': 'Enlarge the starting-house overlay to cover the underlying sprite edges',
@@ -11935,7 +11936,7 @@ const BAKED_ISSUES: Issue[] = [
   { id: 'ISSUE-005', title: 'Townsfolk test failures (pre-existing)', description: 'Simulate.ts townsfolk roster failures from BUILD 548.', status: 'fixed', severity: 'medium', firstBuild: '548', fixedBuild: '638', relatedFiles: ['scripts/simulate.ts'], verification: 'All 54641 tests pass, 0 failed', notes: 'Test infrastructure fixed; Elsa AI uses simplified test anchors' },
   { id: 'ISSUE-006', title: 'Player exits from back of house', description: 'Exit could use stale position if doorway lookup failed.', status: 'fixed', severity: 'medium', firstBuild: '625', fixedBuild: '638', relatedFiles: ['src/App.tsx'], verification: 'Robust fallback chain added; code review confirms correct', notes: 'Phone verification recommended' },
 ];
-function IssueTrackerPanel({ buildNumber, changelog, updateStatus }: { buildNumber: string; changelog: { build: string; note: string }[]; updateStatus?: string }) {
+function IssueTrackerPanel({ buildNumber, changelog, updateStatus, onSaveGame, showMenuSaveButton, onToggleMenuSaveButton }: { buildNumber: string; changelog: { build: string; note: string }[]; updateStatus?: string; onSaveGame: () => void; showMenuSaveButton: boolean; onToggleMenuSaveButton: () => void }) {
   const [issues, setIssues] = useState<Issue[]>(() => {
     try {
       // BUILD 640: Version the storage key by build — old overrides don't
@@ -12032,6 +12033,10 @@ function IssueTrackerPanel({ buildNumber, changelog, updateStatus }: { buildNumb
           <span style={{ color: '#27ae60' }}>● {fixedCount} fixed</span>
         </span>
       </div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+        <button type="button" onClick={onSaveGame} data-testid="button-save-from-changelog" style={{ fontSize: 11, padding: '4px 9px', borderRadius: 5, border: '1px solid #4b7b42', background: '#edf7e9', color: '#285a22', cursor: 'pointer', fontWeight: 700 }}>💾 Save Game</button>
+        <button type="button" onClick={onToggleMenuSaveButton} data-testid="button-toggle-menu-save" style={{ fontSize: 10, padding: '4px 7px', borderRadius: 5, border: '1px solid #aaa', background: '#fff', color: '#333', cursor: 'pointer' }}>{showMenuSaveButton ? 'Hide title-screen Save button' : 'Show title-screen Save button'}</button>
+      </div>
       <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
         {(['all', ...ISSUE_STATUSES] as const).map((f) => (
           <button key={f} onClick={() => setFilter(f)} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '1px solid #ccc', background: filter === f ? '#333' : '#fff', color: filter === f ? '#fff' : '#333', cursor: 'pointer' }}>
@@ -12106,6 +12111,14 @@ function Home() {
   const [inventoryOpen, setInventoryOpen] = useState(false);
   // BUILD 626: Changelog panel visibility.
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const [showMenuSaveButton, setShowMenuSaveButton] = useState(() => {
+    try { return localStorage.getItem('ag-show-menu-save-button') !== 'false'; } catch { return true; }
+  });
+  const toggleMenuSaveButton = () => setShowMenuSaveButton((current) => {
+    const next = !current;
+    try { localStorage.setItem('ag-show-menu-save-button', String(next)); } catch {}
+    return next;
+  });
   // BUILD 728: Compare the running app with the deployed manifest and main source.
   // Commit-message parsing alone is not authoritative for version detection.
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
@@ -12756,13 +12769,13 @@ function Home() {
               <button className="main-menu-button" onClick={() => setCreatingCharacter(true)} data-testid="button-new-game">New Game</button>
               <button className="main-menu-button" onClick={loadLocalSave} disabled={!hasLocalSave} data-testid="button-load-game-menu">{hasLocalSave ? 'Load Game' : 'Load Game · No Save Yet'}</button>
               <button className="main-menu-button" onClick={openLoadPicker} data-testid="button-load-save-menu">Import Save File</button>
-              {/* BUILD 632: Save button in main menu. */}
-              <button className="main-menu-button" onClick={saveGame} data-testid="button-save-menu">💾 Save Game</button>
+              {/* BUILD 830: Optional title-screen save button; can be hidden from Changelog. */}
+              {showMenuSaveButton && <button className="main-menu-button" onClick={saveGame} data-testid="button-save-menu">💾 Save Game</button>}
               {/* BUILD 626: Changelog — verify updates are live. */}
               <button className="main-menu-button" onClick={() => setChangelogOpen((v) => !v)} data-testid="button-changelog">📋 Changelog</button>
             </div>
             {changelogOpen && (
-              <IssueTrackerPanel buildNumber={BUILD_NUMBER} changelog={CHANGELOG} updateStatus={updateStatus} />
+              <IssueTrackerPanel buildNumber={BUILD_NUMBER} changelog={CHANGELOG} updateStatus={updateStatus} onSaveGame={saveGame} showMenuSaveButton={showMenuSaveButton} onToggleMenuSaveButton={toggleMenuSaveButton} />
             )}
             <p className="main-menu-note">Use Load Game for this browser, or Import Save File for a downloaded backup.</p>
             {saveNotice && <div className="save-notice" role="status">{saveNotice}</div>}
