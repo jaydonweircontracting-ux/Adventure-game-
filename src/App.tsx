@@ -133,10 +133,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '809';
+const BUILD_NUMBER = '810';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '810': 'Fix player draw order when walking in front of the starting house',
   '809': 'Make the starting-house sprite twice as large',
   '808': 'Remove the black ground shadow beneath the starting-house sprite',
   '807': 'Make the uploaded IMG_5422 starting-house sprite larger',
