@@ -134,7 +134,8 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
-  '750': 'Fix invisible bandits by using the existing player sprite sheet URL',
+  '751': 'Remove lingering skeleton and floating-shadow remnants at the tutorial cottage',
+  '750': 'Suppress stale hostile sprites across the full starter-town safety zone',
   '749': 'Add a toggleable live player coordinate readout (chunk, local grid, and world coordinates)',
   '748': 'Stop restoring retired legacy field NPCs and stale starter-cottage corpse markers',
   '747': 'Expand hostile-spawn and render suppression around the green-house settlement into adjacent chunks',
@@ -395,6 +396,21 @@ export function isStartingArea(point: Point) {
 // humanoid sprites beside houses. Wilderness encounters remain enabled beyond it.
 export function isStartingSettlementSafetyZone(point: Point) {
   return point.x >= 2 && point.x <= 6 && point.y >= 5 && point.y <= 9;
+}
+
+// BUILD 751: hard-filter the retired tutorial-cottage remnants at their actual
+// field location. World (1225, 2082) maps to chunk (4, 7), local (105, 122).
+// Corpse markers use the full old cottage footprint; living actor suppression
+// is deliberately tighter so normal townsfolk can still use nearby streets.
+function isRetiredTutorialCottageBody(chunkPoint: Point, position: Point) {
+  return chunkPoint.x === 4 && chunkPoint.y === 7
+    && position.x >= 70 && position.x <= 125
+    && position.y >= 90 && position.y <= 145;
+}
+function isRetiredTutorialCottageActor(chunkPoint: Point, position: Point) {
+  return chunkPoint.x === 4 && chunkPoint.y === 7
+    && Math.abs(position.x - 105) <= 12
+    && Math.abs(position.y - 122) <= 12;
 }
 
 function isTutorialCenter(point: Point) {
@@ -9867,7 +9883,7 @@ if (active) {
           )}
                     {/* BUILD 523: Lootable NPC bodies. */}
                     <div className="field-bodies" aria-label="Bodies in the field">
-                      {bodies.filter((b) => !b.looted && b.chunk.x === chunk.x && b.chunk.y === chunk.y).map((body) => (
+                      {bodies.filter((b) => !b.looted && b.chunk.x === chunk.x && b.chunk.y === chunk.y && !isRetiredTutorialCottageBody(b.chunk, b.position)).map((body) => (
                         <button
                           key={body.id}
                           type="button"
@@ -10679,7 +10695,7 @@ if (active) {
               </>
             );
           })()}
-          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && npcStates.map((npc) => {
+          {currentWorldTile.landmark?.name === 'Mosslight Crossing' && npcStates.filter((npc) => !isRetiredTutorialCottageActor(chunk, npc.position)).map((npc) => {
             const enter = npcEnterProps('npcstate-' + npc.name, npc.position, npc.facing as NpcFacing);
             return (
             <button
@@ -10811,6 +10827,7 @@ if (active) {
             </>
           )}
           {currentWorldTile.landmark?.name === 'Mosslight Crossing' && townsfolk.filter((npc) => {
+            if (isRetiredTutorialCottageActor(chunk, npc.position)) return false;
             if (npc.indoors) return false;
             const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
             return !isNpcDead(npc, tick);
