@@ -1,3 +1,4 @@
+import DevConsole from './game/dev/DevConsole';
 import IsoRoomDemo from './game/iso/IsoRoom';
 import RpgPreview from './game/iso/RpgPreview';
 import IsoFieldView from './game/iso/IsoFieldView';
@@ -4018,6 +4019,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [debugHubOpen, setDebugHubOpen] = useState(false);
   // BUILD 836: separate editor inspection target; selecting a chunk never teleports the player.
   const [chunkSelectorOpen, setChunkSelectorOpen] = useState(false);
+  const [devConsoleOpen, setDevConsoleOpen] = useState(false);
   const [chunkSelectorPoint, setChunkSelectorPoint] = useState<Point>({ x: 4, y: 7 });
   const [debugHubSearch, setDebugHubSearch] = useState('');
   const [debugValidationReport, setDebugValidationReport] = useState<string[]>([]);
@@ -9923,6 +9925,7 @@ if (active) {
               })()}
             </div>
           )}
+          {devConsoleOpen && <DevConsole build={BUILD_NUMBER} onClose={() => setDevConsoleOpen(false)} />}
           {chunkSelectorOpen && <ChunkZoneSelector selectedChunk={chunkSelectorPoint} onSelectChunk={setChunkSelectorPoint} getChunkInfo={getChunkSelectorInfo} mapPaints={mapPaints} onClose={() => setChunkSelectorOpen(false)} />}
           {debugHubOpen && (
             <div className="editor-panel inspector-panel debug-hub-panel" role="dialog" aria-label="Debug Control Center" style={{ maxHeight: 'min(84vh, 780px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 1260 }}>
@@ -9940,7 +9943,7 @@ if (active) {
               <div style={{ overflowY: 'auto', padding: 8, minHeight: 0, flex: 1 }}>
                 <strong>World Studio</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
-                  {([{ name: 'Chunk Zone Selector', keywords: 'chunk zones map coordinates outline red select inspect', action: () => { setChunkSelectorPoint(chunk); setChunkSelectorOpen(true); setDebugHubOpen(false); } }, { name: 'World Editor', keywords: 'world map terrain object place', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }, { name: 'Tile Paint', keywords: 'tile ground grass pathway paint', action: () => { setDebugHubOpen(false); if (!tileEditMode) toggleTileEditMode(); else { setMapBuilderMode(true); setMapBuilderMin(false); } } }, { name: 'Asset Studio', keywords: 'asset sprite upload crop rotate flip', action: () => { setDebugHubOpen(false); setAssetStudioOpen(true); } }, { name: 'Building Mover', keywords: 'building house resize move', action: () => { setDebugHubOpen(false); if (!moverMode) toggleMoverMode(); } }, { name: 'Collision Overlay', keywords: 'collision hitbox bounds', action: () => { setCollisionDebugMode((v) => !v); setDebugHubOpen(false); } }, { name: 'Chunk Templates', keywords: 'chunk save template load', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
+                  {([{ name: 'Muse Dev Console', keywords: 'ai chat code assistant github commit update engine development', action: () => { setDevConsoleOpen(true); setDebugHubOpen(false); } }, { name: 'Chunk Zone Selector', keywords: 'chunk zones map coordinates outline red select inspect', action: () => { setChunkSelectorPoint(chunk); setChunkSelectorOpen(true); setDebugHubOpen(false); } }, { name: 'World Editor', keywords: 'world map terrain object place', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }, { name: 'Tile Paint', keywords: 'tile ground grass pathway paint', action: () => { setDebugHubOpen(false); if (!tileEditMode) toggleTileEditMode(); else { setMapBuilderMode(true); setMapBuilderMin(false); } } }, { name: 'Asset Studio', keywords: 'asset sprite upload crop rotate flip', action: () => { setDebugHubOpen(false); setAssetStudioOpen(true); } }, { name: 'Building Mover', keywords: 'building house resize move', action: () => { setDebugHubOpen(false); if (!moverMode) toggleMoverMode(); } }, { name: 'Collision Overlay', keywords: 'collision hitbox bounds', action: () => { setCollisionDebugMode((v) => !v); setDebugHubOpen(false); } }, { name: 'Chunk Templates', keywords: 'chunk save template load', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
                 </div>
                 <strong>Living World & Diagnostics</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
