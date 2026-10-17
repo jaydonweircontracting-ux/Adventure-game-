@@ -4180,6 +4180,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [mapBrush, setMapBrush] = useState<MapBrush>('dirt');
   // BUILD 815: paused tile-edit mode; tapping paints + selects a tile, tapping it again deselects it.
   const [tileEditMode, setTileEditMode] = useState(false);
+  const tileEditModeRef = useRef(false);
   const [tileCoordsOpen, setTileCoordsOpen] = useState(false);
   const [selectedPaintTiles, setSelectedPaintTiles] = useState<Array<{ chunk: string; tx: number; ty: number }>>([]);
   const [customTileColor, setCustomTileColor] = useState('#888888');
@@ -4190,6 +4191,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [tileEditorSaveStatus, setTileEditorSaveStatus] = useState('Not exported yet');
   const toggleTileEditMode = () => {
     const next = !tileEditMode;
+    tileEditModeRef.current = next;
     setTileEditMode(next);
     if (next) {
       // Stop every player-controlled/tap-to-move route immediately while editing.
@@ -6595,7 +6597,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const onKeyDown = (event: KeyboardEvent) => {
       // BUILD 667: Don't steal keys while typing in a text field.
       if (isTextInputActive(event)) return;
-      if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode) return;
+      if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditModeRef.current) return;
       if (event.code === 'Space' || event.code === 'KeyF') { event.preventDefault(); attackGoat(); return; }
       // BUILD 704: Shift hold-to-run (works alongside the touch toggle).
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') { shiftHeldRef.current = true; return; }
