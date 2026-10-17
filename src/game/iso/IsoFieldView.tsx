@@ -1410,13 +1410,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               const scale = targetW / sprite.naturalWidth;
               const sw = sprite.naturalWidth * scale;
               const sh = sprite.naturalHeight * scale;
-              // BUILD 698: soft elliptical ground shadow so sprite buildings
-              // don't float — centered at the base like the NPC/critter
-              // shadow direction (ellipse at feet, no offset).
-              g2.fillStyle = 'rgba(0,0,0,0.20)';
-              g2.beginPath();
-              g2.ellipse(cx, baseY, sw * 0.45, sw * 0.16, 0, 0, Math.PI * 2);
-              g2.fill();
+              // BUILD 808: no black ground ellipse beneath the uploaded house sprite.
               g2.save();
               g2.globalAlpha = 1;
               g2.globalCompositeOperation = 'source-over';
