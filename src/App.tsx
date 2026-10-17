@@ -130,13 +130,12 @@ const assetUrl = (path: string) => artUrl(path);
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
-// BUILD 766: Bundle-owned version marker. Do not read window.__AG_BUILD here:
-// a freshly deployed index.html can otherwise make a cached older JS bundle
-// falsely report itself as current.
-const BUILD_NUMBER = '766';
+// BUILD 767: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
+const BUILD_NUMBER = '767';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '767': 'Restore detailed medieval building art and tighten exterior collision',
   '766': 'Add partition walls and multiple walkable rooms inside buildings',
   '762': 'Render the new vector building designs in the isometric world',
   '761': 'Replace old house sprites with new buildings and remove the enter button',
@@ -993,24 +992,25 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
         right: doorway.rect.right + offset.x,
         bottom: doorway.rect.bottom + offset.y,
       };
+      // BUILD 767: collide using the player's body footprint, not just its centre.
+      // This prevents visible wall clipping while preserving a body-width doorway.
       const rect = {
-        left: movedRect.left + 0.35,
-        top: movedRect.top + 0.35,
-        right: movedRect.right - 0.35,
-        bottom: movedRect.bottom - 0.35,
+        left: movedRect.left - PLAYER_COLLISION_BOX.halfWidth,
+        top: movedRect.top - PLAYER_COLLISION_BOX.halfHeight,
+        right: movedRect.right + PLAYER_COLLISION_BOX.halfWidth,
+        bottom: movedRect.bottom + PLAYER_COLLISION_BOX.halfHeight,
       };
       if (!pointInRect(position, rect)) continue;
 
-      // Leave a narrow, door-width corridor through the south/front wall. The
-      // movement loop detects the doorway before resolving collision and opens
-      // the interior as the player reaches the threshold. Without this gap,
-      // the solid footprint would stop the player just before the trigger.
+      // The only opening is the real south/front doorway. Expand the opening
+      // by the player's half-size so collision does not create an invisible
+      // barrier across the visible door.
       const doorX = doorway.position.x + offset.x;
       const doorY = doorway.position.y + offset.y;
       const { xTol } = doorwayTriggerDims(movedRect);
-      const inDoorwayCorridor = Math.abs(position.x - doorX) <= xTol
-        && position.y >= doorY - 1.2
-        && position.y <= movedRect.bottom + 1.5;
+      const inDoorwayCorridor = Math.abs(position.x - doorX) <= xTol + PLAYER_COLLISION_BOX.halfWidth
+        && position.y >= doorY - 1.2 - PLAYER_COLLISION_BOX.halfHeight
+        && position.y <= movedRect.bottom + 1.5 + PLAYER_COLLISION_BOX.halfHeight;
       if (!inDoorwayCorridor) return true;
     }
   }

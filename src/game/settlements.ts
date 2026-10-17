@@ -116,9 +116,6 @@ export const BUILDING_VARIANTS = [
   // roof). Catalog registration only — Mosslight filler lots keep their own
   // district pools in mosslightLayout.ts.
   'story-tower',
-  // BUILD 761: replacement Mosslight architecture rendered from SVG sprites.
-  'new-stone-house', 'new-story-hall', 'new-plaster-house', 'new-tavern',
-  'new-market-shop', 'new-timber-house', 'new-green-cottage',
 ] as const;
 
 /**

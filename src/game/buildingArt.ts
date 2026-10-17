@@ -5,9 +5,9 @@ import { BUILDING_VARIANTS } from './settlements';
 import { mosslightFillerLots } from './mosslightLayout';
 import type { Rect } from './settlements';
 export interface BuildingArt { variant: string; file: string; aspectRatio: '2 / 1' | '1 / 1' }
-const MOSSLIGHT_PINNED_VARIANTS = ['new-stone-house', 'new-story-hall', 'new-plaster-house', 'new-tavern', '', '', '', '', '', '', 'new-stone-house', 'new-tavern', 'new-market-shop', 'new-timber-house', 'new-market-shop', 'new-stone-house', 'new-market-shop', 'new-stone-house'] as const;
-const HOUSE_VARIANTS = ['new-stone-house', 'new-plaster-house', 'new-timber-house', 'new-green-cottage'] as const;
-const SHOP_VARIANTS = ['new-market-shop', 'new-tavern', 'new-market-shop'] as const;
+const MOSSLIGHT_PINNED_VARIANTS = ['blue-house', 'story-tower', 'plaster-house', 'tavern', '', '', '', '', '', '', 'blue-house', 'tavern', 'green-shop', 'house-timber', 'shop-awning', 'blue-house', 'brick-shop', 'stone-cottage'] as const;
+const HOUSE_VARIANTS = ['blue-cottage', 'red-cottage', 'green-cottage', 'stone-cottage', 'blue-house', 'plaster-house', 'house-timber'] as const;
+const SHOP_VARIANTS = ['red-shop', 'green-shop', 'brick-shop', 'shop-awning'] as const;
 const AUDITED = new Set<string>(BUILDING_VARIANTS);
 export function buildingArtFor(chunk: { x: number; y: number }, index: number, rect: Rect): BuildingArt {
   let variant: string | undefined;
@@ -23,10 +23,9 @@ export function buildingArtFor(chunk: { x: number; y: number }, index: number, r
     variant = pool[hash % pool.length];
   }
   if (!AUDITED.has(variant)) variant = 'new-stone-house';
-  const svgVariants = new Set(['new-stone-house', 'new-story-hall', 'new-plaster-house', 'new-tavern', 'new-market-shop', 'new-timber-house', 'new-green-cottage']);
   return {
     variant,
-    file: 'buildings/' + variant + (svgVariants.has(variant) ? '.svg' : '.png'),
-    aspectRatio: variant === 'new-story-hall' ? '1 / 1' : '2 / 1',
+    file: 'buildings/' + variant + '.png',
+    aspectRatio: variant === 'story-tower' || variant === 'gatehouse' || variant === 'inn-large' || variant === 'house-timber' || variant === 'shop-awning' ? '1 / 1' : '2 / 1',
   };
 }
