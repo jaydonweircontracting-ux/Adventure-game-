@@ -12419,6 +12419,9 @@ function Home() {
       className={menuOpen ? 'game-app menu-mode' : 'game-app'}
       style={{
         '--player-sprite-url': playerSpriteUrl ? `url("${playerSpriteUrl}")` : `url("${assetUrl('assets/cute-fantasy/player.png')}")`,
+        // BUILD 755: Town residents must use the canonical NPC sheet, never the player's custom avatar sheet.
+        // Custom player art can be transparent or a skeleton and was leaking into town NPC rendering.
+        '--npc-sprite-url': `url("${assetUrl('assets/cute-fantasy/player.png')}")`,
         // Bandits stay pinned to the original player sprite sheet even when the
         // player creates a custom character.
         '--bandit-sprite-url': `url("${assetUrl('assets/cute-fantasy/player.png')}")`,
