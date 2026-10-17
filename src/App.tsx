@@ -4191,6 +4191,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       tapMoveTargetRef.current = null;
       tapMovePathRef.current = null;
       setMoving(false);
+      if (mapBrush === 'house') setMapBrush('grass');
       setMapBuilderMode(true);
       setMapBuilderMin(false);
     } else {
@@ -9356,7 +9357,7 @@ if (active) {
                 <button type="button" className="map-builder-exit" onClick={toggleMapBuilder} aria-label="Exit map builder">✕</button>
               </div>
               <div className="map-builder-palette">
-                {mapBrushes.map((b) => (
+                {(tileEditMode ? mapBrushes.filter((b) => b.id !== 'house') : mapBrushes).map((b) => (
                   <button
                     key={b.id}
                     type="button"
