@@ -4182,13 +4182,16 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [tileEditMode, setTileEditMode] = useState(false);
   const tileEditModeRef = useRef(false);
   const [tileCoordsOpen, setTileCoordsOpen] = useState(false);
-  const [selectedPaintTiles, setSelectedPaintTiles] = useState<Array<{ chunk: string; tx: number; ty: number }>>([]);
+  const [selectedPaintTiles, setSelectedPaintTiles] = useState<Array<{ chunk: string; tx: number; ty: number }>>(() => {
+    try { const raw = localStorage.getItem('tileEditorSelectedTiles'); const parsed = raw ? JSON.parse(raw) : []; return Array.isArray(parsed) ? parsed.filter((t) => t && typeof t.chunk === 'string' && Number.isInteger(t.tx) && Number.isInteger(t.ty) && t.tx >= 0 && t.ty >= 0 && t.tx < MAP_TILES_PER_SIDE && t.ty < MAP_TILES_PER_SIDE) : []; } catch { return []; }
+  });
   const [customTileColor, setCustomTileColor] = useState('#888888');
   const [tileCoordFilter, setTileCoordFilter] = useState('');
   const [manualWorldX, setManualWorldX] = useState('');
   const [manualWorldY, setManualWorldY] = useState('');
   const [manualTileNote, setManualTileNote] = useState('');
   const [tileEditorSaveStatus, setTileEditorSaveStatus] = useState('Not exported yet');
+  useEffect(() => { try { localStorage.setItem('tileEditorSelectedTiles', JSON.stringify(selectedPaintTiles)); } catch { setTileEditorSaveStatus('Could not save tile selection to local storage'); } }, [selectedPaintTiles]);
   const toggleTileEditMode = () => {
     const next = !tileEditMode;
     tileEditModeRef.current = next;
@@ -4551,8 +4554,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       }
       pushMapUndo();
       setSelectedPaintTiles((prev) => [...prev, { chunk: chunkKey, tx, ty }]);
+      const oldPaint = (mapPaints[chunkKey] ?? []).find((p) => p.tx === tx && p.ty === ty)?.tile ?? 'procedural';
+      const newPaint = mapBrush === 'erase' ? 'procedural' : mapBrush;
       setMapPaints((prev) => paintTile(prev, chunkKey, tx, ty, mapBrush === 'erase' ? null : mapBrush));
-      logEditorChange('tile-select', 'selected tile (' + tx + ',' + ty + ') in chunk ' + chunkKey + ' and applied ' + mapBrush);
+      logEditorChange('tile-select-paint', 'tile (' + tx + ',' + ty + ') in chunk ' + chunkKey + ' original=' + oldPaint + ' new=' + newPaint);
       return;
     }
     setMapPaints((prev) => paintTile(prev, chunkKey, tx, ty, mapBrush === 'erase' ? null : mapBrush));
