@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '750': 'Fix invisible bandits by using the existing player sprite sheet URL',
   '749': 'Add a toggleable live player coordinate readout (chunk, local grid, and world coordinates)',
   '748': 'Stop restoring retired legacy field NPCs and stale starter-cottage corpse markers',
   '747': 'Expand hostile-spawn and render suppression around the green-house settlement into adjacent chunks',
