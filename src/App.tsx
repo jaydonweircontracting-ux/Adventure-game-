@@ -5431,9 +5431,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   }, []);
   useEffect(() => {
     if (!loadState) return;
-    const restoredDoorway = loadState.interiorId
-      ? buildingDoorwaysFor(loadState.chunk).find((doorway) => doorway.area.id === loadState.interiorId) || null
-      : null;
+    // BUILD 794: old saves that were inside a house now resume outdoors.
+    // Keep the saved world position/chunk, but do not restore a separate house room.
+    const restoredDoorway: Doorway | null = null;
     keysRef.current = {};
     clearTouchHolds(touchHoldsRef.current);
     positionRef.current = loadState.position; setPosition(loadState.position);
