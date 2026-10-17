@@ -1,6 +1,6 @@
 {
-  "build": "780",
-  "note": "Starting-house interior fully fitted with pan and zoom controls",
-  "timestamp": "2026-10-17T18:00:27.693Z",
-  "cacheBuster": "build780-starter-house-fit-pan-zoom"
+  "build": "781",
+  "note": "Starting-house interior fitted to screen with drag panning",
+  "timestamp": "2026-10-17T18:06:42.159Z",
+  "cacheBuster": "build781-starter-house-drag-pan"
 }
