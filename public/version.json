@@ -1,6 +1,6 @@
 {
-  "build": "786",
-  "note": "Re-uploaded starting-house interior asset and refreshed rendering",
-  "timestamp": "2026-10-17T19:30:00.000Z",
-  "cacheBuster": "build786-starting-house-interior-fresh-upload"
+  "build": "787",
+  "note": "Fix starting-house image tint and transparency",
+  "timestamp": "2026-10-17T20:00:00.000Z",
+  "cacheBuster": "build787-neutral-starter-house-render"
 }
