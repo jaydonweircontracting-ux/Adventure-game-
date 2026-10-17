@@ -37,7 +37,7 @@ jobs:
         run: npm run test:settlement-economy
       - name: Build site
         run: npm run build
-      - name: Configure Pages artifact
+      - name: Verify update notifier build-number consistency\n        run: npm run test:update-version\n      - name: Configure Pages artifact
         uses: actions/configure-pages@v5
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

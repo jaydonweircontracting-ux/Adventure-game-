@@ -127,16 +127,17 @@ const PLAYER_ATTACK_SPRITE_URL = artUrl('assets/gameplay/shining-fields/characte
 const queryClient = new QueryClient();
 const assetUrl = (path: string) => artUrl(path);
 // BUILD 792: bundle the uploaded starter-house exterior directly from the repository.
-const ALL_BUILDINGS_SPRITE_URL = new URL('../game sprites/starting house/IMG_5423.png', import.meta.url).href;
+const ALL_BUILDINGS_SPRITE_URL = new URL('../game sprites/starting house/IMG_5422.png', import.meta.url).href;
 // Flat fallback colors + PNG tile art for the world map, applied inline per tile.
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '803';
+const BUILD_NUMBER = '804';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '804': 'Synchronize the game and deployment build numbers; restore IMG_5422 as the starting-house exterior',
   '803': 'Hide all generated building images; keep only the existing starter house exterior',
   '796': 'Fix Pages typecheck and use the uploaded house sprite on every building exterior',
   '797': 'Use the same uploaded IMG_5423 sprite for every house and farmhouse',
