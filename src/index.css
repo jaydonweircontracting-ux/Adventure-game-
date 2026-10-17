@@ -5701,7 +5701,7 @@ body {
 }
 
 
-/* BUILD 799: temporarily remove every rendered house sprite from the world. */
+/* BUILD 800: every house uses the single uploaded IMG_5423 sprite. */
 .field-house,
 .field-house.sprite-house,
 .field-house.farm-house {
@@ -5710,7 +5710,13 @@ body {
   border: 0 !important;
   box-shadow: none !important;
 }
-.field-house-art,
+.field-house-art {
+  display: block !important;
+  background-image: var(--building-art) !important;
+  background-repeat: no-repeat !important;
+  background-position: center bottom !important;
+  background-size: contain !important;
+}
 .field-house-sign,
 .field-house::before,
 .field-house::after {
