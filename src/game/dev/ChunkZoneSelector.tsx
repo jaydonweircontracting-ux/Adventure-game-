@@ -49,7 +49,7 @@ export default function ChunkZoneSelector({ selectedChunk, onSelectChunk, getChu
   const paintByTile = new Map(paints.map(p => [p.tx + ',' + p.ty, p.tile]));
   const jumpToCoordinates = () => {
     const x = Number(searchX), y = Number(searchY);
-    if (Number.isFinite(x) && Number.isFinite(y) && Number.isInteger(x) && Number.isInteger(y)) onSelectChunk({ x, y });
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isInteger(x) && Number.isInteger(y)) { setRegion(x >= 117 && x <= 196 && y >= -28 && y <= 51 ? 'second' : 'main'); onSelectChunk({ x, y }); }
   };
   return (
     <section role="dialog" aria-label="Chunk zone selector" style={{ position: 'fixed', inset: 'max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom))', zIndex: 22000, background: '#111b19', color: '#f3f6ef', border: '1px solid #5a7567', borderRadius: 12, boxShadow: '0 12px 40px #000c', display: 'flex', flexDirection: 'column', overflow: 'hidden', font: '12px system-ui' }}>
