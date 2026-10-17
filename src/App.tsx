@@ -10455,7 +10455,7 @@ if (active) {
                 const isSelected = selectedHouse === doorway.id;
                 const buildingIndex = doorways.indexOf(doorway);
                 const buildingArt = buildingArtFor(chunk, buildingIndex, rect);
-                const buildingArtUrl = doorway.id === 'tutorial-house' ? STARTER_HOUSE_EXTERIOR_URL : assetUrl(buildingArt.file);
+                const buildingArtUrl = doorway.id === 'tutorial-house-door' ? STARTER_HOUSE_EXTERIOR_URL : assetUrl(buildingArt.file);
                 return (
                 <span
                   key={doorway.id}
