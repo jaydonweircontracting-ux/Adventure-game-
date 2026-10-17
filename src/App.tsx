@@ -135,10 +135,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '824';
+const BUILD_NUMBER = '825';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '825': 'Remove the bottom Fists HUD and hide the house overlay indoors',
   '824': 'Make the Hide Map button smaller',
   '823': 'Render the starting-house overlay in the isometric world and hide it indoors',
   '822': 'Add a button to hide and show the minimap',
@@ -10707,7 +10708,7 @@ if (active) {
                       setSelectedPlacedId(null);
                     }
                   } : undefined}
-                ><span className="field-house-art" aria-hidden="true" />{doorway.id === 'tutorial-house-door' && <img className="field-house-overlay-art" src={STARTING_HOUSE_OVERLAY_URL} alt="" draggable={false} aria-hidden="true" />}{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}{moverMode && (
+                ><span className="field-house-art" aria-hidden="true" />{doorway.id === 'tutorial-house-door' && !interior && <img className="field-house-overlay-art" src={STARTING_HOUSE_OVERLAY_URL} alt="" draggable={false} aria-hidden="true" />}{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}{moverMode && (
                   <span className="editor-coord" aria-hidden="true">
                     {(rect.left + off.x).toFixed(1)}, {(rect.top + off.y).toFixed(1)}
                   </span>
@@ -11827,11 +11828,6 @@ if (active) {
              </div>
            </section>
          )}
-         <div className="field-actions">
-           <div className="equipped-weapon-box" role="status" aria-label={'Equipped weapon: ' + (equippedSword ? 'Barbarian sword' : equippedBow ? 'Hunting bow' : equippedDagger ? 'Goat-horn dagger' : 'Fists')} title={equippedSword ? 'Barbarian sword — melee hits 35% harder' : equippedBow ? 'Hunting bow — attacks fire arrows' : equippedDagger ? 'Goat-horn dagger' : 'Fists'} data-testid="hud-equipped-weapon">
-             <span className="equipped-weapon-icon" aria-hidden="true">{equippedSword ? '🗡' : equippedBow ? '🏹' : equippedDagger ? '†' : '✊'}</span>
-             <span className="equipped-weapon-label">{equippedSword ? 'Sword' : equippedBow ? 'Bow' : equippedDagger ? 'Dagger' : 'Fists'}</span>
-           </div>
            {/* BUILD 461: D-pad (arrow keys) — toggle in options */}
            {showDpad && !interior && !optionsOpen && (
              <div className="field-dpad" style={{
