@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '762': 'Render the new vector building designs in the isometric world',
   '761': 'Replace old house sprites with new buildings and remove the enter button',
   '759': 'Move all market stalls onto the middle east-west town fork',
   '758': 'Move all market stalls into the central town road fork',
