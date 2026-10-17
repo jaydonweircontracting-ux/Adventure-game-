@@ -1217,7 +1217,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         const kind = selectedKind === 'hut-thatched' ? 'green-cottage' : selectedKind;
         buildingKindCache.set(b, kind);
         const projectedWidth = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 0.95;
-        const spriteHeight = buildingSpriteHeightForWidth(projectedWidth, kind);
+        const spriteHeight = buildingSpriteHeightForWidth(projectedWidth, kind) * 1.12;
         const minY = Math.min(p00.y, p10.y, p11.y, p01.y) - Math.max(64, spriteHeight);
         const maxY = Math.max(p00.y, p10.y, p11.y, p01.y);
         if (maxX < cam.x - vhw || minX > cam.x + vhw || maxY < cam.y - vhh || minY > cam.y + vhh) continue;
@@ -1240,8 +1240,10 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               // Draw sprite anchored at building base center
               const cx = (p00.x + p11.x) / 2;
               const baseY = Math.max(p00.y, p10.y, p11.y, p01.y);
-              // BUILD 602: Scale to fit building footprint (was 1.2x, caused overlap)
-              const targetW = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 0.95;
+              // BUILD 764: Give houses a more substantial presence without changing
+              // their shared logical footprint, door trigger, or collision data.
+              // The slight overhang is intentional; culling above uses the same scale.
+              const targetW = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 1.12;
               const scale = targetW / sprite.naturalWidth;
               const sw = sprite.naturalWidth * scale;
               const sh = sprite.naturalHeight * scale;
