@@ -265,11 +265,35 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
     if (!ctx) return;
 
     const furn = furnitureFor(roomType, roomId);
-    // BUILD 388: cellar/prison render the dungeon sprite kit (brick walls,
-    // torches, chests, pillars). Collision and furniture data are untouched.
+    // BUILD 766: multi-room floorplans with walkable door gaps between rooms.
     const isDungeon = roomType === 'cellar' || roomType === 'prison';
+    const partitionWalls: { tx: number; ty: number; axis: 'north' | 'west' }[] = [];
+    const addWall = (tx: number, ty: number, axis: 'north' | 'west') => {
+      if (tx > 0 && ty > 0 && tx < ROOM_W - 1 && ty < ROOM_H - 1) partitionWalls.push({ tx, ty, axis });
+    };
+    if (!isDungeon) {
+      if (roomType === 'building') {
+        // Main room, bedroom wing, and rear storage/kitchen room.
+        for (let ty = 2; ty <= 9; ty++) if (ty !== 6) addWall(9, ty, 'west');
+        for (let tx = 9; tx <= 12; tx++) if (tx !== 11) addWall(tx, 4, 'north');
+      } else if (roomType === 'tavern' || roomType === 'inn') {
+        // Public taproom separated from the staff/store room.
+        for (let ty = 1; ty <= 4; ty++) if (ty !== 3) addWall(8, ty, 'west');
+        for (let tx = 8; tx <= 12; tx++) if (tx !== 10) addWall(tx, 5, 'north');
+      } else if (roomType === 'guild') {
+        // Workshop plus enclosed rear tool room and side office.
+        for (let ty = 2; ty <= 9; ty++) if (ty !== 6) addWall(8, ty, 'west');
+        for (let tx = 8; tx <= 12; tx++) if (tx !== 10) addWall(tx, 4, 'north');
+      } else if (roomType === 'chapel') {
+        // Nave with a separated sacristy at the rear.
+        for (let tx = 2; tx <= 11; tx++) if (tx !== 6) addWall(tx, 3, 'north');
+      }
+    }
+    const partitionTileBlocked = (tx: number, ty: number) =>
+      partitionWalls.some((w) => w.tx === tx && w.ty === ty);
     const solidAt = (tx: number, ty: number): boolean => {
       if (tx < 0 || ty < 0 || tx >= ROOM_W || ty >= ROOM_H) return true;
+      if (partitionTileBlocked(tx, ty)) return true;
       return furn.some((f) => f.solid && tx >= f.tx && tx < f.tx + f.w && ty >= f.ty && ty < f.ty + f.h);
     };
     const doorTile: TilePoint = { tx: Math.floor(ROOM_W / 2), ty: ROOM_H - 1 };
@@ -871,6 +895,37 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
             g2.lineTo(p.x, p.y + (TILE_H * state.zoom) / 2 - wh);
             g2.lineTo(p.x + hw, p.y - wh);
             g2.closePath(); g2.fill();
+          },
+        });
+      }
+
+      // BUILD 766: raised isometric partition walls. The omitted wall tiles
+      // are door openings, so every new room remains reachable.
+      for (const wall of partitionWalls) {
+        const p = toScreen(wall.tx, wall.ty);
+        const hw = (TILE_W * state.zoom) / 2;
+        const hh = (TILE_H * state.zoom) / 2;
+        const wallHeight = WALL_H * state.zoom;
+        drawables.push({
+          depth: depthKey(wall.tx, wall.ty) + 0.5,
+          draw: (g2) => {
+            const x1 = wall.axis === 'north' ? p.x - hw : p.x + hw;
+            const x2 = p.x;
+            const y1 = p.y;
+            const y2 = p.y + hh;
+            g2.fillStyle = wallDark;
+            g2.beginPath();
+            g2.moveTo(x1, y1); g2.lineTo(x2, y2);
+            g2.lineTo(x2, y2 - wallHeight); g2.lineTo(x1, y1 - wallHeight);
+            g2.closePath(); g2.fill();
+            g2.strokeStyle = 'rgba(38,28,20,0.75)';
+            g2.lineWidth = Math.max(1, state.zoom);
+            g2.stroke();
+            g2.strokeStyle = wallCol;
+            g2.lineWidth = Math.max(2, 3 * state.zoom);
+            g2.beginPath();
+            g2.moveTo(x1, y1 - wallHeight); g2.lineTo(x2, y2 - wallHeight);
+            g2.stroke();
           },
         });
       }
