@@ -1051,6 +1051,16 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
         const wallYRadius = Math.max(0.18, (PLAYER_COLLISION_BOX.halfHeight / roomHeight) * 12 + 0.08);
         if (vertical.some(([x, y1, y2]) => Math.abs(tileX - x) <= wallXRadius && tileY >= y1 && tileY <= y2)
           || horizontal.some(([y, x1, x2]) => Math.abs(tileY - y) <= wallYRadius && tileX >= x1 && tileX <= x2)) return true;
+
+        // Furniture uses the same deterministic layout as the floor-plan art.
+        const layout = generateInteriorLayout(doorway.id, houseType, 14, 12);
+        const furnitureRadiusX = Math.max(0.12, (PLAYER_COLLISION_BOX.halfWidth / roomWidth) * 14);
+        const furnitureRadiusY = Math.max(0.12, (PLAYER_COLLISION_BOX.halfHeight / roomHeight) * 12);
+        if (layout.furniture.some((item) => item.solid
+          && tileX + furnitureRadiusX > item.tx
+          && tileX - furnitureRadiusX < item.tx + item.w
+          && tileY + furnitureRadiusY > item.ty
+          && tileY - furnitureRadiusY < item.ty + item.h)) return true;
         continue;
       }
       if (!inDoorwayCorridor) return true;
