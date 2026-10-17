@@ -124,13 +124,7 @@ export function appearanceForNpc(id: string, archetype: string, opts: NpcAppeara
   // different settlements dress differently while individuals stay stable.
   const palette = OUTFIT_PALETTES[arch];
   const offset = opts.region ? hashString(opts.region) % palette.length : 0;
-  // BUILD 754: Tam and Nan are the town-w1 household. Both had been
-  // assigned unstable/problematic outfit columns; force both to the known-good
-  // human blue sprite column in every rendering context (field, interior, portrait).
-  // Roster indices are zero-based: Tam=townsfolk-36, Nan=townsfolk-37.
-  const column = (id === 'townsfolk-36' || id === 'townsfolk-37')
-    ? 0
-    : palette[Math.floor(rand() * palette.length + offset) % palette.length];
+  const column = palette[Math.floor(rand() * palette.length + offset) % palette.length];
 
   // Subtle per-NPC tint jitter — tasteful, never garish.
   const hueJitter = Math.round((rand() * 2 - 1) * 7);          // ±7deg
