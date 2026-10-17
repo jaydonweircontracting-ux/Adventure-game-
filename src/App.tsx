@@ -9797,7 +9797,7 @@ if (active) {
                           </div>
                           <div><strong>Current state:</strong> {selected.activity} · {selected.indoors ? 'Indoors / not rendered in field' : selected.moving ? 'Walking' : 'Stationary'} · HP {selected.hp ?? 'full'} · {Math.round(selected.position.x)}, {Math.round(selected.position.y)}</div>
                           <div style={{ marginTop: 5 }}><strong>Mood:</strong> {stats.mood.label}{needs ? ' (' + stats.mood.score + '/100)' : ''} · <strong>Wealth:</strong> {stats.wealth} ({stats.gold} gold)</div>
-                          <div style={{ marginTop: 5 }}><strong>Disposition toward player:</strong> {stats.disp}/100 — {dispositionLabel(stats.disp)}</div>
+                          <div style={{ marginTop: 5 }}><strong>Disposition toward player:</strong> {stats.disp}/100 — {dispositionLabel(dispositionTier(stats.disp))}</div>
                           <div style={{ marginTop: 5 }}><strong>Reputation:</strong> {repRows.map(([label, value]) => label + ' ' + (value > 0 ? '+' : '') + value).join(' · ')}</div>
                           {needs && <div style={{ marginTop: 5 }}><strong>Needs:</strong> Hunger {needs.hunger} · Energy {needs.energy} · Social {needs.social} · Comfort {needs.comfort}</div>}
                           <div style={{ marginTop: 5 }}><strong>Personality:</strong> {pers.sociability >= .66 ? 'Outgoing' : pers.sociability <= .33 ? 'Reserved' : 'Balanced'} · {pers.diligence >= .66 ? 'Hardworking' : 'Easygoing'} · thrift {Math.round(pers.thrift * 100)}%</div>
