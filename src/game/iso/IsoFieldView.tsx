@@ -68,6 +68,56 @@ const dirtPathCache = createBoundedCache<string, DirtPathCacheEntry>(64);
 
 // BUILD 715: cache deterministic settlement geometry and sprite variants.
 // These were being rebuilt/reselected inside the 60 Hz draw loop.
+// BUILD 791: Remove the JPEG's black matte from the starter-house interior.
+const starterHouseCutoutCache = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
+function starterHouseCutout(image: HTMLImageElement): HTMLCanvasElement {
+  const cached = starterHouseCutoutCache.get(image);
+  if (cached) return cached;
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return canvas;
+  ctx.drawImage(image, 0, 0);
+  const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const { data, width, height } = frame;
+  const total = width * height;
+  const seen = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  let head = 0, tail = 0;
+  const isMatte = (i: number) => Math.max(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]) < 52;
+  const seed = (x: number, y: number) => {
+    const i = y * width + x;
+    if (!seen[i] && isMatte(i)) { seen[i] = 1; queue[tail++] = i; }
+  };
+  for (let x = 0; x < width; x++) { seed(x, 0); seed(x, height - 1); }
+  for (let y = 0; y < height; y++) { seed(0, y); seed(width - 1, y); }
+  while (head < tail) {
+    const i = queue[head++], x = i % width, y = (i / width) | 0;
+    if (x > 0) seed(x - 1, y);
+    if (x + 1 < width) seed(x + 1, y);
+    if (y > 0) seed(x, y - 1);
+    if (y + 1 < height) seed(x, y + 1);
+  }
+  // Fully clear the edge-connected black matte, then soften its JPEG fringe.
+  for (let i = 0; i < total; i++) {
+    const p = i * 4;
+    if (seen[i]) { data[p + 3] = 0; continue; }
+    const x = i % width, y = (i / width) | 0;
+    let touchesMatte = false;
+    if (x > 0 && seen[i - 1]) touchesMatte = true;
+    else if (x + 1 < width && seen[i + 1]) touchesMatte = true;
+    else if (y > 0 && seen[i - width]) touchesMatte = true;
+    else if (y + 1 < height && seen[i + width]) touchesMatte = true;
+    if (touchesMatte) {
+      const brightness = Math.max(data[p], data[p + 1], data[p + 2]);
+      if (brightness < 105) data[p + 3] = Math.min(data[p + 3], Math.max(0, Math.round((brightness - 28) * 255 / 77)));
+    }
+  }
+  ctx.putImageData(frame, 0, 0);
+  starterHouseCutoutCache.set(image, canvas);
+  return canvas;
+}
 const settlementDecorCache = createBoundedCache<string, ReturnType<typeof settlementDecorFor>>(32);
 const buildingKindCache = new WeakMap<object, string>();
 const ambientCritterCache = createBoundedCache<string, AmbientCritter[]>(32);
@@ -1354,7 +1404,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               g2.globalAlpha = 1;
               g2.globalCompositeOperation = 'source-over';
               g2.filter = 'none';
-              g2.drawImage(sprite, cx - sw / 2, baseY - sh, sw, sh);
+              g2.drawImage(kind === 'starting-house-exterior' ? starterHouseCutout(sprite) : sprite, cx - sw / 2, baseY - sh, sw, sh);
               g2.restore();
               // Keep authored sprite architecture intact; only add entry-aligned ground dressing.
               drawBuildingGroundDress(g2, cx, baseY, sw, r.left + r.right, r.top + r.bottom);
