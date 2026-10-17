@@ -36,7 +36,7 @@ import {
 } from './critters';
 import {
   buildingDoorwaysFor, fieldTreesFor, fieldOresFor, mapTileFor, fieldPalettes, FIELD_SIZE,
-  isStartingArea, ORE_COLORS, settlementDecorFor, cottageVariantForRect,
+  isStartingArea, isStartingSettlementSafetyZone, ORE_COLORS, settlementDecorFor, cottageVariantForRect,
   type Point, type Doorway, type FieldTree, type FieldOre, type MapTile,
 } from '../../App';
 import type { Townsperson } from '../townsfolk';
@@ -164,7 +164,7 @@ type IsoMonster = { id: number; kind: string; position: Point; facing: string; d
  * reject invalid/out-of-chunk coordinates before both drawing and hit tests.
  */
 function liveMonstersForActiveChunk(monsters: readonly IsoMonster[] | undefined, chunk: Point): IsoMonster[] {
-  if (isStartingArea(chunk)) return [];
+  if (isStartingSettlementSafetyZone(chunk)) return [];
   const seenIds = new Set<number>();
   return (monsters ?? []).filter((monster) => {
     const { x, y } = monster.position;
