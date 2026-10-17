@@ -48,7 +48,7 @@ import { mosslightFillerLots, fillerVariantForLot, mosslightPinnedRects } from '
 // in src/game/buildingRig.ts.
 import { BUILDING_ASSET_META, buildingSpriteHeightForWidth } from '../buildingRig';
 // BUILD 801: one shared uploaded sprite for every rendered building.
-import sharedHouseSpriteUrl from '../../../game sprites/starting house/IMG_5423.png';
+import sharedHouseSpriteUrl from '../../../game sprites/starting house/IMG_5422.png';
 // BUILD 769: shared deterministic layouts for in-world residential cutaways.
 import { generateInteriorLayout } from '../interiors';
 import { houseTypeForBuilding } from '../houseTypes';
