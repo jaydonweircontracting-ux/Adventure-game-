@@ -130,7 +130,10 @@ const assetUrl = (path: string) => artUrl(path);
 const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49a', meadow: '#47a13d', forest: '#47a13d', desert: '#e0c184', tundra: '#edf0ec', rock: '#9a9a9a' };
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
-const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { __AG_BUILD?: string }).__AG_BUILD) || '375';
+// BUILD 766: Bundle-owned version marker. Do not read window.__AG_BUILD here:
+// a freshly deployed index.html can otherwise make a cached older JS bundle
+// falsely report itself as current.
+const BUILD_NUMBER = '766';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
