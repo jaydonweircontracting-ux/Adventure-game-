@@ -1,18 +1,19 @@
 // Deterministic exterior sprite assignment for world buildings.
-// Uses only audited assets in public/buildings; no per-render randomness.
+// BUILD 761: Mosslight's replacement buildings use original vector pixel-art
+// sprites so the new vernacular reads consistently at every zoom level.
 import { BUILDING_VARIANTS, mosslightCottageVariantForRect } from './settlements';
 import { fillerVariantForLot, mosslightFillerLots } from './mosslightLayout';
 import type { Rect } from './settlements';
 export interface BuildingArt { variant: string; file: string; aspectRatio: '2 / 1' | '1 / 1' }
-const MOSSLIGHT_PINNED_VARIANTS = ['blue-house', 'story-tower', 'plaster-house', 'tavern', '', '', '', '', '', '', 'blue-house', 'red-shop', 'green-shop', 'house-timber', 'shop-awning', 'blue-house', 'brick-shop', 'stone-cottage'] as const;
-const HOUSE_VARIANTS = ['blue-cottage', 'red-cottage', 'hut-thatched', 'blue-house', 'house-timber', 'green-cottage', 'stone-cottage', 'plaster-house'] as const;
-const SHOP_VARIANTS = ['red-shop', 'shop-awning', 'green-shop', 'brick-shop', 'tavern', 'inn-large'] as const;
+const MOSSLIGHT_PINNED_VARIANTS = ['new-stone-house', 'new-story-hall', 'new-plaster-house', 'new-tavern', '', '', '', '', '', '', 'new-stone-house', 'new-tavern', 'new-market-shop', 'new-timber-house', 'new-market-shop', 'new-stone-house', 'new-market-shop', 'new-stone-house'] as const;
+const HOUSE_VARIANTS = ['new-stone-house', 'new-plaster-house', 'new-timber-house', 'new-green-cottage'] as const;
+const SHOP_VARIANTS = ['new-market-shop', 'new-tavern', 'new-market-shop'] as const;
 const AUDITED = new Set<string>(BUILDING_VARIANTS);
 export function buildingArtFor(chunk: { x: number; y: number }, index: number, rect: Rect): BuildingArt {
   let variant: string | undefined;
   if (chunk.x === 4 && chunk.y === 7) {
     if (index >= 0 && index < 4) variant = MOSSLIGHT_PINNED_VARIANTS[index];
-    else if (index >= 4 && index < 10) variant = mosslightCottageVariantForRect(rect) ?? HOUSE_VARIANTS[(index + 1) % HOUSE_VARIANTS.length];
+    else if (index >= 4 && index < 10) variant = HOUSE_VARIANTS[(index + 1) % HOUSE_VARIANTS.length];
     else if (index >= 10 && index < 18) variant = MOSSLIGHT_PINNED_VARIANTS[index];
     else if (index >= 18) { const filler = mosslightFillerLots()[index - 18]; variant = filler ? fillerVariantForLot(rect, filler.district) : undefined; }
   }
@@ -21,7 +22,11 @@ export function buildingArtFor(chunk: { x: number; y: number }, index: number, r
     const pool = index % 7 === 5 || index % 7 === 6 ? SHOP_VARIANTS : HOUSE_VARIANTS;
     variant = pool[hash % pool.length];
   }
-  if (variant === 'hut-thatched') variant = 'green-cottage';
-  if (!AUDITED.has(variant)) variant = 'blue-cottage';
-  return { variant, file: 'buildings/' + variant + '.png', aspectRatio: variant === 'hut-thatched' ? '1 / 1' : '2 / 1' };
+  if (!AUDITED.has(variant)) variant = 'new-stone-house';
+  const svgVariants = new Set(['new-stone-house', 'new-story-hall', 'new-plaster-house', 'new-tavern', 'new-market-shop', 'new-timber-house', 'new-green-cottage']);
+  return {
+    variant,
+    file: 'buildings/' + variant + (svgVariants.has(variant) ? '.svg' : '.png'),
+    aspectRatio: variant === 'new-story-hall' ? '1 / 1' : '2 / 1',
+  };
 }
