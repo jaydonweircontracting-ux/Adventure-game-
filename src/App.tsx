@@ -1003,15 +1003,29 @@ function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Re
       };
       if (!pointInRect(position, rect)) continue;
 
-      // The only opening is the real south/front doorway. Expand the opening
-      // by the player's half-size so collision does not create an invisible
-      // barrier across the visible door.
+      // The south/front doorway is the one legitimate opening. Keep its
+      // corridor wider than the player's collision footprint so the door
+      // never becomes an invisible barrier.
       const doorX = doorway.position.x + offset.x;
       const doorY = doorway.position.y + offset.y;
       const { xTol } = doorwayTriggerDims(movedRect);
       const inDoorwayCorridor = Math.abs(position.x - doorX) <= xTol + PLAYER_COLLISION_BOX.halfWidth
         && position.y >= doorY - 1.2 - PLAYER_COLLISION_BOX.halfHeight
         && position.y <= movedRect.bottom + 1.5 + PLAYER_COLLISION_BOX.halfHeight;
+
+      // BUILD 769: ordinary residential interiors occupy the actual footprint
+      // of the building. Block the perimeter walls, not the entire room, so
+      // once the player passes the doorway they can move on the floor plane.
+      // The floor-plan renderer uses this same doorway rect as its geometry.
+      if (doorway.area.roomType === 'building' && pointInRect(position, movedRect)) {
+        const wall = 0.85;
+        const onPerimeter = position.x <= movedRect.left + wall
+          || position.x >= movedRect.right - wall
+          || position.y <= movedRect.top + wall
+          || position.y >= movedRect.bottom - wall;
+        if (onPerimeter && !inDoorwayCorridor) return true;
+        continue;
+      }
       if (!inDoorwayCorridor) return true;
     }
   }
@@ -7480,8 +7494,14 @@ if (active) {
         const attempted = { x: current.x + movement.x, y: current.y + movement.y };
         const nearbyDoor = doorwayNear(attempted, currentChunk, houseOffsetsRef.current);
         if (nearbyDoor && canEnterDoorway(current, attempted, nearbyDoor, direction)) {
-          enterDoorway(nearbyDoor, currentChunk);
-          return;
+          // BUILD 769: ordinary houses are continuous field geometry. Keep the
+          // field movement loop active instead of swapping to IsoInteriorView.
+          // Special interiors (guild, chapel, tavern services, cellar, prison)
+          // retain their existing interaction flow until migrated individually.
+          if (nearbyDoor.area.roomType !== 'building') {
+            enterDoorway(nearbyDoor, currentChunk);
+            return;
+          }
         }
         const resolved = resolveFieldMovement(current, movement, currentChunk, goatsRef.current, houseOffsetsRef.current);
         if (resolved) {
