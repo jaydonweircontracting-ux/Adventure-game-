@@ -131,10 +131,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '770';
+const BUILD_NUMBER = '771';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '771': 'Disable collision on all houses, including invisible building footprints',
   '770': 'Restore reliable house doorway entry and remove blocking interior collision',
   '769': 'Add in-world house floor-plan cutaways and type-specific room partitions',
   '768': 'Pin Mosslight building designs and restore house 12 as the tavern',
@@ -970,54 +971,11 @@ function fieldTreeBaseRect(tree: FieldTree): FieldRect {
 }
 
 function isFieldPositionBlocked(position: Point, chunk: Point, houseOffsets?: Record<string, Point>) {
-  // BUILD 762: building footprints are solid again. The previous temporary
-  // development bypass let the player walk through every house. Doorway entry
-  // is handled before this test by doorwayNear/canEnterDoorway, so blocking the
-  // footprint here cannot close a legitimate entrance. The exit spawn remains
-  // just outside the footprint. Respect offsets while the house editor is active.
-  const chunkKey = `${chunk.x},${chunk.y}`;
-  const tile = _memoizedWorldGen(`tile:${chunkKey}`, () => mapTileFor(chunk));
+  // BUILD 771: disable all house/building footprint collision, including
+  // collision rectangles for houses whose artwork is invisible or missing.
+  // Keep water blocking; doorway interactions remain handled separately.
+  const tile = _memoizedWorldGen(`tile:${chunk.x},${chunk.y}`, () => mapTileFor(chunk));
   if (pointInWater(position, tile)) return true;
-
-  // Keep the editor's free-placement workflow, but enforce the actual generated
-  // house rectangles during normal play. Use the exact doorway source of truth
-  // so collision, art, entry triggers, and house movement share coordinates.
-  if (!moveHouses) {
-    const doorways = _memoizedWorldGen(
-      `building-collision:${chunkKey}`,
-      () => buildingDoorwaysFor(chunk),
-    );
-    for (const doorway of doorways) {
-      const offset = houseOffsets?.[doorway.id] || { x: 0, y: 0 };
-      const movedRect = {
-        left: doorway.rect.left + offset.x,
-        top: doorway.rect.top + offset.y,
-        right: doorway.rect.right + offset.x,
-        bottom: doorway.rect.bottom + offset.y,
-      };
-      // BUILD 767: collide using the player's body footprint, not just its centre.
-      // This prevents visible wall clipping while preserving a body-width doorway.
-      const rect = {
-        left: movedRect.left - PLAYER_COLLISION_BOX.halfWidth,
-        top: movedRect.top - PLAYER_COLLISION_BOX.halfHeight,
-        right: movedRect.right + PLAYER_COLLISION_BOX.halfWidth,
-        bottom: movedRect.bottom + PLAYER_COLLISION_BOX.halfHeight,
-      };
-      if (!pointInRect(position, rect)) continue;
-
-      // The south/front doorway is the one legitimate opening. Keep its
-      // corridor wider than the player's collision footprint so the door
-      // never becomes an invisible barrier.
-      const doorX = doorway.position.x + offset.x;
-      const doorY = doorway.position.y + offset.y;
-      const { xTol } = doorwayTriggerDims(movedRect);
-      const inDoorwayCorridor = Math.abs(position.x - doorX) <= Math.max(xTol, INTERIOR_DOORWAY_WIDTH_PX / 2) + PLAYER_COLLISION_BOX.halfWidth + INTERIOR_DOORWAY_PADDING_PX
-        && position.y >= doorY - 2.5 - PLAYER_COLLISION_BOX.halfHeight
-        && position.y <= movedRect.bottom + 2.5 + PLAYER_COLLISION_BOX.halfHeight;
-
-      if (!inDoorwayCorridor) return true;
-    }
-  }
   return false;
 }
 
