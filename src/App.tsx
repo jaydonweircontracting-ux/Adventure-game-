@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '747': 'Expand hostile-spawn and render suppression around the green-house settlement into adjacent chunks',
   '746': 'Render each live monster once from active-chunk coordinates; reject duplicate IDs and invalid cross-chunk positions',
   '745': 'Hard-block hostile monster rendering in the starting town across both field renderers',
     '744': 'Remove the two broken ambient animals beside the starting house and restore original wilderness wildlife behaviour',
@@ -383,6 +384,14 @@ const mapLandmarks = LANDMARKS;
 
 export function isStartingArea(point: Point) {
   return point.x >= 3 && point.x <= 5 && point.y >= 6 && point.y <= 8;
+}
+
+// BUILD 747: the green-house settlement remains visible from adjacent chunks.
+// Keep hostile spawns disabled across the full 5x5 town approach, not just the
+// original 3x3 starter area, so edge chunks cannot place skeletons or broken
+// humanoid sprites beside houses. Wilderness encounters remain enabled beyond it.
+export function isStartingSettlementSafetyZone(point: Point) {
+  return point.x >= 2 && point.x <= 6 && point.y >= 5 && point.y <= 9;
 }
 
 function isTutorialCenter(point: Point) {
@@ -1978,7 +1987,7 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {
   // BUILD 741: the tutorial settlement and its surrounding starter chunks are safe.
   // Prevent hostile skeletons and malformed green humanoid encounters from
   // wandering through the starting town; wilderness encounters remain intact.
-  if (terrain === 'ocean' || isStartingArea(chunk)) return [];
+  if (terrain === 'ocean' || isStartingSettlementSafetyZone(chunk)) return [];
   const danger = dangerForChunk(chunk);
   const monsters: MonsterState[] = [];
   let id = 0;
@@ -9618,7 +9627,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView playerLook={rpgConfig.look} npcSpeechEnabled={false} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingArea(chunk) ? [] : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
+            <IsoFieldView playerLook={rpgConfig.look} npcSpeechEnabled={false} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? [] : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {
