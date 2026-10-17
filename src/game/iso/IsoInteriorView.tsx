@@ -876,7 +876,7 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
       if (isStarterHouse && starterScene) {
         const maxW = state.w * 1.35;
         const maxH = state.h * 0.78;
-        const scale = Math.min(maxW / starterScene.naturalWidth, maxH / starterScene.naturalHeight);
+        const scale = Math.max(maxW / starterScene.naturalWidth, maxH / starterScene.naturalHeight);
         const imageW = starterScene.naturalWidth * scale;
         const imageH = starterScene.naturalHeight * scale;
         g.globalCompositeOperation = 'screen';
