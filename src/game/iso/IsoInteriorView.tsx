@@ -73,7 +73,7 @@ function ratSprite(): HTMLImageElement | undefined {
   return ratSpriteImg.complete && ratSpriteImg.naturalWidth > 0 ? ratSpriteImg : undefined;
 }
 
-// BUILD 786: re-uploaded, versioned starting-house room diorama.
+// BUILD 787: render starter-house art with neutral canvas state; no warm glow overlay.
 let starterHouseSceneImg: HTMLImageElement | null = null;
 function starterHouseScene(): HTMLImageElement | undefined {
   if (!starterHouseSceneImg) {
@@ -880,8 +880,16 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
         const scale = Math.min(maxW / starterScene.naturalWidth, maxH / starterScene.naturalHeight);
         const imageW = starterScene.naturalWidth * scale;
         const imageH = starterScene.naturalHeight * scale;
+        // Isolate image rendering from any canvas state left by earlier draw calls.
+        // The uploaded JPEG must retain its original colour and full opacity.
+        g.save();
+        g.globalAlpha = 1;
         g.globalCompositeOperation = 'source-over';
+        g.filter = 'none';
+        g.shadowColor = 'rgba(0,0,0,0)';
+        g.shadowBlur = 0;
         g.drawImage(starterScene, (state.w - imageW) / 2, (state.h - imageH) / 2, imageW, imageH);
+        g.restore();
       } else {
       // floor
       for (let ty = 0; ty < ROOM_H; ty++) {
@@ -924,8 +932,9 @@ export default function IsoInteriorView({ roomId, roomType, npcs, onExit, onTalk
 
       }
 
-      if (isStarterHouse) {
-        // Warm daylight and hearth bounce soften the floor without obscuring movement or objects.
+      if (isStarterHouse && !starterScene) {
+        // Only apply procedural warm lighting when the fallback room is being drawn.
+        // Do not tint the supplied starter-house image.
         const glowAt = (tx: number, ty: number, radius: number, alpha: number) => {
           const p = toScreen(tx, ty);
           const gr = g.createRadialGradient(p.x, p.y, 2, p.x, p.y, radius * state.zoom);
