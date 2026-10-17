@@ -133,10 +133,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '795';
+const BUILD_NUMBER = '796';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '796': 'Fix Pages typecheck and use the uploaded house sprite on every building exterior',
   '795': 'Use the uploaded IMG_5423 sprite for every building exterior',
   '794': 'Keep all house exterior sprites and disable separate house interiors',
   '793': 'Start directly in the outdoor world instead of the starting-house interior',
@@ -5432,9 +5433,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   }, []);
   useEffect(() => {
     if (!loadState) return;
-    // BUILD 794: old saves that were inside a house now resume outdoors.
+    // BUILD 796: old saves that were inside a house now resume outdoors.
     // Keep the saved world position/chunk, but do not restore a separate house room.
-    const restoredDoorway: Doorway | null = null;
     keysRef.current = {};
     clearTouchHolds(touchHoldsRef.current);
     positionRef.current = loadState.position; setPosition(loadState.position);
@@ -5537,9 +5537,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       townsfolkRef.current = restored;
       setTownsfolk(restored);
     }
-    interiorDoorwayIdRef.current = restoredDoorway?.id || null;
+    interiorDoorwayIdRef.current = null;
     interiorEntryChunkRef.current = { x: loadState.chunk.x, y: loadState.chunk.y };
-    interiorRef.current = restoredDoorway?.area || null; setInterior(restoredDoorway?.area || null);
+    interiorRef.current = null; setInterior(null);
     interiorPositionRef.current = loadState.interiorPosition; setInteriorPosition(loadState.interiorPosition);
     onRestorePrison(loadState.inPrison || false, loadState.prisonState);
     if (loadState.journal) onRestoreJournal(loadState.journal);
