@@ -501,9 +501,6 @@ const ROSTER: TownsfolkDef[] = [
   // town-e2: Corb & Liss
   ['Corb', 'male', 'guard', 'warrior', 'town-e2'],
   ['Liss', 'female', 'commoner', 'mage', 'town-e2'],
-  // town-w1: Tam & Nan
-  ['Tam', 'male', 'commoner', 'guide', 'town-w1'],
-  ['Nan', 'female', 'commoner', 'mage', 'town-w1'],
   // town-w2: Jory & Ess
   ['Jory', 'male', 'smith', 'warrior', 'town-w2'],
   ['Ess', 'female', 'merchant', 'mage', 'town-w2'],
