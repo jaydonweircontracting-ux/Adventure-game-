@@ -134,6 +134,7 @@ const BUILD_NUMBER = (typeof window !== 'undefined' && (window as unknown as { _
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '746': 'Render each live monster once from active-chunk coordinates; reject duplicate IDs and invalid cross-chunk positions',
   '745': 'Hard-block hostile monster rendering in the starting town across both field renderers',
     '744': 'Remove the two broken ambient animals beside the starting house and restore original wilderness wildlife behaviour',
   '743': 'Remove deer aggro marker',
