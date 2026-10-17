@@ -705,7 +705,10 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       if (dead) anim.setState('dead');
       anim.update({ x: tx, y: ty, moving: dead ? false : moving, facing, nowMs: now, running: dead ? false : running });
       d.push({
-        depth: tx + ty + 0.01, draw: (g2) => {
+        // BUILD 812: Keep the player above oversized house artwork. Sorting
+        // only by world feet coordinates is insufficient for tall sprites whose
+        // visible pixels extend well beyond their logical footprint.
+        depth: animKey === 'player' ? Number.POSITIVE_INFINITY : tx + ty + 0.01, draw: (g2) => {
           drawIsoCharacter({
             g: g2, x: c.x, y: c.y, look, nowMs: now, animator: anim,
             // BUILD 699: children render smaller.
