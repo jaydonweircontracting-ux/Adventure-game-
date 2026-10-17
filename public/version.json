@@ -1,6 +1,6 @@
 {
-  "build": "782",
-  "note": "Starting-house interior restored to native image size with camera panning",
-  "timestamp": "2026-10-17T18:20:00.000Z",
-  "cacheBuster": "build782-starter-house-native-size-pan"
+  "build": "783",
+  "note": "Starter-house room enlarged with warm backdrop",
+  "timestamp": "2026-10-17T18:35:00.000Z",
+  "cacheBuster": "build783-warm-backdrop-larger-room"
 }
