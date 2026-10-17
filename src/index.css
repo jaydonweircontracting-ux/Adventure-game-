@@ -5699,3 +5699,22 @@ body {
   outline: 0 !important;
   box-shadow: none !important;
 }
+
+
+/* BUILD 799: temporarily remove every rendered house sprite from the world. */
+.field-house,
+.field-house.sprite-house,
+.field-house.farm-house {
+  background: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+.field-house-art,
+.field-house-sign,
+.field-house::before,
+.field-house::after {
+  display: none !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
