@@ -47,6 +47,8 @@ import { mosslightFillerLots, fillerVariantForLot, mosslightPinnedRects } from '
 // kind->path maps duplicated in this file). Anchor/scale conventions documented
 // in src/game/buildingRig.ts.
 import { BUILDING_ASSET_META, buildingSpriteHeightForWidth } from '../buildingRig';
+// BUILD 801: one shared uploaded sprite for every rendered building.
+import sharedHouseSpriteUrl from '../../../game sprites/starting house/IMG_5423.png';
 // BUILD 769: shared deterministic layouts for in-world residential cutaways.
 import { generateInteriorLayout } from '../interiors';
 import { houseTypeForBuilding } from '../houseTypes';
@@ -336,8 +338,8 @@ const CRITTER_SRC_ENTRIES: Array<[string, string]> = [
 
 // BUILD 707: static building source entries (was rebuilt per frame).
 const BLD_SRC_ENTRIES: Array<[string, string]> = [
-  ...Object.entries(BUILDING_ASSET_META).map(
-    ([variant, meta]) => [variant, meta.file] as [string, string],
+  ...Object.keys(BUILDING_ASSET_META).map(
+    (variant) => [variant, sharedHouseSpriteUrl] as [string, string],
   ),
 ];
 
@@ -1404,7 +1406,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               g2.globalAlpha = 1;
               g2.globalCompositeOperation = 'source-over';
               g2.filter = 'none';
-              g2.drawImage(kind === 'starting-house-exterior' ? starterHouseCutout(sprite) : sprite, cx - sw / 2, baseY - sh, sw, sh);
+              g2.drawImage(sprite, cx - sw / 2, baseY - sh, sw, sh);
               g2.restore();
               // Keep authored sprite architecture intact; only add entry-aligned ground dressing.
               drawBuildingGroundDress(g2, cx, baseY, sw, r.left + r.right, r.top + r.bottom);
