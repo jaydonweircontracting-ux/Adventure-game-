@@ -4218,7 +4218,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     pushMapUndo();
     setMapPaints((prev) => selectedPaintTiles.reduce((next, selected) =>
       paintTile(next, selected.chunk, selected.tx, selected.ty, tile === 'erase' ? null : tile), prev));
-    logEditorChange('tile-edit-paint', (tile === 'erase' ? 'erased ' : 'recolored ') + selectedPaintTiles.length + ' selected tile(s) as ' + tile);
+    const diffs = selectedPaintTiles.map((selected) => { const old = (mapPaints[selected.chunk] ?? []).find((p) => p.tx === selected.tx && p.ty === selected.ty)?.tile ?? 'procedural'; return selected.chunk + ':' + selected.tx + ',' + selected.ty + ' ' + old + ' -> ' + (tile === 'erase' ? 'procedural' : tile); });
+    logEditorChange('tile-edit-paint', (tile === 'erase' ? 'erased ' : 'recolored ') + selectedPaintTiles.length + ' selected tile(s); ' + diffs.join('; '));
   };
   const copySelectedTileCoordinates = () => {
     const rows = selectedPaintTiles.map((tile) => {
@@ -4313,7 +4314,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   };
   const [mapPaints, setMapPaints] = useState<MapPaints>(loadMapPaints);
   useEffect(() => {
-    try { localStorage.setItem('mapBuilderPaints', JSON.stringify(mapPaints)); } catch { /* ignore */ }
+    try { localStorage.setItem('mapBuilderPaints', JSON.stringify(mapPaints)); } catch { setTileEditorSaveStatus('WARNING: map paint could not be saved locally; export the editor log now'); }
   }, [mapPaints]);
   const toggleMapBuilder = () => { setMapBuilderMin(false); setMapBuilderMode((m) => !m); };
   // BUILD 374: examine system. Convert any mouse/pointer event on the field
