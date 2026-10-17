@@ -4026,6 +4026,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [assetStudioStatus, setAssetStudioStatus] = useState('Imported assets are saved in this browser only.');
   const [selectedCustomAssetId, setSelectedCustomAssetId] = useState<string | null>(null);
   const [selectedPlacedCustomId, setSelectedPlacedCustomId] = useState<string | null>(null);
+  const [spriteCoordinateEditorOpen, setSpriteCoordinateEditorOpen] = useState(false);
+  const [spriteTargetX, setSpriteTargetX] = useState('');
+  const [spriteTargetY, setSpriteTargetY] = useState('');
   const [assetPlacementMode, setAssetPlacementMode] = useState(false);
   const [assetMoveMode, setAssetMoveMode] = useState(false);
   const [customAssetSnapToGrid, setCustomAssetSnapToGrid] = useState(false);
@@ -10065,6 +10068,26 @@ if (active) {
               <div style={{ padding: 8, borderTop: '1px solid #53655a', fontSize: 11, flexShrink: 0 }}>
                 {assetPlacementMode && <div style={{ color: '#ffe98a', marginBottom: 6 }}>📍 Placement mode ON — tap the world to place the selected sprite. <button type="button" className="editor-btn" onClick={() => setAssetPlacementMode(false)}>Cancel placement</button></div>}
                 {assetMoveMode && <div style={{ color: '#ffe98a', marginBottom: 6 }}>📍 Move mode ON — tap the world to move the selected sprite. <button type="button" className="editor-btn" onClick={() => setAssetMoveMode(false)}>Cancel move</button></div>}
+                {selectedPlacedCustomId && (() => {
+                  const selectedSprite = customPlacedAssets.find((asset) => asset.id === selectedPlacedCustomId);
+                  if (!selectedSprite) return null;
+                  return <div style={{ marginTop: 8, padding: 8, border: '1px solid #a44', borderRadius: 8 }}>
+                    <strong>Selected sprite: {selectedSprite.name}</strong>
+                    <div style={{ marginTop: 4 }}>Current local coordinates: X {selectedSprite.x.toFixed(1)}, Y {selectedSprite.y.toFixed(1)} · Chunk {selectedSprite.chunk}</div>
+                    <button type="button" className="editor-btn" onClick={() => { setSpriteTargetX(String(selectedSprite.x)); setSpriteTargetY(String(selectedSprite.y)); setSpriteCoordinateEditorOpen((v) => !v); }}>{spriteCoordinateEditorOpen ? 'Close coordinate editor' : 'Move sprite by coordinates…'}</button>
+                    {spriteCoordinateEditorOpen && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 6, alignItems: 'end', marginTop: 7 }}>
+                      <label>X (local)<input aria-label="Sprite local X coordinate" inputMode="decimal" type="number" step="0.1" value={spriteTargetX} onChange={(e) => setSpriteTargetX(e.target.value)} style={{ display: 'block', width: '100%', boxSizing: 'border-box', padding: 7 }} /></label>
+                      <label>Y (local)<input aria-label="Sprite local Y coordinate" inputMode="decimal" type="number" step="0.1" value={spriteTargetY} onChange={(e) => setSpriteTargetY(e.target.value)} style={{ display: 'block', width: '100%', boxSizing: 'border-box', padding: 7 }} /></label>
+                      <button type="button" className="editor-btn" onClick={() => {
+                        const x = Number(spriteTargetX), y = Number(spriteTargetY);
+                        if (!spriteTargetX.trim() || !spriteTargetY.trim() || !Number.isFinite(x) || !Number.isFinite(y)) { setAssetStudioStatus('Enter valid numeric X and Y coordinates.'); return; }
+                        setCustomPlacedAssets((prev) => prev.map((asset) => asset.id === selectedSprite.id ? { ...asset, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 } : asset));
+                        setAssetStudioStatus('Moved ' + selectedSprite.name + ' to local coordinates (' + x.toFixed(1) + ', ' + y.toFixed(1) + ').');
+                        setSpriteCoordinateEditorOpen(false);
+                      }}>OK · Move</button>
+                    </div>}
+                  </div>;
+                })()}
                 <div>{assetStudioStatus}</div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                   <button type="button" className="editor-btn" onClick={exportDebugAssetLibrary}>Export library + placements JSON</button>
