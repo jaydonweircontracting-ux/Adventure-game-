@@ -1434,10 +1434,11 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
                   g2.globalAlpha = 1;
                   g2.globalCompositeOperation = 'source-over';
                   g2.filter = 'none';
-                  // BUILD 827: oversize the overlay slightly and keep its bottom edge anchored
-                  // to the house base, covering the underlying sprite along the lower edge.
-                  const overlayW = sw * 1.12;
-                  const overlayH = sh * 1.12;
+                  // BUILD 828: make the authored overlay substantially larger than the base house sprite.
+                  // Keep its bottom edge anchored to the same world base so the extra size
+                  // expands upward and sideways instead of shifting the doorway alignment.
+                  const overlayW = sw * 1.5;
+                  const overlayH = sh * 1.5;
                   g2.drawImage(overlay, cx - overlayW / 2, baseY - overlayH, overlayW, overlayH);
                   g2.restore();
                 }
