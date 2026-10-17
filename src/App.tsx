@@ -135,13 +135,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '837';
+const BUILD_NUMBER = '838';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '838': 'Add searchable Debug Control Center, live counts, validation, and diagnostics export',
   '837': 'Add one-touch close-all Debug recovery and safer mobile workspace cleanup',
   '836': 'Add stone pathway tile painting and repository sprite browsing in Asset Studio',
   '835': 'Add local Asset Studio with upload, crop, transforms, placement, and JSON export',
@@ -4010,6 +4011,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [npcRosterSearch, setNpcRosterSearch] = useState('');
   const [npcRosterSelectedId, setNpcRosterSelectedId] = useState<string | null>(null);
   // BUILD 835: Asset Studio stores imported sprites locally; export/commit is separate.
+  // BUILD 838: searchable central launcher and real-data world validation.
+  const [debugHubOpen, setDebugHubOpen] = useState(false);
+  const [debugHubSearch, setDebugHubSearch] = useState('');
+  const [debugValidationReport, setDebugValidationReport] = useState<string[]>([]);
   const [assetStudioOpen, setAssetStudioOpen] = useState(false);
   const [assetStudioSearch, setAssetStudioSearch] = useState('');
   const [assetStudioStatus, setAssetStudioStatus] = useState('Imported assets are saved in this browser only.');
@@ -8743,7 +8748,31 @@ if (active) {
     inTutorialHouse: interior?.id === 'tutorial-house',
     daggerPickedUp: pickedUpGroundItems.includes(TUTORIAL_DAGGER_ITEM),
   });
-  const anyDebugToolActive = moverMode || mapBuilderMode || tileEditMode || collisionDebugMode || inspectorOpen || npcRosterOpen || assetStudioOpen || carriageDebugOpen || debugConsoleOpen || controlCenterOpen;
+  const runDebugWorldValidation = () => {
+    const issues: string[] = [];
+    for (const object of placedObjects) {
+      if (!Number.isFinite(object.x) || !Number.isFinite(object.y) || object.x < 0 || object.y < 0 || object.x >= FIELD_SIZE || object.y >= FIELD_SIZE) issues.push('Placed object ' + object.id + ' has coordinates outside its chunk.');
+      if (!object.chunk || !/^[-]?\\d+,[-]?\\d+$/.test(object.chunk)) issues.push('Placed object ' + object.id + ' has an invalid chunk key.');
+    }
+    for (const [key, tiles] of Object.entries(mapPaints)) {
+      if (!/^[-]?\\d+,[-]?\\d+$/.test(key)) issues.push('Painted terrain has invalid chunk key ' + key + '.');
+      for (const tile of tiles) if (!Number.isInteger(tile.tx) || !Number.isInteger(tile.ty) || tile.tx < 0 || tile.ty < 0 || tile.tx >= MAP_TILES_PER_SIDE || tile.ty >= MAP_TILES_PER_SIDE) issues.push('Painted tile in chunk ' + key + ' has invalid tile coordinates.');
+    }
+    for (const asset of customPlacedAssets) {
+      if (!asset.src) issues.push('Placed sprite ' + asset.id + ' has no source image.');
+      if (!Number.isFinite(asset.x) || !Number.isFinite(asset.y) || asset.x < 0 || asset.y < 0 || asset.x >= FIELD_SIZE || asset.y >= FIELD_SIZE) issues.push('Placed sprite ' + asset.id + ' is outside chunk bounds.');
+    }
+    for (const npc of townsfolk) if (!npc.id || !npc.name) issues.push('A townsfolk entry is missing an ID or display name.');
+    if (issues.length === 0) issues.push('PASS: no invalid coordinates, chunk keys, painted tile indices, placed sprite sources, or missing townsfolk IDs/names were detected in the data checked.');
+    setDebugValidationReport(issues);
+    logDebug('World validation finished: ' + (issues[0]?.startsWith('PASS:') ? 'PASS' : issues.length + ' issue(s)') + '.');
+  };
+  const exportDebugDiagnostics = () => {
+    const report = { schema: 'adventure-game-debug-diagnostics-v1', build: BUILD_NUMBER, exportedAt: new Date().toISOString(), chunk: chunkKey, player: { x: position.x, y: position.y }, counts: { townsfolk: townsfolk.length, placedObjects: placedObjects.length, paintedTiles: Object.values(mapPaints).reduce((n, list) => n + list.length, 0), importedAssets: customAssetLibrary.length, placedCustomAssets: customPlacedAssets.length }, validation: debugValidationReport };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'adventure-game-debug-diagnostics.json'; link.click(); URL.revokeObjectURL(url);
+  };
+  const anyDebugToolActive = moverMode || mapBuilderMode || tileEditMode || collisionDebugMode || inspectorOpen || npcRosterOpen || assetStudioOpen || debugHubOpen || carriageDebugOpen || debugConsoleOpen || controlCenterOpen;
   return (
     <div className="field-column" data-debug-ui-hidden={debugUiHidden ? 'true' : 'false'}>
       <style>{`
@@ -9847,6 +9876,38 @@ if (active) {
                   </>
                 );
               })()}
+            </div>
+          )}
+          {debugHubOpen && (
+            <div className="editor-panel inspector-panel debug-hub-panel" role="dialog" aria-label="Debug Control Center" style={{ maxHeight: 'min(84vh, 780px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 1260 }}>
+              <div className="editor-panel-title">🧰 Debug Control Center <span className="editor-panel-chunk">BUILD {BUILD_NUMBER}</span>
+                <button type="button" className="editor-minimize-btn" onClick={() => setDebugHubOpen(false)} aria-label="Close Debug Control Center">✕</button>
+              </div>
+              <div style={{ padding: 8, flexShrink: 0 }}>
+                <input aria-label="Search Debug tools" value={debugHubSearch} onChange={(e) => setDebugHubSearch(e.target.value)} placeholder="Search tools: terrain, NPC, collision…" style={{ width: '100%', boxSizing: 'border-box', padding: 9, borderRadius: 7 }} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 6, marginTop: 8 }}>
+                  <div style={{ background: '#24352b', borderRadius: 6, padding: 7 }}><small>NPCs</small><div style={{ fontWeight: 800, fontSize: 18 }}>{townsfolk.length}</div></div>
+                  <div style={{ background: '#24352b', borderRadius: 6, padding: 7 }}><small>Painted tiles</small><div style={{ fontWeight: 800, fontSize: 18 }}>{Object.values(mapPaints).reduce((n, list) => n + list.length, 0)}</div></div>
+                  <div style={{ background: '#24352b', borderRadius: 6, padding: 7 }}><small>Placed assets</small><div style={{ fontWeight: 800, fontSize: 18 }}>{placedObjects.length + customPlacedAssets.length}</div></div>
+                </div>
+              </div>
+              <div style={{ overflowY: 'auto', padding: 8, minHeight: 0, flex: 1 }}>
+                <strong>World Studio</strong>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
+                  {([{ name: 'World Editor', keywords: 'world map terrain object place', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }, { name: 'Tile Paint', keywords: 'tile ground grass pathway paint', action: () => { setDebugHubOpen(false); if (!tileEditMode) toggleTileEditMode(); else { setMapBuilderMode(true); setMapBuilderMin(false); } } }, { name: 'Asset Studio', keywords: 'asset sprite upload crop rotate flip', action: () => { setDebugHubOpen(false); setAssetStudioOpen(true); } }, { name: 'Building Mover', keywords: 'building house resize move', action: () => { setDebugHubOpen(false); if (!moverMode) toggleMoverMode(); } }, { name: 'Collision Overlay', keywords: 'collision hitbox bounds', action: () => { setCollisionDebugMode((v) => !v); setDebugHubOpen(false); } }, { name: 'Chunk Templates', keywords: 'chunk save template load', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
+                </div>
+                <strong>Living World & Diagnostics</strong>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
+                  {([{ name: 'NPC Roster', keywords: 'npc people mood wealth rich broke', action: () => { setDebugHubOpen(false); setNpcRosterOpen(true); } }, { name: 'NPC Inspector', keywords: 'npc schedule inspect', action: () => { setDebugHubOpen(false); setInspectorOpen(true); } }, { name: 'Simulation Center', keywords: 'simulation economy market brain time', action: () => { setDebugHubOpen(false); setControlCenterOpen(true); } }, { name: 'Debug Console', keywords: 'console log error', action: () => { setDebugHubOpen(false); setDebugConsoleOpen(true); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
+                </div>
+                <strong>World Validation</strong>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '6px 0' }}>
+                  <button type="button" className="editor-btn" onClick={runDebugWorldValidation}>▶ Run data checks</button>
+                  <button type="button" className="editor-btn" onClick={exportDebugDiagnostics}>Export diagnostics JSON</button>
+                </div>
+                {debugValidationReport.length > 0 && <div style={{ background: '#101812', border: '1px solid #43564a', borderRadius: 6, padding: 8, fontSize: 11, whiteSpace: 'pre-wrap' }}>{debugValidationReport.map((line, i) => <div key={i} style={{ color: line.startsWith('PASS:') ? '#a5e7a2' : '#ffd18a', marginBottom: 4 }}>{line}</div>)}</div>}
+                <p style={{ color: '#bdc9c0', fontSize: 11 }}>Checks cover stored tile indices, chunk keys, placed-object coordinates, imported sprite sources, and townsfolk IDs/names. They do not claim to validate quest logic or every navigation route.</p>
+              </div>
             </div>
           )}
           {assetStudioOpen && (
@@ -11677,6 +11738,10 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); setCollisionDebugMode(!collisionDebugMode); }} data-testid="button-debug-collision">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: Collision Boxes{collisionDebugMode ? ' (On)' : ''}</strong><small>{collisionDebugMode ? 'Tap to hide boxes' : 'Red = current box · tap critter, drag green to propose move'}</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); setDebugHubOpen(true); }} data-testid="button-debug-control-center">
+                  <span className="options-action-icon"><Settings size={17} /></span>
+                  <span><strong>🧰 Debug Control Center</strong><small>Search tools, inspect live counts, validate world data, export diagnostics</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMapBuilder(); }} data-testid="button-debug-world-editor">
                   <span className="options-action-icon"><Settings size={17} /></span>
