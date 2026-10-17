@@ -131,10 +131,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '774';
+const BUILD_NUMBER = '775';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '775': 'Tighten the house-entry trigger and move a compact Enter label above the doorway',
   '774': 'Restore a visible Enter button when near any building entrance',
   '773': 'Fix house entry triggers at the exterior front edge',
   '772': 'Restore reliable entrances for every generated house and farmhouse',
@@ -11456,25 +11457,28 @@ if (active) {
             ⚠ frame error ×{loopErrorRef.current.count}: {loopErrorRef.current.message}
           </button>
         )}
-        {/* BUILD 774: explicit proximity entry action, including isometric/mobile play. */}
+        {/* BUILD 775: tight doorway-only trigger; compact label anchored just above that house. */}
         {!interior && !moverMode && !markerMode && !mapBuilderMode && (() => {
           const entrance = buildingDoorwaysFor(chunk).find((doorway) => {
             const dx = Math.abs(position.x - doorway.position.x);
             const frontY = doorway.rect.bottom;
-            const nearFront = position.y >= frontY - 8 && position.y <= frontY + 15;
-            return dx <= Math.max((doorway.rect.right - doorway.rect.left) * 0.3, 7) && nearFront;
+            const nearFront = position.y >= frontY - 2 && position.y <= frontY + 4;
+            return dx <= Math.max((doorway.rect.right - doorway.rect.left) * 0.2, 3.5) && nearFront;
           });
-          return entrance ? (
+          if (!entrance) return null;
+          const doorX = (entrance.rect.left + entrance.rect.right) / 2;
+          const labelY = Math.max(2, entrance.rect.top - 3);
+          return (
             <button
               type="button"
               className="building-enter-button"
               data-testid="button-enter-building"
               onClick={() => enterDoorway(entrance, chunk)}
-              style={{ position: 'absolute', zIndex: 120, left: '50%', bottom: '94px', transform: 'translateX(-50%)', padding: '11px 20px', borderRadius: '10px', border: '2px solid #e8d6a0', background: '#253d2e', color: '#fff5d6', fontWeight: 800, fontSize: '15px', boxShadow: '0 3px 12px #0009', touchAction: 'manipulation' }}
+              style={{ position: 'absolute', zIndex: 120, left: fieldPct(doorX), top: fieldPct(labelY), transform: 'translate(-50%, -100%)', padding: '4px 8px', whiteSpace: 'nowrap', borderRadius: '6px', border: '1px solid #e8d6a0', background: '#253d2e', color: '#fff5d6', fontWeight: 750, fontSize: '11px', lineHeight: 1.2, boxShadow: '0 2px 6px #0008', touchAction: 'manipulation' }}
             >
-              Enter {entrance.area.name}
+              Enter
             </button>
-          ) : null;
+          );
         })()}
         {/* BUILD 374: examine system — context menu + result toast. */}
         {contextMenu && (
