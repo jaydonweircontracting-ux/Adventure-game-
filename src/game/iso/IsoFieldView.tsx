@@ -1239,13 +1239,21 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
             depth: r.left + r.top - 30,
             draw: (g2) => {
               // Actual world-space floor tiles, aligned to the building footprint.
+              const floorPalettes: Record<string, [string, string]> = {
+                cottage: ['#aa8961', '#9a7952'],
+                farmhouse: ['#ad8b5c', '#977347'],
+                merchant: ['#98704b', '#815a39'],
+                guard: ['#8b8170', '#756b5d'],
+                craftsman: ['#806343', '#6e5036'],
+              };
+              const floorColors = floorPalettes[layout.houseType] ?? floorPalettes.cottage;
               for (let ty = 0; ty < layout.height; ty++) for (let tx = 0; tx < layout.width; tx++) {
                 const x0 = r.left + tx * tileW, y0 = r.top + ty * tileH;
                 const p0 = isoToScreen(x0, y0), p1 = isoToScreen(x0 + tileW, y0);
                 const p2 = isoToScreen(x0 + tileW, y0 + tileH), p3 = isoToScreen(x0, y0 + tileH);
                 g2.beginPath(); g2.moveTo(p0.x, p0.y); g2.lineTo(p1.x, p1.y);
                 g2.lineTo(p2.x, p2.y); g2.lineTo(p3.x, p3.y); g2.closePath();
-                g2.fillStyle = (tx + ty) % 2 ? '#9a7952' : '#aa8961';
+                g2.fillStyle = (tx + ty) % 2 ? floorColors[1] : floorColors[0];
                 g2.fill();
                 g2.strokeStyle = 'rgba(48,35,23,0.22)'; g2.lineWidth = 0.7; g2.stroke();
               }
