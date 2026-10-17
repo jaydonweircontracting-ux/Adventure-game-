@@ -10,7 +10,7 @@ import { createBody, lootBody, type LootableBody } from './game/lootableBodies';
 import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
 import { pickpocketChance, resolvePickpocket } from './game/pickpocket';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { isRecord, isFiniteNumber } from '@/game/shared/guards';
 import { Backpack, BookOpen, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
