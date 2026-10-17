@@ -135,10 +135,11 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '822';
+const BUILD_NUMBER = '823';
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '823': 'Render the starting-house overlay in the isometric world and hide it indoors',
   '822': 'Add a button to hide and show the minimap',
   '821': 'Remove the 2.5D BETA label from the main game screen',
   '820': 'Remove the 2D view button from the main isometric game screen',

@@ -49,6 +49,8 @@ import { mosslightFillerLots, fillerVariantForLot, mosslightPinnedRects } from '
 import { BUILDING_ASSET_META, buildingSpriteHeightForWidth } from '../buildingRig';
 // BUILD 801: one shared uploaded sprite for every rendered building.
 import sharedHouseSpriteUrl from '../../../game sprites/starting house/IMG_5422.png';
+// BUILD 823: Exact authored transparent overlay for the starter-house exterior.
+import startingHouseOverlayUrl from '../../../game sprites/starting house/IMG_5424.png';
 // BUILD 769: shared deterministic layouts for in-world residential cutaways.
 import { generateInteriorLayout } from '../interiors';
 import { houseTypeForBuilding } from '../houseTypes';
@@ -343,6 +345,7 @@ const BLD_SRC_ENTRIES: Array<[string, string]> = [
   ),
   // Load the starter exterior explicitly so its sprite never depends on a generic variant.
   ['starting-house-exterior', sharedHouseSpriteUrl],
+  ['starting-house-overlay', startingHouseOverlayUrl],
 ];
 
 const LOD_FARM_RGB: Array<[number, number, number]> = FARM_BASE_COLORS.map(
@@ -1175,7 +1178,7 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         // Imported Vite asset URLs already include the GitHub Pages base path.
         // Do not pass them through artUrl(), which prepends the base a second time
         // and makes IMG_5422 fail to load (leaving the procedural white house visible).
-        const resolvedSrc = src === sharedHouseSpriteUrl ? src : artUrl(src);
+        const resolvedSrc = (src === sharedHouseSpriteUrl || src === startingHouseOverlayUrl) ? src : artUrl(src);
         let img = bldImgs[kind];
         // BUILD 802: replace stale cached variant images too; every building
         // must display the same uploaded IMG_5423 sprite, not legacy art.
@@ -1419,6 +1422,22 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               g2.restore();
               // Keep authored sprite architecture intact; only add entry-aligned ground dressing.
               drawBuildingGroundDress(g2, cx, baseY, sw, r.left + r.right, r.top + r.bottom);
+              // BUILD 823: draw the exact uploaded overlay in the same world-space
+              // rectangle as IMG_5422. Because this is part of the same depth-sorted
+              // drawable, it tracks camera motion/zoom and never drifts or duplicates.
+              // IsoFieldView is only mounted outdoors; the interior view replaces it
+              // on entry, so the exterior overlay disappears automatically indoors.
+              if (b.area.id === 'tutorial-house') {
+                const overlay = bldImgs['starting-house-overlay'];
+                if (overlay && overlay.complete && overlay.naturalWidth > 0) {
+                  g2.save();
+                  g2.globalAlpha = 1;
+                  g2.globalCompositeOperation = 'source-over';
+                  g2.filter = 'none';
+                  g2.drawImage(overlay, cx - sw / 2, baseY - sh, sw, sh);
+                  g2.restore();
+                }
+              }
               return;
             }
             // BUILD 806: if the starting-house sprite is still loading, skip this
