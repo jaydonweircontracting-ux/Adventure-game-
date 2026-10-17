@@ -1167,9 +1167,14 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
       // BUILDING_ASSET_META every frame — static data).
       const bldImgs = (window as unknown as { __bldImgs?: Record<string, HTMLImageElement> }).__bldImgs || {};
       for (const [kind, src] of BLD_SRC_ENTRIES) {
-        if (!bldImgs[kind]) {
-          const img = new Image();
-          img.src = artUrl(src);
+        const resolvedSrc = artUrl(src);
+        let img = bldImgs[kind];
+        // BUILD 802: replace stale cached variant images too; every building
+        // must display the same uploaded IMG_5423 sprite, not legacy art.
+        if (!img || img.dataset.sharedHouseSrc !== resolvedSrc) {
+          img = new Image();
+          img.dataset.sharedHouseSrc = resolvedSrc;
+          img.src = resolvedSrc;
           bldImgs[kind] = img;
         }
       }
@@ -1410,6 +1415,19 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
               g2.restore();
               // Keep authored sprite architecture intact; only add entry-aligned ground dressing.
               drawBuildingGroundDress(g2, cx, baseY, sw, r.left + r.right, r.top + r.bottom);
+              return;
+            }
+            // BUILD 802: draw the shared house sprite even if the renderer's
+            // cached variant was unavailable; never fall back to white box art.
+            const sharedFallback = bldImgs['blue-house'];
+            if (sharedFallback && sharedFallback.complete && sharedFallback.naturalWidth > 0) {
+              const cx = (p00.x + p11.x) / 2;
+              const baseY = Math.max(p00.y, p10.y, p11.y, p01.y);
+              const targetW = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 1.32;
+              const scale = targetW / sharedFallback.naturalWidth;
+              const sw = sharedFallback.naturalWidth * scale;
+              const sh = sharedFallback.naturalHeight * scale;
+              g2.drawImage(sharedFallback, cx - sw / 2, baseY - sh, sw, sh);
               return;
             }
             // shadow (fallback procedural)
