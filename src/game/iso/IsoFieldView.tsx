@@ -1278,14 +1278,14 @@ export default function IsoFieldView({ npcSpeechEnabled = false, chunk, position
         const wallH = 64;
         const top = (p: { x: number; y: number }) => ({ x: p.x, y: p.y - wallH });
         const t00 = top(p00), t10 = top(p10), t11 = top(p11), t01 = top(p01);
-        // BUILD 530: Fix depth sorting — when the player is south of (in front of)
-        // the building, the building must draw BEHIND the player, not over them.
-        // The old single depth (right+bottom) was larger than the player's x+y
-        // when standing at the door, so the wall covered the sprite.
-        // Use a small tolerance so players standing in the doorway (at the
-        // south edge) also get the building drawn behind them.
-        const playerSouthOfBuilding = playerY > r.bottom - 1;
-        const buildingDepth = playerSouthOfBuilding ? (r.left + r.top - 10) : (r.right + r.bottom);
+        // BUILD 810: Depth-sort the oversized starting-house sprite against
+        // the player's live world position. Its artwork overhangs the footprint,
+        // so the old south-edge-only check let the sprite cover the player along
+        // the sides and while walking around the doorway.
+        const playerInFrontOfBuilding = position.x + position.y > r.right + r.bottom - 1;
+        const buildingDepth = playerInFrontOfBuilding
+          ? position.x + position.y - 0.02
+          : r.right + r.bottom;
 
         // BUILD 769: ordinary houses become visible top-down floor plans while
         // the player is physically inside their footprint. The roof/exterior
