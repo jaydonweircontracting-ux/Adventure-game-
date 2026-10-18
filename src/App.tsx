@@ -1,4 +1,5 @@
 import WorldObjectCoordinates from './game/dev/WorldObjectCoordinates';
+import { removeEdgeMatte, transparentAssetSource } from './game/dev/assetTransparency';
 import DevConsole from './game/dev/DevConsole';
 import IsoRoomDemo from './game/iso/IsoRoom';
 import RpgPreview from './game/iso/RpgPreview';
@@ -138,13 +139,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '854';
+const BUILD_NUMBER = '855';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '855': 'Automatically remove solid edge-connected black or white backgrounds from placed sprites while preserving transparent artwork',
   '854': 'Add Asset Studio resize controls and a resizable window, including while minimized',
   '853': 'Select placed sprites and world objects directly with Debug open; quick-edit from Asset Studio',
   '852': 'Fix placed house sprites and render editor-placed houses in both 2D and isometric views',
@@ -4066,6 +4068,19 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   });
   useEffect(() => { try { localStorage.setItem('ag-custom-asset-library', JSON.stringify(customAssetLibrary)); setAssetStudioStatus('Local library saved · ' + customAssetLibrary.length + ' asset(s)'); } catch { setAssetStudioStatus('Storage full. Export/remove large images before adding more.'); } }, [customAssetLibrary]);
   useEffect(() => { try { localStorage.setItem('ag-custom-placed-assets', JSON.stringify(customPlacedAssets)); } catch { setAssetStudioStatus('Storage full: placed sprite positions could not be saved. Export the library and remove large images.'); } }, [customPlacedAssets]);
+  // BUILD 855: transparently clean legacy local assets too, so existing placements do not keep old matte backgrounds.
+  useEffect(() => {
+    let active = true;
+    void Promise.all(customAssetLibrary.map(async (asset) => ({ ...asset, src: await transparentAssetSource(asset.src) }))).then((assets) => {
+      if (active && assets.some((asset, index) => asset.src !== customAssetLibrary[index]?.src)) setCustomAssetLibrary(assets);
+    });
+    void Promise.all(customPlacedAssets.map(async (asset) => ({ ...asset, src: await transparentAssetSource(asset.src) }))).then((assets) => {
+      if (active && assets.some((asset, index) => asset.src !== customPlacedAssets[index]?.src)) setCustomPlacedAssets(assets);
+    });
+    return () => { active = false; };
+  // Run once on startup against the assets restored from local browser storage.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const selectedCustomAsset = customAssetLibrary.find((a) => a.id === selectedCustomAssetId) ?? null;
   const selectedPlacedCustomAsset = customPlacedAssets.find((a) => a.id === selectedPlacedCustomId) ?? null;
   const updateSelectedCustomAsset = (patch: Partial<DebugCustomAsset>) => {
@@ -4089,7 +4104,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       img.onload = () => {
         const id = 'asset-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
         const name = file.name.replace(/\\.(png|webp|jpe?g)$/i, '').slice(0, 80) || 'Imported sprite';
-        const asset: DebugCustomAsset = { id, name, src, width: img.naturalWidth, height: img.naturalHeight, scale: 1, rotation: 0, flipX: false, flipY: false, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0 };
+        const cleanSrc = removeEdgeMatte(img);
+        const asset: DebugCustomAsset = { id, name, src: cleanSrc, width: img.naturalWidth, height: img.naturalHeight, scale: 1, rotation: 0, flipX: false, flipY: false, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0 };
         setCustomAssetLibrary((prev) => [...prev, asset]);
         setSelectedCustomAssetId(id);
         setAssetStudioStatus('Imported ' + name + ' (' + img.naturalWidth + '×' + img.naturalHeight + '). Saved locally in this browser; not committed to GitHub.');
@@ -10198,7 +10214,8 @@ if (active) {
                       const img = new Image();
                       img.onerror = () => setAssetStudioStatus('Could not load repository sprite: ' + asset.path);
                       img.onload = () => {
-                        const imported: DebugCustomAsset = { id, name: asset.name.replace(/\\.[^.]+$/, ''), src: asset.src, width: img.naturalWidth, height: img.naturalHeight, scale: 1, rotation: 0, flipX: false, flipY: false, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0 };
+                        const cleanSrc = removeEdgeMatte(img);
+                        const imported: DebugCustomAsset = { id, name: asset.name.replace(/\\.[^.]+$/, ''), src: cleanSrc, width: img.naturalWidth, height: img.naturalHeight, scale: 1, rotation: 0, flipX: false, flipY: false, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0 };
                         setCustomAssetLibrary((prev) => [...prev, imported]); setSelectedCustomAssetId(id);
                         setAssetStudioStatus('Added repository sprite ' + asset.path + ' to the local working library.');
                       };
