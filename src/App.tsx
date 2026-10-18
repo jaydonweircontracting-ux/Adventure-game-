@@ -1,5 +1,5 @@
 import WorldObjectCoordinates from './game/dev/WorldObjectCoordinates';
-import { removeEdgeMatte, transparentAssetSource } from './game/dev/assetTransparency';
+import { removeEdgeMatte, removeEdgeColorMatte, transparentAssetSource } from './game/dev/assetTransparency';
 import DevConsole from './game/dev/DevConsole';
 import IsoRoomDemo from './game/iso/IsoRoom';
 import RpgPreview from './game/iso/RpgPreview';
@@ -141,7 +141,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
 const BUILD_NUMBER = '856';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
-  .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace(/^..\\//, ''), src: String(src), name: path.split('/').pop() || path }))
+  .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
@@ -4091,6 +4091,20 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   }, []);
   const selectedCustomAsset = customAssetLibrary.find((a) => a.id === selectedCustomAssetId) ?? null;
   const selectedPlacedCustomAsset = customPlacedAssets.find((a) => a.id === selectedPlacedCustomId) ?? null;
+  const repositorySpriteFolders = Array.from(new Set(DEBUG_REPOSITORY_ASSETS.map((asset) => asset.folder))).sort((a, b) => a.localeCompare(b));
+  const localSpriteFolders = Array.from(new Set(customAssetLibrary.map((asset) => asset.folder || 'Uploads'))).sort((a, b) => a.localeCompare(b));
+  const removeSelectedSpriteBackground = (auto = false) => {
+    if (!selectedCustomAsset) return;
+    const image = new Image();
+    image.onload = () => {
+      const cleaned = auto ? removeEdgeMatte(image) : removeEdgeColorMatte(image, spriteBackgroundColor, spriteBackgroundTolerance);
+      updateSelectedCustomAsset({ src: cleaned });
+      setCustomPlacedAssets((prev) => prev.map((placed) => placed.assetId === selectedCustomAsset.id ? { ...placed, src: cleaned } : placed));
+      setAssetStudioStatus(auto ? 'Auto background cleanup applied to edge-connected black/white matte.' : 'Custom edge-connected background color removed. Increase tolerance if a fringe remains.');
+    };
+    image.onerror = () => setAssetStudioStatus('Could not process this sprite. Try exporting it as PNG/WebP and importing again.');
+    image.src = selectedCustomAsset.src;
+  };
   const updateSelectedCustomAsset = (patch: Partial<DebugCustomAsset>) => {
     if (!selectedCustomAssetId) return;
     setCustomAssetLibrary((prev) => prev.map((a) => a.id === selectedCustomAssetId ? { ...a, ...patch } : a));
@@ -10205,16 +10219,34 @@ if (active) {
                 <button type="button" className="editor-btn" aria-label="Make Asset Studio wider and taller" onClick={() => { setAssetStudioWidth((v) => Math.min(900, v + 40)); setAssetStudioHeight((v) => Math.min(1000, v + 40)); }}>＋ Larger</button>
                 <button type="button" className="editor-btn" onClick={() => { setAssetStudioWidth(380); setAssetStudioHeight(620); }}>Reset</button>
               </div>}
-              <div style={{ display: 'flex', gap: 6, padding: 8, flexShrink: 0 }}>
-                <input aria-label="Search local assets" value={assetStudioSearch} onChange={(e) => setAssetStudioSearch(e.target.value)} placeholder="Search imported assets…" style={{ minWidth: 0, flex: 1, padding: 8, borderRadius: 6 }} />
+              <div style={{ display: 'flex', gap: 6, padding: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+                <input aria-label="Search sprites" value={assetStudioSearch} onChange={(e) => setAssetStudioSearch(e.target.value)} placeholder="Search sprites…" style={{ minWidth: 0, flex: '1 1 140px', padding: 8, borderRadius: 6 }} />
                 <button type="button" className="editor-btn" onClick={() => assetFileInputRef.current?.click()}>＋ Upload</button>
+                <button type="button" className="editor-btn" onClick={() => assetFolderInputRef.current?.click()}>📁 Load folder</button>
                 <input ref={assetFileInputRef} type="file" accept="image/png,image/webp,image/jpeg" style={{ display: 'none' }} onChange={(e) => { handleDebugAssetUpload(e.target.files?.[0]); e.currentTarget.value = ''; }} />
+                <input ref={assetFolderInputRef} type="file" accept="image/png,image/webp,image/jpeg" multiple style={{ display: 'none' }} {...({ webkitdirectory: '', directory: '' } as any)} onChange={(e) => {
+                  const files = Array.from(e.currentTarget.files || []);
+                  if (!files.length) return;
+                  const rootFolder = (files[0] as File & { webkitRelativePath?: string }).webkitRelativePath?.split('/')[0] || 'Imported folder';
+                  setLocalAssetFolder(rootFolder);
+                  files.filter((file) => ['image/png','image/webp','image/jpeg'].includes(file.type)).forEach((file) => {
+                    const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+                    const folder = relative.split('/').slice(0, -1).join('/') || rootFolder;
+                    handleDebugAssetUpload(file, folder);
+                  });
+                  setAssetStudioStatus('Loading images from ' + rootFolder + '. Folder paths are retained in the local library.');
+                  e.currentTarget.value = '';
+                }} />
               </div>
               <div style={{ padding: '0 8px 8px', overflowY: 'auto', minHeight: 0, flex: 1 }}>
                 <p style={{ fontSize: 11, color: '#b7c8bc', margin: '2px 0 8px' }}>Upload accepts PNG, WebP or JPEG up to 1 MB. Imported images and placements are stored in this browser only; use Export JSON to move them. Existing repository assets are not overwritten.</p>
-                <strong style={{ display: 'block', margin: '8px 0' }}>Repository sprites ({DEBUG_REPOSITORY_ASSETS.length})</strong>
+                <strong style={{ display: 'block', margin: '8px 0' }}>Repository sprite folders ({DEBUG_REPOSITORY_ASSETS.length} sprites)</strong>
+                <select aria-label="Repository sprite folder" value={repositorySpriteFolder} onChange={(e) => setRepositorySpriteFolder(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: 8, marginBottom: 8, background: '#18231e', color: '#fff', borderRadius: 6 }}>
+                  <option value="game sprites">All sprite folders</option>
+                  {repositorySpriteFolders.map((folder) => <option key={folder} value={folder}>{folder}</option>)}
+                </select>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(94px,1fr))', gap: 7 }}>
-                  {DEBUG_REPOSITORY_ASSETS.filter((a) => (a.name + ' ' + a.path).toLowerCase().includes(assetStudioSearch.toLowerCase())).slice(0, 240).map((asset) => (
+                  {DEBUG_REPOSITORY_ASSETS.filter((a) => (repositorySpriteFolder === 'game sprites' || a.folder === repositorySpriteFolder) && (a.name + ' ' + a.path + ' ' + a.folder).toLowerCase().includes(assetStudioSearch.toLowerCase())).slice(0, 240).map((asset) => (
                     <button key={asset.id} type="button" onClick={() => {
                       const existing = customAssetLibrary.find((a) => a.src === asset.src);
                       if (existing) { setSelectedCustomAssetId(existing.id); return; }
@@ -10223,7 +10255,7 @@ if (active) {
                       img.onerror = () => setAssetStudioStatus('Could not load repository sprite: ' + asset.path);
                       img.onload = () => {
                         const cleanSrc = removeEdgeMatte(img);
-                        const imported: DebugCustomAsset = { id, name: asset.name.replace(/\\.[^.]+$/, ''), src: cleanSrc, width: img.naturalWidth, height: img.naturalHeight, scale: 1, rotation: 0, flipX: false, flipY: false, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0 };
+                        const imported: DebugCustomAsset = { id, name: asset.name.replace(/\\.[^.]+$/, ''), src: cleanSrc, folder: asset.folder, width: img.naturalWidth, height: img.naturalHeight, scale: 1, rotation: 0, flipX: false, flipY: false, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0 };
                         setCustomAssetLibrary((prev) => [...prev, imported]); setSelectedCustomAssetId(id);
                         setAssetStudioStatus('Added repository sprite ' + asset.path + ' to the local working library.');
                       };
@@ -10238,8 +10270,12 @@ if (active) {
                 {DEBUG_REPOSITORY_ASSETS.length === 0 && <p style={{ color: '#d0d9d2', fontSize: 12 }}>No images were discovered in the game sprites directory by the asset scan.</p>}
                 {DEBUG_REPOSITORY_ASSETS.length > 240 && <small>Showing first 240 matches. Search by filename or folder to narrow the list.</small>}
                 <strong style={{ display: 'block', margin: '12px 0 8px' }}>Local working library ({customAssetLibrary.length})</strong>
+                <select aria-label="Local asset folder" value={localAssetFolder} onChange={(e) => setLocalAssetFolder(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: 8, marginBottom: 8, background: '#18231e', color: '#fff', borderRadius: 6 }}>
+                  <option value="All folders">All local folders</option>
+                  {localSpriteFolders.map((folder) => <option key={folder} value={folder}>{folder}</option>)}
+                </select>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(94px,1fr))', gap: 7 }}>
-                  {customAssetLibrary.filter((a) => a.name.toLowerCase().includes(assetStudioSearch.toLowerCase())).map((asset) => (
+                  {customAssetLibrary.filter((a) => (localAssetFolder === 'All folders' || (a.folder || 'Uploads') === localAssetFolder) && (a.name + ' ' + (a.folder || 'Uploads')).toLowerCase().includes(assetStudioSearch.toLowerCase())).map((asset) => (
                     <button key={asset.id} type="button" onClick={() => { setSelectedCustomAssetId(asset.id); setMapBuilderMode(true); setMapBuilderMin(true); setAssetPlacementMode(true); setAssetMoveMode(false); setAssetStudioMinimized(true); setAssetStudioStatus("Placement active: tap the world to place " + asset.name + ". Tap again to place another; reopen Asset Studio to cancel or edit."); }} style={{ minWidth: 0, border: selectedCustomAssetId === asset.id ? '2px solid #f2d35e' : '1px solid #52645a', borderRadius: 7, padding: 6, background: selectedCustomAssetId === asset.id ? '#35452e' : '#18231e', color: '#fff' }}>
                       <img src={asset.src} alt="" style={{ width: '100%', height: 64, objectFit: 'contain', imageRendering: 'pixelated' }} />
                       <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{asset.name}</span>
@@ -10250,7 +10286,19 @@ if (active) {
                 {customAssetLibrary.length === 0 && <p style={{ color: '#d0d9d2', fontSize: 12 }}>No imported assets yet. Upload an image to begin. Repository sprites are not copied into this local upload library automatically.</p>}
                 {selectedCustomAsset && (
                   <div style={{ borderTop: '1px solid #53655a', marginTop: 10, paddingTop: 10 }}>
-                    <strong>{selectedCustomAsset.name}</strong> <small>· source {selectedCustomAsset.width}×{selectedCustomAsset.height}</small>
+                    <strong>{selectedCustomAsset.name}</strong> <small>· {selectedCustomAsset.folder || 'Uploads'} · source {selectedCustomAsset.width}×{selectedCustomAsset.height}</small>
+                    <button type="button" className="editor-btn" style={{ width: '100%', marginTop: 8 }} onClick={() => setSpriteEditorPreviewOpen((v) => !v)}>{spriteEditorPreviewOpen ? 'Hide sprite preview' : 'Open sprite editor preview'}</button>
+                    {spriteEditorPreviewOpen && <div style={{ marginTop: 8, padding: 8, border: '1px solid #52645a', borderRadius: 8, backgroundColor: '#253128', backgroundImage: 'linear-gradient(45deg,#344239 25%,transparent 25%),linear-gradient(-45deg,#344239 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#344239 75%),linear-gradient(-45deg,transparent 75%,#344239 75%)', backgroundSize: '16px 16px', backgroundPosition: '0 0,0 8px,8px -8px,-8px 0', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 140, maxHeight: 240, overflow: 'auto' }}>
+                      <img src={selectedCustomAsset.src} alt={selectedCustomAsset.name + ' editor preview'} style={{ maxWidth: '100%', maxHeight: 220, objectFit: 'contain', imageRendering: 'pixelated' }} />
+                    </div>}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, marginTop: 8 }}>
+                      <button type="button" className="editor-btn" onClick={() => removeSelectedSpriteBackground(true)}>Auto remove black/white</button>
+                      <label style={{ fontSize: 11 }}>Background color <input aria-label="Background color to remove" type="color" value={spriteBackgroundColor} onChange={(e) => setSpriteBackgroundColor(e.target.value)} style={{ display: 'block', width: '100%', height: 32 }} /></label>
+                    </div>
+                    <label style={{ display: 'block', fontSize: 11, marginTop: 6 }}>Color tolerance: {spriteBackgroundTolerance}
+                      <input aria-label="Background removal tolerance" type="range" min="5" max="120" step="5" value={spriteBackgroundTolerance} onChange={(e) => setSpriteBackgroundTolerance(Number(e.target.value))} style={{ display: 'block', width: '100%' }} />
+                    </label>
+                    <button type="button" className="editor-btn" style={{ width: '100%', marginTop: 6 }} onClick={() => removeSelectedSpriteBackground(false)}>Remove selected edge color</button>
                     <label style={{ display: 'block', fontSize: 11, marginTop: 8 }}>Name</label>
                     <input aria-label="Asset name" value={selectedCustomAsset.name} onChange={(e) => updateSelectedCustomAsset({ name: e.target.value.slice(0, 80) })} style={{ width: '100%', boxSizing: 'border-box', padding: 7 }} />
                     <label style={{ display: 'block', fontSize: 11, marginTop: 8 }}>Scale: {Math.round(selectedCustomAsset.scale * 100)}%</label>
@@ -10311,7 +10359,13 @@ if (active) {
                 </div>
               </div>
               <div style={{ padding: 8, borderTop: '1px solid #53655a', fontSize: 11, flexShrink: 0 }}>
-                {assetPlacementMode && <div style={{ color: '#ffe98a', marginBottom: 6 }}>📍 Placement mode ON — tap the world to place the selected sprite. <button type="button" className="editor-btn" onClick={() => setAssetPlacementMode(false)}>Cancel placement</button></div>}
+                {assetPlacementMode && <div style={{ color: '#ffe98a', marginBottom: 6 }}>📍 Placement mode ON — tap the world to place the selected sprite.
+                  <label style={{ display: 'inline-flex', gap: 5, alignItems: 'center', marginLeft: 6 }}>Layer
+                    <select aria-label="Layer for new sprite placement" value={assetPlacementLayer} onChange={(e) => setAssetPlacementLayer(Number(e.target.value))} style={{ padding: 5, background: '#18231e', color: '#fff', borderRadius: 5 }}>
+                      {[-10,-5,-2,-1,0,1,2,5,10].map((layer) => <option key={layer} value={layer}>{layer === 0 ? '0 · Default' : layer < 0 ? layer + ' · Behind' : '+' + layer + ' · Front'}</option>)}
+                    </select>
+                  </label>
+                  <button type="button" className="editor-btn" onClick={() => setAssetPlacementMode(false)}>Cancel placement</button></div>}
                 {assetMoveMode && <div style={{ color: '#ffe98a', marginBottom: 6 }}>📍 Move mode ON — tap the world to move the selected sprite. <button type="button" className="editor-btn" onClick={() => setAssetMoveMode(false)}>Cancel move</button></div>}
                 {selectedPlacedCustomId && (() => {
                   const selectedSprite = customPlacedAssets.find((asset) => asset.id === selectedPlacedCustomId);
