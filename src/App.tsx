@@ -138,13 +138,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '852';
+const BUILD_NUMBER = '853';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '853': 'Select placed sprites and world objects directly with Debug open; quick-edit from Asset Studio',
   '852': 'Fix placed house sprites and render editor-placed houses in both 2D and isometric views',
   '846': 'Minimize Debug panels independently, freeze player movement in editor mode, and improve placed sprite visibility',
   '840': 'Save and restore placed custom sprites in named chunk templates',
@@ -9813,6 +9814,40 @@ if (active) {
                   setAssetStudioStatus('Placed ' + selectedCustomAsset.name + ' at (' + p.x.toFixed(1) + ', ' + p.y.toFixed(1) + '). Tap again to place another, or cancel placement in Asset Studio.');
                   e.stopPropagation();
                   return;
+                }
+                // BUILD 853: tap placed sprites/objects directly while Debug panels remain open.
+                // This runs before terrain painting so selecting an object never paints a tile.
+                if (!tileEditMode && !assetMoveMode && !assetPlacementMode && editorTool === 'select' && (moverMode || assetStudioOpen)) {
+                  const p = tapToField(e);
+                  const sprite = customPlacedAssets.slice().reverse().find((a) =>
+                    a.chunk === chunkKey && a.visible !== false &&
+                    Math.abs(a.x - p.x) <= Math.max(4, (a.width * a.scale) / 28) &&
+                    Math.abs(a.y - p.y) <= Math.max(4, (a.height * a.scale) / 28)
+                  );
+                  if (sprite) {
+                    e.preventDefault();
+                    setSelectedPlacedCustomId(sprite.id);
+                    setSelectedPlacedId(null);
+                    setSelectedHouse(null);
+                    setEntityInspectorSelection({ kind: 'Custom sprite', id: sprite.id, name: sprite.name, x: sprite.x, y: sprite.y, chunk: sprite.chunk });
+                    setAssetStudioOpen(true);
+                    setAssetStudioMinimized(false);
+                    setAssetStudioStatus('Selected ' + sprite.name + '. Edit position, size, rotation, layer, visibility, or delete in Asset Studio.');
+                    return;
+                  }
+                  const placed = placedObjects.filter((o) => o.chunk === chunkKey).slice().reverse().find((o) =>
+                    Math.abs(o.x - p.x) <= (o.kind === 'house' ? 9 : 5) &&
+                    Math.abs(o.y - p.y) <= (o.kind === 'house' ? 7 : 5)
+                  );
+                  if (placed) {
+                    e.preventDefault();
+                    setSelectedPlacedId(placed.id);
+                    setSelectedPlacedCustomId(null);
+                    setSelectedHouse(null);
+                    setEntityInspectorSelection({ kind: placed.kind, id: placed.id, name: placed.kind + ' (' + placed.id.slice(-6) + ')', x: placed.x, y: placed.y, chunk: placed.chunk });
+                    setEditorTool('select');
+                    return;
+                  }
                 }
                 if (tileEditMode) { paintAtEvent(e, true); return; }
                 try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
