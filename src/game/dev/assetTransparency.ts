@@ -17,19 +17,37 @@ export function removeEdgeMatte(image: HTMLImageElement): string {
     context.drawImage(image, 0, 0);
     const frame = context.getImageData(0, 0, width, height);
     const pixels = frame.data;
-    const corners = [0, width - 1, (height - 1) * width, height * width - 1];
+    // BUILD 857: Detect a matte from the whole outer border, not just the four corners.
+    // House art often touches a corner or has a non-white corner detail while most of
+    // the surrounding canvas is still a flat white export background.
     const family = (index: number): 'white' | 'black' | null => {
       const offset = index * 4;
-      if (pixels[offset + 3] < 245) return null;
+      if (pixels[offset + 3] < 200) return null;
       const r = pixels[offset], g = pixels[offset + 1], b = pixels[offset + 2];
-      if (r >= 215 && g >= 215 && b >= 215) return 'white';
-      if (r <= 40 && g <= 40 && b <= 40) return 'black';
+      if (r >= 215 && g >= 215 && b >= 215 && Math.max(r, g, b) - Math.min(r, g, b) <= 55) return 'white';
+      if (r <= 45 && g <= 45 && b <= 45 && Math.max(r, g, b) - Math.min(r, g, b) <= 45) return 'black';
       return null;
     };
-    const cornerFamilies = corners.map(family);
-    const whiteCorners = cornerFamilies.filter((value) => value === 'white').length;
-    const blackCorners = cornerFamilies.filter((value) => value === 'black').length;
-    const target = whiteCorners >= 3 ? 'white' : blackCorners >= 3 ? 'black' : null;
+    let edgeSamples = 0, whiteEdgeSamples = 0, blackEdgeSamples = 0;
+    const sampleEdge = (index: number) => {
+      const kind = family(index);
+      if (kind) {
+        edgeSamples++;
+        if (kind === 'white') whiteEdgeSamples++;
+        else blackEdgeSamples++;
+      }
+    };
+    for (let x = 0; x < width; x++) {
+      sampleEdge(x);
+      if (height > 1) sampleEdge((height - 1) * width + x);
+    }
+    for (let y = 1; y < height - 1; y++) {
+      sampleEdge(y * width);
+      if (width > 1) sampleEdge(y * width + width - 1);
+    }
+    const target: 'white' | 'black' | null =
+      edgeSamples > 0 && whiteEdgeSamples / edgeSamples >= 0.55 ? 'white' :
+      edgeSamples > 0 && blackEdgeSamples / edgeSamples >= 0.55 ? 'black' : null;
     if (!target) return image.src;
 
     const matches = (index: number): boolean => {
@@ -60,7 +78,7 @@ export function removeEdgeMatte(image: HTMLImageElement): string {
       if (index >= width) add(index - width);
       if (index + width < total) add(index + width);
     }
-    if (tail < Math.max(16, total * 0.002)) return image.src;
+    if (tail < Math.max(8, total * 0.0005)) return image.src;
     for (let i = 0; i < total; i++) {
       if (!visited[i]) continue;
       const offset = i * 4;
