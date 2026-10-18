@@ -9469,7 +9469,7 @@ if (active) {
                 <div style={{ padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #35473c' }}>
                   <strong>📍 Selected tile coordinates ({selectedPaintTiles.length})</strong>
                   <button type="button" onClick={() => setTileCoordsMinimized(true)} style={{ background: '#26382e', color: '#fff', border: '1px solid #718a78', borderRadius: 6, padding: '6px 10px', minHeight: 34 }} aria-label="Minimize tile coordinates">— Minimize</button>
-                  <button type="button" onClick={() => setTileCoordsOpen(false)} aria-label="Close tile coordinates" style={{ background: '#2a3a31', color: '#fff', border: 0, borderRadius: 6, padding: '6px 10px' }}>✕</button>
+                  <button type="button" onClick={() => { setTileCoordsOpen(false); setTileCoordsMinimized(false); }} aria-label="Close tile coordinates" style={{ background: '#2a3a31', color: '#fff', border: 0, borderRadius: 6, padding: '6px 10px' }}>✕</button>
                 </div>
                 <div style={{ padding: 10, overflowY: 'auto', minHeight: 90 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
@@ -9864,7 +9864,7 @@ if (active) {
               </div>}
               {tileEditMode && <div style={{ padding: '5px 8px', color: '#fff4b0', fontSize: 12 }}>
                 Tap a tile to paint and select it. Tap the highlighted tile again to unselect. Selected: {selectedPaintTiles.length}.
-                <button type="button" className="map-builder-btn" style={{ marginLeft: 8 }} onClick={() => setTileCoordsOpen(true)}>📍 Tile coordinates ({selectedPaintTiles.length})</button>
+                <button type="button" className="map-builder-btn" style={{ marginLeft: 8 }} onClick={() => { setTileCoordsOpen(true); setTileCoordsMinimized(false); }}>📍 Tile coordinates ({selectedPaintTiles.length})</button>
                 <button type="button" className="map-builder-btn" style={{ marginLeft: 6 }} onClick={() => setSelectedPaintTiles([])}>Clear selection</button>
               </div>}
               <div className="map-builder-actions">
