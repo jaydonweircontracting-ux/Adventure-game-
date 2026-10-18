@@ -51,7 +51,9 @@ try {
   await page.click('[data-testid="button-open-options"]');
   const zoomSlider = page.locator('[data-testid="input-world-zoom"]');
   await zoomSlider.waitFor({ state: 'visible' });
-  await zoomSlider.fill('250');
+  await zoomSlider.focus();
+  await page.keyboard.press('Home');
+  for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowRight');
   const savedZoom = await page.evaluate(() => localStorage.getItem('ag-game-zoom'));
   check('World zoom setting persists', savedZoom === '2.5', `savedZoom=${savedZoom}`);
   await page.click('[data-testid="button-close-options"]');
