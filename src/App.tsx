@@ -9188,7 +9188,24 @@ if (active) {
               <div>Chunk: {entityInspectorSelection.chunk}</div>
               <div style={{ opacity: .7, marginTop: 6 }}>Long-press a tree, NPC, placed object, or custom sprite to inspect it. Built-in entities are read-only here; placed objects can be moved with the coordinate editor.</div>
               {entityInspectorSelection.id !== 'none' && placedObjects.some((o) => o.id === entityInspectorSelection.id) && (
-                <button type="button" style={{ marginTop: 8, width: '100%', padding: 7 }} onClick={() => setWorldObjectCoordinatesOpen(true)}>Open coordinate editor</button>
+                <>
+                  <button type="button" style={{ marginTop: 8, width: '100%', padding: 7 }} onClick={() => setWorldObjectCoordinatesOpen(true)}>Open coordinate editor</button>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 5, marginTop: 6 }}>
+                    <button type="button" style={{ padding: 7 }} aria-label="Move placed object left" onClick={() => { const o = placedObjects.find((v) => v.id === entityInspectorSelection.id); if (o) { pushMapUndo(); const x = Math.max(0, o.x - 1); setPlacedObjects((prev) => prev.map((v) => v.id === o.id ? { ...v, x } : v)); setEntityInspectorSelection((v) => v && v.id === o.id ? { ...v, x } : v); } }}>← 1</button>
+                    <button type="button" style={{ padding: 7 }} aria-label="Move placed object up" onClick={() => { const o = placedObjects.find((v) => v.id === entityInspectorSelection.id); if (o) { pushMapUndo(); const y = Math.max(0, o.y - 1); setPlacedObjects((prev) => prev.map((v) => v.id === o.id ? { ...v, y } : v)); setEntityInspectorSelection((v) => v && v.id === o.id ? { ...v, y } : v); } }}>↑ 1</button>
+                    <button type="button" style={{ padding: 7 }} aria-label="Move placed object down" onClick={() => { const o = placedObjects.find((v) => v.id === entityInspectorSelection.id); if (o) { pushMapUndo(); const y = Math.min(FIELD_SIZE - 0.1, o.y + 1); setPlacedObjects((prev) => prev.map((v) => v.id === o.id ? { ...v, y } : v)); setEntityInspectorSelection((v) => v && v.id === o.id ? { ...v, y } : v); } }}>↓ 1</button>
+                    <button type="button" style={{ padding: 7 }} aria-label="Move placed object right" onClick={() => { const o = placedObjects.find((v) => v.id === entityInspectorSelection.id); if (o) { pushMapUndo(); const x = Math.min(FIELD_SIZE - 0.1, o.x + 1); setPlacedObjects((prev) => prev.map((v) => v.id === o.id ? { ...v, x } : v)); setEntityInspectorSelection((v) => v && v.id === o.id ? { ...v, x } : v); } }}>→ 1</button>
+                  </div>
+                  <button type="button" style={{ marginTop: 6, width: '100%', padding: 7, color: '#fff', background: '#8c2929' }} onClick={() => {
+                    const id = entityInspectorSelection.id;
+                    pushMapUndo();
+                    setPlacedObjects((prev) => prev.filter((v) => v.id !== id));
+                    setFlaggedItems((prev) => prev.filter((v) => v.id !== id));
+                    setSelectedPlacedId(null);
+                    setEntityInspectorSelection(null);
+                    logEditorChange('delete-inspected-object', 'Deleted placed object ' + id);
+                  }}>Delete selected placed object</button>
+                </>
               )}
               {entityInspectorSelection.kind === 'Generated tree' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 5, marginTop: 8 }}>
@@ -11123,6 +11140,9 @@ if (active) {
                   transform: 'rotate(' + (asset.rotation || 0) + 'deg) scale(' + (asset.flipX ? -1 : 1) + ',' + (asset.flipY ? -1 : 1) + ')',
                   transformOrigin: 'center bottom',
                   opacity: asset.locked ? 0.9 : 1,
+                  outline: selectedPlacedCustomId === asset.id ? '3px solid #ffd166' : undefined,
+                  outlineOffset: selectedPlacedCustomId === asset.id ? '2px' : undefined,
+                  filter: selectedPlacedCustomId === asset.id ? 'drop-shadow(0 0 5px #ffd166)' : undefined,
                   display: 'block',
                 }}
               />;
