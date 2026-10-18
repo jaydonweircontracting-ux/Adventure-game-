@@ -14,6 +14,7 @@ type Props = {
   getChunkInfo: (x: number, y: number) => ChunkMapInfo;
   mapPaints: MapPaints;
   onClose: () => void;
+  onMinimize?: () => void;
 };
 
 const BIOME_COLORS: Record<string, string> = {
@@ -32,7 +33,7 @@ const keyOf = ({ x, y }: ChunkMapPoint) => x + ',' + y;
 
 /** Mobile-first chunk picker. The overview is the generated world map; the detail
  * grid shows the selected chunk's saved paint edits over its generated biome. */
-export default function ChunkZoneSelector({ selectedChunk, onSelectChunk, getChunkInfo, mapPaints, onClose }: Props) {
+export default function ChunkZoneSelector({ selectedChunk, onSelectChunk, getChunkInfo, mapPaints, onClose, onMinimize }: Props) {
   const [zonesVisible, setZonesVisible] = useState(true);
   const [region, setRegion] = useState<'main' | 'second'>('main');
   const [searchX, setSearchX] = useState(String(selectedChunk.x));
@@ -58,7 +59,7 @@ export default function ChunkZoneSelector({ selectedChunk, onSelectChunk, getChu
           <strong style={{ fontSize: 15 }}>Chunk Zone Selector</strong>
           <div style={{ color: '#b8c8bd', marginTop: 3 }}>Choose a chunk to inspect its map and saved tile paints.</div>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close chunk selector" style={{ background: '#263b31', color: 'white', border: '1px solid #6d8a79', borderRadius: 8, padding: '8px 11px', fontWeight: 700 }}>Close</button>
+        <div style={{display:"flex",gap:5}}>{onMinimize && <button type="button" onClick={onMinimize} aria-label="Minimize chunk selector" style={{ background: '#263b31', color: 'white', border: '1px solid #6d8a79', borderRadius: 8, padding: '8px 11px', fontWeight: 700 }}>—</button>}<button type="button" onClick={onClose} aria-label="Close chunk selector" style={{ background: '#263b31', color: 'white', border: '1px solid #6d8a79', borderRadius: 8, padding: '8px 11px', fontWeight: 700 }}>✕</button></div>
       </header>
       <div style={{ padding: 10, overflow: 'auto', display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: 12 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
