@@ -292,6 +292,8 @@ interface IsoFieldViewProps {
   collisionDebug?: boolean;
   // BUILD 851: user-placed Asset Studio sprites rendered in the live isometric world.
   placedAssets?: Array<{ id: string; name: string; src: string; chunk: string; x: number; y: number; width: number; height: number; scale: number; rotation: number; flipX: boolean; flipY: boolean; visible?: boolean; layer?: number }>;
+  // BUILD 852: houses stamped with the World Editor/Map Builder must also render in isometric mode.
+  editorPlacedObjects?: Array<{ id: string; kind: string; chunk: string; x: number; y: number }>;
 }
 
 interface Drawable { depth: number; draw: (g: CanvasRenderingContext2D, now: number) => void }
@@ -473,11 +475,11 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
   return e.fill;
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, chunk, position, townsfolk, goats, placedAssets = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, chunk, position, townsfolk, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior });
-  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -2191,6 +2193,25 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           g.imageSmoothingEnabled = false;
           g.drawImage(image, -width / 2, -height, width, height);
           g.restore();
+        }
+      }
+
+      // BUILD 852: draw houses stamped by the editor; the 2D DOM layer is hidden under the iso canvas.
+      {
+        const activeChunkKey = liveRef.current.chunk.x + ',' + liveRef.current.chunk.y;
+        const houseImage = placedAssetImage(sharedHouseSpriteUrl);
+        if (houseImage.complete && houseImage.naturalWidth > 0) {
+          const houses = (liveRef.current.editorPlacedObjects || []).filter((o) => o.kind === 'house' && o.chunk === activeChunkKey).slice().sort((a, b) => a.y - b.y);
+          for (const house of houses) {
+            if (!Number.isFinite(house.x) || !Number.isFinite(house.y)) continue;
+            const p = isoToScreen(house.x, house.y);
+            const width = 180;
+            const height = width * houseImage.naturalHeight / Math.max(1, houseImage.naturalWidth);
+            g.save();
+            g.imageSmoothingEnabled = false;
+            g.drawImage(houseImage, p.x - width / 2, p.y - height, width, height);
+            g.restore();
+          }
         }
       }
 
