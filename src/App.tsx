@@ -4376,8 +4376,6 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 815: paused tile-edit mode; tapping paints + selects a tile, tapping it again deselects it.
   const [tileEditMode, setTileEditMode] = useState(false);
   const tileEditModeRef = useRef(false);
-  const editorTestStateRef = useRef({ moverMode, mapBuilderMode, tileEditMode, assetPlacementMode, assetMoveMode, debugUiHidden, mapBuilderMin, assetStudioOpen, debugHubOpen, chunkSelectorOpen, worldObjectCoordinatesOpen, devConsoleOpen, inspectorOpen, npcRosterOpen, debugConsoleOpen, controlCenterOpen, carriageDebugOpen });
-  editorTestStateRef.current = { moverMode, mapBuilderMode, tileEditMode, assetPlacementMode, assetMoveMode, debugUiHidden, mapBuilderMin, assetStudioOpen, debugHubOpen, chunkSelectorOpen, worldObjectCoordinatesOpen, devConsoleOpen, inspectorOpen, npcRosterOpen, debugConsoleOpen, controlCenterOpen, carriageDebugOpen };
   const [tileCoordsOpen, setTileCoordsOpen] = useState(false);
   const [tileCoordsMinimized, setTileCoordsMinimized] = useState(false);
   const [selectedPaintTiles, setSelectedPaintTiles] = useState<Array<{ chunk: string; tx: number; ty: number }>>(() => {
@@ -5195,6 +5193,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [carriageTravel, setCarriageTravel] = useState<{ destName: string; destChunk: Point; arrival: Point; totalTicks: number; doneTicks: number } | null>(null);
   const [carriageDebugOpen, setCarriageDebugOpen] = useState(false);
   const [carriageDebugMinimized, setCarriageDebugMinimized] = useState(false);
+  const editorTestStateRef = useRef({ moverMode, mapBuilderMode, tileEditMode, assetPlacementMode, assetMoveMode, debugUiHidden, mapBuilderMin, assetStudioOpen, debugHubOpen, chunkSelectorOpen, worldObjectCoordinatesOpen, devConsoleOpen, inspectorOpen, npcRosterOpen, debugConsoleOpen, controlCenterOpen, carriageDebugOpen });
+  editorTestStateRef.current = { moverMode, mapBuilderMode, tileEditMode, assetPlacementMode, assetMoveMode, debugUiHidden, mapBuilderMin, assetStudioOpen, debugHubOpen, chunkSelectorOpen, worldObjectCoordinatesOpen, devConsoleOpen, inspectorOpen, npcRosterOpen, debugConsoleOpen, controlCenterOpen, carriageDebugOpen };
+
   const carriageTravelTimerRef = useRef<number | null>(null);
   const carriageEarningsRef = useRef<Record<string, number>>({});
   const carriageStation = useMemo(() => getCarriageStation(chunk), [chunk.x, chunk.y]);
