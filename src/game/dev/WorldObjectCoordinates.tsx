@@ -5,8 +5,9 @@ type Props = {
   objects: PlacedObject[];
   onMove: (id: string, x: number, y: number, chunk: string) => void;
   onClose: () => void;
+  onMinimize?: () => void;
 };
-export default function WorldObjectCoordinates({ objects, onMove, onClose }: Props) {
+export default function WorldObjectCoordinates({ objects, onMove, onClose, onMinimize }: Props) {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [xText, setXText] = useState('');
@@ -21,7 +22,7 @@ export default function WorldObjectCoordinates({ objects, onMove, onClose }: Pro
     onMove(selected.id, Math.round(x * 10) / 10, Math.round(y * 10) / 10, chunk.replace(/\s/g, ''));
   };
   return <section role="dialog" aria-label="World object coordinates" style={{ position:'fixed', inset:'max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom))', zIndex:22500, display:'flex', flexDirection:'column', overflow:'hidden', background:'#111b19', color:'#f3f6ef', border:'1px solid #5a7567', borderRadius:12, boxShadow:'0 12px 40px #000c', font:'13px system-ui' }}>
-    <header style={{ display:'flex', alignItems:'center', gap:8, padding:12, borderBottom:'1px solid #35483e' }}><div style={{flex:1}}><strong style={{fontSize:16}}>World Object Coordinates</strong><div style={{color:'#b8c8bd',marginTop:3}}>Move placed houses, trees, rocks and roads by local coordinates and chunk.</div></div><button onClick={onClose} style={{background:'#263b31',color:'white',border:'1px solid #6d8a79',borderRadius:8,padding:'8px 11px'}}>Close</button></header>
+    <header style={{ display:'flex', alignItems:'center', gap:8, padding:12, borderBottom:'1px solid #35483e' }}><div style={{flex:1}}><strong style={{fontSize:16}}>World Object Coordinates</strong><div style={{color:'#b8c8bd',marginTop:3}}>Move placed houses, trees, rocks and roads by local coordinates and chunk.</div></div>{onMinimize && <button onClick={onMinimize} aria-label="Minimize World Object Coordinates" style={{background:'#263b31',color:'white',border:'1px solid #6d8a79',borderRadius:8,padding:'8px 11px'}}>—</button>}<button onClick={onClose} style={{background:'#263b31',color:'white',border:'1px solid #6d8a79',borderRadius:8,padding:'8px 11px'}}>✕</button></header>
     <div style={{padding:10,display:'grid',gap:10,overflow:'auto',minHeight:0}}>
       <input aria-label="Search placed world objects" placeholder="Search by ID, type or chunk…" value={search} onChange={e=>setSearch(e.target.value)} style={{background:'#202d28',color:'white',border:'1px solid #53685c',borderRadius:6,padding:9}} />
       <div style={{color:'#c2d0c6'}}>{filtered.length} of {objects.length} placed world objects</div>
