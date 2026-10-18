@@ -4534,6 +4534,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   };
   const activateMapBuilder = () => {
     stopPlayerInputForEditor();
+    moveHouses = false;
+    setMoverMode(false);
+    setSelectedHouse(null);
+    setSelectedPlacedId(null);
     setMapBuilderMode(true);
     setMapBuilderMin(false);
   };
@@ -6866,6 +6870,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     };
   }, []);
 
+  const playerInputLockedRef = useRef(false);
+  playerInputLockedRef.current = inputLocked || optionsOpen || Boolean(guardEncounter) || waitingRef.current || tileEditModeRef.current || moverMode || mapBuilderMode || assetPlacementMode || assetMoveMode;
   useEffect(() => {
     const clearInput = () => {
       keysRef.current = {};
@@ -6876,7 +6882,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const onKeyDown = (event: KeyboardEvent) => {
       // BUILD 667: Don't steal keys while typing in a text field.
       if (isTextInputActive(event)) return;
-      if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditModeRef.current) return;
+      if (playerInputLockedRef.current) return;
       if (event.code === 'Space' || event.code === 'KeyF') { event.preventDefault(); attackGoat(); return; }
       // BUILD 704: Shift hold-to-run (works alongside the touch toggle).
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') { shiftHeldRef.current = true; return; }
@@ -8988,6 +8994,7 @@ if (active) {
             tileEditModeRef.current = false;
             setMapBuilderMode(false);
             setMapBuilderMin(false);
+            moveHouses = false;
             setMoverMode(false);
             setSelectedHouse(null);
             setSelectedPlacedId(null);
