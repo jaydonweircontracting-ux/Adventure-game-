@@ -8959,6 +8959,17 @@ if (active) {
           }} aria-label="Close all Debug tools">Close all</button>
         </div>
       ) : null}
+      {/* BUILD 849: Keep Options reachable during normal play, not only from map overlays. */}
+      {!optionsOpen && !inputLocked && !mapOpen && shopStallIndex === null && (
+        <button
+          type="button"
+          aria-label="Open game options"
+          title="Options and settings"
+          data-testid="button-open-game-options"
+          onClick={() => setOptionsOpen(true)}
+          style={{ position: 'fixed', top: 10, left: 10, zIndex: 102, width: 36, height: 36, display: 'grid', placeItems: 'center', padding: 0, borderRadius: 9, border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(20,30,38,0.92)', color: '#fff', boxShadow: '0 2px 8px #0006', touchAction: 'manipulation' }}
+        ><Settings size={17} /></button>
+      )}
       {/* BUILD 609: Circular minimap in corner */}
       {/* BUILD 663: Hide minimap when Options is open (mandatory UI fix). */}
       {/* BUILD 691: Hide minimap when the world map is open. */}
