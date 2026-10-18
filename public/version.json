@@ -1,6 +1,6 @@
 {
-  "build": "846",
-  "note": "Independently minimize Debug panels, pause player movement in editor mode, and fix custom sprite sizing",
-  "timestamp": "2026-10-18T00:50:00.000Z",
-  "cacheBuster": "build846-debug-panels-editor-freeze-sprite-size"
+  "build": "847",
+  "note": "Persist world zoom and improve mobile options; strengthen real-game browser checks",
+  "timestamp": "2026-10-18T00:45:39.478Z",
+  "cacheBuster": "build847-persisted-world-zoom-options-browser-qa"
 }
