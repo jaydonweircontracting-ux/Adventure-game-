@@ -2,5 +2,5 @@
   "build": "870",
   "note": "Keep Asset Studio minimize independent from World Editor; restore button reopens Asset Studio",
   "timestamp": "2026-10-18T22:30:00.000Z",
-  "cacheBuster": "build870-asset-studio-minimize-isolation"
+  "cacheBuster": "build870-deploy-retry-2026-10-18"
 }
