@@ -47,6 +47,15 @@ try {
   const canMove = await page.evaluate(() => window.__gameTest.canMove(1, 0));
   check('Movement validation works', typeof canMove === 'boolean');
 
+  // BUILD 847: the mobile options slider must persist the user's zoom preference.
+  await page.click('[data-testid="button-open-options"]');
+  const zoomSlider = page.locator('[data-testid="input-world-zoom"]');
+  await zoomSlider.waitFor({ state: 'visible' });
+  await zoomSlider.fill('250');
+  const savedZoom = await page.evaluate(() => localStorage.getItem('ag-game-zoom'));
+  check('World zoom setting persists', savedZoom === '2.5', `savedZoom=${savedZoom}`);
+  await page.click('[data-testid="button-close-options"]');
+
 } catch (e) {
   check('Test completed without exception', false, e.message.slice(0, 200));
 }
