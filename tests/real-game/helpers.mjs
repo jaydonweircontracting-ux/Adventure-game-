@@ -19,7 +19,8 @@ export async function setupGame(pageOptions = {}) {
   const browser = await chromium.launch();
   const page = await browser.newPage(pageOptions);
   const errors = [];
-  page.on('pageerror', e => errors.push(e.message.slice(0, 200)));
+  page.on('pageerror', e => { const message = e.message.slice(0, 200); errors.push(message); console.log('[BROWSER PAGEERROR]', message); });
+  page.on('console', message => { if (message.type() === 'error') console.log('[BROWSER CONSOLE ERROR]', message.text().slice(0, 240)); });
 
   await page.goto(GAME_URL, { waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForSelector('[data-testid="button-new-game"]', { timeout: 15000 });
