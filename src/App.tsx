@@ -10211,7 +10211,7 @@ if (active) {
                       ))}
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-                      <button type="button" className="editor-btn" onClick={() => { setMapBuilderMode(true); setMapBuilderMin(true); setAssetPlacementMode(true); setAssetStudioStatus('Placement active: tap the world to place ' + selectedCustomAsset.name + '. Tap again for duplicates; cancel here when done.'); }}>📍 Place Asset</button>
+                      <button type="button" className="editor-btn" onClick={() => { activateMapBuilder(); setMapBuilderMin(true); setAssetPlacementMode(true); setAssetStudioStatus('Placement active: tap the world to place ' + selectedCustomAsset.name + '. Tap again for duplicates; cancel here when done.'); }}>📍 Place Asset</button>
                       <button type="button" className="editor-btn" onClick={() => { setCustomAssetLibrary((prev) => [...prev, { ...selectedCustomAsset, id: 'asset-' + Date.now().toString(36), name: selectedCustomAsset.name + ' copy' }]); }}>Duplicate asset</button>
                       <button type="button" className="editor-btn" onClick={() => { if (confirm('Delete this imported local asset? Existing placed copies remain unchanged.')) { setCustomAssetLibrary((prev) => prev.filter((a) => a.id !== selectedCustomAsset.id)); setSelectedCustomAssetId(null); } }}>Delete asset</button>
                     </div>
@@ -10233,7 +10233,7 @@ if (active) {
                       <label style={{ fontSize: 11 }}>World Y<input aria-label="Placed sprite world Y" type="number" step="0.1" min="0" max={FIELD_SIZE - 0.1} value={selectedPlacedCustomAsset.y} onChange={(e) => updateSelectedPlacedCustomAsset({ y: Math.max(0, Math.min(FIELD_SIZE - 0.1, Number(e.target.value) || 0)) })} style={{ width: '100%', boxSizing: 'border-box', padding: 6 }} /></label>
                     </div>
                     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 7 }}>
-                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => { setMapBuilderMode(true); setMapBuilderMin(true); setAssetMoveMode(true); setAssetPlacementMode(false); }}>📍 Move: tap world</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => { activateMapBuilder(); setMapBuilderMin(true); setAssetMoveMode(true); setAssetPlacementMode(false); }}>📍 Move: tap world</button>
                       <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ x: Math.max(0, selectedPlacedCustomAsset.x - 1) })}>← 1</button>
                       <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ x: Math.min(FIELD_SIZE - 0.1, selectedPlacedCustomAsset.x + 1) })}>→ 1</button>
                       <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ y: Math.max(0, selectedPlacedCustomAsset.y - 1) })}>↑ 1</button>
