@@ -4162,6 +4162,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [showGrid, setShowGrid] = useState(false);
   const [showChunkBounds, setShowChunkBounds] = useState(false);
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
+  const [entityInspectorSelection, setEntityInspectorSelection] = useState<{ kind: string; id: string; name: string; x: number; y: number; chunk: string } | null>(null);
   const [copiedNotice, setCopiedNotice] = useState(false);
   const loadPlacedObjects = (): PlacedObject[] => {
     try {
@@ -4505,8 +4506,37 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 374: hit-test the field at a pointer location and open the
   // RuneScape-style "Choose Option" context menu for the topmost entity.
   const openExamineMenu = (clientX: number, clientY: number, el: HTMLElement) => {
-    if (interior || moverMode || markerMode || mapBuilderMode || isoFieldBeta) return;
+    if (interior || markerMode || mapBuilderMode || isoFieldBeta) return;
     const p = clientToField(clientX, clientY, el);
+    // BUILD 843: long-press entity picking for the world editor. Does not change normal tap-to-move.
+    if (moverMode) {
+      const npc = townsfolk.find((n) => !n.indoors && Math.hypot(n.position.x - p.x, n.position.y - p.y) < 4);
+      if (npc) {
+        setEntityInspectorSelection({ kind: 'NPC', id: npc.id, name: npc.name, x: npc.position.x, y: npc.position.y, chunk: chunkKey });
+        setSelectedPlacedId(null);
+        return;
+      }
+      const tree = fieldTrees.find((t) => !isTreeFelled(fieldTreeKey(chunk, t.id)) && Math.hypot((t.x + 3.2 * t.scale) - p.x, (t.y + 4 * t.scale) - p.y) < 5);
+      if (tree) {
+        setEntityInspectorSelection({ kind: 'Generated tree', id: String(tree.id), name: 'Tree ' + tree.id, x: tree.x, y: tree.y, chunk: chunkKey });
+        setSelectedPlacedId(null);
+        return;
+      }
+      const placed = placedHere.slice().reverse().find((o) => Math.hypot(o.x - p.x, o.y - p.y) < 6);
+      if (placed) {
+        setSelectedPlacedId(placed.id);
+        setEntityInspectorSelection({ kind: placed.kind, id: placed.id, name: placed.kind + ' (' + placed.id + ')', x: placed.x, y: placed.y, chunk: placed.chunk });
+        return;
+      }
+      const sprite = customPlacedAssets.slice().reverse().find((a) => a.chunk === chunkKey && Math.hypot(a.x - p.x, a.y - p.y) < Math.max(5, a.width * a.scale / 2, a.height * a.scale / 2));
+      if (sprite) {
+        setSelectedPlacedCustomId(sprite.id);
+        setEntityInspectorSelection({ kind: 'Custom sprite', id: sprite.id, name: sprite.name, x: sprite.x, y: sprite.y, chunk: sprite.chunk });
+        return;
+      }
+      setEntityInspectorSelection({ kind: 'No entity', id: 'none', name: 'No editable entity found here', x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, chunk: chunkKey });
+      return;
+    }
     // 1. NPCs (smallest, most specific targets).
     const npc = townsfolk.find((n) => !n.indoors && Math.hypot(n.position.x - p.x, n.position.y - p.y) < 4);
     if (npc) {
@@ -9058,6 +9088,23 @@ if (active) {
               {Array.from({ length: 7 }, (_, i) => (i + 1) * 20).map((v) => (
                 <span key={'gy' + v} className="editor-grid-label editor-grid-label-y" style={{ top: fieldPct(v) }}>{v}</span>
               ))}
+            </div>
+          )}
+          {/* BUILD 843: selected built-in or placed entity coordinate readout. */}
+          {moverMode && entityInspectorSelection && (
+            <div style={{ position: 'absolute', left: 8, bottom: 8, zIndex: 95, width: 'min(290px, calc(100% - 16px))', maxHeight: '42%', overflowY: 'auto', background: 'rgba(13,20,25,.96)', color: '#f4f7fa', border: '1px solid #f2a900', borderRadius: 9, padding: 10, boxShadow: '0 3px 14px #0009', fontSize: 12 }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <strong style={{ color: '#ffd166' }}>ENTITY INSPECTOR</strong>
+                <button type="button" onClick={() => setEntityInspectorSelection(null)} style={{ padding: '3px 7px' }}>Close</button>
+              </div>
+              <div style={{ marginTop: 6, fontWeight: 800 }}>{entityInspectorSelection.name}</div>
+              <div style={{ opacity: .8, marginTop: 3 }}>{entityInspectorSelection.kind} · ID: {entityInspectorSelection.id}</div>
+              <div style={{ marginTop: 6 }}>Local X: {entityInspectorSelection.x.toFixed(1)} · Y: {entityInspectorSelection.y.toFixed(1)}</div>
+              <div>Chunk: {entityInspectorSelection.chunk}</div>
+              <div style={{ opacity: .7, marginTop: 6 }}>Long-press a tree, NPC, placed object, or custom sprite to inspect it. Built-in entities are read-only here; placed objects can be moved with the coordinate editor.</div>
+              {entityInspectorSelection.id !== 'none' && placedObjects.some((o) => o.id === entityInspectorSelection.id) && (
+                <button type="button" style={{ marginTop: 8, width: '100%', padding: 7 }} onClick={() => setWorldObjectCoordinatesOpen(true)}>Open coordinate editor</button>
+              )}
             </div>
           )}
           {/* BUILD 842: live chunk boundary overlay follows the currently loaded gameplay chunk. */}
