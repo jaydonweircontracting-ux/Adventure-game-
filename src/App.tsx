@@ -139,13 +139,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '867';
+const BUILD_NUMBER = '868';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '868': 'Add a clear yellow pressed-state highlight to every Asset Studio button, including touch controls',
   '867': 'Fix Asset Studio resize buttons so the panel visibly expands and contracts with explicit dimensions',
   '866': 'Add shared debug player-freeze toggle, selectable/deletable placed sprites and houses, and persistent Sprite Studio restore control',
   '865': 'Prevent Asset Studio minimize and restore controls from bubbling into world-editor pointer handlers',
@@ -10230,6 +10231,7 @@ if (active) {
           )}
           {assetStudioOpen && !assetStudioMinimized && (
             <div className="editor-panel asset-studio-panel" role="dialog" aria-label="Asset Studio" style={{ width: assetStudioWidth + 'px', height: assetStudioHeight + 'px', minWidth: 280, minHeight: 240, maxWidth: '96vw', maxHeight: '82vh', flex: '0 0 auto', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'auto', zIndex: 1250 }}>
+              <style>{`.asset-studio-panel button:active, .asset-studio-panel button:focus-visible { outline: 3px solid #ffd84d !important; outline-offset: 1px !important; border-color: #ffd84d !important; box-shadow: 0 0 0 2px rgba(255, 216, 77, 0.35) !important; } .asset-studio-panel button:active { background-color: #66531b !important; }`}</style>
               <div className="editor-panel-title" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>🖼️ Asset Studio <span className="editor-panel-chunk">{customAssetLibrary.length} local assets</span>
                 <button type="button" className="editor-minimize-btn" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setAssetStudioResizeControlsOpen((v) => !v); }} aria-label="Show Asset Studio resize controls">↔</button><button type="button" className="editor-minimize-btn" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setAssetStudioOpen(true); setAssetStudioMinimized(true); setAssetStudioStatus('Sprite Studio minimized. Use the persistent 🖼️ Sprite Studio button at the bottom to reopen it.'); }} aria-label="Minimize Asset Studio">—</button><button type="button" className="editor-minimize-btn" onClick={() => { setAssetStudioOpen(false); setAssetStudioMinimized(false); }} aria-label="Close Asset Studio">✕</button>
               </div>
