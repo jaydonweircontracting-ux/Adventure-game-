@@ -138,13 +138,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '845';
+const BUILD_NUMBER = '846';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '846': 'Minimize Debug panels independently, freeze player movement in editor mode, and improve placed sprite visibility',
   '840': 'Save and restore placed custom sprites in named chunk templates',
   '839': 'Add precise move/nudge, visibility, lock, and layer controls for placed sprites',
   '838': 'Add searchable Debug Control Center, live counts, validation, and diagnostics export',
@@ -4008,11 +4009,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     try { localStorage.setItem('ag-show-dpad-v2', next ? '1' : '0'); } catch { /* ignore */ }
   };
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectorMinimized, setInspectorMinimized] = useState(false);
   // BUILD 834: Hide Debug panels without disabling the active world-editing tool.
   const [debugUiHidden, setDebugUiHidden] = useState(() => { try { return localStorage.getItem('ag-debug-ui-hidden') === '1'; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem('ag-debug-ui-hidden', debugUiHidden ? '1' : '0'); } catch { /* private browsing */ } }, [debugUiHidden]);
   // BUILD 833: Scrollable RCT-style character roster for visual NPC QA.
   const [npcRosterOpen, setNpcRosterOpen] = useState(false);
+  const [npcRosterMinimized, setNpcRosterMinimized] = useState(false);
   const [npcRosterSearch, setNpcRosterSearch] = useState('');
   const [npcRosterSelectedId, setNpcRosterSelectedId] = useState<string | null>(null);
   // BUILD 835: Asset Studio stores imported sprites locally; export/commit is separate.
@@ -4091,8 +4094,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
 
   // BUILD 605: Debug console — black window with coordinates, copyable.
   const [debugConsoleOpen, setDebugConsoleOpen] = useState(false);
+  const [debugConsoleMinimized, setDebugConsoleMinimized] = useState(false);
   // BUILD 663: World Simulation Control Center.
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
+  const [controlCenterMinimized, setControlCenterMinimized] = useState(false);
   const [controlCenterTab, setControlCenterTab] = useState<'overview' | 'integrity' | 'lore' | 'npcs' | 'market' | 'brain' | 'builder' | 'interiors'>('overview');
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const logDebug = (msg: string) => {
@@ -4148,6 +4153,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const next = !moverMode;
     moveHouses = next;
     setMoverMode(next);
+    if (next) {
+      keysRef.current = {};
+      clearTouchHolds(touchHoldsRef.current);
+      tapMoveTargetRef.current = null;
+      tapMovePathRef.current = null;
+      mapPaintingRef.current = false;
+      setMoving(false);
+    }
     if (!next) {
       setSelectedHouse(null);
       setSelectedPlacedId(null);
@@ -4392,6 +4405,15 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       mapPaintingRef.current = false;
     }
   };
+  useEffect(() => {
+    if (!moverMode && !mapBuilderMode && !tileEditMode && !assetPlacementMode && !assetMoveMode) return;
+    keysRef.current = {};
+    clearTouchHolds(touchHoldsRef.current);
+    tapMoveTargetRef.current = null;
+    tapMovePathRef.current = null;
+    mapPaintingRef.current = false;
+    setMoving(false);
+  }, [moverMode, mapBuilderMode, tileEditMode, assetPlacementMode, assetMoveMode]);
   const tileSelectionKey = (chunkName: string, tx: number, ty: number) => chunkName + ':' + tx + ':' + ty;
   const selectedTileKeys = new Set(selectedPaintTiles.map((tile) => tileSelectionKey(tile.chunk, tile.tx, tile.ty)));
   const paintSelectedTiles = (tile: MapPaintTile | 'erase') => {
@@ -5141,6 +5163,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [carriageDialog, setCarriageDialog] = useState<CarriageDialogState | null>(null);
   const [carriageTravel, setCarriageTravel] = useState<{ destName: string; destChunk: Point; arrival: Point; totalTicks: number; doneTicks: number } | null>(null);
   const [carriageDebugOpen, setCarriageDebugOpen] = useState(false);
+  const [carriageDebugMinimized, setCarriageDebugMinimized] = useState(false);
   const carriageTravelTimerRef = useRef<number | null>(null);
   const carriageEarningsRef = useRef<Record<string, number>>({});
   const carriageStation = useMemo(() => getCarriageStation(chunk), [chunk.x, chunk.y]);
@@ -8113,7 +8136,7 @@ if (active) {
   const touchIdentifierOf = (event: TouchEvent<HTMLButtonElement>): number | undefined =>
     event.changedTouches.length > 0 ? event.changedTouches[0].identifier : undefined;
   const pressDirection = (direction: Direction, touchId?: number) => {
-    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode) return;
+    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode || moverMode || mapBuilderMode || assetPlacementMode || assetMoveMode) return;
     if (touchId === undefined) keysRef.current[direction] = true;
     else pressTouchHold(touchHoldsRef.current, direction, touchId);
     setMoving(true);
@@ -8124,7 +8147,7 @@ if (active) {
   // a finger is down switches direction without lifting.
   const slideToDirection = (direction: Direction) => {
     if (!dpadActiveRef.current) return;
-    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode) return;
+    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode || moverMode || mapBuilderMode || assetPlacementMode || assetMoveMode) return;
     pressTouchHold(touchHoldsRef.current, direction, 1);
     setMoving(true);
   };
@@ -8879,6 +8902,16 @@ if (active) {
         .field-column[data-debug-ui-hidden="true"] .inspector-panel,
         .field-column[data-debug-ui-hidden="true"] .tile-coordinates-window,
         .field-column[data-debug-ui-hidden="true"] .debug-console-panel { display: none !important; }
+         .editor-panel, .map-builder-bar, .debug-console-panel { box-sizing: border-box; max-width: calc(100vw - 16px); max-height: min(56dvh, 560px); overscroll-behavior: contain; }
+        .editor-panel { overflow-y: auto; }
+        .editor-panel-title, .map-builder-title { position: sticky; top: 0; z-index: 5; flex-shrink: 0; }
+        .editor-minimized-chip, .map-builder-min-chip { min-height: 34px; max-width: calc(100vw - 24px); }
+        @media (max-width: 700px) {
+          .editor-panel, .map-builder-bar { left: 8px !important; right: 8px !important; width: auto !important; max-width: calc(100vw - 16px) !important; max-height: 48dvh !important; font-size: 12px; }
+          .editor-panel-title, .map-builder-title { min-height: 38px; gap: 4px; flex-wrap: wrap; }
+          .editor-minimize-btn, .map-builder-min, .map-builder-exit { min-width: 34px; min-height: 32px; touch-action: manipulation; }
+          .editor-actions { flex-wrap: wrap; }
+        }
         .ag-debug-reveal { position: fixed; right: 10px; top: 10px; z-index: 20000; border: 1px solid #f5d778; border-radius: 999px; background: #18271f; color: #fff6c7; padding: 9px 12px; font: 700 12px system-ui; box-shadow: 0 3px 12px #0008; touch-action: manipulation; }
         .ag-debug-quick-actions { position: fixed; right: 10px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 19000; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 20px); }
         .ag-debug-clutter-toggle { position: static; border: 1px solid #8da99a; border-radius: 9px; background: #17251fef; color: white; padding: 9px 11px; font: 700 12px system-ui; box-shadow: 0 3px 12px #0007; touch-action: manipulation; }
@@ -9470,7 +9503,7 @@ if (active) {
             </div>
           )}
           {/* BUILD 605: Debug console — black window, white monospace, scrollable, copyable */}
-          {debugConsoleOpen && (
+          {debugConsoleOpen && !debugConsoleMinimized && (
             <div style={{
               position: 'fixed', bottom: 10, left: 10, right: 10, height: '40vh',
               backgroundColor: '#000', color: '#fff', fontFamily: 'monospace',
@@ -9479,6 +9512,7 @@ if (active) {
             }}>
               <div style={{ padding: '8px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>📟 Debug Console</span>
+                <button type="button" onClick={() => setDebugConsoleMinimized(true)} style={{ background: '#333', color: '#fff', border: 'none', padding: '4px 12px', marginRight: '8px', borderRadius: '4px', cursor: 'pointer' }} aria-label="Minimize Debug Console">— Minimize</button>
                 <div>
                   <button
                     type="button"
@@ -9499,7 +9533,7 @@ if (active) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setDebugConsoleOpen(false)}
+                    onClick={() => { setDebugConsoleOpen(false); setDebugConsoleMinimized(false); }}
                     style={{ background: '#333', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer' }}
                   >
                     ✕ Close
@@ -9516,7 +9550,7 @@ if (active) {
             </div>
           )}
           {/* BUILD 663: World Simulation Control Center. */}
-          {controlCenterOpen && (
+          {controlCenterOpen && !controlCenterMinimized && (
             <div style={{
               position: 'fixed', top: 10, left: 10, right: 10, bottom: 10,
               backgroundColor: '#1a1a2e', color: '#eee', fontFamily: 'monospace',
@@ -9525,6 +9559,7 @@ if (active) {
             }}>
               <div style={{ padding: '12px', borderBottom: '1px solid #4a4a6a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '14px', fontWeight: 'bold' }}>🌍 World Simulation Control Center</span>
+                <button type="button" onClick={() => setControlCenterMinimized(true)} style={{ background: '#333b59', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }} aria-label="Minimize World Simulation Control Center">— Minimize</button>
                 <div>
                   {(['overview', 'integrity', 'lore', 'npcs', 'market', 'brain', 'builder', 'interiors'] as const).map((tab) => (
                     <button
@@ -9902,14 +9937,14 @@ if (active) {
               🗺️ Builder
             </button>
           )}
-          {carriageDebugOpen && (() => {
+          {carriageDebugOpen && !carriageDebugMinimized && (() => {
             const clock = brainRef.current?.worldCore.getClock();
             const discoveredNames = journal.discoveredLocations.map((l) => l.name);
             const dests = carriageDestinations(chunk, discoveredNames);
             const dirs: Array<'north' | 'south' | 'east' | 'west'> = ['north', 'south', 'east', 'west'];
             return (
               <div className="editor-panel inspector-panel">
-                <div className="editor-panel-title">🐎 Carriage Network <span className="editor-panel-chunk">{time}</span></div>
+                <div className="editor-panel-title">🐎 Carriage Network <span className="editor-panel-chunk">{time}</span><button type="button" className="editor-minimize-btn" onClick={() => setCarriageDebugMinimized(true)} aria-label="Minimize Carriage Network">—</button><button type="button" className="editor-minimize-btn" onClick={() => { setCarriageDebugOpen(false); setCarriageDebugMinimized(false); }} aria-label="Close Carriage Network">✕</button></div>
                 <div className="editor-actions">
                   <button type="button" className="editor-btn" onClick={() => setCarriageDebugOpen(false)}>Close</button>
                 </div>
@@ -9941,9 +9976,9 @@ if (active) {
               </div>
             );
           })()}
-          {npcRosterOpen && (
+          {npcRosterOpen && !npcRosterMinimized && (
             <div className="editor-panel inspector-panel" role="dialog" aria-label="NPC roster" data-testid="npc-roster-panel" style={{ maxHeight: 'min(78vh, 720px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 1200 }}>
-              <div className="editor-panel-title">🧑‍🤝‍🧑 NPC Roster <span className="editor-panel-chunk">{townsfolk.length} townsfolk</span></div>
+              <div className="editor-panel-title">🧑‍🤝‍🧑 NPC Roster <span className="editor-panel-chunk">{townsfolk.length} townsfolk</span><button type="button" className="editor-minimize-btn" onClick={() => setNpcRosterMinimized(true)} aria-label="Minimize NPC Roster">—</button></div>
               <div className="editor-actions" style={{ flexShrink: 0, gap: 6 }}>
                 <input aria-label="Search NPCs" data-testid="input-npc-roster-search" value={npcRosterSearch} onChange={(e) => setNpcRosterSearch(e.target.value)} placeholder="Search name, role, activity…" style={{ minWidth: 0, flex: 1, padding: '7px 9px', borderRadius: 6, border: '1px solid #777', background: '#171717', color: '#fff' }} />
                 <button type="button" className="editor-btn" onClick={() => { setNpcRosterOpen(false); setNpcRosterSelectedId(null); }}>Close</button>
@@ -10021,7 +10056,7 @@ if (active) {
               })()}
             </div>
           )}
-          {(debugHubMinimized || assetStudioMinimized || chunkSelectorMinimized || worldObjectCoordinatesMinimized || devConsoleMinimized) && <div aria-label="Minimized debug tools" style={{ position: 'fixed', left: 8, right: 8, bottom: 'max(8px, env(safe-area-inset-bottom))', zIndex: 24000, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', pointerEvents: 'none' }}>{debugHubMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setDebugHubMinimized(false)}>🧰 Debug tools</button>}{assetStudioMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setAssetStudioMinimized(false)}>🖼️ Asset Studio</button>}{chunkSelectorMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setChunkSelectorMinimized(false)}>🧭 Chunks</button>}{worldObjectCoordinatesMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setWorldObjectCoordinatesMinimized(false)}>📍 Coordinates</button>}{devConsoleMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setDevConsoleMinimized(false)}>📟 Dev Console</button>}</div>}
+          {(debugHubMinimized || assetStudioMinimized || chunkSelectorMinimized || worldObjectCoordinatesMinimized || devConsoleMinimized) && <div aria-label="Minimized debug tools" style={{ position: 'fixed', left: 8, right: 8, bottom: 'max(8px, env(safe-area-inset-bottom))', zIndex: 24000, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', pointerEvents: 'none' }}>{debugHubMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setDebugHubMinimized(false)}>🧰 Debug tools</button>}{npcRosterMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setNpcRosterMinimized(false)}>🧑‍🤝‍🧑 NPC Roster</button>}{inspectorMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setInspectorMinimized(false)}>🔍 NPC Inspector</button>}{carriageDebugMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setCarriageDebugMinimized(false)}>🐎 Carriage</button>}{controlCenterMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setControlCenterMinimized(false)}>🌍 Simulation</button>}{debugConsoleMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setDebugConsoleMinimized(false)}>📟 Debug Console</button>}{assetStudioMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setAssetStudioMinimized(false)}>🖼️ Asset Studio</button>}{chunkSelectorMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setChunkSelectorMinimized(false)}>🧭 Chunks</button>}{worldObjectCoordinatesMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setWorldObjectCoordinatesMinimized(false)}>📍 Coordinates</button>}{devConsoleMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setDevConsoleMinimized(false)}>📟 Dev Console</button>}</div>}
           {worldObjectCoordinatesOpen && !worldObjectCoordinatesMinimized && <WorldObjectCoordinates objects={placedObjects} onMinimize={() => setWorldObjectCoordinatesMinimized(true)} onMove={(id, x, y, targetChunk) => { pushMapUndo(); setPlacedObjects(prev => prev.map(object => object.id === id ? { ...object, x, y, chunk: targetChunk } : object)); logEditorChange('move-coordinate', 'Moved placed object ' + id + ' to local (' + x + ',' + y + ') chunk ' + targetChunk); }} onClose={() => setWorldObjectCoordinatesOpen(false)} />}
           {devConsoleOpen && !devConsoleMinimized && <DevConsole build={BUILD_NUMBER} onMinimize={() => setDevConsoleMinimized(true)} onClose={() => { setDevConsoleOpen(false); setDevConsoleMinimized(false); }} />}
           {chunkSelectorOpen && !chunkSelectorMinimized && <ChunkZoneSelector selectedChunk={chunkSelectorPoint} onSelectChunk={setChunkSelectorPoint} getChunkInfo={getChunkSelectorInfo} mapPaints={mapPaints} onMinimize={() => setChunkSelectorMinimized(true)} onClose={() => { setChunkSelectorOpen(false); setChunkSelectorMinimized(false); }} />}
@@ -10197,9 +10232,9 @@ if (active) {
               </div>
             </div>
           )}
-          {inspectorOpen && (
+          {inspectorOpen && !inspectorMinimized && (
             <div className="editor-panel inspector-panel">
-              <div className="editor-panel-title">🔍 NPC Inspector <span className="editor-panel-chunk">{time}</span></div>
+              <div className="editor-panel-title">🔍 NPC Inspector <span className="editor-panel-chunk">{time}</span><button type="button" className="editor-minimize-btn" onClick={() => setInspectorMinimized(true)} aria-label="Minimize NPC Inspector">—</button></div>
               <div className="editor-actions">
                 <button type="button" className="editor-btn" onClick={() => setInspectorOpen(false)}>
                   Close
@@ -11020,8 +11055,10 @@ if (active) {
           </div>
           {/* BUILD 844: render sprites placed through Asset Studio in the active chunk. */}
           <div className="field-custom-placed-assets" aria-label="Placed custom sprites" style={{ position: 'absolute', inset: 0, zIndex: 31, pointerEvents: 'none', overflow: 'visible' }}>
-            {customPlacedAssets.filter((asset) => asset.chunk === chunkKey && asset.visible !== false).map((asset) => (
-              <img
+            {customPlacedAssets.filter((asset) => asset.chunk === chunkKey && asset.visible !== false).map((asset) => {
+              const renderedWidth = Math.max(32, Math.min(640, asset.width * asset.scale));
+              const renderedHeight = renderedWidth * (asset.height / Math.max(1, asset.width));
+              return <img
                 key={asset.id}
                 src={asset.src}
                 alt={asset.name}
@@ -11029,10 +11066,10 @@ if (active) {
                 onError={() => setAssetStudioStatus('Sprite could not render: ' + asset.name + '. Re-upload it in Asset Studio and place it again.')}
                 style={{
                   position: 'absolute',
-                  left: 'calc(' + fieldPct(asset.x) + ' - ' + (asset.width * asset.scale) / 2 + 'px)',
-                  top: 'calc(' + fieldPct(asset.y) + ' - ' + asset.height * asset.scale + 'px)',
-                  width: Math.max(1, asset.width * asset.scale),
-                  height: Math.max(1, asset.height * asset.scale),
+                  left: 'calc(' + fieldPct(asset.x) + ' - ' + renderedWidth / 2 + 'px)',
+                  top: 'calc(' + fieldPct(asset.y) + ' - ' + renderedHeight + 'px)',
+                  width: renderedWidth,
+                  height: renderedHeight,
                   objectFit: 'fill',
                   imageRendering: 'pixelated',
                   transform: 'rotate(' + (asset.rotation || 0) + 'deg) scale(' + (asset.flipX ? -1 : 1) + ',' + (asset.flipY ? -1 : 1) + ')',
@@ -11040,8 +11077,8 @@ if (active) {
                   opacity: asset.locked ? 0.9 : 1,
                   display: 'block',
                 }}
-              />
-            ))}
+              />;
+            })}
           </div>
           {cornStalks.length > 0 && (
             <div className="field-corn" aria-hidden="true" style={{ '--env-sprites': 'url("' + assetUrl('environment/FreePack.png') + '")' } as CSSProperties} data-testid="cornfield">
