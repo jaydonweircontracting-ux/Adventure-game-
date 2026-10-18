@@ -1,6 +1,6 @@
 {
-  "build": "861",
-  "note": "Remove duplicate top-left Options button and remove the green border/frame around the game screen",
-  "timestamp": "2026-10-18T07:20:00.000Z",
-  "cacheBuster": "build861-remove-options-button-green-frame"
+  "build": "862",
+  "note": "Asset Studio can select placed houses/sprites in the world with a yellow highlight and delete the selected placement",
+  "timestamp": "2026-10-18T08:00:00.000Z",
+  "cacheBuster": "build862-select-delete-placed-houses"
 }
