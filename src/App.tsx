@@ -138,7 +138,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '843';
+const BUILD_NUMBER = '844';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -11011,6 +11011,31 @@ if (active) {
                 />
               );
             })}
+          </div>
+          {/* BUILD 844: render sprites placed through Asset Studio in the active chunk. */}
+          <div className="field-custom-placed-assets" aria-label="Placed custom sprites" style={{ position: 'absolute', inset: 0, zIndex: 31, pointerEvents: 'none', overflow: 'visible' }}>
+            {customPlacedAssets.filter((asset) => asset.chunk === chunkKey && asset.visible !== false).map((asset) => (
+              <img
+                key={asset.id}
+                src={asset.src}
+                alt={asset.name}
+                draggable={false}
+                onError={() => setAssetStudioStatus('Sprite could not render: ' + asset.name + '. Re-upload it in Asset Studio and place it again.')}
+                style={{
+                  position: 'absolute',
+                  left: 'calc(' + fieldPct(asset.x) + ' - ' + (asset.width * asset.scale) / 2 + 'px)',
+                  top: 'calc(' + fieldPct(asset.y) + ' - ' + asset.height * asset.scale + 'px)',
+                  width: Math.max(1, asset.width * asset.scale),
+                  height: Math.max(1, asset.height * asset.scale),
+                  objectFit: 'fill',
+                  imageRendering: 'pixelated',
+                  transform: 'rotate(' + (asset.rotation || 0) + 'deg) scale(' + (asset.flipX ? -1 : 1) + ',' + (asset.flipY ? -1 : 1) + ')',
+                  transformOrigin: 'center bottom',
+                  opacity: asset.locked ? 0.9 : 1,
+                  display: 'block',
+                }}
+              />
+            ))}
           </div>
           {cornStalks.length > 0 && (
             <div className="field-corn" aria-hidden="true" style={{ '--env-sprites': 'url("' + assetUrl('environment/FreePack.png') + '")' } as CSSProperties} data-testid="cornfield">
