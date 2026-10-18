@@ -1,6 +1,6 @@
 {
-  "build": "866",
-  "note": "Add shared debug player-freeze toggle, selectable/deletable placed sprites and houses, and persistent Sprite Studio restore control",
-  "timestamp": "2026-10-18T16:40:00.000Z",
-  "cacheBuster": "build866-debug-freeze-select-delete"
+  "build": "867",
+  "note": "Fix Asset Studio resize buttons so the panel visibly expands and contracts with explicit dimensions",
+  "timestamp": "2026-10-18T21:30:00.000Z",
+  "cacheBuster": "build867-asset-studio-resize-fix"
 }
