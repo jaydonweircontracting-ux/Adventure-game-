@@ -1,6 +1,6 @@
 {
-  "build": "862",
-  "note": "Asset Studio can select placed houses/sprites in the world with a yellow highlight and delete the selected placement",
-  "timestamp": "2026-10-18T08:00:00.000Z",
-  "cacheBuster": "build862-select-delete-placed-houses"
+  "build": "863",
+  "note": "Asset Studio Select existing activates world selection for existing in-game houses/buildings",
+  "timestamp": "2026-10-18T08:15:00.000Z",
+  "cacheBuster": "build863-select-existing-houses"
 }
