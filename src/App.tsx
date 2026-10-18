@@ -4051,7 +4051,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [assetStudioWidth, setAssetStudioWidth] = useState(380);
   const [assetStudioHeight, setAssetStudioHeight] = useState(620);
   const [assetStudioSearch, setAssetStudioSearch] = useState('');
-  const [repositorySpriteFolder, setRepositorySpriteFolder] = useState('game sprites');
+  const [repositorySpriteFolder, setRepositorySpriteFolder] = useState('');
   const [localAssetFolder, setLocalAssetFolder] = useState('All folders');
   const [assetPlacementLayer, setAssetPlacementLayer] = useState(0);
   const [spriteBackgroundColor, setSpriteBackgroundColor] = useState('#ffffff');
@@ -10242,11 +10242,12 @@ if (active) {
                 <p style={{ fontSize: 11, color: '#b7c8bc', margin: '2px 0 8px' }}>Upload accepts PNG, WebP or JPEG up to 1 MB. Imported images and placements are stored in this browser only; use Export JSON to move them. Existing repository assets are not overwritten.</p>
                 <strong style={{ display: 'block', margin: '8px 0' }}>Repository sprite folders ({DEBUG_REPOSITORY_ASSETS.length} sprites)</strong>
                 <select aria-label="Repository sprite folder" value={repositorySpriteFolder} onChange={(e) => setRepositorySpriteFolder(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: 8, marginBottom: 8, background: '#18231e', color: '#fff', borderRadius: 6 }}>
-                  <option value="game sprites">All sprite folders</option>
+                  <option value="">Choose a folder…</option>
+                  <option value="__all__">All folders (large list)</option>
                   {repositorySpriteFolders.map((folder) => <option key={folder} value={folder}>{folder}</option>)}
                 </select>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(94px,1fr))', gap: 7 }}>
-                  {DEBUG_REPOSITORY_ASSETS.filter((a) => (repositorySpriteFolder === 'game sprites' || a.folder === repositorySpriteFolder) && (a.name + ' ' + a.path + ' ' + a.folder).toLowerCase().includes(assetStudioSearch.toLowerCase())).slice(0, 240).map((asset) => (
+                  {DEBUG_REPOSITORY_ASSETS.filter((a) => (repositorySpriteFolder === '__all__' || a.folder === repositorySpriteFolder) && (a.name + ' ' + a.path + ' ' + a.folder).toLowerCase().includes(assetStudioSearch.toLowerCase())).slice(0, 240).map((asset) => (
                     <button key={asset.id} type="button" onClick={() => {
                       const existing = customAssetLibrary.find((a) => a.src === asset.src);
                       if (existing) { setSelectedCustomAssetId(existing.id); setMapBuilderMode(true); setMapBuilderMin(true); setAssetPlacementMode(true); setAssetMoveMode(false); setAssetStudioMinimized(true); setAssetStudioStatus('Placement active: tap the world to place ' + existing.name + '. Choose the layer from the minimized Asset Studio chip.'); return; }
@@ -10267,6 +10268,7 @@ if (active) {
                     </button>
                   ))}
                 </div>
+                {!repositorySpriteFolder && <p style={{ color: '#d0d9d2', fontSize: 12 }}>Choose a sprite folder above to browse just that folder. Use “All folders” only when you need the full repository list.</p>}
                 {DEBUG_REPOSITORY_ASSETS.length === 0 && <p style={{ color: '#d0d9d2', fontSize: 12 }}>No images were discovered in the game sprites directory by the asset scan.</p>}
                 {DEBUG_REPOSITORY_ASSETS.length > 240 && <small>Showing first 240 matches. Search by filename or folder to narrow the list.</small>}
                 <strong style={{ display: 'block', margin: '12px 0 8px' }}>Local working library ({customAssetLibrary.length})</strong>
