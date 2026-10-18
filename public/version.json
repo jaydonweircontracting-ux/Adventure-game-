@@ -1,6 +1,6 @@
 {
-  "build": "870",
-  "note": "Keep Asset Studio minimize independent from World Editor; restore button reopens Asset Studio",
-  "timestamp": "2026-10-18T22:30:00.000Z",
-  "cacheBuster": "build870-deploy-retry-2026-10-18"
+  "build": "871",
+  "note": "Persist Asset Studio selection highlight; minimizing Asset Studio closes World Editor while preserving placement",
+  "timestamp": "2026-10-18T23:15:00.000Z",
+  "cacheBuster": "build871-studio-selection-minimize-fix"
 }
