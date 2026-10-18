@@ -10152,7 +10152,7 @@ if (active) {
                 <strong style={{ display: 'block', margin: '12px 0 8px' }}>Local working library ({customAssetLibrary.length})</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(94px,1fr))', gap: 7 }}>
                   {customAssetLibrary.filter((a) => a.name.toLowerCase().includes(assetStudioSearch.toLowerCase())).map((asset) => (
-                    <button key={asset.id} type="button" onClick={() => setSelectedCustomAssetId(asset.id)} style={{ minWidth: 0, border: selectedCustomAssetId === asset.id ? '2px solid #f2d35e' : '1px solid #52645a', borderRadius: 7, padding: 6, background: selectedCustomAssetId === asset.id ? '#35452e' : '#18231e', color: '#fff' }}>
+                    <button key={asset.id} type="button" onClick={() => { setSelectedCustomAssetId(asset.id); setMapBuilderMode(true); setMapBuilderMin(true); setAssetPlacementMode(true); setAssetMoveMode(false); setAssetStudioMinimized(true); setAssetStudioStatus("Placement active: tap the world to place " + asset.name + ". Tap again to place another; reopen Asset Studio to cancel or edit."); }} style={{ minWidth: 0, border: selectedCustomAssetId === asset.id ? '2px solid #f2d35e' : '1px solid #52645a', borderRadius: 7, padding: 6, background: selectedCustomAssetId === asset.id ? '#35452e' : '#18231e', color: '#fff' }}>
                       <img src={asset.src} alt="" style={{ width: '100%', height: 64, objectFit: 'contain', imageRendering: 'pixelated' }} />
                       <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{asset.name}</span>
                       <small style={{ opacity: 0.75 }}>{asset.width}×{asset.height}</small>
