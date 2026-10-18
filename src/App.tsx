@@ -139,13 +139,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '868';
+const BUILD_NUMBER = '869';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '869': 'Fix starting-house selection in Asset Studio with a direct select button and reliable house hit area',
   '868': 'Add a clear yellow pressed-state highlight to every Asset Studio button, including touch controls',
   '867': 'Fix Asset Studio resize buttons so the panel visibly expands and contracts with explicit dimensions',
   '866': 'Add shared debug player-freeze toggle, selectable/deletable placed sprites and houses, and persistent Sprite Studio restore control',
@@ -10244,6 +10245,7 @@ if (active) {
               <div style={{ display: 'flex', gap: 6, padding: 8, flexShrink: 0, flexWrap: 'wrap' }}>
                 <input aria-label="Search sprites" value={assetStudioSearch} onChange={(e) => setAssetStudioSearch(e.target.value)} placeholder="Search sprites…" style={{ minWidth: 0, flex: '1 1 140px', padding: 8, borderRadius: 6 }} />
                 <button type="button" className="editor-btn" aria-label="Select an existing house, building, or placed sprite in the world" onClick={() => { setMoverMode(true); setMapBuilderMode(false); setMapBuilderMin(false); setEditorTool('select'); setSelectedHouse(null); setSelectedPlacedId(null); setSelectedPlacedCustomId(null); setAssetPlacementMode(false); setAssetMoveMode(false); setAssetStudioOpen(true); setAssetStudioMinimized(false); setAssetStudioStatus('SELECT EXISTING mode active: tap a house or placed sprite directly in the world to highlight it yellow. Delete selected removes supported placed assets and objects.'); }}>🎯 Select existing</button>
+                <button type="button" className="editor-btn" aria-label="Select starting house" onClick={() => { const startingHouse = doorways.find((doorway) => doorway.area.id === 'tutorial-house'); if (!startingHouse) { setAssetStudioStatus('Starting house was not found in the current chunk. Return to the starting area and try again.'); return; } setMoverMode(true); setMapBuilderMode(false); setMapBuilderMin(false); setEditorTool('select'); setAssetPlacementMode(false); setAssetMoveMode(false); setSelectedHouse(startingHouse.id); setSelectedPlacedId(null); setSelectedPlacedCustomId(null); setAssetStudioStatus('Starting house selected. It should have a yellow outline; use the house controls or Delete selected.'); }}>🏠 Select starting house</button>
                 <button type="button" className="editor-btn" aria-label="Delete selected house, placed object, or sprite" disabled={!selectedHouse && !selectedPlacedCustomId && !selectedPlacedId} onClick={() => { if (selectedPlacedCustomId) { const item = customPlacedAssets.find((a) => a.id === selectedPlacedCustomId); if (item && confirm('Delete placed ' + item.name + ' from this world?')) { pushMapUndo(); setCustomPlacedAssets((prev) => prev.filter((a) => a.id !== item.id)); setSelectedPlacedCustomId(null); setEntityInspectorSelection(null); setAssetStudioStatus('Deleted placed ' + item.name + '.'); } } else if (selectedPlacedId) { const item = placedObjects.find((o) => o.id === selectedPlacedId); if (item && confirm('Delete this placed ' + item.kind + '?')) { pushMapUndo(); setPlacedObjects((prev) => prev.filter((o) => o.id !== item.id)); setFlaggedItems((prev) => prev.filter((flag) => flag.id !== item.id)); setSelectedPlacedId(null); setEntityInspectorSelection(null); setAssetStudioStatus('Deleted placed ' + item.kind + '.'); } } else if (selectedHouse) { const house = buildingDoorwaysFor(chunk).find((d) => d.id === selectedHouse); if (house && confirm('Remove ' + house.area.name + ' from the visible world?')) { setDeletedHouseIds((prev) => prev.includes(selectedHouse) ? prev : [...prev, selectedHouse]); setSelectedHouse(null); setHouseOffsets((prev) => { const next = { ...prev }; delete next[selectedHouse]; return next; }); setAssetStudioStatus('Removed ' + house.area.name + ' from the visible world.'); } } }}>🗑 Delete selected</button>
                 <button type="button" className="editor-btn" onClick={() => assetFileInputRef.current?.click()}>＋ Upload</button>
                 <button type="button" className="editor-btn" onClick={() => assetFolderInputRef.current?.click()}>📁 Load folder</button>
@@ -11541,7 +11543,7 @@ if (active) {
                   key={doorway.id}
                   className={'field-house sprite-house' + (isStartingArea(chunk) ? ' new-house' : '')}
                   style={{
-                    zIndex: isSelected ? 10 : 20 + (houseLayerOffsets[doorway.id] ?? 0),
+                    zIndex: isSelected ? 240 : 20 + (houseLayerOffsets[doorway.id] ?? 0),
                     '--building-art': 'url("' + buildingArtUrl + '")',
                     '--building-art-ratio': buildingArt.aspectRatio,
                     left: fieldPct(rect.left + off.x - ((rect.right - rect.left) * ((houseSizeScales[doorway.id] ?? 1) - 1)) / 2),
@@ -11579,7 +11581,7 @@ if (active) {
                       setSelectedPlacedCustomId(null);
                     }
                   } : undefined}
-                ><span className="field-house-art" aria-hidden="true" />{doorway.id === 'tutorial-house-door' && !interior && <img className="field-house-overlay-art" src={STARTING_HOUSE_OVERLAY_URL} alt="" draggable={false} aria-hidden="true" />}{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}{moverMode && (
+                ><span className="field-house-art" aria-hidden="true" />{doorway.id === 'tutorial-house-door' && !interior && <img className="field-house-overlay-art" src={STARTING_HOUSE_OVERLAY_URL} alt="" draggable={false} aria-hidden="true" style={{ pointerEvents: 'none' }} />}{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}{moverMode && (
                   <span className="editor-coord" aria-hidden="true">
                     {(rect.left + off.x).toFixed(1)}, {(rect.top + off.y).toFixed(1)}
                   </span>
