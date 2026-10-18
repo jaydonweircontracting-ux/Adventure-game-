@@ -23,7 +23,8 @@
     "test:town-production": "npx tsx tests/town-production.test.ts",
     "test:village-food-needs": "npx tsx tests/village-food-needs.test.ts",
     "test:caravan-trade": "npx tsx tests/caravan-trade.test.ts",
-    "test:settlement-economy": "npx tsx tests/settlement-economy.test.ts"
+    "test:settlement-economy": "npx tsx tests/settlement-economy.test.ts",
+    "test:world-dev-foundation": "npx tsx tests/world-dev-foundation.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

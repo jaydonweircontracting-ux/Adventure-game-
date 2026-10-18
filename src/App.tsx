@@ -1,3 +1,5 @@
+import WorldObjectCoordinates from './game/dev/WorldObjectCoordinates';
+import DevConsole from './game/dev/DevConsole';
 import IsoRoomDemo from './game/iso/IsoRoom';
 import RpgPreview from './game/iso/RpgPreview';
 import IsoFieldView from './game/iso/IsoFieldView';
@@ -10,7 +12,7 @@ import { createBody, lootBody, type LootableBody } from './game/lootableBodies';
 import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
 import { pickpocketChance, resolvePickpocket } from './game/pickpocket';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { isRecord, isFiniteNumber } from '@/game/shared/guards';
 import { Backpack, BookOpen, Download, Eye, EyeOff, Hourglass, Map as MapIcon, Menu, MessageCircle, Minus, Plus, Settings, Sword, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import { type CSSProperties } from 'react';
@@ -28,6 +30,7 @@ import type { EditorSolid, EditorPlaceKind, PlacedObject, FlaggedItem, EditorXMa
 export type { EditorPlaceKind, PlacedObject, FlaggedItem } from './game/worldEditor';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText } from './game/worldEditor';
 import { paintTile, clearChunkPaints, mapBuilderSolidsFor, MAP_TILE_UNITS, MAP_TILES_PER_SIDE, type MapPaints, type MapPaintTile, type PaintedTile } from './game/mapBuilder';
+import ChunkZoneSelector from './game/dev/ChunkZoneSelector';
 import { organicTownSpecs } from './game/organicTowns';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 // BUILD 697: market stall shops — pure defs + guarded transactions.
@@ -135,13 +138,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '840';
+const BUILD_NUMBER = '846';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '846': 'Minimize Debug panels independently, freeze player movement in editor mode, and improve placed sprite visibility',
   '840': 'Save and restore placed custom sprites in named chunk templates',
   '839': 'Add precise move/nudge, visibility, lock, and layer controls for placed sprites',
   '838': 'Add searchable Debug Control Center, live counts, validation, and diagnostics export',
@@ -4005,23 +4009,38 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     try { localStorage.setItem('ag-show-dpad-v2', next ? '1' : '0'); } catch { /* ignore */ }
   };
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectorMinimized, setInspectorMinimized] = useState(false);
   // BUILD 834: Hide Debug panels without disabling the active world-editing tool.
   const [debugUiHidden, setDebugUiHidden] = useState(() => { try { return localStorage.getItem('ag-debug-ui-hidden') === '1'; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem('ag-debug-ui-hidden', debugUiHidden ? '1' : '0'); } catch { /* private browsing */ } }, [debugUiHidden]);
   // BUILD 833: Scrollable RCT-style character roster for visual NPC QA.
   const [npcRosterOpen, setNpcRosterOpen] = useState(false);
+  const [npcRosterMinimized, setNpcRosterMinimized] = useState(false);
   const [npcRosterSearch, setNpcRosterSearch] = useState('');
   const [npcRosterSelectedId, setNpcRosterSelectedId] = useState<string | null>(null);
   // BUILD 835: Asset Studio stores imported sprites locally; export/commit is separate.
   // BUILD 838: searchable central launcher and real-data world validation.
   const [debugHubOpen, setDebugHubOpen] = useState(false);
+  const [debugHubMinimized, setDebugHubMinimized] = useState(false);
+  // BUILD 836: separate editor inspection target; selecting a chunk never teleports the player.
+  const [chunkSelectorOpen, setChunkSelectorOpen] = useState(false);
+  const [chunkSelectorMinimized, setChunkSelectorMinimized] = useState(false);
+  const [worldObjectCoordinatesOpen, setWorldObjectCoordinatesOpen] = useState(false);
+  const [worldObjectCoordinatesMinimized, setWorldObjectCoordinatesMinimized] = useState(false);
+  const [devConsoleOpen, setDevConsoleOpen] = useState(false);
+  const [devConsoleMinimized, setDevConsoleMinimized] = useState(false);
+  const [chunkSelectorPoint, setChunkSelectorPoint] = useState<Point>({ x: 4, y: 7 });
   const [debugHubSearch, setDebugHubSearch] = useState('');
   const [debugValidationReport, setDebugValidationReport] = useState<string[]>([]);
   const [assetStudioOpen, setAssetStudioOpen] = useState(false);
+  const [assetStudioMinimized, setAssetStudioMinimized] = useState(false);
   const [assetStudioSearch, setAssetStudioSearch] = useState('');
   const [assetStudioStatus, setAssetStudioStatus] = useState('Imported assets are saved in this browser only.');
   const [selectedCustomAssetId, setSelectedCustomAssetId] = useState<string | null>(null);
   const [selectedPlacedCustomId, setSelectedPlacedCustomId] = useState<string | null>(null);
+  const [spriteCoordinateEditorOpen, setSpriteCoordinateEditorOpen] = useState(false);
+  const [spriteTargetX, setSpriteTargetX] = useState('');
+  const [spriteTargetY, setSpriteTargetY] = useState('');
   const [assetPlacementMode, setAssetPlacementMode] = useState(false);
   const [assetMoveMode, setAssetMoveMode] = useState(false);
   const [customAssetSnapToGrid, setCustomAssetSnapToGrid] = useState(false);
@@ -4075,8 +4094,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
 
   // BUILD 605: Debug console — black window with coordinates, copyable.
   const [debugConsoleOpen, setDebugConsoleOpen] = useState(false);
+  const [debugConsoleMinimized, setDebugConsoleMinimized] = useState(false);
   // BUILD 663: World Simulation Control Center.
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
+  const [controlCenterMinimized, setControlCenterMinimized] = useState(false);
   const [controlCenterTab, setControlCenterTab] = useState<'overview' | 'integrity' | 'lore' | 'npcs' | 'market' | 'brain' | 'builder' | 'interiors'>('overview');
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const logDebug = (msg: string) => {
@@ -4132,6 +4153,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const next = !moverMode;
     moveHouses = next;
     setMoverMode(next);
+    if (next) {
+      keysRef.current = {};
+      clearTouchHolds(touchHoldsRef.current);
+      tapMoveTargetRef.current = null;
+      tapMovePathRef.current = null;
+      mapPaintingRef.current = false;
+      setMoving(false);
+    }
     if (!next) {
       setSelectedHouse(null);
       setSelectedPlacedId(null);
@@ -4149,7 +4178,31 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 822: let the player hide the minimap without opening another menu.
   const [minimapHidden, setMinimapHidden] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
+  const [showChunkBounds, setShowChunkBounds] = useState(false);
+  // BUILD 843: persistent per-chunk offsets for generated vegetation.
+  const [treePositionOverrides, setTreePositionOverrides] = useState<Record<string, { x: number; y: number }>>(() => {
+    try {
+      const raw = localStorage.getItem('ag-generated-tree-positions');
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('ag-generated-tree-positions', JSON.stringify(treePositionOverrides)); } catch { /* ignore storage failures */ }
+  }, [treePositionOverrides]);
+  const nudgeInspectedTree = (dx: number, dy: number) => {
+    const selected = entityInspectorSelection;
+    if (!selected || selected.kind !== 'Generated tree') return;
+    const treeId = Number(selected.id);
+    if (!Number.isInteger(treeId)) return;
+    const key = selected.chunk + ':' + treeId;
+    const next = { x: Math.round((selected.x + dx) * 10) / 10, y: Math.round((selected.y + dy) * 10) / 10 };
+    setTreePositionOverrides(prev => ({ ...prev, [key]: next }));
+    setEntityInspectorSelection({ ...selected, x: next.x, y: next.y });
+    logEditorChange('move-generated-tree', 'Moved generated tree ' + treeId + ' to (' + next.x + ',' + next.y + ') in chunk ' + selected.chunk);
+  };
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
+  const [entityInspectorSelection, setEntityInspectorSelection] = useState<{ kind: string; id: string; name: string; x: number; y: number; chunk: string } | null>(null);
   const [copiedNotice, setCopiedNotice] = useState(false);
   const loadPlacedObjects = (): PlacedObject[] => {
     try {
@@ -4323,6 +4376,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [tileEditMode, setTileEditMode] = useState(false);
   const tileEditModeRef = useRef(false);
   const [tileCoordsOpen, setTileCoordsOpen] = useState(false);
+  const [tileCoordsMinimized, setTileCoordsMinimized] = useState(false);
   const [selectedPaintTiles, setSelectedPaintTiles] = useState<Array<{ chunk: string; tx: number; ty: number }>>(() => {
     try { const raw = localStorage.getItem('tileEditorSelectedTiles'); const parsed = raw ? JSON.parse(raw) : []; return Array.isArray(parsed) ? parsed.filter((t) => t && typeof t.chunk === 'string' && Number.isInteger(t.tx) && Number.isInteger(t.ty) && t.tx >= 0 && t.ty >= 0 && t.tx < MAP_TILES_PER_SIDE && t.ty < MAP_TILES_PER_SIDE) : []; } catch { return []; }
   });
@@ -4352,6 +4406,15 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       mapPaintingRef.current = false;
     }
   };
+  useEffect(() => {
+    if (!moverMode && !mapBuilderMode && !tileEditMode && !assetPlacementMode && !assetMoveMode) return;
+    keysRef.current = {};
+    clearTouchHolds(touchHoldsRef.current);
+    tapMoveTargetRef.current = null;
+    tapMovePathRef.current = null;
+    mapPaintingRef.current = false;
+    setMoving(false);
+  }, [moverMode, mapBuilderMode, tileEditMode, assetPlacementMode, assetMoveMode]);
   const tileSelectionKey = (chunkName: string, tx: number, ty: number) => chunkName + ':' + tx + ':' + ty;
   const selectedTileKeys = new Set(selectedPaintTiles.map((tile) => tileSelectionKey(tile.chunk, tile.tx, tile.ty)));
   const paintSelectedTiles = (tile: MapPaintTile | 'erase') => {
@@ -4493,8 +4556,37 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 374: hit-test the field at a pointer location and open the
   // RuneScape-style "Choose Option" context menu for the topmost entity.
   const openExamineMenu = (clientX: number, clientY: number, el: HTMLElement) => {
-    if (interior || moverMode || markerMode || mapBuilderMode || isoFieldBeta) return;
+    if (interior || markerMode || mapBuilderMode || isoFieldBeta) return;
     const p = clientToField(clientX, clientY, el);
+    // BUILD 843: long-press entity picking for the world editor. Does not change normal tap-to-move.
+    if (moverMode) {
+      const npc = townsfolk.find((n) => !n.indoors && Math.hypot(n.position.x - p.x, n.position.y - p.y) < 4);
+      if (npc) {
+        setEntityInspectorSelection({ kind: 'NPC', id: npc.id, name: npc.name, x: npc.position.x, y: npc.position.y, chunk: chunkKey });
+        setSelectedPlacedId(null);
+        return;
+      }
+      const tree = fieldTrees.find((t) => !isTreeFelled(fieldTreeKey(chunk, t.id)) && Math.hypot((t.x + 3.2 * t.scale) - p.x, (t.y + 4 * t.scale) - p.y) < 5);
+      if (tree) {
+        setEntityInspectorSelection({ kind: 'Generated tree', id: String(tree.id), name: 'Tree ' + tree.id, x: tree.x, y: tree.y, chunk: chunkKey });
+        setSelectedPlacedId(null);
+        return;
+      }
+      const placed = placedHere.slice().reverse().find((o) => Math.hypot(o.x - p.x, o.y - p.y) < 6);
+      if (placed) {
+        setSelectedPlacedId(placed.id);
+        setEntityInspectorSelection({ kind: placed.kind, id: placed.id, name: placed.kind + ' (' + placed.id + ')', x: placed.x, y: placed.y, chunk: placed.chunk });
+        return;
+      }
+      const sprite = customPlacedAssets.slice().reverse().find((a) => a.chunk === chunkKey && Math.hypot(a.x - p.x, a.y - p.y) < Math.max(5, a.width * a.scale / 2, a.height * a.scale / 2));
+      if (sprite) {
+        setSelectedPlacedCustomId(sprite.id);
+        setEntityInspectorSelection({ kind: 'Custom sprite', id: sprite.id, name: sprite.name, x: sprite.x, y: sprite.y, chunk: sprite.chunk });
+        return;
+      }
+      setEntityInspectorSelection({ kind: 'No entity', id: 'none', name: 'No editable entity found here', x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, chunk: chunkKey });
+      return;
+    }
     // 1. NPCs (smallest, most specific targets).
     const npc = townsfolk.find((n) => !n.indoors && Math.hypot(n.position.x - p.x, n.position.y - p.y) < 4);
     if (npc) {
@@ -4797,6 +4889,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [chunk, setChunk] = useState<Point>(playtestChunk ?? { x: 4, y: 7 });
   // Debug world editor: objects/flags for the current chunk.
   const chunkKey = chunk.x + ',' + chunk.y;
+  const getChunkSelectorInfo = useCallback((x: number, y: number) => {
+    const tile = mapTileFor({ x, y });
+    return { terrain: tile.terrain, biome: tile.worldBiome, road: tile.road, landmark: tile.landmark?.name ?? null };
+  }, []);
   // BUILD 341: merge map-builder painted solids (water/forest tiles) into the
   // module-level collision solids alongside world-editor placed objects.
   useEffect(() => {
@@ -5068,6 +5164,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [carriageDialog, setCarriageDialog] = useState<CarriageDialogState | null>(null);
   const [carriageTravel, setCarriageTravel] = useState<{ destName: string; destChunk: Point; arrival: Point; totalTicks: number; doneTicks: number } | null>(null);
   const [carriageDebugOpen, setCarriageDebugOpen] = useState(false);
+  const [carriageDebugMinimized, setCarriageDebugMinimized] = useState(false);
   const carriageTravelTimerRef = useRef<number | null>(null);
   const carriageEarningsRef = useRef<Record<string, number>>({});
   const carriageStation = useMemo(() => getCarriageStation(chunk), [chunk.x, chunk.y]);
@@ -8040,7 +8137,7 @@ if (active) {
   const touchIdentifierOf = (event: TouchEvent<HTMLButtonElement>): number | undefined =>
     event.changedTouches.length > 0 ? event.changedTouches[0].identifier : undefined;
   const pressDirection = (direction: Direction, touchId?: number) => {
-    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode) return;
+    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode || moverMode || mapBuilderMode || assetPlacementMode || assetMoveMode) return;
     if (touchId === undefined) keysRef.current[direction] = true;
     else pressTouchHold(touchHoldsRef.current, direction, touchId);
     setMoving(true);
@@ -8051,7 +8148,7 @@ if (active) {
   // a finger is down switches direction without lifting.
   const slideToDirection = (direction: Direction) => {
     if (!dpadActiveRef.current) return;
-    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode) return;
+    if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode || moverMode || mapBuilderMode || assetPlacementMode || assetMoveMode) return;
     pressTouchHold(touchHoldsRef.current, direction, 1);
     setMoving(true);
   };
@@ -8124,7 +8221,10 @@ if (active) {
   const selectedGoat = targetGoatId === null ? null : goats.find((goat) => goat.id === targetGoatId && goat.disposition !== 'defeated') || null;
   const playerMaxHp = playerMaxHpForStats(playerStats);
   const deletedHere = deletedGenTrees[chunkKey] ?? [];
-  const fieldTrees = fieldTreesFor(chunk).filter((t) => !deletedHere.includes(t.id));
+  const fieldTrees = fieldTreesFor(chunk).filter((t) => !deletedHere.includes(t.id)).map((t) => {
+    const saved = treePositionOverrides[chunkKey + ':' + t.id];
+    return saved ? { ...t, x: saved.x, y: saved.y } : t;
+  });
   const fieldAccents = fieldAccentsFor(chunk);
   const fieldPalette = fieldPalettes[currentWorldTile.terrain];
   const startingArea = isStartingArea(chunk);
@@ -8803,6 +8903,16 @@ if (active) {
         .field-column[data-debug-ui-hidden="true"] .inspector-panel,
         .field-column[data-debug-ui-hidden="true"] .tile-coordinates-window,
         .field-column[data-debug-ui-hidden="true"] .debug-console-panel { display: none !important; }
+         .editor-panel, .map-builder-bar, .debug-console-panel { box-sizing: border-box; max-width: calc(100vw - 16px); max-height: min(56dvh, 560px); overscroll-behavior: contain; }
+        .editor-panel { overflow-y: auto; }
+        .editor-panel-title, .map-builder-title { position: sticky; top: 0; z-index: 5; flex-shrink: 0; }
+        .editor-minimized-chip, .map-builder-min-chip { min-height: 34px; max-width: calc(100vw - 24px); }
+        @media (max-width: 700px) {
+          .editor-panel, .map-builder-bar { left: 8px !important; right: 8px !important; width: auto !important; max-width: calc(100vw - 16px) !important; max-height: 48dvh !important; font-size: 12px; }
+          .editor-panel-title, .map-builder-title { min-height: 38px; gap: 4px; flex-wrap: wrap; }
+          .editor-minimize-btn, .map-builder-min, .map-builder-exit { min-width: 34px; min-height: 32px; touch-action: manipulation; }
+          .editor-actions { flex-wrap: wrap; }
+        }
         .ag-debug-reveal { position: fixed; right: 10px; top: 10px; z-index: 20000; border: 1px solid #f5d778; border-radius: 999px; background: #18271f; color: #fff6c7; padding: 9px 12px; font: 700 12px system-ui; box-shadow: 0 3px 12px #0008; touch-action: manipulation; }
         .ag-debug-quick-actions { position: fixed; right: 10px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 19000; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 20px); }
         .ag-debug-clutter-toggle { position: static; border: 1px solid #8da99a; border-radius: 9px; background: #17251fef; color: white; padding: 9px 11px; font: 700 12px system-ui; box-shadow: 0 3px 12px #0007; touch-action: manipulation; }
@@ -8816,6 +8926,7 @@ if (active) {
           <button type="button" className="ag-debug-clutter-toggle" onClick={() => setDebugUiHidden(true)} aria-label="Hide Debug windows and clear screen">Hide Debug UI ⤵</button>
           <button type="button" className="ag-debug-close-all" onClick={() => {
             setDebugUiHidden(false);
+            setDebugHubMinimized(false); setAssetStudioMinimized(false); setChunkSelectorMinimized(false); setTileCoordsMinimized(false); setWorldObjectCoordinatesMinimized(false); setDevConsoleMinimized(false); setNpcRosterMinimized(false); setInspectorMinimized(false); setCarriageDebugMinimized(false); setControlCenterMinimized(false); setDebugConsoleMinimized(false);
             setAssetStudioOpen(false);
             setAssetPlacementMode(false);
             setNpcRosterOpen(false);
@@ -9042,6 +9153,38 @@ if (active) {
               {Array.from({ length: 7 }, (_, i) => (i + 1) * 20).map((v) => (
                 <span key={'gy' + v} className="editor-grid-label editor-grid-label-y" style={{ top: fieldPct(v) }}>{v}</span>
               ))}
+            </div>
+          )}
+          {/* BUILD 843: selected built-in or placed entity coordinate readout. */}
+          {moverMode && entityInspectorSelection && (
+            <div style={{ position: 'absolute', left: 8, bottom: 8, zIndex: 95, width: 'min(290px, calc(100% - 16px))', maxHeight: '42%', overflowY: 'auto', background: 'rgba(13,20,25,.96)', color: '#f4f7fa', border: '1px solid #f2a900', borderRadius: 9, padding: 10, boxShadow: '0 3px 14px #0009', fontSize: 12 }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <strong style={{ color: '#ffd166' }}>ENTITY INSPECTOR</strong>
+                <button type="button" onClick={() => setEntityInspectorSelection(null)} style={{ padding: '3px 7px' }}>Close</button>
+              </div>
+              <div style={{ marginTop: 6, fontWeight: 800 }}>{entityInspectorSelection.name}</div>
+              <div style={{ opacity: .8, marginTop: 3 }}>{entityInspectorSelection.kind} · ID: {entityInspectorSelection.id}</div>
+              <div style={{ marginTop: 6 }}>Local X: {entityInspectorSelection.x.toFixed(1)} · Y: {entityInspectorSelection.y.toFixed(1)}</div>
+              <div>Chunk: {entityInspectorSelection.chunk}</div>
+              <div style={{ opacity: .7, marginTop: 6 }}>Long-press a tree, NPC, placed object, or custom sprite to inspect it. Built-in entities are read-only here; placed objects can be moved with the coordinate editor.</div>
+              {entityInspectorSelection.id !== 'none' && placedObjects.some((o) => o.id === entityInspectorSelection.id) && (
+                <button type="button" style={{ marginTop: 8, width: '100%', padding: 7 }} onClick={() => setWorldObjectCoordinatesOpen(true)}>Open coordinate editor</button>
+              )}
+              {entityInspectorSelection.kind === 'Generated tree' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 5, marginTop: 8 }}>
+                  <button type="button" style={{ padding: 7 }} onClick={() => nudgeInspectedTree(-1, 0)} aria-label="Move tree left">← 1</button>
+                  <button type="button" style={{ padding: 7 }} onClick={() => nudgeInspectedTree(0, -1)} aria-label="Move tree up">↑ 1</button>
+                  <button type="button" style={{ padding: 7 }} onClick={() => nudgeInspectedTree(0, 1)} aria-label="Move tree down">↓ 1</button>
+                  <button type="button" style={{ padding: 7 }} onClick={() => nudgeInspectedTree(1, 0)} aria-label="Move tree right">→ 1</button>
+                </div>
+              )}
+              {entityInspectorSelection.kind === 'Generated tree' && <div style={{ opacity: .75, marginTop: 5 }}>Position changes save in this browser and remain tied to this chunk/tree ID.</div>}
+            </div>
+          )}
+          {/* BUILD 842: live chunk boundary overlay follows the currently loaded gameplay chunk. */}
+          {moverMode && showChunkBounds && (
+            <div aria-label={'Chunk boundary ' + chunkRef.current.x + ',' + chunkRef.current.y} style={{ position: 'absolute', inset: 1, zIndex: 69, border: '3px solid #ff3030', boxSizing: 'border-box', pointerEvents: 'none' }}>
+              <span style={{ position: 'absolute', top: 3, left: 3, background: '#b71919', color: '#fff', border: '1px solid #ffd4d4', borderRadius: 4, padding: '4px 7px', fontSize: 12, lineHeight: 1.2, fontWeight: 900, textShadow: '0 1px 2px #000' }}>CHUNK {chunkRef.current.x},{chunkRef.current.y}</span>
             </div>
           )}
           {/* Marker dots are rendered inside field-world-layer (below) so they stay locked to world positions when zooming/walking. */}
@@ -9309,6 +9452,7 @@ if (active) {
                 >
                   Reset houses
                 </button>
+                <button type="button" className={'editor-btn' + (showChunkBounds ? ' is-active' : '')} onClick={() => setShowChunkBounds(v => !v)}>{showChunkBounds ? '🔴 Hide live chunk boundary' : '🔴 Show live chunk boundary'}</button>
                 <button type="button" className="editor-btn" onClick={() => setGameZoom(1)}>
                   Reset zoom
                 </button>
@@ -9319,12 +9463,13 @@ if (active) {
               {renderEditorLogPanel()}
             </div>
           )}
-          {tileCoordsOpen && (
+          {tileCoordsOpen && !tileCoordsMinimized && (
             <div role="dialog" aria-modal="true" aria-label="Selected tile coordinates" style={{ position: 'fixed', inset: 0, zIndex: 10020, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
               <div style={{ width: 'min(560px, 100%)', maxHeight: '82vh', display: 'flex', flexDirection: 'column', background: '#101a17', color: '#eaf3e9', border: '1px solid #718a78', borderRadius: 10, boxShadow: '0 12px 42px rgba(0,0,0,.5)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
                 <div style={{ padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #35473c' }}>
                   <strong>📍 Selected tile coordinates ({selectedPaintTiles.length})</strong>
-                  <button type="button" onClick={() => setTileCoordsOpen(false)} aria-label="Close tile coordinates" style={{ background: '#2a3a31', color: '#fff', border: 0, borderRadius: 6, padding: '6px 10px' }}>✕</button>
+                  <button type="button" onClick={() => setTileCoordsMinimized(true)} style={{ background: '#26382e', color: '#fff', border: '1px solid #718a78', borderRadius: 6, padding: '6px 10px', minHeight: 34 }} aria-label="Minimize tile coordinates">— Minimize</button>
+                  <button type="button" onClick={() => { setTileCoordsOpen(false); setTileCoordsMinimized(false); }} aria-label="Close tile coordinates" style={{ background: '#2a3a31', color: '#fff', border: 0, borderRadius: 6, padding: '6px 10px' }}>✕</button>
                 </div>
                 <div style={{ padding: 10, overflowY: 'auto', minHeight: 90 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
@@ -9361,7 +9506,7 @@ if (active) {
             </div>
           )}
           {/* BUILD 605: Debug console — black window, white monospace, scrollable, copyable */}
-          {debugConsoleOpen && (
+          {debugConsoleOpen && !debugConsoleMinimized && (
             <div style={{
               position: 'fixed', bottom: 10, left: 10, right: 10, height: '40vh',
               backgroundColor: '#000', color: '#fff', fontFamily: 'monospace',
@@ -9370,6 +9515,7 @@ if (active) {
             }}>
               <div style={{ padding: '8px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>📟 Debug Console</span>
+                <button type="button" onClick={() => setDebugConsoleMinimized(true)} style={{ background: '#333', color: '#fff', border: 'none', padding: '4px 12px', marginRight: '8px', borderRadius: '4px', cursor: 'pointer' }} aria-label="Minimize Debug Console">— Minimize</button>
                 <div>
                   <button
                     type="button"
@@ -9390,7 +9536,7 @@ if (active) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setDebugConsoleOpen(false)}
+                    onClick={() => { setDebugConsoleOpen(false); setDebugConsoleMinimized(false); }}
                     style={{ background: '#333', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer' }}
                   >
                     ✕ Close
@@ -9407,7 +9553,7 @@ if (active) {
             </div>
           )}
           {/* BUILD 663: World Simulation Control Center. */}
-          {controlCenterOpen && (
+          {controlCenterOpen && !controlCenterMinimized && (
             <div style={{
               position: 'fixed', top: 10, left: 10, right: 10, bottom: 10,
               backgroundColor: '#1a1a2e', color: '#eee', fontFamily: 'monospace',
@@ -9416,6 +9562,7 @@ if (active) {
             }}>
               <div style={{ padding: '12px', borderBottom: '1px solid #4a4a6a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '14px', fontWeight: 'bold' }}>🌍 World Simulation Control Center</span>
+                <button type="button" onClick={() => setControlCenterMinimized(true)} style={{ background: '#333b59', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }} aria-label="Minimize World Simulation Control Center">— Minimize</button>
                 <div>
                   {(['overview', 'integrity', 'lore', 'npcs', 'market', 'brain', 'builder', 'interiors'] as const).map((tab) => (
                     <button
@@ -9717,7 +9864,7 @@ if (active) {
               </div>}
               {tileEditMode && <div style={{ padding: '5px 8px', color: '#fff4b0', fontSize: 12 }}>
                 Tap a tile to paint and select it. Tap the highlighted tile again to unselect. Selected: {selectedPaintTiles.length}.
-                <button type="button" className="map-builder-btn" style={{ marginLeft: 8 }} onClick={() => setTileCoordsOpen(true)}>📍 Tile coordinates ({selectedPaintTiles.length})</button>
+                <button type="button" className="map-builder-btn" style={{ marginLeft: 8 }} onClick={() => { setTileCoordsOpen(true); setTileCoordsMinimized(false); }}>📍 Tile coordinates ({selectedPaintTiles.length})</button>
                 <button type="button" className="map-builder-btn" style={{ marginLeft: 6 }} onClick={() => setSelectedPaintTiles([])}>Clear selection</button>
               </div>}
               <div className="map-builder-actions">
@@ -9793,14 +9940,14 @@ if (active) {
               🗺️ Builder
             </button>
           )}
-          {carriageDebugOpen && (() => {
+          {carriageDebugOpen && !carriageDebugMinimized && (() => {
             const clock = brainRef.current?.worldCore.getClock();
             const discoveredNames = journal.discoveredLocations.map((l) => l.name);
             const dests = carriageDestinations(chunk, discoveredNames);
             const dirs: Array<'north' | 'south' | 'east' | 'west'> = ['north', 'south', 'east', 'west'];
             return (
               <div className="editor-panel inspector-panel">
-                <div className="editor-panel-title">🐎 Carriage Network <span className="editor-panel-chunk">{time}</span></div>
+                <div className="editor-panel-title">🐎 Carriage Network <span className="editor-panel-chunk">{time}</span><button type="button" className="editor-minimize-btn" onClick={() => setCarriageDebugMinimized(true)} aria-label="Minimize Carriage Network">—</button><button type="button" className="editor-minimize-btn" onClick={() => { setCarriageDebugOpen(false); setCarriageDebugMinimized(false); }} aria-label="Close Carriage Network">✕</button></div>
                 <div className="editor-actions">
                   <button type="button" className="editor-btn" onClick={() => setCarriageDebugOpen(false)}>Close</button>
                 </div>
@@ -9832,12 +9979,12 @@ if (active) {
               </div>
             );
           })()}
-          {npcRosterOpen && (
+          {npcRosterOpen && !npcRosterMinimized && (
             <div className="editor-panel inspector-panel" role="dialog" aria-label="NPC roster" data-testid="npc-roster-panel" style={{ maxHeight: 'min(78vh, 720px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 1200 }}>
-              <div className="editor-panel-title">🧑‍🤝‍🧑 NPC Roster <span className="editor-panel-chunk">{townsfolk.length} townsfolk</span></div>
+              <div className="editor-panel-title">🧑‍🤝‍🧑 NPC Roster <span className="editor-panel-chunk">{townsfolk.length} townsfolk</span><button type="button" className="editor-minimize-btn" onClick={() => setNpcRosterMinimized(true)} aria-label="Minimize NPC Roster">—</button></div>
               <div className="editor-actions" style={{ flexShrink: 0, gap: 6 }}>
                 <input aria-label="Search NPCs" data-testid="input-npc-roster-search" value={npcRosterSearch} onChange={(e) => setNpcRosterSearch(e.target.value)} placeholder="Search name, role, activity…" style={{ minWidth: 0, flex: 1, padding: '7px 9px', borderRadius: 6, border: '1px solid #777', background: '#171717', color: '#fff' }} />
-                <button type="button" className="editor-btn" onClick={() => { setNpcRosterOpen(false); setNpcRosterSelectedId(null); }}>Close</button>
+                <button type="button" className="editor-btn" onClick={() => { setNpcRosterOpen(false); setNpcRosterMinimized(false); setNpcRosterSelectedId(null); }}>Close</button>
               </div>
               <div style={{ fontSize: 11, opacity: 0.85, margin: '2px 0 7px', flexShrink: 0 }}>Sprite audit · click a row for live stats · wealth is calculated from the NPC purse</div>
               {(() => {
@@ -9912,10 +10059,14 @@ if (active) {
               })()}
             </div>
           )}
-          {debugHubOpen && (
+          {(debugHubMinimized || assetStudioMinimized || chunkSelectorMinimized || worldObjectCoordinatesMinimized || devConsoleMinimized) && <div aria-label="Minimized debug tools" style={{ position: 'fixed', left: 8, right: 8, bottom: 'max(8px, env(safe-area-inset-bottom))', zIndex: 24000, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', pointerEvents: 'none' }}>{debugHubMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setDebugHubMinimized(false)}>🧰 Debug tools</button>}{tileCoordsMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setTileCoordsMinimized(false)}>📍 Tile coordinates</button>}{npcRosterMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setNpcRosterMinimized(false)}>🧑‍🤝‍🧑 NPC Roster</button>}{inspectorMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setInspectorMinimized(false)}>🔍 NPC Inspector</button>}{carriageDebugMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setCarriageDebugMinimized(false)}>🐎 Carriage</button>}{controlCenterMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setControlCenterMinimized(false)}>🌍 Simulation</button>}{debugConsoleMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setDebugConsoleMinimized(false)}>📟 Debug Console</button>}{assetStudioMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setAssetStudioMinimized(false)}>🖼️ Asset Studio</button>}{chunkSelectorMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setChunkSelectorMinimized(false)}>🧭 Chunks</button>}{worldObjectCoordinatesMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setWorldObjectCoordinatesMinimized(false)}>📍 Coordinates</button>}{devConsoleMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setDevConsoleMinimized(false)}>📟 Dev Console</button>}</div>}
+          {worldObjectCoordinatesOpen && !worldObjectCoordinatesMinimized && <WorldObjectCoordinates objects={placedObjects} onMinimize={() => setWorldObjectCoordinatesMinimized(true)} onMove={(id, x, y, targetChunk) => { pushMapUndo(); setPlacedObjects(prev => prev.map(object => object.id === id ? { ...object, x, y, chunk: targetChunk } : object)); logEditorChange('move-coordinate', 'Moved placed object ' + id + ' to local (' + x + ',' + y + ') chunk ' + targetChunk); }} onClose={() => setWorldObjectCoordinatesOpen(false)} />}
+          {devConsoleOpen && !devConsoleMinimized && <DevConsole build={BUILD_NUMBER} onMinimize={() => setDevConsoleMinimized(true)} onClose={() => { setDevConsoleOpen(false); setDevConsoleMinimized(false); }} />}
+          {chunkSelectorOpen && !chunkSelectorMinimized && <ChunkZoneSelector selectedChunk={chunkSelectorPoint} onSelectChunk={setChunkSelectorPoint} getChunkInfo={getChunkSelectorInfo} mapPaints={mapPaints} onMinimize={() => setChunkSelectorMinimized(true)} onClose={() => { setChunkSelectorOpen(false); setChunkSelectorMinimized(false); }} />}
+          {debugHubOpen && !debugHubMinimized && (
             <div className="editor-panel inspector-panel debug-hub-panel" role="dialog" aria-label="Debug Control Center" style={{ maxHeight: 'min(84vh, 780px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 1260 }}>
               <div className="editor-panel-title">🧰 Debug Control Center <span className="editor-panel-chunk">BUILD {BUILD_NUMBER}</span>
-                <button type="button" className="editor-minimize-btn" onClick={() => setDebugHubOpen(false)} aria-label="Close Debug Control Center">✕</button>
+                <button type="button" className="editor-minimize-btn" onClick={() => setDebugHubMinimized(true)} aria-label="Minimize Debug Control Center">—</button><button type="button" className="editor-minimize-btn" onClick={() => { setDebugHubOpen(false); setDebugHubMinimized(false); }} aria-label="Close Debug Control Center">✕</button>
               </div>
               <div style={{ padding: 8, flexShrink: 0 }}>
                 <input aria-label="Search Debug tools" value={debugHubSearch} onChange={(e) => setDebugHubSearch(e.target.value)} placeholder="Search tools: terrain, NPC, collision…" style={{ width: '100%', boxSizing: 'border-box', padding: 9, borderRadius: 7 }} />
@@ -9928,11 +10079,11 @@ if (active) {
               <div style={{ overflowY: 'auto', padding: 8, minHeight: 0, flex: 1 }}>
                 <strong>World Studio</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
-                  {([{ name: 'World Editor', keywords: 'world map terrain object place', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }, { name: 'Tile Paint', keywords: 'tile ground grass pathway paint', action: () => { setDebugHubOpen(false); if (!tileEditMode) toggleTileEditMode(); else { setMapBuilderMode(true); setMapBuilderMin(false); } } }, { name: 'Asset Studio', keywords: 'asset sprite upload crop rotate flip', action: () => { setDebugHubOpen(false); setAssetStudioOpen(true); } }, { name: 'Building Mover', keywords: 'building house resize move', action: () => { setDebugHubOpen(false); if (!moverMode) toggleMoverMode(); } }, { name: 'Collision Overlay', keywords: 'collision hitbox bounds', action: () => { setCollisionDebugMode((v) => !v); setDebugHubOpen(false); } }, { name: 'Chunk Templates', keywords: 'chunk save template load', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
+                  {([{ name: 'Muse Dev Console', keywords: 'ai chat code assistant github commit update engine development', action: () => { setDevConsoleOpen(true); setDevConsoleMinimized(false); setDebugHubOpen(false); } }, { name: 'World Object Coordinates', keywords: 'placed objects select move coordinate x y chunk house tree rock road', action: () => { setWorldObjectCoordinatesOpen(true); setWorldObjectCoordinatesMinimized(false); setDebugHubOpen(false); } }, { name: 'Chunk Zone Selector', keywords: 'chunk zones map coordinates outline red select inspect', action: () => { setChunkSelectorPoint(chunk); setChunkSelectorOpen(true); setChunkSelectorMinimized(false); setDebugHubOpen(false); } }, { name: 'World Editor', keywords: 'world map terrain object place', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }, { name: 'Tile Paint', keywords: 'tile ground grass pathway paint', action: () => { setDebugHubOpen(false); if (!tileEditMode) toggleTileEditMode(); else { setMapBuilderMode(true); setMapBuilderMin(false); } } }, { name: 'Asset Studio', keywords: 'asset sprite upload crop rotate flip', action: () => { setDebugHubOpen(false); setAssetStudioOpen(true); setAssetStudioMinimized(false); } }, { name: 'Building Mover', keywords: 'building house resize move', action: () => { setDebugHubOpen(false); if (!moverMode) toggleMoverMode(); } }, { name: 'Collision Overlay', keywords: 'collision hitbox bounds', action: () => { setCollisionDebugMode((v) => !v); setDebugHubOpen(false); } }, { name: 'Chunk Templates', keywords: 'chunk save template load', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
                 </div>
                 <strong>Living World & Diagnostics</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
-                  {([{ name: 'NPC Roster', keywords: 'npc people mood wealth rich broke', action: () => { setDebugHubOpen(false); setNpcRosterOpen(true); } }, { name: 'NPC Inspector', keywords: 'npc schedule inspect', action: () => { setDebugHubOpen(false); setInspectorOpen(true); } }, { name: 'Simulation Center', keywords: 'simulation economy market brain time', action: () => { setDebugHubOpen(false); setControlCenterOpen(true); } }, { name: 'Debug Console', keywords: 'console log error', action: () => { setDebugHubOpen(false); setDebugConsoleOpen(true); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
+                  {([{ name: 'NPC Roster', keywords: 'npc people mood wealth rich broke', action: () => { setDebugHubOpen(false); setNpcRosterOpen(true); setNpcRosterMinimized(false); } }, { name: 'NPC Inspector', keywords: 'npc schedule inspect', action: () => { setDebugHubOpen(false); setInspectorOpen(true); setInspectorMinimized(false); } }, { name: 'Simulation Center', keywords: 'simulation economy market brain time', action: () => { setDebugHubOpen(false); setControlCenterOpen(true); setControlCenterMinimized(false); } }, { name: 'Debug Console', keywords: 'console log error', action: () => { setDebugHubOpen(false); setDebugConsoleOpen(true); setDebugConsoleMinimized(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
                 </div>
                 <strong>World Validation</strong>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '6px 0' }}>
@@ -9944,10 +10095,10 @@ if (active) {
               </div>
             </div>
           )}
-          {assetStudioOpen && (
+          {assetStudioOpen && !assetStudioMinimized && (
             <div className="editor-panel inspector-panel asset-studio-panel" role="dialog" aria-label="Asset Studio" style={{ maxHeight: 'min(82vh, 760px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 1250 }}>
               <div className="editor-panel-title">🖼️ Asset Studio <span className="editor-panel-chunk">{customAssetLibrary.length} local assets</span>
-                <button type="button" className="editor-minimize-btn" onClick={() => setAssetStudioOpen(false)} aria-label="Close Asset Studio">✕</button>
+                <button type="button" className="editor-minimize-btn" onClick={() => setAssetStudioMinimized(true)} aria-label="Minimize Asset Studio">—</button><button type="button" className="editor-minimize-btn" onClick={() => { setAssetStudioOpen(false); setAssetStudioMinimized(false); }} aria-label="Close Asset Studio">✕</button>
               </div>
               <div style={{ display: 'flex', gap: 6, padding: 8, flexShrink: 0 }}>
                 <input aria-label="Search local assets" value={assetStudioSearch} onChange={(e) => setAssetStudioSearch(e.target.value)} placeholder="Search imported assets…" style={{ minWidth: 0, flex: 1, padding: 8, borderRadius: 6 }} />
@@ -10056,6 +10207,26 @@ if (active) {
               <div style={{ padding: 8, borderTop: '1px solid #53655a', fontSize: 11, flexShrink: 0 }}>
                 {assetPlacementMode && <div style={{ color: '#ffe98a', marginBottom: 6 }}>📍 Placement mode ON — tap the world to place the selected sprite. <button type="button" className="editor-btn" onClick={() => setAssetPlacementMode(false)}>Cancel placement</button></div>}
                 {assetMoveMode && <div style={{ color: '#ffe98a', marginBottom: 6 }}>📍 Move mode ON — tap the world to move the selected sprite. <button type="button" className="editor-btn" onClick={() => setAssetMoveMode(false)}>Cancel move</button></div>}
+                {selectedPlacedCustomId && (() => {
+                  const selectedSprite = customPlacedAssets.find((asset) => asset.id === selectedPlacedCustomId);
+                  if (!selectedSprite) return null;
+                  return <div style={{ marginTop: 8, padding: 8, border: '1px solid #a44', borderRadius: 8 }}>
+                    <strong>Selected sprite: {selectedSprite.name}</strong>
+                    <div style={{ marginTop: 4 }}>Current local coordinates: X {selectedSprite.x.toFixed(1)}, Y {selectedSprite.y.toFixed(1)} · Chunk {selectedSprite.chunk}</div>
+                    <button type="button" className="editor-btn" onClick={() => { setSpriteTargetX(String(selectedSprite.x)); setSpriteTargetY(String(selectedSprite.y)); setSpriteCoordinateEditorOpen((v) => !v); }}>{spriteCoordinateEditorOpen ? 'Close coordinate editor' : 'Move sprite by coordinates…'}</button>
+                    {spriteCoordinateEditorOpen && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 6, alignItems: 'end', marginTop: 7 }}>
+                      <label>X (local)<input aria-label="Sprite local X coordinate" inputMode="decimal" type="number" step="0.1" value={spriteTargetX} onChange={(e) => setSpriteTargetX(e.target.value)} style={{ display: 'block', width: '100%', boxSizing: 'border-box', padding: 7 }} /></label>
+                      <label>Y (local)<input aria-label="Sprite local Y coordinate" inputMode="decimal" type="number" step="0.1" value={spriteTargetY} onChange={(e) => setSpriteTargetY(e.target.value)} style={{ display: 'block', width: '100%', boxSizing: 'border-box', padding: 7 }} /></label>
+                      <button type="button" className="editor-btn" onClick={() => {
+                        const x = Number(spriteTargetX), y = Number(spriteTargetY);
+                        if (!spriteTargetX.trim() || !spriteTargetY.trim() || !Number.isFinite(x) || !Number.isFinite(y)) { setAssetStudioStatus('Enter valid numeric X and Y coordinates.'); return; }
+                        setCustomPlacedAssets((prev) => prev.map((asset) => asset.id === selectedSprite.id ? { ...asset, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 } : asset));
+                        setAssetStudioStatus('Moved ' + selectedSprite.name + ' to local coordinates (' + x.toFixed(1) + ', ' + y.toFixed(1) + ').');
+                        setSpriteCoordinateEditorOpen(false);
+                      }}>OK · Move</button>
+                    </div>}
+                  </div>;
+                })()}
                 <div>{assetStudioStatus}</div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                   <button type="button" className="editor-btn" onClick={exportDebugAssetLibrary}>Export library + placements JSON</button>
@@ -10064,11 +10235,11 @@ if (active) {
               </div>
             </div>
           )}
-          {inspectorOpen && (
+          {inspectorOpen && !inspectorMinimized && (
             <div className="editor-panel inspector-panel">
-              <div className="editor-panel-title">🔍 NPC Inspector <span className="editor-panel-chunk">{time}</span></div>
+              <div className="editor-panel-title">🔍 NPC Inspector <span className="editor-panel-chunk">{time}</span><button type="button" className="editor-minimize-btn" onClick={() => setInspectorMinimized(true)} aria-label="Minimize NPC Inspector">—</button></div>
               <div className="editor-actions">
-                <button type="button" className="editor-btn" onClick={() => setInspectorOpen(false)}>
+                <button type="button" className="editor-btn" onClick={() => { setInspectorOpen(false); setInspectorMinimized(false); }}>
                   Close
                 </button>
               </div>
@@ -10883,6 +11054,33 @@ if (active) {
                   }}
                 />
               );
+            })}
+          </div>
+          {/* BUILD 844: render sprites placed through Asset Studio in the active chunk. */}
+          <div className="field-custom-placed-assets" aria-label="Placed custom sprites" style={{ position: 'absolute', inset: 0, zIndex: 31, pointerEvents: 'none', overflow: 'visible' }}>
+            {customPlacedAssets.filter((asset) => asset.chunk === chunkKey && asset.visible !== false).map((asset) => {
+              const renderedWidth = Math.max(32, Math.min(640, asset.width * asset.scale));
+              const renderedHeight = renderedWidth * (asset.height / Math.max(1, asset.width));
+              return <img
+                key={asset.id}
+                src={asset.src}
+                alt={asset.name}
+                draggable={false}
+                onError={() => setAssetStudioStatus('Sprite could not render: ' + asset.name + '. Re-upload it in Asset Studio and place it again.')}
+                style={{
+                  position: 'absolute',
+                  left: 'calc(' + fieldPct(asset.x) + ' - ' + renderedWidth / 2 + 'px)',
+                  top: 'calc(' + fieldPct(asset.y) + ' - ' + renderedHeight + 'px)',
+                  width: renderedWidth,
+                  height: renderedHeight,
+                  objectFit: 'fill',
+                  imageRendering: 'pixelated',
+                  transform: 'rotate(' + (asset.rotation || 0) + 'deg) scale(' + (asset.flipX ? -1 : 1) + ',' + (asset.flipY ? -1 : 1) + ')',
+                  transformOrigin: 'center bottom',
+                  opacity: asset.locked ? 0.9 : 1,
+                  display: 'block',
+                }}
+              />;
             })}
           </div>
           {cornStalks.length > 0 && (
@@ -11826,7 +12024,7 @@ if (active) {
                   <span className="options-action-icon"><Eye size={17} /></span>
                   <span><strong>🧑‍🤝‍🧑 Debug: NPC Roster</strong><small>Scroll every townsfolk sprite, mood, wealth, reputation, and disposition</small></span>
                 </button>
-                <button className="options-action" onClick={() => { setOptionsOpen(false); setCarriageDebugOpen(true); }} data-testid="button-debug-carriage">
+                <button className="options-action" onClick={() => { setOptionsOpen(false); setCarriageDebugOpen(true); setCarriageDebugMinimized(false); }} data-testid="button-debug-carriage">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: Carriage Network</strong><small>Stations, routes, prices, times · go-to</small></span>
                 </button>

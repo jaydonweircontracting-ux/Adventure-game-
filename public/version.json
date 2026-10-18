@@ -1,6 +1,6 @@
 {
-  "build": "816",
-  "note": "Add custom-color tiles, manual coordinate selection, and downloadable tile-editor logs",
-  "timestamp": "2026-10-17T21:44:00.000Z",
-  "cacheBuster": "build816-tile-editor-custom-colors"
+  "build": "846",
+  "note": "Independently minimize Debug panels, pause player movement in editor mode, and fix custom sprite sizing",
+  "timestamp": "2026-10-18T00:50:00.000Z",
+  "cacheBuster": "build846-debug-panels-editor-freeze-sprite-size"
 }
