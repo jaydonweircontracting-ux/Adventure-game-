@@ -4406,6 +4406,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       tapMoveTargetRef.current = null;
       tapMovePathRef.current = null;
       setMoving(false);
+      moveHouses = false;
+      setMoverMode(false);
+      setSelectedHouse(null);
+      setSelectedPlacedId(null);
       if (mapBrush === 'house') setMapBrush('grass');
       setMapBuilderMode(true);
       setMapBuilderMin(false);
@@ -8993,6 +8997,7 @@ if (active) {
             tileEditModeRef.current = false;
             setMapBuilderMode(false);
             setMapBuilderMin(false);
+            moveHouses = false;
             setMoverMode(false);
             setSelectedHouse(null);
             setSelectedPlacedId(null);
