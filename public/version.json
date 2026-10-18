@@ -1,6 +1,6 @@
 {
-  "build": "849",
-  "note": "Fix duplicate sprite placement, persist world zoom, and add an in-game Options button",
-  "timestamp": "2026-10-18T00:51:07.015Z",
-  "cacheBuster": "build849-sprite-render-zoom-options-entry"
+  "build": "850",
+  "note": "Asset Studio selection starts tap-to-place mode; preserve world zoom and single sprite rendering",
+  "timestamp": "2026-10-18T01:01:57.684Z",
+  "cacheBuster": "build850-asset-studio-select-tap-to-place"
 }
