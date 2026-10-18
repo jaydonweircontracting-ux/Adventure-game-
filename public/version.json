@@ -1,6 +1,6 @@
 {
-  "build": "853",
-  "note": "Select placed sprites and world objects directly with Debug open; quick move and delete controls",
-  "timestamp": "2026-10-18T02:15:00.000Z",
-  "cacheBuster": "build853-select-transform-placed-assets"
+  "build": "854",
+  "note": "Resizable Asset Studio window with resize controls available while minimized",
+  "timestamp": "2026-10-18T02:30:00.000Z",
+  "cacheBuster": "build854-asset-studio-resize-controls"
 }
