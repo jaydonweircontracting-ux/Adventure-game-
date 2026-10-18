@@ -1,6 +1,6 @@
 {
-  "build": "864",
-  "note": "Audit editor selection controls and synchronize the app, startup, and version build markers",
-  "timestamp": "2026-10-17T21:00:00.000Z",
-  "cacheBuster": "build864-editor-audit"
+  "build": "865",
+  "note": "Prevent Asset Studio minimize and restore controls from bubbling into world-editor pointer handlers",
+  "timestamp": "2026-10-18T21:00:00.000Z",
+  "cacheBuster": "build865-studio-minimize-bubble-fix"
 }
