@@ -11573,6 +11573,7 @@ if (active) {
                     } else {
                       setSelectedHouse(doorway.id);
                       setSelectedPlacedId(null);
+                      setSelectedPlacedCustomId(null);
                     }
                   } : undefined}
                 ><span className="field-house-art" aria-hidden="true" />{doorway.id === 'tutorial-house-door' && !interior && <img className="field-house-overlay-art" src={STARTING_HOUSE_OVERLAY_URL} alt="" draggable={false} aria-hidden="true" />}{doorway.area.id === 'fourth-house' && <span className="field-house-sign" aria-hidden="true" />}{moverMode && (
@@ -11606,6 +11607,7 @@ if (active) {
                   if (editorTool !== 'select') return;
                   setSelectedPlacedId(isSel ? null : o.id);
                   setSelectedHouse(null);
+                  setSelectedPlacedCustomId(null);
                 };
                 const shared = {
                   key: o.id,
