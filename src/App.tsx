@@ -139,13 +139,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '861';
+const BUILD_NUMBER = '862';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '862': 'Add Asset Studio Select mode for placed houses/sprites, visible yellow selection, and a direct delete-selected control',
   '861': 'Remove duplicate top-left Options button and remove the green border/frame around the game screen',
   '860': 'Keep Sprite Studio open while selecting assets; Place Asset explicitly enters placement mode and adds a direct reopen control',
   '859': 'Add explicit in-world placed-asset selection with yellow highlight and placed flip, rotate, and resize controls',
@@ -10216,6 +10217,8 @@ if (active) {
               </div>}
               <div style={{ display: 'flex', gap: 6, padding: 8, flexShrink: 0, flexWrap: 'wrap' }}>
                 <input aria-label="Search sprites" value={assetStudioSearch} onChange={(e) => setAssetStudioSearch(e.target.value)} placeholder="Search sprites…" style={{ minWidth: 0, flex: '1 1 140px', padding: 8, borderRadius: 6 }} />
+                <button type="button" className="editor-btn" aria-label="Select a placed house or sprite in the world" onClick={() => { setMapBuilderMode(true); setMapBuilderMin(true); setEditorTool('select'); setAssetPlacementMode(false); setAssetMoveMode(false); setAssetStudioOpen(true); setAssetStudioMinimized(false); setAssetStudioStatus('SELECT mode active: tap a placed house or sprite in the world. The selected item will be outlined yellow. Use Delete selected to remove it.'); }}>🎯 Select placed</button>
+                <button type="button" className="editor-btn" aria-label="Delete selected placed house or sprite" disabled={!selectedPlacedCustomId && !selectedPlacedId} onClick={() => { if (selectedPlacedCustomId) { const item = customPlacedAssets.find((a) => a.id === selectedPlacedCustomId); if (item && confirm('Delete placed ' + item.name + ' from this world?')) { pushMapUndo(); setCustomPlacedAssets((prev) => prev.filter((a) => a.id !== item.id)); setSelectedPlacedCustomId(null); setEntityInspectorSelection(null); setAssetStudioStatus('Deleted placed ' + item.name + '.'); } } else if (selectedPlacedId) { const item = placedObjects.find((o) => o.id === selectedPlacedId); if (item && confirm('Delete this placed ' + item.kind + '?')) { setPlacedObjects((prev) => prev.filter((o) => o.id !== item.id)); setFlaggedItems((prev) => prev.filter((flag) => flag.id !== item.id)); setSelectedPlacedId(null); setEntityInspectorSelection(null); setAssetStudioStatus('Deleted placed ' + item.kind + '.'); } } }}>🗑 Delete selected</button>
                 <button type="button" className="editor-btn" onClick={() => assetFileInputRef.current?.click()}>＋ Upload</button>
                 <button type="button" className="editor-btn" onClick={() => assetFolderInputRef.current?.click()}>📁 Load folder</button>
                 <input ref={assetFileInputRef} type="file" accept="image/png,image/webp,image/jpeg" style={{ display: 'none' }} onChange={(e) => { handleDebugAssetUpload(e.target.files?.[0]); e.currentTarget.value = ''; }} />
