@@ -10640,16 +10640,7 @@ if (active) {
               shows the world outside the chunk boundary (roads continuing/ending). */}
           <ChunkSurroundings chunk={chunk} gameZoom={gameZoom} hiddenRoadChunks={hiddenRoadChunks} mapPaints={mapPaints} />
           <FieldGroundLayer spec={groundSpec} />
-          {/* BUILD 835: user-imported world sprites render in the active chunk and follow the world camera/zoom. */}
-          {customPlacedAssets.filter((asset) => asset.chunk === chunkKey && asset.visible !== false).map((asset) => (
-            <img key={asset.id} src={asset.src} alt={asset.name} title={asset.name}
-              draggable={false}
-              style={{ position: 'absolute', left: (asset.x / FIELD_SIZE * 100) + '%', top: (asset.y / FIELD_SIZE * 100) + '%',
-                width: Math.max(24, Math.min(260, asset.width * 0.35)) * asset.scale + 'px', height: 'auto',
-                transform: 'translate(-50%, -100%) rotate(' + asset.rotation + 'deg) scale(' + (asset.flipX ? -1 : 1) + ',' + (asset.flipY ? -1 : 1) + ')',
-                transformOrigin: '50% 100%', clipPath: 'inset(' + asset.cropTop + '% ' + asset.cropRight + '% ' + asset.cropBottom + '% ' + asset.cropLeft + '%)',
-                zIndex: 35 + Math.max(-20, Math.min(20, asset.layer ?? 0)), pointerEvents: 'none', imageRendering: 'pixelated', opacity: 0.98 }} />
-          ))}
+          {/* BUILD 848: custom placed sprites render once in the dedicated asset layer below. */}
           {/* Marker dots: inside the world layer so they stay locked to field positions when walking/zooming. */}
           {markerMode && debugMarks.map((mark, i) => [
             <span key={'mark-' + i} aria-hidden="true" style={{
