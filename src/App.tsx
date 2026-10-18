@@ -139,13 +139,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '857';
+const BUILD_NUMBER = '858';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '858': 'Increase Asset Studio image upload limit from 1 MB to 10 MB per file',
   '857': 'Improve automatic white/black background removal by detecting connected matte across the full image border',
   '856': 'Asset Studio folder navigation, directory import, placement layer selection, improved sprite editing and background removal controls',
   '855': 'Automatically remove solid edge-connected black or white backgrounds from placed sprites while preserving transparent artwork',
@@ -4117,7 +4118,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const handleDebugAssetUpload = (file?: File, folder = 'Uploads') => {
     if (!file) return;
     if (!['image/png', 'image/webp', 'image/jpeg'].includes(file.type)) { setAssetStudioStatus('Unsupported file. Choose PNG, WebP, or JPEG.'); return; }
-    if (file.size > 1000000) { setAssetStudioStatus('Image is larger than 1 MB. Resize/compress it before importing to protect browser storage.'); return; }
+    if (file.size > 10000000) { setAssetStudioStatus('Image is larger than the 10 MB per-file upload limit. Resize/compress it before importing. Very large libraries may still reach your browser storage quota.'); return; }
     const reader = new FileReader();
     reader.onerror = () => setAssetStudioStatus('Could not read that file.');
     reader.onload = () => {
@@ -10240,7 +10241,7 @@ if (active) {
                 }} />
               </div>
               <div style={{ padding: '0 8px 8px', overflowY: 'auto', minHeight: 0, flex: 1 }}>
-                <p style={{ fontSize: 11, color: '#b7c8bc', margin: '2px 0 8px' }}>Upload accepts PNG, WebP or JPEG up to 1 MB. Imported images and placements are stored in this browser only; use Export JSON to move them. Existing repository assets are not overwritten.</p>
+                <p style={{ fontSize: 11, color: '#b7c8bc', margin: '2px 0 8px' }}>Upload accepts PNG, WebP or JPEG up to 10 MB per file. Imported images and placements are stored in this browser only; large libraries can reach browser storage limits, so use Export JSON to back them up. Existing repository assets are not overwritten.</p>
                 <strong style={{ display: 'block', margin: '8px 0' }}>Repository sprite folders ({DEBUG_REPOSITORY_ASSETS.length} sprites)</strong>
                 <select aria-label="Repository sprite folder" value={repositorySpriteFolder} onChange={(e) => setRepositorySpriteFolder(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: 8, marginBottom: 8, background: '#18231e', color: '#fff', borderRadius: 6 }}>
                   <option value="">Choose a folder…</option>
