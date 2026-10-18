@@ -138,13 +138,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '846';
+const BUILD_NUMBER = '847';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '847': 'Harden editor input locking, make Hide Debug UI cover every debug window, and add real-browser editor regression tests',
   '846': 'Minimize Debug panels independently, freeze player movement in editor mode, and improve placed sprite visibility',
   '840': 'Save and restore placed custom sprites in named chunk templates',
   '839': 'Add precise move/nudge, visibility, lock, and layer controls for placed sprites',
@@ -4375,6 +4376,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 815: paused tile-edit mode; tapping paints + selects a tile, tapping it again deselects it.
   const [tileEditMode, setTileEditMode] = useState(false);
   const tileEditModeRef = useRef(false);
+  const editorTestStateRef = useRef({ moverMode, mapBuilderMode, tileEditMode, assetPlacementMode, assetMoveMode, debugUiHidden, mapBuilderMin: false });
+  editorTestStateRef.current = { moverMode, mapBuilderMode, tileEditMode, assetPlacementMode, assetMoveMode, debugUiHidden, mapBuilderMin };
   const [tileCoordsOpen, setTileCoordsOpen] = useState(false);
   const [tileCoordsMinimized, setTileCoordsMinimized] = useState(false);
   const [selectedPaintTiles, setSelectedPaintTiles] = useState<Array<{ chunk: string; tx: number; ty: number }>>(() => {
@@ -4518,10 +4521,37 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     return {};
   };
   const [mapPaints, setMapPaints] = useState<MapPaints>(loadMapPaints);
+  const mapPaintsRef = useRef<MapPaints>(mapPaints);
+  mapPaintsRef.current = mapPaints;
   useEffect(() => {
     try { localStorage.setItem('mapBuilderPaints', JSON.stringify(mapPaints)); } catch { setTileEditorSaveStatus('WARNING: map paint could not be saved locally; export the editor log now'); }
   }, [mapPaints]);
-  const toggleMapBuilder = () => { setMapBuilderMin(false); setMapBuilderMode((m) => !m); };
+  const stopPlayerInputForEditor = () => {
+    keysRef.current = {};
+    clearTouchHolds(touchHoldsRef.current);
+    tapMoveTargetRef.current = null;
+    tapMovePathRef.current = null;
+    mapPaintingRef.current = false;
+    setMoving(false);
+  };
+  const activateMapBuilder = () => {
+    stopPlayerInputForEditor();
+    setMapBuilderMode(true);
+    setMapBuilderMin(false);
+  };
+  const toggleMapBuilder = () => {
+    const next = !mapBuilderMode;
+    if (next) activateMapBuilder();
+    else {
+      setMapBuilderMode(false);
+      setTileEditMode(false);
+      tileEditModeRef.current = false;
+      setAssetPlacementMode(false);
+      setAssetMoveMode(false);
+      mapPaintingRef.current = false;
+    }
+    setMapBuilderMin(false);
+  };
   // BUILD 374: examine system. Convert any mouse/pointer event on the field
   // into field units (shared by right-click and touch long-press).
   // BUILD 327: inverts the centered-zoom transform (translate then scale,
@@ -5421,6 +5451,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (!window.location.search.includes('testmode=1')) return;
       (window as unknown as { __gameTest: unknown }).__gameTest = {
         getBuild: () => BUILD_NUMBER,
+        openOptions: () => setOptionsOpen(true),
+        getEditorState: () => ({ ...editorTestStateRef.current }),
+        getPaintedTileCount: () => Object.values(mapPaintsRef.current).reduce((count, tiles) => count + tiles.length, 0),
         getPlayerPos: () => ({ ...positionRef.current }),
         getChunk: () => ({ ...chunkRef.current }),
         getPlayerHp: () => playerHpRef.current,
@@ -8902,7 +8935,8 @@ if (active) {
         .field-column[data-debug-ui-hidden="true"] .editor-minimized-chip,
         .field-column[data-debug-ui-hidden="true"] .inspector-panel,
         .field-column[data-debug-ui-hidden="true"] .tile-coordinates-window,
-        .field-column[data-debug-ui-hidden="true"] .debug-console-panel { display: none !important; }
+        .field-column[data-debug-ui-hidden="true"] .debug-console-panel,
+        .field-column[data-debug-ui-hidden="true"] [data-debug-window="true"] { display: none !important; }
          .editor-panel, .map-builder-bar, .debug-console-panel { box-sizing: border-box; max-width: calc(100vw - 16px); max-height: min(56dvh, 560px); overscroll-behavior: contain; }
         .editor-panel { overflow-y: auto; }
         .editor-panel-title, .map-builder-title { position: sticky; top: 0; z-index: 5; flex-shrink: 0; }
@@ -8928,9 +8962,23 @@ if (active) {
             setDebugUiHidden(false);
             setDebugHubMinimized(false); setAssetStudioMinimized(false); setChunkSelectorMinimized(false); setTileCoordsMinimized(false); setWorldObjectCoordinatesMinimized(false); setDevConsoleMinimized(false); setNpcRosterMinimized(false); setInspectorMinimized(false); setCarriageDebugMinimized(false); setControlCenterMinimized(false); setDebugConsoleMinimized(false);
             setAssetStudioOpen(false);
+            setAssetStudioMinimized(false);
             setAssetPlacementMode(false);
+            setAssetMoveMode(false);
             setNpcRosterOpen(false);
+            setNpcRosterMinimized(false);
             setInspectorOpen(false);
+            setInspectorMinimized(false);
+            setDebugHubOpen(false);
+            setDebugHubMinimized(false);
+            setChunkSelectorOpen(false);
+            setChunkSelectorMinimized(false);
+            setWorldObjectCoordinatesOpen(false);
+            setWorldObjectCoordinatesMinimized(false);
+            setDevConsoleOpen(false);
+            setDevConsoleMinimized(false);
+            setTileCoordsOpen(false);
+            setTileCoordsMinimized(false);
             setDebugConsoleOpen(false);
             setControlCenterOpen(false);
             setCarriageDebugOpen(false);
@@ -9464,7 +9512,7 @@ if (active) {
             </div>
           )}
           {tileCoordsOpen && !tileCoordsMinimized && (
-            <div role="dialog" aria-modal="true" aria-label="Selected tile coordinates" style={{ position: 'fixed', inset: 0, zIndex: 10020, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+            <div role="dialog" aria-modal="true" aria-label="Selected tile coordinates" data-debug-window="true" style={{ position: 'fixed', inset: 0, zIndex: 10020, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
               <div style={{ width: 'min(560px, 100%)', maxHeight: '82vh', display: 'flex', flexDirection: 'column', background: '#101a17', color: '#eaf3e9', border: '1px solid #718a78', borderRadius: 10, boxShadow: '0 12px 42px rgba(0,0,0,.5)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
                 <div style={{ padding: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #35473c' }}>
                   <strong>📍 Selected tile coordinates ({selectedPaintTiles.length})</strong>
@@ -9507,7 +9555,7 @@ if (active) {
           )}
           {/* BUILD 605: Debug console — black window, white monospace, scrollable, copyable */}
           {debugConsoleOpen && !debugConsoleMinimized && (
-            <div style={{
+            <div data-debug-window="true" style={{
               position: 'fixed', bottom: 10, left: 10, right: 10, height: '40vh',
               backgroundColor: '#000', color: '#fff', fontFamily: 'monospace',
               fontSize: '12px', zIndex: 9999, display: 'flex', flexDirection: 'column',
@@ -9554,7 +9602,7 @@ if (active) {
           )}
           {/* BUILD 663: World Simulation Control Center. */}
           {controlCenterOpen && !controlCenterMinimized && (
-            <div style={{
+            <div data-debug-window="true" style={{
               position: 'fixed', top: 10, left: 10, right: 10, bottom: 10,
               backgroundColor: '#1a1a2e', color: '#eee', fontFamily: 'monospace',
               fontSize: '12px', zIndex: 9998, display: 'flex', flexDirection: 'column',
@@ -10079,7 +10127,7 @@ if (active) {
               <div style={{ overflowY: 'auto', padding: 8, minHeight: 0, flex: 1 }}>
                 <strong>World Studio</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
-                  {([{ name: 'Muse Dev Console', keywords: 'ai chat code assistant github commit update engine development', action: () => { setDevConsoleOpen(true); setDevConsoleMinimized(false); setDebugHubOpen(false); } }, { name: 'World Object Coordinates', keywords: 'placed objects select move coordinate x y chunk house tree rock road', action: () => { setWorldObjectCoordinatesOpen(true); setWorldObjectCoordinatesMinimized(false); setDebugHubOpen(false); } }, { name: 'Chunk Zone Selector', keywords: 'chunk zones map coordinates outline red select inspect', action: () => { setChunkSelectorPoint(chunk); setChunkSelectorOpen(true); setChunkSelectorMinimized(false); setDebugHubOpen(false); } }, { name: 'World Editor', keywords: 'world map terrain object place', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }, { name: 'Tile Paint', keywords: 'tile ground grass pathway paint', action: () => { setDebugHubOpen(false); if (!tileEditMode) toggleTileEditMode(); else { setMapBuilderMode(true); setMapBuilderMin(false); } } }, { name: 'Asset Studio', keywords: 'asset sprite upload crop rotate flip', action: () => { setDebugHubOpen(false); setAssetStudioOpen(true); setAssetStudioMinimized(false); } }, { name: 'Building Mover', keywords: 'building house resize move', action: () => { setDebugHubOpen(false); if (!moverMode) toggleMoverMode(); } }, { name: 'Collision Overlay', keywords: 'collision hitbox bounds', action: () => { setCollisionDebugMode((v) => !v); setDebugHubOpen(false); } }, { name: 'Chunk Templates', keywords: 'chunk save template load', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
+                  {([{ name: 'Muse Dev Console', keywords: 'ai chat code assistant github commit update engine development', action: () => { setDevConsoleOpen(true); setDevConsoleMinimized(false); setDebugHubOpen(false); } }, { name: 'World Object Coordinates', keywords: 'placed objects select move coordinate x y chunk house tree rock road', action: () => { setWorldObjectCoordinatesOpen(true); setWorldObjectCoordinatesMinimized(false); setDebugHubOpen(false); } }, { name: 'Chunk Zone Selector', keywords: 'chunk zones map coordinates outline red select inspect', action: () => { setChunkSelectorPoint(chunk); setChunkSelectorOpen(true); setChunkSelectorMinimized(false); setDebugHubOpen(false); } }, { name: 'World Editor', keywords: 'world map terrain object place', action: () => { setDebugHubOpen(false); activateMapBuilder(); } }, { name: 'Tile Paint', keywords: 'tile ground grass pathway paint', action: () => { setDebugHubOpen(false); if (!tileEditMode) toggleTileEditMode(); else { setMapBuilderMode(true); setMapBuilderMin(false); } } }, { name: 'Asset Studio', keywords: 'asset sprite upload crop rotate flip', action: () => { setDebugHubOpen(false); setAssetStudioOpen(true); setAssetStudioMinimized(false); } }, { name: 'Building Mover', keywords: 'building house resize move', action: () => { setDebugHubOpen(false); if (!moverMode) toggleMoverMode(); } }, { name: 'Collision Overlay', keywords: 'collision hitbox bounds', action: () => { setCollisionDebugMode((v) => !v); setDebugHubOpen(false); } }, { name: 'Chunk Templates', keywords: 'chunk save template load', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
                 </div>
                 <strong>Living World & Diagnostics</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
