@@ -8925,6 +8925,7 @@ if (active) {
           <button type="button" className="ag-debug-clutter-toggle" onClick={() => setDebugUiHidden(true)} aria-label="Hide Debug windows and clear screen">Hide Debug UI ⤵</button>
           <button type="button" className="ag-debug-close-all" onClick={() => {
             setDebugUiHidden(false);
+            setDebugHubMinimized(false); setAssetStudioMinimized(false); setChunkSelectorMinimized(false); setWorldObjectCoordinatesMinimized(false); setDevConsoleMinimized(false); setNpcRosterMinimized(false); setInspectorMinimized(false); setCarriageDebugMinimized(false); setControlCenterMinimized(false); setDebugConsoleMinimized(false);
             setAssetStudioOpen(false);
             setAssetPlacementMode(false);
             setNpcRosterOpen(false);
@@ -9981,7 +9982,7 @@ if (active) {
               <div className="editor-panel-title">🧑‍🤝‍🧑 NPC Roster <span className="editor-panel-chunk">{townsfolk.length} townsfolk</span><button type="button" className="editor-minimize-btn" onClick={() => setNpcRosterMinimized(true)} aria-label="Minimize NPC Roster">—</button></div>
               <div className="editor-actions" style={{ flexShrink: 0, gap: 6 }}>
                 <input aria-label="Search NPCs" data-testid="input-npc-roster-search" value={npcRosterSearch} onChange={(e) => setNpcRosterSearch(e.target.value)} placeholder="Search name, role, activity…" style={{ minWidth: 0, flex: 1, padding: '7px 9px', borderRadius: 6, border: '1px solid #777', background: '#171717', color: '#fff' }} />
-                <button type="button" className="editor-btn" onClick={() => { setNpcRosterOpen(false); setNpcRosterSelectedId(null); }}>Close</button>
+                <button type="button" className="editor-btn" onClick={() => { setNpcRosterOpen(false); setNpcRosterMinimized(false); setNpcRosterSelectedId(null); }}>Close</button>
               </div>
               <div style={{ fontSize: 11, opacity: 0.85, margin: '2px 0 7px', flexShrink: 0 }}>Sprite audit · click a row for live stats · wealth is calculated from the NPC purse</div>
               {(() => {
@@ -10080,7 +10081,7 @@ if (active) {
                 </div>
                 <strong>Living World & Diagnostics</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
-                  {([{ name: 'NPC Roster', keywords: 'npc people mood wealth rich broke', action: () => { setDebugHubOpen(false); setNpcRosterOpen(true); } }, { name: 'NPC Inspector', keywords: 'npc schedule inspect', action: () => { setDebugHubOpen(false); setInspectorOpen(true); } }, { name: 'Simulation Center', keywords: 'simulation economy market brain time', action: () => { setDebugHubOpen(false); setControlCenterOpen(true); } }, { name: 'Debug Console', keywords: 'console log error', action: () => { setDebugHubOpen(false); setDebugConsoleOpen(true); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
+                  {([{ name: 'NPC Roster', keywords: 'npc people mood wealth rich broke', action: () => { setDebugHubOpen(false); setNpcRosterOpen(true); setNpcRosterMinimized(false); } }, { name: 'NPC Inspector', keywords: 'npc schedule inspect', action: () => { setDebugHubOpen(false); setInspectorOpen(true); setInspectorMinimized(false); } }, { name: 'Simulation Center', keywords: 'simulation economy market brain time', action: () => { setDebugHubOpen(false); setControlCenterOpen(true); setControlCenterMinimized(false); } }, { name: 'Debug Console', keywords: 'console log error', action: () => { setDebugHubOpen(false); setDebugConsoleOpen(true); setDebugConsoleMinimized(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
                 </div>
                 <strong>World Validation</strong>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '6px 0' }}>
@@ -10236,7 +10237,7 @@ if (active) {
             <div className="editor-panel inspector-panel">
               <div className="editor-panel-title">🔍 NPC Inspector <span className="editor-panel-chunk">{time}</span><button type="button" className="editor-minimize-btn" onClick={() => setInspectorMinimized(true)} aria-label="Minimize NPC Inspector">—</button></div>
               <div className="editor-actions">
-                <button type="button" className="editor-btn" onClick={() => setInspectorOpen(false)}>
+                <button type="button" className="editor-btn" onClick={() => { setInspectorOpen(false); setInspectorMinimized(false); }}>
                   Close
                 </button>
               </div>
@@ -12021,7 +12022,7 @@ if (active) {
                   <span className="options-action-icon"><Eye size={17} /></span>
                   <span><strong>🧑‍🤝‍🧑 Debug: NPC Roster</strong><small>Scroll every townsfolk sprite, mood, wealth, reputation, and disposition</small></span>
                 </button>
-                <button className="options-action" onClick={() => { setOptionsOpen(false); setCarriageDebugOpen(true); }} data-testid="button-debug-carriage">
+                <button className="options-action" onClick={() => { setOptionsOpen(false); setCarriageDebugOpen(true); setCarriageDebugMinimized(false); }} data-testid="button-debug-carriage">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: Carriage Network</strong><small>Stations, routes, prices, times · go-to</small></span>
                 </button>
