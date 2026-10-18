@@ -1,6 +1,6 @@
 {
-  "build": "865",
-  "note": "Prevent Asset Studio minimize and restore controls from bubbling into world-editor pointer handlers",
-  "timestamp": "2026-10-18T21:00:00.000Z",
-  "cacheBuster": "build865-studio-minimize-bubble-fix"
+  "build": "866",
+  "note": "Add shared debug player-freeze toggle, selectable/deletable placed sprites and houses, and persistent Sprite Studio restore control",
+  "timestamp": "2026-10-18T16:40:00.000Z",
+  "cacheBuster": "build866-debug-freeze-select-delete"
 }
