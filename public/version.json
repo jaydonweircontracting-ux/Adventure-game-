@@ -1,6 +1,6 @@
 {
-  "build": "849",
-  "note": "Fix duplicate sprite placement, persist world zoom, and add an in-game Options button",
-  "timestamp": "2026-10-18T00:51:07.015Z",
-  "cacheBuster": "build849-sprite-render-zoom-options-entry"
+  "build": "850",
+  "note": "Fix keyboard movement during editor mode, restore all Debug windows, and add mobile editor regression tests",
+  "timestamp": "2026-10-18T01:10:00.000Z",
+  "cacheBuster": "build850-world-editor-engine-reliability"
 }
