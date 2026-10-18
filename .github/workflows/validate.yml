@@ -61,16 +61,18 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Start built game server
         run: |
+          # Vite builds with the GitHub Pages base path. Mirror that path in the local test server.
+          ln -s . dist/public/Adventure-game-
           python3 -m http.server 8901 --directory dist/public > /tmp/adventure-game-server.log 2>&1 &
           for attempt in $(seq 1 30); do
-            if curl --fail --silent http://127.0.0.1:8901/ > /dev/null; then exit 0; fi
+            if curl --fail --silent http://127.0.0.1:8901/Adventure-game-/ > /dev/null; then exit 0; fi
             sleep 1
           done
           cat /tmp/adventure-game-server.log
           exit 1
       - name: Real-game browser smoke test
-        run: node tests/real-game/smoke.mjs
+        run: GAME_URL=http://localhost:8901/Adventure-game-/?testmode=1 node tests/real-game/smoke.mjs
       - name: Real-game mobile World Editor regression test
-        run: node tests/real-game/editor.mjs
+        run: GAME_URL=http://localhost:8901/Adventure-game-/?testmode=1 node tests/real-game/editor.mjs
       - name: Real-game movement and doorway test
-        run: node tests/real-game/movement.mjs
+        run: GAME_URL=http://localhost:8901/Adventure-game-/?testmode=1 node tests/real-game/movement.mjs
