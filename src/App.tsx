@@ -9982,7 +9982,7 @@ if (active) {
               })()}
             </div>
           )}
-          {worldObjectCoordinatesOpen && <WorldObjectCoordinates objects={placedObjects} onMove={(id, x, y, targetChunk) => { setPlacedObjects(prev => prev.map(object => object.id === id ? { ...object, x, y, chunk: targetChunk } : object)); logEditorChange('move-coordinate', 'Moved placed object ' + id + ' to local (' + x + ',' + y + ') chunk ' + targetChunk); }} onClose={() => setWorldObjectCoordinatesOpen(false)} />}
+          {worldObjectCoordinatesOpen && <WorldObjectCoordinates objects={placedObjects} onMove={(id, x, y, targetChunk) => { pushMapUndo(); setPlacedObjects(prev => prev.map(object => object.id === id ? { ...object, x, y, chunk: targetChunk } : object)); logEditorChange('move-coordinate', 'Moved placed object ' + id + ' to local (' + x + ',' + y + ') chunk ' + targetChunk); }} onClose={() => setWorldObjectCoordinatesOpen(false)} />}
           {devConsoleOpen && <DevConsole build={BUILD_NUMBER} onClose={() => setDevConsoleOpen(false)} />}
           {chunkSelectorOpen && <ChunkZoneSelector selectedChunk={chunkSelectorPoint} onSelectChunk={setChunkSelectorPoint} getChunkInfo={getChunkSelectorInfo} mapPaints={mapPaints} onClose={() => setChunkSelectorOpen(false)} />}
           {debugHubOpen && (
