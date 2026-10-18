@@ -1,6 +1,6 @@
 {
-  "build": "857",
-  "note": "Improve automatic white/black background removal for placed sprites",
-  "timestamp": "2026-10-18T05:40:00.000Z",
-  "cacheBuster": "build857-border-matte-detection"
+  "build": "858",
+  "note": "Asset Studio upload limit increased to 10 MB per file",
+  "timestamp": "2026-10-18T06:05:00.000Z",
+  "cacheBuster": "build858-asset-upload-10mb"
 }
