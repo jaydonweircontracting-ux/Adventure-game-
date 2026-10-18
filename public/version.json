@@ -1,6 +1,6 @@
 {
-  "build": "847",
-  "note": "Persist world zoom and improve mobile options; strengthen real-game browser checks",
-  "timestamp": "2026-10-18T00:45:39.478Z",
-  "cacheBuster": "build847-persisted-world-zoom-options-browser-qa"
+  "build": "848",
+  "note": "Fix duplicate sprite rendering and persist world zoom; strengthen browser QA",
+  "timestamp": "2026-10-18T00:46:52.099Z",
+  "cacheBuster": "build848-single-sprite-render-persistent-zoom-browser-qa"
 }
