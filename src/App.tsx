@@ -139,13 +139,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '855';
+const BUILD_NUMBER = '856';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
-  .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
+  .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace(/^..\\//, ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '856': 'Asset Studio folder navigation, directory import, placement layer selection, improved sprite editing and background removal controls',
   '855': 'Automatically remove solid edge-connected black or white backgrounds from placed sprites while preserving transparent artwork',
   '854': 'Add Asset Studio resize controls and a resizable window, including while minimized',
   '853': 'Select placed sprites and world objects directly with Debug open; quick-edit from Asset Studio',
@@ -4050,6 +4051,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [assetStudioWidth, setAssetStudioWidth] = useState(380);
   const [assetStudioHeight, setAssetStudioHeight] = useState(620);
   const [assetStudioSearch, setAssetStudioSearch] = useState('');
+  const [repositorySpriteFolder, setRepositorySpriteFolder] = useState('game sprites');
+  const [localAssetFolder, setLocalAssetFolder] = useState('All folders');
+  const [assetPlacementLayer, setAssetPlacementLayer] = useState(0);
+  const [spriteBackgroundColor, setSpriteBackgroundColor] = useState('#ffffff');
+  const [spriteBackgroundTolerance, setSpriteBackgroundTolerance] = useState(45);
+  const [spriteEditorPreviewOpen, setSpriteEditorPreviewOpen] = useState(true);
   const [assetStudioStatus, setAssetStudioStatus] = useState('Imported assets are saved in this browser only.');
   const [selectedCustomAssetId, setSelectedCustomAssetId] = useState<string | null>(null);
   const [selectedPlacedCustomId, setSelectedPlacedCustomId] = useState<string | null>(null);
@@ -4060,6 +4067,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [assetMoveMode, setAssetMoveMode] = useState(false);
   const [customAssetSnapToGrid, setCustomAssetSnapToGrid] = useState(false);
   const assetFileInputRef = useRef<HTMLInputElement>(null);
+  const assetFolderInputRef = useRef<HTMLInputElement>(null);
   const [customAssetLibrary, setCustomAssetLibrary] = useState<DebugCustomAsset[]>(() => {
     try { const v = JSON.parse(localStorage.getItem('ag-custom-asset-library') || '[]'); return Array.isArray(v) ? v.filter((a) => a && typeof a.id === 'string' && typeof a.src === 'string' && typeof a.name === 'string') : []; } catch { return []; }
   });
@@ -4091,7 +4099,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (!selectedPlacedCustomId) return;
     setCustomPlacedAssets((prev) => prev.map((a) => a.id === selectedPlacedCustomId ? { ...a, ...patch } : a));
   };
-  const handleDebugAssetUpload = (file?: File) => {
+  const handleDebugAssetUpload = (file?: File, folder = 'Uploads') => {
     if (!file) return;
     if (!['image/png', 'image/webp', 'image/jpeg'].includes(file.type)) { setAssetStudioStatus('Unsupported file. Choose PNG, WebP, or JPEG.'); return; }
     if (file.size > 1000000) { setAssetStudioStatus('Image is larger than 1 MB. Resize/compress it before importing to protect browser storage.'); return; }
@@ -4105,7 +4113,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         const id = 'asset-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
         const name = file.name.replace(/\\.(png|webp|jpe?g)$/i, '').slice(0, 80) || 'Imported sprite';
         const cleanSrc = removeEdgeMatte(img);
-        const asset: DebugCustomAsset = { id, name, src: cleanSrc, width: img.naturalWidth, height: img.naturalHeight, scale: 1, rotation: 0, flipX: false, flipY: false, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0 };
+        const asset: DebugCustomAsset = { id, name, src: cleanSrc, folder, width: img.naturalWidth, height: img.naturalHeight, scale: 1, rotation: 0, flipX: false, flipY: false, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0 };
         setCustomAssetLibrary((prev) => [...prev, asset]);
         setSelectedCustomAssetId(id);
         setAssetStudioStatus('Imported ' + name + ' (' + img.naturalWidth + '×' + img.naturalHeight + '). Saved locally in this browser; not committed to GitHub.');
@@ -4200,8 +4208,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // field, flag generated objects for removal, teleport the player.
   type EditorTool = 'select' | 'house' | 'tree' | 'pine' | 'rock' | 'roadH' | 'roadV' | 'flag' | 'erase' | 'player' | 'xmark' | 'rotate';
   // BUILD 835: user-imported local sprite library and per-placement transforms.
-  type DebugCustomAsset = { id: string; name: string; src: string; width: number; height: number; scale: number; rotation: number; flipX: boolean; flipY: boolean; cropTop: number; cropRight: number; cropBottom: number; cropLeft: number };
-  type DebugPlacedAsset = { id: string; assetId: string; name: string; src: string; chunk: string; x: number; y: number; width: number; height: number; scale: number; rotation: number; flipX: boolean; flipY: boolean; cropTop: number; cropRight: number; cropBottom: number; cropLeft: number; visible?: boolean; locked?: boolean; layer?: number };
+  type DebugCustomAsset = { id: string; name: string; src: string; folder?: string; width: number; height: number; scale: number; rotation: number; flipX: boolean; flipY: boolean; cropTop: number; cropRight: number; cropBottom: number; cropLeft: number };
+  type DebugPlacedAsset = { id: string; assetId: string; name: string; src: string; folder?: string; chunk: string; x: number; y: number; width: number; height: number; scale: number; rotation: number; flipX: boolean; flipY: boolean; cropTop: number; cropRight: number; cropBottom: number; cropLeft: number; visible?: boolean; locked?: boolean; layer?: number };
 
   const [editorTool, setEditorTool] = useState<EditorTool>('select');
   // BUILD 822: let the player hide the minimap without opening another menu.
@@ -9846,7 +9854,7 @@ if (active) {
                   const p = tapToField(e);
                   pushMapUndo();
                   const id = 'placed-asset-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
-                  setCustomPlacedAssets((prev) => [...prev, { ...selectedCustomAsset, id, assetId: selectedCustomAsset.id, chunk: chunkKey, x: p.x, y: p.y, visible: true, locked: false, layer: 0 }]);
+                  setCustomPlacedAssets((prev) => [...prev, { ...selectedCustomAsset, id, assetId: selectedCustomAsset.id, chunk: chunkKey, x: p.x, y: p.y, visible: true, locked: false, layer: assetPlacementLayer }]);
                   setSelectedPlacedCustomId(id);
                   setAssetStudioStatus('Placed ' + selectedCustomAsset.name + ' at (' + p.x.toFixed(1) + ', ' + p.y.toFixed(1) + '). Tap again to place another, or cancel placement in Asset Studio.');
                   e.stopPropagation();
