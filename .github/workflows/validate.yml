@@ -32,7 +32,9 @@ jobs:
       - name: Isometric direction regression test
         run: npm run test:iso-directions
       - name: Production build
-        run: npm run build
+        # The CI smoke server hosts dist/public at /, not /Adventure-game-/.
+        # Use root-relative assets here; the Pages deployment workflow keeps its repository base path.
+        run: BASE_PATH=/ npm run build
       - name: Live update version regression test
         run: npm run test:update-version
       - name: Fantasy encounter regression test
@@ -47,3 +49,26 @@ jobs:
         run: npm run test:town-production
       - name: Village food-needs regression test
         run: npm run test:village-food-needs
+      - name: World development foundation regression test
+        run: npm run test:world-dev-foundation
+      - name: Settlement economy regression test
+        run: npm run test:settlement-economy
+      - name: Caravan trade regression test
+        run: npm run test:caravan-trade
+      - name: Quest playthrough regression test
+        run: npx tsx tests/quest-playthrough.mts
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Start built game server
+        run: |
+          python3 -m http.server 8901 --directory dist/public > /tmp/adventure-game-server.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8901/ > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/adventure-game-server.log
+          exit 1
+      - name: Real-game browser smoke test
+        run: node tests/real-game/smoke.mjs
+      - name: Real-game movement and doorway test
+        run: node tests/real-game/movement.mjs

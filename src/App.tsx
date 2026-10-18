@@ -3984,10 +3984,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => setCopiedNotice(true)).catch(() => setCopiedNotice(false));
   };
 
-  // Mover zoom level.
-  // Game zoom (base game feature): +/− buttons on the right side. Min 100%.
-  // BUILD 327: default is 225% with the player centered in the viewport.
-  const [gameZoom, setGameZoom] = useState(DEFAULT_GAME_ZOOM);
+  // BUILD 847: persist gameplay zoom so the user's preferred framing survives reloads.
+  // Keep the value clamped to the same range used by the on-screen zoom controls.
+  const [gameZoom, setGameZoom] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem('ag-game-zoom'));
+      return Number.isFinite(saved) && saved >= 1 && saved <= 3 ? saved : DEFAULT_GAME_ZOOM;
+    } catch { return DEFAULT_GAME_ZOOM; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('ag-game-zoom', String(Math.max(1, Math.min(3, gameZoom)))); } catch { /* private browsing */ }
+  }, [gameZoom]);
   // Debug mover mode (toggleable from options menu). Syncs with module-level moveHouses.
   const [moverMode, setMoverMode] = useState(moveHouses);
   // BUILD 422: debug direction test — red numbered arrows per movement
@@ -8952,6 +8959,17 @@ if (active) {
           }} aria-label="Close all Debug tools">Close all</button>
         </div>
       ) : null}
+      {/* BUILD 849: Keep Options reachable during normal play, not only from map overlays. */}
+      {!optionsOpen && !inputLocked && !mapOpen && shopStallIndex === null && (
+        <button
+          type="button"
+          aria-label="Open game options"
+          title="Options and settings"
+          data-testid="button-open-game-options"
+          onClick={() => setOptionsOpen(true)}
+          style={{ position: 'fixed', top: 10, left: 10, zIndex: 102, width: 36, height: 36, display: 'grid', placeItems: 'center', padding: 0, borderRadius: 9, border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(20,30,38,0.92)', color: '#fff', boxShadow: '0 2px 8px #0006', touchAction: 'manipulation' }}
+        ><Settings size={17} /></button>
+      )}
       {/* BUILD 609: Circular minimap in corner */}
       {/* BUILD 663: Hide minimap when Options is open (mandatory UI fix). */}
       {/* BUILD 691: Hide minimap when the world map is open. */}
@@ -10633,16 +10651,7 @@ if (active) {
               shows the world outside the chunk boundary (roads continuing/ending). */}
           <ChunkSurroundings chunk={chunk} gameZoom={gameZoom} hiddenRoadChunks={hiddenRoadChunks} mapPaints={mapPaints} />
           <FieldGroundLayer spec={groundSpec} />
-          {/* BUILD 835: user-imported world sprites render in the active chunk and follow the world camera/zoom. */}
-          {customPlacedAssets.filter((asset) => asset.chunk === chunkKey && asset.visible !== false).map((asset) => (
-            <img key={asset.id} src={asset.src} alt={asset.name} title={asset.name}
-              draggable={false}
-              style={{ position: 'absolute', left: (asset.x / FIELD_SIZE * 100) + '%', top: (asset.y / FIELD_SIZE * 100) + '%',
-                width: Math.max(24, Math.min(260, asset.width * 0.35)) * asset.scale + 'px', height: 'auto',
-                transform: 'translate(-50%, -100%) rotate(' + asset.rotation + 'deg) scale(' + (asset.flipX ? -1 : 1) + ',' + (asset.flipY ? -1 : 1) + ')',
-                transformOrigin: '50% 100%', clipPath: 'inset(' + asset.cropTop + '% ' + asset.cropRight + '% ' + asset.cropBottom + '% ' + asset.cropLeft + '%)',
-                zIndex: 35 + Math.max(-20, Math.min(20, asset.layer ?? 0)), pointerEvents: 'none', imageRendering: 'pixelated', opacity: 0.98 }} />
-          ))}
+          {/* BUILD 848: custom placed sprites render once in the dedicated asset layer below. */}
           {/* Marker dots: inside the world layer so they stay locked to field positions when walking/zooming. */}
           {markerMode && debugMarks.map((mark, i) => [
             <span key={'mark-' + i} aria-hidden="true" style={{
@@ -11958,6 +11967,13 @@ if (active) {
                   <span><strong>Volume</strong><small>{muted ? 'Sound is muted' : 'Sound is on'}</small></span>
                 </div>
                 <button className="options-sound-toggle" onClick={onToggleMute} aria-pressed={muted} data-testid="button-options-sound">{muted ? 'Turn on' : 'Mute'}</button>
+              </div>
+              <div className="options-sound-control" style={{ display: 'block' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <strong>World zoom</strong><span aria-live="polite">{Math.round(gameZoom * 100)}%</span>
+                </div>
+                <input aria-label="World zoom" data-testid="input-world-zoom" type="range" min="100" max="300" step="25" value={Math.round(gameZoom * 100)} onChange={(e) => setGameZoom(Math.max(1, Math.min(3, Number(e.target.value) / 100)))} style={{ width: '100%', minHeight: 30, touchAction: 'pan-y' }} />
+                <small style={{ display: 'block', opacity: 0.8 }}>Adjust how much of the world you see. Your choice is saved on this device.</small>
               </div>
               <div className="options-actions">
                 <button className="options-action primary" onClick={() => { onSave(); setOptionsOpen(false); }} data-testid="button-save-browser">

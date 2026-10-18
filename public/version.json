@@ -1,6 +1,6 @@
 {
-  "build": "846",
-  "note": "Independently minimize Debug panels, pause player movement in editor mode, and fix custom sprite sizing",
-  "timestamp": "2026-10-18T00:50:00.000Z",
-  "cacheBuster": "build846-debug-panels-editor-freeze-sprite-size"
+  "build": "849",
+  "note": "Fix duplicate sprite placement, persist world zoom, and add an in-game Options button",
+  "timestamp": "2026-10-18T00:51:07.015Z",
+  "cacheBuster": "build849-sprite-render-zoom-options-entry"
 }

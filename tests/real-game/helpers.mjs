@@ -19,11 +19,23 @@ export async function setupGame() {
   const browser = await chromium.launch();
   const page = await browser.newPage();
   const errors = [];
+  page.setDefaultTimeout(20000);
+  await page.setViewportSize({ width: 1280, height: 800 });
   page.on('pageerror', e => errors.push(e.message.slice(0, 200)));
+  page.on('console', msg => { if (msg.type() === 'error') errors.push(`console: ${msg.text().slice(0, 200)}`); });
 
   await page.goto(GAME_URL, { waitUntil: 'networkidle', timeout: 60000 });
-  await page.waitForSelector('[data-testid="button-new-game"]', { timeout: 15000 });
+  try {
+    await page.waitForSelector('[data-testid="button-new-game"]', { state: 'visible', timeout: 20000 });
+  } catch (error) {
+    await page.screenshot({ path: 'tests/real-game/startup-failure.png', fullPage: true }).catch(() => {});
+    const state = await page.evaluate(() => ({ title: document.title, url: location.href, body: document.body.innerText.slice(0, 1200), button: !!document.querySelector('[data-testid="button-new-game"]'), ready: document.readyState })).catch(() => null);
+    throw new Error(`Game title screen did not become visible; state=${JSON.stringify(state)}; browserErrors=${errors.join(' | ').slice(0, 1200)}; cause=${error.message.slice(0, 180)}`);
+  }
   await page.click('[data-testid="button-new-game"]');
+  // New Game opens the character creator; confirm it to enter the live world.
+  await page.waitForSelector('[data-testid="button-confirm-rpg-character"]', { state: 'visible', timeout: 15000 });
+  await page.click('[data-testid="button-confirm-rpg-character"]');
   await page.waitForFunction(
     () => typeof window.__gameTest !== 'undefined',
     null, { timeout: 30000 }
@@ -47,6 +59,8 @@ export async function createTestPage(browser) {
   await page.goto(GAME_URL, { waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForSelector('[data-testid="button-new-game"]', { timeout: 15000 });
   await page.click('[data-testid="button-new-game"]');
+  await page.waitForSelector('[data-testid="button-confirm-rpg-character"]', { state: 'visible', timeout: 15000 });
+  await page.click('[data-testid="button-confirm-rpg-character"]');
   await page.waitForFunction(
     () => typeof window.__gameTest !== 'undefined',
     null, { timeout: 30000 }
