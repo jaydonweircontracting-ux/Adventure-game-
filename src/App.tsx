@@ -4160,6 +4160,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 822: let the player hide the minimap without opening another menu.
   const [minimapHidden, setMinimapHidden] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
+  const [showChunkBounds, setShowChunkBounds] = useState(false);
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
   const [copiedNotice, setCopiedNotice] = useState(false);
   const loadPlacedObjects = (): PlacedObject[] => {
@@ -9059,6 +9060,12 @@ if (active) {
               ))}
             </div>
           )}
+          {/* BUILD 842: live chunk boundary overlay follows the currently loaded gameplay chunk. */}
+          {moverMode && showChunkBounds && (
+            <div aria-label={'Chunk boundary ' + chunkRef.current.x + ',' + chunkRef.current.y} style={{ position: 'absolute', inset: 1, zIndex: 69, border: '3px solid #ff3030', boxSizing: 'border-box', pointerEvents: 'none' }}>
+              <span style={{ position: 'absolute', top: 3, left: 3, background: '#b71919', color: '#fff', border: '1px solid #ffd4d4', borderRadius: 4, padding: '4px 7px', fontSize: 12, lineHeight: 1.2, fontWeight: 900, textShadow: '0 1px 2px #000' }}>CHUNK {chunkRef.current.x},{chunkRef.current.y}</span>
+            </div>
+          )}
           {/* Marker dots are rendered inside field-world-layer (below) so they stay locked to world positions when zooming/walking. */}
           {markerMode && (debugMarks.length > 0 || redMarks.length > 0) && (
             <div style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 70, display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -9324,6 +9331,7 @@ if (active) {
                 >
                   Reset houses
                 </button>
+                <button type="button" className={'editor-btn' + (showChunkBounds ? ' is-active' : '')} onClick={() => setShowChunkBounds(v => !v)}>{showChunkBounds ? '🔴 Hide live chunk boundary' : '🔴 Show live chunk boundary'}</button>
                 <button type="button" className="editor-btn" onClick={() => setGameZoom(1)}>
                   Reset zoom
                 </button>
