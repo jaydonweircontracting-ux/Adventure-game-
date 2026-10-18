@@ -4092,7 +4092,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const selectedCustomAsset = customAssetLibrary.find((a) => a.id === selectedCustomAssetId) ?? null;
   const selectedPlacedCustomAsset = customPlacedAssets.find((a) => a.id === selectedPlacedCustomId) ?? null;
   const repositorySpriteFolders = Array.from(new Set(DEBUG_REPOSITORY_ASSETS.map((asset) => asset.folder))).sort((a, b) => a.localeCompare(b));
-  const localSpriteFolders = Array.from(new Set(customAssetLibrary.map((asset) => asset.folder || 'Uploads'))).sort((a, b) => a.localeCompare(b));
+  const localSpriteFolders = Array.from(new Set([...customAssetLibrary.map((asset) => asset.folder || 'Uploads'), ...customAssetLibrary.map((asset) => (asset.folder || 'Uploads').split('/')[0])])).sort((a, b) => a.localeCompare(b));
   const removeSelectedSpriteBackground = (auto = false) => {
     if (!selectedCustomAsset) return;
     const image = new Image();
@@ -10249,21 +10249,21 @@ if (active) {
                   {DEBUG_REPOSITORY_ASSETS.filter((a) => (repositorySpriteFolder === 'game sprites' || a.folder === repositorySpriteFolder) && (a.name + ' ' + a.path + ' ' + a.folder).toLowerCase().includes(assetStudioSearch.toLowerCase())).slice(0, 240).map((asset) => (
                     <button key={asset.id} type="button" onClick={() => {
                       const existing = customAssetLibrary.find((a) => a.src === asset.src);
-                      if (existing) { setSelectedCustomAssetId(existing.id); return; }
+                      if (existing) { setSelectedCustomAssetId(existing.id); setMapBuilderMode(true); setMapBuilderMin(true); setAssetPlacementMode(true); setAssetMoveMode(false); setAssetStudioMinimized(true); setAssetStudioStatus('Placement active: tap the world to place ' + existing.name + '. Choose the layer from the minimized Asset Studio chip.'); return; }
                       const id = 'asset-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
                       const img = new Image();
                       img.onerror = () => setAssetStudioStatus('Could not load repository sprite: ' + asset.path);
                       img.onload = () => {
                         const cleanSrc = removeEdgeMatte(img);
                         const imported: DebugCustomAsset = { id, name: asset.name.replace(/\\.[^.]+$/, ''), src: cleanSrc, folder: asset.folder, width: img.naturalWidth, height: img.naturalHeight, scale: 1, rotation: 0, flipX: false, flipY: false, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0 };
-                        setCustomAssetLibrary((prev) => [...prev, imported]); setSelectedCustomAssetId(id);
-                        setAssetStudioStatus('Added repository sprite ' + asset.path + ' to the local working library.');
+                        setCustomAssetLibrary((prev) => [...prev, imported]); setSelectedCustomAssetId(id); setMapBuilderMode(true); setMapBuilderMin(true); setAssetPlacementMode(true); setAssetMoveMode(false); setAssetStudioMinimized(true);
+                        setAssetStudioStatus('Placement active: tap the world to place ' + imported.name + '. Choose the layer from the minimized Asset Studio chip.');
                       };
                       img.src = asset.src;
                     }} style={{ minWidth: 0, border: '1px solid #52645a', borderRadius: 7, padding: 6, background: '#18231e', color: '#fff' }}>
                       <img src={asset.src} alt="" loading="lazy" style={{ width: '100%', height: 64, objectFit: 'contain', imageRendering: 'pixelated' }} />
                       <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{asset.name}</span>
-                      <small style={{ opacity: 0.65 }}>Add to library</small>
+                      <small style={{ opacity: 0.65 }}>Select & place</small>
                     </button>
                   ))}
                 </div>
@@ -10275,7 +10275,7 @@ if (active) {
                   {localSpriteFolders.map((folder) => <option key={folder} value={folder}>{folder}</option>)}
                 </select>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(94px,1fr))', gap: 7 }}>
-                  {customAssetLibrary.filter((a) => (localAssetFolder === 'All folders' || (a.folder || 'Uploads') === localAssetFolder) && (a.name + ' ' + (a.folder || 'Uploads')).toLowerCase().includes(assetStudioSearch.toLowerCase())).map((asset) => (
+                  {customAssetLibrary.filter((a) => (localAssetFolder === 'All folders' || (a.folder || 'Uploads') === localAssetFolder || (a.folder || 'Uploads').startsWith(localAssetFolder + '/')) && (a.name + ' ' + (a.folder || 'Uploads')).toLowerCase().includes(assetStudioSearch.toLowerCase())).map((asset) => (
                     <button key={asset.id} type="button" onClick={() => { setSelectedCustomAssetId(asset.id); setMapBuilderMode(true); setMapBuilderMin(true); setAssetPlacementMode(true); setAssetMoveMode(false); setAssetStudioMinimized(true); setAssetStudioStatus("Placement active: tap the world to place " + asset.name + ". Tap again to place another; reopen Asset Studio to cancel or edit."); }} style={{ minWidth: 0, border: selectedCustomAssetId === asset.id ? '2px solid #f2d35e' : '1px solid #52645a', borderRadius: 7, padding: 6, background: selectedCustomAssetId === asset.id ? '#35452e' : '#18231e', color: '#fff' }}>
                       <img src={asset.src} alt="" style={{ width: '100%', height: 64, objectFit: 'contain', imageRendering: 'pixelated' }} />
                       <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>{asset.name}</span>
