@@ -4376,8 +4376,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 815: paused tile-edit mode; tapping paints + selects a tile, tapping it again deselects it.
   const [tileEditMode, setTileEditMode] = useState(false);
   const tileEditModeRef = useRef(false);
-  const editorTestStateRef = useRef({ moverMode, mapBuilderMode, tileEditMode, assetPlacementMode, assetMoveMode, debugUiHidden, mapBuilderMin: false });
-  editorTestStateRef.current = { moverMode, mapBuilderMode, tileEditMode, assetPlacementMode, assetMoveMode, debugUiHidden, mapBuilderMin };
+  const editorTestStateRef = useRef({ moverMode, mapBuilderMode, tileEditMode, assetPlacementMode, assetMoveMode, debugUiHidden, mapBuilderMin, assetStudioOpen, debugHubOpen, chunkSelectorOpen, worldObjectCoordinatesOpen, devConsoleOpen, inspectorOpen, npcRosterOpen, debugConsoleOpen, controlCenterOpen, carriageDebugOpen });
+  editorTestStateRef.current = { moverMode, mapBuilderMode, tileEditMode, assetPlacementMode, assetMoveMode, debugUiHidden, mapBuilderMin, assetStudioOpen, debugHubOpen, chunkSelectorOpen, worldObjectCoordinatesOpen, devConsoleOpen, inspectorOpen, npcRosterOpen, debugConsoleOpen, controlCenterOpen, carriageDebugOpen };
   const [tileCoordsOpen, setTileCoordsOpen] = useState(false);
   const [tileCoordsMinimized, setTileCoordsMinimized] = useState(false);
   const [selectedPaintTiles, setSelectedPaintTiles] = useState<Array<{ chunk: string; tx: number; ty: number }>>(() => {
