@@ -112,6 +112,8 @@ try {
   await page.reload({ waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForSelector('[data-testid="button-new-game"]', { timeout: 15000 });
   await page.locator('[data-testid="button-new-game"]').tap();
+  await page.waitForSelector('[data-testid="button-confirm-rpg-character"]', { timeout: 15000 });
+  await page.locator('[data-testid="button-confirm-rpg-character"]').tap();
   await page.waitForFunction(() => typeof window.__gameTest?.getPaintedTileCount === 'function', null, { timeout: 30000 });
   await page.waitForTimeout(300);
   const paintCountReloaded = await page.evaluate(() => window.__gameTest.getPaintedTileCount());
