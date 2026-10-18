@@ -138,7 +138,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '841';
+const BUILD_NUMBER = '843';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -4161,6 +4161,28 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [minimapHidden, setMinimapHidden] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
   const [showChunkBounds, setShowChunkBounds] = useState(false);
+  // BUILD 843: persistent per-chunk offsets for generated vegetation.
+  const [treePositionOverrides, setTreePositionOverrides] = useState<Record<string, { x: number; y: number }>>(() => {
+    try {
+      const raw = localStorage.getItem('ag-generated-tree-positions');
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('ag-generated-tree-positions', JSON.stringify(treePositionOverrides)); } catch { /* ignore storage failures */ }
+  }, [treePositionOverrides]);
+  const nudgeInspectedTree = (dx: number, dy: number) => {
+    const selected = entityInspectorSelection;
+    if (!selected || selected.kind !== 'Generated tree') return;
+    const treeId = Number(selected.id);
+    if (!Number.isInteger(treeId)) return;
+    const key = selected.chunk + ':' + treeId;
+    const next = { x: Math.round((selected.x + dx) * 10) / 10, y: Math.round((selected.y + dy) * 10) / 10 };
+    setTreePositionOverrides(prev => ({ ...prev, [key]: next }));
+    setEntityInspectorSelection({ ...selected, x: next.x, y: next.y });
+    logEditorChange('move-generated-tree', 'Moved generated tree ' + treeId + ' to (' + next.x + ',' + next.y + ') in chunk ' + selected.chunk);
+  };
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
   const [entityInspectorSelection, setEntityInspectorSelection] = useState<{ kind: string; id: string; name: string; x: number; y: number; chunk: string } | null>(null);
   const [copiedNotice, setCopiedNotice] = useState(false);
@@ -8170,7 +8192,10 @@ if (active) {
   const selectedGoat = targetGoatId === null ? null : goats.find((goat) => goat.id === targetGoatId && goat.disposition !== 'defeated') || null;
   const playerMaxHp = playerMaxHpForStats(playerStats);
   const deletedHere = deletedGenTrees[chunkKey] ?? [];
-  const fieldTrees = fieldTreesFor(chunk).filter((t) => !deletedHere.includes(t.id));
+  const fieldTrees = fieldTreesFor(chunk).filter((t) => !deletedHere.includes(t.id)).map((t) => {
+    const saved = treePositionOverrides[chunkKey + ':' + t.id];
+    return saved ? { ...t, x: saved.x, y: saved.y } : t;
+  });
   const fieldAccents = fieldAccentsFor(chunk);
   const fieldPalette = fieldPalettes[currentWorldTile.terrain];
   const startingArea = isStartingArea(chunk);
@@ -9105,6 +9130,15 @@ if (active) {
               {entityInspectorSelection.id !== 'none' && placedObjects.some((o) => o.id === entityInspectorSelection.id) && (
                 <button type="button" style={{ marginTop: 8, width: '100%', padding: 7 }} onClick={() => setWorldObjectCoordinatesOpen(true)}>Open coordinate editor</button>
               )}
+              {entityInspectorSelection.kind === 'Generated tree' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 5, marginTop: 8 }}>
+                  <button type="button" style={{ padding: 7 }} onClick={() => nudgeInspectedTree(-1, 0)} aria-label="Move tree left">← 1</button>
+                  <button type="button" style={{ padding: 7 }} onClick={() => nudgeInspectedTree(0, -1)} aria-label="Move tree up">↑ 1</button>
+                  <button type="button" style={{ padding: 7 }} onClick={() => nudgeInspectedTree(0, 1)} aria-label="Move tree down">↓ 1</button>
+                  <button type="button" style={{ padding: 7 }} onClick={() => nudgeInspectedTree(1, 0)} aria-label="Move tree right">→ 1</button>
+                </div>
+              )}
+              {entityInspectorSelection.kind === 'Generated tree' && <div style={{ opacity: .75, marginTop: 5 }}>Position changes save in this browser and remain tied to this chunk/tree ID.</div>}
             </div>
           )}
           {/* BUILD 842: live chunk boundary overlay follows the currently loaded gameplay chunk. */}
