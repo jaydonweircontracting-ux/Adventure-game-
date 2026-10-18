@@ -1,6 +1,6 @@
 {
-  "build": "855",
-  "note": "Remove solid black or white edge-connected backgrounds from Asset Studio sprites",
-  "timestamp": "2026-10-18T02:45:00.000Z",
-  "cacheBuster": "build855-transparent-sprite-backgrounds"
+  "build": "856",
+  "note": "Asset Studio folders, directory import, layer-aware placement and sprite background editor",
+  "timestamp": "2026-10-18T03:00:00.000Z",
+  "cacheBuster": "build856-asset-studio-folders-layers-editor"
 }
