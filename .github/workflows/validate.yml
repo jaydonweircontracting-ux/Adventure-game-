@@ -32,7 +32,9 @@ jobs:
       - name: Isometric direction regression test
         run: npm run test:iso-directions
       - name: Production build
-        run: npm run build
+        # The CI smoke server hosts dist/public at /, not /Adventure-game-/.
+        # Use root-relative assets here; the Pages deployment workflow keeps its repository base path.
+        run: BASE_PATH=/ npm run build
       - name: Live update version regression test
         run: npm run test:update-version
       - name: Fantasy encounter regression test
