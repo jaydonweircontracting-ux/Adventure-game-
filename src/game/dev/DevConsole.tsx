@@ -53,7 +53,7 @@ export default function DevConsole({ build, onClose, onMinimize }: Props) {
     URL.revokeObjectURL(url);
     setStatus('Request exported as a text file.');
   };
-  return <section role="dialog" aria-label="Muse Dev Console" style={{ position: 'fixed', inset: 'max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom))', zIndex: 23000, background: '#101a17', color: '#f2f5f0', border: '1px solid #597667', borderRadius: 12, boxShadow: '0 12px 40px #000c', display: 'flex', flexDirection: 'column', overflow: 'hidden', font: '13px system-ui' }}>
+  return <section role="dialog" aria-label="Muse Dev Console" data-debug-window="true" style={{ position: 'fixed', inset: 'max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom))', zIndex: 23000, background: '#101a17', color: '#f2f5f0', border: '1px solid #597667', borderRadius: 12, boxShadow: '0 12px 40px #000c', display: 'flex', flexDirection: 'column', overflow: 'hidden', font: '13px system-ui' }}>
     <header style={{ padding: 12, borderBottom: '1px solid #35483e', display: 'flex', alignItems: 'center', gap: 10 }}>
       <div style={{ flex: 1 }}><strong style={{ fontSize: 16 }}>Muse Dev Console</strong><div style={{ color: '#b8c8bd', marginTop: 3 }}>Build {build} · in-game development workspace</div></div>
       {onMinimize && <button onClick={onMinimize} aria-label="Minimize Muse Dev Console" style={{ background: '#263b31', color: 'white', border: '1px solid #6d8a79', borderRadius: 8, padding: '8px 11px' }}>—</button>}<button onClick={onClose} style={{ background: '#263b31', color: 'white', border: '1px solid #6d8a79', borderRadius: 8, padding: '8px 11px' }}>✕</button>
