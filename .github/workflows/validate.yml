@@ -68,5 +68,7 @@ jobs:
           exit 1
       - name: Real-game browser smoke test
         run: node tests/real-game/smoke.mjs
+      - name: Real-game mobile World Editor regression test
+        run: node tests/real-game/editor.mjs
       - name: Real-game movement and doorway test
         run: node tests/real-game/movement.mjs
