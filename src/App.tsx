@@ -139,13 +139,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '865';
+const BUILD_NUMBER = '866';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '866': 'Add shared debug player-freeze toggle, selectable/deletable placed sprites and houses, and persistent Sprite Studio restore control',
   '865': 'Prevent Asset Studio minimize and restore controls from bubbling into world-editor pointer handlers',
   '864': 'Audit editor selection controls and synchronize the app, startup, and version build markers',
   '863': 'Make Asset Studio Select existing activate world selection so existing houses/buildings can be tapped and highlighted',
@@ -3977,6 +3978,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   }, [houseOffsets]);
   // Tap-to-move: selected house ID. Tap a house to pick it up, tap the field to place it.
   const [selectedHouse, setSelectedHouse] = useState<string | null>(null);
+  const [deletedHouseIds, setDeletedHouseIds] = useState<string[]>([]);
   // BUILD 831: per-building render-layer offsets, editable in the debug mover and persisted locally.
   const [houseLayerOffsets, setHouseLayerOffsets] = useState<Record<string, number>>(() => {
     try { const raw = localStorage.getItem('ag-house-layer-offsets'); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
@@ -4034,6 +4036,23 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [inspectorMinimized, setInspectorMinimized] = useState(false);
   // BUILD 834: Hide Debug panels without disabling the active world-editing tool.
   const [debugUiHidden, setDebugUiHidden] = useState(() => { try { return localStorage.getItem('ag-debug-ui-hidden') === '1'; } catch { return false; } });
+  // BUILD 866: shared movement freeze control for all debug/editor modes; simulation and NPCs continue.
+  const [debugPlayerFrozen, setDebugPlayerFrozen] = useState(false);
+  const debugPlayerFrozenRef = useRef(false);
+  const setDebugPlayerFreeze = (frozen: boolean) => {
+    debugPlayerFrozenRef.current = frozen;
+    setDebugPlayerFrozen(frozen);
+    if (frozen) {
+      keysRef.current = {};
+      clearTouchHolds(touchHoldsRef.current);
+      tapMoveTargetRef.current = null;
+      tapMovePathRef.current = null;
+      targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null);
+      targetGoatIdRef.current = null; setTargetGoatId(null);
+      targetMonsterIdRef.current = null; setTargetMonsterId(null);
+      setMoving(false);
+    }
+  };
   useEffect(() => { try { localStorage.setItem('ag-debug-ui-hidden', debugUiHidden ? '1' : '0'); } catch { /* private browsing */ } }, [debugUiHidden]);
   // BUILD 833: Scrollable RCT-style character roster for visual NPC QA.
   const [npcRosterOpen, setNpcRosterOpen] = useState(false);
@@ -6996,8 +7015,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const heldDown = keysRef.current.down === true || isTouchHeld(touchHoldsRef.current, 'down');
       const heldUp = keysRef.current.up === true || isTouchHeld(touchHoldsRef.current, 'up');
       const input = {
-        x: inputLocked || optionsOpen || guardEncounter || waitingRef.current || collisionDebugRef.current ? 0 : (heldRight ? 1 : 0) - (heldLeft ? 1 : 0),
-        y: inputLocked || optionsOpen || guardEncounter || waitingRef.current || collisionDebugRef.current ? 0 : (heldDown ? 1 : 0) - (heldUp ? 1 : 0),
+        x: debugPlayerFrozenRef.current || inputLocked || optionsOpen || guardEncounter || waitingRef.current || collisionDebugRef.current ? 0 : (heldRight ? 1 : 0) - (heldLeft ? 1 : 0),
+        y: debugPlayerFrozenRef.current || inputLocked || optionsOpen || guardEncounter || waitingRef.current || collisionDebugRef.current ? 0 : (heldDown ? 1 : 0) - (heldUp ? 1 : 0),
       };
       // BUILD 366: tap-to-move steering. Manual input always wins and cancels
       // an in-flight tap target. Otherwise steer toward the tap target using
@@ -7010,7 +7029,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         targetNpcIdRef.current = null;
         targetNpcModeRef.current = null;
         setTargetNpcId(null);
-      } else if (targetId && !inputLocked && !optionsOpen && !waitingRef.current) {
+      } else if (targetId && !debugPlayerFrozenRef.current && !inputLocked && !optionsOpen && !waitingRef.current) {
         const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
         const targetNpc = townsfolkRef.current.find((n) => n.id === targetId);
         if (!targetNpc || targetNpc.indoors || isNpcDead(targetNpc, tick)) {
@@ -7056,7 +7075,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         setTargetGoatId(null);
         targetMonsterIdRef.current = null;
         setTargetMonsterId(null);
-      } else if (!targetId && (selectedGoatId != null || selectedMonsterId != null) && !inputLocked && !optionsOpen && !waitingRef.current) {
+      } else if (!targetId && (selectedGoatId != null || selectedMonsterId != null) && !debugPlayerFrozenRef.current && !inputLocked && !optionsOpen && !waitingRef.current) {
         const targetGoat = selectedGoatId != null
           ? goatsRef.current.find((goat) => goat.id === selectedGoatId && goat.disposition === 'aggressive' && goat.hp > 0)
           : undefined;
@@ -7093,7 +7112,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (tapTarget && (input.x !== 0 || input.y !== 0)) {
         tapMoveTargetRef.current = null;
         tapMovePathRef.current = null;
-      } else if (tapTarget && !inputLocked && !optionsOpen && !waitingRef.current) {
+      } else if (tapTarget && !debugPlayerFrozenRef.current && !inputLocked && !optionsOpen && !waitingRef.current) {
         // BUILD 668: Follow A* path waypoints if available, else steer directly.
         const path = tapMovePathRef.current;
         let steerTarget = tapTarget;
@@ -10171,6 +10190,7 @@ if (active) {
               })()}
             </div>
           )}
+          {(debugHubOpen || assetStudioOpen || moverMode || mapBuilderMode || tileEditMode || worldObjectCoordinatesOpen || chunkSelectorOpen || devConsoleOpen || controlCenterOpen) && <div aria-label="Shared debug player movement controls" style={{ position: 'fixed', top: 'max(8px, env(safe-area-inset-top))', right: 8, zIndex: 25000, display: 'flex', gap: 6, alignItems: 'center', pointerEvents: 'auto' }}><button type="button" className="editor-minimized-chip" aria-pressed={debugPlayerFrozen} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setDebugPlayerFreeze(!debugPlayerFrozen); }} style={{ background: debugPlayerFrozen ? '#8b2929' : '#24352b', color: '#fff', border: debugPlayerFrozen ? '2px solid #ffd166' : '1px solid #708578', fontWeight: 800 }}>{debugPlayerFrozen ? '🧊 Player frozen · Tap to unfreeze' : '⏸ Freeze player movement'}</button></div>}
           {(debugHubMinimized || assetStudioMinimized || chunkSelectorMinimized || worldObjectCoordinatesMinimized || devConsoleMinimized) && <div aria-label="Minimized debug tools" style={{ position: 'fixed', left: 8, right: 8, bottom: 'max(8px, env(safe-area-inset-bottom))', zIndex: 24000, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', pointerEvents: 'none' }}>{debugHubMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setDebugHubMinimized(false)}>🧰 Debug tools</button>}{tileCoordsMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setTileCoordsMinimized(false)}>📍 Tile coordinates</button>}{npcRosterMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setNpcRosterMinimized(false)}>🧑‍🤝‍🧑 NPC Roster</button>}{inspectorMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setInspectorMinimized(false)}>🔍 NPC Inspector</button>}{carriageDebugMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setCarriageDebugMinimized(false)}>🐎 Carriage</button>}{controlCenterMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setControlCenterMinimized(false)}>🌍 Simulation</button>}{debugConsoleMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setDebugConsoleMinimized(false)}>📟 Debug Console</button>}{assetStudioMinimized && <div style={{display:'flex',gap:4,alignItems:'center',pointerEvents:'auto',flexWrap:'wrap'}}><button type="button" className="editor-minimized-chip" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setAssetStudioOpen(true); setAssetStudioMinimized(false); }}>🖼️ Sprite Studio</button>{assetPlacementMode && <label style={{display:'inline-flex',alignItems:'center',gap:4,padding:'4px 7px',borderRadius:7,background:'#24352b',color:'#fff',fontSize:11}}>Layer <select aria-label="Placement layer while Asset Studio is minimized" value={assetPlacementLayer} onChange={(e) => setAssetPlacementLayer(Number(e.target.value))} style={{maxWidth:118,padding:4,background:'#18231e',color:'#fff',borderRadius:5}}>{[-10,-5,-2,-1,0,1,2,5,10].map((layer) => <option key={layer} value={layer}>{layer === 0 ? '0 Default' : layer < 0 ? layer + ' Behind' : '+' + layer + ' Front'}</option>)}</select></label>}<button type="button" className="editor-minimized-chip" aria-label="Resize Asset Studio" onClick={() => setAssetStudioResizeControlsOpen((v) => !v)}>↔ Resize</button>{assetStudioResizeControlsOpen && <><button type="button" className="editor-minimized-chip" aria-label="Make Asset Studio smaller" onClick={() => { setAssetStudioWidth((v) => Math.max(280, v - 40)); setAssetStudioHeight((v) => Math.max(240, v - 40)); }}>−</button><button type="button" className="editor-minimized-chip" aria-label="Make Asset Studio larger" onClick={() => { setAssetStudioWidth((v) => Math.min(900, v + 40)); setAssetStudioHeight((v) => Math.min(1000, v + 40)); }}>＋</button></>}</div>}{chunkSelectorMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setChunkSelectorMinimized(false)}>🧭 Chunks</button>}{worldObjectCoordinatesMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setWorldObjectCoordinatesMinimized(false)}>📍 Coordinates</button>}{devConsoleMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setDevConsoleMinimized(false)}>📟 Dev Console</button>}</div>}
           {worldObjectCoordinatesOpen && !worldObjectCoordinatesMinimized && <WorldObjectCoordinates objects={placedObjects} onMinimize={() => setWorldObjectCoordinatesMinimized(true)} onMove={(id, x, y, targetChunk) => { pushMapUndo(); setPlacedObjects(prev => prev.map(object => object.id === id ? { ...object, x, y, chunk: targetChunk } : object)); logEditorChange('move-coordinate', 'Moved placed object ' + id + ' to local (' + x + ',' + y + ') chunk ' + targetChunk); }} onClose={() => setWorldObjectCoordinatesOpen(false)} />}
           {devConsoleOpen && !devConsoleMinimized && <DevConsole build={BUILD_NUMBER} onMinimize={() => setDevConsoleMinimized(true)} onClose={() => { setDevConsoleOpen(false); setDevConsoleMinimized(false); }} />}
@@ -10210,7 +10230,7 @@ if (active) {
           {assetStudioOpen && !assetStudioMinimized && (
             <div className="editor-panel inspector-panel asset-studio-panel" role="dialog" aria-label="Asset Studio" style={{ width: 'min(' + assetStudioWidth + 'px, 96vw)', height: 'min(' + assetStudioHeight + 'px, 82vh)', minWidth: 280, minHeight: 240, maxWidth: '96vw', maxHeight: '82vh', boxSizing: 'border-box', resize: 'both', display: 'flex', flexDirection: 'column', overflow: 'auto', zIndex: 1250 }}>
               <div className="editor-panel-title" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>🖼️ Asset Studio <span className="editor-panel-chunk">{customAssetLibrary.length} local assets</span>
-                <button type="button" className="editor-minimize-btn" onClick={() => setAssetStudioResizeControlsOpen((v) => !v)} aria-label="Show Asset Studio resize controls">↔</button><button type="button" className="editor-minimize-btn" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setAssetStudioMinimized(true); }} aria-label="Minimize Asset Studio">—</button><button type="button" className="editor-minimize-btn" onClick={() => { setAssetStudioOpen(false); setAssetStudioMinimized(false); }} aria-label="Close Asset Studio">✕</button>
+                <button type="button" className="editor-minimize-btn" onClick={() => setAssetStudioResizeControlsOpen((v) => !v)} aria-label="Show Asset Studio resize controls">↔</button><button type="button" className="editor-minimize-btn" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setAssetStudioOpen(true); setAssetStudioMinimized(true); setAssetStudioStatus('Sprite Studio minimized. Use the persistent 🖼️ Sprite Studio button at the bottom to reopen it.'); }} aria-label="Minimize Asset Studio">—</button><button type="button" className="editor-minimize-btn" onClick={() => { setAssetStudioOpen(false); setAssetStudioMinimized(false); }} aria-label="Close Asset Studio">✕</button>
               </div>
               {assetStudioResizeControlsOpen && <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '6px 8px', flexShrink: 0, background: '#24352b' }}>
                 <span style={{fontSize:11,whiteSpace:'nowrap'}}>Window size</span>
@@ -10220,8 +10240,8 @@ if (active) {
               </div>}
               <div style={{ display: 'flex', gap: 6, padding: 8, flexShrink: 0, flexWrap: 'wrap' }}>
                 <input aria-label="Search sprites" value={assetStudioSearch} onChange={(e) => setAssetStudioSearch(e.target.value)} placeholder="Search sprites…" style={{ minWidth: 0, flex: '1 1 140px', padding: 8, borderRadius: 6 }} />
-                <button type="button" className="editor-btn" aria-label="Select an existing house, building, or placed sprite in the world" onClick={() => { setMoverMode(true); setMapBuilderMode(false); setMapBuilderMin(false); setEditorTool('select'); setSelectedHouse(null); setSelectedPlacedId(null); setSelectedPlacedCustomId(null); setAssetPlacementMode(false); setAssetMoveMode(false); setAssetStudioOpen(true); setAssetStudioMinimized(false); setAssetStudioStatus('SELECT EXISTING mode active: tap an existing house/building or placed sprite directly in the world. The selected house is outlined yellow. Use Delete selected to remove supported placed objects. Tap Select existing again to re-arm selection.'); }}>🎯 Select existing</button>
-                <button type="button" className="editor-btn" aria-label="Delete selected placed house or sprite" disabled={!selectedPlacedCustomId && !selectedPlacedId} onClick={() => { if (selectedPlacedCustomId) { const item = customPlacedAssets.find((a) => a.id === selectedPlacedCustomId); if (item && confirm('Delete placed ' + item.name + ' from this world?')) { pushMapUndo(); setCustomPlacedAssets((prev) => prev.filter((a) => a.id !== item.id)); setSelectedPlacedCustomId(null); setEntityInspectorSelection(null); setAssetStudioStatus('Deleted placed ' + item.name + '.'); } } else if (selectedPlacedId) { const item = placedObjects.find((o) => o.id === selectedPlacedId); if (item && confirm('Delete this placed ' + item.kind + '?')) { setPlacedObjects((prev) => prev.filter((o) => o.id !== item.id)); setFlaggedItems((prev) => prev.filter((flag) => flag.id !== item.id)); setSelectedPlacedId(null); setEntityInspectorSelection(null); setAssetStudioStatus('Deleted placed ' + item.kind + '.'); } } }}>🗑 Delete selected</button>
+                <button type="button" className="editor-btn" aria-label="Select an existing house, building, or placed sprite in the world" onClick={() => { setMoverMode(true); setMapBuilderMode(false); setMapBuilderMin(false); setEditorTool('select'); setSelectedHouse(null); setSelectedPlacedId(null); setSelectedPlacedCustomId(null); setAssetPlacementMode(false); setAssetMoveMode(false); setAssetStudioOpen(true); setAssetStudioMinimized(false); setAssetStudioStatus('SELECT EXISTING mode active: tap a house or placed sprite directly in the world to highlight it yellow. Delete selected removes supported placed assets and objects.'); }}>🎯 Select existing</button>
+                <button type="button" className="editor-btn" aria-label="Delete selected house, placed object, or sprite" disabled={!selectedHouse && !selectedPlacedCustomId && !selectedPlacedId} onClick={() => { if (selectedPlacedCustomId) { const item = customPlacedAssets.find((a) => a.id === selectedPlacedCustomId); if (item && confirm('Delete placed ' + item.name + ' from this world?')) { pushMapUndo(); setCustomPlacedAssets((prev) => prev.filter((a) => a.id !== item.id)); setSelectedPlacedCustomId(null); setEntityInspectorSelection(null); setAssetStudioStatus('Deleted placed ' + item.name + '.'); } } else if (selectedPlacedId) { const item = placedObjects.find((o) => o.id === selectedPlacedId); if (item && confirm('Delete this placed ' + item.kind + '?')) { pushMapUndo(); setPlacedObjects((prev) => prev.filter((o) => o.id !== item.id)); setFlaggedItems((prev) => prev.filter((flag) => flag.id !== item.id)); setSelectedPlacedId(null); setEntityInspectorSelection(null); setAssetStudioStatus('Deleted placed ' + item.kind + '.'); } } else if (selectedHouse) { const house = buildingDoorwaysFor(chunk).find((d) => d.id === selectedHouse); if (house && confirm('Remove ' + house.area.name + ' from the visible world?')) { setDeletedHouseIds((prev) => prev.includes(selectedHouse) ? prev : [...prev, selectedHouse]); setSelectedHouse(null); setHouseOffsets((prev) => { const next = { ...prev }; delete next[selectedHouse]; return next; }); setAssetStudioStatus('Removed ' + house.area.name + ' from the visible world.'); } } }}>🗑 Delete selected</button>
                 <button type="button" className="editor-btn" onClick={() => assetFileInputRef.current?.click()}>＋ Upload</button>
                 <button type="button" className="editor-btn" onClick={() => assetFolderInputRef.current?.click()}>📁 Load folder</button>
                 <input ref={assetFileInputRef} type="file" accept="image/png,image/webp,image/jpeg" style={{ display: 'none' }} onChange={(e) => { handleDebugAssetUpload(e.target.files?.[0]); e.currentTarget.value = ''; }} />
@@ -11226,7 +11246,10 @@ if (active) {
                 alt={asset.name}
                 draggable={false}
                 onError={() => setAssetStudioStatus('Sprite could not render: ' + asset.name + '. Re-upload it in Asset Studio and place it again.')}
+                onPointerUp={moverMode && editorTool === 'select' && !assetPlacementMode && !assetMoveMode ? (e) => { e.stopPropagation(); setSelectedPlacedCustomId(asset.id); setSelectedPlacedId(null); setSelectedHouse(null); setAssetStudioOpen(true); setAssetStudioMinimized(false); setAssetStudioStatus('Selected ' + asset.name + ' in the world. Highlighted yellow; use the placed-sprite controls or Delete selected.'); } : undefined}
                 style={{
+                  pointerEvents: moverMode && editorTool === 'select' && !assetPlacementMode && !assetMoveMode ? 'auto' : 'none',
+                  cursor: moverMode && editorTool === 'select' && !assetPlacementMode && !assetMoveMode ? 'pointer' : 'default',
                   position: 'absolute',
                   left: 'calc(' + fieldPct(asset.x) + ' - ' + renderedWidth / 2 + 'px)',
                   top: 'calc(' + fieldPct(asset.y) + ' - ' + renderedHeight + 'px)',
@@ -11503,7 +11526,7 @@ if (active) {
                 }
               } : undefined}
             >
-              {doorways.filter((doorway) => doorway.area.id === 'tutorial-house').map((doorway) => {
+              {doorways.filter((doorway) => doorway.area.id === 'tutorial-house' && !deletedHouseIds.includes(doorway.id)).map((doorway) => {
                 const rect = doorway.rect;
                 const off = houseOffsets[doorway.id] || { x: 0, y: 0 };
                 const isSelected = selectedHouse === doorway.id;
