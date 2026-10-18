@@ -90,3 +90,49 @@ export function transparentAssetSource(src: string): Promise<string> {
   transparentSourceCache.set(src, result);
   return result;
 }
+
+
+/** Remove a user-selected edge-connected matte color with adjustable tolerance. */
+export function removeEdgeColorMatte(image: HTMLImageElement, hexColor: string, tolerance = 45): string {
+  const width = image.naturalWidth, height = image.naturalHeight;
+  if (!width || !height) return image.src;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) return image.src;
+    context.drawImage(image, 0, 0);
+    const frame = context.getImageData(0, 0, width, height);
+    const pixels = frame.data;
+    const parsed = /^#?([0-9a-f]{6})$/i.exec(hexColor);
+    if (!parsed) return image.src;
+    const rgb = [parseInt(parsed[1].slice(0,2),16), parseInt(parsed[1].slice(2,4),16), parseInt(parsed[1].slice(4,6),16)];
+    const threshold = Math.max(0, Math.min(160, tolerance));
+    const total = width * height, visited = new Uint8Array(total), queue = new Int32Array(total);
+    const matches = (i: number) => {
+      const o = i * 4;
+      if (pixels[o + 3] < 8) return false;
+      const d0 = pixels[o] - rgb[0], d1 = pixels[o + 1] - rgb[1], d2 = pixels[o + 2] - rgb[2];
+      return Math.sqrt(d0*d0 + d1*d1 + d2*d2) <= threshold * 1.732;
+    };
+    let head = 0, tail = 0;
+    const add = (i: number) => { if (i < 0 || i >= total || visited[i] || !matches(i)) return; visited[i] = 1; queue[tail++] = i; };
+    for (let x=0;x<width;x++) { add(x); add((height-1)*width+x); }
+    for (let y=1;y<height-1;y++) { add(y*width); add(y*width+width-1); }
+    while (head < tail) {
+      const i=queue[head++], x=i%width;
+      if (x>0) add(i-1); if (x+1<width) add(i+1);
+      if (i>=width) add(i-width); if (i+width<total) add(i+width);
+    }
+    if (tail < Math.max(8, total * 0.001)) return image.src;
+    for (let i=0;i<total;i++) {
+      if (!visited[i]) continue;
+      const o=i*4;
+      const d0=pixels[o]-rgb[0], d1=pixels[o+1]-rgb[1], d2=pixels[o+2]-rgb[2];
+      const distance=Math.sqrt(d0*d0+d1*d1+d2*d2);
+      pixels[o+3]=Math.min(pixels[o+3], Math.max(0, Math.round((distance / Math.max(1, threshold)) * 255)));
+    }
+    context.putImageData(frame,0,0);
+    return canvas.toDataURL('image/png');
+  } catch { return image.src; }
+}
