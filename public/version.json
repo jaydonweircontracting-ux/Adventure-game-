@@ -1,6 +1,6 @@
 {
-  "build": "867",
-  "note": "Fix Asset Studio resize buttons so the panel visibly expands and contracts with explicit dimensions",
-  "timestamp": "2026-10-18T21:30:00.000Z",
-  "cacheBuster": "build867-asset-studio-resize-fix"
+  "build": "868",
+  "note": "Add a clear yellow pressed-state highlight to every Asset Studio button, including touch controls",
+  "timestamp": "2026-10-18T21:40:00.000Z",
+  "cacheBuster": "build868-asset-studio-button-press-highlight"
 }
