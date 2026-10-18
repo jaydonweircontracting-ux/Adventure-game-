@@ -11229,6 +11229,7 @@ if (active) {
                   transform: 'rotate(' + (asset.rotation || 0) + 'deg) scale(' + (asset.flipX ? -1 : 1) + ',' + (asset.flipY ? -1 : 1) + ')',
                   transformOrigin: 'center bottom',
                   opacity: asset.locked ? 0.9 : 1,
+                  zIndex: asset.layer ?? 0,
                   outline: selectedPlacedCustomId === asset.id ? '3px solid #ffd166' : undefined,
                   outlineOffset: selectedPlacedCustomId === asset.id ? '2px' : undefined,
                   filter: selectedPlacedCustomId === asset.id ? 'drop-shadow(0 0 5px #ffd166)' : undefined,
