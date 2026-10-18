@@ -15,15 +15,18 @@ export const GAME_URL = process.env.GAME_URL || 'http://localhost:8901/?testmode
  * Launch browser, load game, click New Game, wait for test hooks.
  * Returns { browser, page }.
  */
-export async function setupGame() {
+export async function setupGame(pageOptions = {}) {
   const browser = await chromium.launch();
-  const page = await browser.newPage();
+  const page = await browser.newPage(pageOptions);
   const errors = [];
-  page.on('pageerror', e => errors.push(e.message.slice(0, 200)));
+  page.on('pageerror', e => { const message = e.message.slice(0, 200); errors.push(message); console.log('[BROWSER PAGEERROR]', message); });
+  page.on('console', message => { if (message.type() === 'error') console.log('[BROWSER CONSOLE ERROR]', message.text().slice(0, 240)); });
 
   await page.goto(GAME_URL, { waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForSelector('[data-testid="button-new-game"]', { timeout: 15000 });
   await page.click('[data-testid="button-new-game"]');
+  await page.waitForSelector('[data-testid="button-confirm-rpg-character"]', { timeout: 15000 });
+  await page.click('[data-testid="button-confirm-rpg-character"]');
   await page.waitForFunction(
     () => typeof window.__gameTest !== 'undefined',
     null, { timeout: 30000 }
@@ -47,6 +50,8 @@ export async function createTestPage(browser) {
   await page.goto(GAME_URL, { waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForSelector('[data-testid="button-new-game"]', { timeout: 15000 });
   await page.click('[data-testid="button-new-game"]');
+  await page.waitForSelector('[data-testid="button-confirm-rpg-character"]', { timeout: 15000 });
+  await page.click('[data-testid="button-confirm-rpg-character"]');
   await page.waitForFunction(
     () => typeof window.__gameTest !== 'undefined',
     null, { timeout: 30000 }

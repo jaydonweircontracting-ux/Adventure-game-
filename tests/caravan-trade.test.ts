@@ -29,7 +29,9 @@ deliverCaravanCargo(destination, { grain: 20, tools: 4, medicine: -3 });
 assert.equal(destination.storage.grain, 60, 'delivery respects population-based storage cap');
 assert.equal(destination.storage.tools, 4, 'valid cargo is delivered');
 assert.equal(destination.storage.medicine, 0, 'negative cargo is ignored');
-assert.equal(destination.supply.tools, 4, 'delivery refreshes supply/demand and prices');
+assert.equal(destination.supply.tools, 0.2, 'four stored tools contribute 0.2 supply units at 20 items per unit');
+assert.equal(destination.demand.tools, 0, 'delivery recomputes demand from consumption');
+assert.equal(destination.prices.tools, 10.91, 'delivery recomputes market prices from effective supply');
 
 const origin = settlement('origin', 100);
 origin.storage.grain = 13;

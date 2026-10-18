@@ -1,6 +1,6 @@
 {
-  "build": "846",
-  "note": "Independently minimize Debug panels, pause player movement in editor mode, and fix custom sprite sizing",
-  "timestamp": "2026-10-18T00:50:00.000Z",
-  "cacheBuster": "build846-debug-panels-editor-freeze-sprite-size"
+  "build": "847",
+  "note": "Harden editor input locking, hide and close every Debug window reliably, and add real-browser editor regression coverage",
+  "timestamp": "2026-10-18T01:00:00.000Z",
+  "cacheBuster": "build847-world-editor-engine-reliability"
 }
