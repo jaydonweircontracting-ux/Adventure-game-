@@ -15,9 +15,9 @@ export const GAME_URL = process.env.GAME_URL || 'http://localhost:8901/?testmode
  * Launch browser, load game, click New Game, wait for test hooks.
  * Returns { browser, page }.
  */
-export async function setupGame() {
+export async function setupGame(pageOptions = {}) {
   const browser = await chromium.launch();
-  const page = await browser.newPage();
+  const page = await browser.newPage(pageOptions);
   const errors = [];
   page.on('pageerror', e => errors.push(e.message.slice(0, 200)));
 
