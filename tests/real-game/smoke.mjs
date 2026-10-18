@@ -48,7 +48,7 @@ try {
   check('Movement validation works', typeof canMove === 'boolean');
 
   // BUILD 847: the mobile options slider must persist the user's zoom preference.
-  await page.click('[data-testid="button-open-options"]');
+  await page.click('[data-testid="button-open-game-options"]');
   const zoomSlider = page.locator('[data-testid="input-world-zoom"]');
   await zoomSlider.waitFor({ state: 'visible' });
   await zoomSlider.focus();
