@@ -49,6 +49,8 @@ jobs:
         run: npm run test:village-food-needs
       - name: World development foundation regression test
         run: npm run test:world-dev-foundation
+      - name: World editor paint and placement regression test
+        run: npm run test:world-editor-persistence
       - name: Settlement economy regression test
         run: npm run test:settlement-economy
       - name: Caravan trade regression test
