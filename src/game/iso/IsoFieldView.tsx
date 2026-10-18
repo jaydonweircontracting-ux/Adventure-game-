@@ -290,6 +290,8 @@ interface IsoFieldViewProps {
   playerRunning?: boolean;
   // BUILD 459: collision box debug — red = current box, green = draggable proposed box
   collisionDebug?: boolean;
+  // BUILD 851: user-placed Asset Studio sprites rendered in the live isometric world.
+  placedAssets?: Array<{ id: string; name: string; src: string; chunk: string; x: number; y: number; width: number; height: number; scale: number; rotation: number; flipX: boolean; flipY: boolean; visible?: boolean; layer?: number }>;
 }
 
 interface Drawable { depth: number; draw: (g: CanvasRenderingContext2D, now: number) => void }
@@ -305,6 +307,19 @@ interface IsoChunkScene {
   tile: MapTile; water: WaterGrid;
   palette: { field: string; path: string; glow: string };
   road: string;
+}
+
+// BUILD 851: cache uploaded Asset Studio images once; draw them from the live world loop.
+const placedAssetImageCache = new Map<string, HTMLImageElement>();
+function placedAssetImage(src: string): HTMLImageElement {
+  let image = placedAssetImageCache.get(src);
+  if (!image) {
+    image = new Image();
+    image.decoding = 'async';
+    image.src = src;
+    placedAssetImageCache.set(src, image);
+  }
+  return image;
 }
 
 const MARGIN = 48; // world-px background margin around the map
@@ -458,11 +473,11 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
   return e.fill;
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, chunk, position, townsfolk, goats, onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, chunk, position, townsfolk, goats, placedAssets = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior });
-  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -2152,6 +2167,32 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
 
       drawables.sort((a, b) => a.depth - b.depth);
       for (const d of drawables) d.draw(g, nowMs);
+
+      // BUILD 851: Asset Studio placements must be drawn by the actual world
+      // renderer, not just stored in localStorage/editor lists. Coordinates are
+      // chunk-local field units, matching tapToField() and the player's position.
+      {
+        const activeChunkKey = liveRef.current.chunk.x + ',' + liveRef.current.chunk.y;
+        const assets = (liveRef.current.placedAssets || [])
+          .filter((asset) => asset.visible !== false && asset.chunk === activeChunkKey)
+          .slice()
+          .sort((a, b) => (a.layer ?? 0) - (b.layer ?? 0) || a.y - b.y);
+        for (const asset of assets) {
+          if (!Number.isFinite(asset.x) || !Number.isFinite(asset.y)) continue;
+          const image = placedAssetImage(asset.src);
+          if (!image.complete || image.naturalWidth <= 0) continue;
+          const p = isoToScreen(asset.x, asset.y);
+          const width = Math.max(1, (asset.width || image.naturalWidth) * Math.max(0.1, asset.scale || 1));
+          const height = Math.max(1, (asset.height || image.naturalHeight) * Math.max(0.1, asset.scale || 1));
+          g.save();
+          g.translate(p.x, p.y);
+          g.rotate(((asset.rotation || 0) * Math.PI) / 180);
+          g.scale(asset.flipX ? -1 : 1, asset.flipY ? -1 : 1);
+          g.imageSmoothingEnabled = false;
+          g.drawImage(image, -width / 2, -height, width, height);
+          g.restore();
+        }
+      }
 
       // BUILD 684: floating combat text in iso (damage numbers were 2D-DOM
       // only). World-space, floats up and fades over ~0.9s (matches the
