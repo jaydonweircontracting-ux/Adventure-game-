@@ -1,6 +1,6 @@
 {
-  "build": "856",
-  "note": "Asset Studio folders, directory import, layer-aware placement and sprite background editor",
-  "timestamp": "2026-10-18T03:00:00.000Z",
-  "cacheBuster": "build856-asset-studio-folders-layers-editor"
+  "build": "857",
+  "note": "Improve automatic white/black background removal for placed sprites",
+  "timestamp": "2026-10-18T05:40:00.000Z",
+  "cacheBuster": "build857-border-matte-detection"
 }
