@@ -1,6 +1,6 @@
 {
-  "build": "869",
-  "note": "Fix starting-house selection in Asset Studio with a direct select button and reliable house hit area",
-  "timestamp": "2026-10-18T22:00:00.000Z",
-  "cacheBuster": "build869-starting-house-select-fix"
+  "build": "870",
+  "note": "Keep Asset Studio minimize independent from World Editor; restore button reopens Asset Studio",
+  "timestamp": "2026-10-18T22:30:00.000Z",
+  "cacheBuster": "build870-asset-studio-minimize-isolation"
 }
