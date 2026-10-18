@@ -1,6 +1,6 @@
 {
-  "build": "854",
-  "note": "Resizable Asset Studio window with resize controls available while minimized",
-  "timestamp": "2026-10-18T02:30:00.000Z",
-  "cacheBuster": "build854-asset-studio-resize-controls"
+  "build": "855",
+  "note": "Remove solid black or white edge-connected backgrounds from Asset Studio sprites",
+  "timestamp": "2026-10-18T02:45:00.000Z",
+  "cacheBuster": "build855-transparent-sprite-backgrounds"
 }
