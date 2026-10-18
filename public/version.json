@@ -1,6 +1,6 @@
 {
-  "build": "852",
-  "note": "Fix placed house sprites in the 2D editor and render editor-placed houses in the isometric world",
-  "timestamp": "2026-10-18T02:00:00.000Z",
-  "cacheBuster": "build852-editor-house-and-asset-rendering-fix"
+  "build": "853",
+  "note": "Select placed sprites and world objects directly with Debug open; quick move and delete controls",
+  "timestamp": "2026-10-18T02:15:00.000Z",
+  "cacheBuster": "build853-select-transform-placed-assets"
 }
