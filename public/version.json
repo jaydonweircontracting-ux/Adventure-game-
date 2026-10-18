@@ -1,6 +1,6 @@
 {
-  "build": "848",
-  "note": "Fix duplicate sprite rendering and persist world zoom; strengthen browser QA",
-  "timestamp": "2026-10-18T00:46:52.099Z",
-  "cacheBuster": "build848-single-sprite-render-persistent-zoom-browser-qa"
+  "build": "849",
+  "note": "Fix duplicate sprite placement, persist world zoom, and add an in-game Options button",
+  "timestamp": "2026-10-18T00:51:07.015Z",
+  "cacheBuster": "build849-sprite-render-zoom-options-entry"
 }
