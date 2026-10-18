@@ -1,6 +1,6 @@
 {
-  "build": "844",
-  "note": "Fix Asset Studio sprite placement rendering and align live-update boot marker",
-  "timestamp": "2026-10-18T00:15:00.000Z",
-  "cacheBuster": "build844-asset-placement-render"
+  "build": "845",
+  "note": "Make Debug panels independently minimizable and restore game visibility on mobile",
+  "timestamp": "2026-10-18T00:35:00.000Z",
+  "cacheBuster": "build845-debug-panel-minimize"
 }
