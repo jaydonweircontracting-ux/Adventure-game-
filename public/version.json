@@ -1,6 +1,6 @@
 {
-  "build": "859",
-  "note": "Select placed assets in-world with yellow highlight and flip, rotate, and resize controls",
-  "timestamp": "2026-10-18T06:40:00.000Z",
-  "cacheBuster": "build859-select-transform-placed-assets"
+  "build": "860",
+  "note": "Keep Sprite Studio open while selecting assets; Place Asset explicitly enters placement mode",
+  "timestamp": "2026-10-18T07:00:00.000Z",
+  "cacheBuster": "build860-sprite-studio-selection-place"
 }
