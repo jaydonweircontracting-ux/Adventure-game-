@@ -138,7 +138,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '844';
+const BUILD_NUMBER = '845';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -4018,14 +4018,19 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 835: Asset Studio stores imported sprites locally; export/commit is separate.
   // BUILD 838: searchable central launcher and real-data world validation.
   const [debugHubOpen, setDebugHubOpen] = useState(false);
+  const [debugHubMinimized, setDebugHubMinimized] = useState(false);
   // BUILD 836: separate editor inspection target; selecting a chunk never teleports the player.
   const [chunkSelectorOpen, setChunkSelectorOpen] = useState(false);
+  const [chunkSelectorMinimized, setChunkSelectorMinimized] = useState(false);
   const [worldObjectCoordinatesOpen, setWorldObjectCoordinatesOpen] = useState(false);
+  const [worldObjectCoordinatesMinimized, setWorldObjectCoordinatesMinimized] = useState(false);
   const [devConsoleOpen, setDevConsoleOpen] = useState(false);
+  const [devConsoleMinimized, setDevConsoleMinimized] = useState(false);
   const [chunkSelectorPoint, setChunkSelectorPoint] = useState<Point>({ x: 4, y: 7 });
   const [debugHubSearch, setDebugHubSearch] = useState('');
   const [debugValidationReport, setDebugValidationReport] = useState<string[]>([]);
   const [assetStudioOpen, setAssetStudioOpen] = useState(false);
+  const [assetStudioMinimized, setAssetStudioMinimized] = useState(false);
   const [assetStudioSearch, setAssetStudioSearch] = useState('');
   const [assetStudioStatus, setAssetStudioStatus] = useState('Imported assets are saved in this browser only.');
   const [selectedCustomAssetId, setSelectedCustomAssetId] = useState<string | null>(null);
@@ -10016,13 +10021,14 @@ if (active) {
               })()}
             </div>
           )}
-          {worldObjectCoordinatesOpen && <WorldObjectCoordinates objects={placedObjects} onMove={(id, x, y, targetChunk) => { pushMapUndo(); setPlacedObjects(prev => prev.map(object => object.id === id ? { ...object, x, y, chunk: targetChunk } : object)); logEditorChange('move-coordinate', 'Moved placed object ' + id + ' to local (' + x + ',' + y + ') chunk ' + targetChunk); }} onClose={() => setWorldObjectCoordinatesOpen(false)} />}
-          {devConsoleOpen && <DevConsole build={BUILD_NUMBER} onClose={() => setDevConsoleOpen(false)} />}
-          {chunkSelectorOpen && <ChunkZoneSelector selectedChunk={chunkSelectorPoint} onSelectChunk={setChunkSelectorPoint} getChunkInfo={getChunkSelectorInfo} mapPaints={mapPaints} onClose={() => setChunkSelectorOpen(false)} />}
-          {debugHubOpen && (
+          {(debugHubMinimized || assetStudioMinimized || chunkSelectorMinimized || worldObjectCoordinatesMinimized || devConsoleMinimized) && <div aria-label="Minimized debug tools" style={{ position: 'fixed', left: 8, right: 8, bottom: 'max(8px, env(safe-area-inset-bottom))', zIndex: 24000, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', pointerEvents: 'none' }}>{debugHubMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setDebugHubMinimized(false)}>🧰 Debug tools</button>}{assetStudioMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setAssetStudioMinimized(false)}>🖼️ Asset Studio</button>}{chunkSelectorMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setChunkSelectorMinimized(false)}>🧭 Chunks</button>}{worldObjectCoordinatesMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setWorldObjectCoordinatesMinimized(false)}>📍 Coordinates</button>}{devConsoleMinimized && <button type="button" className="editor-minimized-chip" style={{pointerEvents:'auto'}} onClick={() => setDevConsoleMinimized(false)}>📟 Dev Console</button>}</div>}
+          {worldObjectCoordinatesOpen && !worldObjectCoordinatesMinimized && <WorldObjectCoordinates objects={placedObjects} onMinimize={() => setWorldObjectCoordinatesMinimized(true)} onMove={(id, x, y, targetChunk) => { pushMapUndo(); setPlacedObjects(prev => prev.map(object => object.id === id ? { ...object, x, y, chunk: targetChunk } : object)); logEditorChange('move-coordinate', 'Moved placed object ' + id + ' to local (' + x + ',' + y + ') chunk ' + targetChunk); }} onClose={() => setWorldObjectCoordinatesOpen(false)} />}
+          {devConsoleOpen && !devConsoleMinimized && <DevConsole build={BUILD_NUMBER} onMinimize={() => setDevConsoleMinimized(true)} onClose={() => { setDevConsoleOpen(false); setDevConsoleMinimized(false); }} />}
+          {chunkSelectorOpen && !chunkSelectorMinimized && <ChunkZoneSelector selectedChunk={chunkSelectorPoint} onSelectChunk={setChunkSelectorPoint} getChunkInfo={getChunkSelectorInfo} mapPaints={mapPaints} onMinimize={() => setChunkSelectorMinimized(true)} onClose={() => { setChunkSelectorOpen(false); setChunkSelectorMinimized(false); }} />}
+          {debugHubOpen && !debugHubMinimized && (
             <div className="editor-panel inspector-panel debug-hub-panel" role="dialog" aria-label="Debug Control Center" style={{ maxHeight: 'min(84vh, 780px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 1260 }}>
               <div className="editor-panel-title">🧰 Debug Control Center <span className="editor-panel-chunk">BUILD {BUILD_NUMBER}</span>
-                <button type="button" className="editor-minimize-btn" onClick={() => setDebugHubOpen(false)} aria-label="Close Debug Control Center">✕</button>
+                <button type="button" className="editor-minimize-btn" onClick={() => setDebugHubMinimized(true)} aria-label="Minimize Debug Control Center">—</button><button type="button" className="editor-minimize-btn" onClick={() => { setDebugHubOpen(false); setDebugHubMinimized(false); }} aria-label="Close Debug Control Center">✕</button>
               </div>
               <div style={{ padding: 8, flexShrink: 0 }}>
                 <input aria-label="Search Debug tools" value={debugHubSearch} onChange={(e) => setDebugHubSearch(e.target.value)} placeholder="Search tools: terrain, NPC, collision…" style={{ width: '100%', boxSizing: 'border-box', padding: 9, borderRadius: 7 }} />
@@ -10035,7 +10041,7 @@ if (active) {
               <div style={{ overflowY: 'auto', padding: 8, minHeight: 0, flex: 1 }}>
                 <strong>World Studio</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
-                  {([{ name: 'Muse Dev Console', keywords: 'ai chat code assistant github commit update engine development', action: () => { setDevConsoleOpen(true); setDebugHubOpen(false); } }, { name: 'World Object Coordinates', keywords: 'placed objects select move coordinate x y chunk house tree rock road', action: () => { setWorldObjectCoordinatesOpen(true); setDebugHubOpen(false); } }, { name: 'Chunk Zone Selector', keywords: 'chunk zones map coordinates outline red select inspect', action: () => { setChunkSelectorPoint(chunk); setChunkSelectorOpen(true); setDebugHubOpen(false); } }, { name: 'World Editor', keywords: 'world map terrain object place', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }, { name: 'Tile Paint', keywords: 'tile ground grass pathway paint', action: () => { setDebugHubOpen(false); if (!tileEditMode) toggleTileEditMode(); else { setMapBuilderMode(true); setMapBuilderMin(false); } } }, { name: 'Asset Studio', keywords: 'asset sprite upload crop rotate flip', action: () => { setDebugHubOpen(false); setAssetStudioOpen(true); } }, { name: 'Building Mover', keywords: 'building house resize move', action: () => { setDebugHubOpen(false); if (!moverMode) toggleMoverMode(); } }, { name: 'Collision Overlay', keywords: 'collision hitbox bounds', action: () => { setCollisionDebugMode((v) => !v); setDebugHubOpen(false); } }, { name: 'Chunk Templates', keywords: 'chunk save template load', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
+                  {([{ name: 'Muse Dev Console', keywords: 'ai chat code assistant github commit update engine development', action: () => { setDevConsoleOpen(true); setDevConsoleMinimized(false); setDebugHubOpen(false); } }, { name: 'World Object Coordinates', keywords: 'placed objects select move coordinate x y chunk house tree rock road', action: () => { setWorldObjectCoordinatesOpen(true); setWorldObjectCoordinatesMinimized(false); setDebugHubOpen(false); } }, { name: 'Chunk Zone Selector', keywords: 'chunk zones map coordinates outline red select inspect', action: () => { setChunkSelectorPoint(chunk); setChunkSelectorOpen(true); setChunkSelectorMinimized(false); setDebugHubOpen(false); } }, { name: 'World Editor', keywords: 'world map terrain object place', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }, { name: 'Tile Paint', keywords: 'tile ground grass pathway paint', action: () => { setDebugHubOpen(false); if (!tileEditMode) toggleTileEditMode(); else { setMapBuilderMode(true); setMapBuilderMin(false); } } }, { name: 'Asset Studio', keywords: 'asset sprite upload crop rotate flip', action: () => { setDebugHubOpen(false); setAssetStudioOpen(true); setAssetStudioMinimized(false); } }, { name: 'Building Mover', keywords: 'building house resize move', action: () => { setDebugHubOpen(false); if (!moverMode) toggleMoverMode(); } }, { name: 'Collision Overlay', keywords: 'collision hitbox bounds', action: () => { setCollisionDebugMode((v) => !v); setDebugHubOpen(false); } }, { name: 'Chunk Templates', keywords: 'chunk save template load', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
                 </div>
                 <strong>Living World & Diagnostics</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
@@ -10051,10 +10057,10 @@ if (active) {
               </div>
             </div>
           )}
-          {assetStudioOpen && (
+          {assetStudioOpen && !assetStudioMinimized && (
             <div className="editor-panel inspector-panel asset-studio-panel" role="dialog" aria-label="Asset Studio" style={{ maxHeight: 'min(82vh, 760px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 1250 }}>
               <div className="editor-panel-title">🖼️ Asset Studio <span className="editor-panel-chunk">{customAssetLibrary.length} local assets</span>
-                <button type="button" className="editor-minimize-btn" onClick={() => setAssetStudioOpen(false)} aria-label="Close Asset Studio">✕</button>
+                <button type="button" className="editor-minimize-btn" onClick={() => setAssetStudioMinimized(true)} aria-label="Minimize Asset Studio">—</button><button type="button" className="editor-minimize-btn" onClick={() => { setAssetStudioOpen(false); setAssetStudioMinimized(false); }} aria-label="Close Asset Studio">✕</button>
               </div>
               <div style={{ display: 'flex', gap: 6, padding: 8, flexShrink: 0 }}>
                 <input aria-label="Search local assets" value={assetStudioSearch} onChange={(e) => setAssetStudioSearch(e.target.value)} placeholder="Search imported assets…" style={{ minWidth: 0, flex: 1, padding: 8, borderRadius: 6 }} />
