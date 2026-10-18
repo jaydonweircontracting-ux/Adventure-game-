@@ -139,13 +139,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '858';
+const BUILD_NUMBER = '859';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '859': 'Add explicit in-world placed-asset selection with yellow highlight and placed flip, rotate, and resize controls',
   '858': 'Increase Asset Studio image upload limit from 1 MB to 10 MB per file',
   '857': 'Improve automatic white/black background removal by detecting connected matte across the full image border',
   '856': 'Asset Studio folder navigation, directory import, placement layer selection, improved sprite editing and background removal controls',
@@ -10331,7 +10332,7 @@ if (active) {
                   <strong>Placed sprites in this chunk ({customPlacedAssets.filter((a) => a.chunk === chunkKey).length})</strong>
                   {customPlacedAssets.filter((a) => a.chunk === chunkKey).map((asset) => (
                     <div key={asset.id} style={{ display: 'flex', gap: 5, alignItems: 'center', marginTop: 5 }}>
-                      <button type="button" className="editor-btn" style={{ flex: 1, minWidth: 0, textAlign: 'left' }} onClick={() => setSelectedPlacedCustomId(asset.id)}>{selectedPlacedCustomId === asset.id ? '● ' : ''}{asset.name} · ({asset.x.toFixed(1)}, {asset.y.toFixed(1)})</button>
+                      <button type="button" className="editor-btn" style={{ flex: 1, minWidth: 0, textAlign: 'left', border: selectedPlacedCustomId === asset.id ? '2px solid #ffd166' : undefined, background: selectedPlacedCustomId === asset.id ? '#51451f' : undefined, color: selectedPlacedCustomId === asset.id ? '#fff2b0' : undefined }} onClick={() => { setSelectedPlacedCustomId(asset.id); setSelectedPlacedId(null); setSelectedHouse(null); setAssetPlacementMode(false); setAssetMoveMode(false); setAssetStudioOpen(true); setAssetStudioMinimized(false); setAssetStudioStatus('Selected ' + asset.name + ' in the world. It is highlighted yellow; use the placed-sprite controls below to flip, rotate, and resize it.'); }}>{selectedPlacedCustomId === asset.id ? '🟡 Selected in world' : '🎯 Select in world'} · {asset.name} ({asset.x.toFixed(1)}, {asset.y.toFixed(1)})</button>
                       <button type="button" className="editor-btn" onClick={() => { pushMapUndo(); setCustomPlacedAssets((prev) => [...prev, { ...asset, id: 'placed-asset-' + Date.now().toString(36), x: Math.min(FIELD_SIZE - 1, asset.x + 8), y: Math.min(FIELD_SIZE - 1, asset.y + 8) }]); }}>Copy</button>
                       <button type="button" className="editor-btn" onClick={() => { pushMapUndo(); setCustomPlacedAssets((prev) => prev.filter((a) => a.id !== asset.id)); if (selectedPlacedCustomId === asset.id) setSelectedPlacedCustomId(null); }}>Delete</button>
                     </div>
@@ -10355,8 +10356,13 @@ if (active) {
                       <button type="button" className="editor-btn" onClick={() => updateSelectedPlacedCustomAsset({ layer: Math.max(-20, Math.min(20, (selectedPlacedCustomAsset.layer ?? 0) + 1)) })}>Layer +</button>
                       <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ scale: Math.max(0.25, Math.min(3, selectedPlacedCustomAsset.scale - 0.1)) })}>− Size</button>
                       <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ scale: Math.max(0.25, Math.min(3, selectedPlacedCustomAsset.scale + 0.1)) })}>＋ Size</button>
-                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ rotation: (selectedPlacedCustomAsset.rotation + 15) % 360 })}>Rotate</button>
-                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ flipX: !selectedPlacedCustomAsset.flipX })}>Flip</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ rotation: (selectedPlacedCustomAsset.rotation - 15 + 360) % 360 })}>↶ Rotate −15°</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ rotation: (selectedPlacedCustomAsset.rotation + 15) % 360 })}>↷ Rotate +15°</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ flipX: !selectedPlacedCustomAsset.flipX })}>↔ Flip X {selectedPlacedCustomAsset.flipX ? '✓' : ''}</button>
+                      <button type="button" className="editor-btn" disabled={Boolean(selectedPlacedCustomAsset.locked)} onClick={() => updateSelectedPlacedCustomAsset({ flipY: !selectedPlacedCustomAsset.flipY })}>↕ Flip Y {selectedPlacedCustomAsset.flipY ? '✓' : ''}</button>
+                      <label style={{ flex: '1 1 100%', fontSize: 11, marginTop: 4 }}>Placed size: {Math.round(selectedPlacedCustomAsset.scale * 100)}%
+                        <input aria-label="Selected placed asset size" type="range" min="25" max="300" step="5" value={Math.round(selectedPlacedCustomAsset.scale * 100)} disabled={Boolean(selectedPlacedCustomAsset.locked)} onChange={(e) => updateSelectedPlacedCustomAsset({ scale: Number(e.target.value) / 100 })} style={{ display: 'block', width: '100%' }} />
+                      </label>
                     </div>
                     </>
                   )}
