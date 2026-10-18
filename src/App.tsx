@@ -139,13 +139,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '856';
+const BUILD_NUMBER = '857';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '857': 'Improve automatic white/black background removal by detecting connected matte across the full image border',
   '856': 'Asset Studio folder navigation, directory import, placement layer selection, improved sprite editing and background removal controls',
   '855': 'Automatically remove solid edge-connected black or white backgrounds from placed sprites while preserving transparent artwork',
   '854': 'Add Asset Studio resize controls and a resizable window, including while minimized',
