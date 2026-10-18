@@ -65,8 +65,8 @@ export function removeEdgeMatte(image: HTMLImageElement): string {
       if (!visited[i]) continue;
       const offset = i * 4;
       const distance = target === 'white'
-        ? Math.min(pixels[offset], pixels[offset + 1], pixels[offset + 2])
-        : 255 - Math.max(pixels[offset], pixels[offset + 1], pixels[offset + 2]);
+        ? 255 - Math.min(pixels[offset], pixels[offset + 1], pixels[offset + 2])
+        : Math.max(pixels[offset], pixels[offset + 1], pixels[offset + 2]);
       // Softly fade antialiased matte pixels instead of leaving a bright/dark fringe.
       pixels[offset + 3] = Math.min(pixels[offset + 3], Math.max(0, Math.round((distance / 75) * 255)));
     }
