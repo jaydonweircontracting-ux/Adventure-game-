@@ -1,6 +1,6 @@
 {
-  "build": "841",
-  "note": "Add chunk zone selector, red chunk outlines, coordinate jump, and selected chunk map preview",
-  "timestamp": "2026-10-17T23:58:00.000Z",
-  "cacheBuster": "build841-chunk-zone-selector"
+  "build": "843",
+  "note": "Persistent generated-tree placement editing and coordinate move undo support",
+  "timestamp": "2026-10-18T00:10:00.000Z",
+  "cacheBuster": "build843-generated-tree-editor"
 }
