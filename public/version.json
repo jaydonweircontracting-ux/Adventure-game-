@@ -1,6 +1,6 @@
 {
-  "build": "871",
-  "note": "Persist Asset Studio selection highlight; minimizing Asset Studio closes World Editor while preserving placement",
-  "timestamp": "2026-10-18T23:15:00.000Z",
-  "cacheBuster": "build871-studio-selection-minimize-fix"
+  "build": "872",
+  "note": "Persist Asset Studio option highlight and isolate Asset Studio minimize/placement from World Editor",
+  "timestamp": "2026-10-18T19:15:00.000Z",
+  "cacheBuster": "build872-studio-selection-world-editor-isolation"
 }
