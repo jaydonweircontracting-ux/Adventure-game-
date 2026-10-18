@@ -139,13 +139,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '860';
+const BUILD_NUMBER = '861';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '861': 'Remove duplicate top-left Options button and remove the green border/frame around the game screen',
   '860': 'Keep Sprite Studio open while selecting assets; Place Asset explicitly enters placement mode and adds a direct reopen control',
   '859': 'Add explicit in-world placed-asset selection with yellow highlight and placed flip, rotate, and resize controls',
   '858': 'Increase Asset Studio image upload limit from 1 MB to 10 MB per file',
@@ -9007,17 +9008,7 @@ if (active) {
           }} aria-label="Close all Debug tools">Close all</button>
         </div>
       ) : null}
-      {/* BUILD 849: Keep Options reachable during normal play, not only from map overlays. */}
-      {!optionsOpen && !inputLocked && !mapOpen && shopStallIndex === null && (
-        <button
-          type="button"
-          aria-label="Open game options"
-          title="Options and settings"
-          data-testid="button-open-game-options"
-          onClick={() => setOptionsOpen(true)}
-          style={{ position: 'fixed', top: 10, left: 10, zIndex: 102, width: 36, height: 36, display: 'grid', placeItems: 'center', padding: 0, borderRadius: 9, border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(20,30,38,0.92)', color: '#fff', boxShadow: '0 2px 8px #0006', touchAction: 'manipulation' }}
-        ><Settings size={17} /></button>
-      )}
+      {/* BUILD 861: Options are accessed from the Bag menu; remove duplicate top-left button. */}
       {/* BUILD 609: Circular minimap in corner */}
       {/* BUILD 663: Hide minimap when Options is open (mandatory UI fix). */}
       {/* BUILD 691: Hide minimap when the world map is open. */}
@@ -13644,7 +13635,12 @@ function Home() {
         </section>
       ) : (
         <>
-          <div className="game-layout">
+          <style>{`
+        /* BUILD 861: Remove the unwanted green frame around the playable screen. */
+        html, body, #root, .game-layout, .game-frame { outline: none !important; border-color: transparent !important; }
+        .game-layout, .game-frame { box-shadow: none !important; }
+      `}</style>
+      <div className="game-layout">
             <GameCrashBoundary chunk={chunk}>
             <GameField rpgConfig={{ look: equippedDagger ? { ...rpgPlayerLook, equipment: Array.from(new Set([...rpgPlayerLook.equipment, 'Dagger'])) } : rpgPlayerLook, forceIso: forceIsoField }} inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} mapOpen={mapOpen} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} onResolveBounty={() => setBounty(emptyBounty())} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
             </GameCrashBoundary>
