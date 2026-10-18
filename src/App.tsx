@@ -3984,10 +3984,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => setCopiedNotice(true)).catch(() => setCopiedNotice(false));
   };
 
-  // Mover zoom level.
-  // Game zoom (base game feature): +/− buttons on the right side. Min 100%.
-  // BUILD 327: default is 225% with the player centered in the viewport.
-  const [gameZoom, setGameZoom] = useState(DEFAULT_GAME_ZOOM);
+  // BUILD 847: persist gameplay zoom so the user's preferred framing survives reloads.
+  // Keep the value clamped to the same range used by the on-screen zoom controls.
+  const [gameZoom, setGameZoom] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem('ag-game-zoom'));
+      return Number.isFinite(saved) && saved >= 1 && saved <= 3 ? saved : DEFAULT_GAME_ZOOM;
+    } catch { return DEFAULT_GAME_ZOOM; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('ag-game-zoom', String(Math.max(1, Math.min(3, gameZoom)))); } catch { /* private browsing */ }
+  }, [gameZoom]);
   // Debug mover mode (toggleable from options menu). Syncs with module-level moveHouses.
   const [moverMode, setMoverMode] = useState(moveHouses);
   // BUILD 422: debug direction test — red numbered arrows per movement
@@ -11958,6 +11965,13 @@ if (active) {
                   <span><strong>Volume</strong><small>{muted ? 'Sound is muted' : 'Sound is on'}</small></span>
                 </div>
                 <button className="options-sound-toggle" onClick={onToggleMute} aria-pressed={muted} data-testid="button-options-sound">{muted ? 'Turn on' : 'Mute'}</button>
+              </div>
+              <div className="options-sound-control" style={{ display: 'block' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <strong>World zoom</strong><span aria-live="polite">{Math.round(gameZoom * 100)}%</span>
+                </div>
+                <input aria-label="World zoom" data-testid="input-world-zoom" type="range" min="100" max="300" step="25" value={Math.round(gameZoom * 100)} onChange={(e) => setGameZoom(Math.max(1, Math.min(3, Number(e.target.value) / 100)))} style={{ width: '100%', minHeight: 30, touchAction: 'pan-y' }} />
+                <small style={{ display: 'block', opacity: 0.8 }}>Adjust how much of the world you see. Your choice is saved on this device.</small>
               </div>
               <div className="options-actions">
                 <button className="options-action primary" onClick={() => { onSave(); setOptionsOpen(false); }} data-testid="button-save-browser">
