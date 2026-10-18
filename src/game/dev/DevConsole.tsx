@@ -1,13 +1,13 @@
 import { useState } from 'react';
 
-type Props = { build: string; onClose: () => void };
+type Props = { build: string; onClose: () => void; onMinimize?: () => void };
 
 /**
  * In-game development workspace. It deliberately does not claim to call an AI
  * service directly: it prepares a portable, context-rich request for ChatGPT/Muse
  * and links to the source-of-truth branch until a secure bridge endpoint exists.
  */
-export default function DevConsole({ build, onClose }: Props) {
+export default function DevConsole({ build, onClose, onMinimize }: Props) {
   const [request, setRequest] = useState('');
   const [context, setContext] = useState('debug-tools');
   const [notes, setNotes] = useState(() => {
@@ -56,7 +56,7 @@ export default function DevConsole({ build, onClose }: Props) {
   return <section role="dialog" aria-label="Muse Dev Console" style={{ position: 'fixed', inset: 'max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom))', zIndex: 23000, background: '#101a17', color: '#f2f5f0', border: '1px solid #597667', borderRadius: 12, boxShadow: '0 12px 40px #000c', display: 'flex', flexDirection: 'column', overflow: 'hidden', font: '13px system-ui' }}>
     <header style={{ padding: 12, borderBottom: '1px solid #35483e', display: 'flex', alignItems: 'center', gap: 10 }}>
       <div style={{ flex: 1 }}><strong style={{ fontSize: 16 }}>Muse Dev Console</strong><div style={{ color: '#b8c8bd', marginTop: 3 }}>Build {build} · in-game development workspace</div></div>
-      <button onClick={onClose} style={{ background: '#263b31', color: 'white', border: '1px solid #6d8a79', borderRadius: 8, padding: '8px 11px' }}>Close</button>
+      {onMinimize && <button onClick={onMinimize} aria-label="Minimize Muse Dev Console" style={{ background: '#263b31', color: 'white', border: '1px solid #6d8a79', borderRadius: 8, padding: '8px 11px' }}>—</button>}<button onClick={onClose} style={{ background: '#263b31', color: 'white', border: '1px solid #6d8a79', borderRadius: 8, padding: '8px 11px' }}>✕</button>
     </header>
     <div style={{ overflow: 'auto', padding: 12, display: 'grid', gap: 12 }}>
       <div style={{ border: '1px solid #3d5548', borderRadius: 8, padding: 10, background: '#17251f' }}>
