@@ -1,6 +1,6 @@
 {
-  "build": "863",
-  "note": "Asset Studio Select existing activates world selection for existing in-game houses/buildings",
-  "timestamp": "2026-10-18T08:15:00.000Z",
-  "cacheBuster": "build863-select-existing-houses"
+  "build": "864",
+  "note": "Audit editor selection controls and synchronize the app, startup, and version build markers",
+  "timestamp": "2026-10-17T21:00:00.000Z",
+  "cacheBuster": "build864-editor-audit"
 }
