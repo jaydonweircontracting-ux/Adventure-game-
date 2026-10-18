@@ -3180,7 +3180,7 @@ body {
 .options-overlay {
   position: absolute;
   inset: 0;
-  z-index: 40;
+  z-index: 26000;
   display: grid;
   place-items: center;
   padding: 22px;
