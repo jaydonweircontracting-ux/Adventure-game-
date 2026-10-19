@@ -5740,14 +5740,12 @@ body {
 }
 
 
-/* BUILD 873: Keep combat/run controls anchored and visible on touch screens.
-   They are rendered inside the top HUD flex row; fixed positioning prevents
-   them from being pushed off-screen by HUD layout changes or editor panels. */
+/* BUILD 876: Keep combat controls visible above editor chips and on small touch screens. */
 .field-attack-button,
 .field-run-button {
   position: fixed !important;
   right: max(16px, env(safe-area-inset-right)) !important;
-  z-index: 12000 !important;
+  z-index: 30000 !important;
   display: grid !important;
   place-items: center !important;
   width: 52px !important;
@@ -5759,14 +5757,16 @@ body {
   color: #fff4d8 !important;
   box-shadow: 0 3px 12px rgba(0, 0, 0, .55) !important;
   pointer-events: auto !important;
+  visibility: visible !important;
+  opacity: 1 !important;
   touch-action: none !important;
 }
 .field-attack-button {
-  bottom: max(18px, env(safe-area-inset-bottom)) !important;
+  bottom: max(86px, calc(env(safe-area-inset-bottom) + 74px)) !important;
   background: rgba(131, 67, 55, .96) !important;
 }
 .field-run-button {
-  bottom: max(80px, calc(env(safe-area-inset-bottom) + 68px)) !important;
+  bottom: max(148px, calc(env(safe-area-inset-bottom) + 136px)) !important;
   background: rgba(38, 91, 57, .96) !important;
 }
 .field-run-button.is-running {
