@@ -266,6 +266,82 @@ export function raiseMountains(world: GeneratedWorld, cx: number, cy: number, ra
   return { ...world, cells };
 }
 
+/**
+ * Adapter for the game's existing chunk/biome vocabulary. This export is a
+ * non-destructive map template: it never overwrites the authored live world.
+ */
+export type AdventureMapBiome = 'ocean' | 'shore' | 'meadow' | 'forest' | 'desert' | 'tundra' | 'rock';
+
+export interface AdventureWorldMapExport {
+  format: 'adventure-world-map';
+  version: 1;
+  generator: 'adventure-native-worldgen';
+  seed: number;
+  width: number;
+  height: number;
+  seaLevel: number;
+  tiles: Array<{
+    x: number;
+    y: number;
+    biome: AdventureMapBiome;
+    sourceBiome: WorldBiome;
+    elevation: number;
+    temperature: number;
+    moisture: number;
+    water: boolean;
+    river: boolean;
+    forest: boolean;
+    plate: number;
+  }>;
+}
+
+function toAdventureBiome(cell: WorldCell): AdventureMapBiome {
+  switch (cell.biome) {
+    case 'ocean': return 'ocean';
+    case 'beach': return 'shore';
+    case 'desert': return 'desert';
+    case 'savanna': return 'meadow';
+    case 'grassland': return 'meadow';
+    case 'woodland':
+    case 'forest':
+    case 'rainforest':
+    case 'taiga': return 'forest';
+    case 'tundra': return 'tundra';
+    case 'alpine': return 'rock';
+    case 'wetland': return 'meadow';
+  }
+}
+
+/** Convert the detailed climate grid to the game's existing biome vocabulary. */
+export function exportAdventureWorldMap(world: GeneratedWorld): AdventureWorldMapExport {
+  return {
+    format: 'adventure-world-map',
+    version: 1,
+    generator: 'adventure-native-worldgen',
+    seed: world.seed >>> 0,
+    width: world.width,
+    height: world.height,
+    seaLevel: world.seaLevel,
+    tiles: world.cells.map((cell, index) => ({
+      x: index % world.width,
+      y: Math.floor(index / world.width),
+      biome: toAdventureBiome(cell),
+      sourceBiome: cell.biome,
+      elevation: cell.height,
+      temperature: cell.temperature,
+      moisture: cell.moisture,
+      water: cell.water,
+      river: cell.river,
+      forest: cell.forest,
+      plate: cell.plate,
+    })),
+  };
+}
+
+export function serializeAdventureWorldMap(world: GeneratedWorld): string {
+  return JSON.stringify(exportAdventureWorldMap(world));
+}
+
 /** Save/load format is versioned JSON so future schemas can migrate safely. */
 export function serializeWorld(world: GeneratedWorld): string {
   return JSON.stringify(world);
