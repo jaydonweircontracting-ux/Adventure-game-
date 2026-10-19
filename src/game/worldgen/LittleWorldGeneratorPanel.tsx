@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   generateWorld, renderWorldPixels, raiseMountains, smoothTerrain,
-  serializeWorld, deserializeWorld,
+  serializeWorld, deserializeWorld, serializeAdventureWorldMap,
   type GeneratedWorld, type WorldOverlay,
 } from './littleWorldGenerator';
 
@@ -51,6 +51,18 @@ export default function LittleWorldGeneratorPanel() {
     setMessage('World save exported.');
   };
 
+  const downloadAdventureMap = () => {
+    if (!world) return;
+    const blob = new Blob([serializeAdventureWorldMap(world)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'adventure-map-' + (world.seed >>> 0) + '.json';
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    setMessage('Adventure map template exported with ' + world.cells.length + ' tiles. Existing world data was not changed.');
+  };
+
   const loadSave = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -78,7 +90,7 @@ export default function LittleWorldGeneratorPanel() {
     <section className="flex h-full min-h-0 flex-col gap-3 overflow-auto rounded-xl border border-white/15 bg-slate-950/95 p-3 text-slate-100">
       <header>
         <h2 className="text-lg font-semibold">Little World Generator</h2>
-        <p className="text-xs text-slate-400">Native seeded terrain, climate, rivers and biome preview</p>
+        <p className="text-xs text-slate-400">Native terrain, tectonics, erosion, rivers, climate, biomes and forests</p>
       </header>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         <label className="flex flex-col gap-1 text-xs">Width
@@ -96,6 +108,7 @@ export default function LittleWorldGeneratorPanel() {
         <button className="rounded bg-slate-700 px-3 py-2 text-sm hover:bg-slate-600" disabled={!world} onClick={() => world && setWorld(smoothTerrain(world, 1))}>Smooth terrain</button>
         <button className="rounded bg-slate-700 px-3 py-2 text-sm hover:bg-slate-600" disabled={!world} onClick={editMountains}>Raise mountains</button>
         <button className="rounded bg-slate-700 px-3 py-2 text-sm hover:bg-slate-600" disabled={!world} onClick={downloadSave}>Export save</button>
+        <button className="rounded bg-indigo-700 px-3 py-2 text-sm hover:bg-indigo-600" disabled={!world} onClick={downloadAdventureMap}>Export Adventure map</button>
         <label className="cursor-pointer rounded bg-slate-700 px-3 py-2 text-sm hover:bg-slate-600">Load save
           <input className="hidden" type="file" accept="application/json,.json" onChange={loadSave} />
         </label>
