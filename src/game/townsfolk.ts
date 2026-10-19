@@ -85,6 +85,11 @@ export type Townsperson = {
   fleeUntilTick?: number;
   /** Position of the threat to run away from. */
   fleeFrom?: TownsfolkPoint;
+  /** BUILD 879: hostile response to an attacker; target position is refreshed by the world combat loop. */
+  fightBackUntilTick?: number;
+  fightBackTarget?: TownsfolkPoint;
+  /** World tick when this NPC may next land a melee hit on the player. */
+  fightBackNextAttackTick?: number;
   /**
    * BUILD 704: true while the NPC is actively running (fleeing). Walk is the
    * default; the renderer picks the run cycle only when this is true.
@@ -867,24 +872,34 @@ export function npcHp(npc: Townsperson): number {
 export const NPC_RESPAWN_TICKS = 7200;
 
 /**
- * Apply damage to an NPC (BUILD 441). Returns the updated NPC.
- * If HP reaches 0, the NPC dies (deadUntilTick set, flee cleared).
- * Survivors start fleeing from the attacker.
+ * BUILD 879: NPCs make deterministic fight-or-flight decisions after being hit.
+ * Guards and combat-capable archetypes are more likely to retaliate; civilians
+ * still usually flee. A surviving fighter chases the attacker instead of fleeing.
  */
 export function damageNpc(npc: Townsperson, damage: number, from: TownsfolkPoint, tick: number): Townsperson {
   const newHp = npcHp(npc) - damage;
   if (newHp <= 0) {
     return {
-      ...npc,
-      hp: 0,
-      deadUntilTick: tick + NPC_RESPAWN_TICKS,
-      fleeUntilTick: undefined,
-      fleeFrom: undefined,
-      running: false,
+      ...npc, hp: 0, deadUntilTick: tick + NPC_RESPAWN_TICKS,
+      fleeUntilTick: undefined, fleeFrom: undefined,
+      fightBackUntilTick: undefined, fightBackTarget: undefined, running: false,
+    };
+  }
+  const threshold = npc.archetype === 'guard' ? 88
+    : npc.archetype === 'bandit' || npc.archetype === 'adventurer' ? 78
+    : npc.archetype === 'merchant' || npc.archetype === 'innkeeper' ? 22
+    : npc.archetype === 'elder' || npc.archetype === 'child' ? 8 : 38;
+  const personalityRoll = Math.abs((npc.seed * 31 + Math.floor(tick / 3) * 17 + Math.round(npcHp(npc))) % 100);
+  if (personalityRoll < threshold) {
+    return {
+      ...npc, hp: newHp,
+      fleeUntilTick: undefined, fleeFrom: undefined,
+      fightBackUntilTick: tick + 900, fightBackTarget: { ...from },
+      moving: true, running: true, activity: 'Fighting back!',
     };
   }
   return {
-    ...startNpcFlee(npc, from, tick),
+    ...startNpcFlee({ ...npc, fightBackUntilTick: undefined, fightBackTarget: undefined }, from, tick),
     hp: newHp,
   };
 }
@@ -998,6 +1013,25 @@ function advanceOne(
     if (clock.tick < npc.deadUntilTick) return npc;
     // Respawn: back home, full HP, clear death.
     return { ...npc, hp: undefined, deadUntilTick: undefined, position: { ...npc.home }, activity: 'At home' };
+  }
+
+  // --- BUILD 879: retaliating NPCs chase the player and suspend their schedule. ---
+  if (!npc.indoors && npc.fightBackUntilTick !== undefined && npc.fightBackTarget) {
+    if (clock.tick < npc.fightBackUntilTick) {
+      const dx = npc.fightBackTarget.x - npc.position.x;
+      const dy = npc.fightBackTarget.y - npc.position.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 1.35) {
+        const chaseStep = step * 1.35;
+        const nx = dx / (dist || 1), ny = dy / (dist || 1);
+        const facing: TownsfolkFacing = Math.abs(nx) >= Math.abs(ny)
+          ? (nx >= 0 ? 'right' : 'left')
+          : (ny >= 0 ? 'down' : 'up');
+        return { ...npc, position: { x: npc.position.x + nx * Math.min(chaseStep, dist - 1.1), y: npc.position.y + ny * Math.min(chaseStep, dist - 1.1) }, facing, moving: true, running: true, activity: 'Fighting back!' };
+      }
+      return { ...npc, moving: false, running: false, activity: 'Attacking the player' };
+    }
+    npc = { ...npc, fightBackUntilTick: undefined, fightBackTarget: undefined, fightBackNextAttackTick: undefined, running: false };
   }
 
   // --- FLEEING (BUILD 436): run away from the attacker, skip schedule. ---
