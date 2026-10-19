@@ -47,8 +47,8 @@ try {
   const canMove = await page.evaluate(() => window.__gameTest.canMove(1, 0));
   check('Movement validation works', typeof canMove === 'boolean');
 
-  // BUILD 847: the mobile options slider must persist the user's zoom preference.
-  await page.click('[data-testid="button-open-game-options"]');
+  // BUILD 877: use the gated test hook; the old HUD selector no longer exists.
+  await page.evaluate(() => window.__gameTest.openOptions());
   const zoomSlider = page.locator('[data-testid="input-world-zoom"]');
   await zoomSlider.waitFor({ state: 'visible' });
   await zoomSlider.focus();
