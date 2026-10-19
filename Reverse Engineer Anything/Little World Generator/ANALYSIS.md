@@ -85,3 +85,15 @@ Keep simulation state independent from UI state, make random generation seedable
 
 Official REA reference: https://github.com/morluto/rea
 REA website: https://rea.tools/
+
+
+## Follow-up work completed (2026-10-19)
+
+Static inspection was extended to enumerate additional GameMaker resource markers and names:
+- Resource chunks include `SCPT`, `GLOB`, `SHDR`, and `ROOM`.
+- Additional visible names include `sMountain`, `oWorldGen`, `oRiver`, and `oForest`.
+- The archive readme was checked directly; all seven feature groups above come from its user-facing controls and descriptions.
+
+The recommended next step has been started as a clean-room native implementation in `src/game/worldgen/littleWorldGenerator.ts`. It includes seeded terrain generation with stylized plate boundaries, erosion, flow accumulation and river flags, climate/biome/forest fields, terrain editing helpers, pixel buffers for diagnostic overlays, and validated JSON save/load. A test file was added at `tests/little-world-generator.test.ts`.
+
+**Still not completed:** no REA engine execution, no full GameMaker resource decompilation, and no integration of a user-facing editor into the live React game. The new generator is a behavior-inspired implementation, not recovered original source or proof of identical output. See [INTEGRATION.md](INTEGRATION.md) for the staged plan.
