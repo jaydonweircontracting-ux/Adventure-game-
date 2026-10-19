@@ -4122,7 +4122,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       }
       const identity = button.getAttribute('data-testid') || button.getAttribute('aria-label') || button.getAttribute('title') || '';
       const matchesIdentity = Boolean(assetStudioPickedOption.identity) && identity === assetStudioPickedOption.identity;
-      const matchesIndex = !assetStudioPickedOption.identity && index === assetStudioPickedOption.index;
+      const matchesIndex = index === assetStudioPickedOption.index;
       const matchesLabel = normalize(button.getAttribute('aria-label') || button.textContent) === assetStudioPickedOption.label;
       if (matchesIdentity || matchesIndex || matchesLabel) button.setAttribute('data-studio-picked', 'true');
       else button.removeAttribute('data-studio-picked');
