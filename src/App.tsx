@@ -140,13 +140,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '878';
+const BUILD_NUMBER = '879';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '879': 'Give NPCs personality-based fight-or-flight reactions, pursuit movement, and cooldown-based melee damage when attacked',
   '878': 'Make guards visibly sprint to wanted players before the flee, jail, or fine prompt appears',
   '877': 'Add a non-destructive Adventure Map export adapter for generated terrain, climate, river, plate, and biome data',
   '869': 'Fix starting-house selection in Asset Studio with a direct select button and reliable house hit area',
@@ -6181,6 +6182,51 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     }, 150);
     return () => window.clearInterval(timer);
   }, [bounty.amount, inPrison, chunk.x, chunk.y, guardEncounter]);
+  // BUILD 879: retaliation loop. Fighters refresh their pursuit target and
+  // land real melee damage on a cooldown; it is disabled indoors and during
+  // the guard's legal encounter prompt.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (interiorRef.current || inPrison || guardEncounter || gameOverRef.current ||
+          chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) return;
+      const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+      const player = positionRef.current;
+      let changed = false;
+      let damageTaken = 0;
+      let attackerName = '';
+      const next = townsfolkRef.current.map((npc) => {
+        if (npc.indoors || isNpcDead(npc, tick) || npc.fightBackUntilTick === undefined || tick >= npc.fightBackUntilTick) return npc;
+        const refreshed = { ...npc, fightBackTarget: { ...player } };
+        const dist = Math.hypot(npc.position.x - player.x, npc.position.y - player.y);
+        if (dist > 1.8 || tick < (npc.fightBackNextAttackTick ?? 0)) {
+          if (refreshed.fightBackTarget?.x !== npc.fightBackTarget?.x || refreshed.fightBackTarget?.y !== npc.fightBackTarget?.y) changed = true;
+          return refreshed;
+        }
+        // A slow, readable melee cadence gives the player a chance to escape.
+        damageTaken += npc.archetype === 'guard' || npc.archetype === 'bandit' ? 7 : 4;
+        attackerName = npc.name;
+        changed = true;
+        return { ...refreshed, fightBackNextAttackTick: tick + 48, moving: false, running: false, activity: 'Attacking the player' };
+      });
+      if (changed) {
+        townsfolkRef.current = next;
+        setTownsfolk(next);
+      }
+      if (damageTaken > 0) {
+        const nextHp = Math.max(0, playerHpRef.current - damageTaken);
+        playerHpRef.current = nextHp;
+        setPlayerHp(nextHp);
+        spawnCombatText('-' + damageTaken, player, 'damage');
+        setLogs((current) => [{ text: attackerName + ' fights back and hits you for ' + damageTaken + ' damage.', color: 'red' }, ...current].slice(0, 3));
+        if (nextHp <= 0 && !gameOverRef.current) {
+          gameOverRef.current = true;
+          setGameOver(true);
+        }
+      }
+    }, 150);
+    return () => window.clearInterval(timer);
+  }, [inPrison, guardEncounter]);
+
   useEffect(() => { cornStalksRef.current = cornStalks; }, [cornStalks]);
   useEffect(() => { targetGoatIdRef.current = targetGoatId; }, [targetGoatId]);
   useEffect(() => { targetMonsterIdRef.current = targetMonsterId; }, [targetMonsterId]);
