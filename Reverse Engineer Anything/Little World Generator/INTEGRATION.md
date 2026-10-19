@@ -29,11 +29,11 @@ Included:
 - Mountain brush helper
 - Versioned JSON save/load with validation
 
-The module is independent of React and the browser UI so the existing game can integrate it incrementally. A standalone React panel is also available at `src/game/worldgen/LittleWorldGeneratorPanel.tsx`; it provides generation settings, map-overlay selection, terrain smoothing/mountain actions, and JSON save/load controls. **The panel has not yet been mounted into the existing App/debug-menu entry point**, so it is not accessible in the live game until that integration step is completed.
+The module is independent of React and the browser UI. The React panel at `src/game/worldgen/LittleWorldGeneratorPanel.tsx` provides generation settings, map-overlay selection, terrain smoothing/mountain actions, and JSON save/load controls. It is now mounted in `src/App.tsx` and launched from Debug Control Center → World Studio → **Little World Generator**. The preview is a separate floating window and does not replace the existing World Editor.
 
 ## Verification
 
-Run `npx tsx tests/little-world-generator.test.ts` to test seeded repeatability, water/land output, river generation, pixel buffers, save/load, smoothing, mountain editing, and malformed-save rejection.
+Run `npm run test:little-world-generator` to test seeded repeatability, water/land output, river generation, pixel buffers, save/load, smoothing, mountain editing, and malformed-save rejection. This test is included in the GitHub Pages build workflow.
 
 ## Next reverse-engineering pass
 
@@ -41,6 +41,6 @@ Run `npx tsx tests/little-world-generator.test.ts` to test seeded repeatability,
 2. If unsupported, use a compatible GameMaker data.win parser/decompiler in a controlled environment.
 3. Recover the actual scripts, objects, room/resource metadata, and function bodies where technically possible.
 4. Compare recovered behavior against the clean-room implementation, correcting only where evidence supports it.
-5. Integrate a user-facing world-gen/editor screen only after checking the current engine entry points and avoiding duplicate world-state systems.
+5. Continue refining integration with the game's existing world-state/editor APIs rather than creating duplicate persistent world state.
 
 Official reference: https://github.com/morluto/rea

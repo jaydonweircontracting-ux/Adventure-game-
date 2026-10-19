@@ -35,6 +35,8 @@ jobs:
         run: npm run test:iso-directions
       - name: Settlement economy regression test
         run: npm run test:settlement-economy
+      - name: Little World Generator regression test
+        run: npm run test:little-world-generator
       - name: Build site
         run: npm run build
       - name: Verify update notifier build-number consistency
