@@ -140,13 +140,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '876';
+const BUILD_NUMBER = '877';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '877': 'Add a non-destructive Adventure Map export adapter for generated terrain, climate, river, plate, and biome data',
   '869': 'Fix starting-house selection in Asset Studio with a direct select button and reliable house hit area',
   '870': 'Keep Asset Studio minimize independent from World Editor; restore button reopens Asset Studio',
   '873': 'Keep Asset Studio selection highlight persistent, isolate minimize from World Editor, and restore visible Attack and Sprint HUD buttons',
@@ -5534,6 +5535,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (!window.location.search.includes('testmode=1')) return;
       (window as unknown as { __gameTest: unknown }).__gameTest = {
         getBuild: () => BUILD_NUMBER,
+        // BUILD 877: open the current options panel without relying on a removed HUD selector.
+        openOptions: () => setOptionsOpen(true),
         getPlayerPos: () => ({ ...positionRef.current }),
         getChunk: () => ({ ...chunkRef.current }),
         getPlayerHp: () => playerHpRef.current,
