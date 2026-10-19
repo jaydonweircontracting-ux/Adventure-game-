@@ -6136,22 +6136,50 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     setBarks((previous) => { let changed = false; const next = { ...previous }; for (const npc of townsfolk) if (isNpcDead(npc, tick) && next[npc.id]) { delete next[npc.id]; changed = true; } return changed ? next : previous; });
   }, [townsfolk, townsfolkDialogue]);
 
-  // BUILD 728: wanted criminals are pursued by the nearest living guard in Mosslight.
+  // BUILD 878: a wanted encounter is proximity-triggered, never attack-triggered.
+  // Guards visibly sprint toward a witnessed-crime suspect; only the guard's
+  // actual arrival opens the flee / surrender / fine prompt.
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (wantedLevel(bounty.amount) <= 0 || inPrison || interiorRef.current || chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) return;
-      const tick = brainRef.current?.worldCore.getClock().tick ?? 0; const player = positionRef.current;
+      if (wantedLevel(bounty.amount) <= 0 || inPrison || interiorRef.current || guardEncounter || chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) return;
+      const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+      const player = positionRef.current;
       const guards = townsfolkRef.current.filter((npc) => npc.archetype === 'guard' && !npc.indoors && !isNpcDead(npc, tick));
       if (!guards.length) return;
       guards.sort((a, b) => Math.hypot(a.position.x - player.x, a.position.y - player.y) - Math.hypot(b.position.x - player.x, b.position.y - player.y));
-      const guard = guards[0]; const dx = player.x - guard.position.x; const dy = player.y - guard.position.y; const dist = Math.hypot(dx, dy);
-      if (dist <= 6) { if (Date.now() >= guardCooldownUntilRef.current) { setTownsfolkDialogue(null); setDialogueTopic(null); setGuardEncounter((current) => current || { guardId: guard.id, guardName: guard.name, bounty: bounty.amount }); } return; }
-      if (dist > 38) return; const step = Math.min(1.25, dist - 4.5); if (step <= 0) return;
-      const nextGuard = { ...guard, position: { x: guard.position.x + dx / dist * step, y: guard.position.y + dy / dist * step }, moving: true, running: true, activity: 'Pursuing a wanted criminal', facing: Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' as const : 'left' as const) : (dy > 0 ? 'down' as const : 'up' as const) };
-      const next = townsfolkRef.current.map((npc) => npc.id === guard.id ? nextGuard : npc); townsfolkRef.current = next; setTownsfolk(next);
-    }, 750);
+      const guard = guards[0];
+      const dx = player.x - guard.position.x;
+      const dy = player.y - guard.position.y;
+      const dist = Math.hypot(dx, dy);
+      // Do not show the prompt from a distant or stale guard position. The
+      // guard must visibly reach the player first.
+      if (dist <= 3.25) {
+        if (Date.now() >= guardCooldownUntilRef.current) {
+          setTownsfolkDialogue(null);
+          setDialogueTopic(null);
+          setGuardEncounter((current) => current || { guardId: guard.id, guardName: guard.name, bounty: bounty.amount });
+        }
+        return;
+      }
+      // Pursue from anywhere in the settlement, not just within the old 38-unit
+      // bubble. Move in frequent short steps so the sprint looks continuous.
+      if (dist > 120) return;
+      const step = Math.min(0.72, dist - 2.6);
+      if (step <= 0) return;
+      const nextGuard = {
+        ...guard,
+        position: { x: guard.position.x + dx / dist * step, y: guard.position.y + dy / dist * step },
+        moving: true,
+        running: true,
+        activity: 'Running to apprehend a wanted criminal',
+        facing: Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' as const : 'left' as const) : (dy > 0 ? 'down' as const : 'up' as const),
+      };
+      const next = townsfolkRef.current.map((npc) => npc.id === guard.id ? nextGuard : npc);
+      townsfolkRef.current = next;
+      setTownsfolk(next);
+    }, 150);
     return () => window.clearInterval(timer);
-  }, [bounty.amount, inPrison, chunk.x, chunk.y]);
+  }, [bounty.amount, inPrison, chunk.x, chunk.y, guardEncounter]);
   useEffect(() => { cornStalksRef.current = cornStalks; }, [cornStalks]);
   useEffect(() => { targetGoatIdRef.current = targetGoatId; }, [targetGoatId]);
   useEffect(() => { targetMonsterIdRef.current = targetMonsterId; }, [targetMonsterId]);
