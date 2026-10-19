@@ -196,7 +196,7 @@ export function generateWorld(options: WorldGenOptions): GeneratedWorld {
     }
   }
   for (const i of order) if (downstream[i] >= 0) flow[downstream[i]] += flow[i];
-  const riverThreshold = Math.max(7, Math.floor(Math.min(width, height) * 0.65));
+  const riverThreshold = Math.max(5, Math.floor(Math.min(width, height) * 0.25));
   for (let i = 0; i < count; i++) if (heights[i] >= seaLevel && flow[i] >= riverThreshold) rivers[i] = 1;
 
   // Climate uses latitude, altitude, broad moisture fields and river proximity.
@@ -242,7 +242,10 @@ export function smoothTerrain(world: GeneratedWorld, iterations = 1): GeneratedW
       cells[i].height = total / n;
     }
   }
-  for (const c of cells) c.water = c.height < world.seaLevel;
+  for (const c of cells) {
+    c.water = c.height < world.seaLevel;
+    c.biome = classifyBiome(c.height, world.seaLevel, c.temperature, c.moisture, c.river);
+  }
   return { ...world, cells };
 }
 
@@ -256,7 +259,10 @@ export function raiseMountains(world: GeneratedWorld, cx: number, cy: number, ra
       if (d <= 1) cells[idx(world.width, x, y)].height = clamp(cells[idx(world.width, x, y)].height + strength * (1 - smooth(d)));
     }
   }
-  for (const c of cells) c.water = c.height < world.seaLevel;
+  for (const c of cells) {
+    c.water = c.height < world.seaLevel;
+    c.biome = classifyBiome(c.height, world.seaLevel, c.temperature, c.moisture, c.river);
+  }
   return { ...world, cells };
 }
 
