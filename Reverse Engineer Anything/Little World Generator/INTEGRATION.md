@@ -29,7 +29,7 @@ Included:
 - Mountain brush helper
 - Versioned JSON save/load with validation
 
-The module is independent of React and the browser UI so the existing game can integrate it incrementally.
+The module is independent of React and the browser UI so the existing game can integrate it incrementally. A standalone React panel is also available at `src/game/worldgen/LittleWorldGeneratorPanel.tsx`; it provides generation settings, map-overlay selection, terrain smoothing/mountain actions, and JSON save/load controls. **The panel has not yet been mounted into the existing App/debug-menu entry point**, so it is not accessible in the live game until that integration step is completed.
 
 ## Verification
 
