@@ -6203,7 +6203,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           return refreshed;
         }
         // A slow, readable melee cadence gives the player a chance to escape.
-        damageTaken += npc.archetype === 'guard' || npc.archetype === 'bandit' ? 7 : 4;
+        damageTaken += npc.archetype === 'guard' || npc.archetype === 'smith' ? 7 : 4;
         attackerName = npc.name;
         changed = true;
         return { ...refreshed, fightBackNextAttackTick: tick + 48, moving: false, running: false, activity: 'Attacking the player' };
