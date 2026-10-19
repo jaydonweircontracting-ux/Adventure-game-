@@ -886,9 +886,10 @@ export function damageNpc(npc: Townsperson, damage: number, from: TownsfolkPoint
     };
   }
   const threshold = npc.archetype === 'guard' ? 88
-    : npc.archetype === 'bandit' || npc.archetype === 'adventurer' ? 78
-    : npc.archetype === 'merchant' || npc.archetype === 'innkeeper' ? 22
-    : npc.archetype === 'elder' || npc.archetype === 'child' ? 8 : 38;
+    : npc.archetype === 'smith' ? 62
+    : npc.archetype === 'merchant' ? 22
+    : npc.archetype === 'priest' || npc.archetype === 'child' ? 8
+    : npc.archetype === 'farmer' ? 28 : 38;
   const personalityRoll = Math.abs((npc.seed * 31 + Math.floor(tick / 3) * 17 + Math.round(npcHp(npc))) % 100);
   if (personalityRoll < threshold) {
     return {
