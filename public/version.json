@@ -1,6 +1,6 @@
 {
-  "build": "873",
-  "note": "Persistent Studio selection highlight, independent Asset Studio minimize, restored Attack and Sprint HUD controls",
-  "timestamp": "2026-10-18T20:39:00.000Z",
-  "cacheBuster": "build873-studio-hud-controls"
+  "build": "874",
+  "note": "Persist Studio selection highlight, fully close World Editor when minimizing Asset Studio, keep Attack and Sprint controls visible",
+  "timestamp": "2026-10-19T01:51:27.473Z",
+  "cacheBuster": "build874-studio-selection-minimize-hud"
 }
