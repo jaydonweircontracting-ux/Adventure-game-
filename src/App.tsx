@@ -5535,6 +5535,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (!window.location.search.includes('testmode=1')) return;
       (window as unknown as { __gameTest: unknown }).__gameTest = {
         getBuild: () => BUILD_NUMBER,
+        // BUILD 877: open the current options panel without relying on a removed HUD selector.
+        openOptions: () => setOptionsOpen(true),
         getPlayerPos: () => ({ ...positionRef.current }),
         getChunk: () => ({ ...chunkRef.current }),
         getPlayerHp: () => playerHpRef.current,
