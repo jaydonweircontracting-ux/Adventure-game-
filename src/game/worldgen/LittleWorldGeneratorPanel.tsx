@@ -24,7 +24,8 @@ export default function LittleWorldGeneratorPanel() {
     canvas.height = world.height;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const image = new ImageData(pixels, world.width, world.height);
+    const image = ctx.createImageData(world.width, world.height);
+    image.data.set(pixels);
     ctx.putImageData(image, 0, 0);
   }, [world, pixels]);
 
