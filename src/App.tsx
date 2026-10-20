@@ -6361,53 +6361,60 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // every few seconds. Facing the player pauses them.
   useEffect(() => {
     const timer = window.setInterval(() => {
-      setNpcStates((current) => current.map((npc) => {
-        const player = positionRef.current;
-        const nearby = Math.hypot(player.x - npc.position.x, player.y - npc.position.y) < 18;
-        const directions: Direction[] = ['up', 'right', 'down', 'left'];
-        const facePlayer: Direction = Math.abs(player.x - npc.position.x) >= Math.abs(player.y - npc.position.y)
-          ? (player.x >= npc.position.x ? 'right' : 'left')
-          : (player.y >= npc.position.y ? 'down' : 'up');
-        if (nearby) {
-          return npc.moving || npc.target || npc.facing !== facePlayer
-            ? { ...npc, facing: facePlayer, moving: false, target: null }
-            : npc;
-        }
-        let target = npc.target;
-        let facing = npc.facing;
-        if (!target) {
-          // Use schedule-based target instead of random wandering
-          const clock = brainRef.current?.worldCore.getClock();
-          const hour = clock?.hour ?? 12;
-          const scheduleTarget = npcScheduleTarget(npc, hour);
-          const distToSchedule = Math.hypot(scheduleTarget.x - npc.position.x, scheduleTarget.y - npc.position.y);
-          // If far from schedule location, head there; otherwise wander nearby
-          if (distToSchedule > 8) {
-            target = scheduleTarget;
-          } else if (Math.random() < 0.05) {
-            facing = directions[Math.floor(Math.random() * directions.length)];
-            target = {
-              x: Math.min(86, Math.max(14, scheduleTarget.x + (Math.random() * 12 - 6))),
-              y: Math.min(76, Math.max(32, scheduleTarget.y + (Math.random() * 12 - 6))),
-            };
-          } else if (Math.random() < 0.02) {
-            facing = directions.filter((candidate) => candidate !== npc.facing)[Math.floor(Math.random() * 3)];
+      // Snapshot shared tick inputs once; avoid allocating the direction list
+      // and reading the world clock separately for every static town NPC.
+      const player = positionRef.current;
+      const directions: Direction[] = ['up', 'right', 'down', 'left'];
+      const hour = brainRef.current?.worldCore.getClock()?.hour ?? 12;
+      setNpcStates((current) => {
+        const next = current.map((npc) => {
+          const nearby = Math.hypot(player.x - npc.position.x, player.y - npc.position.y) < 18;
+          const facePlayer: Direction = Math.abs(player.x - npc.position.x) >= Math.abs(player.y - npc.position.y)
+            ? (player.x >= npc.position.x ? 'right' : 'left')
+            : (player.y >= npc.position.y ? 'down' : 'up');
+          if (nearby) {
+            return npc.moving || npc.target || npc.facing !== facePlayer
+              ? { ...npc, facing: facePlayer, moving: false, target: null }
+              : npc;
           }
-          return target || facing !== npc.facing ? { ...npc, facing, target, moving: false } : npc;
-        }
-        const dx = target.x - npc.position.x;
-        const dy = target.y - npc.position.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 0.4) return { ...npc, target: null, moving: false };
-        const step = Math.min(0.14, dist);
-        facing = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'down' : 'up');
-        return {
-          ...npc,
-          position: { x: npc.position.x + (dx / dist) * step, y: npc.position.y + (dy / dist) * step },
-          facing,
-          moving: true,
-        };
-      }));
+          let target = npc.target;
+          let facing = npc.facing;
+          if (!target) {
+            // Use schedule-based target instead of random wandering
+            const scheduleTarget = npcScheduleTarget(npc, hour);
+            const distToSchedule = Math.hypot(scheduleTarget.x - npc.position.x, scheduleTarget.y - npc.position.y);
+            // If far from schedule location, head there; otherwise wander nearby
+            if (distToSchedule > 8) {
+              target = scheduleTarget;
+            } else if (Math.random() < 0.05) {
+              facing = directions[Math.floor(Math.random() * directions.length)];
+              target = {
+                x: Math.min(86, Math.max(14, scheduleTarget.x + (Math.random() * 12 - 6))),
+                y: Math.min(76, Math.max(32, scheduleTarget.y + (Math.random() * 12 - 6))),
+              };
+            } else if (Math.random() < 0.02) {
+              facing = directions.filter((candidate) => candidate !== npc.facing)[Math.floor(Math.random() * 3)];
+            }
+            return target || facing !== npc.facing ? { ...npc, facing, target, moving: false } : npc;
+          }
+          const dx = target.x - npc.position.x;
+          const dy = target.y - npc.position.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 0.4) return { ...npc, target: null, moving: false };
+          const step = Math.min(0.14, dist);
+          facing = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'down' : 'up');
+          return {
+            ...npc,
+            position: { x: npc.position.x + (dx / dist) * step, y: npc.position.y + (dy / dist) * step },
+            facing,
+            moving: true,
+          };
+        });
+        // Many NPCs are stationary or already facing the player. Preserve the
+        // old array identity when nothing changed to prevent needless React
+        // renders at the 120 ms simulation cadence.
+        return next.some((npc, index) => npc !== current[index]) ? next : current;
+      });
       // Living-town roster: step townsfolk toward their schedule targets on
       // the same lightweight interval (only exists in the player's chunk).
       const folkAnchors = townsfolkAnchorsRef.current;
