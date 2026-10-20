@@ -3,15 +3,13 @@ import { RPG_BASES, RPG_DEFAULT_LOOK, type RpgBase, type RpgLook } from '../game
 import { CharacterAnimator, drawIsoCharacter } from '../game/iso/characterSystem';
 
 type Slot = { label: string; options: string[] };
-const SLOTS: Record<string, Slot> = {
-  legs: { label: 'Legwear / boots', options: ['BluePants', 'BrownPants', 'BlackBoots', 'DrkBoot', 'AhoulBoots1', 'AhoulKilt1'] },
-  torso: { label: 'Clothing / chest armor', options: ['BlueVest', 'BrvHrtTunic', 'BrvHrtVest', 'ChestPiece1', 'ChestPiece2', 'BreastPlate1', 'BreastPlateGold', 'Breastplate2', 'DrkChestPlat', 'AhoulChestpiece1', 'AhoulLeatherBreastplate'] },
-  arms: { label: 'Arms / shoulders', options: ['AhoulArmBand', 'AhoulArmGuards', 'DrkArmPlat', 'AhoulShoulderpads1', 'AhoulLeatherShoulderpads', 'AhoulMetalShoulderpads'] },
-  head: { label: 'Helmet / hood', options: ['CanvasHood', 'ChainCoif', 'CoifFelious', 'CoifMudam', 'DrkCoif', 'DrkHelm', 'DrkHood'] },
+export const CHARACTER_CREATION_SLOTS: Record<string, Slot> = {
+  // Character creation is deliberately limited to basic appearance. Armor,
+  // shields and weapons must be acquired/equipped during gameplay.
+  legs: { label: 'Basic legwear / boots', options: ['BluePants', 'BrownPants', 'BlackBoots'] },
+  torso: { label: 'Basic clothing', options: ['BlueVest', 'BrvHrtTunic', 'BrvHrtVest'] },
   hair: { label: 'Hairstyle', options: ['DreamWalkerHair1', 'DreamWalkerHair2', 'DreamWalkerHair3'] },
   beard: { label: 'Beard', options: ['BeardDark', 'BeardGrey', 'BeardLight', 'BeardRed'] },
-  weapon: { label: 'Weapon', options: ['Dagger', 'BroadSword', 'BroadSword2', 'BastardSword', 'BattleAxe', 'Axe', 'BoneBow', 'BoneClub', 'ChainMace'] },
-  shield: { label: 'Shield', options: ['BucklerNisos', 'BucklerWood'] },
 };
 
 const STORAGE_KEY = 'ag-rpg-character-look-v1';
@@ -22,7 +20,7 @@ function loadInitialLook(): RpgLook {
     if (raw) {
       const value = JSON.parse(raw) as Partial<RpgLook>;
       const base = RPG_BASES.includes(value.base as RpgBase) ? value.base as RpgBase : RPG_DEFAULT_LOOK.base;
-      const equipment = Array.isArray(value.equipment) ? value.equipment.filter((item): item is string => typeof item === 'string' && Object.values(SLOTS).some((slot) => slot.options.includes(item))) : [];
+      const equipment = Array.isArray(value.equipment) ? value.equipment.filter((item): item is string => typeof item === 'string' && Object.values(CHARACTER_CREATION_SLOTS).some((slot) => slot.options.includes(item))) : [];
       return { base, equipment };
     }
   } catch { /* use a safe default */ }
@@ -64,7 +62,7 @@ export default function RpgCharacterCreator({ onConfirm, onCancel }: Props) {
     const initial = loadInitialLook();
     const result: Record<string, string> = {};
     for (const item of initial.equipment) {
-      for (const [slot, data] of Object.entries(SLOTS)) if (data.options.includes(item)) result[slot] = item;
+      for (const [slot, data] of Object.entries(CHARACTER_CREATION_SLOTS)) if (data.options.includes(item)) result[slot] = item;
     }
     return result;
   });
@@ -103,7 +101,7 @@ export default function RpgCharacterCreator({ onConfirm, onCancel }: Props) {
             </label>
           </div>
           <div className="rpg-creator-options">
-            {Object.entries(SLOTS).map(([slot, data]) => (
+            {Object.entries(CHARACTER_CREATION_SLOTS).map(([slot, data]) => (
               <label className="creator-group" key={slot}>
                 <span className="creator-group-title">{data.label}</span>
                 <select className="rpg-creator-select" value={selected[slot] || ''} onChange={(event) => choose(slot, event.target.value)}>
