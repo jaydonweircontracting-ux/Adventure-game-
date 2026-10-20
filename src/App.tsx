@@ -142,13 +142,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '913';
+const BUILD_NUMBER = '914';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '914': 'Wilderness ecology expansion — larger herds in meadows, more wildlife in forests and shorelines, direwolves reserved for deeper wilderness, and richer slime, bat, rat, wolf, and spider encounters outside the protected starting settlement',
   '913': 'Melee can finally hit goats: critter separation holds goats 2.35 units from you, but the sword only reached 1.06 — every swing at a calm goat whiffed (found in the overnight burn-down: 22 measured swings, 0 hits). Goat swings now use a reach that covers the separation distance, so you can walk up to a goat and hit it. NPC and monster melee range is unchanged. Also closes the Phase D burn-down: fresh-game playtest passed end to end (house entry, tap-to-talk, NPC fight-back, horse riding, body loot take/leave, chunk crossings on foot and mounted, world map, minimap radar, full zoom range with no black screen, and an exact save/reload round-trip)',
   '912': 'Horses arrive in the isometric world: your mount now renders under you when you ride (and waits saddled where you left it), with a Mount horse button in the HUD next to Dismount. Townsfolk horses live in the iso view too — riders traveling, owners leading their horses, and merchants hauling carts to market. Fighting NPCs now swing with real attack animations. Fixed the body-loot window in the iso view: it used to open into the hidden 2D layer and never appear — it now displays, bodies pulse with a gold Loot ring and a bigger tap target, and tapping a corpse no longer selects the dead NPC instead. Dismounting no longer teleports you in the east/south field',
   '911': 'Equipped gear is now worn: the paperdoll and looted/crafted items render on your character (armor, helmets, gloves, boots, weapons, shields, cloaks) over your character-creator clothing and hair; a worn helmet covers your hair, boots layer over pants, and unequipping restores your base look. NPC outfits finally render too — the equipment sprite folders are installed in public/rpg and every item base maps to its art in equipmentArt.ts',
@@ -2072,13 +2073,21 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
     // Wilderness critters continue using the original spawn and AI systems.
     return [];
   }
-  const positions = Array.from({ length: mapTileFor(chunk).terrain === 'meadow' ? 4 : 2 }, (_, index) => ({ x: 20 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % (FIELD_SIZE - 40)), y: 20 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % (FIELD_SIZE - 40)) }));
+  const terrain = mapTileFor(chunk).terrain;
+  // More visible wildlife variety outside town: meadows support larger herds,
+  // forests have moderate groups, shorelines have smaller groups, and harsh
+  // terrain stays sparse. All positions remain deterministic and collision-safe.
+  const animalCount = terrain === 'meadow' ? 5 : terrain === 'forest' ? 4 : terrain === 'shore' ? 3 : 2;
+  const positions = Array.from({ length: animalCount }, (_, index) => ({ x: 20 + ((Math.abs(chunk.x * 47 + chunk.y * 71 + index * 29) * 13) % (FIELD_SIZE - 40)), y: 20 + ((Math.abs(chunk.x * 31 + chunk.y * 53 + index * 41) * 17) % (FIELD_SIZE - 40)) }));
   const safePositions = positions.filter((position) => !isFieldPositionBlocked(position, chunk));
   return safePositions.map((position, index) => {
     const wanderSeed = Math.abs(chunk.x * 97 + chunk.y * 193 + index * 53 + 17);
-    // BUILD 575: Add 'goat' as a spawnable kind. Previously only
-    // deer/boar/badger/direwolf spawned — no actual goats existed!
-    const kinds = ['goat', 'deer', 'boar', 'badger', 'direwolf'] as const;
+    // Meadow/forest wildlife includes goats, deer, boar, and badgers.
+    // Direwolves are reserved for deeper wilderness so starter outskirts feel
+    // inhabited rather than immediately hostile.
+    const kinds = dangerForChunk(chunk) >= 2
+      ? (['goat', 'deer', 'boar', 'badger', 'direwolf'] as const)
+      : (['goat', 'deer', 'boar', 'badger'] as const);
     return {
       id: index,
       kind: kinds[wanderSeed % kinds.length],
