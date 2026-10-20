@@ -1461,7 +1461,18 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               // BUILD 826: draw the authored exterior overlay only while no interior is active.
               // The iso field can remain mounted during house transitions, so use the
               // live interior state instead of relying on unmounting the whole view.
-              if (!liveRef.current.inInterior && b.area.id === 'tutorial-house') {
+              // BUILD 895: the starting house's logical rect is far smaller
+              // than its drawn sprite (BUILD 809/828 scale the art up), so
+              // "inside the house" must be tested against the overlay's
+              // actual drawn bounds: when the player's screen position is
+              // under the roof, hide the overlay so the authored roofless
+              // interior base sprite shows. Restores automatically on exit.
+              const overlayW = sw * 1.5;
+              const overlayH = sh * 1.5;
+              const playerPt = isoToScreen(liveRef.current.px, liveRef.current.py);
+              const playerUnderRoof = playerPt.x >= cx - overlayW / 2 && playerPt.x <= cx + overlayW / 2
+                && playerPt.y >= baseY - overlayH && playerPt.y <= baseY;
+              if (!liveRef.current.inInterior && b.area.id === 'tutorial-house' && !playerUnderRoof) {
                 const overlay = bldImgs['starting-house-overlay'];
                 if (overlay && overlay.complete && overlay.naturalWidth > 0) {
                   g2.save();
@@ -1471,8 +1482,6 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
                   // BUILD 828: make the authored overlay substantially larger than the base house sprite.
                   // Keep its bottom edge anchored to the same world base so the extra size
                   // expands upward and sideways instead of shifting the doorway alignment.
-                  const overlayW = sw * 1.5;
-                  const overlayH = sh * 1.5;
                   g2.drawImage(overlay, cx - overlayW / 2, baseY - overlayH, overlayW, overlayH);
                   g2.restore();
                 }

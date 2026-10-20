@@ -1,6 +1,6 @@
 {
-  "build": "885",
-  "note": "Guard arrests — NPC thieves caught by a guard witness are hauled to jail for 2 days (stolen gold forfeited), hidden from the field, released home",
-  "timestamp": "2026-10-20T01:48:32.003Z",
-  "cacheBuster": "mvg0y3dm"
+  "build": "896",
+  "note": "Starting house roof hides when you walk in — the authored roof overlay now disappears while you are under it, revealing the furnished interior; the roof returns when you walk back out",
+  "timestamp": "2026-10-20T04:49:00.102Z",
+  "cacheBuster": "mvg7e6di"
 }
