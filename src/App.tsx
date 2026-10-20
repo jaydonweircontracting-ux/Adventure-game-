@@ -140,13 +140,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '891';
+const BUILD_NUMBER = '892';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '892': 'Debug overlay measures game-loop CPU time and slow simulation frames to help pinpoint stutter',
   '891': 'Debug performance panel shows FPS, average frame interval, worst frame interval, and slow-frame count to help diagnose stutter',
   '890': 'Examine provenance — looted equipment remembers its previous owners ("Previously owned by Ham") in the inventory and survives save/load',
   '889': 'Damage-drop HP bars — damaged townsfolk show a shrinking red HP bar under their name in the iso view (monsters already had one)',
@@ -3300,9 +3301,16 @@ export function getMapDebugStats(): { cached: boolean; buildMs: number; width: n
 // Playtest diagnostics overlay (?debug=1): text-observable build/fps/position/
 // map-cache/validation readout so automated playtests can verify without
 // relying on screenshots.
+// Frame-loop work metrics are enabled only while the diagnostics overlay is mounted.
+let debugFrameMetricsEnabled = false;
+let latestSimulationFrameMs = 0;
+let worstSimulationFrameMs = 0;
+let slowSimulationFrames = 0;
+
 function DebugOverlay({ chunk }: { chunk: Point }) {
-  const [frameStats, setFrameStats] = useState({ fps: 0, averageFrameMs: 0, worstFrameMs: 0, slowFrames: 0 });
+  const [frameStats, setFrameStats] = useState({ fps: 0, averageFrameMs: 0, worstFrameMs: 0, slowFrames: 0, simulationMs: 0, worstSimulationMs: 0, slowSimulationFrames: 0 });
   useEffect(() => {
+    debugFrameMetricsEnabled = true;
     let frames = 0;
     let slowFrames = 0;
     let last = performance.now();
@@ -3322,7 +3330,12 @@ function DebugOverlay({ chunk }: { chunk: Point }) {
           averageFrameMs: Math.round((sampleDuration / frames) * 10) / 10,
           worstFrameMs: Math.round(worstFrameMs * 10) / 10,
           slowFrames,
+          simulationMs: Math.round(latestSimulationFrameMs * 10) / 10,
+          worstSimulationMs: Math.round(worstSimulationFrameMs * 10) / 10,
+          slowSimulationFrames,
         });
+        worstSimulationFrameMs = 0;
+        slowSimulationFrames = 0;
         frames = 0;
         slowFrames = 0;
         worstFrameMs = 0;
@@ -3331,9 +3344,9 @@ function DebugOverlay({ chunk }: { chunk: Point }) {
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return () => { cancelAnimationFrame(raf); debugFrameMetricsEnabled = false; };
   }, []);
-  const { fps, averageFrameMs, worstFrameMs, slowFrames } = frameStats;
+  const { fps, averageFrameMs, worstFrameMs, slowFrames, simulationMs, worstSimulationMs, slowSimulationFrames: slowSimulationFrameCount } = frameStats;
   const report = useMemo(() => {
     const stats = getMapDebugStats();
     const validation = validateMapData();
@@ -3344,6 +3357,7 @@ function DebugOverlay({ chunk }: { chunk: Point }) {
     <div data-testid="debug-overlay" style={{ position: 'fixed', left: 8, top: 8, zIndex: 9999, background: 'rgba(0,0,0,0.82)', color: '#7dff9a', font: '10px/1.5 monospace', padding: '8px 10px', borderRadius: 6, pointerEvents: 'none', maxWidth: 320 }}>
       <div>BUILD {BUILD_NUMBER} · {fps} fps</div>
       <div>frame {averageFrameMs}ms avg · {worstFrameMs}ms worst · {slowFrames} slow (&gt;33ms)/sec</div>
+      <div>game JS {simulationMs}ms last · {worstSimulationMs}ms worst · {slowSimulationFrameCount} slow (&gt;8ms)/sec</div>
       <div>chunk {chunk.x},{chunk.y}</div>
       <div>atlas {stats.cached ? 'CACHED' : 'MISS'} · built in {stats.buildMs}ms · {stats.width}x{stats.height}px · {stats.tileCount} tiles · {stats.landmarkCount} landmarks</div>
       <div>map-sync {validation.ok ? 'OK (' + validation.roadTileCount + ' road tiles)' : 'FAIL: ' + validation.problems.slice(0, 3).join(' | ')}</div>
@@ -7278,10 +7292,19 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // on screen, and the next frame is ALWAYS scheduled — one bad frame can
     // never permanently freeze the character again.
     const animate = (now: number) => {
+      const measureFrameWork = debugFrameMetricsEnabled;
+      const frameWorkStart = measureFrameWork ? performance.now() : 0;
       try {
         runFrame(now);
       } catch (err) {
         recordLoopError(err);
+      } finally {
+        if (measureFrameWork) {
+          const workMs = performance.now() - frameWorkStart;
+          latestSimulationFrameMs = workMs;
+          worstSimulationFrameMs = Math.max(worstSimulationFrameMs, workMs);
+          if (workMs > 8) slowSimulationFrames += 1;
+        }
       }
       animationFrame = window.requestAnimationFrame(animate);
     };
