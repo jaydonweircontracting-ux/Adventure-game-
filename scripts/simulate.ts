@@ -1316,6 +1316,19 @@ console.log('Testing village life layer (BUILD 366)...');
   const det2 = villageTarget(npc, anchors, clockAt(10, 0));
   assert(det1.activity === det2.activity, 'villageTarget not deterministic');
 
+  // BUILD 883: lonely sociable workers seek the tavern (need-driven, not scheduled).
+  const lonelyWorker = folk.find((n) => {
+    const p = npcPersonality(n);
+    return n.archetype !== 'child' && n.archetype !== 'guard' && p.sociability > 0.3 && p.sociability < 0.5;
+  });
+  if (lonelyWorker) {
+    const socialTarget = villageTarget(lonelyWorker, anchors, clockAt(11, 0));
+    const sNeeds = npcNeeds(lonelyWorker, clockAt(11, 0));
+    if (sNeeds.social < 32) {
+      assert(socialTarget.activity === 'A pint with friends', `Lonely worker not sent to tavern: ${socialTarget.activity}`);
+    }
+  }
+
   // Relationships: housemates are family; deterministic.
   const rels = npcRelationships(npc, folk, clockAt(10, 0));
   const rels2 = npcRelationships(npc, folk, clockAt(10, 0));

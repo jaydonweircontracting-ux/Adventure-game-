@@ -1,6 +1,6 @@
 {
-  "build": "881",
-  "note": "Skill masters — Tom, Aldric and Bryn teach smithing, woodcutting and cooking; meet their stat requirement to apprentice for +50% earned XP",
-  "timestamp": "2026-10-20T01:33:11.795Z",
-  "cacheBuster": "mvg0edbn"
+  "build": "882",
+  "note": "Paperdoll shows all 8 equipment slots — weapon, offhand, helmet, armor, gloves, boots, ring, amulet with equipped item names and unequip buttons",
+  "timestamp": "2026-10-20T01:34:38.014Z",
+  "cacheBuster": "mvg0g7um"
 }

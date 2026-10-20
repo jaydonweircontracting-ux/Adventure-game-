@@ -147,6 +147,7 @@ const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '883': 'Need-driven tavern visits — lonely NPCs seek company at the Tankard on low social instead of waiting for the scheduled evening',
   '882': 'Paperdoll shows all 8 equipment slots — weapon, offhand, helmet, armor, gloves, boots, ring, amulet with equipped item names and unequip buttons',
   '881': 'Skill masters — Tom, Aldric and Bryn teach smithing, woodcutting and cooking; meet their stat requirement to apprentice for +50% earned XP',
   '880': 'NPCs commit crimes — hungry, broke townsfolk steal from each other and feed the existing crime, witness, memory and gossip pipeline',

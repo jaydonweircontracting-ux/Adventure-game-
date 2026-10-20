@@ -92,6 +92,7 @@ function minutesOf(clock: WorldClockState): number {
 
 const SOCIAL_ACTIVITIES = [
   'Evening at the Tankard',
+  'A pint with friends',
   'Having lunch',
   'Lunch at home',
   'Playing',
@@ -198,6 +199,20 @@ export function villageTarget(
   if (needs.energy < 12) {
     const home = anchors.points[npc.homeKey] ?? npc.home;
     return { activity: 'Resting', target: { ...home }, indoors: true };
+  }
+  // BUILD 883: lonely (SoX RoomServiceNeed — the tavern services the social
+  // need). Sociable NPCs grinding solitary work seek company midday instead
+  // of waiting for the scheduled evening. Hermits (low sociability) are fine
+  // alone. Self-terminating: 'A pint with friends' is a social activity, so
+  // the need refills and the schedule resumes.
+  const personality = npcPersonality(npc);
+  if (needs.social < 32 && personality.sociability > 0.3) {
+    const tavern = anchors.points.tavern ?? anchors.plaza;
+    return {
+      activity: 'A pint with friends',
+      target: { ...tavern },
+      indoors: false,
+    };
   }
   return base;
 }

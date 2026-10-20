@@ -55,3 +55,27 @@ export function beerDamageMultiplier(beerBuffUntil: number, now: number = Date.n
 export function pointInAnnexRect(x: number, y: number, rect: FieldRectLike, margin = 0.45): boolean {
   return x >= rect.left - margin && x <= rect.right + margin && y >= rect.top - margin && y <= rect.bottom + margin;
 }
+
+// ---------------------------------------------------------------------------
+// Service registry (BUILD 883 — SoX RoomServiceNeed model)
+// ---------------------------------------------------------------------------
+
+/** Needs a service building can satisfy. */
+export type ServiceNeedKind = 'hunger' | 'social';
+
+/**
+ * Buildings declare which needs they service. The tavern (anchor key
+ * 'tavern') serves food/drink (hunger) and company (social). NPC need
+ * overrides in villageLife.ts resolve the anchor for a need from here.
+ */
+export const SERVICE_NEEDS: Record<string, ServiceNeedKind[]> = {
+  tavern: ['hunger', 'social'],
+};
+
+/** Anchor key of the building servicing a need (undefined = none). */
+export function serviceAnchorFor(need: ServiceNeedKind): string | undefined {
+  for (const [anchorKey, needs] of Object.entries(SERVICE_NEEDS)) {
+    if (needs.includes(need)) return anchorKey;
+  }
+  return undefined;
+}
