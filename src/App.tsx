@@ -10,7 +10,7 @@ import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/iso/isoSprites';
 import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality, npcGold, adjustNPCGold, npcCrimeUrge, npcStoleToday, NPC_COMMITTED_THEFT, NPC_WAS_ARRESTED, NPC_MARRIED_PLAYER, NPC_DIVORCED_PLAYER } from './game/villageLife';
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
-import { createBody, type LootableBody } from './game/lootableBodies';
+import { createBody, takeBodyLootSelection, type LootableBody } from './game/lootableBodies';
 import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
 import { pickpocketChance, resolvePickpocket } from './game/pickpocket';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
@@ -141,13 +141,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '907';
+const BUILD_NUMBER = '908';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '908': 'Hardened selective corpse looting with a pure tested single-entry transfer model; taking one stack or item preserves all unselected loot on the body',
   '907': 'Body loot now opens a selectable inventory panel; take coins, individual potions, and future NPC items one at a time, leaving anything unwanted on the body',
   '906': 'Town landscape polish: round only exposed shallow-water shoreline corners; keep connected water cells seamless to remove checkerboard gaps and preserve chunk-edge continuity',
   '905': 'Performance fix — NPCs whose schedule destination is unreachable (blocked grid cell) no longer re-run a full-map A* search every 120ms tick forever; they record the give-up and wait for a new destination, as designed. Measured in town: failed path searches drop from ~25/sec to ~0 in steady state (about 1.2M wasted grid cells per 10s eliminated)',
@@ -5496,30 +5497,29 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const takeTownspersonLootItem = (bodyId: string, kind: 'gold' | 'potion' | 'item', itemId?: string) => {
     const body = bodiesRef.current.find((candidate) => candidate.id === bodyId && !candidate.looted);
     if (!body) return;
-    const nextLoot = { ...body.loot, items: [...body.loot.items] };
-    const inventoryLoot: Record<string, number> = {};
-    if (kind === 'gold' && nextLoot.gold > 0) {
-      inventoryLoot.coins = nextLoot.gold;
-      nextLoot.gold = 0;
-    } else if (kind === 'potion' && nextLoot.potions > 0) {
-      inventoryLoot.healthPotion = 1;
-      nextLoot.potions -= 1;
-    } else if (kind === 'item' && itemId) {
-      const itemIndex = nextLoot.items.indexOf(itemId);
-      if (itemIndex < 0) return;
-      nextLoot.items.splice(itemIndex, 1);
-      const generated = generateItem(new ItemRng(Date.now() ^ itemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current));
-      onEquipmentChange((prev) => [...prev, withProvenance({ ...generated, name: itemId.replace(/[-_]/g, ' ') }, body.npcName)]);
-    } else return;
-    const empty = nextLoot.gold <= 0 && nextLoot.potions <= 0 && nextLoot.items.length === 0;
-    const updatedBody = { ...body, loot: nextLoot, looted: empty };
+    const selection = kind === 'gold' ? { kind: 'gold' as const }
+      : kind === 'potion' ? { kind: 'potion' as const }
+      : itemId ? { kind: 'item' as const, itemId } : null;
+    if (!selection) return;
+    const result = takeBodyLootSelection(body, selection);
+    if (!result) return;
+    const { taken, updatedBody } = result;
     const nextBodies = bodiesRef.current.map((candidate) => candidate.id === body.id ? updatedBody : candidate);
     bodiesRef.current = nextBodies;
     setBodies(nextBodies);
+    const inventoryLoot: Record<string, number> = {};
+    if (taken.gold > 0) inventoryLoot.coins = taken.gold;
+    if (taken.potions > 0) inventoryLoot.healthPotion = taken.potions;
+    if (taken.items.length > 0) {
+      for (const selectedItemId of taken.items) {
+        const generated = generateItem(new ItemRng(Date.now() ^ selectedItemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current));
+        onEquipmentChange((prev) => [...prev, withProvenance({ ...generated, name: selectedItemId.replace(/[-_]/g, ' ') }, body.npcName)]);
+      }
+    }
     if (Object.keys(inventoryLoot).length) onLoot(inventoryLoot as GoatLoot);
-    const takenLabel = kind === 'gold' ? `${inventoryLoot.coins} coins` : kind === 'potion' ? '1 health potion' : (itemId || '').replace(/[-_]/g, ' ');
+    const takenLabel = taken.gold > 0 ? `${taken.gold} coins` : taken.potions > 0 ? '1 health potion' : taken.items.map((item) => item.replace(/[-_]/g, ' ')).join(', ');
     setLogs((cur) => [{ text: `Took ${takenLabel} from ${body.npcName}'s body.`, color: 'gold' }, ...cur].slice(0, 3));
-    if (empty) setActiveLootBodyId(null);
+    if (updatedBody.looted) setActiveLootBodyId(null);
   };
   const recordTownspersonCrime = (npc: Townsperson, type: 'assault' | 'murder') => {
     try {
