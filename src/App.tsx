@@ -10,7 +10,7 @@ import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/iso/isoSprites';
 import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality, npcGold, adjustNPCGold, npcCrimeUrge, npcStoleToday, NPC_COMMITTED_THEFT, NPC_WAS_ARRESTED, NPC_MARRIED_PLAYER, NPC_DIVORCED_PLAYER } from './game/villageLife';
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
-import { createBody, lootBody, type LootableBody } from './game/lootableBodies';
+import { createBody, type LootableBody } from './game/lootableBodies';
 import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
 import { pickpocketChance, resolvePickpocket } from './game/pickpocket';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
@@ -141,13 +141,13 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '906';
+const BUILD_NUMBER = '907';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
-const BUILD_NOTES: Record<string, string> = {
+const BUILD_NOTES: Record<string, string> = {\n  '907': 'Body loot now opens a selectable inventory panel; take coins, individual potions, and future NPC items one at a time, leaving anything unwanted on the body',
   '906': 'Town landscape polish: round only exposed shallow-water shoreline corners; keep connected water cells seamless to remove checkerboard gaps and preserve chunk-edge continuity',
   '905': 'Performance fix — NPCs whose schedule destination is unreachable (blocked grid cell) no longer re-run a full-map A* search every 120ms tick forever; they record the give-up and wait for a new destination, as designed. Measured in town: failed path searches drop from ~25/sec to ~0 in steady state (about 1.2M wasted grid cells per 10s eliminated)',
   '904': 'Town landscape overhaul: round shallow shoreline cells for more natural river and lake edges; preserve deep channels, roads, bridges, and pinned town layout',
@@ -5474,6 +5474,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 522: Lootable NPC bodies.
   const [bodies, setBodies] = useState<LootableBody[]>([]);
   const bodiesRef = useRef<LootableBody[]>([]);
+  // BUILD 907: corpse interaction opens a selective, persistent loot panel.
+  const [activeLootBodyId, setActiveLootBodyId] = useState<string | null>(null);
+  const activeLootBody = bodies.find((body) => body.id === activeLootBodyId && !body.looted && body.chunk.x === chunk.x && body.chunk.y === chunk.y) ?? null;
   // BUILD 728: create one lootable body per death; the loot model supports future gear IDs.
   const dropTownspersonBody = (npc: Townsperson) => {
     const clock = brainRef.current?.worldCore.getClock();
@@ -5487,25 +5490,35 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (inputLocked || optionsOpen || waitingRef.current) return;
     const body = bodiesRef.current.find((candidate) => candidate.id === bodyId && !candidate.looted);
     if (!body) return;
-    const { loot: taken, updatedBody } = lootBody(body);
-    const nextBodies = bodiesRef.current.map((candidate) => candidate.id === body.id ? updatedBody : candidate);
-    bodiesRef.current = nextBodies; setBodies(nextBodies);
-    const loot: Record<string, number> = {};
-    if (taken.gold > 0) loot.coins = taken.gold;
-    if (taken.potions > 0) loot.healthPotion = taken.potions;
-    const takenItemNames: string[] = [];
-    for (const itemId of taken.items) {
+    setActiveLootBodyId(body.id);
+  };
+  const takeTownspersonLootItem = (bodyId: string, kind: 'gold' | 'potion' | 'item', itemId?: string) => {
+    const body = bodiesRef.current.find((candidate) => candidate.id === bodyId && !candidate.looted);
+    if (!body) return;
+    const nextLoot = { ...body.loot, items: [...body.loot.items] };
+    const inventoryLoot: Record<string, number> = {};
+    if (kind === 'gold' && nextLoot.gold > 0) {
+      inventoryLoot.coins = nextLoot.gold;
+      nextLoot.gold = 0;
+    } else if (kind === 'potion' && nextLoot.potions > 0) {
+      inventoryLoot.healthPotion = 1;
+      nextLoot.potions -= 1;
+    } else if (kind === 'item' && itemId) {
+      const itemIndex = nextLoot.items.indexOf(itemId);
+      if (itemIndex < 0) return;
+      nextLoot.items.splice(itemIndex, 1);
       const generated = generateItem(new ItemRng(Date.now() ^ itemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current));
-      // BUILD 890: the item remembers whose body it came from.
-      const named = withProvenance({ ...generated, name: itemId.replace(/[-_]/g, ' ') }, body.npcName);
-      takenItemNames.push(named.name);
-      onEquipmentChange((prev) => [...prev, named]);
-    }
-    onLoot(loot as GoatLoot);
-    // BUILD 888: name everything taken from the body, not just "Looted".
-    const bodyContents = [describeLoot(loot), ...takenItemNames].filter((s) => s && s !== 'nothing').join(' · ');
-    setLogs((cur) => [{ text: `You looted ${body.npcName}'s body: ${bodyContents || 'nothing'}.`, color: 'gold' }, ...cur].slice(0, 3));
-    spawnCombatText('LOOTED', body.position, 'reward');
+      onEquipmentChange((prev) => [...prev, withProvenance({ ...generated, name: itemId.replace(/[-_]/g, ' ') }, body.npcName)]);
+    } else return;
+    const empty = nextLoot.gold <= 0 && nextLoot.potions <= 0 && nextLoot.items.length === 0;
+    const updatedBody = { ...body, loot: nextLoot, looted: empty };
+    const nextBodies = bodiesRef.current.map((candidate) => candidate.id === body.id ? updatedBody : candidate);
+    bodiesRef.current = nextBodies;
+    setBodies(nextBodies);
+    if (Object.keys(inventoryLoot).length) onLoot(inventoryLoot as GoatLoot);
+    const takenLabel = kind === 'gold' ? `${inventoryLoot.coins} coins` : kind === 'potion' ? '1 health potion' : (itemId || '').replace(/[-_]/g, ' ');
+    setLogs((cur) => [{ text: `Took ${takenLabel} from ${body.npcName}'s body.`, color: 'gold' }, ...cur].slice(0, 3));
+    if (empty) setActiveLootBodyId(null);
   };
   const recordTownspersonCrime = (npc: Townsperson, type: 'assault' | 'murder') => {
     try {
@@ -11400,31 +11413,37 @@ if (active) {
                           aria-label={'Loot ' + body.npcName + "'s body"}
                           onClick={() => {
                             if (inputLocked || optionsOpen || guardEncounter || waitingRef.current) return;
-                            // Open loot UI: transfer loot to inventory via onLoot.
-                            const { loot: taken, updatedBody } = lootBody(body);
-                            const nextBodies = bodiesRef.current.map((x) => x.id === body.id ? updatedBody : x);
-                            bodiesRef.current = nextBodies;
-                            setBodies(nextBodies);
-                            // Add to inventory via the loot callback.
-                            const loot: Record<string, number> = {};
-                            // Body fields map to the live inventory ledger.
-                            if (taken.gold > 0) loot.coins = taken.gold;
-                            if (taken.potions > 0) loot.healthPotion = taken.potions;
-                            // BodyLoot.items is the extension point for future NPC armor/weapons.
-                            for (const itemId of taken.items) {
-                              const generated = generateItem(new ItemRng(Date.now() ^ itemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current));
-                              // BUILD 890: the item remembers whose body it came from.
-                              onEquipmentChange((prev) => [...prev, withProvenance({ ...generated, name: itemId.replace(/[-_]/g, ' ') }, body.npcName)]);
-                            }
-                            onLoot(loot as GoatLoot);
-                            setLogs((cur) => [{ text: `Looted ${body.npcName}'s body.`, color: 'gold' }, ...cur].slice(0, 3));
-                            spawnCombatText('LOOTED', body.position, 'reward');
+                            setActiveLootBodyId(body.id);
                           }}
                         >
                           <span className="body-icon" aria-hidden="true">💀</span>
                         </button>
                       ))}
                     </div>
+                    {activeLootBody && (
+                      <div className="body-loot-backdrop" role="presentation" onClick={() => setActiveLootBodyId(null)}>
+                        <section className="body-loot-panel" role="dialog" aria-modal="true" aria-label={`Loot ${activeLootBody.npcName}`} onClick={(event) => event.stopPropagation()}>
+                          <header className="body-loot-header">
+                            <div><span className="body-loot-kicker">BODY LOOT</span><h3>{activeLootBody.npcName}</h3></div>
+                            <button type="button" className="body-loot-close" aria-label="Close loot window" onClick={() => setActiveLootBodyId(null)}>×</button>
+                          </header>
+                          <p className="body-loot-hint">Choose what to take. Anything left stays on the body.</p>
+                          <div className="body-loot-items">
+                            {activeLootBody.loot.gold > 0 && (
+                              <div className="body-loot-item"><span><strong>🪙 Coins</strong><small>{activeLootBody.loot.gold} coins</small></span><button type="button" onClick={() => takeTownspersonLootItem(activeLootBody.id, 'gold')}>Take</button></div>
+                            )}
+                            {activeLootBody.loot.potions > 0 && (
+                              <div className="body-loot-item"><span><strong>🧪 Health potion</strong><small>{activeLootBody.loot.potions} remaining</small></span><button type="button" onClick={() => takeTownspersonLootItem(activeLootBody.id, 'potion')}>Take 1</button></div>
+                            )}
+                            {activeLootBody.loot.items.map((itemId, index) => (
+                              <div className="body-loot-item" key={itemId + '-' + index}><span><strong>🎒 {itemId.replace(/[-_]/g, ' ')}</strong><small>Item</small></span><button type="button" onClick={() => takeTownspersonLootItem(activeLootBody.id, 'item', itemId)}>Take</button></div>
+                            ))}
+                            {activeLootBody.loot.gold <= 0 && activeLootBody.loot.potions <= 0 && activeLootBody.loot.items.length === 0 && <p className="body-loot-empty">Nothing left to take.</p>}
+                          </div>
+                          <button type="button" className="body-loot-done" onClick={() => setActiveLootBodyId(null)}>Done</button>
+                        </section>
+                      </div>
+                    )}
                     <div className="field-goats" aria-label="Goats in the field">
             {goats.filter((goat) => goat.disposition !== 'defeated').map((goat) => (
               <button
