@@ -42,12 +42,15 @@ try {
   const stats = await page.evaluate(async (items) => {
     const results: Array<{
       kind: string; id: number; width: number; height: number; visible: number;
-      transparent: number; uniqueColors: number; opaqueWhiteCorners: boolean;
+      transparent: number; uniqueColors: number; opaqueWhiteCorners: boolean; decodeError?: string;
     }> = [];
     for (const item of items) {
       const img = new Image();
       img.src = 'data:image/png;base64,' + item.bytes;
-      await img.decode();
+      try { await img.decode(); } catch (error) {
+        results.push({ kind: item.kind, id: item.id, width: 0, height: 0, visible: 0, transparent: 0, uniqueColors: 0, opaqueWhiteCorners: false, decodeError: String(error) });
+        continue;
+      }
       const canvas = document.createElement('canvas');
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
@@ -83,10 +86,14 @@ try {
   const failures: string[] = [];
   for (const tile of stats) {
     const pixels = tile.width * tile.height;
-    if (tile.visible < pixels * 0.02) failures.push(`${tile.kind}/${tile.id}: fewer than 2% visible pixels`);
-    if (tile.uniqueColors < 2) failures.push(`${tile.kind}/${tile.id}: visually flat single-color image`);
-    if (tile.kind === 'decor' && tile.opaqueWhiteCorners) failures.push(`${tile.kind}/${tile.id}: opaque white background at all four corners`);
+    if (tile.decodeError) failures.push(`${tile.kind}/${tile.id}: browser PNG decode failed (${tile.decodeError})`);
+    else {
+      if (tile.visible < pixels * 0.02) failures.push(`${tile.kind}/${tile.id}: fewer than 2% visible pixels`);
+      if (tile.uniqueColors < 2) failures.push(`${tile.kind}/${tile.id}: visually flat single-color image`);
+      if (tile.kind === 'decor' && tile.opaqueWhiteCorners) failures.push(`${tile.kind}/${tile.id}: opaque white background at all four corners`);
+    }
   }
+  if (failures.length) console.error('Tile visual audit failures:\\n' + failures.join('\\n'));
   assert.deepEqual(failures, [], `tile pixel audit found broken-looking assets:\n${failures.join('\n')}`);
   const decor = stats.filter((tile) => tile.kind === 'decor');
   const transparentDecor = decor.filter((tile) => tile.transparent > 0).length;
