@@ -40,7 +40,7 @@ import {
   type Point, type Doorway, type FieldTree, type FieldOre, type MapTile,
 } from '../../App';
 import type { Townsperson } from '../townsfolk';
-import { marketStallsFromDecor } from '../townsfolk';
+import { marketStallsFromDecor, npcMaxHp } from '../townsfolk';
 // BUILD 886: disposition-colored overhead name labels (EO-style).
 import { dispositionNameColor, defaultDisposition } from '../dialogue';
 // BUILD 692: district-appropriate art variants for the engine's filler lots.
@@ -1940,6 +1940,12 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           const color = dispositionNameColor(live.dispositions?.[npc.id] ?? defaultDisposition(), hostile);
           const nameText = npc.name;
           const nameX = nc.x, nameY = nc.y - (npc.archetype === 'child' ? 42 : 52);
+          // BUILD 889: damage-drop HP bar — damaged townsfolk show a shrinking
+          // red bar under the name (monsters already had one; NPCs didn't).
+          const npcHpNow = npc.hp;
+          const npcMaxHpNow = npcMaxHp(npc);
+          const damaged = npcHpNow != null && npcHpNow < npcMaxHpNow;
+          const hpFrac = damaged ? Math.max(0, npcHpNow / Math.max(1, npcMaxHpNow)) : 1;
           drawables.push({
             depth: ix + iy + 0.05,
             draw: (g2) => {
@@ -1952,6 +1958,13 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               g2.strokeText(nameText, nameX, nameY);
               g2.fillStyle = color;
               g2.fillText(nameText, nameX, nameY);
+              if (damaged) {
+                const bw = 30, bh = 4, bx = nameX - bw / 2, by = nameY + 8;
+                g2.fillStyle = 'rgba(20,10,10,0.8)';
+                g2.fillRect(bx, by, bw, bh);
+                g2.fillStyle = hpFrac > 0.35 ? '#e34b4b' : '#ff2222';
+                g2.fillRect(bx, by, bw * hpFrac, bh);
+              }
               g2.restore();
             },
           });

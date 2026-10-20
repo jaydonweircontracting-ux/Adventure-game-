@@ -140,13 +140,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '888';
+const BUILD_NUMBER = '889';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '889': 'Damage-drop HP bars — damaged townsfolk show a shrinking red HP bar under their name in the iso view (monsters already had one)',
   '888': 'Loot-drop announcements — "You looted: +3 silk · +1 sword" names every item from ground drops and body looting; fixes ChatGPT build 886 DebugOverlay scope crash',
   '887': 'Colored overhead name labels — NPC names above sprites in red (hostile/cold), green (friendly), white (neutral)',
   '886': 'Add live FPS and frame-rate diagnostics whenever Debug tools are open; retain the ?debug=1 playtest overlay',
