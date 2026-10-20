@@ -141,13 +141,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '905';
+const BUILD_NUMBER = '906';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '906': 'Town landscape polish: round only exposed shallow-water shoreline corners; keep connected water cells seamless to remove checkerboard gaps and preserve chunk-edge continuity',
   '905': 'Performance fix — NPCs whose schedule destination is unreachable (blocked grid cell) no longer re-run a full-map A* search every 120ms tick forever; they record the give-up and wait for a new destination, as designed. Measured in town: failed path searches drop from ~25/sec to ~0 in steady state (about 1.2M wasted grid cells per 10s eliminated)',
   '904': 'Town landscape overhaul: round shallow shoreline cells for more natural river and lake edges; preserve deep channels, roads, bridges, and pinned town layout',
   '903': 'Town landscape overhaul: soften river and lake shorelines with depth-blended edges while preserving pinned buildings and road layout',
