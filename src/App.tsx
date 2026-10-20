@@ -142,13 +142,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '896';
+const BUILD_NUMBER = '897';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '897': 'World terrain audit — resolve shorelines and biome borders from all four neighboring cells so coastline bands and edge details no longer depend on generation direction',
   '896': 'Starting house roof hides when you walk in — the authored roof overlay now disappears while you are under it, revealing the furnished interior; the roof returns when you walk back out',
   '895': 'Landscape cohesion pass — anchor grass/decor tiles to absolute world coordinates to stop shifting patterns and chunk seams; unify grass ground tiles, smooth dirt paths, and reduce filler-house clutter while preserving pinned doors',
   '894': 'Marriage/partner slot — propose to an adult NPC who admires you (disposition 80+) in dialogue; partner chip in HUD, bond and memories persist through save/load',

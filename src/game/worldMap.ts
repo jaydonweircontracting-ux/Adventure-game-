@@ -348,34 +348,36 @@ function generateOuterTiles(
     skipBounds !== null &&
     x >= skipBounds.minX && x <= skipBounds.maxX &&
     y >= skipBounds.minY && y <= skipBounds.maxY;
-  const tiles: GeneratedWorldTile[] = [];
-  const generated = new Map<string, WorldMapBiome>();
-  // Seed the map with core biomes so the ring blends with the frozen edge.
-  for (const [key, tile] of coreTiles) generated.set(key, tile.biome);
-  // Process outward from the core in row-major order for determinism.
+
+  // Pass 1 assigns the inland biome field. Keep every provisional biome in
+  // the lookup so the later shoreline/border pass can inspect all four sides,
+  // not only west/north neighbors that happened to be generated earlier.
+  const rawBiomes = new Map<string, WorldMapBiome>();
+  const climateByKey = new Map<string, WorldMapClimate>();
+  for (const [key, tile] of coreTiles) {
+    rawBiomes.set(key, tile.biome);
+    climateByKey.set(key, tile.climate);
+  }
   const outerCoords: Array<{ x: number; y: number }> = [];
   for (let y = tileBounds.minY; y <= tileBounds.maxY; y += 1) {
     for (let x = tileBounds.minX; x <= tileBounds.maxX; x += 1) {
       if (!isSkipped(x, y)) outerCoords.push({ x, y });
     }
   }
+
   for (const { x, y } of outerCoords) {
     const edge = x === tileBounds.minX || x === tileBounds.maxX || y === tileBounds.minY || y === tileBounds.maxY;
     const climate = climateFor(x, y, climateBounds, elevationNoise, temperatureNoise, moistureNoise);
     let biome: WorldMapBiome;
-    if (edge) {
-      biome = 'ocean';
-    } else if (climate.elevation < SEA_LEVEL - 0.07) {
-      biome = 'ocean';
-    } else if (climate.elevation < SEA_LEVEL + 0.03) {
+    if (edge || climate.elevation < SEA_LEVEL + 0.03) {
       biome = 'ocean';
     } else {
-      // Weighted pick from climate, boosted toward already-generated neighbors
-      // (which include the frozen core edge) for continuous regions.
+      // Bias toward previously generated inland neighbors to form broad,
+      // stable biome regions. Final coastlines are resolved in pass 2.
       const weights = climateBiomeWeights(climate);
       const neighborBiomes: WorldMapBiome[] = [];
       for (const [dx, dy] of GRID_DIRECTIONS) {
-        const nb = generated.get(cellKey(x + dx, y + dy));
+        const nb = rawBiomes.get(cellKey(x + dx, y + dy));
         if (nb && nb !== 'ocean' && nb !== 'shore') neighborBiomes.push(nb);
       }
       const scored = INLAND_BIOMES.map((candidate) => {
@@ -383,7 +385,6 @@ function generateOuterTiles(
         for (const nb of neighborBiomes) if (nb === candidate) score += 2.0;
         return { candidate, score };
       });
-      // Position-hash rng: deterministic per tile, independent of order.
       const rng = new MapRng((seed ^ Math.imul(x + 101, 2654435761) ^ Math.imul(y + 37, 40503)) >>> 0);
       const total = scored.reduce((sum, entry) => sum + entry.score, 0);
       let roll = rng.next() * total;
@@ -391,28 +392,50 @@ function generateOuterTiles(
       for (const entry of scored) {
         if ((roll -= entry.score) <= 0) { biome = entry.candidate; break; }
       }
-      // Respect adjacency rules with the frozen core edge.
       const coreNeighbor = GRID_DIRECTIONS
         .map(([dx, dy]) => coreTiles.get(cellKey(x + dx, y + dy))?.biome)
         .find((b): b is WorldMapBiome => Boolean(b));
       if (coreNeighbor && !canTouch(coreNeighbor, biome)) biome = 'meadow';
     }
-    // Shore band: land tiles touching ocean become shore.
-    if (biome !== 'ocean') {
-      const touchesOcean = GRID_DIRECTIONS.some(([dx, dy]) => {
-        const nb = generated.get(cellKey(x + dx, y + dy));
-        return nb === 'ocean';
-      });
-      if (touchesOcean) biome = 'shore';
-    }
-    generated.set(cellKey(x, y), biome);
-    const adjacentBiomes = GRID_DIRECTIONS.map(([dx, dy]) => generated.get(cellKey(x + dx, y + dy))).filter((b): b is WorldMapBiome => Boolean(b));
-    const nearBiomeBorder = adjacentBiomes.some((neighbor) => neighbor !== biome);
-    const nearWater = biome === 'ocean' || biome === 'shore' || adjacentBiomes.some((neighbor) => neighbor === 'ocean' || neighbor === 'shore');
+    rawBiomes.set(cellKey(x, y), biome);
+    climateByKey.set(cellKey(x, y), climate);
+  }
+
+  // Pass 2a resolves every shoreline before calculating border detail.
+  // Using a complete final-biome lookup avoids directional artifacts and lets
+  // inland tiles correctly recognize a neighboring shore band.
+  const finalBiomes = new Map<string, WorldMapBiome>();
+  for (const { x, y } of outerCoords) {
+    const key = cellKey(x, y);
+    const rawBiome = rawBiomes.get(key)!;
+    const touchesOcean = GRID_DIRECTIONS.some(([dx, dy]) =>
+      rawBiomes.get(cellKey(x + dx, y + dy)) === 'ocean');
+    finalBiomes.set(key, rawBiome !== 'ocean' && touchesOcean ? 'shore' : rawBiome);
+  }
+  // Preserve the frozen core biomes while exposing them to outer border tests.
+  for (const [key, tile] of coreTiles) finalBiomes.set(key, tile.biome);
+
+  // Pass 2b calculates edge details against final, four-way neighborhood data.
+  const tiles: GeneratedWorldTile[] = [];
+  for (const { x, y } of outerCoords) {
+    const key = cellKey(x, y);
+    const biome = finalBiomes.get(key)!;
+    const neighbors = GRID_DIRECTIONS
+      .map(([dx, dy]) => finalBiomes.get(cellKey(x + dx, y + dy)))
+      .filter((b): b is WorldMapBiome => Boolean(b));
+    const nearBiomeBorder = neighbors.some((neighbor) => neighbor !== biome);
+    const nearWater = biome === 'ocean' || biome === 'shore' ||
+      neighbors.some((neighbor) => neighbor === 'ocean' || neighbor === 'shore');
+    const climate = climateByKey.get(key)!;
     tiles.push({
-      x, y, row: y - tileBounds.minY, column: x - tileBounds.minX, biome, nearBiomeBorder,
+      x, y,
+      row: y - tileBounds.minY,
+      column: x - tileBounds.minX,
+      biome,
+      nearBiomeBorder,
       detail: detailFor(biome, nearWater, nearBiomeBorder, seed, x, y),
-      climate, elevationLevel: elevationLevelFor(climate, biome),
+      climate,
+      elevationLevel: elevationLevelFor(climate, biome),
     });
   }
   return tiles;

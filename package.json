@@ -25,7 +25,8 @@
     "test:caravan-trade": "npx tsx tests/caravan-trade.test.ts",
     "test:settlement-economy": "npx tsx tests/settlement-economy.test.ts",
     "test:world-dev-foundation": "npx tsx tests/world-dev-foundation.test.ts",
-    "test:little-world-generator": "npx tsx tests/little-world-generator.test.ts"
+    "test:little-world-generator": "npx tsx tests/little-world-generator.test.ts",
+    "test:world-map-coherence": "npx tsx tests/world-map-coherence.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
