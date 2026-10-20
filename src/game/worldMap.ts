@@ -401,19 +401,28 @@ function generateOuterTiles(
     climateByKey.set(cellKey(x, y), climate);
   }
 
-  // Pass 2 derives the shoreline band and border details from the completed
-  // neighborhood. This removes directional artifacts where coasts and biome
-  // edge details appeared only on the west/north side of a region.
-  const tiles: GeneratedWorldTile[] = [];
+  // Pass 2a resolves every shoreline before calculating border detail.
+  // Using a complete final-biome lookup avoids directional artifacts and lets
+  // inland tiles correctly recognize a neighboring shore band.
+  const finalBiomes = new Map<string, WorldMapBiome>();
   for (const { x, y } of outerCoords) {
     const key = cellKey(x, y);
     const rawBiome = rawBiomes.get(key)!;
+    const touchesOcean = GRID_DIRECTIONS.some(([dx, dy]) =>
+      rawBiomes.get(cellKey(x + dx, y + dy)) === 'ocean');
+    finalBiomes.set(key, rawBiome !== 'ocean' && touchesOcean ? 'shore' : rawBiome);
+  }
+  // Preserve the frozen core biomes while exposing them to outer border tests.
+  for (const [key, tile] of coreTiles) finalBiomes.set(key, tile.biome);
+
+  // Pass 2b calculates edge details against final, four-way neighborhood data.
+  const tiles: GeneratedWorldTile[] = [];
+  for (const { x, y } of outerCoords) {
+    const key = cellKey(x, y);
+    const biome = finalBiomes.get(key)!;
     const neighbors = GRID_DIRECTIONS
-      .map(([dx, dy]) => rawBiomes.get(cellKey(x + dx, y + dy)))
+      .map(([dx, dy]) => finalBiomes.get(cellKey(x + dx, y + dy)))
       .filter((b): b is WorldMapBiome => Boolean(b));
-    const biome: WorldMapBiome = rawBiome !== 'ocean' && neighbors.includes('ocean')
-      ? 'shore'
-      : rawBiome;
     const nearBiomeBorder = neighbors.some((neighbor) => neighbor !== biome);
     const nearWater = biome === 'ocean' || biome === 'shore' ||
       neighbors.some((neighbor) => neighbor === 'ocean' || neighbor === 'shore');
