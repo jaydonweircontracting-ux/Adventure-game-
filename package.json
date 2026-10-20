@@ -27,7 +27,8 @@
     "test:world-dev-foundation": "npx tsx tests/world-dev-foundation.test.ts",
     "test:little-world-generator": "npx tsx tests/little-world-generator.test.ts",
     "test:world-map-coherence": "npx tsx tests/world-map-coherence.test.ts",
-    "test:iso-tile-assets": "npx tsx tests/iso-tile-assets.test.ts"
+    "test:iso-tile-assets": "npx tsx tests/iso-tile-assets.test.ts",
+    "test:npc-combat": "npx tsx scripts/sim/npc-combat.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

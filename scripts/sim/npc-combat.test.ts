@@ -1,5 +1,6 @@
 // BUILD 284: NPC combat AI — common-sense aggro, flee, wielded-gear drops.
 // Run with: npx tsx scripts/sim/npc-combat.test.ts
+import { npcReactionForRoll } from '../../src/game/townsfolk';
 import {
   updateGoat,
   gearForMonster,
@@ -107,6 +108,14 @@ for (const kind of ['goblin', 'bandit', 'soldier', 'orc', 'skeleton', 'troll']) 
 for (const kind of ['wolf', 'spider', 'rat', 'slime', 'bat', 'snake', 'dragon']) {
   check(kind + ' drops no bones', bonesForMonster(kind).bone === undefined);
 }
+
+// --- Townsfolk use the requested exact 60/40 response split ---
+check('NPC roll 0 fights back', npcReactionForRoll(0) === 'fight');
+check('NPC roll 59 fights back (60th percentile boundary)', npcReactionForRoll(59) === 'fight');
+check('NPC roll 60 flees (40th percentile boundary)', npcReactionForRoll(60) === 'flee');
+check('NPC roll 99 flees', npcReactionForRoll(99) === 'flee');
+check('NPC reaction clamps negative roll safely', npcReactionForRoll(-12) === 'fight');
+check('NPC reaction clamps high roll safely', npcReactionForRoll(120) === 'flee');
 
 console.log(`\nnpc-combat: ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
