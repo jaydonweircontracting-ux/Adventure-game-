@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { EXPANDED_WORLD_BOUNDS } from '../src/game/worldMap';
 import {
   LANDSCAPE_FIELD_SIZE,
   checkFieldContinuity,
@@ -79,5 +80,37 @@ for (const [cx, cy] of [[0, 0], [-2, 4], [7, -3]] as const) {
   assert.deepEqual(Array.from(a.depths), Array.from(b.depths));
   assert.deepEqual(Array.from(a.kinds), Array.from(b.kinds));
 }
+
+// Exhaustively audit every chunk represented by the expanded atlas, including
+// the original region, ocean gap, and second continent. Each edge samples all
+// four world-anchored fields at nine points; this catches seams hidden between
+// the handful of hand-picked smoke-test chunks above.
+const atlasChunks: Array<{ x: number; y: number }> = [];
+for (let cy = EXPANDED_WORLD_BOUNDS.minY; cy <= EXPANDED_WORLD_BOUNDS.maxY; cy += 1) {
+  for (let cx = EXPANDED_WORLD_BOUNDS.minX; cx <= EXPANDED_WORLD_BOUNDS.maxX; cx += 1) {
+    atlasChunks.push({ x: cx, y: cy });
+  }
+}
+const atlasContinuity = checkFieldContinuity(atlasChunks);
+assert.equal(atlasContinuity.length, atlasChunks.length * 4,
+  'every expanded-world chunk must audit all four edges');
+const worstSeam = atlasContinuity.reduce((worst, sample) =>
+  sample.maxDelta > worst.maxDelta ? sample : worst,
+  { chunk: { x: 0, y: 0 }, edge: 'n' as const, maxDelta: 0 });
+assert.ok(atlasContinuity.every((sample) => sample.maxDelta < 0.001),
+  `world-field seam at chunk ${worstSeam.chunk.x},${worstSeam.chunk.y} ${worstSeam.edge} edge exceeded tolerance: ${worstSeam.maxDelta}`);
+
+// Check every atlas cell's world-space environment samples are finite and
+// normalized, not just the original three representative coordinates.
+for (const chunk of atlasChunks) {
+  const wx = (chunk.x + 0.5) * LANDSCAPE_FIELD_SIZE;
+  const wy = (chunk.y + 0.5) * LANDSCAPE_FIELD_SIZE;
+  for (const field of [macroLandformAt, moistureAt, forestDensityAt, rockDensityAt]) {
+    const value = field(wx, wy);
+    assert.ok(Number.isFinite(value) && value >= 0 && value <= 1,
+      `invalid landscape field at chunk ${chunk.x},${chunk.y}: ${value}`);
+  }
+}
+console.log(`Landscape atlas audit passed: ${atlasChunks.length} chunks, ${atlasContinuity.length} edges, ${worstSeam.maxDelta.toFixed(6)} worst seam delta.`);
 
 console.log('Landscape coherence checks passed.');
