@@ -55,9 +55,6 @@ assert.ok(borderDetailCount > 0, 'world must mark biome boundaries for edge deta
 
 // Multi-seed audit: map expansion must not change the authored core, and
 // every seed must still produce a varied, valid home region.
-const coreTiles = first.filter((tile) =>
-  tile.x >= CORE_WORLD_BOUNDS.minX && tile.x <= CORE_WORLD_BOUNDS.maxX &&
-  tile.y >= CORE_WORLD_BOUNDS.minY && tile.y <= CORE_WORLD_BOUNDS.maxY);
 for (const seed of [1, 42, 2026, 0x7fffffff]) {
   const coreOnly = generateWorldMap(seed, CORE_WORLD_BOUNDS);
   const expanded = generateWorldMap(seed, bounds);
