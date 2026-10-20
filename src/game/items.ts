@@ -234,6 +234,8 @@ export interface GeneratedItem {
   value: number;
   /** Whether this item is currently equipped. Only equipped items grant stats. */
   equipped: boolean;
+  /** BUILD 890: previous owners, most recent first (survives save/load — serialized with the item). */
+  provenance?: string[];
 }
 
 let itemInstanceCounter = 0;
@@ -468,4 +470,21 @@ export function describeLoot(loot: Record<string, number>): string {
     parts.push(`+${count} ${label}${plural}`);
   }
   return parts.join(' · ') || 'nothing';
+}
+
+// ---------------------------------------------------------------------------
+// Provenance (BUILD 890 — examine flavor: "Previously owned by X")
+// ---------------------------------------------------------------------------
+
+/** Record a new previous owner. Most recent first, capped at 3. Pure. */
+export function withProvenance(item: GeneratedItem, owner: string): GeneratedItem {
+  const prev = item.provenance ?? [];
+  if (prev[0] === owner) return item;
+  return { ...item, provenance: [owner, ...prev].slice(0, 3) };
+}
+
+/** "Previously owned by A, B" or undefined when the item has no history. Pure. */
+export function provenanceLabel(item: GeneratedItem): string | undefined {
+  if (!item.provenance?.length) return undefined;
+  return 'Previously owned by ' + item.provenance.join(', ');
 }

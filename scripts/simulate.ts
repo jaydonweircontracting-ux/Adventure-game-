@@ -34,7 +34,7 @@ import { mosslightEngineProps } from '../src/game/mosslightLayout';
 import { WfcSolver, WfcSeededRng, wfcSeedFor } from '../src/game/wfc';
 import { worldBiomeTileSet, generateChunkBiomes, validateBiomeGrid } from '../src/game/wfcWorld';
 import { SpatialHash, updateSeparation, createSeparationState } from '../src/game/spatialHash';
-import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, generatedItemWeight, describeLoot } from '../src/game/items';
+import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, generatedItemWeight, describeLoot, withProvenance, provenanceLabel } from '../src/game/items';
 import { BURROWING_BEAST, TWO_HEADED_SERPENT, phaseForHealth, allBosses } from '../src/game/bosses';
 import { EntityPool, type PoolableEntity } from '../src/game/entityPool';
 import { FlowField, FlowFieldCache, sampleFlowSmoothed } from '../src/game/flowField';
@@ -5210,6 +5210,17 @@ console.log('Testing examine system...');
   assert(describeLoot({}) === 'nothing', 'Loot: empty');
   assert(describeLoot({ coins: 0, silk: -1 }) === 'nothing', 'Loot: zero/negative skipped');
   assert(describeLoot({ goatHorns: 2 }) === '+2 horns', 'Loot: horns plural');
+
+  // BUILD 890: provenance — previous owners recorded, most recent first.
+  const looted = withProvenance(item1, 'Ham the Smith');
+  assert(looted.provenance?.[0] === 'Ham the Smith', 'Provenance: owner recorded');
+  assert(item1.provenance === undefined, 'Provenance: pure (original untouched)');
+  const twice = withProvenance(looted, 'Bandit Chief');
+  assert(twice.provenance!.join('|') === 'Bandit Chief|Ham the Smith', `Provenance: order: ${twice.provenance}`);
+  const dup = withProvenance(looted, 'Ham the Smith');
+  assert(dup === looted, 'Provenance: same owner twice is a no-op');
+  assert(provenanceLabel(twice) === 'Previously owned by Bandit Chief, Ham the Smith', 'Provenance: label');
+  assert(provenanceLabel(item1) === undefined, 'Provenance: no history, no label');
 
   // Equip non-existent → unchanged.
   const unchanged = equipItem([item1], 'nonexistent');

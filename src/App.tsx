@@ -43,7 +43,7 @@ import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, cl
 // BUILD 704: stamina/energy for sprinting.
 import { createStamina, tickStamina, canRun, staminaFrac, type StaminaState } from './game/stamina';
 import { npcAppearanceStyle } from './game/npcAppearance';
-import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, describeLoot, type GeneratedItem, type EncumbranceTier } from './game/items';
+import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, describeLoot, withProvenance, provenanceLabel, type GeneratedItem, type EncumbranceTier } from './game/items';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, applyPersonalityTone, type DialogueTopicId } from './game/dialogue';
 import { recognizeIntent, fallbackResponse } from './game/dialogueIntent';
 import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasConversationMemories } from './game/conversationMemory';
@@ -140,13 +140,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '889';
+const BUILD_NUMBER = '890';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '890': 'Examine provenance — looted equipment remembers its previous owners ("Previously owned by Ham") in the inventory and survives save/load',
   '889': 'Damage-drop HP bars — damaged townsfolk show a shrinking red HP bar under their name in the iso view (monsters already had one)',
   '888': 'Loot-drop announcements — "You looted: +3 silk · +1 sword" names every item from ground drops and body looting; fixes ChatGPT build 886 DebugOverlay scope crash',
   '887': 'Colored overhead name labels — NPC names above sprites in red (hostile/cold), green (friendly), white (neutral)',
@@ -3575,10 +3576,14 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
           {equipment.length > 0 && (
             <div className="found-items" data-testid="found-items">
               <h4>Found Equipment ({equipment.length})</h4>
-              {equipment.map((item) => (
+              {equipment.map((item) => {
+                // BUILD 890: examine provenance — whose hands held it before.
+                const prov = provenanceLabel(item);
+                return (
                 <div key={item.instanceId} className="found-item" style={{ borderLeftColor: item.quality === 'unique' ? '#c9a24a' : item.quality === 'epic' ? '#9a4ac9' : item.quality === 'rare' ? '#4a7ec9' : item.quality === 'uncommon' ? '#4a9e4a' : '#9a9a9a' }}>
                   <strong>{item.name}</strong>
                   <small>{item.slot} · Lv {item.level} · {item.quality}{item.equipped ? ' · EQUIPPED' : ''}</small>
+                  {prov && <small style={{ display: 'block', fontStyle: 'italic' }}>{prov}</small>}
                   <div className="found-item-stats">
                     {Object.entries(item.stats).map(([k, v]) => (
                       <span key={k}>{k}: {typeof v === 'number' && v < 1 && v > 0 ? Math.round(v * 100) + '%' : v}</span>
@@ -3592,7 +3597,8 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
                     {item.equipped ? 'Unequip' : 'Equip'}
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}</div>
           ) : activeTab === 'quests' ? (
@@ -5390,7 +5396,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const takenItemNames: string[] = [];
     for (const itemId of taken.items) {
       const generated = generateItem(new ItemRng(Date.now() ^ itemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current));
-      const named = { ...generated, name: itemId.replace(/[-_]/g, ' ') };
+      // BUILD 890: the item remembers whose body it came from.
+      const named = withProvenance({ ...generated, name: itemId.replace(/[-_]/g, ' ') }, body.npcName);
       takenItemNames.push(named.name);
       onEquipmentChange((prev) => [...prev, named]);
     }
@@ -7083,7 +7090,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           // Elites get at least rare; bosses get epic or unique.
           const forcedQuality = isBoss ? (Math.random() < 0.3 ? 'unique' : 'epic') : isElite && Math.random() < 0.5 ? 'rare' : undefined;
           const item = generateItem(itemRng, itemLevel, forcedQuality);
-          onEquipmentChange((prev) => [...prev, item]);
+          // BUILD 890: the item remembers whose hoard it came from.
+          const goatState = attackTarget as GoatState;
+          const slainBy = `the ${isBoss ? 'boss ' : isElite ? 'elite ' : ''}${goatState.kind ?? 'beast'}`;
+          onEquipmentChange((prev) => [...prev, withProvenance(item, slainBy)]);
           const prefix = isBoss ? 'BOSS SLAIN! Alpha Direwolf defeated! ' : isElite ? 'Elite slain! ' : '';
           setLogs((currentLogs) => [{ text: `${prefix}You found: ${item.name}!`, color: 'gold' }, ...currentLogs].slice(0, 3));
         }
@@ -11242,7 +11252,8 @@ if (active) {
                             // BodyLoot.items is the extension point for future NPC armor/weapons.
                             for (const itemId of taken.items) {
                               const generated = generateItem(new ItemRng(Date.now() ^ itemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current));
-                              onEquipmentChange((prev) => [...prev, { ...generated, name: itemId.replace(/[-_]/g, ' ') }]);
+                              // BUILD 890: the item remembers whose body it came from.
+                              onEquipmentChange((prev) => [...prev, withProvenance({ ...generated, name: itemId.replace(/[-_]/g, ' ') }, body.npcName)]);
                             }
                             onLoot(loot as GoatLoot);
                             setLogs((cur) => [{ text: `Looted ${body.npcName}'s body.`, color: 'gold' }, ...cur].slice(0, 3));
