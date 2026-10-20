@@ -13,9 +13,14 @@
 export const ISO_TILES_BASE = 'iso-tiles';
 
 /** Ground tile numbers per terrain (files: iso-tiles/ground/tile_NNN.png). */
+const GRASS_GROUND_TILES = [24, 27, 28, 29, 30, 36, 37, 38, 39, 40];
+
 export const GROUND_TILES: Record<string, number[]> = {
-  meadow: [24, 27, 28, 29, 30, 36, 37, 38, 39, 40],
-  forest: [25, 26, 31, 32, 33, 34, 35],
+  // One continuous grass tileset under all grassy land. Forests are made
+  // visually distinct by tree/decor layers rather than a mismatched floor.
+  grass: GRASS_GROUND_TILES,
+  meadow: GRASS_GROUND_TILES,
+  forest: GRASS_GROUND_TILES,
   desert: [0, 1, 2, 3, 4, 5],
   shore: [6, 7, 8, 9, 10, 11],
   rock: [13, 14, 15, 16, 17, 18, 19, 20, 21],
@@ -46,7 +51,7 @@ export function hashTile(lx: number, ly: number, salt: number, ox: number, oy: n
 
 /** Which ground tile number to draw for a terrain at a tile. Unknown terrain falls back to meadow. */
 export function groundTileFor(terrain: string, lx: number, ly: number, ox: number, oy: number): number {
-  const list = GROUND_TILES[terrain] ?? GROUND_TILES.meadow;
+  const list = GROUND_TILES[terrain] ?? GROUND_TILES.grass;
   return list[hashTile(lx, ly, terrain.length + 7, ox, oy) % list.length];
 }
 

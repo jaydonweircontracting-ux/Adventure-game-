@@ -157,7 +157,7 @@ export function computeDirtPathGeometry(
     // Full stroke width in px, matching the pre-692 flat-stroke look.
     const bodyW = Math.max(2, ln.width * 14);
     // Organic edge wobble, bounded to a fraction of the path width.
-    const wobAmp = bodyW * 0.16;
+    const wobAmp = bodyW * 0.08; // BUILD 895: softer edge wobble avoids visibly jagged, broken-looking footpaths.
     const wob = (s: number) =>
       wobAmp * (0.62 * Math.sin(s * f1 + p1) + 0.38 * Math.sin(s * f2 + p2));
     geo.strokes.push({
@@ -165,11 +165,11 @@ export function computeDirtPathGeometry(
       widths: [bodyW * 1.45, bodyW, bodyW * 0.5],
     });
     // pebble speckles along the path (sparse for perf)
-    const count = Math.floor(total / 25);
+    const count = Math.floor(total / 38); // BUILD 895: keep path texture subtle instead of peppering it with noisy dots.
     for (let k = 0; k < count; k++) {
       const s = rng() * total;
       const { p, n } = pointAt(pts, arc, s);
-      const lateral = (rng() * 2 - 1) * bodyW * 0.38;
+      const lateral = (rng() * 2 - 1) * bodyW * 0.30;
       const rx = 0.9 + rng() * 1.9;
       geo.speckles.push({
         x: p.x + n.x * lateral,

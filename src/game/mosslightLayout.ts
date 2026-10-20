@@ -64,7 +64,7 @@ export function mosslightEngineLayout(): TownLayout {
       plazaCenter: { x: 4, y: 4 },
       plazaRadius: 13,
       pinnedLots: pinnedLots(),
-      maxFillerLots: 8,
+      maxFillerLots: 5, // BUILD 895: leave more green breathing room around the pinned, gameplay-critical buildings.
       suburbs: false,
     });
   }

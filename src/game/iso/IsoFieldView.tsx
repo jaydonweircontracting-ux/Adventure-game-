@@ -962,6 +962,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           const absCxS = chunk.x + sc.ox, absCyS = chunk.y + sc.oy;
           const sandy = absCxS >= 3 && absCxS <= 5 && absCyS >= 6 && absCyS <= 8 &&
             mosslightSandAt(lx + absCxS * 280, ly + absCyS * 280) > 0.5;
+          // BUILD 895: tile art is keyed to absolute world coordinates, not camera-relative chunk offsets. This prevents grass/decor patterns shifting or mismatching at chunk seams as the player moves.
           // BUILD 698: world tile coords + farmland plot code (0 = none).
           // Computed before the tileset branch so farm tiles use the flat
           // plot-color fallback (like the 695 sand), not the meadow tileset.
@@ -1002,9 +1003,9 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             const absCx = chunk.x + sc.ox, absCy = chunk.y + sc.oy;
             const wx = lx + absCx * 280, wy = ly + absCy * 280; // world coords
             const inPlaza = absCx === 0 && absCy === 0 && wx >= 124 && wx < 164 && wy >= 124 && wy < 164;
-            if (isOcean || wet) tn = groundTileFor('ocean', lx, ly, sc.ox, sc.oy);
-            else if (inPlaza) tn = groundTileFor('cobble', lx, ly, sc.ox, sc.oy);
-            else if (roadHere && !sandy) tn = groundTileFor('road', lx, ly, sc.ox, sc.oy);
+            if (isOcean || wet) tn = groundTileFor('ocean', wxW, wyW, 0, 0);
+            else if (inPlaza) tn = groundTileFor('cobble', wxW, wyW, 0, 0);
+            else if (roadHere && !sandy) tn = groundTileFor('road', wxW, wyW, 0, 0);
             // BUILD 695 fix: town roads use the flat fallback too (the road
             // tileset blocks would checkerboard the sandy streets).
             // BUILD 695 fix: sandy tiles use the FLAT diamond fallback below,
@@ -1014,7 +1015,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             // BUILD 698: farmland tiles likewise use the flat plot-color
             // fallback so the seeded plot colors show.
             else if (sandy || farmCode > 0) tn = -1;
-            else tn = groundTileFor(terr, lx, ly, sc.ox, sc.oy);
+            else tn = groundTileFor(terr, wxW, wyW, 0, 0);
             tileDrawn = tn >= 0 && drawGroundTile(groundCacheG, tn, p.x, p.y);
           }
           if (!tileDrawn) {
@@ -1077,7 +1078,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             // (desert rocks would litter the market square).
             // BUILD 698: none on farmland either — meadow tufts on plowed
             // soil read wrong; plots get hedge/fence boundaries instead.
-            const dn = (sandy || farmCode > 0) ? -1 : decorTileFor(terr, lx, ly, sc.ox, sc.oy);
+            const dn = (sandy || farmCode > 0) ? -1 : decorTileFor(terr, wxW, wyW, 0, 0);
             if (dn >= 0) drawDecor(groundCacheG, dn, p.x, p.y);
             else if (!sandy && farmCode === 0) {
               // HTML5 canvas accents add warm, storybook ground detail without
