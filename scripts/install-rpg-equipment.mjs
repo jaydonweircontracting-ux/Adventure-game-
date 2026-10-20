@@ -22,6 +22,9 @@ const MANIFEST_PATH = path.join(ROOT, 'src', 'game', 'iso', 'rpgManifest.json');
 const LOOK_SOURCES = [
   path.join(ROOT, 'src', 'game', 'iso', 'characterSystem.ts'),
   path.join(ROOT, 'src', 'components', 'RpgCharacterCreator.tsx'),
+  // BUILD 911: item->art mapping + folder/slot classification (equipmentArt)
+  // references the folders worn for generated gear and paperdoll toggles.
+  path.join(ROOT, 'src', 'game', 'iso', 'equipmentArt.ts'),
 ];
 const ANIMATIONS = {
   Idle: { seq: 1, frames: [20, 25, 35, 40] },

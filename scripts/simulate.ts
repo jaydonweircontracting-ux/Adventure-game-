@@ -1081,6 +1081,78 @@ console.log('Testing townsfolk living-town simulation...');
   assert(npcHp(respawned) === npcMaxHp(respawned), 'Respawn should restore HP');
 }
 
+// ---- 13a2. Equipment art wiring (BUILD 911): item art map + look compose ----
+console.log('Testing equipment art wiring (BUILD 911)...');
+{
+  const art = await import('../src/game/iso/equipmentArt');
+  const items = await import('../src/game/items');
+  const { readFileSync } = await import('node:fs');
+  const manifest = JSON.parse(readFileSync(new URL('../src/game/iso/rpgManifest.json', import.meta.url), 'utf8')) as {
+    folders: Record<string, { type: string }>;
+  };
+  const noToggles = { dagger: false, bow: false, shirt: false, sword: false };
+
+  // Every item base has an explicit art entry; every referenced folder is
+  // classified and exists in the pack manifest (installable as pure data).
+  for (const base of items.ITEM_BASES) {
+    assert(base.id in art.ITEM_BASE_ART, `ITEM_BASE_ART missing entry for ${base.id}`);
+    for (const folder of art.ITEM_BASE_ART[base.id] ?? []) {
+      assert(art.RPG_FOLDER_VISUAL_SLOT[folder] !== undefined, `Art folder ${folder} not classified`);
+      assert(manifest.folders[folder]?.type === 'equipment', `Art folder ${folder} not in manifest`);
+    }
+  }
+  // Jewelry and the spellbook deliberately have no worn art.
+  for (const id of ['copper_ring', 'gold_ring', 'bone_amulet', 'wolf_pendant', 'spellbook']) {
+    assert((art.ITEM_BASE_ART[id] ?? ['x']).length === 0, `${id} should have no worn art`);
+  }
+
+  const creatorLook = { base: 'BaseHumanMale' as const, equipment: ['BluePants', 'BlueVest', 'DreamWalkerHair1', 'BeardDark'] };
+  // Creator-only look passes through in canonical draw order.
+  const plain = art.composePlayerLook(creatorLook, noToggles, []);
+  assert(plain.base === 'BaseHumanMale', 'Compose keeps the creator base');
+  assert(JSON.stringify(plain.equipment) === JSON.stringify(['BluePants', 'BlueVest', 'DreamWalkerHair1', 'BeardDark']),
+    `Creator-only compose order wrong: ${plain.equipment}`);
+
+  const mkItem = (baseId: string, equipped = true) => ({
+    instanceId: 't-' + baseId, baseId, name: baseId, slot: items.ITEM_BASES.find((b) => b.id === baseId)!.slot,
+    quality: 'common' as const, stats: {}, affixIds: [], level: 1, value: 1, equipped,
+  });
+
+  // Equipped armor replaces the creator's torso clothing; helmet covers hair
+  // but not the beard; boots layer over the creator's pants.
+  const geared = art.composePlayerLook(creatorLook, noToggles, [
+    mkItem('plate_armor'), mkItem('steel_helm'), mkItem('leather_boots'), mkItem('dagger'),
+  ]);
+  assert(geared.equipment.includes('BreastPlate1') && !geared.equipment.includes('BlueVest'),
+    'Equipped plate should replace creator vest');
+  assert(geared.equipment.includes('DrkHelm') && !geared.equipment.includes('DreamWalkerHair1'),
+    'Worn helmet should suppress the hair layer');
+  assert(geared.equipment.includes('BeardDark'), 'Beard survives a worn helmet');
+  assert(geared.equipment.indexOf('BluePants') < geared.equipment.indexOf('DrkBoot'),
+    'Boots layer must draw over pants');
+  assert(geared.equipment[geared.equipment.length - 1] === 'Dagger', 'Weapon draws last in its group');
+
+  // Unequipped items contribute nothing; unequipping restores the base look.
+  const restored = art.composePlayerLook(creatorLook, noToggles, [mkItem('plate_armor', false)]);
+  assert(JSON.stringify(restored.equipment) === JSON.stringify(plain.equipment), 'Unequip should restore the creator look');
+
+  // Paperdoll toggles: sword toggle shows a sword; a real equipped weapon wins.
+  const toggled = art.composePlayerLook(creatorLook, { ...noToggles, sword: true }, []);
+  assert(toggled.equipment.includes('BroadSword2'), 'Sword toggle should add the sword layer');
+  const realWins = art.composePlayerLook(creatorLook, { ...noToggles, sword: true }, [mkItem('dagger')]);
+  assert(realWins.equipment.includes('Dagger') && !realWins.equipment.includes('BroadSword2'),
+    'Equipped generated weapon should beat the toggle weapon');
+  // Legacy parity: dagger toggle alone reproduces the pre-911 look exactly.
+  const legacy = art.composePlayerLook({ base: 'BaseHumanMale' as const, equipment: [] }, { ...noToggles, dagger: true }, []);
+  assert(JSON.stringify(legacy.equipment) === JSON.stringify(['Dagger']), 'Dagger toggle parity with pre-911 behavior');
+
+  // The cloak maps to the accessory layer and coexists with torso armor.
+  const cloaked = art.composePlayerLook(creatorLook, noToggles, [mkItem('traveler_cloak'), mkItem('chainmail')]);
+  assert(cloaked.equipment.includes('DrkCloakFRONT') && cloaked.equipment.includes('DrkChainTunic'),
+    'Cloak front should coexist with torso armor');
+  assert(!cloaked.equipment.includes('DrkCloakBACK'), 'Back-cloak layer is never emitted (renderer has no back pass)');
+}
+
 // ---- 13b. Ambient market life (BUILD 694): shoppers, browsers, errands ----
 console.log('Testing ambient market life (BUILD 694)...');
 {

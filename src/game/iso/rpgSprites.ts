@@ -256,6 +256,26 @@ export function preloadRpgBase(base: RpgBase): void {
   }
 }
 
+/**
+ * Preload equipment layer folders (BUILD 911). Layers use the same frame
+ * contract as bases; only the locomotion/idle sets are preloaded — combat
+ * frames stream in on demand behind the renderer's last-good-layer cache.
+ */
+export function preloadRpgLayers(folders: readonly string[]): void {
+  const anims: RpgAnim[] = ['Idle', 'Walk', 'Run'];
+  const faces: Face8[] = ['up', 'down', 'left', 'right', 'upleft', 'upright', 'downleft', 'downright'];
+  for (const folder of folders) {
+    for (const anim of anims) {
+      const n = RPG_ANIM_FRAMES[anim];
+      for (const face of faces) {
+        for (let i = 0; i < n; i++) {
+          rpgSprite(folder, anim, face, i); // starts load, cached
+        }
+      }
+    }
+  }
+}
+
 /** True when all frames for (base, anim) are loaded in every direction. */
 export function rpgAnimReady(base: string, anim: RpgAnim): boolean {
   const faces: Face8[] = ['up', 'down', 'left', 'right', 'upleft', 'upright', 'downleft', 'downright'];

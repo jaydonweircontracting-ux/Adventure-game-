@@ -1,6 +1,6 @@
 {
-  "build": "899",
-  "note": "Tap-to-talk — tapping a near, already-targeted NPC opens dialogue directly (iso canvas + DOM field); the field Chat/Talk button is removed from the UI. Starting-house roof overlay enlarged and sunk so its wall bases fully cover the interior sprite bottom (no more floor/bed/plant sticking out below the walls); roof still hides when you walk in",
-  "timestamp": "2026-10-20T05:21:33.480Z",
-  "cacheBuster": "mvg8k1m0"
+  "build": "911",
+  "note": "Equipped gear is now worn: the paperdoll and looted/crafted items render on your character (armor, helmets, gloves, boots, weapons, shields, cloaks) over your character-creator clothing and hair; a worn helmet covers your hair, boots layer over pants, and unequipping restores your base look. NPC outfits finally render too — the equipment sprite folders are installed in public/rpg and every item base maps to its art in equipmentArt.ts",
+  "timestamp": "2026-10-20T07:52:15.851Z",
+  "cacheBuster": "mvgdxur0"
 }

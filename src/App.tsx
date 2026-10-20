@@ -122,7 +122,8 @@ import { cornStalksForChunk, type CornStalk } from '@/game/cornfield';
 import { getSpriteState } from '@/game/animation';
 import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/persistence';
 import RpgCharacterCreator from '@/components/RpgCharacterCreator';
-import { RPG_DEFAULT_LOOK, type RpgLook } from '@/game/iso/rpgSprites';
+import { RPG_DEFAULT_LOOK, preloadRpgLayers, type RpgLook } from '@/game/iso/rpgSprites';
+import { composePlayerLook } from '@/game/iso/equipmentArt';
 import { compositeAttackSprite, compositeCharacterSheet, sanitizeCharacterChoices, type CharacterChoices } from '@/game/characterCreator';
 import { artUrl } from '@/game/artCache';
 import { determineUpdateStatus, parseBuildMarker } from '@/game/updateVersion';
@@ -141,13 +142,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '910';
+const BUILD_NUMBER = '911';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '911': 'Equipped gear is now worn: the paperdoll and looted/crafted items render on your character (armor, helmets, gloves, boots, weapons, shields, cloaks) over your character-creator clothing and hair; a worn helmet covers your hair, boots layer over pants, and unequipping restores your base look. NPC outfits finally render too — the equipment sprite folders are installed in public/rpg and every item base maps to its art in equipmentArt.ts',
   '910': 'Every Mosslight building now uses the starter-house two-layer system: roofless interior below, roof overlay that lifts when you step inside and returns when you leave. Roof sunk to fully cover the interior floor edge; non-tutorial houses sized to their lots so neighbours no longer blanket each other; buildings paint in correct south-over-north order',
   '909': 'Character creation is limited to basic clothing, legwear, hair and beard choices; armor, shields and weapons must be acquired and equipped during gameplay',
   '908': 'Hardened selective corpse looting with a pure tested single-entry transfer model; taking one stack or item preserves all unselected loot on the body',
@@ -13709,6 +13711,18 @@ function Home() {
     } catch { /* default to a valid model */ }
     return { ...RPG_DEFAULT_LOOK, equipment: [] };
   });
+  // BUILD 911: the player's rendered look = creator picks + paperdoll
+  // toggles + equipped generated gear, composed by equipmentArt (real gear
+  // wins its layer). Memoized on the source state so the render loop gains
+  // no per-frame work; derives entirely from persisted state, so the worn
+  // look survives save/load and chunk transitions by construction.
+  const playerRenderLook = useMemo(
+    () => composePlayerLook(rpgPlayerLook, {
+      dagger: equippedDagger, bow: equippedBow, shirt: equippedShirt, sword: equippedSword,
+    }, equipment),
+    [rpgPlayerLook, equippedDagger, equippedBow, equippedShirt, equippedSword, equipment],
+  );
+  useEffect(() => { preloadRpgLayers(playerRenderLook.equipment); }, [playerRenderLook]);
   const [characterChoices, setCharacterChoices] = useState<CharacterChoices | null>(null);
   const [playerSpriteUrl, setPlayerSpriteUrl] = useState<string | null>(null);
   const [playerAttackSpriteUrl, setPlayerAttackSpriteUrl] = useState<string | null>(null);
@@ -14213,7 +14227,7 @@ function Home() {
       `}</style>
       <div className="game-layout">
             <GameCrashBoundary chunk={chunk}>
-            <GameField rpgConfig={{ look: equippedDagger ? { ...rpgPlayerLook, equipment: Array.from(new Set([...rpgPlayerLook.equipment, 'Dagger'])) } : rpgPlayerLook, forceIso: forceIsoField }} inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} mapOpen={mapOpen} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} onResolveBounty={() => setBounty(emptyBounty())} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
+            <GameField rpgConfig={{ look: playerRenderLook, forceIso: forceIsoField }} inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} mapOpen={mapOpen} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} onResolveBounty={() => setBounty(emptyBounty())} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
             </GameCrashBoundary>
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
