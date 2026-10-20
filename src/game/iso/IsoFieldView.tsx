@@ -703,8 +703,12 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       const dpr = baseDpr() * adaptiveResolutionScale;
       const width = Math.max(1, Math.round(r.width * dpr));
       const height = Math.max(1, Math.round(r.height * dpr));
-      if (canvas.width !== width) canvas.width = width;
-      if (canvas.height !== height) canvas.height = height;
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        // Ground cache pixels must match the new backing-store resolution.
+        groundCacheKey = '';
+      }
     };
     resize();
     window.addEventListener('resize', resize);
