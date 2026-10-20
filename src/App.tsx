@@ -116,7 +116,7 @@ import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, ques
 import { chestsForChunk, attemptLockpick, serializeOpenedChests, parseOpenedChests, type LockedChest } from '@/game/lockpicking';
 import { sitesForActiveStages, resolveSiteChunk, chunkSatisfiesStage, type ActiveQuestStage } from '@/game/questSites';
 import { playCombatSound } from '@/game/effects';
-import { createEmptySkills, awardXp, levelForXp, xpToNextLevel, SKILLS, WOODCUTTING_XP_PER_TREE, type SkillState } from '@/game/skills';
+import { createEmptySkills, awardXp, levelForXp, xpToNextLevel, SKILLS, WOODCUTTING_XP_PER_TREE, SKILL_MASTERS, masterForNpc, apprenticeshipCheck, apprenticeXpBonus, type SkillState } from '@/game/skills';
 import { cornStalksForChunk, type CornStalk } from '@/game/cornfield';
 import { getSpriteState } from '@/game/animation';
 import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/persistence';
@@ -147,6 +147,7 @@ const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '881': 'Skill masters — Tom, Aldric and Bryn teach smithing, woodcutting and cooking; meet their stat requirement to apprentice for +50% earned XP',
   '880': 'NPCs commit crimes — hungry, broke townsfolk steal from each other and feed the existing crime, witness, memory and gossip pipeline',
   '879': 'Give NPCs personality-based fight-or-flight reactions, pursuit movement, and cooldown-based melee damage when attacked',
   '878': 'Make guards visibly sprint to wanted players before the flee, jail, or fine prompt appears',
@@ -1760,6 +1761,8 @@ type SaveGameData = {
   bounty?: BountyState;
   // BUILD 595: Skill XP (levels recalculated from XP on load).
   skills?: Record<string, { xp: number }>;
+  // BUILD 881: skill-master apprenticeships (skillId -> master npcName).
+  apprenticeships?: Record<string, string>;
   // BUILD 704: player stamina (0-100).
   stamina?: number;
 };
@@ -5904,6 +5907,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     skills: Object.fromEntries(
       Object.entries(skillsRef.current).map(([id, s]) => [id, { xp: s.xp }])
     ),
+    // BUILD 881: Persist skill-master apprenticeships.
+    apprenticeships: { ...apprenticeshipsRef.current },
     // BUILD 704: Persist player stamina.
     stamina: Math.round(staminaRef.current.value),
   });
@@ -5955,6 +5960,18 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         }
       }
       skillsRef.current = restored; setSkills({ ...restored });
+      // BUILD 881: restore apprenticeships (validate against known masters).
+      {
+        const ap: Record<string, string> = {};
+        if (loadState.apprenticeships && typeof loadState.apprenticeships === 'object') {
+          for (const [skillId, npcName] of Object.entries(loadState.apprenticeships)) {
+            if (typeof npcName !== 'string') continue;
+            const master = SKILL_MASTERS[skillId];
+            if (master && master.npcName === npcName) ap[skillId] = npcName;
+          }
+        }
+        apprenticeshipsRef.current = ap; setApprenticeships({ ...ap });
+      }
       // BUILD 704: restore player stamina (clamped, never exhausted on load).
       if (typeof loadState.stamina === 'number' && Number.isFinite(loadState.stamina)) {
         staminaRef.current = createStamina(loadState.stamina);
@@ -6783,8 +6800,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 595: Authoritative skill state. XP is authoritative; levels derive from XP.
   const [skills, setSkills] = useState<Record<string, SkillState>>(() => createEmptySkills());
   const skillsRef = useRef<Record<string, SkillState>>(skills);
+  // BUILD 881: skill-master apprenticeships (skillId -> master npcName).
+  const [apprenticeships, setApprenticeships] = useState<Record<string, string>>({});
+  const apprenticeshipsRef = useRef<Record<string, string>>({});
   const awardSkillXp = (skillId: string, amount: number) => {
-    const result = awardXp(skillsRef.current, skillId, amount);
+    // BUILD 881: masters multiply EARNED xp only (never grant free xp).
+    const bonus = apprenticeXpBonus(apprenticeshipsRef.current, skillId);
+    const result = awardXp(skillsRef.current, skillId, Math.round(amount * bonus));
     setSkills({ ...skillsRef.current });
     if (result.leveledUp) {
       const def = SKILLS[skillId];
@@ -8565,8 +8587,24 @@ if (active) {
     setTownsfolk([...townsfolkRef.current]);
   };
 
-  const chooseDialogueTopic = (npc: Townsperson, topic: DialogueTopicId) => {
-    const liveNpc = townsfolkRef.current.find((candidate) => candidate.id === npc.id); const tickNow = brainRef.current?.worldCore.getClock().tick ?? 0;
+  // BUILD 881: skill-master apprenticeship. Masters never grant free XP —
+  // they multiply XP earned from real actions once the stat requirement is met.
+  const becomeApprentice = (npc: Townsperson) => {
+    const master = masterForNpc(npc.name);
+    if (!master) return;
+    if (apprenticeshipsRef.current[master.skillId] === npc.name) return;
+    const check = apprenticeshipCheck(playerStats, master);
+    if (!check.ok) {
+      setLogs((cur) => [{ text: `${npc.name} shakes their head: "${check.reason}."`, color: 'orange' }, ...cur].slice(0, 3));
+      return;
+    }
+    const next = { ...apprenticeshipsRef.current, [master.skillId]: npc.name };
+    apprenticeshipsRef.current = next;
+    setApprenticeships(next);
+    const skillName = SKILLS[master.skillId]?.name ?? master.skillId;
+    setLogs((cur) => [{ text: `🤝 ${npc.name} takes you as apprentice in ${skillName}! +50% XP from practice.`, color: 'gold' }, ...cur].slice(0, 3));
+  };
+  const chooseDialogueTopic = (npc: Townsperson, topic: DialogueTopicId) => {    const liveNpc = townsfolkRef.current.find((candidate) => candidate.id === npc.id); const tickNow = brainRef.current?.worldCore.getClock().tick ?? 0;
     if (!liveNpc || isNpcDead(liveNpc, tickNow)) { setTownsfolkDialogue(null); setDialogueTopic(null); return; }
     if (topic === 'bye') {
       setTownsfolkDialogue(null);
@@ -12707,6 +12745,20 @@ if (active) {
                     {topicsFor(npc.archetype).map((t) => (
                       <button key={t.id} type="button" className={'dialogue-topic' + (dialogueTopic === t.id ? ' is-active' : '')} onClick={() => chooseDialogueTopic(npc, t.id)}>{t.label}</button>
                     ))}
+                    {/* BUILD 881: skill-master apprenticeship button. */}
+                    {(() => {
+                      const master = masterForNpc(npc.name);
+                      if (!master) return null;
+                      const isApprenticed = apprenticeships[master.skillId] === npc.name;
+                      const skillName = SKILLS[master.skillId]?.name ?? master.skillId;
+                      return (
+                        <button key="apprentice" type="button" className="dialogue-topic" disabled={isApprenticed}
+                          onClick={() => becomeApprentice(npc)} data-testid="button-apprentice"
+                          title={isApprenticed ? 'Already apprenticed' : master.pitch}>
+                          {isApprenticed ? `✓ ${skillName} apprentice` : `🛠 Train ${skillName} (${master.requiredStat} ${master.stat.toUpperCase()})`}
+                        </button>
+                      );
+                    })()}
                   </div>
                   {/* BUILD 654: Free-text input. */}
                   <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>

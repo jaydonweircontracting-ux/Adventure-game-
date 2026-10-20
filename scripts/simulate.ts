@@ -97,7 +97,7 @@ import { mulberry32, shadeColor, mixColor, hexToRgb, GROUND_PX_PER_UNIT } from '
 import { FIELD_SIZE, DEFAULT_GAME_ZOOM, zoomTranslatePct, cameraFrac, playerScreenPct, screenPxToFieldUnits, fieldPct } from '../src/game/fieldCamera';
 import { PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP, collisionBoxesOverlap, isPositionOccupiedByGoat, separateGoatFromPlayer } from '../src/game/fieldCollision';
 import { oreNodesForChunk, mineralRichness, geoHash, oreKindFor, GEOLOGY_CELL } from '../src/game/geology';
-import { createEmptySkills, awardXp, levelForXp, xpForLevel, xpToNextLevel, SKILLS, WOODCUTTING_XP_PER_TREE } from '../src/game/skills';
+import { createEmptySkills, awardXp, levelForXp, xpForLevel, xpToNextLevel, SKILLS, WOODCUTTING_XP_PER_TREE, SKILL_MASTERS, masterForNpc, apprenticeshipCheck, apprenticeXpBonus } from '../src/game/skills';
 import { ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset, isoViewportCovered, isoVisibleTileRange } from '../src/game/iso/isoChunks';
 // BUILD 702: barbarian.ts replaced by rpgSprites.ts (import removed)
 
@@ -5496,6 +5496,19 @@ console.log('Testing examine system...');
   // 9. All six skills defined.
   assert(SKILLS.woodcutting && SKILLS.mining && SKILLS.fishing && SKILLS.smithing && SKILLS.crafting && SKILLS.cooking,
     'Skills: all six skills defined');
+
+  // BUILD 881: skill masters — named NPC teachers with stat prerequisites.
+  assert(Object.keys(SKILL_MASTERS).length >= 3, 'Skills: at least 3 masters defined');
+  const tom = masterForNpc('Tom');
+  assert(tom && tom.skillId === 'smithing', 'Skills: Tom teaches smithing');
+  assert(masterForNpc('Nobody') === undefined, 'Skills: non-master returns undefined');
+  const checkOk = apprenticeshipCheck({ str: 15, dex: 8, int: 8, luk: 8 }, tom!);
+  assert(checkOk.ok, 'Skills: meets stat requirement');
+  const checkFail = apprenticeshipCheck({ str: 5, dex: 8, int: 8, luk: 8 }, tom!);
+  assert(!checkFail.ok && checkFail.reason.includes('12'), 'Skills: fails below requirement with reason');
+  assert(apprenticeXpBonus({}, 'smithing') === 1, 'Skills: no bonus without apprenticeship');
+  assert(apprenticeXpBonus({ smithing: 'Tom' }, 'smithing') === 1.5, 'Skills: 1.5x bonus when apprenticed');
+  assert(apprenticeXpBonus({ smithing: 'Tom' }, 'cooking') === 1, 'Skills: bonus is per-skill');
 }
 
 // BUILD 627: Wildlife combat — shared pipeline verification.

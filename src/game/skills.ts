@@ -104,3 +104,82 @@ export function awardXp(
 // Woodcutting XP: 25 XP per tree felled (takes ~3-4 swings)
 // At 25 XP/tree: Level 2 after 4 trees, Level 10 after ~400 trees
 export const WOODCUTTING_XP_PER_TREE = 25;
+
+// ---------------------------------------------------------------------------
+// Skill masters (BUILD 881 — EO skill-master model, need-driven teachers)
+// ---------------------------------------------------------------------------
+
+export interface SkillMasterDef {
+  skillId: string;
+  /** Named Mosslight NPC who teaches this skill. */
+  npcName: string;
+  /** Stat checked at apprenticeship time. */
+  stat: 'str' | 'dex' | 'int' | 'luk';
+  /** Minimum stat value to become an apprentice. */
+  requiredStat: number;
+  /**
+   * XP multiplier on EARNED xp once apprenticed. Never grants free XP —
+   * the bonus only multiplies XP from real successful actions.
+   */
+  xpBonus: number;
+  /** The master's invitation line. */
+  pitch: string;
+}
+
+export const SKILL_MASTERS: Record<string, SkillMasterDef> = {
+  smithing: {
+    skillId: 'smithing',
+    npcName: 'Tom',
+    stat: 'str',
+    requiredStat: 12,
+    xpBonus: 1.5,
+    pitch: 'Steel remembers the hand that shapes it. Show me strong arms and I will show you the forge.',
+  },
+  woodcutting: {
+    skillId: 'woodcutting',
+    npcName: 'Aldric',
+    stat: 'str',
+    requiredStat: 10,
+    xpBonus: 1.5,
+    pitch: 'The north fields taught me every tree by name. Keep up with my axe and you will learn.',
+  },
+  cooking: {
+    skillId: 'cooking',
+    npcName: 'Bryn',
+    stat: 'dex',
+    requiredStat: 10,
+    xpBonus: 1.5,
+    pitch: 'A steady hand makes a steady stew. Prove your dexterity and my kitchen is yours.',
+  },
+};
+
+/** Find the master definition for a named NPC (undefined = not a master). */
+export function masterForNpc(npcName: string): SkillMasterDef | undefined {
+  return Object.values(SKILL_MASTERS).find((m) => m.npcName === npcName);
+}
+
+/** Check the stat prerequisite for apprenticeship. Pure. */
+export function apprenticeshipCheck(
+  stats: Record<string, number>,
+  master: SkillMasterDef,
+): { ok: boolean; reason: string } {
+  const value = stats[master.stat] ?? 0;
+  if (value >= master.requiredStat) return { ok: true, reason: '' };
+  return {
+    ok: false,
+    reason: `Requires ${master.requiredStat} ${master.stat.toUpperCase()} (you have ${value})`,
+  };
+}
+
+/**
+ * XP multiplier for a skill given current apprenticeships.
+ * apprenticeships: skillId -> master npcName. 1 = no master.
+ */
+export function apprenticeXpBonus(
+  apprenticeships: Record<string, string>,
+  skillId: string,
+): number {
+  if (!apprenticeships[skillId]) return 1;
+  const master = SKILL_MASTERS[skillId];
+  return master ? master.xpBonus : 1;
+}

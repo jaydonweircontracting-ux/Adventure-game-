@@ -1,6 +1,6 @@
 {
-  "build": "876",
-  "note": "Keep Asset Studio selection highlight persistent, minimize without opening World Editor, and restore always-visible Attack and Sprint controls",
-  "timestamp": "2026-10-19T21:54:08.658Z",
-  "cacheBuster": "build876-studio-highlight-minimize-combat-hud"
+  "build": "880",
+  "note": "NPCs commit crimes — hungry, broke townsfolk steal from each other and feed the existing crime, witness, memory and gossip pipeline",
+  "timestamp": "2026-10-20T01:30:37.505Z",
+  "cacheBuster": "mvg0b29t"
 }
