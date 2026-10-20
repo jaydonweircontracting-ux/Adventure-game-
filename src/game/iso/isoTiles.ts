@@ -111,8 +111,10 @@ export const FARM_GREEN = 2; // muted green #A8C090
 export const FARM_SOIL = 3; // brown soil   #B8A890
 export const FARM_TRACK = 4; // dirt track   #BFA878
 
-/** Base colors for the FARM_* codes above (index = code - 1). */
-export const FARM_BASE_COLORS = ['#E8D8A0', '#A8C090', '#B8A890', '#BFA878'];
+/** Base colors for the FARM_* codes above (index = code - 1).
+ * BUILD 916: retuned so plots read as what they are — wheat ochre, crop
+ * green, tilled soil brown, dirt track — instead of three pale beiges. */
+export const FARM_BASE_COLORS = ['#dec98e', '#7cab58', '#8f6d4b', '#b39a67'];
 
 /** Farmland detail codes returned by farmlandDetailAt: 0 none, 1 hedge, 2 fence, 3 farmhouse, 4 barn. */
 export const FARM_DET_NONE = 0;
@@ -178,6 +180,92 @@ export function farmlandDetailAt(wx: number, wy: number): number {
   const edge = lx === 2 || ly === 2 || lx === FARM_CELL - 1 || ly === FARM_CELL - 1;
   if (!edge) return FARM_DET_NONE;
   return hashTile(px, py, 699, 0, 0) % 2 === 0 ? FARM_DET_HEDGE : FARM_DET_FENCE;
+}
+
+// ---------------------------------------------------------------------------
+// BUILD 916: continuous ground tones (the checkerboard fix).
+//
+// Every ground surface used to pick a discrete shade bucket per tile from
+// hashTile (sand: %8 shades, farm: %4 shades, tileset art: %10 blocks). The
+// XOR hash's low bits correlate with tile parity, so the buckets landed in
+// near-perfect alternating light/dark diamonds — the whole world read as a
+// two-tone checkerboard quilt (town sand, farm plots, meadow, river alike).
+//
+// Ground tone is now a smooth value-noise field over world coordinates:
+// neighboring tiles always get neighboring tones, so no surface can checker.
+// Three brightness octaves (broad/medium/fine) plus a large-scale "patch"
+// channel for mixing between two tones of the same surface. Pure functions
+// of world coords — identical every load, no shimmer, no per-frame state.
+// ---------------------------------------------------------------------------
+
+function toneLattice(ix: number, iy: number, seed: number): number {
+  const s = Math.sin(ix * 127.1 + iy * 311.7 + seed * 74.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+/** Smoothstep-interpolated value noise over a global lattice. Returns 0..1. */
+export function groundValueNoise(u: number, v: number, seed: number): number {
+  const ix = Math.floor(u), iy = Math.floor(v);
+  const fx = u - ix, fy = v - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = toneLattice(ix, iy, seed), b = toneLattice(ix + 1, iy, seed);
+  const c = toneLattice(ix, iy + 1, seed), d = toneLattice(ix + 1, iy + 1, seed);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+
+export interface GroundTone {
+  /** Brightness multiplier, ~[0.89, 1.11], spatially smooth. */
+  shade: number;
+  /** Large-scale patch channel 0..1 for mixing two tones of one surface. */
+  patch: number;
+}
+
+const TONE_CACHE_MAX = 65536;
+const toneCache = new Map<number, GroundTone>();
+
+/** Continuous ground tone at world tile coords. Deterministic forever.
+ * Memoized (bounded) — the ground renderer repaints the same tiles on
+ * every cache rebuild as the camera moves, and the tone never changes. */
+export function groundToneAt(wx: number, wy: number): GroundTone {
+  const key = (wx + 8192) * 16384 + (wy + 8192);
+  let t = toneCache.get(key);
+  if (!t) {
+    const coarse = groundValueNoise(wx / 120, wy / 120, 9161);
+    const mid = groundValueNoise(wx / 41, wy / 41, 9162);
+    const fine = groundValueNoise(wx / 11, wy / 11, 9163);
+    const shade = 1 + (coarse - 0.5) * 0.09 + (mid - 0.5) * 0.08 + (fine - 0.5) * 0.05;
+    const patch = groundValueNoise(wx / 170, wy / 170, 9164);
+    t = { shade, patch };
+    while (toneCache.size >= TONE_CACHE_MAX) {
+      const oldest = toneCache.keys().next();
+      if (oldest.done) break;
+      toneCache.delete(oldest.value);
+    }
+    toneCache.set(key, t);
+  }
+  return t;
+}
+
+function hexRgb(hex: string): [number, number, number] {
+  return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+}
+
+function rgbHex(r: number, g: number, b: number): string {
+  const c = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+  return '#' + ((1 << 24) + (c(r) << 16) + (c(g) << 8) + c(b)).toString(16).slice(1);
+}
+
+/** Lerp between two hex colors, t in 0..1. */
+export function mixHexColor(a: string, b: string, t: number): string {
+  const ca = hexRgb(a), cb = hexRgb(b);
+  const k = Math.max(0, Math.min(1, t));
+  return rgbHex(ca[0] + (cb[0] - ca[0]) * k, ca[1] + (cb[1] - ca[1]) * k, ca[2] + (cb[2] - ca[2]) * k);
+}
+
+/** Multiply a hex color by a brightness factor. */
+export function shadeHexColor(hex: string, f: number): string {
+  const c = hexRgb(hex);
+  return rgbHex(c[0] * f, c[1] * f, c[2] * f);
 }
 
 // ---------------------------------------------------------------------------

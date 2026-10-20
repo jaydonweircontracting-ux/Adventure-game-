@@ -24,11 +24,13 @@ import { artUrl } from '../artCache';
 import { computeDirtPathGeometry, buildDirtPath2D, DIRT_LAYER_STYLE } from './dirtPaths';
 // BUILD 389: user-supplied landscape tileset + ambient critters.
 import {
-  preloadIsoTiles, isoTilesReady, drawGroundTile, drawDecor,
-  groundTileFor, decorTileFor, mosslightSandAt, hashTile,
+  preloadIsoTiles, isoTilesReady, drawDecor,
+  decorTileFor, mosslightSandAt,
   farmlandPlotAt, farmlandDetailAt, FARM_BASE_COLORS, FARM_TRACK,
+  FARM_OCHRE, FARM_GREEN, FARM_SOIL,
   FARM_DET_HEDGE, FARM_DET_FENCE, FARM_DET_HOUSE, FARM_DET_BARN,
-  lodGroundClassAt,
+  lodGroundClassAt, groundToneAt,
+  type GroundTone,
 } from './isoTiles';
 import {
   preloadCritters, crittersReady, crittersForChunk, critterPose, drawCritter,
@@ -62,7 +64,7 @@ import startingHouseOverlayUrl from '../../../game sprites/starting house/IMG_54
 // starter-house art for every building now.
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, type MonsterAnim, type MonsterSpriteDef } from '../monsterSprites';
 // BUILD 369 (Phase 2b): authoritative water/bridges in the iso field.
-import { waterGridForChunk, waterDepthAt, waterGridAt, type WaterGrid } from '../landscape';
+import { waterGridForChunk, waterDepthAt, waterKindAt, waterGridAt, type WaterGrid } from '../landscape';
 // BUILD 376: multi-chunk rendering so generated terrain fills the whole
 // screen at every zoom level — no blue void where nothing was generated.
 import {
@@ -165,13 +167,8 @@ function cachedSettlementDecorFor(chunk: { x: number; y: number }): ReturnType<t
 // BUILD 698 helpers
 // ---------------------------------------------------------------------------
 
-/** Brightness-scaled rgb() string from a hex color (cheap, no allocation per tile when precomputed). */
-function shadeOf(hex: string, v: number): string {
-  const r = Math.min(255, Math.round(parseInt(hex.slice(1, 3), 16) * v));
-  const g = Math.min(255, Math.round(parseInt(hex.slice(3, 5), 16) * v));
-  const b = Math.min(255, Math.round(parseInt(hex.slice(5, 7), 16) * v));
-  return `rgb(${r},${g},${b})`;
-}
+/** (BUILD 916: shadeOf removed with the discrete shade palettes it fed —
+ * ground shading now comes from shadeHexColor/groundToneAt in isoTiles.) */
 
 /**
  * Pre-tinted goat sprite. Goats reuse the deer strip as a placeholder; the
@@ -356,14 +353,9 @@ function lodHexRgb(hex: string): [number, number, number] {
   }
   return c;
 }
-const LOD_DESERT_RGB_LAZY: { v: [number, number, number] | null } = { v: null };
-// fieldPalettes lives in App.tsx, which circularly imports this module —
-// parsing it at module load would throw a TDZ ReferenceError and kill the
-// boot. Defer to first use (still parsed exactly once).
-function lodDesertRgb(): [number, number, number] {
-  if (!LOD_DESERT_RGB_LAZY.v) LOD_DESERT_RGB_LAZY.v = lodHexRgb(fieldPalettes.desert.field);
-  return LOD_DESERT_RGB_LAZY.v;
-}
+// BUILD 916: the LOD town-mask color is the packed-earth town tone (the
+// 695 sand read as a beach); matches the near pass's townGroundFill.
+const LOD_TOWN_RGB: [number, number, number] = [164, 141, 96];
 // BUILD 707: static critter source entries (was rebuilt per frame).
 const CRITTER_SRC_ENTRIES: Array<[string, string]> = [
   ['deer', 'critters/stag/critter_stag_SE_idle.png'],
@@ -388,28 +380,9 @@ const LOD_FARM_RGB: Array<[number, number, number]> = FARM_BASE_COLORS.map(
   (fc) => [parseInt(fc.slice(1, 3), 16), parseInt(fc.slice(3, 5), 16), parseInt(fc.slice(5, 7), 16)] as [number, number, number],
 );
 
-// BUILD 707: shade palettes hoisted from the per-frame loop (were rebuilt
-// every frame — static data). Same TDZ constraint as lodDesertRgb above:
-// fieldPalettes comes from App.tsx's circular import, so defer to first use.
-let SAND_SHADES_LAZY: string[] | null = null;
-let FARM_SHADES_LAZY: string[][] | null = null;
-function getSandShades(): string[] {
-  if (!SAND_SHADES_LAZY) {
-    SAND_SHADES_LAZY = [];
-    for (let i = 0; i < 8; i++) SAND_SHADES_LAZY.push(shadeOf(fieldPalettes.desert.field, 0.98 + (i / 7) * 0.04));
-  }
-  return SAND_SHADES_LAZY;
-}
-function getFarmShades(): string[][] {
-  if (!FARM_SHADES_LAZY) {
-    FARM_SHADES_LAZY = FARM_BASE_COLORS.map((hex) => {
-      const arr: string[] = [];
-      for (let i = 0; i < 4; i++) arr.push(shadeOf(hex, 0.95 + (i / 3) * 0.10));
-      return arr;
-    });
-  }
-  return FARM_SHADES_LAZY;
-}
+// BUILD 916: the BUILD 698/707 discrete shade palettes (sand %8, farm %4
+// hash buckets) are gone — they were the checkerboard. All ground surfaces
+// now shade from the continuous groundToneAt field in isoTiles.
 
 // BUILD 701: memoized final fill strings for chunk-LOD subtiles. The
 // classification (lodGroundClassAt) is already cached, but the per-frame
@@ -464,7 +437,7 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
     const cls = lodGroundClassAt(tx0, ty0, subN, skipFarm);
     const [br, bg, bb] = lodHexRgb(baseHex);
     let cr: number, cg: number, cb: number;
-    if (cls.kind === 1) { const dr = lodDesertRgb(); cr = dr[0]; cg = dr[1]; cb = dr[2]; }
+    if (cls.kind === 1) { const dr = LOD_TOWN_RGB; cr = dr[0]; cg = dr[1]; cb = dr[2]; }
     else if (cls.kind >= 2) {
       const fc = LOD_FARM_RGB[cls.kind - 2];
       cr = fc[0]; cg = fc[1]; cb = fc[2];
@@ -490,6 +463,122 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
     row.set(tx0, e);
   }
   return e.fill;
+}
+
+// ---------------------------------------------------------------------------
+// BUILD 916: procedural ground fills. The tileset ground blocks and the
+// per-tile hash shade buckets are retired for base ground: every surface is
+// a flat fill driven by the continuous groundToneAt value-noise field, so
+// tones vary smoothly across tiles and nothing can read as a checkerboard
+// quilt. Ramps are [deep, light] tone pairs per surface; the patch channel
+// mixes between them at ~170-tile scale, the shade channel brightens at
+// ~120/41/11-tile scales. All pure in world coords — the ground cache stays
+// valid forever per position.
+// ---------------------------------------------------------------------------
+
+const BIOME_GROUND_RAMPS: Record<string, [string, string]> = {
+  meadow: ['#5f9247', '#93bc67'],
+  grass: ['#5f9247', '#93bc67'],
+  forest: ['#3e6b41', '#649157'],
+  desert: ['#bd9257', '#dcb87e'],
+  shore: ['#a3a068', '#c9b57e'],
+  rock: ['#75816c', '#9aa48b'],
+  tundra: ['#9db8ad', '#c6d6cd'],
+  ocean: ['#2a6f8d', '#3d84a3'],
+};
+
+// Hot-loop color math on RGB tuples (no per-tile hex parsing/formatting —
+// ground cache rebuilds touch tens of thousands of tiles at far zoom).
+type Rgb = [number, number, number];
+const rgbOf = (hex: string): Rgb => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+const rgbStr = (c: Rgb): string => `rgb(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])})`;
+const BIOME_RAMPS_RGB: Record<string, [Rgb, Rgb]> = Object.fromEntries(
+  Object.entries(BIOME_GROUND_RAMPS).map(([k, [a, b]]) => [k, [rgbOf(a), rgbOf(b)] as [Rgb, Rgb]]),
+);
+const FARM_RGB: Rgb[] = FARM_BASE_COLORS.map(rgbOf);
+const TOWN_EARTH_RGB: [Rgb, Rgb] = [rgbOf('#8f7a54'), rgbOf('#a68f61')];
+const ROAD_RGB: [Rgb, Rgb] = [rgbOf('#a8895a'), rgbOf('#c2a878')];
+const PLAZA_RGB: [Rgb, Rgb] = [rgbOf('#82827b'), rgbOf('#a4a49b')];
+const BANK_RGB: Rgb = rgbOf('#8f7a52');
+const WATER_DEEP_RGB: Rgb = rgbOf('#2f6cb8');
+const WATER_DEEP_LAKE_RGB: Rgb = rgbOf('#2a64b0');
+const WATER_SHAL_RGB: Rgb = rgbOf('#55a0dd');
+const WATER_SHAL_LAKE_RGB: Rgb = rgbOf('#5aa3de');
+const WATER_SHORE_RGB: Rgb = rgbOf('#a8cddd');
+const WATER_TEAL_RGB: Rgb = rgbOf('#2e7fa8');
+const BRIDGE_RGB: Rgb = rgbOf('#8a6a44');
+const SOIL_DARK_RGB: Rgb = rgbOf('#77572f');
+const OCHRE_LIGHT_RGB: Rgb = rgbOf('#cbb26a');
+const CROP_DARK_RGB: Rgb = rgbOf('#679c46');
+
+// Allocation-free variants writing into caller scratch tuples: a ground
+// cache rebuild touches tens of thousands of tiles, and per-tile array
+// churn showed up as a walking-FPS cost. S2/S3 are helper-internal slots.
+const S2: Rgb = [0, 0, 0];
+const S3: Rgb = [0, 0, 0];
+function mixInto(out: Rgb, a: Rgb, b: Rgb, t: number): void {
+  out[0] = a[0] + (b[0] - a[0]) * t;
+  out[1] = a[1] + (b[1] - a[1]) * t;
+  out[2] = a[2] + (b[2] - a[2]) * t;
+}
+function shadeInto(out: Rgb, c: Rgb, f: number): void {
+  out[0] = c[0] * f; out[1] = c[1] * f; out[2] = c[2] * f;
+}
+function copyInto(out: Rgb, c: Rgb): void {
+  out[0] = c[0]; out[1] = c[1]; out[2] = c[2];
+}
+
+function biomeGroundInto(out: Rgb, terrain: string, fallbackHex: string, tone: GroundTone): void {
+  const ramp = BIOME_RAMPS_RGB[terrain];
+  if (!ramp) { shadeInto(out, rgbOf(fallbackHex), tone.shade); return; }
+  mixInto(out, ramp[0], ramp[1], tone.patch);
+  shadeInto(out, out, tone.shade);
+}
+
+/** Town ground: worn grass blending to packed earth toward the town mask. */
+function townGroundInto(out: Rgb, townM: number, tone: GroundTone): void {
+  biomeGroundInto(S2, 'meadow', '#77a45b', tone); // grass in S2
+  mixInto(S3, TOWN_EARTH_RGB[0], TOWN_EARTH_RGB[1], tone.patch);
+  shadeInto(S3, S3, tone.shade); // earth in S3
+  // Patchy wear: even at the mask center much of the ground stays grassy;
+  // streets and the plaza carry the earth look, yards keep worn grass.
+  const worn = townM * (0.3 + 0.55 * tone.patch);
+  mixInto(out, S2, S3, worn);
+}
+
+/** Farmland plot fill: retuned base colors, smooth tone, 1D furrow rows. */
+function farmGroundInto(out: Rgb, code: number, tone: GroundTone, wy: number): void {
+  const base = FARM_RGB[code - 1];
+  if (code === FARM_SOIL) mixInto(out, base, SOIL_DARK_RGB, tone.patch * 0.35);
+  else if (code === FARM_OCHRE) mixInto(out, base, OCHRE_LIGHT_RGB, tone.patch * 0.3);
+  else if (code === FARM_GREEN) mixInto(out, base, CROP_DARK_RGB, tone.patch * 0.3);
+  else copyInto(out, base);
+  let f = tone.shade;
+  // Furrows: gentle one-dimensional row striping (period 2 tiles). Rows
+  // read as plough lines; a 1D stripe can never checker.
+  if (code === FARM_SOIL || code === FARM_GREEN) f *= 1 + Math.sin(wy * Math.PI) * 0.04;
+  shadeInto(out, out, f);
+}
+
+/** Packed-dirt road tone. */
+function roadGroundInto(out: Rgb, tone: GroundTone): void {
+  mixInto(out, ROAD_RGB[0], ROAD_RGB[1], tone.patch);
+  shadeInto(out, out, tone.shade);
+}
+
+/**
+ * How strongly a road tile renders as dirt, from its depth inside the
+ * chunk's road band: 0.3 at the verge, 1 at the centerline. Roads keep
+ * their full width in the navigation/collision graph — only the visual
+ * weight feathers at the edges so bands stop streaking across fields.
+ */
+function roadBlendFor(road: string, lx: number, ly: number): number {
+  if (road === 'none') return 0;
+  const c = FIELD_SIZE / 2;
+  let d = 0;
+  if (road.includes('e') || road.includes('w')) d = Math.max(d, ROAD_HALF - Math.abs(ly - c));
+  if (road.includes('n') || road.includes('s')) d = Math.max(d, ROAD_HALF - Math.abs(lx - c));
+  return 0.3 + 0.7 * Math.min(1, Math.max(0, d) / 2.5);
 }
 
 export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, playerMounted, playerHorse, worldHorses, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
@@ -813,8 +902,6 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       // variation for sand (±2%, subtle like the reference) and farmland
       // plots (±5%). BUILD 707: hoisted to lazy module scope (was rebuilt
       // every frame — static data, zero reason for per-frame allocation).
-      const sandShades = getSandShades();
-      const farmShades = getFarmShades();
       // Reset reusable per-frame buffers; retain their backing storage.
       drawables.length = 0;
       farmsteadQueue.length = 0;
@@ -948,6 +1035,17 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         const { x0: groundX0, x1: groundX1, y0: groundY0, y1: groundY1 } =
           isoVisibleTileRange(cacheCenterX, cacheCenterY, groundCacheW, groundCacheH, groundCacheScale);
         farmsteadQueue.length = 0;
+        // BUILD 916: water depth at any tile in the scene grid (same
+        // sampling as the per-tile wet test, including the BUILD 610
+        // town dry-land guard) — used for wet-bank shore blending.
+        const colC: Rgb = [0, 0, 0]; // per-tile fill scratch (BUILD 916)
+        const depthAtTile = (tx2: number, ty2: number): number => {
+          const o2 = isoTileChunkOffset(tx2, ty2, N);
+          const nsc = sceneFor(o2.ox, o2.oy);
+          const acx2 = chunk.x + nsc.ox, acy2 = chunk.y + nsc.oy;
+          if (acx2 >= 3 && acx2 <= 5 && acy2 >= 6 && acy2 <= 8) return 0;
+          return waterDepthAt(nsc.water, acx2 * FIELD_SIZE + o2.lx + 0.5, acy2 * FIELD_SIZE + o2.ly + 0.5);
+        };
       // ground — per-tile chunk lookup into the scene grid
       // BUILD 376: tile detail is sub-pixel when zoomed out, so skip it there.
       // BUILD 389: user-supplied landscape tileset replaces the procedural
@@ -1002,6 +1100,11 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           // plot-color fallback (like the 695 sand), not the meadow tileset.
           const wxW = lx + absCxS * 280, wyW = ly + absCyS * 280;
           const farmCode = skipFarm ? 0 : farmlandPlotAt(wxW, wyW, sandy);
+          // BUILD 916: raw town mask (0..1) drives the worn-grass → packed-
+          // earth blend; the BUILD 604 plaza rect picks the stone fill.
+          const townM = absCxS >= 3 && absCxS <= 5 && absCyS >= 6 && absCyS <= 8
+            ? mosslightSandAt(wxW, wyW) : 0;
+          const inPlaza = absCxS === 0 && absCyS === 0 && wxW >= 124 && wxW < 164 && wyW >= 124 && wyW < 164;
           const terr = sc.tile.terrain;
           const isOcean = terr === 'ocean';
           const roadHere = isOcean ? false : isRoadTileFor(sc, lx, ly);
@@ -1009,91 +1112,99 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           const hw = TILE_W / 2, hh = TILE_H / 2;
           // BUILD 698: expand sand/road diamonds ~1px so AA seams can't show
           // the dark background — the "graph paper" grid lines.
-          const ex = (sandy || roadHere) && !isOcean ? 1 : 0;
+          // BUILD 916: flat fills replaced the overlapping tileset blocks on
+          // EVERY surface, so every diamond expands — otherwise the seam
+          // grid shows through the flat water/grass/plots.
+          const ex = 1;
           groundCacheG.beginPath();
           groundCacheG.moveTo(p.x, p.y - hh - ex); groundCacheG.lineTo(p.x + hw + ex, p.y);
           groundCacheG.lineTo(p.x, p.y + hh + ex); groundCacheG.lineTo(p.x - hw - ex, p.y);
           groundCacheG.closePath();
           // BUILD 369 (Phase 2b): authoritative rivers/lakes; road crossings draw as bridges.
           let wet = false;
+          let depthHere = 0;
+          let inTownArea = false;
           if (!isOcean) {
             // BUILD 610: Never render water in starting town area (chunks 3-5, 6-8).
             // Town should be dry land; lakes were flooding the town.
-            const inTownArea = (chunk.x + sc.ox) >= 3 && (chunk.x + sc.ox) <= 5 &&
+            inTownArea = (chunk.x + sc.ox) >= 3 && (chunk.x + sc.ox) <= 5 &&
                                (chunk.y + sc.oy) >= 6 && (chunk.y + sc.oy) <= 8;
             if (!inTownArea) {
               // BUILD 714: depth-only lookup avoids allocating a temporary
               // { depth, kind } object for every visible tile on every frame.
-              const depth = waterDepthAt(sc.water, (chunk.x + sc.ox) * FIELD_SIZE + lx + 0.5, (chunk.y + sc.oy) * FIELD_SIZE + ly + 0.5);
+              depthHere = waterDepthAt(sc.water, (chunk.x + sc.ox) * FIELD_SIZE + lx + 0.5, (chunk.y + sc.oy) * FIELD_SIZE + ly + 0.5);
               // BUILD 583: require deeper water before overriding land tiles.
               // Shallow depth (0.25-0.5) was causing false water rendering on meadows.
-              wet = depth > 0.5;
+              wet = depthHere > 0.5;
             }
           }
-          let tileDrawn = false;
-          if (tilesOn) {
-            let tn: number;
-            // BUILD 604: Cobblestone plaza in starting town (124-164, 124-164).
-            const absCx = chunk.x + sc.ox, absCy = chunk.y + sc.oy;
-            const wx = lx + absCx * 280, wy = ly + absCy * 280; // world coords
-            const inPlaza = absCx === 0 && absCy === 0 && wx >= 124 && wx < 164 && wy >= 124 && wy < 164;
-            if (isOcean || wet) tn = groundTileFor('ocean', wxW, wyW, 0, 0);
-            else if (inPlaza) tn = groundTileFor('cobble', wxW, wyW, 0, 0);
-            else if (roadHere && !sandy) tn = groundTileFor('road', wxW, wyW, 0, 0);
-            // BUILD 695 fix: town roads use the flat fallback too (the road
-            // tileset blocks would checkerboard the sandy streets).
-            // BUILD 695 fix: sandy tiles use the FLAT diamond fallback below,
-            // not the desert block tiles (tile_000-005 are raised 3D dirt
-            // blocks — they tiled into a red-brown checkerboard). The
-            // fallback draws fieldPalettes.desert.field, a warm flat sand.
-            // BUILD 698: farmland tiles likewise use the flat plot-color
-            // fallback so the seeded plot colors show.
-            else if (sandy || farmCode > 0) tn = -1;
-            else tn = groundTileFor(terr, wxW, wyW, 0, 0);
-            tileDrawn = tn >= 0 && drawGroundTile(groundCacheG, tn, p.x, p.y);
+          // BUILD 916: one procedural fill per tile. The tileset ground
+          // blocks and the per-tile hash shade buckets that used to be
+          // picked here (BUILD 389/695/698) are retired for base ground —
+          // their discrete per-tile choices were the checkerboard quilt on
+          // every surface. Fills now come from the continuous groundToneAt
+          // field; decor sprites + accents still layer on top below.
+          const tone = groundToneAt(wxW, wyW);
+          const col = colC;
+          if (wet && roadHere) {
+            copyInto(col, BRIDGE_RGB); // bridge planks
+          } else if (wet || isOcean) {
+            const sampleX = (chunk.x + sc.ox) * FIELD_SIZE + lx + 0.5;
+            const sampleY = (chunk.y + sc.oy) * FIELD_SIZE + ly + 0.5;
+            const wDepth = waterDepthAt(sc.water, sampleX, sampleY);
+            const wKind = waterKindAt(sc.water, sampleX, sampleY);
+            const t = isOcean ? Math.max(0.55, Math.min(1, wDepth)) : Math.min(1, wDepth);
+            mixInto(col, wKind === 2 ? WATER_SHAL_LAKE_RGB : WATER_SHAL_RGB, wKind === 2 ? WATER_DEEP_LAKE_RGB : WATER_DEEP_RGB, t);
+            // Shore lightening: shallow water lifts toward pale aqua so
+            // banks blend in instead of ending at a hard diamond edge.
+            const shoreK = Math.max(0, Math.min(1, (0.95 - t) / 0.45));
+            mixInto(col, col, WATER_SHORE_RGB, shoreK * 0.35);
+            // Gentle continuous variation — large teal patches plus the
+            // shared shade field; never a per-tile bucket.
+            mixInto(col, col, WATER_TEAL_RGB, tone.patch * 0.18);
+            shadeInto(col, col, 0.97 + (tone.shade - 1) * 0.55);
+          } else if (inPlaza) {
+            mixInto(col, PLAZA_RGB[0], PLAZA_RGB[1], tone.patch);
+            shadeInto(col, col, tone.shade);
+          } else if (farmCode > 0) {
+            farmGroundInto(col, farmCode, tone, wyW);
+          } else if (townM > 0) {
+            townGroundInto(col, townM, tone);
+          } else {
+            biomeGroundInto(col, terr, sc.palette.field, tone);
           }
-          if (!tileDrawn) {
-            let col = sc.palette.field;
-            if (roadHere) col = sc.palette.path;
-            // BUILD 695: sandy fallback color inside the Mosslight mask.
-            // BUILD 698: seeded ±2% per-tile brightness on sandy tiles —
-            // subtle texture like the reference (the flat single fill was
-            // the "graph paper" root cause). The checkerboard darkening is
-            // skipped on sand in the detail block, and sand diamonds are
-            // expanded 1px at path build to kill AA seams.
-            else if (sandy && !wet) {
-              col = sandShades[hashTile(wxW, wyW, 698, 0, 0) % 8];
-            }
-            // BUILD 698: farmland ring — seeded plot colors outside the sand
-            // mask. Roads/water/plaza keep their own tiles; collision and the
-            // 689 door/path alignment are untouched (ground color only).
-            else if (farmCode > 0 && !wet) {
-              col = farmShades[farmCode - 1][hashTile(wxW, wyW, 698, 0, 0) % 4];
-            }
-            // BUILD 604: plaza fallback color (cobblestone gray)
-            if (absCxS === 0 && absCyS === 0 && wxW >= 124 && wxW < 164 && wyW >= 124 && wyW < 164) {
-              col = '#9a9a9a';
-            }
-            if (wet) {
-              if (roadHere) col = '#8a6a44'; // bridge planks
-              else {
-                const wq = waterGridAt(sc.water, (chunk.x + sc.ox) * FIELD_SIZE + lx + 0.5, (chunk.y + sc.oy) * FIELD_SIZE + ly + 0.5);
-                const t = Math.min(1, wq.depth);
-                const deep = wq.kind === 2 ? '#2a64b0' : '#2f6cb8';
-                const shal = wq.kind === 2 ? '#5aa3de' : '#55a0dd';
-                // mix shallow->deep by depth (hex lerp)
-                const sd = parseInt(shal.slice(1), 16), dd = parseInt(deep.slice(1), 16);
-                const r = Math.round(((sd >> 16) & 255) + (((dd >> 16) & 255) - ((sd >> 16) & 255)) * t);
-                const gg = Math.round(((sd >> 8) & 255) + (((dd >> 8) & 255) - ((sd >> 8) & 255)) * t);
-                const b = Math.round((sd & 255) + ((dd & 255) - (sd & 255)) * t);
-                col = '#' + ((1 << 24) + (r << 16) + (gg << 8) + b).toString(16).slice(1);
-              }
-            }
-            groundCacheG.fillStyle = col;
-            groundCacheG.fill();
+          // Roads feather into the ground they cross: dirt weight rises
+          // from verge to centerline (roadBlendFor), and inside farm plots
+          // it fades hard so lanes stop streaking across crops. The road
+          // graph (navigation/collision/door alignment) is untouched.
+          let roadK = 0;
+          if (roadHere && !wet) {
+            roadK = roadBlendFor(sc.road, lx, ly);
+            if (farmCode > 0) roadK *= 0.3;
+            roadGroundInto(S3, tone);
+            mixInto(col, col, S3, roadK);
           }
-          // Add cached road gravel and soft verge marks after the base tile, so roads feel worn rather than flat.
-          if (roadHere && !isOcean && !wet) {
+          // Wet-bank tint: dry tiles touching water get a muddy edge, so
+          // river/lake shores don't end at a hard diamond boundary. A cheap
+          // same-grid probe (±1 water cell) gates the exact cross-chunk
+          // neighbor checks so dry inland tiles never pay for them.
+          if (!wet && !isOcean && !inTownArea && !inPlaza) {
+            const nearWater = depthHere > 0 ||
+              waterDepthAt(sc.water, wxW + 4.5, wyW + 0.5) > 0 ||
+              waterDepthAt(sc.water, wxW - 3.5, wyW + 0.5) > 0 ||
+              waterDepthAt(sc.water, wxW + 0.5, wyW + 4.5) > 0 ||
+              waterDepthAt(sc.water, wxW + 0.5, wyW - 3.5) > 0;
+            if (nearWater &&
+                (depthAtTile(tx - 1, ty) > 0.5 || depthAtTile(tx + 1, ty) > 0.5 ||
+                 depthAtTile(tx, ty - 1) > 0.5 || depthAtTile(tx, ty + 1) > 0.5)) {
+              mixInto(col, col, BANK_RGB, 0.34 * (0.7 + 0.6 * tone.patch));
+            }
+          }
+          groundCacheG.fillStyle = rgbStr(col);
+          groundCacheG.fill();
+          // Road gravel/verge detail only on the worn core of a road —
+          // never on farm plots (faded above) or the feathered verge.
+          if (roadHere && !isOcean && !wet && farmCode === 0 && roadK >= 0.8) {
             drawProceduralPathDetail(groundCacheG, wxW, wyW, p.x, p.y, sandy);
           }
           // BUILD 366: deterministic per-tile detail (chunk-gen video techniques).
@@ -1101,13 +1212,9 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           // the home chunk's pattern; home chunk hash is unchanged.)
           // BUILD 389: tileset decor sprites replace the rect-based bits.
           if (showDetail && !isOcean && !roadHere && !wet) {
-            // BUILD 698: skip the checkerboard darkening on sand and
-            // farmland — plots carry their own seeded variation and
-            // boundaries, so the extra darkening just re-grids them.
-            if ((lx + ly) % 2 === 1 && !sandy && farmCode === 0) {
-              groundCacheG.fillStyle = 'rgba(0,0,0,0.05)';
-              groundCacheG.fill();
-            }
+            // BUILD 916: the old (lx + ly) % 2 parity darkening is gone —
+            // it was one of the checkerboard sources. Surface variation
+            // now comes only from the continuous tone field in the fill.
             // BUILD 695: clean sandy streets — no decor sprites on town sand
             // (desert rocks would litter the market square).
             // BUILD 698: none on farmland either — meadow tufts on plowed
@@ -1163,9 +1270,10 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         const bx = sc.ox * N, by = sc.oy * N;
         for (const p of decor.plazas) {
           const c = isoToScreen(p.x + bx, p.y + by);
-          // BUILD 695: sandy plaza decal (was village green) — matches the
-          // storybook sandy streets.
-          g.fillStyle = 'rgba(216, 186, 132, 0.35)'; // sandy plaza
+          // BUILD 695: plaza decal (was village green).
+          // BUILD 916: packed-earth tint instead of sand, matching the
+          // new town ground (the sand ellipse read as a beach patch).
+          g.fillStyle = 'rgba(168, 144, 96, 0.28)'; // packed-earth plaza
           g.beginPath();
           g.ellipse(c.x, c.y, p.r * 32, p.r * 16, 0, 0, 7);
           g.fill();
@@ -1202,7 +1310,8 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             const bb = lane.bbox;
             if (bb[1] < vx0 || bb[0] > vx1 || bb[3] < vy0 || bb[2] > vy1) continue;
             for (let li = 0; li < 3; li++) {
-              g.lineWidth = lane.widths[li];
+              // BUILD 916: lanes stroke at 85% width — less visual weight.
+              g.lineWidth = lane.widths[li] * 0.85;
               g.strokeStyle = DIRT_LAYER_STYLE[li];
               g.stroke(lane.path);
             }

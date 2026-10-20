@@ -619,6 +619,14 @@ export function waterDepthAt(grid: WaterGrid, wx: number, wy: number): number {
   return grid.depths[gy * grid.cells + gx];
 }
 
+/** Allocation-free kind-only lookup (0 none, 1 river, 2 lake). BUILD 916. */
+export function waterKindAt(grid: WaterGrid, wx: number, wy: number): number {
+  const gx = Math.floor((wx - grid.originX) / grid.cellSize);
+  const gy = Math.floor((wy - grid.originY) / grid.cellSize);
+  if (gx < 0 || gy < 0 || gx >= grid.cells || gy >= grid.cells) return 0;
+  return grid.kinds[gy * grid.cells + gx];
+}
+
 // ---------------------------------------------------------------------------
 // Continuity self-check (developer-only, no player-facing score)
 // ---------------------------------------------------------------------------

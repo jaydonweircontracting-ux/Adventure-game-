@@ -1361,6 +1361,43 @@ console.log('Testing horse art + hauling (BUILD 912)...');
 }
 
 // ---- 13b. Ambient market life (BUILD 694): shoppers, browsers, errands ----
+// ---- BUILD 916: continuous ground tones (the checkerboard fix) ----
+{
+  const { groundToneAt, groundValueNoise, mixHexColor, shadeHexColor } = await import('../src/game/iso/isoTiles');
+  // Deterministic: same world tile, same tone, every call.
+  const t1 = groundToneAt(1264, 2104);
+  const t2 = groundToneAt(1264, 2104);
+  assert(t1.shade === t2.shade && t1.patch === t2.patch, 'ground tone must be deterministic');
+  // Bounded over a wide world sample (town, fields, wilderness, negatives).
+  for (let x = -560; x <= 2240; x += 151) {
+    for (let y = -560; y <= 3080; y += 163) {
+      const t = groundToneAt(x, y);
+      assert(t.shade > 0.85 && t.shade < 1.15, 'ground shade out of range at ' + x + ',' + y + ': ' + t.shade);
+      assert(t.patch >= 0 && t.patch <= 1, 'ground patch out of range at ' + x + ',' + y);
+    }
+  }
+  // Smooth: horizontal neighbors can never jump like a checkerboard — the
+  // largest single-tile shade step stays far below the old hash-bucket
+  // alternation (which flipped ±5-10% on every tile).
+  let maxStep = 0;
+  for (let x = 0; x < 400; x++) {
+    for (let y = 0; y < 400; y += 7) {
+      const d = Math.abs(groundToneAt(x + 1, y).shade - groundToneAt(x, y).shade);
+      if (d > maxStep) maxStep = d;
+    }
+  }
+  assert(maxStep < 0.03, 'ground shade must vary smoothly tile-to-tile, max step ' + maxStep);
+  // Value noise itself is bounded.
+  for (let i = 0; i < 200; i++) {
+    const v = groundValueNoise(i * 0.37, i * 0.91, 9161);
+    assert(v >= 0 && v <= 1, 'ground value noise out of range: ' + v);
+  }
+  // Color helpers: endpoints exact, midpoint sane, shade 1 = identity.
+  assert(mixHexColor('#000000', '#ffffff', 0) === '#000000', 'mixHexColor t=0 must be the first color');
+  assert(mixHexColor('#000000', '#ffffff', 1) === '#ffffff', 'mixHexColor t=1 must be the second color');
+  assert(mixHexColor('#000000', '#ffffff', 0.5) === '#808080', 'mixHexColor midpoint must be mid-gray');
+  assert(shadeHexColor('#77a45b', 1) === '#77a45b', 'shadeHexColor 1 must be identity');
+}
 console.log('Testing ambient market life (BUILD 694)...');
 {
   const mkAnchors = (stalls: TownsfolkPoint[], arterials?: TownsfolkPoint[]): TownsfolkAnchors => ({

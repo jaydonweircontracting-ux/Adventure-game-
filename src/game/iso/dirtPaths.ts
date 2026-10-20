@@ -183,11 +183,13 @@ export function computeDirtPathGeometry(
   return geo;
 }
 
-/** Layer styles, kept next to the geometry they belong to. */
+/** Layer styles, kept next to the geometry they belong to.
+ * BUILD 916: alphas toned down — at the old 0.55 body alpha the lanes read
+ * as wide pale ribbons poured over the town ground. */
 export const DIRT_LAYER_STYLE = [
-  'rgba(110, 82, 50, 0.16)', // worn fringe (widest)
-  'rgba(156, 122, 72, 0.55)', // dirt body
-  'rgba(190, 160, 108, 0.30)', // foot-worn center (narrowest)
+  'rgba(110, 82, 50, 0.12)', // worn fringe (widest)
+  'rgba(156, 122, 72, 0.40)', // dirt body
+  'rgba(190, 160, 108, 0.20)', // foot-worn center (narrowest)
 ] as const;
 
 /** Browser-only: convert geometry to cached stroke Path2Ds.

@@ -1,6 +1,6 @@
 {
-  "build": "915",
-  "note": "NPCs vs monsters: hostile creatures now hunt townsfolk as well as you. A wolf or bandit picks its nearest victim and sticks to it, townsfolk fight back or flee using the same instincts they use against you, and guards sprint to engage any creature menacing a townsfolk or loose in town. A creature that kills a townsfolk leaves a lootable body like any other death — and it is never blamed on you: no crime, no bounty. Creatures killed by NPCs drop their loot on the ground for anyone to pick up, but the kill earns you no XP (you did not land it)",
-  "timestamp": "2026-10-20T14:41:06.742Z",
-  "cacheBuster": "mvgsjmwm"
+  "build": "916",
+  "note": "Landscape overhaul: the ground no longer renders as a two-tone checkerboard quilt. Town ground is worn grass and packed earth instead of beach sand, farm plots read as wheat, crops and tilled soil with plough rows, dirt lanes feather into the land and fade across fields instead of streaking through them, and rivers and lakes are smooth layered water with soft blended shorelines — no more giant navy checkerboard. Every surface now shades in smooth continuous tones that flow across tiles",
+  "timestamp": "2026-10-20T15:19:26.505Z",
+  "cacheBuster": "mvgtwxey"
 }
