@@ -141,13 +141,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '901';
+const BUILD_NUMBER = '902';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '902': 'Tile visual audit — decode every referenced ground/decor PNG in Chromium, flag blank or flat assets and opaque white decor backgrounds, and run the audit with the browser tests',
   '901': 'Guards pursue fugitives, land melee damage after flee, and call nearby guards; NPCs use a consistent 60/40 fight-or-flight reaction',
   '900': 'Full terrain QA — audit multi-seed biome coverage and starting-region stability, and verify every referenced isometric ground/decor tile asset exists',
   '899': 'Tap-to-talk — tapping a near, already-targeted NPC opens dialogue directly (iso canvas + DOM field); the field Chat/Talk button is removed from the UI. Starting-house roof overlay enlarged and sunk so its wall bases fully cover the interior sprite bottom (no more floor/bed/plant sticking out below the walls); roof still hides when you walk in',
