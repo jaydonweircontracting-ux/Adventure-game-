@@ -37,7 +37,6 @@ import { organicTownSpecs } from './game/organicTowns';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 // BUILD 697: market stall shops — pure defs + guarded transactions.
 import { stallShopDef, stallBuyList, createStallStock, restockStall, buyFromStall, sellToStall, sanitizeStallStocks, npcShoppingPick, type ShopItemKey, type StallStockState } from '@/game/shops';
-import { findTalkTarget } from './game/talkTarget';
 import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cellarRats';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds, type TouchHoldState, type TouchEventKind } from './game/touchInput';
 // BUILD 704: stamina/energy for sprinting.
@@ -142,13 +141,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '898';
+const BUILD_NUMBER = '899';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '899': 'Tap-to-talk — tapping a near, already-targeted NPC opens dialogue directly (iso canvas + DOM field); the field Chat/Talk button is removed from the UI. Starting-house roof overlay enlarged and sunk so its wall bases fully cover the interior sprite bottom (no more floor/bed/plant sticking out below the walls); roof still hides when you walk in',
   '898': 'Full-world terrain audit — make biome clustering independent of tile scan order and exhaustively test field continuity across every expanded-world chunk edge',
   '897': 'World terrain audit — resolve shorelines and biome borders from all four neighboring cells so coastline bands and edge details no longer depend on generation direction',
   '896': 'Starting house roof hides when you walk in — the authored roof overlay now disappears while you are under it, revealing the furnished interior; the roof returns when you walk back out',
@@ -8894,37 +8894,9 @@ if (active) {
       setDialogueHistory((h) => [...h, { speaker: 'npc', text: fallbackResponse(npc.name) + ' Try asking about me, my work, rumors, or the town.' }]);
     }
   };
-  // Pokémon-style talk: when the player faces an NPC within range, a Talk
-  // button appears beside Attack. Covers quest givers, town NPCs and outdoor
-  // townsfolk — the same handlers as tapping the NPC directly.
-  const talkTarget = useMemo(() => {
-    if (interior || moverMode || markerMode || inputLocked) return null;
-    const inMosslight = currentWorldTile.landmark?.name === 'Mosslight Crossing';
-    const candidates: Array<{ name: string; position: Point; talk: () => void }> = [];
-    for (const giver of QUEST_GIVER_FIELD_NPCS) {
-      if (giver.chunk.x !== chunk.x || giver.chunk.y !== chunk.y) continue;
-      candidates.push({ name: giver.displayName, position: giver.position, talk: () => openQuestDialog(giver.name) });
-    }
-    if (inMosslight) {
-      for (const npc of npcStates) candidates.push({ name: npc.name, position: npc.position, talk: () => talkToNpc(npc) });
-      for (const npc of townsfolk) {
-        if (npc.indoors) continue;
-        candidates.push({ name: npc.name, position: npc.position, talk: () => talkToTownsfolk(npc) });
-      }
-    }
-    // BUILD 355: the wandering hermit mage is talkable in the wilds.
-    if (wanderMage) {
-      candidates.push({ name: wanderMage.name, position: wanderMage.position, talk: () => talkToWanderMage(wanderMage) });
-    }
-    // BUILD 721: the Talk action belongs to the selected NPC only. Do not
-    // surface a chat icon for whichever unrelated NPC happens to be in front.
-    if (!targetNpcId || candidates.length === 0) return null;
-    const selectedTownsperson = townsfolk.find((npc) => npc.id === targetNpcId && !npc.indoors);
-    if (!selectedTownsperson) return null;
-    const selectedCandidate = candidates.find((candidate) => candidate.name === selectedTownsperson.name);
-    if (!selectedCandidate) return null;
-    return findTalkTarget([selectedCandidate], position, facing);
-  }, [interior, moverMode, markerMode, inputLocked, currentWorldTile, chunk, npcStates, townsfolk, position, facing, wanderMage, targetNpcId]);
+  // BUILD 899: the Talk button + talkTarget memo are removed. Dialogue now
+  // opens by tapping a near, already-targeted NPC (IsoFieldView onTap and
+  // the .town-npc tap handler both route to the same talk handlers).
   // Road traffic: analytic travelers resolved from the world clock (civ phase 2).
   // Recomputed whenever the clock ticks, so waiting visibly moves traffic.
   // Road links are static for the world seed — built once.
@@ -12388,9 +12360,17 @@ if (active) {
               className={'town-npc npc-' + npc.role + (npc.name === 'Ham' ? ' npc-ham show-nameplate' : '') + (npc.moving ? ' is-moving' : '') + (targetNpcId === npc.id ? ' is-targeted' : '') + (nameplateNpc === npc.name ? ' show-nameplate' : '') + (enter ? enter.className : '')}
               onClick={(moverMode || markerMode) ? undefined : () => {
                 if (targetNpcIdRef.current === npc.id) {
-                  targetNpcIdRef.current = null;
-                  targetNpcModeRef.current = null;
-                  setTargetNpcId(null);
+                  // BUILD 899: tapping an already-targeted, near NPC talks
+                  // directly (mirrors the iso canvas). Far/dead/attacked
+                  // targets keep the old deselect-on-second-tap behavior.
+                  const dist = Math.hypot(npc.position.x - positionRef.current.x, npc.position.y - positionRef.current.y);
+                  const talkable = npc.hp == null && npc.fleeUntilTick == null && npc.deadUntilTick == null;
+                  if (dist <= 8.5 && talkable) { talkToTownsfolk(npc); }
+                  else {
+                    targetNpcIdRef.current = null;
+                    targetNpcModeRef.current = null;
+                    setTargetNpcId(null);
+                  }
                 } else {
                   targetGoatIdRef.current = null;
                   setTargetGoatId(null);
@@ -13259,9 +13239,8 @@ if (active) {
                <div />
              </div>
            )}
-           {!attacking && attackCooldownMs <= 0 && talkTarget && targetNpcId && (
-             <button className="icon-button field-talk-button" onClick={() => talkTarget.talk()} aria-label={'Talk to ' + talkTarget.name} title={'Talk to ' + talkTarget.name} data-testid="button-talk"><MessageCircle size={16} /></button>
-           )}
+           {/* BUILD 899: the field Talk/Chat button is gone — tap a near,
+               already-targeted NPC to open dialogue (see IsoFieldView onTap). */}
            <button className="icon-button field-attack-button" onClick={() => attackGoat()} disabled={attackCooldownMs > 0 || attacking || inputLocked || (Boolean(interior) && interior?.roomType !== 'cellar') || (mounted && !equippedBow)} aria-label={equippedBow ? (selectedGoat ? 'Loose arrow at target' : 'Loose arrow') : (selectedGoat ? 'Strike selected goat' : 'Strike nearest goat')} title={equippedBow ? 'Fire bow · Space' : (selectedGoat ? 'Strike selected target · Space' : 'Strike nearest target · Space')} aria-disabled={attackCooldownMs > 0 || attacking} data-testid="button-attack">{equippedBow ? '🏹' : <Sword size={16} />}{attackCooldownMs > 0 && <span className="attack-cooldown-ring" style={{ background: 'conic-gradient(rgba(219, 120, 94, .95) ' + ((attackCooldownMs / PLAYER_ATTACK_COOLDOWN_MS) * 100) + '%, rgba(19, 43, 34, .2) 0)' }} aria-hidden="true" />}</button>
           {/* BUILD 704: run toggle + stamina bar. Tapping toggles sprint;
               Shift on keyboard holds to run. Stamina drains while running. */}

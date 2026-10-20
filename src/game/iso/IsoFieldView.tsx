@@ -1467,9 +1467,24 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               // actual drawn bounds: when the player's screen position is
               // under the roof, hide the overlay so the authored roofless
               // interior base sprite shows. Restores automatically on exit.
-              const overlayW = sw * 1.5;
-              const overlayH = sh * 1.5;
+              // BUILD 899: enlarge the overlay (1.5 -> 1.6) and sink it so
+              // its wall bases fully cover the base interior sprite's floor
+              // front edge. Scale-about-the-bottom-anchor alone cannot close
+              // that gap: the two authored images frame the house at
+              // different heights, so scaling only moves the overlay's wall
+              // bases up, not down (verified at 1.75 with a real screenshot —
+              // the porch/deck stayed exposed). The sink keeps the
+              // horizontal center and the world base anchor; only the drawn
+              // rect's bottom extends past baseY onto the wall-base line.
+              const overlayW = sw * 1.6;
+              const overlayH = sh * 1.6;
+              const overlaySink = sh * 0.18;
               const playerPt = isoToScreen(liveRef.current.px, liveRef.current.py);
+              // The under-roof test keeps the pre-sink rect: the sink strip
+              // hangs over the ground in FRONT of the house, where the
+              // player legitimately stands outside — counting it as
+              // "under the roof" would hide the roof for a player who
+              // merely walked up to the front wall.
               const playerUnderRoof = playerPt.x >= cx - overlayW / 2 && playerPt.x <= cx + overlayW / 2
                 && playerPt.y >= baseY - overlayH && playerPt.y <= baseY;
               if (!liveRef.current.inInterior && b.area.id === 'tutorial-house' && !playerUnderRoof) {
@@ -1479,10 +1494,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
                   g2.globalAlpha = 1;
                   g2.globalCompositeOperation = 'source-over';
                   g2.filter = 'none';
-                  // BUILD 828: make the authored overlay substantially larger than the base house sprite.
-                  // Keep its bottom edge anchored to the same world base so the extra size
-                  // expands upward and sideways instead of shifting the doorway alignment.
-                  g2.drawImage(overlay, cx - overlayW / 2, baseY - overlayH, overlayW, overlayH);
+                  g2.drawImage(overlay, cx - overlayW / 2, baseY - overlayH + overlaySink, overlayW, overlayH);
                   g2.restore();
                 }
               }
@@ -2421,7 +2433,9 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         const by = (w.y - cam.y) * zm + hpx / 2 - 58 * zm;
         if (Math.hypot(bx - sx, by - sy) <= 25) { talk(selectedNpc); return; }
       }
-      // NPC body taps select/deselect and start/stop the existing follow system.
+      // BUILD 899: NPC body taps. Tapping a near, already-targeted NPC talks
+      // directly (tap-to-talk). Far or untargeted NPCs keep select/deselect
+      // and the existing follow system.
       const { onSelectNpc: selectNpc, onSelectGoat: selectGoat } = tapRef.current;
       let bestNpc: Townsperson | null = null; let bestNpcD = 34;
       for (const npc of liveRef.current.folk) {
@@ -2433,7 +2447,13 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         if (d < bestNpcD) { bestNpcD = d; bestNpc = npc; }
       }
       if (bestNpc && selectNpc) {
-        selectNpc(liveRef.current.selectedNpcId === bestNpc.id ? null : bestNpc);
+        const alreadySelected = liveRef.current.selectedNpcId === bestNpc.id;
+        const nearEnough = Math.hypot(bestNpc.position.x - liveRef.current.px, bestNpc.position.y - liveRef.current.py) <= 8.5;
+        // Same exclusions as the BUILD 719/724 chat affordance: dead, hurt,
+        // or fleeing townsfolk never trigger dialogue on tap.
+        const talkable = bestNpc.hp == null && bestNpc.fleeUntilTick == null && bestNpc.deadUntilTick == null;
+        if (alreadySelected && nearEnough && talkable && talk) { talk(bestNpc); return; }
+        selectNpc(alreadySelected ? null : bestNpc);
         return;
       }
       // Hostile critters can be targeted directly in the isometric view.
