@@ -41,6 +41,8 @@ jobs:
         run: npm run test:update-version
       - name: Fantasy encounter regression test
         run: npm run test:fantasy-encounters
+      - name: NPC retaliation and guard pursuit regression test
+        run: npm run test:npc-combat
       - name: Landscape coherence regression test
         run: npm run test:landscape-coherence
       - name: Expanded world map coherence regression test
