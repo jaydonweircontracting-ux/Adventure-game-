@@ -53,9 +53,9 @@ import { BUILDING_ASSET_META, buildingSpriteHeightForWidth } from '../buildingRi
 import sharedHouseSpriteUrl from '../../../game sprites/starting house/IMG_5422.png';
 // BUILD 823: Exact authored transparent overlay for the starter-house exterior.
 import startingHouseOverlayUrl from '../../../game sprites/starting house/IMG_5424.png';
-// BUILD 769: shared deterministic layouts for in-world residential cutaways.
-import { generateInteriorLayout } from '../interiors';
-import { houseTypeForBuilding } from '../houseTypes';
+// BUILD 910 (Phase A2): the BUILD 769 in-world cutaway imports were removed
+// with the cutaway itself; interiors in the field are the authored two-layer
+// starter-house art for every building now.
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, type MonsterAnim, type MonsterSpriteDef } from '../monsterSprites';
 // BUILD 369 (Phase 2b): authoritative water/bridges in the iso field.
 import { waterGridForChunk, waterDepthAt, waterGridAt, type WaterGrid } from '../landscape';
@@ -555,7 +555,13 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         const tile = mapTileFor(cp);
         list.push({
           ox, oy,
-          buildings: buildingDoorwaysFor(cp),
+          // BUILD 910 (Phase A2): all buildings share one draw depth (just
+          // behind the player, BUILD 811), so their relative painter order is
+          // their push order. Sort by position sum so southern buildings are
+          // pushed (and therefore drawn) after northern ones — with every
+          // building wearing the oversized two-layer art, unsorted overlaps
+          // painted northern interiors over southern roofs.
+          buildings: buildingDoorwaysFor(cp).slice().sort((a, b2) => (a.position.x + a.position.y) - (b2.position.x + b2.position.y)),
           trees: fieldTreesFor(cp),
           ores: fieldOresFor(cp),
           tile,
@@ -1292,9 +1298,11 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       for (const sc of scenes) {
         const bx = sc.ox * N, by = sc.oy * N;
         for (const b of sc.buildings) {
-          // BUILD 805: show IMG_5422 as the starting-house exterior only.
-          // Keep all other building exteriors hidden; doorway/collision data is unchanged.
-          if (b.area.id !== 'tutorial-house') continue;
+          // BUILD 910 (Phase A2): every building renders the two-layer
+          // starter-house treatment (roofless interior base + roof overlay
+          // that hides while the player is under it). BUILD 805 hid all
+          // non-tutorial exteriors; that skip is gone — doorway/collision
+          // data is unchanged, only the visuals are universal now.
           const r = { left: b.rect.left + bx, top: b.rect.top + by, right: b.rect.right + bx, bottom: b.rect.bottom + by };
           const bpos = { x: b.position.x + bx, y: b.position.y + by };
         const p00 = isoToScreen(r.left, r.top), p10 = isoToScreen(r.right, r.top);
@@ -1314,7 +1322,11 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         buildingKindCache.set(b, kind);
         const projectedWidth = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 0.95;
         const spriteHeight = buildingSpriteHeightForWidth(projectedWidth * (3.3 / 0.95), kind);
-        const minY = Math.min(p00.y, p10.y, p11.y, p01.y) - Math.max(64, spriteHeight);
+        // BUILD 910 (Phase A2): the roof overlay is drawn at 1.6x the base
+        // sprite's height for EVERY building now, so the vertical culling
+        // allowance must cover the overlay's full height (plus margin) or
+        // roofs would pop in late at the top edge of the screen.
+        const minY = Math.min(p00.y, p10.y, p11.y, p01.y) - Math.max(64, spriteHeight * 1.7);
         const maxY = Math.max(p00.y, p10.y, p11.y, p01.y);
         if (maxX < cam.x - vhw || minX > cam.x + vhw || maxY < cam.y - vhh || minY > cam.y + vhh) continue;
         const wallH = 64;
@@ -1326,118 +1338,19 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         // Collision and doorway logic remain tied to the original footprint.
         const buildingDepth = position.x + position.y - 0.02;
 
-        // BUILD 769: ordinary houses become visible top-down floor plans while
-        // the player is physically inside their footprint. The roof/exterior
-        // sprite is omitted only for the occupied house; outside art is unchanged.
-        const playerInsideHouse = b.area.id !== 'tutorial-house'
-          && b.area.roomType === 'building'
-          && sc.ox === 0 && sc.oy === 0
-          && position.x > b.rect.left + 0.45 && position.x < b.rect.right - 0.45
-          && position.y > b.rect.top + 0.45 && position.y < b.rect.bottom - 0.45;
-        if (playerInsideHouse) {
-          const layout = generateInteriorLayout(b.id, houseTypeForBuilding(b.id), 14, 12);
-          const roomW = Math.max(0.1, r.right - r.left);
-          const roomH = Math.max(0.1, r.bottom - r.top);
-          const tileW = roomW / layout.width;
-          const tileH = roomH / layout.height;
-          drawables.push({
-            depth: r.left + r.top - 30,
-            draw: (g2) => {
-              // Actual world-space floor tiles, aligned to the building footprint.
-              const floorPalettes: Record<string, [string, string]> = {
-                cottage: ['#aa8961', '#9a7952'],
-                farmhouse: ['#ad8b5c', '#977347'],
-                merchant: ['#98704b', '#815a39'],
-                guard: ['#8b8170', '#756b5d'],
-                craftsman: ['#806343', '#6e5036'],
-              };
-              const floorColors = floorPalettes[layout.houseType] ?? floorPalettes.cottage;
-              for (let ty = 0; ty < layout.height; ty++) for (let tx = 0; tx < layout.width; tx++) {
-                const x0 = r.left + tx * tileW, y0 = r.top + ty * tileH;
-                const p0 = isoToScreen(x0, y0), p1 = isoToScreen(x0 + tileW, y0);
-                const p2 = isoToScreen(x0 + tileW, y0 + tileH), p3 = isoToScreen(x0, y0 + tileH);
-                g2.beginPath(); g2.moveTo(p0.x, p0.y); g2.lineTo(p1.x, p1.y);
-                g2.lineTo(p2.x, p2.y); g2.lineTo(p3.x, p3.y); g2.closePath();
-                g2.fillStyle = (tx + ty) % 2 ? floorColors[1] : floorColors[0];
-                g2.fill();
-                g2.strokeStyle = 'rgba(48,35,23,0.22)'; g2.lineWidth = 0.7; g2.stroke();
-              }
-              // Furnishings use the same deterministic placements as the interior system.
-              const furnitureColors: Record<string, string> = {
-                bed: '#665b91', table: '#76502f', chair: '#805c38', shelf: '#5a3b25',
-                fireplace: '#45434a', lamp: '#d8a84b', rug: '#9a5145', chest: '#68452c',
-                workbench: '#62432c', barrel: '#7d5632', crate: '#90663b', plant: '#426c3f',
-              };
-              for (const item of layout.furniture) {
-                const cx = r.left + (item.tx + item.w / 2) * tileW;
-                const cy = r.top + (item.ty + item.h / 2) * tileH;
-                const p = isoToScreen(cx, cy);
-                const fw = Math.max(3, TILE_W * tileW * item.w * 0.34);
-                const fh = Math.max(2, TILE_H * tileH * item.h * 0.3);
-                g2.fillStyle = 'rgba(0,0,0,0.24)';
-                g2.fillRect(p.x - fw / 2 + 1.5, p.y - fh / 2 + 2, fw, fh);
-                g2.fillStyle = furnitureColors[item.kind] ?? '#70523a';
-                g2.fillRect(p.x - fw / 2, p.y - fh / 2, fw, fh);
-                g2.strokeStyle = 'rgba(35,24,18,0.8)'; g2.lineWidth = 1; g2.strokeRect(p.x - fw / 2, p.y - fh / 2, fw, fh);
-              }
-              // Type-specific room partitions, rendered on the floor plane.
-              const verticalPartitions: [number, number, number][] = [];
-              const horizontalPartitions: [number, number, number][] = [];
-              switch (layout.houseType) {
-                case 'farmhouse':
-                  verticalPartitions.push([8, 2, 5], [8, 6, 9]);
-                  horizontalPartitions.push([6, 8, 10], [6, 11, 12]);
-                  break;
-                case 'merchant':
-                  horizontalPartitions.push([4, 5, 9], [4, 10, 12]);
-                  verticalPartitions.push([5, 4, 7], [5, 8, 9]);
-                  break;
-                case 'guard':
-                  verticalPartitions.push([7, 2, 6], [7, 7, 9]);
-                  horizontalPartitions.push([7, 7, 10], [7, 11, 12]);
-                  break;
-                case 'craftsman':
-                  verticalPartitions.push([4, 2, 5], [4, 6, 9]);
-                  horizontalPartitions.push([4, 4, 8], [4, 9, 11]);
-                  break;
-                default:
-                  verticalPartitions.push([8, 2, 6], [8, 7, 8]);
-                  horizontalPartitions.push([3, 8, 10], [3, 11, 12]);
-                  break;
-              }
-              g2.strokeStyle = '#5c422d'; g2.lineWidth = 2.5;
-              for (const [x, y1, y2] of verticalPartitions) {
-                const a = isoToScreen(r.left + x * tileW, r.top + y1 * tileH);
-                const b = isoToScreen(r.left + x * tileW, r.top + y2 * tileH);
-                g2.beginPath(); g2.moveTo(a.x, a.y); g2.lineTo(b.x, b.y); g2.stroke();
-              }
-              for (const [y, x1, x2] of horizontalPartitions) {
-                const a = isoToScreen(r.left + x1 * tileW, r.top + y * tileH);
-                const b = isoToScreen(r.left + x2 * tileW, r.top + y * tileH);
-                g2.beginPath(); g2.moveTo(a.x, a.y); g2.lineTo(b.x, b.y); g2.stroke();
-              }
-              // Low cutaway walls. The south/front edge has a real doorway gap.
-              const nw = isoToScreen(r.left, r.top), ne = isoToScreen(r.right, r.top);
-              const se = isoToScreen(r.right, r.bottom), sw = isoToScreen(r.left, r.bottom);
-              const doorHalf = roomW * 0.12;
-              const doorLeft = isoToScreen(Math.max(r.left, Math.min(r.right, bpos.x - doorHalf)), r.bottom);
-              const doorRight = isoToScreen(Math.max(r.left, Math.min(r.right, bpos.x + doorHalf)), r.bottom);
-              g2.strokeStyle = '#6b5037'; g2.lineWidth = 3;
-              g2.beginPath(); g2.moveTo(nw.x, nw.y); g2.lineTo(ne.x, ne.y);
-              g2.lineTo(se.x, se.y); g2.moveTo(sw.x, sw.y); g2.lineTo(nw.x, nw.y);
-              g2.moveTo(se.x, se.y); g2.lineTo(doorRight.x, doorRight.y);
-              g2.moveTo(doorLeft.x, doorLeft.y); g2.lineTo(sw.x, sw.y); g2.stroke();
-            },
-          });
-          continue;
-        }
+        // BUILD 910 (Phase A2): the BUILD 769 procedural floor-plan
+        // cutaway is gone. Every building now uses the starter-house
+        // two-layer pattern (authored interior base sprite + roof overlay
+        // hidden while the player is under the drawn roof) — one consistent
+        // in-field interior treatment for all buildings.
 
         drawables.push({
           depth: buildingDepth, draw: (g2) => {
-            // BUILD 603: stable sprite by absolute chunk + local coords.
-            const sprite = b.area.id === 'tutorial-house'
-              ? (bldImgs['starting-house-exterior'] ?? bldImgs['blue-house'])
-              : bldImgs[kind];
+            // BUILD 910 (Phase A2): every building's base is the authored
+            // roofless-interior sprite (all registry variants already resolve
+            // to IMG_5422; the explicit key keeps that guarantee if variants
+            // are ever re-pointed at other art).
+            const sprite = bldImgs['starting-house-exterior'] ?? bldImgs[kind] ?? bldImgs['blue-house'];
             if (sprite && sprite.complete && sprite.naturalWidth > 0) {
               // Draw sprite anchored at building base center
               const cx = (p00.x + p11.x) / 2;
@@ -1445,7 +1358,18 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               // BUILD 809: Make house sprites twice their previous size without changing
               // their shared logical footprint, door trigger, or collision data.
               // The slight overhang is intentional; culling above uses the same scale.
-              const targetW = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 3.3;
+              // BUILD 910 (Phase A2): the 3.3x factor is a tutorial-house
+              // framing (its logical rect is a tiny 7x4.8 for a full house).
+              // Applied to EVERY building it made each town house's art
+              // ~2.15x its footprint diamond — neighbours blanketed each
+              // other in one unreadable roof pile (verified by screenshot:
+              // a generated house's roof painted over the whole tutorial
+              // house). Other buildings therefore scale with their footprint:
+              // base art ~0.97x the footprint diamond's width, overlay ~1.55x
+              // — the same two-layer look, sized to the lot it stands on.
+              const edgeX = Math.hypot(p10.x - p00.x, p10.y - p00.y);
+              const edgeY = Math.hypot(p01.x - p00.x, p01.y - p00.y);
+              const targetW = b.area.id === 'tutorial-house' ? edgeX * 3.3 : (edgeX + edgeY) * 0.867;
               const scale = targetW / sprite.naturalWidth;
               const sw = sprite.naturalWidth * scale;
               const sh = sprite.naturalHeight * scale;
@@ -1461,12 +1385,11 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               // BUILD 826: draw the authored exterior overlay only while no interior is active.
               // The iso field can remain mounted during house transitions, so use the
               // live interior state instead of relying on unmounting the whole view.
-              // BUILD 895: the starting house's logical rect is far smaller
-              // than its drawn sprite (BUILD 809/828 scale the art up), so
-              // "inside the house" must be tested against the overlay's
-              // actual drawn bounds: when the player's screen position is
-              // under the roof, hide the overlay so the authored roofless
-              // interior base sprite shows. Restores automatically on exit.
+              // BUILD 895: "inside the house" was tested against the overlay's
+              // drawn screen bounds for the (then sole) tutorial house.
+              // BUILD 910 supersedes that test with a per-building world-space
+              // test — see the playerUnderRoof computation below for why the
+              // screen AABB cannot generalize to a whole town of oversized art.
               // BUILD 899: enlarge the overlay (1.5 -> 1.6) and sink it so
               // its wall bases fully cover the base interior sprite's floor
               // front edge. Scale-about-the-bottom-anchor alone cannot close
@@ -1476,18 +1399,38 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               // the porch/deck stayed exposed). The sink keeps the
               // horizontal center and the world base anchor; only the drawn
               // rect's bottom extends past baseY onto the wall-base line.
+              // BUILD 910 (Phase A1+A2): sink 0.18 -> 0.34. At 0.18 the
+              // interior's porch/floor slab still jutted out below the
+              // overlay's stone foundation (measured 22,625 uncovered px in
+              // an offline composite of the two authored PNGs at renderer
+              // geometry, all in the bottom band). At 0.34 the composite is
+              // fully covered (~0 px) and the painted door still sits on its
+              // foundation. The same two-layer treatment now applies to
+              // EVERY building, not just the tutorial house (BUILD 805's
+              // exterior skip is gone): base interior sprite + this overlay,
+              // hidden while the player stands under the drawn roof.
               const overlayW = sw * 1.6;
               const overlayH = sh * 1.6;
-              const overlaySink = sh * 0.18;
-              const playerPt = isoToScreen(liveRef.current.px, liveRef.current.py);
-              // The under-roof test keeps the pre-sink rect: the sink strip
-              // hangs over the ground in FRONT of the house, where the
-              // player legitimately stands outside — counting it as
-              // "under the roof" would hide the roof for a player who
-              // merely walked up to the front wall.
-              const playerUnderRoof = playerPt.x >= cx - overlayW / 2 && playerPt.x <= cx + overlayW / 2
-                && playerPt.y >= baseY - overlayH && playerPt.y <= baseY;
-              if (!liveRef.current.inInterior && b.area.id === 'tutorial-house' && !playerUnderRoof) {
+              const overlaySink = sh * 0.34;
+              // BUILD 910 (Phase A2): the under-roof test is per building in
+              // WORLD space — the player's position (converted into this
+              // scene's frame) against this building's own footprint,
+              // inflated by 3 units (the doorstep + a step past the walls,
+              // where the oversized art still reads as "at the house").
+              // BUILD 896's drawn-screen-AABB test does NOT generalize:
+              // with every building wearing the 3.3x/1.6x art, a
+              // neighbouring house's screen AABB routinely contains the
+              // player (measured: standing south of the tutorial house put
+              // the player inside town-west-1's AABB, so its roof hid and
+              // its interior painted over the tutorial house). The world
+              // test keeps the 896 property that matters — the test follows
+              // THIS building's drawn placement, footprint + art margin —
+              // without borrowing a neighbour's rectangle.
+              const scenePx = liveRef.current.px - bx;
+              const scenePy = liveRef.current.py - by;
+              const playerUnderRoof = scenePx >= b.rect.left - 3 && scenePx <= b.rect.right + 3
+                && scenePy >= b.rect.top - 3 && scenePy <= b.rect.bottom + 3;
+              if (!liveRef.current.inInterior && !playerUnderRoof) {
                 const overlay = bldImgs['starting-house-overlay'];
                 if (overlay && overlay.complete && overlay.naturalWidth > 0) {
                   g2.save();
@@ -1500,21 +1443,14 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               }
               return;
             }
-            // BUILD 806: if the starting-house sprite is still loading, skip this
+            // BUILD 806: if the shared house sprite is still loading, skip this
             // frame rather than briefly drawing the procedural white house.
-            if (b.area.id === 'tutorial-house') return;
-            // Other buildings use their shared uploaded sprite as a fallback.
-            const sharedFallback = bldImgs['blue-house'];
-            if (sharedFallback && sharedFallback.complete && sharedFallback.naturalWidth > 0) {
-              const cx = (p00.x + p11.x) / 2;
-              const baseY = Math.max(p00.y, p10.y, p11.y, p01.y);
-              const targetW = Math.hypot(p10.x - p00.x, p10.y - p00.y) * 3.3;
-              const scale = targetW / sharedFallback.naturalWidth;
-              const sw = sharedFallback.naturalWidth * scale;
-              const sh = sharedFallback.naturalHeight * scale;
-              g2.drawImage(sharedFallback, cx - sw / 2, baseY - sh, sw, sh);
-              return;
-            }
+            // BUILD 910 (Phase A2): this now applies to every building — the
+            // base sprite selection above already falls back through
+            // 'starting-house-exterior' -> kind -> 'blue-house' (all the same
+            // authored IMG_5422), so reaching here means the shared art
+            // itself has not loaded yet.
+            return;
             // shadow (fallback procedural)
             g2.fillStyle = 'rgba(0,0,0,0.18)';
             g2.beginPath();
