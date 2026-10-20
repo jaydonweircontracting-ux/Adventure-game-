@@ -3,12 +3,13 @@
 import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLevelFor } from '../src/game/worldMap';
 import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai';
 import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '../src/game/combat';
+import { chooseCreatureTarget, pickGuardCreatureTarget, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
 import { createAgent, stepAgent, AGENT_MOVE_SPEED, type AgentWorld } from '../src/game/gameplayAgent';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, NPC_RESPAWN_TICKS, marketRoutine, marketBrowseVisit, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, NPC_RESPAWN_TICKS, marketRoutine, marketBrowseVisit, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
 
 /**
  * BUILD 699: Test anchors need all household homeKeys. Uses the real
@@ -178,6 +179,34 @@ for (let i = 0; i < 10000; i++) {
   const result = updateGoat(goat, player, 'left', [goat], 100);
   const distFromHome = Math.hypot(result.goat.position.x - spawnPosition.x, result.goat.position.y - spawnPosition.y);
   assert(distFromHome <= roamRadius + 0.01, `Goat escaped home range: ${distFromHome.toFixed(2)} > ${roamRadius} (iter ${i})`);
+}
+
+// ---- 4b. Melee standoff vs NPC targets (BUILD 914) ----
+// With the default standoff a chasing creature settles at the 4.0 player
+// ring; with meleeStandOff 1.6 (townsfolk victims) it must close to inside
+// NPC retaliation range (1.8) so the victim can actually hit back.
+console.log('Testing melee standoff (BUILD 914)...');
+{
+  const mkGoat = (): GoatAIEntity => ({
+    position: { x: 53, y: 50 },
+    facing: 'left',
+    state: 'chase',
+    disposition: 'aggressive',
+    hp: 100, maxHp: 100,
+    attackCooldown: 0, attackTimer: 0, attackHitApplied: false,
+    hurtTimer: 0, moving: false, attacking: false,
+    spawnPosition: { x: 53, y: 50 }, roamRadius: 60,
+  });
+  const victim = { x: 50, y: 50 };
+  let gDefault = mkGoat();
+  for (let i = 0; i < 200; i++) gDefault = updateGoat(gDefault, victim, 'right', [gDefault], 50).goat;
+  const dDefault = Math.hypot(gDefault.position.x - victim.x, gDefault.position.y - victim.y);
+  assert(dDefault >= 3.9 && dDefault <= 4.01, `Default standoff should settle at the 4.0 ring, got ${dDefault.toFixed(2)}`);
+  let gNpc = mkGoat();
+  for (let i = 0; i < 200; i++) gNpc = updateGoat(gNpc, victim, 'right', [gNpc], 50, { meleeStandOff: 1.6 }).goat;
+  const dNpc = Math.hypot(gNpc.position.x - victim.x, gNpc.position.y - victim.y);
+  assert(dNpc <= 1.8, `NPC standoff should close inside retaliation range 1.8, got ${dNpc.toFixed(2)}`);
+  assert(dNpc >= 1.0, `NPC standoff should not overlap the victim, got ${dNpc.toFixed(2)}`);
 }
 
 // ---- 5. Goat AI flee clamping ----
@@ -1094,6 +1123,83 @@ console.log('Testing townsfolk living-town simulation...');
   const respawned = advanceTownsfolk([killed], anchors, fleeClock(2000 + NPC_RESPAWN_TICKS + 1), navCtx)[0];
   assert(respawned.deadUntilTick === undefined, 'Respawn did not clear death');
   assert(npcHp(respawned) === npcMaxHp(respawned), 'Respawn should restore HP');
+  // BUILD 914: creature attacks run the same damageNpc decision, tagged
+  // with the creature's identity. The farmer fixture flees the roll at
+  // tick 2000 (asserted above), so a creature hit behaves identically.
+  const creatureHit = damageNpcByCreature(healthy, 10, threat, 'monster', 7, 2000);
+  assert(npcHp(creatureHit) === npcMaxHp(healthy) - 10, 'Creature damage not applied');
+  assert(creatureHit.fleeUntilTick !== undefined, 'Civilian should flee a creature like a player');
+  assert(creatureHit.fightBackCreatureId === undefined, 'Fleeing civilian must not be tagged as a creature fighter');
+  // A civilian whose roll says FIGHT gets tagged with the creature.
+  let fightTick = -1;
+  for (let t = 0; t < 300 && fightTick < 0; t++) {
+    if (damageNpc(healthy, 5, threat, t).fightBackUntilTick !== undefined) fightTick = t;
+  }
+  assert(fightTick >= 0, 'Fixture should have a fighting tick');
+  const fighter = damageNpcByCreature(healthy, 5, threat, 'goat', 42, fightTick);
+  assert(fighter.fightBackUntilTick !== undefined, 'Fighting civilian should keep fighting a creature');
+  assert(fighter.fightBackCreatureId === 42 && fighter.fightBackCreatureKind === 'goat', 'Creature identity not tagged');
+  assert(fighter.fleeUntilTick === undefined, 'Fighter must not also flee');
+  // Guards are braver against creatures: whatever the roll says, a guard
+  // ends up fighting the creature, never fleeing it.
+  const guardNpc = { ...healthy, archetype: 'guard' as const, hp: undefined };
+  const guardPlain = damageNpc(guardNpc, 10, threat, 2000);
+  const guardVsCreature = damageNpcByCreature(guardNpc, 10, threat, 'monster', 9, 2000);
+  assert(npcHp(guardVsCreature) === npcHp(guardPlain), 'Guard creature damage should match the plain path');
+  assert(guardVsCreature.fleeUntilTick === undefined, 'Guard must never flee a creature');
+  assert(guardVsCreature.fightBackUntilTick !== undefined, 'Guard should fight the creature');
+  assert(guardVsCreature.fightBackCreatureId === 9 && guardVsCreature.fightBackCreatureKind === 'monster', 'Guard creature tag missing');
+  // A creature kill uses the normal death path and clears the tag.
+  const creatureKill = damageNpcByCreature(healthy, 999, threat, 'monster', 7, 2000);
+  assert(creatureKill.hp === 0 && creatureKill.deadUntilTick === 2000 + NPC_RESPAWN_TICKS, 'Creature kill should use the normal death path');
+  assert(creatureKill.fightBackCreatureId === undefined && creatureKill.fightBackCreatureKind === undefined, 'Death must clear the creature tag');
+  // Creature fight state is transient: it is not part of the save format.
+  const fighterSave = serializeTownsfolk([fighter]);
+  assert(!('fightBackCreatureId' in fighterSave[0]), 'Creature fight state must not be serialized');
+}
+
+// ---- 13a1. Creature target acquisition (BUILD 914) ----
+{
+  const origin = { x: 0, y: 0 };
+  // Acquire the nearest victim: NPC at 6 beats player at 20.
+  const acq = chooseCreatureTarget({ creaturePos: origin, current: null, playerPos: { x: 20, y: 0 }, npcs: [{ npcId: 'a', position: { x: 6, y: 0 } }, { npcId: 'b', position: { x: 10, y: 0 } }] });
+  assert(acq?.kind === 'npc' && acq.npcId === 'a', 'Should acquire the nearest NPC');
+  // Player nearer than every NPC wins.
+  const acqPlayer = chooseCreatureTarget({ creaturePos: origin, current: null, playerPos: { x: 4, y: 0 }, npcs: [{ npcId: 'a', position: { x: 9, y: 0 } }] });
+  assert(acqPlayer?.kind === 'player', 'Should acquire a nearer player');
+  // Nothing inside acquire range: no target.
+  const acqNone = chooseCreatureTarget({ creaturePos: origin, current: null, playerPos: { x: 30, y: 0 }, npcs: [{ npcId: 'a', position: { x: 28, y: 0 } }] });
+  assert(acqNone === null, 'Should not acquire beyond range');
+  // Stability: a locked NPC at 10 is kept against a player at 8 (not < 60%).
+  const locked: CreatureTargetChoice = { kind: 'npc', npcId: 'a' };
+  const keep = chooseCreatureTarget({ creaturePos: origin, current: locked, playerPos: { x: 8, y: 0 }, npcs: [{ npcId: 'a', position: { x: 10, y: 0 } }] });
+  assert(keep?.kind === 'npc' && keep.npcId === 'a', 'Lock should hold against a slightly closer challenger');
+  // A dramatically closer challenger (5 < 10 * 0.6) steals the lock.
+  const steal = chooseCreatureTarget({ creaturePos: origin, current: locked, playerPos: { x: 5, y: 0 }, npcs: [{ npcId: 'a', position: { x: 10, y: 0 } }] });
+  assert(steal?.kind === 'player', 'Lock should switch to a dramatically closer challenger');
+  // Leash: a locked NPC now 40 away breaks the lock; reacquire in range.
+  const leash = chooseCreatureTarget({ creaturePos: origin, current: locked, playerPos: { x: 30, y: 0 }, npcs: [{ npcId: 'a', position: { x: 40, y: 0 } }, { npcId: 'b', position: { x: 12, y: 0 } }] });
+  assert(leash?.kind === 'npc' && leash.npcId === 'b', 'Broken leash should reacquire the nearest in-range victim');
+  // Locked NPC vanished (died/indoors): fall back to a fresh acquire.
+  const gone = chooseCreatureTarget({ creaturePos: origin, current: locked, playerPos: { x: 30, y: 0 }, npcs: [] });
+  assert(gone === null, 'Vanished target with nobody in range should clear the lock');
+  // Player unavailable (indoors): NPCs are still valid victims.
+  const noPlayer = chooseCreatureTarget({ creaturePos: origin, current: null, playerPos: null, npcs: [{ npcId: 'a', position: { x: 7, y: 0 } }] });
+  assert(noPlayer?.kind === 'npc' && noPlayer.npcId === 'a', 'Should target NPCs when the player is unavailable');
+  // Guard intervention picks: menacing + nearest + inside sight only.
+  const guardPos = { x: 0, y: 0 };
+  const threats: GuardThreatCandidate[] = [
+    { entityKind: 'monster', id: 1, position: { x: 18, y: 0 }, menacing: true },
+    { entityKind: 'goat', id: 2, position: { x: 9, y: 0 }, menacing: true },
+    { entityKind: 'monster', id: 3, position: { x: 5, y: 0 }, menacing: false },
+    { entityKind: 'monster', id: 4, position: { x: 40, y: 0 }, menacing: true },
+  ];
+  const pick = pickGuardCreatureTarget(guardPos, threats);
+  assert(pick?.id === 2 && pick.entityKind === 'goat', 'Guard should pick the nearest menacing creature in sight');
+  const noPick = pickGuardCreatureTarget(guardPos, threats.map((t) => ({ ...t, menacing: false })));
+  assert(noPick === null, 'Guard should ignore creatures that are not menacing');
+  const farPick = pickGuardCreatureTarget(guardPos, [{ entityKind: 'monster', id: 4, position: { x: 40, y: 0 }, menacing: true }]);
+  assert(farPick === null, 'Guard should not engage beyond sight range');
 }
 
 // ---- 13a2. Equipment art wiring (BUILD 911): item art map + look compose ----

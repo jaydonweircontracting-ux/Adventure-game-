@@ -91,6 +91,14 @@ export type Townsperson = {
   /** World tick when this NPC may next land a melee hit on the player. */
   fightBackNextAttackTick?: number;
   /**
+   * BUILD 914: when the fight-back target is a creature (not the player),
+   * the creature's id and population. The world combat loop refreshes
+   * fightBackTarget from the live creature and lands this NPC's hits on
+   * it. Transient like the other fight fields — never serialized.
+   */
+  fightBackCreatureId?: number;
+  fightBackCreatureKind?: 'goat' | 'monster';
+  /**
    * BUILD 704: true while the NPC is actively running (fleeing). Walk is the
    * default; the renderer picks the run cycle only when this is true.
    */
@@ -913,6 +921,46 @@ export function damageNpc(npc: Townsperson, damage: number, from: TownsfolkPoint
   };
 }
 
+/**
+ * BUILD 914: an NPC is hit by a CREATURE. Runs the exact same fight-or-flee
+ * decision as a player attack (damageNpc — same deterministic roll, same
+ * death path), then tags the retaliation with the creature's identity so
+ * the world combat loop chases and hits the creature instead of the
+ * player. Guards are braver against beasts than against people: a guard
+ * who rolled "flee" against a creature holds his ground and fights — a
+ * wolf in town is precisely what guards exist for. No crime, witness, or
+ * bounty consequences are recorded here: those exist only in the
+ * player-attack handlers, so a creature kill never incriminates the
+ * player. Pure.
+ */
+export function damageNpcByCreature(
+  npc: Townsperson,
+  damage: number,
+  from: TownsfolkPoint,
+  creatureKind: 'goat' | 'monster',
+  creatureId: number,
+  tick: number,
+): Townsperson {
+  const hurt = damageNpc(npc, damage, from, tick);
+  if (hurt.deadUntilTick !== undefined) {
+    return { ...hurt, fightBackCreatureId: undefined, fightBackCreatureKind: undefined };
+  }
+  if (hurt.fightBackUntilTick !== undefined) {
+    return { ...hurt, fightBackCreatureId: creatureId, fightBackCreatureKind: creatureKind };
+  }
+  // The NPC chose to flee. Guards override the roll against creatures.
+  if (npc.archetype === 'guard') {
+    return {
+      ...hurt,
+      fleeUntilTick: undefined, fleeFrom: undefined,
+      fightBackUntilTick: tick + 900, fightBackTarget: { ...from },
+      fightBackCreatureId: creatureId, fightBackCreatureKind: creatureKind,
+      moving: true, running: true, activity: 'Fighting back!',
+    };
+  }
+  return { ...hurt, fightBackCreatureId: undefined, fightBackCreatureKind: undefined };
+}
+
 /** Whether the NPC is currently dead. */
 export function isNpcDead(npc: Townsperson, tick: number): boolean {
   return npc.deadUntilTick !== undefined && tick < npc.deadUntilTick;
@@ -1067,9 +1115,9 @@ function advanceOne(
           : (ny >= 0 ? 'down' : 'up');
         return { ...npc, position: { x: npc.position.x + nx * Math.min(chaseStep, dist - 1.1), y: npc.position.y + ny * Math.min(chaseStep, dist - 1.1) }, facing, moving: true, running: true, activity: 'Fighting back!' };
       }
-      return { ...npc, moving: false, running: false, activity: 'Attacking the player' };
+      return { ...npc, moving: false, running: false, activity: npc.fightBackCreatureId != null ? 'Attacking the creature!' : 'Attacking the player' };
     }
-    npc = { ...npc, fightBackUntilTick: undefined, fightBackTarget: undefined, fightBackNextAttackTick: undefined, running: false };
+    npc = { ...npc, fightBackUntilTick: undefined, fightBackTarget: undefined, fightBackNextAttackTick: undefined, fightBackCreatureId: undefined, fightBackCreatureKind: undefined, running: false };
   }
 
   // --- FLEEING (BUILD 436): run away from the attacker, skip schedule. ---

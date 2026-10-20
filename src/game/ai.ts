@@ -64,6 +64,14 @@ export type UpdateGoatOpts = {
    *  (axis-separated) instead of entering it, and fully blocked moves stay
    *  in place. When omitted, movement behaves exactly as before. */
   isBlocked?: (pos: CombatPoint) => boolean;
+  /** BUILD 914: melee standoff distance the creature holds from its
+   *  target. Defaults to GOAT_MELEE_RANGE (the player spacing). Against
+   *  townsfolk targets the caller passes a close standoff: NPC retaliation
+   *  lands at 1.8 units and their chase stops at 1.35, so a creature
+   *  holding the 4.0 player ring could never be hit back — it kited its
+   *  victim across town, untouchable (measured in the BUILD 914 browser
+   *  verification: a guard dealt 0 damage over a full 60-HP fight). */
+  meleeStandOff?: number;
 };
 
 // Resolve a desired move against solid geometry. Tries the full move first,
@@ -110,11 +118,11 @@ function shouldReturnHome(goat: GoatAIEntity, player: CombatPoint): boolean {
 
 // Keep hostile goats close enough that sprites nearly touch the player:
 // melee happens up close, and the player's 5-unit swing reach connects.
-function keepMeleeDistance(position: CombatPoint, player: CombatPoint, playerFacing: CombatDirection): CombatPoint {
+function keepMeleeDistance(position: CombatPoint, player: CombatPoint, playerFacing: CombatDirection, standOff: number = GOAT_MELEE_RANGE): CombatPoint {
   const dx = position.x - player.x;
   const dy = position.y - player.y;
   const distance = Math.hypot(dx, dy);
-  if (distance >= GOAT_MELEE_RANGE) return position;
+  if (distance >= standOff) return position;
   if (distance === 0) {
     const facingOffset: Record<CombatDirection, CombatPoint> = {
       up: { x: 0, y: -1 },
@@ -123,9 +131,9 @@ function keepMeleeDistance(position: CombatPoint, player: CombatPoint, playerFac
       right: { x: 1, y: 0 },
     };
     const offset = facingOffset[playerFacing];
-    return { x: player.x + offset.x * GOAT_MELEE_RANGE, y: player.y + offset.y * GOAT_MELEE_RANGE };
+    return { x: player.x + offset.x * standOff, y: player.y + offset.y * standOff };
   }
-  const scale = GOAT_MELEE_RANGE / distance;
+  const scale = standOff / distance;
   return { x: player.x + dx * scale, y: player.y + dy * scale };
 }
 
@@ -183,7 +191,7 @@ export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint,
     }, { x: 0, y: 0 });
     const chasedPosition = moveTowards(goat.position, player, GOAT_CHASE_SPEED, deltaMs, separation);
     const rangedPosition = clampToHomeRange(chasedPosition, goat.spawnPosition, goat.roamRadius);
-    const desired = keepMeleeDistance(rangedPosition, player, playerFacing);
+    const desired = keepMeleeDistance(rangedPosition, player, playerFacing, opts?.meleeStandOff ?? GOAT_MELEE_RANGE);
     const { position, moved } = resolveCollisionMove(goat.position, desired, opts?.isBlocked);
     return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(position, player), moving: moved, attacking: false }, attackHit: false };
   }

@@ -51,7 +51,7 @@ import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasCo
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, townsfolkRosterEntries, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, marketStallsFromDecor, arterialWaypointsFromDecor, marketBrowseVisit, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, townsfolkRosterEntries, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, marketStallsFromDecor, arterialWaypointsFromDecor, marketBrowseVisit, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 // BUILD 683: unified Mosslight rects (single source in settlements.ts).
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
 import { mosslightEngineChunkLayout, mosslightEngineLanes, mosslightEngineProps, mosslightFillerRects } from '@/game/mosslightLayout';
@@ -105,7 +105,8 @@ import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, resolveMonsterS
 import { probeMonsterSheets, isMonsterSheetFailed, onMonsterSheetFailure } from './game/monsterSprites/sheetProbe';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
-import { isInMeleeArc, traceLineBlocked, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '@/game/combat';
+import { isInMeleeArc, traceLineBlocked, getDirection, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH, type CombatDirection } from '@/game/combat';
+import { chooseCreatureTarget, pickGuardCreatureTarget, creatureTargetKey, type CreatureTargetChoice, type GuardThreatCandidate } from '@/game/creatureCombat';
 import { renderGroundDetail, type GroundDetailSpec, type GroundHills } from '@/game/groundDetail';
 // BUILD 355: elevation hills/cliffs (CraftPix island kit tiles).
 import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type ElevContext } from '@/game/elevation';
@@ -142,7 +143,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '914';
+const BUILD_NUMBER = '915';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -150,6 +151,7 @@ const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
   '914': 'Wilderness ecology expansion — larger herds in meadows, more wildlife in forests and shorelines, direwolves reserved for deeper wilderness, and richer slime, bat, rat, wolf, and spider encounters outside the protected starting settlement',
+  '915': 'NPCs vs monsters: hostile creatures now hunt townsfolk as well as you. A wolf or bandit picks its nearest victim and sticks to it, townsfolk fight back or flee using the same instincts they use against you, and guards sprint to engage any creature menacing a townsfolk or loose in town. A creature that kills a townsfolk leaves a lootable body like any other death — and it is never blamed on you: no crime, no bounty. Creatures killed by NPCs drop their loot on the ground for anyone to pick up, but the kill earns you no XP (you did not land it)',
   '913': 'Melee can finally hit goats: critter separation holds goats 2.35 units from you, but the sword only reached 1.06 — every swing at a calm goat whiffed (found in the overnight burn-down: 22 measured swings, 0 hits). Goat swings now use a reach that covers the separation distance, so you can walk up to a goat and hit it. NPC and monster melee range is unchanged. Also closes the Phase D burn-down: fresh-game playtest passed end to end (house entry, tap-to-talk, NPC fight-back, horse riding, body loot take/leave, chunk crossings on foot and mounted, world map, minimap radar, full zoom range with no black screen, and an exact save/reload round-trip)',
   '912': 'Horses arrive in the isometric world: your mount now renders under you when you ride (and waits saddled where you left it), with a Mount horse button in the HUD next to Dismount. Townsfolk horses live in the iso view too — riders traveling, owners leading their horses, and merchants hauling carts to market. Fighting NPCs now swing with real attack animations. Fixed the body-loot window in the iso view: it used to open into the hidden 2D layer and never appear — it now displays, bodies pulse with a gold Loot ring and a bigger tap target, and tapping a corpse no longer selects the dead NPC instead. Dismounting no longer teleports you in the east/south field',
   '911': 'Equipped gear is now worn: the paperdoll and looted/crafted items render on your character (armor, helmets, gloves, boots, weapons, shields, cloaks) over your character-creator clothing and hair; a worn helmet covers your hair, boots layer over pants, and unequipping restores your base look. NPC outfits finally render too — the equipment sprite folders are installed in public/rpg and every item base maps to its art in equipmentArt.ts',
@@ -5554,6 +5556,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     return all.filter((s) => !del.includes(s.id));
   });
   const monstersRef = useRef<MonsterState[]>(monsters);
+  // BUILD 914: NPC-vs-monster combat — each hostile creature's current
+  // victim lock (player or townsfolk), plus the next time it may re-run
+  // acquisition. Transient by design: never saved; locks re-form after a
+  // load or chunk change exactly like the pre-914 player-only behavior.
+  const creatureTargetsRef = useRef<Map<string, CreatureTargetChoice>>(new Map());
+  const creatureAcquireAtRef = useRef<Map<string, number>>(new Map());
   const [birds, setBirds] = useState<BirdState[]>(() => birdsForChunk({ x: 4, y: 7 }));
   const birdsRef = useRef<BirdState[]>(birds);
   const [wildlife, setWildlife] = useState<WildlifeState[]>(() => wildlifeForChunk({ x: 4, y: 7 }));
@@ -5848,6 +5856,62 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           if (hurt.deadUntilTick !== undefined) dropTownspersonBody(hurt);
           return true;
         },
+        // BUILD 914 test fixtures: stage NPC-vs-creature combat in the town
+        // chunk (no hostile spawns there naturally — BUILD 741 safety
+        // zone). LOCALHOST ONLY, same guard pattern as woundNpcForTest.
+        spawnCreatureForTest: (kind: string, x: number, y: number, hp = 40) => {
+          if (typeof window === 'undefined') return -1;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return -1;
+          const id = goatsRef.current.reduce((max, g) => Math.max(max, g.id), 0) + 1000;
+          const creature: GoatState = {
+            id, kind, position: { x, y }, spawnPosition: { x, y }, roamRadius: 30,
+            facing: 'down', level: 1, hp, maxHp: hp, disposition: 'aggressive',
+            attackCooldown: 0, respawnTicks: 0, wanderSeed: 914, moving: false,
+            attacking: false, state: 'idle', hurtTimer: 0, attackTimer: 0,
+            attackHitApplied: false, hitFlash: false, nextWanderTick: 999999999,
+          };
+          const next = [...goatsRef.current, creature];
+          goatsRef.current = next; setGoats(next);
+          return id;
+        },
+        spawnMonsterForTest: (kind: string, x: number, y: number, hp = 40) => {
+          if (typeof window === 'undefined') return -1;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return -1;
+          const id = monstersRef.current.reduce((max, m) => Math.max(max, m.id), 0) + 1000;
+          const monster: MonsterState = {
+            id, kind: kind as MonsterKind, variant: 'default', ranged: false,
+            gear: gearForMonster(kind, 'default', false),
+            position: { x, y }, spawnPosition: { x, y }, roamRadius: 30,
+            facing: 'down', level: 1, hp, maxHp: hp, disposition: 'aggressive',
+            attackCooldown: 0, respawnTicks: 0, wanderSeed: 914, moving: false,
+            attacking: false, state: 'idle', hurtTimer: 0, attackTimer: 0,
+            attackHitApplied: false, hitFlash: false, nextWanderTick: 999999999,
+          };
+          const next = [...monstersRef.current, monster];
+          monstersRef.current = next; setMonsters(next);
+          return id;
+        },
+        getCreaturesForTest: () => ({
+          goats: goatsRef.current.map((g) => ({ id: g.id, kind: g.kind, x: g.position.x, y: g.position.y, hp: g.hp, maxHp: g.maxHp, disposition: g.disposition, state: g.state, target: creatureTargetsRef.current.get(creatureTargetKey('goat', g.id)) ?? null })),
+          monsters: monstersRef.current.map((m) => ({ id: m.id, kind: m.kind, x: m.position.x, y: m.position.y, hp: m.hp, maxHp: m.maxHp, disposition: m.disposition, state: m.state, target: creatureTargetsRef.current.get(creatureTargetKey('monster', m.id)) ?? null })),
+        }),
+        getNpcCombatForTest: (name: string) => {
+          const npc = townsfolkRef.current.find((n) => n.name === name);
+          if (!npc) return null;
+          const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+          return {
+            name: npc.name, archetype: npc.archetype, x: npc.position.x, y: npc.position.y,
+            hp: npcHp(npc), maxHp: npcMaxHp(npc), dead: isNpcDead(npc, tick), indoors: npc.indoors,
+            activity: npc.activity,
+            fightBackCreatureId: npc.fightBackCreatureId ?? null,
+            fightBackCreatureKind: npc.fightBackCreatureKind ?? null,
+            fightingPlayer: npc.fightBackUntilTick !== undefined && npc.fightBackCreatureId == null,
+            fleeing: npc.fleeUntilTick !== undefined,
+          };
+        },
+        getBountyForTest: () => ({ ...bounty }),
         // BUILD 685: current tutorial objective banner text (null when hidden).
         getObjectiveBanner: () => tutorialObjectiveText({
           dismissed: tutorialBannerDismissedRef.current,
@@ -6510,8 +6574,59 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       let changed = false;
       let damageTaken = 0;
       let attackerName = '';
+      const pendingNpcCreatureHits: { entityKind: 'goat' | 'monster'; creatureId: number; damage: number; attackerName: string }[] = [];
+      // BUILD 914: guard intervention. A guard with no fight of his own
+      // moves on the nearest menacing creature in sight (sight range =
+      // WITNESS_RADIUS): one already attacking a townsfolk, or an idle
+      // hostile loose in town. Creatures busy fighting the player are the
+      // player's problem, not the guard's.
+      const threats: GuardThreatCandidate[] = [];
+      for (const g of goatsRef.current) {
+        if (g.disposition !== 'aggressive' || g.hp <= 0) continue;
+        const choice = creatureTargetsRef.current.get(creatureTargetKey('goat', g.id));
+        threats.push({ entityKind: 'goat', id: g.id, position: g.position, menacing: choice === undefined || choice.kind === 'npc' });
+      }
+      for (const m of monstersRef.current) {
+        if (m.disposition !== 'aggressive' || m.hp <= 0) continue;
+        const choice = creatureTargetsRef.current.get(creatureTargetKey('monster', m.id));
+        threats.push({ entityKind: 'monster', id: m.id, position: m.position, menacing: choice === undefined || choice.kind === 'npc' });
+      }
+      const engagements = new Map<string, GuardThreatCandidate>();
+      if (threats.length > 0) {
+        for (const npc of townsfolkRef.current) {
+          if (npc.archetype !== 'guard' || npc.indoors || isNpcDead(npc, tick) || isNpcJailed(npc, tick) || npc.fightBackUntilTick !== undefined || npc.fleeUntilTick !== undefined) continue;
+          const target = pickGuardCreatureTarget(npc.position, threats);
+          if (target) engagements.set(npc.id, target);
+        }
+      }
       const next = townsfolkRef.current.map((npc) => {
-        if (npc.indoors || isNpcDead(npc, tick) || npc.fightBackUntilTick === undefined || tick >= npc.fightBackUntilTick) return npc;
+        if (npc.indoors || isNpcDead(npc, tick)) return npc;
+        const engagement = engagements.get(npc.id);
+        if (engagement && npc.fightBackUntilTick === undefined) {
+          changed = true;
+          return { ...npc, fightBackUntilTick: tick + 900, fightBackTarget: { ...engagement.position }, fightBackCreatureId: engagement.id, fightBackCreatureKind: engagement.entityKind, fightBackNextAttackTick: Math.min(npc.fightBackNextAttackTick ?? tick, tick + 12), moving: true, running: true, activity: 'Fighting back!' };
+        }
+        if (npc.fightBackUntilTick === undefined || tick >= npc.fightBackUntilTick) return npc;
+        // BUILD 914: retaliation against a creature — chase the creature's
+        // live position and land hits on IT, not on the player.
+        if (npc.fightBackCreatureId != null && npc.fightBackCreatureKind) {
+          const creature = npc.fightBackCreatureKind === 'goat'
+            ? goatsRef.current.find((g) => g.id === npc.fightBackCreatureId)
+            : monstersRef.current.find((m) => m.id === npc.fightBackCreatureId);
+          if (!creature || creature.disposition === 'defeated' || creature.hp <= 0) {
+            changed = true;
+            return { ...npc, fightBackUntilTick: undefined, fightBackTarget: undefined, fightBackNextAttackTick: undefined, fightBackCreatureId: undefined, fightBackCreatureKind: undefined, running: false };
+          }
+          const refreshed = { ...npc, fightBackTarget: { ...creature.position } };
+          const dist = Math.hypot(npc.position.x - creature.position.x, npc.position.y - creature.position.y);
+          if (dist > 1.8 || tick < (npc.fightBackNextAttackTick ?? 0)) {
+            if (refreshed.fightBackTarget?.x !== npc.fightBackTarget?.x || refreshed.fightBackTarget?.y !== npc.fightBackTarget?.y) changed = true;
+            return refreshed;
+          }
+          pendingNpcCreatureHits.push({ entityKind: npc.fightBackCreatureKind, creatureId: npc.fightBackCreatureId, damage: npc.archetype === 'guard' || npc.archetype === 'smith' ? 7 : 4, attackerName: npc.name });
+          changed = true;
+          return { ...refreshed, fightBackNextAttackTick: tick + 48, moving: false, running: false, activity: 'Attacking the creature!' };
+        }
         const refreshed = { ...npc, fightBackTarget: { ...player } };
         const dist = Math.hypot(npc.position.x - player.x, npc.position.y - player.y);
         if (dist > 1.8 || tick < (npc.fightBackNextAttackTick ?? 0)) {
@@ -6528,6 +6643,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         townsfolkRef.current = next;
         setTownsfolk(next);
       }
+      for (const hit of pendingNpcCreatureHits) applyNpcHitToCreature(hit.entityKind, hit.creatureId, hit.damage, hit.attackerName);
       if (damageTaken > 0) {
         const nextHp = Math.max(0, playerHpRef.current - damageTaken);
         playerHpRef.current = nextHp;
@@ -6996,6 +7112,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const nextMonsters = monstersForChunk(chunk, playerLevelRef.current);
     monstersRef.current = nextMonsters;
     setMonsters(nextMonsters);
+    // BUILD 914: creature target locks are per-chunk transient state; a new
+    // chunk means new creature populations, so stale locks must not leak.
+    creatureTargetsRef.current.clear();
+    creatureAcquireAtRef.current.clear();
     const nextCornAll = cornStalksForChunk(chunk, mapTileFor(chunk).terrain, (pos) => isFieldPositionBlocked(pos, chunk));
     // BUILD 352: drop stalks the user erased in the World Editor.
     const nextCorn = nextCornAll.filter((s) => !(deletedCorn[chunk.x + ',' + chunk.y] ?? []).includes(s.id));
@@ -7214,6 +7334,125 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       playerLevelRef.current = nextLevel; setPlayerLevel(nextLevel); onStatPointsChange((current) => current + awardedStatPoints);
       spawnCombatText('LEVEL UP! Lv. ' + nextLevel, hitPosition, 'reward');
       setLogs((currentLogs) => [{ text: 'Level up! You reached level ' + nextLevel + ' (+' + awardedStatPoints + ' stat points).', color: 'blue' }, ...currentLogs].slice(0, 3));
+    }
+  };
+
+  // BUILD 914: resolve who a hostile creature is fighting this frame.
+  // Townsfolk victims only exist in the Mosslight chunk; everywhere else
+  // this is exactly the pre-914 behavior (target = the player). Full
+  // acquisition re-runs at most every 400ms per creature — between runs
+  // the existing lock is only validated, never re-picked, so a creature
+  // with no victim in range costs one map lookup per frame.
+  const resolveCreatureCombatTarget = (entityKind: 'goat' | 'monster', creature: GoatState): { choice: CreatureTargetChoice; position: Point; facing: CombatDirection } => {
+    const playerPos = positionRef.current;
+    const playerFacing = facingRef.current as CombatDirection;
+    if (creature.disposition !== 'aggressive' || chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) {
+      return { choice: { kind: 'player' }, position: playerPos, facing: playerFacing };
+    }
+    const key = creatureTargetKey(entityKind, creature.id);
+    const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+    let choice = creatureTargetsRef.current.get(key) ?? null;
+    const now = performance.now();
+    if (now >= (creatureAcquireAtRef.current.get(key) ?? 0)) {
+      const candidates = townsfolkRef.current
+        .filter((n) => !n.indoors && !isNpcDead(n, tick) && !isNpcJailed(n, tick))
+        .map((n) => ({ npcId: n.id, position: n.position }));
+      choice = chooseCreatureTarget({ creaturePos: creature.position, current: choice, playerPos, npcs: candidates });
+      if (choice) creatureTargetsRef.current.set(key, choice);
+      else creatureTargetsRef.current.delete(key);
+      creatureAcquireAtRef.current.set(key, now + 400);
+    }
+    if (choice?.kind === 'npc') {
+      const npc = townsfolkRef.current.find((n) => n.id === choice.npcId);
+      if (npc && !npc.indoors && !isNpcDead(npc, tick)) {
+        // NPCs don't get the player's facing-dodge: pass the facing as if
+        // the victim were turned toward its attacker, so updateGoat's
+        // adjacency check measures distance, not the victim's facing.
+        return { choice, position: npc.position, facing: getDirection(npc.position, creature.position) };
+      }
+      creatureTargetsRef.current.delete(key);
+    }
+    return { choice: { kind: 'player' }, position: playerPos, facing: playerFacing };
+  };
+
+  // BUILD 914: a hostile creature's landed hit on a townsfolk. Damage runs
+  // through damageNpcByCreature (the same fight-or-flee + death path as a
+  // player attack) but records NO crime and NO bounty — the player didn't
+  // do this. Death drops the usual lootable body.
+  const applyCreatureHitToNpc = (npcId: string, damage: number, creatureKind: 'goat' | 'monster', creatureId: number, creaturePos: Point, creatureLabel: string) => {
+    const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+    let victim: Townsperson | undefined;
+    let wasEngaged = false;
+    const hurt = townsfolkRef.current.map((n) => {
+      if (n.id !== npcId) return n;
+      victim = n;
+      wasEngaged = n.fightBackUntilTick !== undefined || n.fleeUntilTick !== undefined;
+      return damageNpcByCreature(n, damage, creaturePos, creatureKind, creatureId, tick);
+    });
+    if (!victim) return;
+    const v = victim;
+    const victimHurt = hurt.find((n) => n.id === npcId);
+    if (!victimHurt) return;
+    let next = hurt;
+    if (!wasEngaged) {
+      // Bystanders scatter from the creature (the existing flee system).
+      next = hurt.map((n) => {
+        if (n.id === npcId || n.indoors || isNpcDead(n, tick) || n.fightBackUntilTick !== undefined || n.fleeUntilTick !== undefined) return n;
+        return Math.hypot(n.position.x - creaturePos.x, n.position.y - creaturePos.y) <= 10 ? startNpcFlee(n, creaturePos, tick) : n;
+      });
+      setLogs((cur) => [{ text: `A ${creatureLabel} is attacking ${v.name}! ${screamFor(v)}`, color: 'orange' }, ...cur].slice(0, 3));
+    }
+    townsfolkRef.current = next;
+    setTownsfolk(next);
+    spawnCombatText('-' + damage, victimHurt.position, 'damage');
+    playCombatSound('shing', muted);
+    if (victimHurt.deadUntilTick !== undefined) {
+      dropTownspersonBody(victimHurt);
+      setLogs((cur) => [{ text: `${v.name} was killed by a ${creatureLabel}!`, color: 'red' }, ...cur].slice(0, 3));
+    }
+  };
+
+  // BUILD 914: a townsfolk's landed hit on a creature. Mirrors the state
+  // mutation of applyPlayerHitToCreature (hurt/die state, hit flash, ground
+  // loot on defeat) but grants the PLAYER nothing: no XP, no quest kill
+  // credit, no generated item into the player's pack. The creature's loot
+  // drops on the ground, exactly as with a player kill.
+  const applyNpcHitToCreature = (entityKind: 'goat' | 'monster', creatureId: number, damage: number, attackerName: string) => {
+    if (entityKind === 'monster') {
+      const target = monstersRef.current.find((m) => m.id === creatureId);
+      if (!target || target.disposition === 'defeated') return;
+      const nextHp = Math.max(0, target.hp - damage);
+      const defeated = nextHp <= 0;
+      const updatedMonsters = monstersRef.current.map((m) => m.id === creatureId ? { ...m, hp: nextHp, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, provoked: true } : m);
+      monstersRef.current = updatedMonsters; setMonsters(updatedMonsters);
+      spawnCombatText('-' + damage, target.position, 'damage');
+      playCombatSound('shing', muted);
+      window.setTimeout(() => setMonsters((current) => current.map((m) => m.id === creatureId ? { ...m, hitFlash: false } : m)), 100);
+      setLogs((cur) => [{ text: defeated ? `${attackerName} killed the ${target.kind}!` : `${attackerName} hits the ${target.kind} for ${damage} damage.`, color: defeated ? 'blue' : 'red' }, ...cur].slice(0, 3));
+      if (defeated) {
+        const loot: GoatLoot = { ...monsterLootForKind(target.kind), ...target.gear, ...bonesForMonster(target.kind) };
+        const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: { ...target.position }, loot };
+        droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
+      }
+      return;
+    }
+    const target = goatsRef.current.find((g) => g.id === creatureId);
+    if (!target || target.disposition === 'defeated') return;
+    const nextHp = Math.max(0, target.hp - damage);
+    const defeated = nextHp <= 0;
+    const label = target.kind ?? 'goat';
+    const updatedGoats = goatsRef.current.map((g) => g.id === creatureId ? { ...g, hp: nextHp, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, respawnTicks: defeated ? 0 : g.respawnTicks } : g);
+    goatsRef.current = updatedGoats; setGoats(updatedGoats);
+    spawnCombatText('-' + damage, target.position, 'damage');
+    playCombatSound('baa', muted);
+    window.setTimeout(() => setGoats((current) => current.map((g) => g.id === creatureId ? { ...g, hitFlash: false } : g)), 100);
+    setLogs((cur) => [{ text: defeated ? `${attackerName} killed the ${label}!` : `${attackerName} hits the ${label} for ${damage} damage.`, color: defeated ? 'blue' : 'red' }, ...cur].slice(0, 3));
+    if (defeated) {
+      const lootType = GOAT_LOOT_TYPES[Math.floor(Math.random() * GOAT_LOOT_TYPES.length)];
+      const loot: GoatLoot = { [lootType]: Math.floor(Math.random() * 3) + 1 };
+      const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: { ...target.position }, loot };
+      droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
+      if (targetGoatIdRef.current === creatureId) { targetGoatIdRef.current = null; setTargetGoatId(null); }
     }
   };
 
@@ -8164,51 +8403,75 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (!interiorRef.current && goatsRef.current.length > 0) {
         const currentGoats = goatsRef.current; const currentPlayer = positionRef.current; const currentChunk = chunkRef.current;
         let damageTaken = 0;
+        const npcHits: { npcId: string; damage: number; creatureId: number; creaturePos: Point; label: string }[] = [];
         const nextGoats = currentGoats.map((goat) => {
           if (goat.disposition === 'defeated') {
             const respawnTicks = goat.respawnTicks + elapsed * 1000 / GOAT_TICK_MS;
             if (respawnTicks >= GOAT_RESPAWN_TICKS) return resetGoatAfterRespawn(goat);
             return { ...goat, moving: false, attacking: false, respawnTicks };
           }
-          const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, threatLevel: playerLevelRef.current }, currentPlayer, facingRef.current, currentGoats, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk) });
+          // BUILD 914: a hostile goat may be fighting a townsfolk instead of
+          // the player — updateGoat is target-agnostic, so feed it the
+          // resolved victim. Player separation applies only to player fights.
+          const targetInfo = resolveCreatureCombatTarget('goat', goat);
+          const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, threatLevel: targetInfo.choice.kind === 'player' ? playerLevelRef.current : undefined }, targetInfo.position, targetInfo.facing, currentGoats, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk), meleeStandOff: targetInfo.choice.kind === 'npc' ? 1.6 : undefined });
           let next = result.goat;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: goat.position, moving: false };
-          const separatedPosition = separateGoatFromPlayer(next.position, currentPlayer, next.kind);
-          if (separatedPosition) {
-            next = !isFieldPositionBlocked(separatedPosition, currentChunk)
-              ? { ...next, position: separatedPosition, moving: false }
-              : { ...next, position: goat.position, moving: false };
+          if (targetInfo.choice.kind === 'player') {
+            const separatedPosition = separateGoatFromPlayer(next.position, currentPlayer, next.kind);
+            if (separatedPosition) {
+              next = !isFieldPositionBlocked(separatedPosition, currentChunk)
+                ? { ...next, position: separatedPosition, moving: false }
+                : { ...next, position: goat.position, moving: false };
+            }
           }
           if (result.attackHit) {
-            const damage = goatAttackDamageForLevel(goat.level); damageTaken += damage;
-            spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted);
+            const damage = goatAttackDamageForLevel(goat.level);
+            if (targetInfo.choice.kind === 'npc') {
+              npcHits.push({ npcId: targetInfo.choice.npcId, damage, creatureId: goat.id, creaturePos: { ...goat.position }, label: goat.kind ?? 'goat' });
+            } else {
+              damageTaken += damage;
+              spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted);
+            }
           }
           return next;
         });
         if (damageTaken > 0) {
-          const nextHp = Math.max(0, playerHpRef.current - damageTaken); playerHpRef.current = nextHp; setPlayerHp(nextHp); 
+          const nextHp = Math.max(0, playerHpRef.current - damageTaken); playerHpRef.current = nextHp; setPlayerHp(nextHp);
           setLogs((currentLogs) => [{ text: 'A hostile goat rams you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
           if (nextHp <= 0 && !gameOverRef.current) { gameOverRef.current = true; setGameOver(true); }
         }
         goatsRef.current = nextGoats; if (publishEntityUi) setGoats(nextGoats);
+        for (const hit of npcHits) applyCreatureHitToNpc(hit.npcId, hit.damage, 'goat', hit.creatureId, hit.creaturePos, hit.label);
       }
       // Hostile monsters (goblins, bandits): same combat AI as goats.
       if (!interiorRef.current && monstersRef.current.length > 0) {
         const currentMonsters = monstersRef.current; const currentPlayer = positionRef.current; const currentChunk = chunkRef.current;
         let damageTaken = 0;
+        const npcHits: { npcId: string; damage: number; creatureId: number; creaturePos: Point; label: string }[] = [];
         const nextMonsters = currentMonsters.map((monster) => {
           if (monster.disposition === 'defeated') {
             return { ...monster, moving: false, attacking: false };
           }
-          const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false, threatLevel: playerLevelRef.current }, currentPlayer, facingRef.current, currentMonsters, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk) });
+          // BUILD 914: monsters pick victims the same way goats do — a
+          // townsfolk can be the target instead of the player.
+          const targetInfo = resolveCreatureCombatTarget('monster', monster);
+          const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false, threatLevel: targetInfo.choice.kind === 'player' ? playerLevelRef.current : undefined }, targetInfo.position, targetInfo.facing, currentMonsters, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk), meleeStandOff: targetInfo.choice.kind === 'npc' ? 1.6 : undefined });
           let next = { ...result.goat, kind: monster.kind, id: monster.id, variant: monster.variant, ranged: monster.ranged, spawnPosition: monster.spawnPosition, roamRadius: monster.roamRadius, level: monster.level, maxHp: monster.maxHp, wanderSeed: monster.wanderSeed, hitFlash: monster.hitFlash, respawnTicks: monster.respawnTicks } as MonsterState;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: monster.position, moving: false };
           if (result.attackHit) {
-            const damage = goatAttackDamageForLevel(monster.level); damageTaken += damage;
-            spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted);
+            const damage = goatAttackDamageForLevel(monster.level);
+            if (targetInfo.choice.kind === 'npc') {
+              npcHits.push({ npcId: targetInfo.choice.npcId, damage, creatureId: monster.id, creaturePos: { ...monster.position }, label: monster.kind });
+            } else {
+              damageTaken += damage;
+              spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted);
+            }
           }
           // Ranged NPCs (bandit/goblin/orc archers) loose arrows at range instead of closing to melee.
-          if (next.ranged && next.disposition === 'aggressive' && next.attackCooldown <= 0) {
+          // BUILD 914: archers only loose at the player — arrows can't hit
+          // townsfolk, so an archer whose victim is an NPC closes to melee.
+          if (next.ranged && targetInfo.choice.kind === 'player' && next.disposition === 'aggressive' && next.attackCooldown <= 0) {
             const distToPlayer = Math.hypot(next.position.x - currentPlayer.x, next.position.y - currentPlayer.y);
             if (distToPlayer > 7 && distToPlayer <= 30) {
               const dist = distToPlayer || 1;
@@ -8227,6 +8490,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           if (nextHp <= 0 && !gameOverRef.current) { gameOverRef.current = true; setGameOver(true); }
         }
         monstersRef.current = nextMonsters; if (publishEntityUi) setMonsters(nextMonsters);
+        for (const hit of npcHits) applyCreatureHitToNpc(hit.npcId, hit.damage, 'monster', hit.creatureId, hit.creaturePos, hit.label);
       }
       // Arrows in flight: player bow shots and bandit-archer volleys.
       if (!interiorRef.current && arrowsRef.current.length > 0) {
