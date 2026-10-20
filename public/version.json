@@ -1,6 +1,6 @@
 {
-  "build": "880",
-  "note": "NPCs commit crimes — hungry, broke townsfolk steal from each other and feed the existing crime, witness, memory and gossip pipeline",
-  "timestamp": "2026-10-20T01:30:37.505Z",
-  "cacheBuster": "mvg0b29t"
+  "build": "881",
+  "note": "Skill masters — Tom, Aldric and Bryn teach smithing, woodcutting and cooking; meet their stat requirement to apprentice for +50% earned XP",
+  "timestamp": "2026-10-20T01:33:11.795Z",
+  "cacheBuster": "mvg0edbn"
 }
