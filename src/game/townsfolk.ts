@@ -890,13 +890,12 @@ export function damageNpc(npc: Townsperson, damage: number, from: TownsfolkPoint
       fightBackUntilTick: undefined, fightBackTarget: undefined, running: false,
     };
   }
-  const threshold = npc.archetype === 'guard' ? 88
-    : npc.archetype === 'smith' ? 62
-    : npc.archetype === 'merchant' ? 22
-    : npc.archetype === 'priest' || npc.archetype === 'child' ? 8
-    : npc.archetype === 'farmer' ? 28 : 38;
+  // BUILD 901: clear 60/40 fight-or-flight roll for every adult townsperson.
+  // Use the stable identity seed + tick + remaining HP so re-renders never
+  // reroll the reaction and the same hit cannot flip between fleeing/fighting.
   const personalityRoll = Math.abs((npc.seed * 31 + Math.floor(tick / 3) * 17 + Math.round(npcHp(npc))) % 100);
-  if (personalityRoll < threshold) {
+  const FIGHT_BACK_ROLLS = 60; // 0..59 fight back, 60..99 flee (exact 60/40 split). 
+  if (personalityRoll < FIGHT_BACK_ROLLS) {
     return {
       ...npc, hp: newHp,
       fleeUntilTick: undefined, fleeFrom: undefined,
