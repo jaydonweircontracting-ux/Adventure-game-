@@ -149,6 +149,7 @@ const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '897': 'World terrain audit — resolve shorelines and biome borders from all four neighboring cells so coastline bands and edge details no longer depend on generation direction',
   '896': 'Starting house roof hides when you walk in — the authored roof overlay now disappears while you are under it, revealing the furnished interior; the roof returns when you walk back out',
   '895': 'Landscape cohesion pass — anchor grass/decor tiles to absolute world coordinates to stop shifting patterns and chunk seams; unify grass ground tiles, smooth dirt paths, and reduce filler-house clutter while preserving pinned doors',
   '894': 'Marriage/partner slot — propose to an adult NPC who admires you (disposition 80+) in dialogue; partner chip in HUD, bond and memories persist through save/load',
