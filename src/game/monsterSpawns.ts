@@ -42,13 +42,13 @@ export const MONSTER_SPAWN_TABLE: MonsterSpawnSpec[] = [
   },
   {
     kind: 'wolf', biomes: ['forest', 'meadow'], minDanger: 1,
-    packBase: 2, packVar: 2, hpMult: 0.9, seedSalt: 14000, seedMulX: 19, seedMulY: 29,
+    packBase: 3, packVar: 2, hpMult: 0.9, seedSalt: 14000, seedMulX: 19, seedMulY: 29,
     variants: ['default', 'default', 'black'],
     eliteVariant: { minDanger: 3, variant: 'dire' },
   },
   {
     kind: 'slime', biomes: ['meadow', 'forest'], minDanger: 1,
-    packBase: 1, packVar: 2, hpMult: 0.6, seedSalt: 15000, seedMulX: 23, seedMulY: 31,
+    packBase: 2, packVar: 2, hpMult: 0.6, seedSalt: 15000, seedMulX: 23, seedMulY: 31,
     variants: ['default'],
   },
   {
@@ -58,7 +58,12 @@ export const MONSTER_SPAWN_TABLE: MonsterSpawnSpec[] = [
   },
   {
     kind: 'rat', biomes: ['meadow', 'forest'], minDanger: 1,
-    packBase: 2, packVar: 3, hpMult: 0.4, seedSalt: 17000, seedMulX: 31, seedMulY: 41,
+    packBase: 3, packVar: 3, hpMult: 0.4, seedSalt: 17000, seedMulX: 31, seedMulY: 41,
+    variants: ['default'],
+  },
+  {
+    kind: 'spider', biomes: ['forest', 'rock'], minDanger: 2,
+    packBase: 1, packVar: 2, hpMult: 0.7, seedSalt: 21000, seedMulX: 47, seedMulY: 59,
     variants: ['default'],
   },
 ];
