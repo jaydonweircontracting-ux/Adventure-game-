@@ -49,6 +49,8 @@ jobs:
         run: npm run test:npc-combat
       - name: Selective body-loot regression test
         run: npm run test:body-loot
+      - name: Character-creator equipment restriction regression test
+        run: npm run test:character-creator
       - name: Build site
         run: npm run build
       - name: Verify update notifier build-number consistency
