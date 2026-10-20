@@ -47,6 +47,8 @@ jobs:
         run: npm run test:building-art
       - name: Guard pursuit and NPC combat regression test
         run: npm run test:npc-combat
+      - name: Selective body-loot regression test
+        run: npm run test:body-loot
       - name: Build site
         run: npm run build
       - name: Verify update notifier build-number consistency
