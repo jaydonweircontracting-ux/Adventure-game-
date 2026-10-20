@@ -31,6 +31,8 @@ jobs:
         run: npm run typecheck
       - name: Isometric direction regression test
         run: npm run test:iso-directions
+      - name: Little World Generator regression test
+        run: npx tsx tests/little-world-generator.test.ts
       - name: Production build
         # The CI smoke server hosts dist/public at /, not /Adventure-game-/.
         # Use root-relative assets here; the Pages deployment workflow keeps its repository base path.
