@@ -141,13 +141,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '908';
+const BUILD_NUMBER = '909';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '909': 'Character creation is limited to basic clothing, legwear, hair and beard choices; armor, shields and weapons must be acquired and equipped during gameplay',
   '908': 'Hardened selective corpse looting with a pure tested single-entry transfer model; taking one stack or item preserves all unselected loot on the body',
   '907': 'Body loot now opens a selectable inventory panel; take coins, individual potions, and future NPC items one at a time, leaving anything unwanted on the body',
   '906': 'Town landscape polish: round only exposed shallow-water shoreline corners; keep connected water cells seamless to remove checkerboard gaps and preserve chunk-edge continuity',
