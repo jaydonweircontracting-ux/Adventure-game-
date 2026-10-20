@@ -147,7 +147,8 @@ const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
-const BUILD_NOTES: Record<string, string> = {\n  '907': 'Body loot now opens a selectable inventory panel; take coins, individual potions, and future NPC items one at a time, leaving anything unwanted on the body',
+const BUILD_NOTES: Record<string, string> = {
+  '907': 'Body loot now opens a selectable inventory panel; take coins, individual potions, and future NPC items one at a time, leaving anything unwanted on the body',
   '906': 'Town landscape polish: round only exposed shallow-water shoreline corners; keep connected water cells seamless to remove checkerboard gaps and preserve chunk-edge continuity',
   '905': 'Performance fix — NPCs whose schedule destination is unreachable (blocked grid cell) no longer re-run a full-map A* search every 120ms tick forever; they record the give-up and wait for a new destination, as designed. Measured in town: failed path searches drop from ~25/sec to ~0 in steady state (about 1.2M wasted grid cells per 10s eliminated)',
   '904': 'Town landscape overhaul: round shallow shoreline cells for more natural river and lake edges; preserve deep channels, roads, bridges, and pinned town layout',
