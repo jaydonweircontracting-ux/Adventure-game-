@@ -309,7 +309,12 @@ export interface AdventureWorldMapExport {
   tiles: Array<{
     x: number;
     y: number;
+    row: number;
+    column: number;
     biome: AdventureMapBiome;
+    detail: 'waves' | 'pebbles' | 'bush' | 'trees' | 'cactus' | 'munchleaf' | 'ridge' | null;
+    nearBiomeBorder: boolean;
+    elevationLevel: number;
     sourceBiome: WorldBiome;
     elevation: number;
     temperature: number;
@@ -348,10 +353,30 @@ export function exportAdventureWorldMap(world: GeneratedWorld): AdventureWorldMa
     width: world.width,
     height: world.height,
     seaLevel: world.seaLevel,
-    tiles: world.cells.map((cell, index) => ({
-      x: index % world.width,
-      y: Math.floor(index / world.width),
-      biome: toAdventureBiome(cell),
+    tiles: world.cells.map((cell, index) => {
+      const x = index % world.width;
+      const y = Math.floor(index / world.width);
+      const biome = toAdventureBiome(cell);
+      const neighborBiomes = neighbors(world.width, world.height, x, y).map(n => toAdventureBiome(world.cells[n]));
+      const nearBiomeBorder = neighborBiomes.some(neighbor => neighbor !== biome);
+      let detail: AdventureWorldMapExport['tiles'][number]['detail'] = null;
+      if (biome === 'ocean') detail = 'waves';
+      else if (biome === 'shore') detail = 'pebbles';
+      else if (biome === 'forest' && cell.forest) detail = 'trees';
+      else if (biome === 'desert' && worldHash(world.seed, x, y, 511) < 0.62) detail = 'cactus';
+      else if (biome === 'tundra' && worldHash(world.seed, x, y, 512) < 0.7) detail = 'munchleaf';
+      else if (biome === 'rock' && worldHash(world.seed, x, y, 513) < 0.78) detail = 'ridge';
+      else if (biome === 'meadow' && !cell.river && worldHash(world.seed, x, y, 514) < 0.28) detail = 'bush';
+      const elevationLevel = biome === 'ocean' ? 0 : cell.height < 0.45 ? 1 : cell.height < 0.55 ? 2 : cell.height < 0.65 ? 3 : cell.height < 0.75 ? 4 : 5;
+      return {
+      x,
+      y,
+      row: y,
+      column: x,
+      biome,
+      detail,
+      nearBiomeBorder,
+      elevationLevel,
       sourceBiome: cell.biome,
       elevation: cell.height,
       temperature: cell.temperature,
@@ -360,7 +385,8 @@ export function exportAdventureWorldMap(world: GeneratedWorld): AdventureWorldMa
       river: cell.river,
       forest: cell.forest,
       plate: cell.plate,
-    })),
+    };
+    }),
   };
 }
 
