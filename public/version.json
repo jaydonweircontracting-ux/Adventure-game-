@@ -1,6 +1,6 @@
 {
-  "build": "911",
-  "note": "Equipped gear is now worn: the paperdoll and looted/crafted items render on your character (armor, helmets, gloves, boots, weapons, shields, cloaks) over your character-creator clothing and hair; a worn helmet covers your hair, boots layer over pants, and unequipping restores your base look. NPC outfits finally render too — the equipment sprite folders are installed in public/rpg and every item base maps to its art in equipmentArt.ts",
-  "timestamp": "2026-10-20T07:52:15.851Z",
-  "cacheBuster": "mvgdxur0"
+  "build": "912",
+  "note": "Horses arrive in the isometric world: your mount now renders under you when you ride (and waits saddled where you left it), with a Mount horse button in the HUD next to Dismount. Townsfolk horses live in the iso view too — riders traveling, owners leading their horses, and merchants hauling carts to market. Fighting NPCs now swing with real attack animations. Fixed the body-loot window in the iso view: it used to open into the hidden 2D layer and never appear — it now displays, bodies pulse with a gold Loot ring and a bigger tap target, and tapping a corpse no longer selects the dead NPC instead. Dismounting no longer teleports you in the east/south field",
+  "timestamp": "2026-10-20T08:25:03.441Z",
+  "cacheBuster": "mvgf40y9"
 }

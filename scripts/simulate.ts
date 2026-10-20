@@ -1153,6 +1153,92 @@ console.log('Testing equipment art wiring (BUILD 911)...');
   assert(!cloaked.equipment.includes('DrkCloakBACK'), 'Back-cloak layer is never emitted (renderer has no back pass)');
 }
 
+// ---- 13a3. Horses in iso (BUILD 912): art helpers + hauling activity ----
+console.log('Testing horse art + hauling (BUILD 912)...');
+{
+  const horseArt = await import('../src/game/iso/horseArt');
+  const horsesMod = await import('../src/game/horses');
+
+  // Every coat name horses.ts can assign has a palette; unknown falls back.
+  for (const color of ['bay', 'chestnut', 'black', 'gray', 'palomino', 'dappled gray', 'roan', 'white']) {
+    assert(horseArt.HORSE_COATS[color] !== undefined, `Missing coat palette for ${color}`);
+    assert(horseArt.horseCoat(color) === horseArt.HORSE_COATS[color], `horseCoat(${color}) mismatch`);
+  }
+  assert(horseArt.horseCoat('purple') === horseArt.HORSE_COATS.bay, 'Unknown coat should fall back to bay');
+
+  // Facing -> pose mapping, both spelling conventions.
+  assert(horseArt.horsePoseForFace('right').pose === 'side' && !horseArt.horsePoseForFace('right').flip, 'right = side, no flip');
+  assert(horseArt.horsePoseForFace('left').flip && horseArt.horsePoseForFace('left').pose === 'side', 'left = side, flipped');
+  assert(horseArt.horsePoseForFace('upleft').flip && horseArt.horsePoseForFace('up-left').flip, 'diagonal-left flips in both spellings');
+  assert(horseArt.horsePoseForFace('up').pose === 'back', 'up = back pose');
+  assert(horseArt.horsePoseForFace('down').pose === 'front', 'down = front pose');
+
+  // Movement delta -> 8-way facing. Facings name SCREEN directions (the
+  // player convention in isoSprites): world-east projects to screen
+  // down-right, world (1,-1) is pure screen-right, world (1,1) screen-down.
+  assert(horseArt.horseFace8ForDelta(1, 0) === 'downright', 'east delta -> downright (screen)');
+  assert(horseArt.horseFace8ForDelta(-1, 0) === 'upleft', 'west delta -> upleft (screen)');
+  assert(horseArt.horseFace8ForDelta(0, 1) === 'downleft', 'south delta -> downleft (screen)');
+  assert(horseArt.horseFace8ForDelta(0, -1) === 'upright', 'north delta -> upright (screen)');
+  assert(horseArt.horseFace8ForDelta(1, 1) === 'down', 'southeast delta -> down (screen)');
+  assert(horseArt.horseFace8ForDelta(-1, -1) === 'up', 'northwest delta -> up (screen)');
+  assert(horseArt.horseFace8ForDelta(1, -1) === 'right', 'northeast delta -> right (screen)');
+  assert(horseArt.horseFace8ForDelta(-1, 1) === 'left', 'southwest delta -> left (screen)');
+  assert(horseArt.horseFace8ForDelta(0, 0) === null, 'zero delta has no facing');
+  // Facing -> world vector inverts the projection (offsets for leader/cart).
+  const dv = horseArt.horseFacingVector('downright');
+  assert(Math.abs(dv.x - 1) < 0.001 && Math.abs(dv.y) < 0.001, 'downright art = world-east vector');
+  const rv = horseArt.horseFacingVector('right');
+  assert(Math.abs(rv.x - Math.SQRT1_2) < 0.001 && Math.abs(rv.y + Math.SQRT1_2) < 0.001, 'right art = world (1,-1) vector');
+  for (const f of ['up', 'down', 'left', 'right', 'upleft', 'upright', 'downleft', 'downright']) {
+    const v = horseArt.horseFacingVector(f);
+    assert(Math.abs(Math.hypot(v.x, v.y) - 1) < 0.001, `facing vector for ${f} is unit length`);
+  }
+
+  // Hauling: a merchant's horse hauls a cart on some days and is ridden on
+  // others; a guard's horse never hauls. Sampled at 10:00 (ride window).
+  const settlement = { id: 'testville', chunk: { x: 0, y: 0 }, kind: 'town' as const };
+  const stable = horsesMod.stableFor(settlement);
+  const mkProfile = (id: string, occupation: string) => ({
+    id, name: id, occupation, wealth: 60, faction: 'aldoria',
+  }) as unknown as import('../src/game/characterGen').CharacterProfile;
+  const mkHorse = (id: string, owner: string) => ({
+    id, name: id, owner, chunk: { ...stable.chunk }, position: { ...stable.position },
+    health: 100, maxHealth: 100, speed: 1.2, inventory: [], stableId: stable.id,
+    currentRider: null, color: 'bay',
+  });
+  const baseClock = new WorldCore(1).getClock();
+  const clockAt = (day: number, mins: number) => ({
+    ...baseClock, day, hour: Math.floor(mins / 60), minuteOfDay: mins,
+  });
+  const merchant = mkProfile('prof-merchant', 'merchant');
+  const merchantHorse = mkHorse('horse-test-merchant', merchant.id);
+  let haulDays = 0;
+  let rideDays = 0;
+  let firstHaulDay = -1;
+  for (let day = 1; day <= 40; day++) {
+    const t = horsesMod.horseTarget(merchantHorse, merchant, [stable], clockAt(day, 600));
+    if (t.activity === 'hauling') { haulDays++; if (firstHaulDay < 0) firstHaulDay = day; }
+    else if (t.activity === 'ridden') rideDays++;
+    else assert(false, `Merchant horse at 10:00 should be ridden or hauling, got ${t.activity} on day ${day}`);
+  }
+  assert(haulDays >= 5, `Merchant should haul on a solid share of days, got ${haulDays}/40`);
+  assert(rideDays >= 5, `Merchant should still ride on other days, got ${rideDays}/40`);
+  // On a hauling day the cart is parked at the market through the workday.
+  const parked = horsesMod.horseTarget(merchantHorse, merchant, [stable], clockAt(firstHaulDay, 800));
+  assert(parked.activity === 'hauling' && parked.position.y === 50,
+    `Hauling day workday should park the cart at the market (y=50), got ${parked.activity} at y=${parked.position.y}`);
+  const guard = mkProfile('prof-guard', 'guard');
+  const guardHorse = mkHorse('horse-test-guard', guard.id);
+  for (let day = 1; day <= 40; day++) {
+    const t = horsesMod.horseTarget(guardHorse, guard, [stable], clockAt(day, 600));
+    assert(t.activity === 'ridden', `Guard horse should ride (never haul), got ${t.activity} on day ${day}`);
+  }
+  // Night: every owned horse is stabled regardless of the day's plan.
+  const night = horsesMod.horseTarget(merchantHorse, merchant, [stable], clockAt(firstHaulDay, 60));
+  assert(night.activity === 'stabled', `Night horse should be stabled, got ${night.activity}`);
+}
+
 // ---- 13b. Ambient market life (BUILD 694): shoppers, browsers, errands ----
 console.log('Testing ambient market life (BUILD 694)...');
 {

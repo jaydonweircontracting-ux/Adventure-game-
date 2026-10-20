@@ -56,7 +56,7 @@ export type HorseSettlement = {
   kind: 'capital' | 'city' | 'town' | 'village' | 'hamlet';
 };
 
-export type HorseActivity = 'stabled' | 'being_led' | 'ridden' | 'grazing';
+export type HorseActivity = 'stabled' | 'being_led' | 'ridden' | 'grazing' | 'hauling';
 
 export type HorseTarget = {
   activity: HorseActivity;
@@ -315,6 +315,36 @@ export function horseTarget(
   // Destination: merchants/caravan workers ride toward the market; military
   // occupations ride the patrol circuit; others ride out to their workplace.
   const dest = destinationFor(ownerProfile, seed);
+
+  // BUILD 912: merchant/trader/caravan owners haul a cart on roughly half
+  // their days (deterministic per horse-day) instead of riding: slower
+  // outbound leg, cart parked at the market through the work windows, and a
+  // hauling return in the evening window. The renderer draws the cart +
+  // seated driver for this activity; all other occupations never haul.
+  const haulsToday = (ownerProfile.occupation === 'merchant'
+    || ownerProfile.occupation === 'trader'
+    || ownerProfile.occupation === 'caravanWorker')
+    && townsfolkHash(seed, 7 + daySalt) < 0.5;
+  if (haulsToday) {
+    if (mins >= nightAt || mins < mountAt - 30) {
+      return { activity: 'stabled', chunk: { ...stable.chunk }, position: { ...stable.position } };
+    }
+    if (mins >= returnAt) {
+      const t = (mins - returnAt) / 30;
+      return { activity: 'hauling', chunk: { ...stable.chunk }, position: lerp(dest, stable.position, t) };
+    }
+    if (mins >= arriveAt) {
+      return { activity: 'hauling', chunk: { ...stable.chunk }, position: { ...dest } };
+    }
+    if (mins >= mountAt) {
+      return {
+        activity: 'hauling',
+        chunk: { ...stable.chunk },
+        position: ridePos(stable.position, dest, seed, mins - mountAt, horse.speed * 0.55),
+      };
+    }
+    return { activity: 'stabled', chunk: { ...stable.chunk }, position: { ...stable.position } };
+  }
 
   if (mins >= nightAt || mins < mountAt - 30) {
     return { activity: 'stabled', chunk: { ...stable.chunk }, position: { ...stable.position } };

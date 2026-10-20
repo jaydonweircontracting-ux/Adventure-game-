@@ -110,7 +110,7 @@ export default function RpgCharacterCreator({ onConfirm, onCancel }: Props) {
                 </select>
               </label>
             ))}
-            <p className="rpg-creator-note">BaseHumanMale and Dagger are installed with their complete animation sets. Other clothing, hair, armor and weapon selections still require their matching PNGs in public/rpg; unavailable layers never hide the base body.</p>
+            <p className="rpg-creator-note">Every clothing, legwear, hairstyle and beard option here is installed and renders on your character in the world (BUILD 911/912). Armor, weapons and shields are not picked here — find or craft them in the game and they will render over these clothes when equipped.</p>
           </div>
         </div>
         <div className="creator-actions">

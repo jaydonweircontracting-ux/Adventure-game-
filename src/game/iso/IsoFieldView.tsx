@@ -35,6 +35,10 @@ import {
   type AmbientCritter,
 } from './critters';
 import {
+  drawIsoHorse, drawIsoCart, horseCoat, horsePoseForFace, horseFace8ForDelta,
+  horseFacingVector, HORSE_SEAT_LIFT, HORSE_CART_SEAT_LIFT, HORSE_CART_TRAIL,
+} from './horseArt';
+import {
   buildingDoorwaysFor, fieldTreesFor, fieldOresFor, mapTileFor, fieldPalettes, FIELD_SIZE,
   isStartingArea, isStartingSettlementSafetyZone, ORE_COLORS, settlementDecorFor, cottageVariantForRect,
   type Point, type Doorway, type FieldTree, type FieldOre, type MapTile,
@@ -274,6 +278,15 @@ interface IsoFieldViewProps {
   // BUILD 731: lootable NPC corpses are also rendered/interacted with in iso mode.
   lootableBodies?: Array<{ id: string; npcName: string; position: Point }>;
   onLootBody?: (body: { id: string; position: Point }) => void;
+  // BUILD 912: horses in iso — the player's mount state plus the analytic
+  // world horses (src/game/horses.ts) for the home chunk. Until this build
+  // the iso view drew no horses at all: mounting changed speed and the HUD
+  // but the player visibly stayed on foot, and NPC horses existed only in
+  // the 2D DOM view.
+  playerMounted?: boolean;
+  /** The player's parked horse in the home chunk (null when mounted or in another chunk). */
+  playerHorse?: { position: Point; facing: string } | null;
+  worldHorses?: Array<{ id: string; name: string; color: string; activity: string; owner: string; position: Point }>;
   // BUILD 684: floating combat text — rendered in iso (were 2D-DOM only).
   damageTexts?: Array<{ id: number; text: string; position: Point; kind: string }>;
   zoom: number; // BUILD 372: zoom is owned by App so the main zoom buttons drive it
@@ -479,11 +492,11 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
   return e.fill;
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, playerMounted, playerHorse, worldHorses, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior, dispositions });
-  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior, dispositions };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -645,6 +658,12 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
     // per frame. The animator also receives the interpolated position, so
     // its speed measurement stays smooth instead of spiky.
     const npcInterp = new Map<string, { px: number; py: number; cx: number; cy: number; t: number; duration: number }>();
+    // BUILD 912: world-horse render interpolation + facing memory. Horse
+    // positions resolve analytically from the world clock and are only
+    // republished when App's clock string changes, so — exactly like NPCs
+    // above — lerp between samples and derive facing from the travel delta.
+    const horseInterp = new Map<string, { px: number; py: number; cx: number; cy: number; t: number; duration: number }>();
+    const horseFace = new Map<string, Face8>();
     // BUILD 710: reuse hot-loop buffers instead of allocating new arrays every
     // frame. This reduces garbage collection pauses while walking through town.
     const drawables: Drawable[] = [];
@@ -737,7 +756,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
     // walk/idle state and speed-tied walk phase; the draw is feet-anchored.
     // BUILD 704: explicit `running` overrides the animator's speed heuristic
     // (NPC fleeing, player sprinting). Undefined = heuristic as before.
-    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, size?: number, running?: boolean, dead = false) => {
+    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, size?: number, running?: boolean, dead = false, liftPx = 0, attacking = false) => {
       const c = isoToScreen(tx, ty);
       let anim = charAnims.get(animKey);
       // Dead NPCs play the Death clip and hold its last frame. Recreate the
@@ -745,6 +764,12 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       if (!anim || (!dead && anim.state === 'dead')) { anim = new CharacterAnimator(animKey); charAnims.set(animKey, anim); }
       seenAnims.add(animKey);
       if (dead) anim.setState('dead');
+      // BUILD 912: an NPC in its fight-back stance (BUILD 879 sim: in range,
+      // not moving) plays the real Attack clip. setState is a no-op while
+      // the one-shot is mid-swing, and the animator returns to idle/walk
+      // when the clip ends — so holding this flag yields a readable swing
+      // cadence instead of damage ticking off a standing sprite.
+      if (attacking && !dead) anim.setState('attack');
       anim.update({ x: tx, y: ty, moving: dead ? false : moving, facing, nowMs: now, running: dead ? false : running });
       d.push({
         // BUILD 812: Keep the player above oversized house artwork. Sorting
@@ -752,9 +777,12 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         // visible pixels extend well beyond their logical footprint.
         depth: animKey === 'player' ? Number.POSITIVE_INFINITY : tx + ty + 0.01, draw: (g2) => {
           drawIsoCharacter({
-            g: g2, x: c.x, y: c.y, look, nowMs: now, animator: anim,
+            g: g2, x: c.x, y: c.y - liftPx, look, nowMs: now, animator: anim,
             // BUILD 699: children render smaller.
             size,
+            // BUILD 912: a lifted character (rider/driver) casts no ground
+            // shadow of its own — the horse/cart below draws it.
+            shadow: liftPx > 0 ? false : undefined,
           });
         },
       });
@@ -1742,8 +1770,24 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             const bc = isoToScreen(bx2, by2);
             drawables.push({
               depth: bx2 + by2 + 0.002,
-              draw: (g2) => {
+              draw: (g2, now) => {
                 g2.save();
+                // BUILD 912: an unlooted body advertises itself — a soft
+                // pulsing gold ring + label, so the corpse reads as a tap
+                // target on a phone instead of a 18px smudge on the ground.
+                const pulse = 1 + Math.sin(now / 350) * 0.15;
+                g2.strokeStyle = 'rgba(255, 205, 80, 0.75)';
+                g2.lineWidth = 2;
+                g2.beginPath(); g2.ellipse(bc.x, bc.y - 1, 15 * pulse, 6.5 * pulse, 0, 0, Math.PI * 2); g2.stroke();
+                g2.font = 'bold 10px sans-serif';
+                g2.textAlign = 'center';
+                g2.textBaseline = 'middle';
+                g2.lineWidth = 3;
+                g2.strokeStyle = 'rgba(20, 16, 10, 0.85)';
+                const label = '💰 Loot';
+                g2.strokeText(label, bc.x, bc.y - 22);
+                g2.fillStyle = '#ffd34d';
+                g2.fillText(label, bc.x, bc.y - 22);
                 g2.fillStyle = 'rgba(0,0,0,0.28)';
                 g2.beginPath(); g2.ellipse(bc.x, bc.y - 1, 9, 4, 0, 0, Math.PI * 2); g2.fill();
                 g2.fillStyle = '#d6cdb6';
@@ -1883,7 +1927,10 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         drawPerson(drawables, ix, iy, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id,
           // BUILD 699: children are smaller (70% scale).
           // BUILD 704: fleeing NPCs run (explicit), everyone else walks.
-          npc.archetype === 'child' ? 36 : undefined, npc.running === true, npc.hp != null && npc.hp <= 0);
+          // BUILD 912: fight-back stance (in range, holding position) plays
+          // the Attack clip — see drawPerson.
+          npc.archetype === 'child' ? 36 : undefined, npc.running === true, npc.hp != null && npc.hp <= 0,
+          0, npc.fightBackTarget != null && !npc.moving && !(npc.hp != null && npc.hp <= 0));
 
         // BUILD 732: dead NPCs are corpses, not conversational actors.
         // Check both authoritative death state and zero HP so ambient chatter
@@ -2169,12 +2216,127 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           });
         }
       }
+      // BUILD 912: horses in the depth-sorted entity pass — the analytic
+      // world horses (src/game/horses.ts) with their riders/leaders/cart
+      // drivers, plus the player's parked horse. (The mounted case draws
+      // under the player just below.)
+      {
+        const seenHorses = new Set<string>();
+        for (const h of live.worldHorses || []) {
+          seenHorses.add(h.id);
+          // Interpolate between clock samples (same pattern as npcInterp,
+          // longer clamp: horse samples arrive per world-clock tick and a
+          // ridden horse covers real distance between them).
+          let hx = h.position.x, hy = h.position.y;
+          let hMoving = false;
+          const prev = horseInterp.get(h.id);
+          if (!prev || prev.cx !== h.position.x || prev.cy !== h.position.y) {
+            const jumped = prev && Math.hypot(h.position.x - prev.cx, h.position.y - prev.cy) > 60;
+            hx = prev && !jumped ? prev.cx : h.position.x;
+            hy = prev && !jumped ? prev.cy : h.position.y;
+            const observedTick = prev ? nowMs - prev.t : 900;
+            const duration = jumped ? 0 : Math.max(200, Math.min(2500, observedTick));
+            horseInterp.set(h.id, { px: hx, py: hy, cx: h.position.x, cy: h.position.y, t: nowMs, duration });
+          } else {
+            const k = prev.duration === 0 ? 1 : Math.min(1, Math.max(0, (nowMs - prev.t) / prev.duration));
+            hx = prev.px + (prev.cx - prev.px) * k;
+            hy = prev.py + (prev.cy - prev.py) * k;
+            hMoving = k < 1 && Math.hypot(prev.cx - prev.px, prev.cy - prev.py) > 0.05;
+          }
+          // Facing from the current travel segment; hold the last facing
+          // when standing (stabled/grazing horses keep their orientation).
+          const seg = horseInterp.get(h.id);
+          const segFace = seg ? horseFace8ForDelta(seg.cx - seg.px, seg.cy - seg.py) : null;
+          if (segFace) horseFace.set(h.id, segFace);
+          const face = horseFace.get(h.id) ?? 'down';
+          const hc = isoToScreen(hx, hy);
+          if (!anchorVisible(hc, 90, 90, 30)) continue;
+          const coat = horseCoat(h.color);
+          const poseFlip = horsePoseForFace(face);
+          const phase = (nowMs / 1000) * 9;
+          const activity = h.activity;
+          const fv = horseFacingVector(face);
+          if (activity === 'hauling') {
+            // Cart trails behind the horse along its facing; the driver
+            // sits on the cart bench (drawPerson with the cart lift).
+            const cartX = hx - fv.x * HORSE_CART_TRAIL, cartY = hy - fv.y * HORSE_CART_TRAIL;
+            const cc = isoToScreen(cartX, cartY);
+            drawables.push({
+              depth: cartX + cartY + 0.006,
+              draw: (g2) => { drawIsoCart(g2, cc.x, cc.y, { pose: poseFlip.pose, flip: poseFlip.flip, moving: hMoving, phase, nowMs }); },
+            });
+            drawables.push({
+              depth: hx + hy + 0.008,
+              draw: (g2) => { drawIsoHorse(g2, hc.x, hc.y, { coat, pose: poseFlip.pose, flip: poseFlip.flip, moving: hMoving, phase, nowMs, saddle: false }); },
+            });
+            drawPerson(drawables, cartX, cartY, face, hMoving, h.id, nowMs, 'driver-' + h.id,
+              undefined, false, false, HORSE_CART_SEAT_LIFT);
+          } else if (activity === 'ridden') {
+            drawables.push({
+              depth: hx + hy + 0.008,
+              draw: (g2) => { drawIsoHorse(g2, hc.x, hc.y, { coat, pose: poseFlip.pose, flip: poseFlip.flip, moving: hMoving, phase, nowMs, saddle: true }); },
+            });
+            // The owner rides: a real character (deterministic look from
+            // the horse id) seated on the back via the seat lift.
+            drawPerson(drawables, hx, hy, face, hMoving, h.id, nowMs, 'rider-' + h.id,
+              undefined, false, false, HORSE_SEAT_LIFT);
+          } else {
+            drawables.push({
+              depth: hx + hy + 0.008,
+              draw: (g2) => { drawIsoHorse(g2, hc.x, hc.y, { coat, pose: poseFlip.pose, flip: poseFlip.flip, moving: hMoving, phase, nowMs, saddle: false }); },
+            });
+            if (activity === 'being_led') {
+              // The owner walks at the horse's head, leading it.
+              const leadX = hx + fv.x * 6.5, leadY = hy + fv.y * 6.5;
+              drawPerson(drawables, leadX, leadY, face, hMoving, h.id, nowMs, 'leader-' + h.id,
+                undefined, false, false, 0);
+            }
+          }
+        }
+        for (const k of horseInterp.keys()) if (!seenHorses.has(k)) { horseInterp.delete(k); horseFace.delete(k); }
+
+        // The player's own horse, parked in this chunk: saddled, idle.
+        const parked = live.playerMounted ? null : live.playerHorse;
+        if (parked) {
+          const pc = isoToScreen(parked.position.x, parked.position.y);
+          if (anchorVisible(pc, 90, 90, 30)) {
+            const poseFlip = horsePoseForFace(parked.facing);
+            drawables.push({
+              depth: parked.position.x + parked.position.y + 0.008,
+              draw: (g2) => {
+                drawIsoHorse(g2, pc.x, pc.y, {
+                  coat: horseCoat('bay'), pose: poseFlip.pose, flip: poseFlip.flip,
+                  moving: false, phase: 0, nowMs, saddle: true,
+                });
+              },
+            });
+          }
+        }
+        // Mounted: the horse under the (already interpolated) player,
+        // facing and gait tied to the player's own movement.
+        if (live.playerMounted) {
+          const mc = isoToScreen(playerX, playerY);
+          const poseFlip = horsePoseForFace(playerFace.f);
+          const phase = (nowMs / 1000) * 10.5;
+          drawables.push({
+            depth: playerX + playerY + 0.009,
+            draw: (g2) => {
+              drawIsoHorse(g2, mc.x, mc.y, {
+                coat: horseCoat('bay'), pose: poseFlip.pose, flip: poseFlip.flip,
+                moving: playerMoving, phase, nowMs, saddle: true,
+              });
+            },
+          });
+        }
+      }
       // player — BUILD 427: depth-sorted with the world instead of layered
       // on top. When the player is behind a house (smaller x+y than the
       // house's front corner), the house draws over them; when in front,
       // the player draws over the house.
+      // BUILD 912: when mounted, the player is lifted onto the horse drawn
+      // above (seat lift, no own ground shadow).
       drawPerson(drawables, playerX, playerY, playerFace.f, playerMoving, live.playerLook ?? 0, nowMs, 'player',
-        undefined, live.playerRunning === true);
+        undefined, live.playerRunning === true, false, live.playerMounted ? HORSE_SEAT_LIFT : 0);
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
       // BUILD 707: prune interpolation entries for NPCs no longer drawn.
       for (const k of npcInterp.keys()) if (!seenAnims.has(k)) npcInterp.delete(k);
@@ -2376,6 +2538,11 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       let bestNpc: Townsperson | null = null; let bestNpcD = 34;
       for (const npc of liveRef.current.folk) {
         if (npc.indoors) continue;
+        // BUILD 912: dead townsfolk are corpses, not selectable actors
+        // (BUILD 732) — their taps belong to the lootable-body test below.
+        // Before this, tapping a body selected/deselected the dead NPC and
+        // the loot branch was unreachable under the corpse.
+        if (npc.deadUntilTick != null || (npc.hp != null && npc.hp <= 0)) continue;
         const w = isoToScreen(npc.position.x, npc.position.y);
         const px = (w.x - cam.x) * zm + wpx / 2;
         const py = (w.y - cam.y) * zm + hpx / 2 - 24;
@@ -2426,6 +2593,29 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       tapRef.current.onSelectNpc?.(null);
       tapRef.current.onSelectGoat?.(null);
       tapRef.current.onSelectMonster?.(null);
+      // BUILD 912: corpse hit test runs BEFORE stalls/rocks/doors. A body is
+      // the most salient tap target in its radius (64px); previously the
+      // static-scenery tests (tutorial boulder 44px, doors 40px) ate taps
+      // meant for a corpse lying near them and the loot window never opened.
+      // BUILD 731 semantics kept: walk to a far body, tap again in range to loot.
+      if (tapMove) {
+        const bodies = liveRef.current.lootableBodies || [];
+        const { onLootBody: lootBodyAt } = tapRef.current;
+        let bestBody: { id: string; npcName: string; position: Point } | null = null; let bestBodyD = 64;
+        for (const body of bodies) {
+          const w = isoToScreen(body.position.x, body.position.y);
+          const bxScreen = (w.x - cam.x) * zm + wpx / 2;
+          const byScreen = (w.y - cam.y) * zm + hpx / 2;
+          const d = Math.hypot(bxScreen - sx, byScreen - sy);
+          if (d < bestBodyD) { bestBodyD = d; bestBody = body; }
+        }
+        if (bestBody && lootBodyAt) {
+          const player = liveRef.current;
+          const dist = Math.hypot(bestBody.position.x - player.px, bestBody.position.y - player.py);
+          if (dist <= 16) { lootBodyAt(bestBody); return; }
+          tapMove({ x: bestBody.position.x, y: bestBody.position.y }); return;
+        }
+      }
       // BUILD 721: stall hit test — only taps directly on the stall open its shop.
       // Keep the touch target tight so nearby paths, props, and open ground
       // remain normal movement targets. NPC hit-testing still takes priority.
@@ -2480,25 +2670,6 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           if (d < bestD) { bestD = d; bestDoor = b.position; }
         }
         if (bestDoor) { tapMove({ x: bestDoor.x, y: bestDoor.y }); return; }
-        // BUILD 731: corpse hit test — walk to a body, then tap again to loot it.
-        {
-          const bodies = liveRef.current.lootableBodies || [];
-          const { onLootBody: lootBodyAt } = tapRef.current;
-          let bestBody: { id: string; npcName: string; position: Point } | null = null; let bestBodyD = 48;
-          for (const body of bodies) {
-            const w = isoToScreen(body.position.x, body.position.y);
-            const bxScreen = (w.x - cam.x) * zm + wpx / 2;
-            const byScreen = (w.y - cam.y) * zm + hpx / 2;
-            const d = Math.hypot(bxScreen - sx, byScreen - sy);
-            if (d < bestBodyD) { bestBodyD = d; bestBody = body; }
-          }
-          if (bestBody && lootBodyAt) {
-            const player = liveRef.current;
-            const dist = Math.hypot(bestBody.position.x - player.px, bestBody.position.y - player.py);
-            if (dist <= 16) { lootBodyAt(bestBody); return; }
-            tapMove({ x: bestBody.position.x, y: bestBody.position.y }); return;
-          }
-        }
         // BUILD 684: loot drop hit test — tap a drop to pick it up when close
         // (same 16-unit rule as the 2D pickup button), else walk toward it.
         {

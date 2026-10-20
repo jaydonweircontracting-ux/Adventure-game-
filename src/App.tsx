@@ -142,13 +142,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '911';
+const BUILD_NUMBER = '912';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '912': 'Horses arrive in the isometric world: your mount now renders under you when you ride (and waits saddled where you left it), with a Mount horse button in the HUD next to Dismount. Townsfolk horses live in the iso view too — riders traveling, owners leading their horses, and merchants hauling carts to market. Fighting NPCs now swing with real attack animations. Fixed the body-loot window in the iso view: it used to open into the hidden 2D layer and never appear — it now displays, bodies pulse with a gold Loot ring and a bigger tap target, and tapping a corpse no longer selects the dead NPC instead. Dismounting no longer teleports you in the east/south field',
   '911': 'Equipped gear is now worn: the paperdoll and looted/crafted items render on your character (armor, helmets, gloves, boots, weapons, shields, cloaks) over your character-creator clothing and hair; a worn helmet covers your hair, boots layer over pants, and unequipping restores your base look. NPC outfits finally render too — the equipment sprite folders are installed in public/rpg and every item base maps to its art in equipmentArt.ts',
   '910': 'Every Mosslight building now uses the starter-house two-layer system: roofless interior below, roof overlay that lifts when you step inside and returns when you leave. Roof sunk to fully cover the interior floor edge; non-tutorial houses sized to their lots so neighbours no longer blanket each other; buildings paint in correct south-over-north order',
   '909': 'Character creation is limited to basic clothing, legwear, hair and beard choices; armor, shields and weapons must be acquired and equipped during gameplay',
@@ -5799,6 +5800,45 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           name: n.name, x: n.position.x, y: n.position.y,
           activity: n.activity, archetype: n.archetype,
         })),
+        // BUILD 912: Phase C verification — mount state, the analytic world
+        // horses (same horseTarget resolution the renderer consumes), and
+        // lootable bodies.
+        getMountState: () => ({
+          mounted: mountedRef.current,
+          horseChunk: { ...horseRef.current.chunk },
+          horsePosition: { ...horseRef.current.position },
+          playerPosition: { ...positionRef.current },
+          playerChunk: { ...chunkRef.current },
+        }),
+        getWorldHorses: () => {
+          const clock = brainRef.current?.worldCore.getClock();
+          if (!clock) return [];
+          const { horses, stables, owners } = ensureHorses();
+          return horses.map((h) => {
+            const t = horseTarget(h, owners.get(h.owner) ?? null, stables, clock);
+            return { id: h.id, name: h.name, color: h.color, owner: h.owner, activity: t.activity, chunk: { ...t.chunk }, x: t.position.x, y: t.position.y };
+          });
+        },
+        getBodies: () => bodiesRef.current.map((b) => ({
+          id: b.id, npcName: b.npcName, chunk: { ...b.chunk }, x: b.position.x, y: b.position.y,
+          gold: b.loot.gold, potions: b.loot.potions, items: [...b.loot.items], looted: b.looted,
+        })),
+        // BUILD 912 test fixture: wound a townsfolk by name through the real
+        // damageNpc path; a kill drops its body via dropTownspersonBody,
+        // exactly like the production attack handlers. LOCALHOST ONLY.
+        woundNpcForTest: (name: string, amount: number) => {
+          if (typeof window === 'undefined') return false;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return false;
+          const npc = townsfolkRef.current.find((n) => n.name === name);
+          if (!npc) return false;
+          const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+          const hurt = damageNpc(npc, amount, positionRef.current, tick);
+          const next = townsfolkRef.current.map((n) => (n.id === npc.id ? hurt : n));
+          townsfolkRef.current = next; setTownsfolk(next);
+          if (hurt.deadUntilTick !== undefined) dropTownspersonBody(hurt);
+          return true;
+        },
         // BUILD 685: current tutorial objective banner text (null when hidden).
         getObjectiveBanner: () => tutorialObjectiveText({
           dismissed: tutorialBannerDismissedRef.current,
@@ -8665,9 +8705,12 @@ if (active) {
       const currentPosition = positionRef.current;
       const currentChunk = chunkRef.current;
       const preferredOffset = facing === 'right' ? -6 : facing === 'left' ? 6 : currentPosition.x < 50 ? 6 : -6;
+      // BUILD 912: clamp to the real field (280 units), not the old 100-unit
+      // field's 88 cap — dismounting east/south of x/y 88 used to teleport
+      // the player back to the 88 line.
       const clampFieldPosition = (candidate: Point): Point => ({
-        x: Math.min(88, Math.max(12, candidate.x)),
-        y: Math.min(88, Math.max(12, candidate.y)),
+        x: Math.min(FIELD_SIZE - 12, Math.max(12, candidate.x)),
+        y: Math.min(FIELD_SIZE - 12, Math.max(12, candidate.y)),
       });
       const dismountCandidates = [
         { x: currentPosition.x + preferredOffset, y: currentPosition.y },
@@ -11207,6 +11250,9 @@ if (active) {
               onPickupDrop={(d) => { const full = droppedLootRef.current.find((x) => x.id === d.id); if (full) pickupDrop(full); }}
               lootableBodies={bodies.filter((body) => !body.looted && body.chunk.x === chunk.x && body.chunk.y === chunk.y).map((body) => ({ id: body.id, npcName: body.npcName, position: body.position }))}
               onLootBody={(body) => lootTownspersonBody(body.id)}
+              playerMounted={mounted}
+              playerHorse={mounted ? null : (horseHere ? { position: horse.position, facing: horseFacing } : null)}
+              worldHorses={visibleHorses}
               damageTexts={damageTexts}
               barbOutfit={equippedShirt ? 'blue' : 'bare'}
               barbWeapon={equippedSword ? 'sword' : equippedBow ? 'bow' : 'none'}
@@ -11276,6 +11322,31 @@ if (active) {
     </div>
   </div>
 )}
+                    {/* BUILD 912: the body-loot panel renders OUTSIDE field-world-layer. It used to live inside it (BUILD 907), but that layer is display:none in the default iso view — the panel opened into a hidden subtree and could never be seen or tapped. Same overlay level as the guard-encounter prompt above. */}
+                    {activeLootBody && (
+                      <div className="body-loot-backdrop" role="presentation" onClick={() => setActiveLootBodyId(null)}>
+                        <section className="body-loot-panel" role="dialog" aria-modal="true" aria-label={`Loot ${activeLootBody.npcName}`} onClick={(event) => event.stopPropagation()}>
+                          <header className="body-loot-header">
+                            <div><span className="body-loot-kicker">BODY LOOT</span><h3>{activeLootBody.npcName}</h3></div>
+                            <button type="button" className="body-loot-close" aria-label="Close loot window" onClick={() => setActiveLootBodyId(null)}>×</button>
+                          </header>
+                          <p className="body-loot-hint">Choose what to take. Anything left stays on the body.</p>
+                          <div className="body-loot-items">
+                            {activeLootBody.loot.gold > 0 && (
+                              <div className="body-loot-item"><span><strong>🪙 Coins</strong><small>{activeLootBody.loot.gold} coins</small></span><button type="button" onClick={() => takeTownspersonLootItem(activeLootBody.id, 'gold')}>Take</button></div>
+                            )}
+                            {activeLootBody.loot.potions > 0 && (
+                              <div className="body-loot-item"><span><strong>🧪 Health potion</strong><small>{activeLootBody.loot.potions} remaining</small></span><button type="button" onClick={() => takeTownspersonLootItem(activeLootBody.id, 'potion')}>Take 1</button></div>
+                            )}
+                            {activeLootBody.loot.items.map((itemId, index) => (
+                              <div className="body-loot-item" key={itemId + '-' + index}><span><strong>🎒 {itemId.replace(/[-_]/g, ' ')}</strong><small>Item</small></span><button type="button" onClick={() => takeTownspersonLootItem(activeLootBody.id, 'item', itemId)}>Take</button></div>
+                            ))}
+                            {activeLootBody.loot.gold <= 0 && activeLootBody.loot.potions <= 0 && activeLootBody.loot.items.length === 0 && <p className="body-loot-empty">Nothing left to take.</p>}
+                          </div>
+                          <button type="button" className="body-loot-done" onClick={() => setActiveLootBodyId(null)}>Done</button>
+                        </section>
+                      </div>
+                    )}
 <div className="field-world-layer" style={isoFieldBeta ? { display: 'none' } : (gameZoom !== 1 ? (() => {
             // BUILD 327: zoom centers the player in the viewport — the layer
             // is scaled around the top-left, then translated so the player's
@@ -11425,30 +11496,6 @@ if (active) {
                         </button>
                       ))}
                     </div>
-                    {activeLootBody && (
-                      <div className="body-loot-backdrop" role="presentation" onClick={() => setActiveLootBodyId(null)}>
-                        <section className="body-loot-panel" role="dialog" aria-modal="true" aria-label={`Loot ${activeLootBody.npcName}`} onClick={(event) => event.stopPropagation()}>
-                          <header className="body-loot-header">
-                            <div><span className="body-loot-kicker">BODY LOOT</span><h3>{activeLootBody.npcName}</h3></div>
-                            <button type="button" className="body-loot-close" aria-label="Close loot window" onClick={() => setActiveLootBodyId(null)}>×</button>
-                          </header>
-                          <p className="body-loot-hint">Choose what to take. Anything left stays on the body.</p>
-                          <div className="body-loot-items">
-                            {activeLootBody.loot.gold > 0 && (
-                              <div className="body-loot-item"><span><strong>🪙 Coins</strong><small>{activeLootBody.loot.gold} coins</small></span><button type="button" onClick={() => takeTownspersonLootItem(activeLootBody.id, 'gold')}>Take</button></div>
-                            )}
-                            {activeLootBody.loot.potions > 0 && (
-                              <div className="body-loot-item"><span><strong>🧪 Health potion</strong><small>{activeLootBody.loot.potions} remaining</small></span><button type="button" onClick={() => takeTownspersonLootItem(activeLootBody.id, 'potion')}>Take 1</button></div>
-                            )}
-                            {activeLootBody.loot.items.map((itemId, index) => (
-                              <div className="body-loot-item" key={itemId + '-' + index}><span><strong>🎒 {itemId.replace(/[-_]/g, ' ')}</strong><small>Item</small></span><button type="button" onClick={() => takeTownspersonLootItem(activeLootBody.id, 'item', itemId)}>Take</button></div>
-                            ))}
-                            {activeLootBody.loot.gold <= 0 && activeLootBody.loot.potions <= 0 && activeLootBody.loot.items.length === 0 && <p className="body-loot-empty">Nothing left to take.</p>}
-                          </div>
-                          <button type="button" className="body-loot-done" onClick={() => setActiveLootBodyId(null)}>Done</button>
-                        </section>
-                      </div>
-                    )}
                     <div className="field-goats" aria-label="Goats in the field">
             {goats.filter((goat) => goat.disposition !== 'defeated').map((goat) => (
               <button
@@ -13180,6 +13227,10 @@ if (active) {
               </div>
             )}
             {mounted && <button className="horse-dismount-button" onClick={toggleMount} aria-label="Dismount horse" data-testid="button-dismount-horse">Dismount</button>}
+            {/* BUILD 912: the matching Mount button in the always-visible HUD.
+                The original Mount button lives inside the 2D DOM field view,
+                so in the default iso view there was no way to remount. */}
+            {!mounted && canMount && <button className="horse-dismount-button" onClick={toggleMount} aria-label="Mount horse" data-testid="button-mount-horse-hud">Mount horse</button>}
           </div>
           ) : (
             <button className="hud-quick-button hud-card-restore" onClick={() => setHpBoxHidden(false)} aria-label="Show HP box" title="Show HP box" data-testid="button-show-hp-box"><Eye size={15} /></button>
