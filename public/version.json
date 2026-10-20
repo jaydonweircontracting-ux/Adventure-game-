@@ -1,6 +1,6 @@
 {
-  "build": "912",
-  "note": "Horses arrive in the isometric world: your mount now renders under you when you ride (and waits saddled where you left it), with a Mount horse button in the HUD next to Dismount. Townsfolk horses live in the iso view too — riders traveling, owners leading their horses, and merchants hauling carts to market. Fighting NPCs now swing with real attack animations. Fixed the body-loot window in the iso view: it used to open into the hidden 2D layer and never appear — it now displays, bodies pulse with a gold Loot ring and a bigger tap target, and tapping a corpse no longer selects the dead NPC instead. Dismounting no longer teleports you in the east/south field",
-  "timestamp": "2026-10-20T08:25:03.441Z",
-  "cacheBuster": "mvgf40y9"
+  "build": "913",
+  "note": "Melee can finally hit goats: critter separation holds goats 2.35 units from you, but the sword only reached 1.06 — every swing at a calm goat whiffed (found in the overnight burn-down: 22 measured swings, 0 hits). Goat swings now use a reach that covers the separation distance, so you can walk up to a goat and hit it. NPC and monster melee range is unchanged. Also closes the Phase D burn-down: fresh-game playtest passed end to end (house entry, tap-to-talk, NPC fight-back, horse riding, body loot take/leave, chunk crossings on foot and mounted, world map, minimap radar, full zoom range with no black screen, and an exact save/reload round-trip)",
+  "timestamp": "2026-10-20T09:15:04.687Z",
+  "cacheBuster": "mvggwcq7"
 }

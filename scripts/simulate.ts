@@ -2,7 +2,7 @@
 // Run with: npx tsx scripts/simulate.ts
 import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLevelFor } from '../src/game/worldMap';
 import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai';
-import { traceLineBlocked } from '../src/game/combat';
+import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '../src/game/combat';
 import { createAgent, stepAgent, AGENT_MOVE_SPEED, type AgentWorld } from '../src/game/gameplayAgent';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
@@ -206,6 +206,21 @@ for (let i = 0; i < 5000; i++) {
 // policy, FOnline-style). Movement must never enter a blocked position; when
 // the direct path is blocked the enemy slides along the obstacle
 // (axis-separated) instead of freezing or tunneling through.
+console.log('Testing goat separation vs melee reach (BUILD 913)...');
+{
+  // The separation resting distance for a goat due east of the player is
+  // exactly 1.5 + 0.5 + 0.35 = 2.35. The default melee reach (0.72 + 0.34 =
+  // 1.06) can never connect at that distance — the bug the BUILD 912
+  // burn-down measured (22 swings, 0 hits) — while GOAT_MELEE_REACH must
+  // cover it. Placed early: the suite crashes later at the BUILD 694
+  // ambient-market section (pre-existing missing 'child' archetype).
+  const restEast = separateGoatFromPlayer({ x: 0.5, y: 0 }, { x: 0, y: 0 }, 'goat');
+  assert(restEast !== null && Math.abs(restEast.x - 2.35) < 0.001 && restEast.y === 0, 'goat separation resting distance should be 2.35 east');
+  assert(!isInMeleeArc({ x: 0, y: 0 }, { x: 2.35, y: 0 }, 'right'), 'default melee reach must miss at the goat separation distance');
+  assert(isInMeleeArc({ x: 0, y: 0 }, { x: 2.35, y: 0 }, 'right', GOAT_MELEE_REACH), 'goat melee reach must connect at the separation distance');
+  assert(GOAT_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS > 2.35, 'goat reach invariant: reach + radius covers the separation floor');
+  assert(PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS < 2.35, 'NPC/monster melee reach stays short (documented asymmetry)');
+}
 console.log('Testing goat collision callback...');
 {
   // Wall sits between goat and player; player stays within GOAT_CHASE_RANGE

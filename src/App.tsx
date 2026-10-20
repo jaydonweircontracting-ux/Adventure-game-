@@ -105,7 +105,7 @@ import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, resolveMonsterS
 import { probeMonsterSheets, isMonsterSheetFailed, onMonsterSheetFailure } from './game/monsterSprites/sheetProbe';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
-import { isInMeleeArc, traceLineBlocked, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS } from '@/game/combat';
+import { isInMeleeArc, traceLineBlocked, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '@/game/combat';
 import { renderGroundDetail, type GroundDetailSpec, type GroundHills } from '@/game/groundDetail';
 // BUILD 355: elevation hills/cliffs (CraftPix island kit tiles).
 import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type ElevContext } from '@/game/elevation';
@@ -142,13 +142,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '912';
+const BUILD_NUMBER = '913';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '913': 'Melee can finally hit goats: critter separation holds goats 2.35 units from you, but the sword only reached 1.06 — every swing at a calm goat whiffed (found in the overnight burn-down: 22 measured swings, 0 hits). Goat swings now use a reach that covers the separation distance, so you can walk up to a goat and hit it. NPC and monster melee range is unchanged. Also closes the Phase D burn-down: fresh-game playtest passed end to end (house entry, tap-to-talk, NPC fight-back, horse riding, body loot take/leave, chunk crossings on foot and mounted, world map, minimap radar, full zoom range with no black screen, and an exact save/reload round-trip)',
   '912': 'Horses arrive in the isometric world: your mount now renders under you when you ride (and waits saddled where you left it), with a Mount horse button in the HUD next to Dismount. Townsfolk horses live in the iso view too — riders traveling, owners leading their horses, and merchants hauling carts to market. Fighting NPCs now swing with real attack animations. Fixed the body-loot window in the iso view: it used to open into the hidden 2D layer and never appear — it now displays, bodies pulse with a gold Loot ring and a bigger tap target, and tapping a corpse no longer selects the dead NPC instead. Dismounting no longer teleports you in the east/south field',
   '911': 'Equipped gear is now worn: the paperdoll and looted/crafted items render on your character (armor, helmets, gloves, boots, weapons, shields, cloaks) over your character-creator clothing and hair; a worn helmet covers your hair, boots layer over pants, and unequipping restores your base look. NPC outfits finally render too — the equipment sprite folders are installed in public/rpg and every item base maps to its art in equipmentArt.ts',
   '910': 'Every Mosslight building now uses the starter-house two-layer system: roofless interior below, roof overlay that lifts when you step inside and returns when you leave. Roof sunk to fully cover the interior floor edge; non-tutorial houses sized to their lots so neighbours no longer blanket each other; buildings paint in correct south-over-north order',
@@ -2570,11 +2571,13 @@ function updateWildlife(animal: WildlifeState, tick: number, chunk: Point): Wild
   return next;
 }
 function goatDistance(goat: GoatState, position: Point) { return Math.hypot(goat.position.x - position.x, goat.position.y - position.y); }
-function goatIsInAttackArc(goat: GoatState, position: Point, facing: Direction) {
+function goatIsInAttackArc(goat: GoatState, position: Point, facing: Direction, reach: number = PLAYER_MELEE_REACH) {
   // Judge the swing by reach in the facing arc: combat is up close, so the
   // swing only connects within a short reach in front of the player.
-  // Anything in front within reach connects.
-  return isInMeleeArc(position, goat.position, facing);
+  // Anything in front within reach connects. BUILD 913: callers pass
+  // GOAT_MELEE_REACH for the goat population, whose separation resting
+  // distance (2.35) sits beyond the default reach.
+  return isInMeleeArc(position, goat.position, facing, reach);
 }
 function goatWanderDelay(wanderSeed: number) {
   const range = GOAT_WANDER_MAX_TICKS - GOAT_WANDER_MIN_TICKS + 1;
@@ -7535,7 +7538,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const dx = combatTarget.position.x - positionRef.current.x;
           const dy = combatTarget.position.y - positionRef.current.y;
           const dist = Math.hypot(dx, dy);
-          if (dist > PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS * 0.8) {
+          // BUILD 913: a targeted goat rests at its 2.35 separation distance,
+          // so the chase must accept the goat reach as "in range" or it steers
+          // forever and never swings. Monsters keep the short range.
+          const swingRange = (targetGoat ? GOAT_MELEE_REACH : PLAYER_MELEE_REACH) + PLAYER_MELEE_TARGET_RADIUS * 0.8;
+          if (dist > swingRange) {
             tapSteer = { x: dx / dist, y: dy / dist };
           } else {
             const absDx = Math.abs(dx), absDy = Math.abs(dy);
@@ -7801,7 +7808,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               .map((rat) => ({ ...rat, position: { x: rat.x, y: rat.y }, entityKind: 'cellar-rat' as const }))
             : [];
           const goatCandidates = inCellar ? [] : (goatsRef.current as (GoatState & { entityKind?: string })[])
-            .filter((goat) => goat.disposition !== 'defeated' && goatIsInAttackArc(goat, attackerPos, playerAttack.direction))
+            .filter((goat) => goat.disposition !== 'defeated' && goatIsInAttackArc(goat, attackerPos, playerAttack.direction, GOAT_MELEE_REACH))
             .map((goat) => ({ ...goat, entityKind: 'goat' as const }));
           const monsterCandidates = inCellar ? [] : (monstersRef.current as (MonsterState & { entityKind?: string })[])
             .filter((monster) => monster.disposition !== 'defeated' && goatIsInAttackArc(monster, attackerPos, playerAttack.direction))
@@ -7875,7 +7882,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                   : lockedGoatId === playerAttack.targetId
                     ? candidate.entityKind === 'goat'
                     : true));
-          if (!swingDamageDealt && attackTarget && (attackTarget.entityKind === 'townsfolk' || attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler' || attackTarget.entityKind === 'cellar-rat' || attackTarget.entityKind === 'wildlife' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction))) {
+          if (!swingDamageDealt && attackTarget && (attackTarget.entityKind === 'townsfolk' || attackTarget.entityKind === 'adventurer' || attackTarget.entityKind === 'traveler' || attackTarget.entityKind === 'cellar-rat' || attackTarget.entityKind === 'wildlife' || goatIsInAttackArc(attackTarget as GoatState, attackerPos, playerAttack.direction, attackTarget.entityKind === 'goat' ? GOAT_MELEE_REACH : PLAYER_MELEE_REACH))) {
             swingDamageDealt = true;
             // Harvesting corn: one swing cuts the stalk, which disappears and
             // drops corn loot. No HP, no combat — it's a crop, not a creature.

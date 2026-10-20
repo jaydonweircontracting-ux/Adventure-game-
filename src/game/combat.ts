@@ -46,6 +46,16 @@ export function isEntityInHitbox(entity: CombatPoint, hitbox: CombatRect): boole
 export const PLAYER_MELEE_REACH = 0.72;
 export const PLAYER_MELEE_BEHIND_TOLERANCE = 0;
 export const PLAYER_MELEE_TARGET_RADIUS = 0.34;
+// BUILD 913: goat-population melee reach. Critters in goatsRef are held away
+// from the player by separation (fieldCollision.separateGoatFromPlayer):
+// their resting distance is up to 1.5 (player box) + 0.5 (goat box) + 0.35
+// (gap) = 2.35 units — beyond PLAYER_MELEE_REACH + TARGET_RADIUS (1.06), so
+// no standing or chased swing could ever connect with a free goat (measured
+// in the BUILD 912 burn-down: 14 chase swings + 8 standing swings, 0 hits).
+// Goat swings use a reach that covers the separation floor
+// (2.2 + 0.34 = 2.54 > 2.35). NPC and monster melee keep the short reach:
+// neither population is separation-held.
+export const GOAT_MELEE_REACH = 2.2;
 const MELEE_SWING_HALF_WIDTH = 0.30;
 
 export function isInMeleeArc(attacker: CombatPoint, target: CombatPoint, facing: CombatDirection, reach = PLAYER_MELEE_REACH): boolean {
