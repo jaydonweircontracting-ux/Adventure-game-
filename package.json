@@ -29,7 +29,8 @@
     "test:world-map-coherence": "npx tsx tests/world-map-coherence.test.ts",
     "test:iso-tile-assets": "npx tsx tests/iso-tile-assets.test.ts",
     "test:npc-combat": "npx tsx scripts/sim/npc-combat.test.ts",
-    "test:body-loot": "npx tsx tests/body-loot-selection.test.ts"
+    "test:body-loot": "npx tsx tests/body-loot-selection.test.ts",
+    "test:character-creator": "npx tsx tests/character-creator-restrictions.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
