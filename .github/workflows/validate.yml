@@ -65,6 +65,8 @@ jobs:
         run: npx tsx tests/quest-playthrough.mts
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
+      - name: Decode and inspect every referenced isometric tile
+        run: npm run test:iso-tile-visual-audit
       - name: Start built game server
         run: |
           python3 -m http.server 8901 --directory dist/public > /tmp/adventure-game-server.log 2>&1 &
