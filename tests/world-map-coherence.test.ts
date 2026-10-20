@@ -53,4 +53,39 @@ for (const tile of first) {
 assert.ok(shorelineCount > 0, 'world must contain coastlines');
 assert.ok(borderDetailCount > 0, 'world must mark biome boundaries for edge detail');
 
+// Multi-seed audit: map expansion must not change the authored core, and
+// every seed must still produce a varied, valid home region.
+const coreTiles = first.filter((tile) =>
+  tile.x >= CORE_WORLD_BOUNDS.minX && tile.x <= CORE_WORLD_BOUNDS.maxX &&
+  tile.y >= CORE_WORLD_BOUNDS.minY && tile.y <= CORE_WORLD_BOUNDS.maxY);
+for (const seed of [1, 42, 2026, 0x7fffffff]) {
+  const coreOnly = generateWorldMap(seed, CORE_WORLD_BOUNDS);
+  const expanded = generateWorldMap(seed, bounds);
+  const coreKey = (tile: GeneratedWorldTile) => `${tile.x},${tile.y}`;
+  const expandedCore = new Map(expanded
+    .filter((tile) => tile.x >= CORE_WORLD_BOUNDS.minX && tile.x <= CORE_WORLD_BOUNDS.maxX &&
+      tile.y >= CORE_WORLD_BOUNDS.minY && tile.y <= CORE_WORLD_BOUNDS.maxY)
+    .map((tile) => [coreKey(tile), tile]));
+  assert.equal(coreOnly.length, (CORE_WORLD_BOUNDS.maxX - CORE_WORLD_BOUNDS.minX + 1) *
+    (CORE_WORLD_BOUNDS.maxY - CORE_WORLD_BOUNDS.minY + 1));
+  for (const tile of coreOnly) {
+    const same = expandedCore.get(coreKey(tile));
+    assert.ok(same, `expanded world lost frozen-core tile ${coreKey(tile)} for seed ${seed}`);
+    assert.equal(same.biome, tile.biome, `core biome changed at ${coreKey(tile)} for seed ${seed}`);
+    assert.deepEqual(same.climate, tile.climate, `core climate changed at ${coreKey(tile)} for seed ${seed}`);
+    assert.equal(same.detail, tile.detail, `core detail changed at ${coreKey(tile)} for seed ${seed}`);
+  }
+  const biomes = new Set(expanded.map((tile) => tile.biome));
+  for (const required of ['ocean', 'shore', 'meadow', 'forest', 'desert', 'tundra', 'rock']) {
+    assert.ok(biomes.has(required as GeneratedWorldTile['biome']),
+      `seed ${seed} missing expected world biome ${required}`);
+  }
+  const coords = new Set(expanded.map(coreKey));
+  assert.equal(coords.size, expanded.length, `seed ${seed} produced duplicate cells`);
+  assert.ok(expanded.every((tile) => Number.isFinite(tile.elevationLevel) &&
+    tile.elevationLevel >= 0 && tile.elevationLevel <= 5),
+  `seed ${seed} produced invalid elevation levels`);
+}
+console.log('Multi-seed audit passed: frozen core, biome variety, unique coordinates, and elevation bands.');
+
 console.log(`World map coherence passed: ${expectedCount} unique cells, ${shorelineCount} shoreline tiles, ${borderDetailCount} biome-border tiles.`);
