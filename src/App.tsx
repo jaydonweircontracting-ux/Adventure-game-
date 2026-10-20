@@ -2204,10 +2204,7 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {
     const count = 1 + (Math.abs(chunk.x * 13 + chunk.y * 19) % 2);
     for (let i = 0; i < count; i++) spawn('skeleton', i, 7000, 1.0, ['default', 'warrior', 'mage']);
   }
-  // Spiders: dark forests (danger 2+).
-  if (terrain === 'forest' && danger >= 2 && Math.abs(chunk.x * 5 + chunk.y * 23) % 2 === 0) {
-    spawn('spider', 0, 8000, 0.7);
-  }
+  // Spider packs are now data-driven in monsterSpawns.ts so forest and rocky encounters share one deterministic rule.
   // Snakes: deserts and meadows (danger 1+).
   if ((terrain === 'desert' || terrain === 'meadow') && danger >= 1) {
     spawn('snake', 0, 9000, 0.5);
