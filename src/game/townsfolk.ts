@@ -1317,13 +1317,22 @@ function advanceOne(
       // No assigned home (housing shortage): stay put, don't teleport.
       return npc.activity === want.activity && !npc.moving ? npc : { ...npc, moving: false, activity: want.activity };
     }
+    if (npc.path?.gaveUp && pathDestIs(npc.path, door.exterior)) {
+      // This door already proved unreachable: keep waiting instead of
+      // re-running a full-grid A* every tick. A new schedule destination
+      // (pathDestIs false) clears the wait on its own.
+      return npc.activity === want.activity && !npc.moving ? npc : { ...npc, moving: false, activity: want.activity };
+    }
     const needNewPath =
       npc.location !== 'ENTERING' || shouldReplanPath(npc.path, door.exterior);
     if (needNewPath) {
       const path = pathToDoor(npc.position, door, nav.obstacles, nav.roadPiece, nav.chunk);
       if (!path) {
-        // Door unreachable: wait (don't teleport, don't wander).
-        return npc.activity === want.activity && !npc.moving ? npc : { ...npc, moving: false, activity: want.activity, path: undefined };
+        // Door unreachable: wait (don't teleport, don't wander). Record the
+        // give-up on the NPC so subsequent ticks take the early-out above
+        // instead of repeating the failed search.
+        const gaveUpPath: NavPath = { waypoints: [], index: 0, destination: { ...door.exterior }, gaveUp: true };
+        return { ...npc, moving: false, activity: want.activity, path: gaveUpPath };
       }
       const bed = bedFor(nav.housing, npc.id);
       return { ...npc, location: 'ENTERING', path, moving: true, activity: want.activity, indoors: false, buildingId: bed?.home.id };
@@ -1357,7 +1366,12 @@ function advanceOne(
   if (needNewPath) {
     const newPath = pathTo(npc.position, want.target, nav.obstacles, nav.roadPiece, nav.chunk);
     if (!newPath) {
-      return npc.activity === want.activity && !npc.moving ? npc : { ...npc, moving: false, activity: want.activity, path: undefined };
+      // Destination unreachable: wait, and record the give-up so the
+      // full-grid A* failure is not retried every 120ms tick. The gaveUp
+      // guard above releases the NPC as soon as the schedule picks a new
+      // destination.
+      const gaveUpPath: NavPath = { waypoints: [], index: 0, destination: { ...want.target }, gaveUp: true };
+      return { ...npc, moving: false, activity: want.activity, path: gaveUpPath };
     }
     path = newPath;
   }
