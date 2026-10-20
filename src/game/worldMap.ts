@@ -365,6 +365,9 @@ function generateOuterTiles(
     }
   }
 
+  // Pass 1 assigns climate and a provisional biome independently for every
+  // coordinate. Never consult a partially filled neighbor map here: that
+  // made east/south cells inherit fewer neighbors than west/north cells.
   for (const { x, y } of outerCoords) {
     const edge = x === tileBounds.minX || x === tileBounds.maxX || y === tileBounds.minY || y === tileBounds.maxY;
     const climate = climateFor(x, y, climateBounds, elevationNoise, temperatureNoise, moistureNoise);
@@ -372,19 +375,8 @@ function generateOuterTiles(
     if (edge || climate.elevation < SEA_LEVEL + 0.03) {
       biome = 'ocean';
     } else {
-      // Bias toward previously generated inland neighbors to form broad,
-      // stable biome regions. Final coastlines are resolved in pass 2.
       const weights = climateBiomeWeights(climate);
-      const neighborBiomes: WorldMapBiome[] = [];
-      for (const [dx, dy] of GRID_DIRECTIONS) {
-        const nb = rawBiomes.get(cellKey(x + dx, y + dy));
-        if (nb && nb !== 'ocean' && nb !== 'shore') neighborBiomes.push(nb);
-      }
-      const scored = INLAND_BIOMES.map((candidate) => {
-        let score = weights[candidate];
-        for (const nb of neighborBiomes) if (nb === candidate) score += 2.0;
-        return { candidate, score };
-      });
+      const scored = INLAND_BIOMES.map((candidate) => ({ candidate, score: weights[candidate] }));
       const rng = new MapRng((seed ^ Math.imul(x + 101, 2654435761) ^ Math.imul(y + 37, 40503)) >>> 0);
       const total = scored.reduce((sum, entry) => sum + entry.score, 0);
       let roll = rng.next() * total;
@@ -400,6 +392,39 @@ function generateOuterTiles(
     rawBiomes.set(cellKey(x, y), biome);
     climateByKey.set(cellKey(x, y), climate);
   }
+
+  // Pass 1b softly clusters provisional biomes using the complete four-way
+  // neighborhood. Read from a snapshot and write to a separate map so tile
+  // results cannot depend on row order or which cells were visited first.
+  const clusteredBiomes = new Map<string, WorldMapBiome>(rawBiomes);
+  for (const { x, y } of outerCoords) {
+    const key = cellKey(x, y);
+    const biome = rawBiomes.get(key)!;
+    if (biome === 'ocean') continue;
+    const climate = climateByKey.get(key)!;
+    const weights = climateBiomeWeights(climate);
+    const adjacent = GRID_DIRECTIONS
+      .map(([dx, dy]) => rawBiomes.get(cellKey(x + dx, y + dy)))
+      .filter((neighbor): neighbor is WorldMapBiome => Boolean(neighbor) && neighbor !== 'ocean' && neighbor !== 'shore');
+    const scored = INLAND_BIOMES.map((candidate) => {
+      const matching = adjacent.filter((neighbor) => neighbor === candidate).length;
+      return { candidate, score: weights[candidate] + matching * 0.55 + (matching >= 2 ? 0.9 : 0) };
+    });
+    const rng = new MapRng((seed ^ Math.imul(x + 101, 2654435761) ^ Math.imul(y + 37, 40503) ^ 0x27d4eb2d) >>> 0);
+    const total = scored.reduce((sum, entry) => sum + entry.score, 0);
+    let roll = rng.next() * total;
+    let smoothed = scored[scored.length - 1].candidate;
+    for (const entry of scored) {
+      if ((roll -= entry.score) <= 0) { smoothed = entry.candidate; break; }
+    }
+    const coreNeighbor = GRID_DIRECTIONS
+      .map(([dx, dy]) => coreTiles.get(cellKey(x + dx, y + dy))?.biome)
+      .find((neighbor): neighbor is WorldMapBiome => Boolean(neighbor));
+    if (coreNeighbor && !canTouch(coreNeighbor, smoothed)) smoothed = 'meadow';
+    clusteredBiomes.set(key, smoothed);
+  }
+  rawBiomes.clear();
+  for (const [key, biome] of clusteredBiomes) rawBiomes.set(key, biome);
 
   // Pass 2a resolves every shoreline before calculating border detail.
   // Using a complete final-biome lookup avoids directional artifacts and lets
