@@ -873,6 +873,11 @@ export function npcHp(npc: Townsperson): number {
   return npc.hp ?? npcMaxHp(npc);
 }
 
+/** Exact 60/40 reaction split used by damageNpc. */
+export function npcReactionForRoll(roll: number): 'fight' | 'flee' {
+  return Math.max(0, Math.min(99, Math.floor(roll))) < 60 ? 'fight' : 'flee';
+}
+
 /** Ticks a dead NPC stays dead before respawning (~2 minutes at 60 ticks/sec). */
 export const NPC_RESPAWN_TICKS = 7200;
 
@@ -894,8 +899,7 @@ export function damageNpc(npc: Townsperson, damage: number, from: TownsfolkPoint
   // Use the stable identity seed + tick + remaining HP so re-renders never
   // reroll the reaction and the same hit cannot flip between fleeing/fighting.
   const personalityRoll = Math.abs((npc.seed * 31 + Math.floor(tick / 3) * 17 + Math.round(npcHp(npc))) % 100);
-  const FIGHT_BACK_ROLLS = 60; // 0..59 fight back, 60..99 flee (exact 60/40 split). 
-  if (personalityRoll < FIGHT_BACK_ROLLS) {
+  if (npcReactionForRoll(personalityRoll) === 'fight') {
     return {
       ...npc, hp: newHp,
       fleeUntilTick: undefined, fleeFrom: undefined,
