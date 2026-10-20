@@ -76,11 +76,11 @@ function valueNoise(seed: number, x: number, y: number, scale: number, salt: num
   return lerp(a, b, fy);
 }
 
-function fbm(seed: number, x: number, y: number, salt: number): number {
+function fbm(seed: number, x: number, y: number, salt: number, worldScale = 1): number {
   return (
-    valueNoise(seed, x, y, 64, salt) * 0.52 +
-    valueNoise(seed, x, y, 28, salt + 1) * 0.30 +
-    valueNoise(seed, x, y, 11, salt + 2) * 0.18
+    valueNoise(seed, x, y, 64 * worldScale, salt) * 0.52 +
+    valueNoise(seed, x, y, 28 * worldScale, salt + 1) * 0.30 +
+    valueNoise(seed, x, y, 11 * worldScale, salt + 2) * 0.18
   );
 }
 
@@ -125,6 +125,9 @@ export function generateWorld(options: WorldGenOptions): GeneratedWorld {
   const equatorVariation = clamp(options.equatorVariation ?? 0.7);
   const plateCount = Math.max(3, Math.min(32, Math.floor(options.plateCount ?? 10)));
   const count = width * height;
+  // Keep continent and detail frequencies proportional as map dimensions change.
+  // A 512x512 world should not become noisy just because it is larger than the default preview.
+  const worldScale = Math.max(width, height) / 96;
   const plates: { x: number; y: number; uplift: number }[] = [];
   for (let p = 0; p < plateCount; p++) {
     plates.push({
@@ -154,8 +157,8 @@ export function generateWorld(options: WorldGenOptions): GeneratedWorld {
     }
     const boundary = clamp(1 - (Math.sqrt(second) - Math.sqrt(best)) / 4);
     const plate = plates[bestId];
-    const continental = fbm(seed, x, y, 200);
-    const detail = fbm(seed, x, y, 210);
+    const continental = fbm(seed, x, y, 200, worldScale);
+    const detail = fbm(seed, x, y, 210, worldScale);
     const boundaryEffect = boundary * (plate.uplift >= 0 ? 0.16 : -0.08);
     const continentalBias = (continental - 0.48) * 0.66;
     heights[idx(width, x, y)] = clamp(0.36 + continentalBias + (detail - 0.5) * 0.20 + boundaryEffect);
@@ -196,7 +199,7 @@ export function generateWorld(options: WorldGenOptions): GeneratedWorld {
     }
   }
   for (const i of order) if (downstream[i] >= 0) flow[downstream[i]] += flow[i];
-  const riverThreshold = Math.max(5, Math.floor(Math.min(width, height) * 0.25));
+  const riverThreshold = Math.max(5, Math.floor(count * 0.0008));
   for (let i = 0; i < count; i++) if (heights[i] >= seaLevel && flow[i] >= riverThreshold) rivers[i] = 1;
 
   // Climate uses latitude, altitude, broad moisture fields and river proximity.
@@ -206,7 +209,7 @@ export function generateWorld(options: WorldGenOptions): GeneratedWorld {
     const equatorDistance = Math.abs(lat - equatorLatitude) * 2;
     const latitudeHeat = 1 - clamp(equatorDistance) * equatorVariation;
     temperatures[i] = clamp(globalTemperature * 0.55 + latitudeHeat * 0.45 - Math.max(0, heights[i] - 0.55) * 0.55);
-    let wet = fbm(seed, x, y, 300) * 0.68 + fbm(seed, x, y, 310) * 0.32;
+    let wet = fbm(seed, x, y, 300, worldScale) * 0.68 + fbm(seed, x, y, 310, worldScale) * 0.32;
     if (rivers[i]) wet += 0.22;
     if (heights[i] < seaLevel) wet = Math.max(wet, 0.72);
     moisture[i] = clamp(wet);
@@ -231,6 +234,37 @@ export function generateWorld(options: WorldGenOptions): GeneratedWorld {
 }
 
 /** Smooth a terrain patch with a 3x3 average while preserving array bounds. */
+function rebuildDerivedTerrain(world: GeneratedWorld, cells: WorldCell[]): GeneratedWorld {
+  const { width, height, seaLevel } = world;
+  const count = width * height;
+  const heights = cells.map(cell => cell.height);
+  const order = Array.from({ length: count }, (_, i) => i).sort((a, b) => heights[b] - heights[a]);
+  const flow = new Float32Array(count);
+  flow.fill(1);
+  const downstream = new Int32Array(count);
+  downstream.fill(-1);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const i = idx(width, x, y);
+    let lowest = heights[i];
+    for (const n of neighbors(width, height, x, y)) if (heights[n] < lowest) {
+      lowest = heights[n];
+      downstream[i] = n;
+    }
+  }
+  for (const i of order) if (downstream[i] >= 0) flow[downstream[i]] += flow[i];
+  const threshold = Math.max(5, Math.floor(count * 0.0008));
+  for (let i = 0; i < count; i++) {
+    const cell = cells[i];
+    cell.water = heights[i] < seaLevel;
+    cell.river = !cell.water && flow[i] >= threshold;
+    cell.biome = classifyBiome(heights[i], seaLevel, cell.temperature, cell.moisture, cell.river);
+    const x = i % width, y = Math.floor(i / width);
+    cell.forest = !cell.water && ['woodland', 'forest', 'rainforest', 'taiga'].includes(cell.biome) &&
+      worldHash(world.seed, x, y, 401) < cell.moisture * 0.65;
+  }
+  return { ...world, cells };
+}
+
 export function smoothTerrain(world: GeneratedWorld, iterations = 1): GeneratedWorld {
   const cells = world.cells.map(c => ({ ...c }));
   for (let pass = 0; pass < Math.max(1, Math.min(8, Math.floor(iterations))); pass++) {
@@ -242,11 +276,7 @@ export function smoothTerrain(world: GeneratedWorld, iterations = 1): GeneratedW
       cells[i].height = total / n;
     }
   }
-  for (const c of cells) {
-    c.water = c.height < world.seaLevel;
-    c.biome = classifyBiome(c.height, world.seaLevel, c.temperature, c.moisture, c.river);
-  }
-  return { ...world, cells };
+  return rebuildDerivedTerrain(world, cells);
 }
 
 /** Increase local relief like a mountain-building brush. */
@@ -259,11 +289,7 @@ export function raiseMountains(world: GeneratedWorld, cx: number, cy: number, ra
       if (d <= 1) cells[idx(world.width, x, y)].height = clamp(cells[idx(world.width, x, y)].height + strength * (1 - smooth(d)));
     }
   }
-  for (const c of cells) {
-    c.water = c.height < world.seaLevel;
-    c.biome = classifyBiome(c.height, world.seaLevel, c.temperature, c.moisture, c.river);
-  }
-  return { ...world, cells };
+  return rebuildDerivedTerrain(world, cells);
 }
 
 /**
