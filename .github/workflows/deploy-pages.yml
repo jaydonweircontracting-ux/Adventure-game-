@@ -37,6 +37,8 @@ jobs:
         run: npm run test:settlement-economy
       - name: Little World Generator regression test
         run: npm run test:little-world-generator
+      - name: Expanded world map coherence regression test
+        run: npm run test:world-map-coherence
       - name: Build site
         run: npm run build
       - name: Verify update notifier build-number consistency
