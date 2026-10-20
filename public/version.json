@@ -1,6 +1,6 @@
 {
-  "build": "883",
-  "note": "Need-driven tavern visits — lonely NPCs seek company at the Tankard on low social instead of waiting for the scheduled evening",
-  "timestamp": "2026-10-20T01:36:51.765Z",
-  "cacheBuster": "mvg0j31y"
+  "build": "884",
+  "note": "Encumbrance — carried weight from STR capacity, over 80% slows movement, over 100% drains stamina, weight widget in HUD",
+  "timestamp": "2026-10-20T01:41:52.790Z",
+  "cacheBuster": "mvg0pjbq"
 }

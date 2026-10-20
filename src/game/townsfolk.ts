@@ -100,6 +100,8 @@ export type Townsperson = {
   hp?: number;
   /** World tick until which the NPC is dead (undefined = alive). Respawns after. */
   deadUntilTick?: number;
+  /** World tick until which the NPC is jailed (undefined = free). BUILD 885. */
+  jailedUntilTick?: number;
 };
 
 /** Named world anchors townsfolk schedules resolve against. */
@@ -821,6 +823,8 @@ export type TownsfolkSave = {
   age?: 'child' | 'young' | 'adult' | 'elder';
   goldDelta?: number;
   memories?: NPCMemory[];
+  /** BUILD 885: jail sentence end tick (optional — old saves restore fine). */
+  jailedUntilTick?: number;
 };
 
 const VALID_LOCATIONS: NPCWorldLocation[] = ['OUTDOOR', 'ENTERING', 'INTERIOR', 'EXITING', 'SLEEPING', 'WORKING'];
@@ -840,6 +844,7 @@ export function serializeTownsfolk(folk: Townsperson[]): TownsfolkSave[] {
     age: npc.age,
     goldDelta: npc.goldDelta,
     memories: npc.memories?.map((m) => ({ ...m })),
+    jailedUntilTick: npc.jailedUntilTick,
   }));
 }
 
@@ -909,6 +914,26 @@ export function damageNpc(npc: Townsperson, damage: number, from: TownsfolkPoint
 export function isNpcDead(npc: Townsperson, tick: number): boolean {
   return npc.deadUntilTick !== undefined && tick < npc.deadUntilTick;
 }
+
+/** Ticks an arrested NPC spends in jail (2 in-game days at 10 min/tick). */
+export const NPC_JAIL_TICKS = 288;
+
+/** Whether the NPC is currently serving a jail sentence. BUILD 885. */
+export function isNpcJailed(npc: Townsperson, tick: number): boolean {
+  return npc.jailedUntilTick !== undefined && tick < npc.jailedUntilTick;
+}
+
+/** Arrest an NPC: pure — returns a copy serving a jail sentence from `tick`. */
+export function arrestNpc(npc: Townsperson, tick: number): Townsperson {
+  return {
+    ...npc,
+    jailedUntilTick: tick + NPC_JAIL_TICKS,
+    moving: false,
+    running: false,
+    activity: 'In jail',
+    path: undefined,
+  };
+}
 export const NPC_SCREAMS = [
   'AHHH!',
   'Help! Help!',
@@ -935,6 +960,7 @@ export function isTownsfolkSave(value: unknown): value is TownsfolkSave {
   if (v.age !== undefined && !['child', 'young', 'adult', 'elder'].includes(v.age as string)) return false;
   if (v.goldDelta !== undefined && !Number.isFinite(v.goldDelta)) return false;
   if (v.memories !== undefined && !Array.isArray(v.memories)) return false;
+  if (v.jailedUntilTick !== undefined && !Number.isFinite(v.jailedUntilTick)) return false;
   return true;
 }
 
@@ -973,6 +999,7 @@ export function restoreTownsfolk(folk: Townsperson[], saved: unknown): Townspers
       age: s.age ?? npc.age,
       goldDelta: s.goldDelta ?? npc.goldDelta,
       memories: memories ?? npc.memories,
+      jailedUntilTick: s.jailedUntilTick ?? npc.jailedUntilTick,
     };
   });
 }
@@ -1014,6 +1041,13 @@ function advanceOne(
     if (clock.tick < npc.deadUntilTick) return npc;
     // Respawn: back home, full HP, clear death.
     return { ...npc, hp: undefined, deadUntilTick: undefined, position: { ...npc.home }, activity: 'At home' };
+  }
+
+  // --- JAILED (BUILD 885): skip schedule until the sentence ends. ---
+  if (npc.jailedUntilTick !== undefined) {
+    if (clock.tick < npc.jailedUntilTick) return npc;
+    // Released: back home, sentence served.
+    return { ...npc, jailedUntilTick: undefined, position: { ...npc.home }, activity: 'At home' };
   }
 
   // --- BUILD 879: retaliating NPCs chase the player and suspend their schedule. ---

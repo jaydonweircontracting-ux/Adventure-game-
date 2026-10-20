@@ -410,6 +410,9 @@ export type NPCCrimeUrge = {
 /** Memory event recorded on the perpetrator when they steal. */
 export const NPC_COMMITTED_THEFT = 'I_COMMITTED_THEFT';
 
+/** Memory event recorded on the perpetrator when guards arrest them. BUILD 885. */
+export const NPC_WAS_ARRESTED = 'I_WAS_ARRESTED';
+
 /**
  * Pure & deterministic NPC crime urge: same (npc, day) → same urge.
  * A very hungry, broke adult may steal from a nearby NPC. Guards, priests

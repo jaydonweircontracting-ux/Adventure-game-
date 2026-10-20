@@ -8,7 +8,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, npcHp, npcMaxHp, isNpcDead, NPC_RESPAWN_TICKS, marketRoutine, marketBrowseVisit, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, NPC_RESPAWN_TICKS, marketRoutine, marketBrowseVisit, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
 
 /**
  * BUILD 699: Test anchors need all household homeKeys. Uses the real
@@ -1063,6 +1063,21 @@ console.log('Testing townsfolk living-town simulation...');
   // Dead NPCs don't move or flee.
   const deadStepped = advanceTownsfolk([killed], anchors, fleeClock(2001), navCtx)[0];
   assert(deadStepped.position.x === killed.position.x, 'Dead NPC should not move');
+  // BUILD 885: guard arrest → jail sentence → release.
+  const jailed = arrestNpc(healthy, 3000);
+  assert(jailed.jailedUntilTick === 3000 + NPC_JAIL_TICKS, 'Jail timer not set');
+  assert(isNpcJailed(jailed, 3001), 'NPC should be jailed');
+  assert(!isNpcJailed(jailed, 3000 + NPC_JAIL_TICKS + 1), 'Sentence should end');
+  assert(!isNpcJailed(healthy, 3001), 'Free NPC not jailed');
+  assert(jailed.activity === 'In jail', 'Jailed activity set');
+  const jailedStepped = advanceTownsfolk([jailed], anchors, fleeClock(3001), navCtx)[0];
+  assert(jailedStepped.position.x === jailed.position.x, 'Jailed NPC should not move');
+  const released = advanceTownsfolk([jailed], anchors, fleeClock(3000 + NPC_JAIL_TICKS + 1), navCtx)[0];
+  assert(released.jailedUntilTick === undefined, 'Sentence cleared on release');
+  assert(released.activity === 'At home', 'Released NPC goes home');
+  // Jail survives save/load.
+  const reJailed = restoreTownsfolk([healthy], serializeTownsfolk([jailed]));
+  assert(reJailed[0].jailedUntilTick === jailed.jailedUntilTick, 'Jail not restored from save');
   // Respawned NPC is back home with full HP.
   const respawned = advanceTownsfolk([killed], anchors, fleeClock(2000 + NPC_RESPAWN_TICKS + 1), navCtx)[0];
   assert(respawned.deadUntilTick === undefined, 'Respawn did not clear death');

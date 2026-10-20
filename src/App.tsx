@@ -8,7 +8,7 @@ import IsoFieldView from './game/iso/IsoFieldView';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
 import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/iso/isoSprites';
-import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality, npcGold, adjustNPCGold, npcCrimeUrge, npcStoleToday, NPC_COMMITTED_THEFT } from './game/villageLife';
+import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality, npcGold, adjustNPCGold, npcCrimeUrge, npcStoleToday, NPC_COMMITTED_THEFT, NPC_WAS_ARRESTED } from './game/villageLife';
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
 import { createBody, lootBody, type LootableBody } from './game/lootableBodies';
 import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
@@ -50,7 +50,7 @@ import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasCo
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, townsfolkRosterEntries, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, marketStallsFromDecor, arterialWaypointsFromDecor, marketBrowseVisit, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, townsfolkRosterEntries, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, marketStallsFromDecor, arterialWaypointsFromDecor, marketBrowseVisit, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 // BUILD 683: unified Mosslight rects (single source in settlements.ts).
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
 import { mosslightEngineChunkLayout, mosslightEngineLanes, mosslightEngineProps, mosslightFillerRects } from '@/game/mosslightLayout';
@@ -147,6 +147,7 @@ const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '885': 'Guard arrests — NPC thieves caught by a guard witness are hauled to jail for 2 days (stolen gold forfeited), hidden from the field, released home',
   '884': 'Encumbrance — carried weight from STR capacity, over 80% slows movement, over 100% drains stamina, weight widget in HUD',
   '883': 'Need-driven tavern visits — lonely NPCs seek company at the Tankard on low social instead of waiting for the scheduled evening',
   '882': 'Paperdoll shows all 8 equipment slots — weapon, offhand, helmet, armor, gloves, boots, ring, amulet with equipped item names and unequip buttons',
@@ -6186,7 +6187,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const live = townsfolk.find((npc) => npc.id === townsfolkDialogue.id);
       if (!live || isNpcDead(live, tick)) { setTownsfolkDialogue(null); setDialogueTopic(null); setDialogueInput(''); setDialogueHistory([]); }
     }
-    setBarks((previous) => { let changed = false; const next = { ...previous }; for (const npc of townsfolk) if (isNpcDead(npc, tick) && next[npc.id]) { delete next[npc.id]; changed = true; } return changed ? next : previous; });
+    setBarks((previous) => { let changed = false; const next = { ...previous }; for (const npc of townsfolk) if ((isNpcDead(npc, tick) || isNpcJailed(npc, tick)) && next[npc.id]) { delete next[npc.id]; changed = true; } return changed ? next : previous; });
   }, [townsfolk, townsfolkDialogue]);
 
   // BUILD 878: a wanted encounter is proximity-triggered, never attack-triggered.
@@ -6235,7 +6236,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   }, [bounty.amount, inPrison, chunk.x, chunk.y, guardEncounter]);
   // BUILD 880: NPC crime — hungry, broke NPCs steal from nearby NPCs
   // (SoX AIModule_Crime, need-driven). Feeds the existing crime → witness →
-  // memory pipeline; guards will react to NPC criminals in a later build.
+  // memory pipeline. BUILD 885: a guard witness arrests the thief on the spot
+  // (2-day jail sentence, stolen gold forfeited as the fine).
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (interiorRef.current || chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) return;
@@ -6246,9 +6248,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const folk = townsfolkRef.current;
       let changed = false;
       let next = folk;
-      const fired: string[] = [];
+      const fired: Array<{ text: string; alert: boolean }> = [];
       for (const npc of folk) {
-        if (npc.indoors || isNpcDead(npc, tick)) continue;
+        if (npc.indoors || isNpcDead(npc, tick) || isNpcJailed(npc, tick)) continue;
         if (npcStoleToday(npc, day)) continue;
         const urge = npcCrimeUrge(npc, clock);
         if (!urge) continue;
@@ -6256,7 +6258,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         let victim: Townsperson | null = null;
         let best = 30;
         for (const other of folk) {
-          if (other.id === npc.id || other.indoors || isNpcDead(other, tick)) continue;
+          if (other.id === npc.id || other.indoors || isNpcDead(other, tick) || isNpcJailed(other, tick)) continue;
           const d = Math.hypot(other.position.x - npc.position.x, other.position.y - npc.position.y);
           if (d < best) { best = d; victim = other; }
         }
@@ -6266,25 +6268,40 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         const crime = createCrime('npc-crime-' + npc.id + '-' + day, 'theft', chunkRef.current, { x: npc.position.x, y: npc.position.y }, day, victim.id, npc.id);
         const witnesses = findWitnesses(
           { position: { x: npc.position.x, y: npc.position.y } },
-          folk.filter((w) => w.id !== npc.id && !isNpcDead(w, tick)).map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } }))
+          folk.filter((w) => w.id !== npc.id && !isNpcDead(w, tick) && !isNpcJailed(w, tick)).map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } }))
         );
         const memEvent = crimeMemoryEvent(crime);
         const importance = crimeMemoryImportance(crime);
         const vid = victim.id;
+        // BUILD 885: a guard witness arrests the perpetrator on the spot.
+        const guardWitness = witnesses.some((x) =>
+          folk.some((w) => w.id === x.npcId && w.archetype === 'guard' && !isNpcJailed(w, tick)));
+        const arrested = guardWitness && !isNpcJailed(npc, tick);
         next = next.map((w) => {
-          if (w.id === npc.id) return addNPCMemory(adjustNPCGold(w, loot), NPC_COMMITTED_THEFT, day, 2);
+          if (w.id === npc.id) {
+            const after = addNPCMemory(adjustNPCGold(w, loot), NPC_COMMITTED_THEFT, day, 2);
+            if (arrested) {
+              // The stolen gold goes to the jail fine; serve the sentence.
+              return addNPCMemory(arrestNpc(adjustNPCGold(after, -loot), tick), NPC_WAS_ARRESTED, day, 3);
+            }
+            return after;
+          }
           if (w.id === vid) return addNPCMemory(adjustNPCGold(w, -loot), memEvent, day, importance);
           if (witnesses.some((x) => x.npcId === w.id)) return addNPCMemory(w, memEvent, day, importance);
           return w;
         });
         changed = true;
-        fired.push(`${npc.name} stole ${loot}g from ${victim.name}`);
+        fired.push(arrested
+          ? { text: `🚔 A guard caught ${npc.name} stealing ${loot}g from ${victim.name} — hauled off to jail!`, alert: true }
+          : { text: `${npc.name} stole ${loot}g from ${victim.name}`, alert: false });
       }
       if (changed) {
         townsfolkRef.current = next;
         setTownsfolk(next);
-        for (const text of fired) {
-          setLogs((cur) => [{ text: `📰 ${text} — witnesses are talking.`, color: 'orange' }, ...cur].slice(0, 3));
+        for (const item of fired) {
+          // Arrested criminals get the full alert; plain theft is rumor fodder.
+          const text = item.alert ? item.text : `📰 ${item.text} — witnesses are talking.`;
+          setLogs((cur) => [{ text, color: 'orange' }, ...cur].slice(0, 3));
         }
       }
     }, 45000);
@@ -12181,7 +12198,8 @@ if (active) {
           {currentWorldTile.landmark?.name === 'Mosslight Crossing' && townsfolk.filter((npc) => {
             if (npc.indoors) return false;
             const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
-            return !isNpcDead(npc, tick);
+            // BUILD 885: jailed NPCs serve their sentence off-field.
+            return !isNpcDead(npc, tick) && !isNpcJailed(npc, tick);
           }).map((npc) => {
             const enter = npcEnterProps(npc.id, npc.position, npc.facing);
             return (
