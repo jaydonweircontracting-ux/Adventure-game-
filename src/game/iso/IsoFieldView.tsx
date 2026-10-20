@@ -693,12 +693,18 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
     }
     propWindow.__propImgs = propImgs;
 
+    // Adaptive backing-store scale keeps the 2.5D scene responsive on
+    // thermally constrained phones without permanently blurring high-end screens.
+    let adaptiveResolutionScale = 1;
+    let adaptiveResolutionLastChange = 0;
+    const baseDpr = () => Math.min(window.innerWidth < 900 ? 1 : 1.25, window.devicePixelRatio || 1);
     const resize = () => {
       const r = wrap.getBoundingClientRect();
-      // Cap backing-store resolution to avoid 4x pixel fill on high-DPR phones.
-      const dpr = Math.min(window.innerWidth < 900 ? 1 : 1.25, window.devicePixelRatio || 1);
-      canvas.width = Math.max(1, Math.round(r.width * dpr));
-      canvas.height = Math.max(1, Math.round(r.height * dpr));
+      const dpr = baseDpr() * adaptiveResolutionScale;
+      const width = Math.max(1, Math.round(r.width * dpr));
+      const height = Math.max(1, Math.round(r.height * dpr));
+      if (canvas.width !== width) canvas.width = width;
+      if (canvas.height !== height) canvas.height = height;
     };
     resize();
     window.addEventListener('resize', resize);
@@ -743,12 +749,14 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
     const frame = (scheduledNowMs?: number) => {
       // Reuse the RAF timestamp from the browser engine instead of sampling the clock twice per frame.
       const nowMs = scheduledNowMs ?? performance.now();
-      const frameStartedAt = nowMs;
+      // Measure work time separately from RAF scheduling delay; including the
+      // frame interval here falsely classified healthy 60Hz frames as slow.
+      const frameStartedAt = performance.now();
       const dt = Math.min(50, Math.max(0, nowMs - last)); last = nowMs;
       const zm = zoomRef.current;
       const wpx = canvas.clientWidth || 1, hpx = canvas.clientHeight || 1;
-      // Keep draw resolution aligned with the capped canvas backing store.
-      const dpr = Math.min(window.innerWidth < 900 ? 1 : 1.25, window.devicePixelRatio || 1);
+      // Keep draw resolution aligned with the adaptive backing-store scale.
+      const dpr = baseDpr() * adaptiveResolutionScale;
       // BUILD 710: don't burn CPU/GPU redrawing a hidden game tab.
       if (document.hidden) { last = nowMs; return; }
       // Perf-debug hook (?nodirt=1): skip textured dirt paths for A/B timing.
@@ -2252,13 +2260,27 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
 
       g.restore();
 
-      // Measure real renderer cost for the adaptive quality governor. Hysteresis avoids
-      // quality toggling: reduce tree detail above 18ms, restore it below 13ms.
+      // Adaptive quality governor: reduce tree detail first, then lower
+      // pixel fill cost if the renderer remains over budget. Restore gradually
+      // only after sustained headroom to avoid visible quality oscillation.
       const renderCostMs = performance.now() - frameStartedAt;
       renderCostEma += (renderCostMs - renderCostEma) * 0.12;
-      if (++qualityProbeFrames >= 15) {
-        if (renderCostEma > 18) adaptiveTreeLod = true;
-        else if (renderCostEma < 13) adaptiveTreeLod = false;
+      if (++qualityProbeFrames >= 30) {
+        if (renderCostEma > 18) {
+          adaptiveTreeLod = true;
+          if (adaptiveResolutionScale === 1 && nowMs - adaptiveResolutionLastChange > 1500) {
+            adaptiveResolutionScale = window.innerWidth < 900 ? 0.82 : 0.9;
+            adaptiveResolutionLastChange = nowMs;
+            resize();
+          }
+        } else if (renderCostEma < 11) {
+          adaptiveTreeLod = false;
+          if (adaptiveResolutionScale < 1 && nowMs - adaptiveResolutionLastChange > 5000) {
+            adaptiveResolutionScale = 1;
+            adaptiveResolutionLastChange = nowMs;
+            resize();
+          }
+        }
         qualityProbeFrames = 0;
       }
       // BUILD 716: measure actual renderer work and expose a compact on-canvas
