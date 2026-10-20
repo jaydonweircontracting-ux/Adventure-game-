@@ -521,7 +521,25 @@ export function renderGroundDetail(spec: GroundDetailSpec): HTMLCanvasElement {
           const opacity = Math.max(0.08, Math.min(0.92, (depth - 0.035) / 0.58));
           ctx.save();
           ctx.globalAlpha *= opacity;
-          rect(x0, y0, pxPerCell, pxPerCell, mixColor(shallow, deep, t));
+          const waterColor = mixColor(shallow, deep, t);
+          if (depth < 0.58) {
+            const radius = Math.min(4, pxPerCell * 0.22);
+            ctx.fillStyle = waterColor;
+            ctx.beginPath();
+            ctx.moveTo(x0 + radius, y0);
+            ctx.lineTo(x0 + pxPerCell - radius, y0);
+            ctx.quadraticCurveTo(x0 + pxPerCell, y0, x0 + pxPerCell, y0 + radius);
+            ctx.lineTo(x0 + pxPerCell, y0 + pxPerCell - radius);
+            ctx.quadraticCurveTo(x0 + pxPerCell, y0 + pxPerCell, x0 + pxPerCell - radius, y0 + pxPerCell);
+            ctx.lineTo(x0 + radius, y0 + pxPerCell);
+            ctx.quadraticCurveTo(x0, y0 + pxPerCell, x0, y0 + pxPerCell - radius);
+            ctx.lineTo(x0, y0 + radius);
+            ctx.quadraticCurveTo(x0, y0, x0 + radius, y0);
+            ctx.closePath();
+            ctx.fill();
+          } else {
+            rect(x0, y0, pxPerCell, pxPerCell, waterColor);
+          }
           ctx.restore();
         }
       }
