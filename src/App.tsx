@@ -43,7 +43,7 @@ import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, cl
 // BUILD 704: stamina/energy for sprinting.
 import { createStamina, tickStamina, canRun, staminaFrac, type StaminaState } from './game/stamina';
 import { npcAppearanceStyle } from './game/npcAppearance';
-import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, type GeneratedItem } from './game/items';
+import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, type GeneratedItem, type EncumbranceTier } from './game/items';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, applyPersonalityTone, type DialogueTopicId } from './game/dialogue';
 import { recognizeIntent, fallbackResponse } from './game/dialogueIntent';
 import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasConversationMemories } from './game/conversationMemory';
@@ -147,6 +147,7 @@ const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '884': 'Encumbrance — carried weight from STR capacity, over 80% slows movement, over 100% drains stamina, weight widget in HUD',
   '883': 'Need-driven tavern visits — lonely NPCs seek company at the Tankard on low social instead of waiting for the scheduled evening',
   '882': 'Paperdoll shows all 8 equipment slots — weapon, offhand, helmet, armor, gloves, boots, ring, amulet with equipped item names and unequip buttons',
   '881': 'Skill masters — Tom, Aldric and Bryn teach smithing, woodcutting and cooking; meet their stat requirement to apprentice for +50% earned XP',
@@ -5062,6 +5063,23 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [runToggleUi, setRunToggleUi] = useState(false);
   const [staminaUi, setStaminaUi] = useState(100);
   const lastStaminaUiRef = useRef(100);
+  // BUILD 884: encumbrance. Ref mirrors the derived tier for the movement
+  // loop; UI state shows the carried weight next to the stamina bar.
+  const encumbranceRef = useRef<EncumbranceTier>('ok');
+  const [carryUi, setCarryUi] = useState<{ weight: number; capacity: number; tier: EncumbranceTier }>({ weight: 0, capacity: carryCapacity(10), tier: 'ok' });
+  // BUILD 884: encumbrance — recompute whenever the load changes (props).
+  // Ref feeds the movement loop; UI state shows the weight widget.
+  useEffect(() => {
+    const weight = carriedWeight(inventory as unknown as Record<string, number>, equipment);
+    const capacity = carryCapacity(playerStats.str);
+    const tier = encumbranceTier(weight, capacity);
+    encumbranceRef.current = tier;
+    setCarryUi((prev) =>
+      prev.weight === weight && prev.capacity === capacity && prev.tier === tier
+        ? prev
+        : { weight, capacity, tier },
+    );
+  }, [inventory, equipment, playerStats]);
   // BUILD 704: mirrors playerRunningRef for the iso views (updates only on
   // walk<->run transitions, so no render spam).
   const [playerRunningUi, setPlayerRunningUi] = useState(false);
@@ -7358,7 +7376,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       let playerRunning = false;
       {
         const wantRun = active && !mountedRef.current && (runToggleRef.current || shiftHeldRef.current);
-        const next = tickStamina(staminaRef.current, wantRun && canRun(staminaRef.current), active, elapsed);
+        // BUILD 884: hauling over capacity drains stamina while moving (8/s).
+        const overencumbered = encumbranceRef.current === 'over';
+        const next = tickStamina(staminaRef.current, wantRun && canRun(staminaRef.current), active, elapsed, overencumbered ? 8 : 0);
         if (next !== staminaRef.current) {
           staminaRef.current = next;
           const pct = Math.round(staminaFrac(next) * 100);
@@ -8086,6 +8106,13 @@ if (active) {
         // BUILD 704: playerRunning computed earlier (before the interior
         // early-return); sprint speed applies to field movement here.
         if (playerRunningRef.current) speed = RUN_SPEED;
+        // BUILD 884: encumbrance slows movement — heavy at 80% capacity,
+        // overencumbered at 100%. Mounted travel ignores the load.
+        if (!mountedRef.current) {
+          const enc = encumbranceRef.current;
+          if (enc === 'over') speed *= 0.6;
+          else if (enc === 'heavy') speed *= 0.85;
+        }
         // BUILD 406: uniform on-screen speed in the 2.5D iso view. The 2:1
         // dimetric projection stretches tile-diagonal moves unevenly, so
         // screen-left/right covered ~2x the pixels of screen-up/down per
@@ -13014,6 +13041,11 @@ if (active) {
               <div style={{ width: staminaUi + '%', height: '100%', background: staminaUi > 30 ? '#7cc47c' : '#d46a5a', borderRadius: 4, transition: 'width .15s' }} />
             </div>
           )}
+          {/* BUILD 884: carried weight widget (EO-style). Amber when heavy,
+              red when over capacity. */}
+          <div role="status" aria-label={'Carrying ' + carryUi.weight + ' of ' + carryUi.capacity} data-testid="hud-weight" style={{ position: 'absolute', right: 12, bottom: 88, zIndex: 10, fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'rgba(0,0,0,.45)', color: carryUi.tier === 'over' ? '#ff7b6b' : carryUi.tier === 'heavy' ? '#f0b35e' : '#cfe8cf' }}>
+            ⚖️ {carryUi.weight}/{carryUi.capacity}
+          </div>
       </div>
       <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? (mounted ? 'Riding through Mosslight Crossing' : 'Moving through Mosslight Crossing') : (mounted ? 'Mounted and ready' : 'Standing still')}</div>
       <div className="sr-only" aria-live="polite" data-testid="status-mount">{mounted ? 'Mounted on the horse' : canMount ? 'Horse nearby and ready to mount' : horseHere ? 'Horse is parked in this field' : 'Horse is in another field'}</div>

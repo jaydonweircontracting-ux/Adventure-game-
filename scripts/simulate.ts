@@ -34,7 +34,7 @@ import { mosslightEngineProps } from '../src/game/mosslightLayout';
 import { WfcSolver, WfcSeededRng, wfcSeedFor } from '../src/game/wfc';
 import { worldBiomeTileSet, generateChunkBiomes, validateBiomeGrid } from '../src/game/wfcWorld';
 import { SpatialHash, updateSeparation, createSeparationState } from '../src/game/spatialHash';
-import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats, equipItem, unequipItem } from '../src/game/items';
+import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, generatedItemWeight } from '../src/game/items';
 import { BURROWING_BEAST, TWO_HEADED_SERPENT, phaseForHealth, allBosses } from '../src/game/bosses';
 import { EntityPool, type PoolableEntity } from '../src/game/entityPool';
 import { FlowField, FlowFieldCache, sampleFlowSmoothed } from '../src/game/flowField';
@@ -5163,6 +5163,21 @@ console.log('Testing examine system...');
   const unequipped = unequipItem(equipped, item1.instanceId);
   assert(unequipped.find(i => i.instanceId === item1.instanceId)!.equipped === false,
     'Equip: unequipped');
+
+  // BUILD 884: encumbrance — weights, capacity, tiers.
+  assert(generatedItemWeight(item1) > 0, 'Equip: generated item has base weight');
+  assert(generatedItemWeight({ ...item1, baseId: 'no-such-base' }) === 0, 'Equip: unknown base weighs 0');
+  const invW = carriedWeight({ wood: 10, stone: 5, coins: 100 }, []);
+  assert(invW === 10 * 3 + 5 * 4, `Equip: inventory weight wrong: ${invW}`);
+  const withGear = carriedWeight({ wood: 1 }, [item1]);
+  assert(withGear === 3 + generatedItemWeight(item1), 'Equip: gear adds weight');
+  assert(carriedWeight({}, []) === 0, 'Equip: empty load weighs 0');
+  assert(carryCapacity(10) === 120, `Equip: STR 10 capacity wrong: ${carryCapacity(10)}`);
+  assert(carryCapacity(0) === 40, 'Equip: STR 0 capacity wrong');
+  assert(encumbranceTier(50, 120) === 'ok', 'Equip: light load ok');
+  assert(encumbranceTier(100, 120) === 'heavy', 'Equip: 83% load heavy');
+  assert(encumbranceTier(130, 120) === 'over', 'Equip: 108% load over');
+  assert(encumbranceTier(0, 0) === 'over', 'Equip: zero capacity over');
 
   // Equip non-existent → unchanged.
   const unchanged = equipItem([item1], 'nonexistent');

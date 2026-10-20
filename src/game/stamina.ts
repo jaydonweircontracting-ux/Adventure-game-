@@ -36,21 +36,29 @@ export function createStamina(value: number = STAMINA_MAX): StaminaState {
  * Advance stamina by dtSec. `running` should be true only while the entity is
  * actually sprinting (moving + run intent + allowed); `moving` while walking.
  * Drain beats regen — a frame never does both.
+ * BUILD 884: `extraDrainPerSec` (e.g. hauling over carry capacity) adds to
+ * sprint drain and cancels walk regen while moving.
  */
 export function tickStamina(
   s: StaminaState,
   running: boolean,
   moving: boolean,
   dtSec: number,
+  extraDrainPerSec = 0,
 ): StaminaState {
   if (!(dtSec > 0)) return s;
   let value = s.value;
   let exhausted = s.exhausted;
   if (running) {
-    value = Math.max(0, value - STAMINA_DRAIN_RUN * dtSec);
+    value = Math.max(0, value - (STAMINA_DRAIN_RUN + extraDrainPerSec) * dtSec);
     if (value <= 0) exhausted = true;
   } else if (moving) {
-    value = Math.min(STAMINA_MAX, value + STAMINA_REGEN_WALK * dtSec);
+    if (extraDrainPerSec > 0) {
+      value = Math.max(0, value - extraDrainPerSec * dtSec);
+      if (value <= 0) exhausted = true;
+    } else {
+      value = Math.min(STAMINA_MAX, value + STAMINA_REGEN_WALK * dtSec);
+    }
   } else {
     value = Math.min(STAMINA_MAX, value + STAMINA_REGEN_IDLE * dtSec);
   }

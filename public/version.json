@@ -1,6 +1,6 @@
 {
-  "build": "882",
-  "note": "Paperdoll shows all 8 equipment slots — weapon, offhand, helmet, armor, gloves, boots, ring, amulet with equipped item names and unequip buttons",
-  "timestamp": "2026-10-20T01:34:38.014Z",
-  "cacheBuster": "mvg0g7um"
+  "build": "883",
+  "note": "Need-driven tavern visits — lonely NPCs seek company at the Tankard on low social instead of waiting for the scheduled evening",
+  "timestamp": "2026-10-20T01:36:51.765Z",
+  "cacheBuster": "mvg0j31y"
 }

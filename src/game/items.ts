@@ -391,3 +391,51 @@ export function unequipItem(items: GeneratedItem[], instanceId: string): Generat
     i.instanceId === instanceId ? { ...i, equipped: false } : i
   );
 }
+
+// ---------------------------------------------------------------------------
+// Encumbrance (BUILD 884 — EO weight widget)
+// ---------------------------------------------------------------------------
+
+/** Per-unit weights for GameInventory stackable keys. */
+export const INVENTORY_WEIGHTS: Record<string, number> = {
+  coins: 0,
+  goatHorns: 2, fabric: 1, daggers: 3, cloths: 1, bone: 1, pelt: 2, fang: 0.5,
+  corn: 0.5, wood: 3, stone: 4, silk: 0.5, bow: 4, beer: 1.5, lockpicks: 0.2,
+  shirts: 2, swords: 8, healthPotion: 0.5,
+};
+
+/** Weight of a generated item from its base definition (0 if unknown). */
+export function generatedItemWeight(item: GeneratedItem): number {
+  const base = ITEM_BASES.find((b) => b.id === item.baseId);
+  return base ? base.weight : 0;
+}
+
+/** Total carried weight: inventory stacks + all generated items. Pure. */
+export function carriedWeight(
+  inventoryCounts: Record<string, number>,
+  equipment: GeneratedItem[],
+): number {
+  let total = 0;
+  for (const [key, count] of Object.entries(inventoryCounts)) {
+    const w = INVENTORY_WEIGHTS[key];
+    if (w && count > 0) total += w * count;
+  }
+  for (const item of equipment) total += generatedItemWeight(item);
+  return Math.round(total * 10) / 10;
+}
+
+/** Carry capacity from STR. Pure. */
+export function carryCapacity(str: number): number {
+  return 40 + Math.max(0, Math.floor(str)) * 8;
+}
+
+export type EncumbranceTier = 'ok' | 'heavy' | 'over';
+
+/** Encumbrance tier: heavy past 80% of capacity, over past 100%. Pure. */
+export function encumbranceTier(weight: number, capacity: number): EncumbranceTier {
+  if (capacity <= 0) return 'over';
+  const ratio = weight / capacity;
+  if (ratio > 1) return 'over';
+  if (ratio > 0.8) return 'heavy';
+  return 'ok';
+}
