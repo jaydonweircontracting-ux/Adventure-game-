@@ -39,11 +39,8 @@ const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage();
   await page.setContent('<!doctype html><html><body></body></html>');
-  const stats = await page.evaluate(async (items) => {
-    const results: Array<{
-      kind: string; id: number; width: number; height: number; visible: number;
-      transparent: number; uniqueColors: number; opaqueWhiteCorners: boolean; decodeError?: string;
-    }> = [];
+  const stats = await page.evaluate(\`async (items) => {
+    const results = [];
     for (const item of items) {
       const img = new Image();
       img.src = 'data:image/png;base64,' + item.bytes;
@@ -60,28 +57,26 @@ try {
       const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
       let visible = 0;
       let transparent = 0;
-      const colors = new Set<string>();
+      const colors = new Set();
       for (let i = 0; i < data.length; i += 4) {
         const a = data[i + 3];
         if (a > 8) visible++;
         if (a < 248) transparent++;
-        // Cap color cardinality to avoid allocating one string per pixel on
-        // large decorative sprites; the threshold is enough to catch blank art.
         if (colors.size < 512) colors.add(data[i] + ',' + data[i + 1] + ',' + data[i + 2] + ',' + a);
       }
-      const at = (x: number, y: number) => {
-        const i = (y * canvas.width + x) * 4;
-        return data[i + 3] > 245 && data[i] > 242 && data[i + 1] > 242 && data[i + 2] > 242;
-      };
       const corners = [[0,0],[canvas.width-1,0],[0,canvas.height-1],[canvas.width-1,canvas.height-1]];
+      let opaqueWhiteCorners = true;
+      for (const point of corners) {
+        const i = (point[1] * canvas.width + point[0]) * 4;
+        if (!(data[i + 3] > 245 && data[i] > 242 && data[i + 1] > 242 && data[i + 2] > 242)) opaqueWhiteCorners = false;
+      }
       results.push({
         kind: item.kind, id: item.id, width: canvas.width, height: canvas.height,
-        visible, transparent, uniqueColors: colors.size,
-        opaqueWhiteCorners: corners.every(([x,y]) => at(x,y)),
+        visible, transparent, uniqueColors: colors.size, opaqueWhiteCorners,
       });
     }
     return results;
-  }, payload);
+  }\`, payload) as Array<{ kind: string; id: number; width: number; height: number; visible: number; transparent: number; uniqueColors: number; opaqueWhiteCorners: boolean; decodeError?: string }>;
 
   const failures: string[] = [];
   for (const tile of stats) {
