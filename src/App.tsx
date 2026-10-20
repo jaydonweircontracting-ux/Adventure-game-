@@ -140,13 +140,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '890';
+const BUILD_NUMBER = '891';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '891': 'Debug performance panel shows FPS, average frame interval, worst frame interval, and slow-frame count to help diagnose stutter',
   '890': 'Examine provenance — looted equipment remembers its previous owners ("Previously owned by Ham") in the inventory and survives save/load',
   '889': 'Damage-drop HP bars — damaged townsfolk show a shrinking red HP bar under their name in the iso view (monsters already had one)',
   '888': 'Loot-drop announcements — "You looted: +3 silk · +1 sword" names every item from ground drops and body looting; fixes ChatGPT build 886 DebugOverlay scope crash',
@@ -3300,16 +3301,31 @@ export function getMapDebugStats(): { cached: boolean; buildMs: number; width: n
 // map-cache/validation readout so automated playtests can verify without
 // relying on screenshots.
 function DebugOverlay({ chunk }: { chunk: Point }) {
-  const [fps, setFps] = useState(0);
+  const [frameStats, setFrameStats] = useState({ fps: 0, averageFrameMs: 0, worstFrameMs: 0, slowFrames: 0 });
   useEffect(() => {
     let frames = 0;
+    let slowFrames = 0;
     let last = performance.now();
+    let previousFrame = last;
+    let worstFrameMs = 0;
     let raf = 0;
     const loop = (now: number) => {
+      const frameInterval = Math.max(0, now - previousFrame);
+      previousFrame = now;
       frames++;
-      if (now - last >= 1000) {
-        setFps(Math.round((frames * 1000) / (now - last)));
+      worstFrameMs = Math.max(worstFrameMs, frameInterval);
+      if (frameInterval > 33.3) slowFrames++;
+      const sampleDuration = now - last;
+      if (sampleDuration >= 1000) {
+        setFrameStats({
+          fps: Math.round((frames * 1000) / sampleDuration),
+          averageFrameMs: Math.round((sampleDuration / frames) * 10) / 10,
+          worstFrameMs: Math.round(worstFrameMs * 10) / 10,
+          slowFrames,
+        });
         frames = 0;
+        slowFrames = 0;
+        worstFrameMs = 0;
         last = now;
       }
       raf = requestAnimationFrame(loop);
@@ -3317,6 +3333,7 @@ function DebugOverlay({ chunk }: { chunk: Point }) {
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
   }, []);
+  const { fps, averageFrameMs, worstFrameMs, slowFrames } = frameStats;
   const report = useMemo(() => {
     const stats = getMapDebugStats();
     const validation = validateMapData();
@@ -3326,6 +3343,7 @@ function DebugOverlay({ chunk }: { chunk: Point }) {
   return (
     <div data-testid="debug-overlay" style={{ position: 'fixed', left: 8, top: 8, zIndex: 9999, background: 'rgba(0,0,0,0.82)', color: '#7dff9a', font: '10px/1.5 monospace', padding: '8px 10px', borderRadius: 6, pointerEvents: 'none', maxWidth: 320 }}>
       <div>BUILD {BUILD_NUMBER} · {fps} fps</div>
+      <div>frame {averageFrameMs}ms avg · {worstFrameMs}ms worst · {slowFrames} slow (&gt;33ms)/sec</div>
       <div>chunk {chunk.x},{chunk.y}</div>
       <div>atlas {stats.cached ? 'CACHED' : 'MISS'} · built in {stats.buildMs}ms · {stats.width}x{stats.height}px · {stats.tileCount} tiles · {stats.landmarkCount} landmarks</div>
       <div>map-sync {validation.ok ? 'OK (' + validation.roadTileCount + ' road tiles)' : 'FAIL: ' + validation.problems.slice(0, 3).join(' | ')}</div>
