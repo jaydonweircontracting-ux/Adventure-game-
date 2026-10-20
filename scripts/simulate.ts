@@ -4,6 +4,7 @@ import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLev
 import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai';
 import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '../src/game/combat';
 import { chooseCreatureTarget, pickGuardCreatureTarget, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
+import { strayGateDecision, strayKindForRoll, straySpawnPoints, pickStraySpawnPoint, isTownEdgePosition, isTownCenterPosition, TOWN_STRAY_CHANCE, TOWN_STRAY_ROAM_RADIUS, TOWN_CENTER_SAFE_RADIUS } from '../src/game/townStrays';
 import { createAgent, stepAgent, AGENT_MOVE_SPEED, type AgentWorld } from '../src/game/gameplayAgent';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
@@ -1200,6 +1201,52 @@ console.log('Testing townsfolk living-town simulation...');
   assert(noPick === null, 'Guard should ignore creatures that are not menacing');
   const farPick = pickGuardCreatureTarget(guardPos, [{ entityKind: 'monster', id: 4, position: { x: 40, y: 0 }, menacing: true }]);
   assert(farPick === null, 'Guard should not engage beyond sight range');
+}
+
+// ---- 13a1b. Town-edge strays (BUILD 917) ----
+console.log('Testing town-edge strays (BUILD 917)...');
+{
+  // Edge band: borders are the outskirts, the inner town is not.
+  assert(isTownEdgePosition({ x: 140, y: 20 }), 'North edge should be outskirts');
+  assert(isTownEdgePosition({ x: 20, y: 140 }), 'West edge should be outskirts');
+  assert(isTownEdgePosition({ x: 260, y: 260 }), 'Corner should be outskirts');
+  assert(!isTownEdgePosition({ x: 140, y: 140 }), 'Town center is not outskirts');
+  assert(!isTownEdgePosition({ x: 100, y: 100 }), 'Inner town is not outskirts');
+  // Center protection.
+  assert(isTownCenterPosition({ x: 140, y: 140 }), 'Plaza heart should be protected');
+  assert(!isTownCenterPosition({ x: 140, y: 26 }), 'Edge midpoint is outside the protected heart');
+  // Every candidate spawn point: in the band, outside the heart, inside
+  // the spawnable field margin, and even a full-roam chase from it can
+  // never reach the plaza heart.
+  const points = straySpawnPoints();
+  assert(points.length >= 8, 'Should offer several edge spawn points');
+  for (const p of points) {
+    assert(isTownEdgePosition(p), 'Spawn point must be in the edge band');
+    assert(!isTownCenterPosition(p), 'Spawn point must be outside the plaza heart');
+    assert(p.x >= 16 && p.x <= 264 && p.y >= 16 && p.y <= 264, 'Spawn point must be inside the field');
+    const dCenter = Math.hypot(p.x - 140, p.y - 140);
+    assert(dCenter - TOWN_STRAY_ROAM_RADIUS > TOWN_CENTER_SAFE_RADIUS, 'A stray chase can never reach the plaza heart');
+  }
+  // Spawn picking: skips blocked points, returns null when all are
+  // blocked, and refuses points that break the edge/center rules even
+  // when the caller's solidity query would accept them — a stray can
+  // never be placed in deep town.
+  const picked = pickStraySpawnPoint(points, 0, (p) => !(p.x === points[0].x && p.y === points[0].y));
+  assert(picked !== null && !(picked.x === points[0].x && picked.y === points[0].y), 'Picker should skip a blocked point');
+  assert(pickStraySpawnPoint(points, 0, () => false) === null, 'Picker returns null when every point is blocked');
+  assert(pickStraySpawnPoint([{ x: 140, y: 140 }], 0, () => true) === null, 'Picker must refuse a center point even when free');
+  assert(pickStraySpawnPoint([{ x: 100, y: 100 }], 0, () => true) === null, 'Picker must refuse a non-edge point even when free');
+  // Gate: cap, cooldown and chance each independently block an arrival.
+  assert(strayGateDecision({ aliveStrays: 0, cooldownReady: true, roll: 0 }) === true, 'Gate should open on a winning roll');
+  assert(strayGateDecision({ aliveStrays: 0, cooldownReady: true, roll: TOWN_STRAY_CHANCE }) === false, 'Gate stays shut at the chance boundary');
+  assert(strayGateDecision({ aliveStrays: 0, cooldownReady: true, roll: 0.99 }) === false, 'Gate stays shut on a losing roll');
+  assert(strayGateDecision({ aliveStrays: 1, cooldownReady: true, roll: 0 }) === false, 'A live stray blocks another (cap)');
+  assert(strayGateDecision({ aliveStrays: 0, cooldownReady: false, roll: 0 }) === false, 'Cooldown blocks a new stray');
+  // Kind weighting boundaries.
+  assert(strayKindForRoll(0) === 'wolf', 'Low rolls are wolves');
+  assert(strayKindForRoll(0.5) === 'slime', 'Mid rolls are slimes');
+  assert(strayKindForRoll(0.85) === 'rat', 'High rolls are rats');
+  assert(strayKindForRoll(0.999) === 'rat', 'Top rolls stay rats');
 }
 
 // ---- 13a2. Equipment art wiring (BUILD 911): item art map + look compose ----

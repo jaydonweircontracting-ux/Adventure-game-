@@ -1,6 +1,6 @@
 {
-  "build": "916",
-  "note": "Landscape overhaul: the ground no longer renders as a two-tone checkerboard quilt. Town ground is worn grass and packed earth instead of beach sand, farm plots read as wheat, crops and tilled soil with plough rows, dirt lanes feather into the land and fade across fields instead of streaking through them, and rivers and lakes are smooth layered water with soft blended shorelines — no more giant navy checkerboard. Every surface now shades in smooth continuous tones that flow across tiles",
-  "timestamp": "2026-10-20T15:19:26.505Z",
-  "cacheBuster": "mvgtwxey"
+  "build": "917",
+  "note": "Stray trouble at the town edge: the wilderness safety zone around Mosslight is relaxed at the outskirts only. Once in a while a lone wolf, slime or rat wanders into the edge of town and picks a fight with whoever it finds there — townsfolk fight back or flee, guards move in, and the body is lootable like any other kill. The plaza and market heart stay completely safe: strays arrive only at the outskirts and their hunting range cannot reach the town center",
+  "timestamp": "2026-10-20T15:35:19.623Z",
+  "cacheBuster": "mvguhcug"
 }

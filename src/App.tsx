@@ -107,6 +107,7 @@ import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc, traceLineBlocked, getDirection, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH, type CombatDirection } from '@/game/combat';
 import { chooseCreatureTarget, pickGuardCreatureTarget, creatureTargetKey, type CreatureTargetChoice, type GuardThreatCandidate } from '@/game/creatureCombat';
+import { strayGateDecision, strayKindForRoll, straySpawnPoints, pickStraySpawnPoint, TOWN_STRAY_CHECK_INTERVAL_MS, TOWN_STRAY_COOLDOWN_MS, TOWN_STRAY_ROAM_RADIUS } from '@/game/townStrays';
 import { renderGroundDetail, type GroundDetailSpec, type GroundHills } from '@/game/groundDetail';
 // BUILD 355: elevation hills/cliffs (CraftPix island kit tiles).
 import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type ElevContext } from '@/game/elevation';
@@ -143,13 +144,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '916';
+const BUILD_NUMBER = '917';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '917': 'Stray trouble at the town edge: the wilderness safety zone around Mosslight is relaxed at the outskirts only. Once in a while a lone wolf, slime or rat wanders into the edge of town and picks a fight with whoever it finds there — townsfolk fight back or flee, guards move in, and the body is lootable like any other kill. The plaza and market heart stay completely safe: strays arrive only at the outskirts and their hunting range cannot reach the town center',
   '914': 'Wilderness ecology expansion — larger herds in meadows, more wildlife in forests and shorelines, direwolves reserved for deeper wilderness, and richer slime, bat, rat, wolf, and spider encounters outside the protected starting settlement',
   '916': 'Landscape overhaul: the ground no longer renders as a two-tone checkerboard quilt. Town ground is worn grass and packed earth instead of beach sand, farm plots read as wheat, crops and tilled soil with plough rows, dirt lanes feather into the land and fade across fields instead of streaking through them, and rivers and lakes are smooth layered water with soft blended shorelines — no more giant navy checkerboard. Every surface now shades in smooth continuous tones that flow across tiles',
   '915': 'NPCs vs monsters: hostile creatures now hunt townsfolk as well as you. A wolf or bandit picks its nearest victim and sticks to it, townsfolk fight back or flee using the same instincts they use against you, and guards sprint to engage any creature menacing a townsfolk or loose in town. A creature that kills a townsfolk leaves a lootable body like any other death — and it is never blamed on you: no crime, no bounty. Creatures killed by NPCs drop their loot on the ground for anyone to pick up, but the kill earns you no XP (you did not land it)',
@@ -1581,7 +1583,10 @@ type GoatState = {
 };
 // Hostile mobs: goblins and bandits. Reuse the goat combat AI shape.
 type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'ogre' | 'elf' | 'dwarf' | 'snake' | 'spider' | 'dragon' | 'orc' | 'soldier' | 'wolf' | 'slime' | 'bat' | 'rat';
-type MonsterState = GoatState & { kind: MonsterKind; variant?: string; ranged?: boolean; gear: GoatLoot };
+// BUILD 917: `stray` marks a deliberate town-edge stray (townStrays.ts).
+// The render suppression in the settlement safety zone lets flagged
+// strays through and keeps hiding everything else.
+type MonsterState = GoatState & { kind: MonsterKind; variant?: string; ranged?: boolean; gear: GoatLoot; stray?: boolean };
 const GOAT_STEP = 0.5;
 // Ambient birds: lightweight wildlife, deterministic per chunk, not persisted.
 type BirdStateName = 'idle' | 'hop' | 'peck' | 'fly';
@@ -5563,6 +5568,45 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // load or chunk change exactly like the pre-914 player-only behavior.
   const creatureTargetsRef = useRef<Map<string, CreatureTargetChoice>>(new Map());
   const creatureAcquireAtRef = useRef<Map<string, number>>(new Map());
+  // BUILD 917: town-stray gate state — ms accumulated toward the next
+  // gate roll, the earliest rAF timestamp a new stray may arrive, and
+  // whether a stray was alive last frame (death/exit starts the
+  // cooldown). Transient by design: never saved (monsters never are).
+  const strayCheckAccRef = useRef(0);
+  const strayNextAtRef = useRef(0);
+  const strayWasAliveRef = useRef(false);
+  // BUILD 917: spawn one stray hostile at the town outskirts. Shared by
+  // the organic gate in the field loop and the localhost test hook, so
+  // a staged stray is identical to a natural one. Placement, stats and
+  // variants come from the same tables as wilderness spawns; only the
+  // position (edge band), the roam anchor and the stray flag differ.
+  // Returns the new monster id, or -1 when every edge point is blocked.
+  const spawnTownStray = (forcedKind?: string): number => {
+    const candidates = straySpawnPoints(FIELD_SIZE);
+    const startIndex = Math.floor(Math.random() * candidates.length);
+    const pos = pickStraySpawnPoint(candidates, startIndex, (p) => !isFieldPositionBlocked(p, TOWNSFOLK_CHUNK));
+    if (!pos) return -1;
+    const kind = (forcedKind ?? strayKindForRoll(Math.random())) as MonsterKind;
+    const spec = MONSTER_SPAWN_TABLE.find((s) => s.kind === kind) ?? MONSTER_SPAWN_TABLE[0];
+    const seed = Math.abs(Math.floor(Math.random() * 1000000000));
+    const level = monsterLevelForChunk(TOWNSFOLK_CHUNK, seed % 5, playerLevelRef.current);
+    const maxHp = Math.round(goatMaxHpForLevel(level) * spec.hpMult);
+    const variant = spec.variants[seed % spec.variants.length];
+    const id = monstersRef.current.reduce((max, m) => Math.max(max, m.id), -1) + 1;
+    const monster: MonsterState = {
+      id, kind, variant, ranged: false, gear: gearForMonster(kind, variant, false),
+      position: { ...pos }, spawnPosition: { ...pos }, roamRadius: TOWN_STRAY_ROAM_RADIUS,
+      facing: pos.x < FIELD_SIZE / 2 ? 'right' : 'left',
+      level, hp: maxHp, maxHp, disposition: 'aggressive',
+      attackCooldown: 0, respawnTicks: 0, wanderSeed: seed, moving: false, attacking: false,
+      state: 'idle', hurtTimer: 0, attackTimer: 0, attackHitApplied: false, hitFlash: false,
+      stray: true,
+    };
+    const next = [...monstersRef.current, monster];
+    monstersRef.current = next; setMonsters(next);
+    setLogs((currentLogs) => [{ text: `A stray ${kind} has wandered into the town outskirts.`, color: 'orange' }, ...currentLogs].slice(0, 3));
+    return id;
+  };
   const [birds, setBirds] = useState<BirdState[]>(() => birdsForChunk({ x: 4, y: 7 }));
   const birdsRef = useRef<BirdState[]>(birds);
   const [wildlife, setWildlife] = useState<WildlifeState[]>(() => wildlifeForChunk({ x: 4, y: 7 }));
@@ -5894,9 +5938,19 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           monstersRef.current = next; setMonsters(next);
           return id;
         },
+        // BUILD 917: stage a natural town-edge stray through the exact
+        // organic spawn path (edge placement, table stats, stray flag),
+        // skipping only the gate roll/cooldown. LOCALHOST ONLY.
+        spawnStrayForTest: (kind?: string) => {
+          if (typeof window === 'undefined') return -1;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return -1;
+          if (chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) return -1;
+          return spawnTownStray(kind);
+        },
         getCreaturesForTest: () => ({
           goats: goatsRef.current.map((g) => ({ id: g.id, kind: g.kind, x: g.position.x, y: g.position.y, hp: g.hp, maxHp: g.maxHp, disposition: g.disposition, state: g.state, target: creatureTargetsRef.current.get(creatureTargetKey('goat', g.id)) ?? null })),
-          monsters: monstersRef.current.map((m) => ({ id: m.id, kind: m.kind, x: m.position.x, y: m.position.y, hp: m.hp, maxHp: m.maxHp, disposition: m.disposition, state: m.state, target: creatureTargetsRef.current.get(creatureTargetKey('monster', m.id)) ?? null })),
+          monsters: monstersRef.current.map((m) => ({ id: m.id, kind: m.kind, x: m.position.x, y: m.position.y, hp: m.hp, maxHp: m.maxHp, disposition: m.disposition, state: m.state, stray: m.stray ?? false, target: creatureTargetsRef.current.get(creatureTargetKey('monster', m.id)) ?? null })),
         }),
         getNpcCombatForTest: (name: string) => {
           const npc = townsfolkRef.current.find((n) => n.name === name);
@@ -8444,6 +8498,27 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         }
         goatsRef.current = nextGoats; if (publishEntityUi) setGoats(nextGoats);
         for (const hit of npcHits) applyCreatureHitToNpc(hit.npcId, hit.damage, 'goat', hit.creatureId, hit.creaturePos, hit.label);
+      }
+      // BUILD 917: stray gate — while the player is in the town field, a
+      // lone hostile may wander into the outskirts (townStrays.ts). Runs
+      // before the monster update so a fresh stray acts this same frame.
+      // The 915 targeting in this chunk does the rest: the stray picks
+      // the nearest victim, townsfolk fight or flee, guards intervene.
+      if (!interiorRef.current && chunkRef.current.x === TOWNSFOLK_CHUNK.x && chunkRef.current.y === TOWNSFOLK_CHUNK.y) {
+        const aliveStrays = monstersRef.current.reduce((n, m) => n + (m.stray && m.disposition !== 'defeated' ? 1 : 0), 0);
+        if (strayWasAliveRef.current && aliveStrays === 0) {
+          strayNextAtRef.current = now + TOWN_STRAY_COOLDOWN_MS;
+        }
+        strayWasAliveRef.current = aliveStrays > 0;
+        strayCheckAccRef.current += elapsed * 1000;
+        if (strayCheckAccRef.current >= TOWN_STRAY_CHECK_INTERVAL_MS) {
+          strayCheckAccRef.current = 0;
+          if (strayGateDecision({ aliveStrays, cooldownReady: now >= strayNextAtRef.current, roll: Math.random() })) {
+            spawnTownStray();
+          }
+        }
+      } else {
+        strayCheckAccRef.current = 0;
       }
       // Hostile monsters (goblins, bandits): same combat AI as goats.
       if (!interiorRef.current && monstersRef.current.length > 0) {
@@ -11487,7 +11562,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView placedAssets={customPlacedAssets} editorPlacedObjects={placedObjects} playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} dispositions={disposition} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? [] : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
+            <IsoFieldView placedAssets={customPlacedAssets} editorPlacedObjects={placedObjects} playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} dispositions={disposition} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? monsters.filter((m) => m.stray) : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash, stray: m.stray }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {
@@ -11818,8 +11893,8 @@ if (active) {
             ))}
           </div>
           <div className="field-monsters" aria-label="Hostile monsters">
-            {/* BUILD 750: suppress stale/previously spawned hostile sprites throughout the full town safety zone, even if an old runtime state survives after chunk entry. */}
-            {(isStartingSettlementSafetyZone(chunk) ? [] : monsters).map((monster) => {
+            {/* BUILD 750: suppress stale/previously spawned hostile sprites throughout the full town safety zone, even if an old runtime state survives after chunk entry. BUILD 917: deliberate town-edge strays (flagged at spawn) pass. */}
+            {(isStartingSettlementSafetyZone(chunk) ? monsters.filter((m) => m.stray) : monsters).map((monster) => {
               const dead = monster.disposition === 'defeated';
               const anim = animForMonsterState({ dead, hitFlash: monster.hitFlash, attacking: monster.attacking, moving: monster.moving });
               const sprite = resolveMonsterSprite(monster.kind);

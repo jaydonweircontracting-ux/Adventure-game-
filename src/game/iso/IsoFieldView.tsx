@@ -215,7 +215,7 @@ function farmFenceSprite(): HTMLCanvasElement {
   return c;
 }
 
-type IsoMonster = { id: number; kind: string; position: Point; facing: string; disposition: string; hp: number; maxHp: number; variant?: string; moving?: boolean; attacking?: boolean; hitFlash?: boolean };
+type IsoMonster = { id: number; kind: string; position: Point; facing: string; disposition: string; hp: number; maxHp: number; variant?: string; moving?: boolean; attacking?: boolean; hitFlash?: boolean; stray?: boolean };
 
 /**
  * The live monster array belongs to the player's active chunk and stores
@@ -224,9 +224,13 @@ type IsoMonster = { id: number; kind: string; position: Point; facing: string; d
  * reject invalid/out-of-chunk coordinates before both drawing and hit tests.
  */
 function liveMonstersForActiveChunk(monsters: readonly IsoMonster[] | undefined, chunk: Point): IsoMonster[] {
-  if (isStartingSettlementSafetyZone(chunk)) return [];
+  // BUILD 917: the settlement safety zone hides every hostile — except
+  // deliberate town-edge strays (flagged at spawn), which are real,
+  // visible participants in townsfolk combat.
+  const inSafetyZone = isStartingSettlementSafetyZone(chunk);
   const seenIds = new Set<number>();
   return (monsters ?? []).filter((monster) => {
+    if (inSafetyZone && !monster.stray) return false;
     const { x, y } = monster.position;
     if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= FIELD_SIZE || y >= FIELD_SIZE) return false;
     if (seenIds.has(monster.id)) return false;
