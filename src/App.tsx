@@ -141,13 +141,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '899';
+const BUILD_NUMBER = '900';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '900': 'Full terrain QA — audit multi-seed biome coverage and starting-region stability, and verify every referenced isometric ground/decor tile asset exists',
   '899': 'Tap-to-talk — tapping a near, already-targeted NPC opens dialogue directly (iso canvas + DOM field); the field Chat/Talk button is removed from the UI. Starting-house roof overlay enlarged and sunk so its wall bases fully cover the interior sprite bottom (no more floor/bed/plant sticking out below the walls); roof still hides when you walk in',
   '898': 'Full-world terrain audit — make biome clustering independent of tile scan order and exhaustively test field continuity across every expanded-world chunk edge',
   '897': 'World terrain audit — resolve shorelines and biome borders from all four neighboring cells so coastline bands and edge details no longer depend on generation direction',
