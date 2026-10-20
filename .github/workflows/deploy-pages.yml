@@ -39,6 +39,14 @@ jobs:
         run: npm run test:little-world-generator
       - name: Expanded world map coherence regression test
         run: npm run test:world-map-coherence
+      - name: Exhaustive landscape chunk-edge continuity regression test
+        run: npm run test:landscape-coherence
+      - name: Isometric tile asset integrity regression test
+        run: npm run test:iso-tile-assets
+      - name: Building sprite and pinned town footprint regression test
+        run: npm run test:building-art
+      - name: Guard pursuit and NPC combat regression test
+        run: npm run test:npc-combat
       - name: Build site
         run: npm run build
       - name: Verify update notifier build-number consistency
