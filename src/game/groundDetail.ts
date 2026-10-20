@@ -499,14 +499,17 @@ export function renderGroundDetail(spec: GroundDetailSpec): HTMLCanvasElement {
       for (let gx = 0; gx < grid.cells; gx++) {
         const i = gy * grid.cells + gx;
         const depth = grid.depths[i];
-        if (depth <= 0.25) continue;
+        // Draw the shallow fringe as translucent water instead of a hard
+        // 16px block edge. The coarse grid remains cached, but grass/sand
+        // underneath can feather the shoreline naturally at every chunk edge.
+        if (depth <= 0.035) continue;
         const lx = (gx + 0.5) * grid.cellSize;
         const ly = (gy + 0.5) * grid.cellSize;
         const x0 = gx * pxPerCell;
         const y0 = gy * pxPerCell;
-        const isBridge = corridors.length > 0 && pointInCorridors(lx, ly, corridors);
+        const isBridge = depth > 0.25 && corridors.length > 0 && pointInCorridors(lx, ly, corridors);
         if (isBridge) {
-          // Wooden planks spanning the water.
+          // Wooden planks spanning the water; only real channel depth gets a bridge.
           rect(x0, y0, pxPerCell, pxPerCell, '#8a6a44');
           rect(x0, y0 + pxPerCell / 2 - 1, pxPerCell, 2, '#6b4f30');
           rect(x0, y0, 2, pxPerCell, 'rgba(0,0,0,0.25)');
@@ -515,7 +518,11 @@ export function renderGroundDetail(spec: GroundDetailSpec): HTMLCanvasElement {
           const t = Math.min(1, depth);
           const deep = grid.kinds[i] === 2 ? '#2a64b0' : '#2f6cb8';
           const shallow = grid.kinds[i] === 2 ? '#5aa3de' : '#55a0dd';
+          const opacity = Math.max(0.08, Math.min(0.92, (depth - 0.035) / 0.58));
+          ctx.save();
+          ctx.globalAlpha *= opacity;
           rect(x0, y0, pxPerCell, pxPerCell, mixColor(shallow, deep, t));
+          ctx.restore();
         }
       }
     }
