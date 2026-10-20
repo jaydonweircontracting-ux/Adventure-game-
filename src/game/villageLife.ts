@@ -413,6 +413,12 @@ export const NPC_COMMITTED_THEFT = 'I_COMMITTED_THEFT';
 /** Memory event recorded on the perpetrator when guards arrest them. BUILD 885. */
 export const NPC_WAS_ARRESTED = 'I_WAS_ARRESTED';
 
+/** Memory event recorded when an NPC marries the player. BUILD 894. */
+export const NPC_MARRIED_PLAYER = 'I_MARRIED_THE_PLAYER';
+
+/** Memory event recorded when the player ends a partnership. BUILD 894. */
+export const NPC_DIVORCED_PLAYER = 'THE_PLAYER_LEFT_ME';
+
 /**
  * Pure & deterministic NPC crime urge: same (npc, day) → same urge.
  * A very hungry, broke adult may steal from a nearby NPC. Guards, priests

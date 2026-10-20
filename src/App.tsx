@@ -8,7 +8,7 @@ import IsoFieldView from './game/iso/IsoFieldView';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
 import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/iso/isoSprites';
-import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality, npcGold, adjustNPCGold, npcCrimeUrge, npcStoleToday, NPC_COMMITTED_THEFT, NPC_WAS_ARRESTED } from './game/villageLife';
+import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality, npcGold, adjustNPCGold, npcCrimeUrge, npcStoleToday, NPC_COMMITTED_THEFT, NPC_WAS_ARRESTED, NPC_MARRIED_PLAYER, NPC_DIVORCED_PLAYER } from './game/villageLife';
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
 import { createBody, lootBody, type LootableBody } from './game/lootableBodies';
 import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
@@ -46,6 +46,7 @@ import { radarDots, RADAR_COLORS, RADAR_RANGE, type RadarEntity } from './game/m
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, describeLoot, withProvenance, provenanceLabel, type GeneratedItem, type EncumbranceTier } from './game/items';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, applyPersonalityTone, type DialogueTopicId } from './game/dialogue';
+import { canPropose, isPartner, isPartnerState, PROPOSAL_MIN_DISPOSITION, type PartnerState } from './game/partner';
 import { recognizeIntent, fallbackResponse } from './game/dialogueIntent';
 import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasConversationMemories } from './game/conversationMemory';
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
@@ -141,13 +142,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '893';
+const BUILD_NUMBER = '894';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '894': 'Marriage/partner slot — propose to an adult NPC who admires you (disposition 80+) in dialogue; partner chip in HUD, bond and memories persist through save/load',
   '893': 'Minimap radar mode — 📡 Radar toggle shows NPC/monster/critter/loot dots on a range-ring sweep instead of terrain (tap-to-move still works)',
   '892': 'Debug overlay measures game-loop CPU time and slow simulation frames to help pinpoint stutter',
   '891': 'Debug performance panel shows FPS, average frame interval, worst frame interval, and slow-frame count to help diagnose stutter',
@@ -1754,6 +1756,8 @@ type SaveGameData = {
   dialogue?: {
     disposition?: Record<string, number>;
     wantedMosslight?: number;
+    /** BUILD 894: marriage partner slot. */
+    partner?: PartnerState;
   };
   carriage?: { earnings?: Record<string, number> };
   carriageTravel?: { destName: string; destChunk: Point; arrival: Point; totalTicks: number; doneTicks: number };
@@ -5347,6 +5351,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [dialogueInput, setDialogueInput] = useState('');
   const [dialogueHistory, setDialogueHistory] = useState<{ speaker: 'player' | 'npc'; text: string }[]>([]);
   const [disposition, setDisposition] = useState<Record<string, number>>({});
+  // BUILD 894: marriage/partner slot — one partner, persists in the dialogue save section.
+  const [partner, setPartner] = useState<PartnerState | null>(null);
   const [wantedMosslight, setWantedMosslight] = useState(0);
   // BUILD 332: ambient barks — floating greetings, one per NPC per ~75s.
   const [barks, setBarks] = useState<Record<string, string>>({});
@@ -6024,7 +6030,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     prisonState,
     journal,
     reputation,
-    dialogue: { disposition, wantedMosslight },
+    dialogue: { disposition, wantedMosslight, partner: partner ?? undefined },
     logs,
     time,
     carriage: serializeCarriage(carriageEarningsRef.current),
@@ -6182,6 +6188,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (loadState.dialogue) {
       if (loadState.dialogue.disposition) setDisposition(loadState.dialogue.disposition);
       if (typeof loadState.dialogue.wantedMosslight === 'number') setWantedMosslight(loadState.dialogue.wantedMosslight);
+      // BUILD 894: restore the partner slot (validated — old saves start single).
+      if (isPartnerState(loadState.dialogue.partner)) setPartner(loadState.dialogue.partner);
     }
     setLogs(loadState.logs); setTime(loadState.time);
     carriageEarningsRef.current = deserializeCarriage(loadState.carriage);
@@ -8773,6 +8781,35 @@ if (active) {
     setApprenticeships(next);
     const skillName = SKILLS[master.skillId]?.name ?? master.skillId;
     setLogs((cur) => [{ text: `🤝 ${npc.name} takes you as apprentice in ${skillName}! +50% XP from practice.`, color: 'gold' }, ...cur].slice(0, 3));
+  };
+  // BUILD 894: marriage proposal. The NPC accepts when disposition is
+  // admiring (80+). Records a memory and fills the partner slot.
+  const proposeToNpc = (npc: Townsperson) => {
+    const disp = disposition[npc.id] ?? defaultDisposition();
+    if (!canPropose(disp, partner, npc.archetype)) {
+      setLogs((cur) => [{ text: `${npc.name} isn't ready — they need to admire you (disposition ${PROPOSAL_MIN_DISPOSITION}+, now ${disp}).`, color: 'orange' }, ...cur].slice(0, 3));
+      return;
+    }
+    const clock = brainRef.current?.worldCore.getClock();
+    const day = clock ? Math.max(1, Math.floor(clock.day)) : 1;
+    const next = townsfolkRef.current.map((w) => w.id === npc.id ? addNPCMemory(w, NPC_MARRIED_PLAYER, day, 3) : w);
+    townsfolkRef.current = next;
+    setTownsfolk(next);
+    setPartner({ npcId: npc.id, npcName: npc.name, day });
+    setDisposition((prev) => ({ ...prev, [npc.id]: 100 }));
+    setLogs((cur) => [{ text: `💍 ${npc.name} accepts your proposal! You are now partners.`, color: 'gold' }, ...cur].slice(0, 3));
+  };
+  // BUILD 894: end the partnership.
+  const endPartnership = (npc: Townsperson) => {
+    if (!isPartner(partner, npc.id)) return;
+    const clock = brainRef.current?.worldCore.getClock();
+    const day = clock ? Math.max(1, Math.floor(clock.day)) : 1;
+    const next = townsfolkRef.current.map((w) => w.id === npc.id ? addNPCMemory(w, NPC_DIVORCED_PLAYER, day, 3) : w);
+    townsfolkRef.current = next;
+    setTownsfolk(next);
+    setPartner(null);
+    setDisposition((prev) => ({ ...prev, [npc.id]: Math.min(prev[npc.id] ?? defaultDisposition(), 40) }));
+    setLogs((cur) => [{ text: `💔 You part ways with ${npc.name}.`, color: 'orange' }, ...cur].slice(0, 3));
   };
   const chooseDialogueTopic = (npc: Townsperson, topic: DialogueTopicId) => {    const liveNpc = townsfolkRef.current.find((candidate) => candidate.id === npc.id); const tickNow = brainRef.current?.worldCore.getClock().tick ?? 0;
     if (!liveNpc || isNpcDead(liveNpc, tickNow)) { setTownsfolkDialogue(null); setDialogueTopic(null); return; }
@@ -12966,6 +13003,30 @@ if (active) {
                         </button>
                       );
                     })()}
+                    {/* BUILD 894: marriage/partner slot. */}
+                    {(() => {
+                      if (partner && isPartner(partner, npc.id)) {
+                        return (
+                          <>
+                            <span key="partner-chip" className="dialogue-topic" style={{ borderStyle: 'solid', borderColor: '#d46a9a', color: '#d46a9a' }} data-testid="partner-chip">💞 Partner since day {partner.day}</span>
+                            <button key="divorce" type="button" className="dialogue-topic" onClick={() => endPartnership(npc)} data-testid="button-end-partnership" title="End the partnership">💔 Part ways</button>
+                          </>
+                        );
+                      }
+                      if (npc.archetype === 'child') return null;
+                      const dispNow = disposition[npc.id] ?? defaultDisposition();
+                      if (!partner && dispNow >= PROPOSAL_MIN_DISPOSITION) {
+                        return (
+                          <button key="propose" type="button" className="dialogue-topic" onClick={() => proposeToNpc(npc)} data-testid="button-propose" title="Propose marriage — they admire you">💍 Propose marriage</button>
+                        );
+                      }
+                      if (!partner && dispNow >= 60) {
+                        return (
+                          <span key="propose-hint" className="dialogue-topic" style={{ opacity: 0.65 }} data-testid="propose-hint" title={`Raise their disposition to ${PROPOSAL_MIN_DISPOSITION} to propose (now ${dispNow})`}>💍 Proposal needs admiration</span>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                   {/* BUILD 654: Free-text input. */}
                   <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
@@ -13211,6 +13272,12 @@ if (active) {
           <div role="status" aria-label={'Carrying ' + carryUi.weight + ' of ' + carryUi.capacity} data-testid="hud-weight" style={{ position: 'absolute', right: 12, bottom: 88, zIndex: 10, fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'rgba(0,0,0,.45)', color: carryUi.tier === 'over' ? '#ff7b6b' : carryUi.tier === 'heavy' ? '#f0b35e' : '#cfe8cf' }}>
             ⚖️ {carryUi.weight}/{carryUi.capacity}
           </div>
+          {/* BUILD 894: partner slot chip — visible whenever you have a partner. */}
+          {partner && (
+            <div role="status" aria-label={'Partner: ' + partner.npcName} data-testid="hud-partner" style={{ position: 'absolute', right: 12, bottom: 112, zIndex: 10, fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'rgba(60,10,30,.55)', color: '#ffb3c9' }}>
+              💞 {partner.npcName}
+            </div>
+          )}
       </div>
       <div className="sr-only" aria-live="polite" data-testid="status-movement">{moving ? (mounted ? 'Riding through Mosslight Crossing' : 'Moving through Mosslight Crossing') : (mounted ? 'Mounted and ready' : 'Standing still')}</div>
       <div className="sr-only" aria-live="polite" data-testid="status-mount">{mounted ? 'Mounted on the horse' : canMount ? 'Horse nearby and ready to mount' : horseHere ? 'Horse is parked in this field' : 'Horse is in another field'}</div>

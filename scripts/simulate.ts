@@ -7868,6 +7868,25 @@ console.log('Testing examine system...');
   assert(lodClassCacheSize() > 0, 'LOD701: cache populated');
 }
 
+// BUILD 894: marriage/partner slot.
+{
+  const { canPropose, isPartner, partnerLabel, isPartnerState, PROPOSAL_MIN_DISPOSITION } = await import('../src/game/partner');
+  assert(canPropose(PROPOSAL_MIN_DISPOSITION, null, 'commoner'), 'Partner: admiring adult can be proposed to');
+  assert(!canPropose(PROPOSAL_MIN_DISPOSITION - 1, null, 'commoner'), 'Partner: below threshold rejected');
+  assert(!canPropose(100, null, 'child'), 'Partner: children ineligible');
+  const existing = { npcId: 'a', npcName: 'A', day: 3 };
+  assert(!canPropose(100, existing, 'commoner'), 'Partner: one partner at a time');
+  assert(isPartner(existing, 'a'), 'Partner: isPartner matches');
+  assert(!isPartner(existing, 'b'), 'Partner: isPartner rejects others');
+  assert(!isPartner(null, 'a'), 'Partner: no partner state');
+  assert(partnerLabel(existing) === '💞 Partner: A (since day 3)', 'Partner: label');
+  assert(partnerLabel(null) === '💞 Partner: none', 'Partner: empty label');
+  assert(isPartnerState(existing), 'Partner: valid state');
+  assert(!isPartnerState({ npcId: 'a' }), 'Partner: incomplete state rejected');
+  assert(!isPartnerState(null), 'Partner: null rejected');
+  assert(!isPartnerState({ npcId: 'a', npcName: 'A', day: 'x' }), 'Partner: bad day rejected');
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
