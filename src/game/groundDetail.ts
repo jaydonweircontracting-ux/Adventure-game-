@@ -523,18 +523,35 @@ export function renderGroundDetail(spec: GroundDetailSpec): HTMLCanvasElement {
           ctx.globalAlpha *= opacity;
           const waterColor = mixColor(shallow, deep, t);
           if (depth < 0.58) {
+            // BUILD 906: round only the exposed shoreline corners. Water cells
+            // touching another water cell keep a square shared edge, preventing
+            // checkerboard gaps inside shallow rivers and lakes. Chunk borders
+            // are treated as connected so the shoreline does not notch at seams.
             const radius = Math.min(4, pxPerCell * 0.22);
+            const northWet = gy === 0 || grid.depths[(gy - 1) * grid.cells + gx] > 0.035;
+            const southWet = gy === grid.cells - 1 || grid.depths[(gy + 1) * grid.cells + gx] > 0.035;
+            const westWet = gx === 0 || grid.depths[gy * grid.cells + gx - 1] > 0.035;
+            const eastWet = gx === grid.cells - 1 || grid.depths[gy * grid.cells + gx + 1] > 0.035;
+            const roundTL = !northWet && !westWet;
+            const roundTR = !northWet && !eastWet;
+            const roundBR = !southWet && !eastWet;
+            const roundBL = !southWet && !westWet;
+            const left = x0, top = y0, right = x0 + pxPerCell, bottom = y0 + pxPerCell;
             ctx.fillStyle = waterColor;
             ctx.beginPath();
-            ctx.moveTo(x0 + radius, y0);
-            ctx.lineTo(x0 + pxPerCell - radius, y0);
-            ctx.quadraticCurveTo(x0 + pxPerCell, y0, x0 + pxPerCell, y0 + radius);
-            ctx.lineTo(x0 + pxPerCell, y0 + pxPerCell - radius);
-            ctx.quadraticCurveTo(x0 + pxPerCell, y0 + pxPerCell, x0 + pxPerCell - radius, y0 + pxPerCell);
-            ctx.lineTo(x0 + radius, y0 + pxPerCell);
-            ctx.quadraticCurveTo(x0, y0 + pxPerCell, x0, y0 + pxPerCell - radius);
-            ctx.lineTo(x0, y0 + radius);
-            ctx.quadraticCurveTo(x0, y0, x0 + radius, y0);
+            ctx.moveTo(left + (roundTL ? radius : 0), top);
+            ctx.lineTo(right - (roundTR ? radius : 0), top);
+            if (roundTR) ctx.quadraticCurveTo(right, top, right, top + radius);
+            else ctx.lineTo(right, top);
+            ctx.lineTo(right, bottom - (roundBR ? radius : 0));
+            if (roundBR) ctx.quadraticCurveTo(right, bottom, right - radius, bottom);
+            else ctx.lineTo(right, bottom);
+            ctx.lineTo(left + (roundBL ? radius : 0), bottom);
+            if (roundBL) ctx.quadraticCurveTo(left, bottom, left, bottom - radius);
+            else ctx.lineTo(left, bottom);
+            ctx.lineTo(left, top + (roundTL ? radius : 0));
+            if (roundTL) ctx.quadraticCurveTo(left, top, left + radius, top);
+            else ctx.lineTo(left, top);
             ctx.closePath();
             ctx.fill();
           } else {
