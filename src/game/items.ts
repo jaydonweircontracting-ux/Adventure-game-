@@ -439,3 +439,33 @@ export function encumbranceTier(weight: number, capacity: number): EncumbranceTi
   if (ratio > 0.8) return 'heavy';
   return 'ok';
 }
+
+// ---------------------------------------------------------------------------
+// Loot announcements (BUILD 888 — "You looted X" instead of silent pickup)
+// ---------------------------------------------------------------------------
+
+/** Readable singular labels for GameInventory keys. */
+export const INVENTORY_LABELS: Record<string, string> = {
+  coins: 'gold', goatHorns: 'horn', fabric: 'fabric', daggers: 'dagger', cloths: 'cloth',
+  bone: 'bone', pelt: 'pelt', fang: 'fang', corn: 'corn', wood: 'wood', stone: 'stone',
+  silk: 'silk', bow: 'bow', beer: 'beer', lockpicks: 'lockpick', shirts: 'shirt',
+  swords: 'sword', healthPotion: 'health potion',
+};
+
+/** Labels that don't pluralize with 's'. */
+const NO_PLURAL_LABELS = new Set(['gold', 'silk', 'fabric', 'corn', 'wood', 'stone', 'beer']);
+
+/**
+ * Contents string for a loot grant: "+3 silk · +1 iron sword".
+ * Skips zero/negative counts; unknown keys fall back to the raw key. Pure.
+ */
+export function describeLoot(loot: Record<string, number>): string {
+  const parts: string[] = [];
+  for (const [key, count] of Object.entries(loot)) {
+    if (!count || count <= 0) continue;
+    const label = INVENTORY_LABELS[key] ?? key.replace(/_/g, ' ');
+    const plural = count === 1 || NO_PLURAL_LABELS.has(label) ? '' : 's';
+    parts.push(`+${count} ${label}${plural}`);
+  }
+  return parts.join(' · ') || 'nothing';
+}

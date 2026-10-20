@@ -34,7 +34,7 @@ import { mosslightEngineProps } from '../src/game/mosslightLayout';
 import { WfcSolver, WfcSeededRng, wfcSeedFor } from '../src/game/wfc';
 import { worldBiomeTileSet, generateChunkBiomes, validateBiomeGrid } from '../src/game/wfcWorld';
 import { SpatialHash, updateSeparation, createSeparationState } from '../src/game/spatialHash';
-import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, generatedItemWeight } from '../src/game/items';
+import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, generatedItemWeight, describeLoot } from '../src/game/items';
 import { BURROWING_BEAST, TWO_HEADED_SERPENT, phaseForHealth, allBosses } from '../src/game/bosses';
 import { EntityPool, type PoolableEntity } from '../src/game/entityPool';
 import { FlowField, FlowFieldCache, sampleFlowSmoothed } from '../src/game/flowField';
@@ -5201,6 +5201,15 @@ console.log('Testing examine system...');
   assert(encumbranceTier(100, 120) === 'heavy', 'Equip: 83% load heavy');
   assert(encumbranceTier(130, 120) === 'over', 'Equip: 108% load over');
   assert(encumbranceTier(0, 0) === 'over', 'Equip: zero capacity over');
+
+  // BUILD 888: loot announcements describe every key, not just goat loot.
+  assert(describeLoot({ silk: 3 }) === '+3 silk', `Loot: silk described: ${describeLoot({ silk: 3 })}`);
+  assert(describeLoot({ coins: 5, swords: 1 }) === '+5 gold · +1 sword', `Loot: mixed: ${describeLoot({ coins: 5, swords: 1 })}`);
+  assert(describeLoot({ swords: 2 }) === '+2 swords', 'Loot: plural');
+  assert(describeLoot({ healthPotion: 1 }) === '+1 health potion', 'Loot: potion labeled');
+  assert(describeLoot({}) === 'nothing', 'Loot: empty');
+  assert(describeLoot({ coins: 0, silk: -1 }) === 'nothing', 'Loot: zero/negative skipped');
+  assert(describeLoot({ goatHorns: 2 }) === '+2 horns', 'Loot: horns plural');
 
   // Equip non-existent → unchanged.
   const unchanged = equipItem([item1], 'nonexistent');

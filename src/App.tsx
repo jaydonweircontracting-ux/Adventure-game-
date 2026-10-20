@@ -43,7 +43,7 @@ import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, cl
 // BUILD 704: stamina/energy for sprinting.
 import { createStamina, tickStamina, canRun, staminaFrac, type StaminaState } from './game/stamina';
 import { npcAppearanceStyle } from './game/npcAppearance';
-import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, type GeneratedItem, type EncumbranceTier } from './game/items';
+import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, describeLoot, type GeneratedItem, type EncumbranceTier } from './game/items';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, applyPersonalityTone, type DialogueTopicId } from './game/dialogue';
 import { recognizeIntent, fallbackResponse } from './game/dialogueIntent';
 import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasConversationMemories } from './game/conversationMemory';
@@ -140,13 +140,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '887';
+const BUILD_NUMBER = '888';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '888': 'Loot-drop announcements — "You looted: +3 silk · +1 sword" names every item from ground drops and body looting; fixes ChatGPT build 886 DebugOverlay scope crash',
   '887': 'Colored overhead name labels — NPC names above sprites in red (hostile/cold), green (friendly), white (neutral)',
   '886': 'Add live FPS and frame-rate diagnostics whenever Debug tools are open; retain the ?debug=1 playtest overlay',
   '885': 'Guard arrests — NPC thieves caught by a guard witness are hauled to jail for 2 days (stolen gold forfeited), hidden from the field, released home',
@@ -5385,12 +5386,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const loot: Record<string, number> = {};
     if (taken.gold > 0) loot.coins = taken.gold;
     if (taken.potions > 0) loot.healthPotion = taken.potions;
+    const takenItemNames: string[] = [];
     for (const itemId of taken.items) {
       const generated = generateItem(new ItemRng(Date.now() ^ itemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current));
-      onEquipmentChange((prev) => [...prev, { ...generated, name: itemId.replace(/[-_]/g, ' ') }]);
+      const named = { ...generated, name: itemId.replace(/[-_]/g, ' ') };
+      takenItemNames.push(named.name);
+      onEquipmentChange((prev) => [...prev, named]);
     }
     onLoot(loot as GoatLoot);
-    setLogs((cur) => [{ text: `Looted ${body.npcName}'s body.`, color: 'gold' }, ...cur].slice(0, 3));
+    // BUILD 888: name everything taken from the body, not just "Looted".
+    const bodyContents = [describeLoot(loot), ...takenItemNames].filter((s) => s && s !== 'nothing').join(' · ');
+    setLogs((cur) => [{ text: `You looted ${body.npcName}'s body: ${bodyContents || 'nothing'}.`, color: 'gold' }, ...cur].slice(0, 3));
     spawnCombatText('LOOTED', body.position, 'reward');
   };
   const recordTownspersonCrime = (npc: Townsperson, type: 'assault' | 'murder') => {
@@ -8332,16 +8338,9 @@ if (active) {
     if (drop.chunk.x !== chunkRef.current.x || drop.chunk.y !== chunkRef.current.y || Math.hypot(drop.position.x - positionRef.current.x, drop.position.y - positionRef.current.y) > 16) return;
     onLoot(drop.loot);
     setDroppedLoot((current) => current.filter((candidate) => candidate.id !== drop.id));
-    const contents = [
-      drop.loot.goatHorns ? `+${drop.loot.goatHorns} horn${drop.loot.goatHorns === 1 ? '' : 's'}` : '',
-      drop.loot.fabric ? `+${drop.loot.fabric} fabric` : '',
-      drop.loot.coins ? `+${drop.loot.coins} gold` : '',
-      drop.loot.bone ? `+${drop.loot.bone} bone${drop.loot.bone === 1 ? '' : 's'}` : '',
-      drop.loot.pelt ? `+${drop.loot.pelt} pelt${drop.loot.pelt === 1 ? '' : 's'}` : '',
-      drop.loot.fang ? `+${drop.loot.fang} fang${drop.loot.fang === 1 ? '' : 's'}` : '',
-      drop.loot.corn ? `+${drop.loot.corn} corn` : '',
-    ].filter(Boolean).join(' · ');
-    const message = `Picked up goat loot: ${contents}.`;
+    // BUILD 888: announce every item looted (was goat-loot keys only — silk,
+    // swords, bows and potions picked up silently).
+    const message = `You looted: ${describeLoot(drop.loot as Record<string, number>)}.`;
     setLogs((currentLogs) => [{ text: message, color: 'blue' }, ...currentLogs].slice(0, 3));
     setAttackFlash(message);
     window.setTimeout(() => setAttackFlash(null), 1200);
@@ -10471,6 +10470,10 @@ if (active) {
           {worldObjectCoordinatesOpen && !worldObjectCoordinatesMinimized && <WorldObjectCoordinates objects={placedObjects} onMinimize={() => setWorldObjectCoordinatesMinimized(true)} onMove={(id, x, y, targetChunk) => { pushMapUndo(); setPlacedObjects(prev => prev.map(object => object.id === id ? { ...object, x, y, chunk: targetChunk } : object)); logEditorChange('move-coordinate', 'Moved placed object ' + id + ' to local (' + x + ',' + y + ') chunk ' + targetChunk); }} onClose={() => setWorldObjectCoordinatesOpen(false)} />}
           {devConsoleOpen && !devConsoleMinimized && <DevConsole build={BUILD_NUMBER} onMinimize={() => setDevConsoleMinimized(true)} onClose={() => { setDevConsoleOpen(false); setDevConsoleMinimized(false); }} />}
           {chunkSelectorOpen && !chunkSelectorMinimized && <ChunkZoneSelector selectedChunk={chunkSelectorPoint} onSelectChunk={setChunkSelectorPoint} getChunkInfo={getChunkSelectorInfo} mapPaints={mapPaints} onMinimize={() => setChunkSelectorMinimized(true)} onClose={() => { setChunkSelectorOpen(false); setChunkSelectorMinimized(false); }} />}
+          {/* BUILD 886 (ChatGPT) + fix: FPS diagnostics overlay. Rendered by
+              GameField because debugHubOpen/anyDebugToolActive live here —
+              the parent component cannot see them. */}
+          {(debugHubOpen || anyDebugToolActive || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1')) && <DebugOverlay chunk={chunk} />}
           {debugHubOpen && !debugHubMinimized && (
             <div className="editor-panel inspector-panel debug-hub-panel" role="dialog" aria-label="Debug Control Center" style={{ maxHeight: 'min(84vh, 780px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 1260 }}>
               <div className="editor-panel-title">🧰 Debug Control Center <span className="editor-panel-chunk">BUILD {BUILD_NUMBER}</span>
@@ -13983,7 +13986,6 @@ function Home() {
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} kingdomLabels={menuBridgeRef.current?.getKingdomLabels() ?? []} tradeRoutes={menuBridgeRef.current?.getTradeRoutes() ?? []} visitedChunks={visitedChunks} />}
-          {typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('debug') === '1' || debugHubOpen || anyDebugToolActive) && <DebugOverlay chunk={chunk} />}
           {inventoryOpen && <InventorySheet inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} onDrinkPotion={drinkPotion} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onOpenSkills={() => menuBridgeRef.current?.openSkills()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onWeaveBowstring={weaveBowstring} />}
           {journalOpen && (
             <div className="sheet journal-sheet" role="dialog" aria-label="Adventure journal" data-testid="journal-sheet">
