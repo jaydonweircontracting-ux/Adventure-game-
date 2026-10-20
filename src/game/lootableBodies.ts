@@ -87,3 +87,41 @@ export function lootBody(body: LootableBody): { loot: BodyLoot; updatedBody: Loo
     updatedBody: { ...body, looted: true, loot: { gold: 0, potions: 0, items: [] } },
   };
 }
+
+/** A single selection from the body-loot panel. */
+export type BodyLootSelection =
+  | { kind: 'gold' }
+  | { kind: 'potion' }
+  | { kind: 'item'; itemId: string };
+
+/**
+ * Take only the selected loot entry, leaving every other entry on the body.
+ * Returns null for stale/invalid selections. The caller transfers the returned
+ * loot to the player's inventory and persists updatedBody.
+ */
+export function takeBodyLootSelection(
+  body: LootableBody,
+  selection: BodyLootSelection,
+): { taken: BodyLoot; updatedBody: LootableBody } | null {
+  if (body.looted) return null;
+  const remaining: BodyLoot = { ...body.loot, items: [...body.loot.items] };
+  const taken: BodyLoot = { gold: 0, potions: 0, items: [] };
+  if (selection.kind === 'gold') {
+    if (remaining.gold <= 0) return null;
+    taken.gold = remaining.gold;
+    remaining.gold = 0;
+  } else if (selection.kind === 'potion') {
+    if (remaining.potions <= 0) return null;
+    taken.potions = 1;
+    remaining.potions -= 1;
+  } else {
+    const index = remaining.items.indexOf(selection.itemId);
+    if (index < 0) return null;
+    taken.items.push(remaining.items.splice(index, 1)[0]);
+  }
+  const empty = remaining.gold <= 0 && remaining.potions <= 0 && remaining.items.length === 0;
+  return {
+    taken,
+    updatedBody: { ...body, loot: remaining, looted: empty },
+  };
+}
