@@ -141,13 +141,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '900';
+const BUILD_NUMBER = '901';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '901': 'Guards pursue fugitives, land melee damage after flee, and call nearby guards; NPCs use a consistent 60/40 fight-or-flight reaction',
   '900': 'Full terrain QA — audit multi-seed biome coverage and starting-region stability, and verify every referenced isometric ground/decor tile asset exists',
   '899': 'Tap-to-talk — tapping a near, already-targeted NPC opens dialogue directly (iso canvas + DOM field); the field Chat/Talk button is removed from the UI. Starting-house roof overlay enlarged and sunk so its wall bases fully cover the interior sprite bottom (no more floor/bed/plant sticking out below the walls); roof still hides when you walk in',
   '898': 'Full-world terrain audit — make biome clustering independent of tile scan order and exhaustively test field continuity across every expanded-world chunk edge',
@@ -6314,35 +6315,41 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (!guards.length) return;
       guards.sort((a, b) => Math.hypot(a.position.x - player.x, a.position.y - player.y) - Math.hypot(b.position.x - player.x, b.position.y - player.y));
       const guard = guards[0];
-      const dx = player.x - guard.position.x;
-      const dy = player.y - guard.position.y;
-      const dist = Math.hypot(dx, dy);
-      // Do not show the prompt from a distant or stale guard position. The
-      // guard must visibly reach the player first.
-      if (dist <= 3.25) {
-        if (Date.now() >= guardCooldownUntilRef.current) {
-          setTownsfolkDialogue(null);
-          setDialogueTopic(null);
-          setGuardEncounter((current) => current || { guardId: guard.id, guardName: guard.name, bounty: bounty.amount });
-        }
+      const nearestDistance = Math.hypot(guard.position.x - player.x, guard.position.y - player.y);
+      // A close guard only opens the encounter when its post-flee cooldown has
+      // expired. During that cooldown, the chase remains physical and hurts.
+      if (nearestDistance <= 3.25 && Date.now() >= guardCooldownUntilRef.current) {
+        setTownsfolkDialogue(null);
+        setDialogueTopic(null);
+        setGuardEncounter((current) => current || { guardId: guard.id, guardName: guard.name, bounty: bounty.amount });
         return;
       }
-      // Pursue from anywhere in the settlement, not just within the old 38-unit
-      // bubble. Move in frequent short steps so the sprint looks continuous.
-      if (dist > 120) return;
-      const step = Math.min(0.72, dist - 2.6);
-      if (step <= 0) return;
-      const nextGuard = {
-        ...guard,
-        position: { x: guard.position.x + dx / dist * step, y: guard.position.y + dy / dist * step },
-        moving: true,
-        running: true,
-        activity: 'Running to apprehend a wanted criminal',
-        facing: Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' as const : 'left' as const) : (dy > 0 ? 'down' as const : 'up' as const),
-      };
-      const next = townsfolkRef.current.map((npc) => npc.id === guard.id ? nextGuard : npc);
-      townsfolkRef.current = next;
-      setTownsfolk(next);
+      // BUILD 901: every available guard responds to the active bounty. The
+      // closest leads; others run in too, so fleeing can turn a one-on-one into
+      // a growing pursuit. Keep all movement short, continuous and visible.
+      let moved = false;
+      const next = townsfolkRef.current.map((candidate) => {
+        if (candidate.archetype !== 'guard' || candidate.indoors || isNpcDead(candidate, tick)) return candidate;
+        const dx = player.x - candidate.position.x;
+        const dy = player.y - candidate.position.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 120 || dist <= 1.35) return candidate;
+        const step = Math.min(candidate.id === guard.id ? 0.72 : 0.58, Math.max(0, dist - 1.1));
+        if (step <= 0) return candidate;
+        moved = true;
+        return {
+          ...candidate,
+          position: { x: candidate.position.x + dx / dist * step, y: candidate.position.y + dy / dist * step },
+          moving: true,
+          running: true,
+          activity: candidate.id === guard.id ? 'Running to apprehend a wanted criminal' : 'Rushing to support the guard',
+          facing: Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' as const : 'left' as const) : (dy > 0 ? 'down' as const : 'up' as const),
+        };
+      });
+      if (moved) {
+        townsfolkRef.current = next;
+        setTownsfolk(next);
+      }
     }, 150);
     return () => window.clearInterval(timer);
   }, [bounty.amount, inPrison, chunk.x, chunk.y, guardEncounter]);
@@ -11221,8 +11228,25 @@ if (active) {
       <h2 id="guard-encounter-title" style={{ margin: '8px 0', fontSize: 22 }}>{guardEncounter.guardName} steps in your path</h2>
       <p style={{ lineHeight: 1.45 }}>“You are wanted in Mosslight Crossing. Your current bounty is {guardEncounter.bounty} gold. Come quietly, pay your fine, or try to run.”</p>
       <div style={{ display: 'grid', gap: 8, marginTop: 16 }}>
-        <button type="button" data-testid="guard-flee" onClick={() => { guardCooldownUntilRef.current = Date.now() + 12000; // Flee must not relocate the player: keep the exact current world position.
-          tapMoveTargetRef.current = null; setGuardEncounter(null); setLogs((cur) => [{ text: 'You break away from the town guard. The pursuit continues.', color: 'orange' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #8d9b8f', background: '#293a31', color: '#fff', fontWeight: 700 }}>🏃 Flee</button>
+        <button type="button" data-testid="guard-flee" onClick={() => {
+          guardCooldownUntilRef.current = Date.now() + 12000;
+          tapMoveTargetRef.current = null;
+          const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+          const player = positionRef.current;
+          // Mark every living town guard as actively pursuing. The combat loop
+          // deals real damage at melee range; the town simulation makes them run.
+          const pursuing = townsfolkRef.current.map((npc) =>
+            npc.archetype === 'guard' && !npc.indoors && !isNpcDead(npc, tick)
+              ? { ...npc, fightBackUntilTick: tick + 900, fightBackTarget: { ...player },
+                  fightBackNextAttackTick: Math.min(npc.fightBackNextAttackTick ?? tick, tick + 12),
+                  fleeUntilTick: undefined, fleeFrom: undefined, moving: true, running: true,
+                  activity: 'Pursuing a fleeing criminal' }
+              : npc);
+          townsfolkRef.current = pursuing;
+          setTownsfolk(pursuing);
+          setGuardEncounter(null);
+          setLogs((cur) => [{ text: 'You flee! The guard strikes as you run, and nearby guards are joining the chase. Keep fighting or get clear before they wear you down.', color: 'red' }, ...cur].slice(0, 3));
+        }} style={{ padding: 11, borderRadius: 8, border: '1px solid #8d9b8f', background: '#293a31', color: '#fff', fontWeight: 700 }}>🏃 Flee</button>
         <button type="button" data-testid="guard-jail" onClick={() => { setGuardEncounter(null); onResolveBounty(); setTownsfolkDialogue(null); setDialogueTopic(null); setWantedMosslight(0); onRestorePrison(true, { foundShiv: false, talkedToPrisoner: false, helpedPrisoner: false, escapeRoute: null }); setLogs((cur) => [{ text: 'The guard arrests you. You are taken to the town jail; your bounty is cleared.', color: 'red' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #8d9b8f', background: '#293a31', color: '#fff', fontWeight: 700 }}>⛓ Go to jail</button>
         <button type="button" data-testid="guard-pay-fine" disabled={inventoryRef.current.coins < guardEncounter.bounty} onClick={() => { const fine = guardEncounter.bounty; if (inventoryRef.current.coins < fine) return; onLoot({ coins: -fine } as GoatLoot); onResolveBounty(); setGuardEncounter(null); setWantedMosslight(0); onRestoreReputation({ ...reputation, guards: reputation.guards + 2, mosslight: reputation.mosslight + 1 }); setLogs((cur) => [{ text: `You paid the ${fine} gold fine. The guard lets you go.`, color: 'gold' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #c99b49', background: inventoryRef.current.coins < guardEncounter.bounty ? '#414741' : '#c99b49', color: inventoryRef.current.coins < guardEncounter.bounty ? '#a8b0aa' : '#1c211b', fontWeight: 800, opacity: inventoryRef.current.coins < guardEncounter.bounty ? 0.6 : 1 }}>💰 Pay fine ({guardEncounter.bounty}g){inventoryRef.current.coins < guardEncounter.bounty ? ' — not enough gold' : ''}</button>
       </div>
