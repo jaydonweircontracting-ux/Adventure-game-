@@ -44,7 +44,7 @@ import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, cl
 import { createStamina, tickStamina, canRun, staminaFrac, type StaminaState } from './game/stamina';
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, type GeneratedItem, type EncumbranceTier } from './game/items';
-import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, applyPersonalityTone, type DialogueTopicId } from './game/dialogue';
+import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, applyPersonalityTone, type DialogueTopicId } from './game/dialogue';
 import { recognizeIntent, fallbackResponse } from './game/dialogueIntent';
 import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasConversationMemories } from './game/conversationMemory';
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
@@ -140,13 +140,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '886';
+const BUILD_NUMBER = '887';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '887': 'Colored overhead name labels — NPC names above sprites in red (hostile/cold), green (friendly), white (neutral)',
   '886': 'Add live FPS and frame-rate diagnostics whenever Debug tools are open; retain the ?debug=1 playtest overlay',
   '885': 'Guard arrests — NPC thieves caught by a guard witness are hauled to jail for 2 days (stolen gold forfeited), hidden from the field, released home',
   '884': 'Encumbrance — carried weight from STR capacity, over 80% slows movement, over 100% drains stamina, weight widget in HUD',
@@ -10989,7 +10990,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView placedAssets={customPlacedAssets} editorPlacedObjects={placedObjects} playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? [] : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
+            <IsoFieldView placedAssets={customPlacedAssets} editorPlacedObjects={placedObjects} playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} dispositions={disposition} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? [] : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {
@@ -12203,6 +12204,10 @@ if (active) {
             return !isNpcDead(npc, tick) && !isNpcJailed(npc, tick);
           }).map((npc) => {
             const enter = npcEnterProps(npc.id, npc.position, npc.facing);
+            // BUILD 886: parchment plate is light — white would vanish, so
+            // neutral falls back to the CSS dark color; red/green still show.
+            const plateColor = dispositionNameColor(disposition[npc.id] ?? defaultDisposition(), npc.fightBackTarget != null || npc.fleeUntilTick != null);
+            const npcNameColor = plateColor === '#ffffff' ? undefined : plateColor;
             return (
             <button
               key={npc.id}
@@ -12233,7 +12238,8 @@ if (active) {
             >
               <span className="npc-nameplate">
                 <span className="npc-role-mark" aria-hidden="true" />
-                <strong>{npc.name}</strong>
+                {/* BUILD 886: name colored by disposition (red hostile/cold, green friendly, dark neutral on the parchment plate). */}
+                <strong style={{ color: npcNameColor }}>{npc.name}</strong>
                 <small>{npc.activity}</small>
               </span>
               {/* BUILD 741: suppress floating bark/scream text that could appear over a missing NPC sprite. */}

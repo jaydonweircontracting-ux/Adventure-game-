@@ -41,6 +41,8 @@ import {
 } from '../../App';
 import type { Townsperson } from '../townsfolk';
 import { marketStallsFromDecor } from '../townsfolk';
+// BUILD 886: disposition-colored overhead name labels (EO-style).
+import { dispositionNameColor, defaultDisposition } from '../dialogue';
 // BUILD 692: district-appropriate art variants for the engine's filler lots.
 import { mosslightFillerLots, fillerVariantForLot, mosslightPinnedRects } from '../mosslightLayout';
 // BUILD 684: single authoritative building asset catalog (was: hardcoded
@@ -244,6 +246,8 @@ interface IsoFieldViewProps {
   inInterior?: boolean;
   // BUILD 722: render lightweight ambient speech above visible NPCs when enabled.
   npcSpeechEnabled?: boolean;
+  // BUILD 886: per-NPC disposition (0-100) colors overhead name labels.
+  dispositions?: Record<string, number>;
   chunk: Point;
   position: Point; // player, field units (0..FIELD_SIZE)
   townsfolk: Townsperson[];
@@ -475,11 +479,11 @@ function lodFillFor(tx0: number, ty0: number, subN: number, skipFarm: boolean, b
   return e.fill;
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, chunk, position, townsfolk, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior });
-  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior, dispositions });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior, dispositions };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -1927,6 +1931,31 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         // Check both authoritative death state and zero HP so ambient chatter
         // cannot survive a death transition while state updates are settling.
         const npcIsDead = npc.deadUntilTick != null || (npc.hp != null && npc.hp <= 0);
+
+        // BUILD 886: overhead name label colored by disposition — red when
+        // hostile (fighting back / fleeing) or cold toward the player, green
+        // when friendly, white when neutral.
+        if (!npcIsDead) {
+          const hostile = npc.fightBackTarget != null || npc.fleeUntilTick != null;
+          const color = dispositionNameColor(live.dispositions?.[npc.id] ?? defaultDisposition(), hostile);
+          const nameText = npc.name;
+          const nameX = nc.x, nameY = nc.y - (npc.archetype === 'child' ? 42 : 52);
+          drawables.push({
+            depth: ix + iy + 0.05,
+            draw: (g2) => {
+              g2.save();
+              g2.font = 'bold 11px sans-serif';
+              g2.textAlign = 'center';
+              g2.textBaseline = 'middle';
+              g2.lineWidth = 3;
+              g2.strokeStyle = 'rgba(20, 16, 10, 0.85)';
+              g2.strokeText(nameText, nameX, nameY);
+              g2.fillStyle = color;
+              g2.fillText(nameText, nameX, nameY);
+              g2.restore();
+            },
+          });
+        }
         // BUILD 722: optional, unobtrusive ambient chatter above each living NPC.
         if (live.npcSpeechEnabled && !npcIsDead) {
           const line = NPC_CHATTER_LINES[Math.floor(nowMs / 4600 + npcSpeechSeedFor(npc.id)) % NPC_CHATTER_LINES.length];

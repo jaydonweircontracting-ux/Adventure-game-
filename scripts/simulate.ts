@@ -81,7 +81,7 @@ import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds } from '../src/game/touchInput';
 import { markerForGiver, questById, type QuestState } from '../src/game/quests';
 import { initialCellarRats, CELLAR_RAT_ID_BASE, CELLAR_RAT_HP, CELLAR_RAT_COUNT } from '../src/game/cellarRats';
-import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, wantedLabel, adjustWanted } from '../src/game/dialogue';
+import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, adjustWanted } from '../src/game/dialogue';
 import { shouldBark, barkFor, seedForName } from '../src/game/npcBarks';
 import { appearanceForNpc, npcAppearanceStyle } from '../src/game/npcAppearance';
 import {
@@ -3035,6 +3035,14 @@ console.log('Testing townsfolk dialogue system...');
   assert(defaultDisposition() === 50, 'default disposition should be 50');
   assert(adjustDisposition(99, 5) === 100, 'disposition must clamp at 100');
   assert(adjustDisposition(1, -5) === 0, 'disposition must clamp at 0');
+  // BUILD 886: nameplate colors — red cold/hostile, green warm, white neutral.
+  assert(dispositionNameColor(0) === '#e5484d', 'cold name not red');
+  assert(dispositionNameColor(39) === '#e5484d', 'wary name not red');
+  assert(dispositionNameColor(40) === '#ffffff', 'neutral name not white');
+  assert(dispositionNameColor(59) === '#ffffff', 'neutral-59 name not white');
+  assert(dispositionNameColor(60) === '#5dbb63', 'warm name not green');
+  assert(dispositionNameColor(100) === '#5dbb63', 'admiring name not green');
+  assert(dispositionNameColor(100, true) === '#e5484d', 'hostile override not red');
   // 3. Wanted labels and clamping.
   assert(wantedLabel(0) === 'Clean', 'wanted 0 should be Clean');
   assert(wantedLabel(2) === 'Suspect', 'wanted 2 should be Suspect');

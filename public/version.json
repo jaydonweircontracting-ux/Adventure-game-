@@ -1,6 +1,6 @@
 {
-  "build": "884",
-  "note": "Encumbrance — carried weight from STR capacity, over 80% slows movement, over 100% drains stamina, weight widget in HUD",
-  "timestamp": "2026-10-20T01:41:52.790Z",
-  "cacheBuster": "mvg0pjbq"
+  "build": "885",
+  "note": "Guard arrests — NPC thieves caught by a guard witness are hauled to jail for 2 days (stolen gold forfeited), hidden from the field, released home",
+  "timestamp": "2026-10-20T01:48:32.003Z",
+  "cacheBuster": "mvg0y3dm"
 }

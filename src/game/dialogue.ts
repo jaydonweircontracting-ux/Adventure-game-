@@ -54,6 +54,17 @@ export function defaultDisposition(): number {
   return 50;
 }
 
+/**
+ * Overhead nameplate color by disposition (BUILD 886 — EO-style): red for
+ * hostile/cold, green for friendly/warm, white for neutral. `hostile`
+ * (currently attacking/fleeing from the player) overrides to red. Pure.
+ */
+export function dispositionNameColor(d: number, hostile = false): string {
+  if (hostile || d < 40) return '#e5484d';
+  if (d >= 60) return '#5dbb63';
+  return '#ffffff';
+}
+
 /** Shift disposition, clamped to 0..100. Pure. */
 export function adjustDisposition(current: number, delta: number): number {
   return Math.min(100, Math.max(0, Math.round(current + delta)));
