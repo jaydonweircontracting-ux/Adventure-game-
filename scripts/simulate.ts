@@ -21,7 +21,7 @@ function householdTestPoints(): Record<string, TownsfolkPoint> {
   }
   return points;
 }
-import { npcPersonality, npcAge, npcAgeYears, npcNeeds, villageTarget, npcRelationships, addNPCMemory, npcWage, npcGold, adjustNPCGold, villageEventsForDay, propagateRumors } from '../src/game/villageLife';
+import { npcPersonality, npcAge, npcAgeYears, npcNeeds, villageTarget, npcRelationships, addNPCMemory, npcWage, npcGold, adjustNPCGold, villageEventsForDay, propagateRumors, npcCrimeUrge, npcStoleToday, NPC_COMMITTED_THEFT } from '../src/game/villageLife';
 import { validateDestination, trackStep, pathTo, findPath, isOnFieldRoad, STUCK_TICK_LIMIT, MAX_REPLANS, type NavPath } from '../src/game/npcNavigation';
 import { landscapeSeed, moistureAt, forestDensityAt, rockDensityAt, macroLandformAt, regionForChunk, roadCorridorsFor, pointInCorridors, townInfluenceAt, landUseAt, landscapeSitesFor, checkFieldContinuity, riverChannelAt, riverAt, lakesForChunk, waterAt, bridgeAt } from '../src/game/landscape';
 import { editorPlaceObject, editorToggleFlag, editorSolidsFor, editorRemovalList, editorSolidSize, editorDeleteGenTree, editorRestoreGenTrees, editorFlaggedDeletions, editorAddXMark, editorRemoveXMark, editorXMarksFor, editorAppendLog, editorLogText, EDITOR_LOG_MAX } from '../src/game/worldEditor';
@@ -1347,6 +1347,17 @@ console.log('Testing village life layer (BUILD 366)...');
   assert(npcWage(merchant.archetype) > npcWage(child.archetype), 'Wage order wrong');
   const tipped = adjustNPCGold(npc, 50);
   assert(npcGold(tipped, clockAt(10, 0, 5)) === g1 + 50, 'Gold delta not applied');
+
+  // BUILD 880: NPC crime urge — deterministic, gated on need/role.
+  const guardNpc = folk.find((n) => n.archetype === 'guard');
+  if (guardNpc) assert(npcCrimeUrge(guardNpc, clockAt(10, 0, 5)) === null, 'Guard has crime urge');
+  assert(npcCrimeUrge(child, clockAt(10, 0, 5)) === null, 'Child has crime urge');
+  const u1 = npcCrimeUrge(npc, clockAt(10, 0, 5));
+  assert(u1 === npcCrimeUrge(npc, clockAt(10, 0, 5)), 'Crime urge not deterministic');
+  assert(!npcStoleToday(npc, 5), 'False positive on stole-today');
+  const thief = addNPCMemory(npc, NPC_COMMITTED_THEFT, 5, 2);
+  assert(npcStoleToday(thief, 5), 'Stole-today not detected');
+  assert(!npcStoleToday(thief, 6), 'Stole-today leaked across days');
 
   // Village events: deterministic per day.
   const e1 = villageEventsForDay(7, 12345);
@@ -5248,6 +5259,13 @@ console.log('Testing examine system...');
   const theft = createCrime('c2', 'theft', { x: 4, y: 7 }, { x: 50, y: 50 }, 5);
   assert(crimeMemoryEvent(theft) === 'PLAYER_STOLE_FROM_ME', 'Crime: memory event for theft');
   assert(crimeMemoryImportance(theft) === 2, 'Crime: theft importance 2');
+
+  // BUILD 880: NPC-perpetrated crimes use NPC_* memory variants.
+  const npcTheft = createCrime('c3', 'theft', { x: 4, y: 7 }, { x: 50, y: 50 }, 5, 'victim-1', 'perp-1');
+  assert(npcTheft.perpetratorId === 'perp-1', 'Crime: perpetrator recorded');
+  assert(crimeMemoryEvent(npcTheft) === 'NPC_STOLE_FROM_SOMEONE', 'Crime: NPC theft memory variant');
+  const npcMurder = createCrime('c4', 'murder', { x: 4, y: 7 }, { x: 50, y: 50 }, 5, 'victim-2', 'perp-2');
+  assert(crimeMemoryEvent(npcMurder) === 'NPC_KILLED_SOMEONE', 'Crime: NPC murder memory variant');
 
   // Witnesses: NPC in radius sees it, far NPC doesn't.
   const witnesses = findWitnesses(

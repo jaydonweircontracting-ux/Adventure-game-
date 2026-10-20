@@ -383,6 +383,45 @@ export function adjustNPCGold(npc: Townsperson, delta: number): Townsperson {
 }
 
 // ---------------------------------------------------------------------------
+// NPC crime (BUILD 880 — SoX AIModule_Crime, need-driven theft)
+// ---------------------------------------------------------------------------
+
+export type NPCCrimeUrge = {
+  type: 'theft';
+  /** Deterministic loot amount in gold. */
+  loot: number;
+};
+
+/** Memory event recorded on the perpetrator when they steal. */
+export const NPC_COMMITTED_THEFT = 'I_COMMITTED_THEFT';
+
+/**
+ * Pure & deterministic NPC crime urge: same (npc, day) → same urge.
+ * A very hungry, broke adult may steal from a nearby NPC. Guards, priests
+ * and children never do. ~4% daily chance when conditions are met — rare
+ * enough that each theft feels like news, not noise.
+ * Needs are 0..100 with higher = more satisfied, so hunger < 35 = starving.
+ */
+export function npcCrimeUrge(npc: Townsperson, clock: WorldClockState): NPCCrimeUrge | null {
+  if (npcAge(npc) === 'child') return null;
+  if (npc.archetype === 'guard' || npc.archetype === 'priest') return null;
+  if (npc.deadUntilTick !== undefined) return null;
+  const needs = npcNeeds(npc, clock);
+  if (needs.hunger > 35) return null;
+  if (npcGold(npc, clock) > 12) return null;
+  const day = Math.max(0, Math.floor(clock.day));
+  const roll = townsfolkHash(npc.seed, day * 131 + 777);
+  if (roll > 0.04) return null;
+  const loot = 4 + Math.floor(townsfolkHash(npc.seed, day * 131 + 778) * 9);
+  return { type: 'theft', loot };
+}
+
+/** Save-safe dedup: did this NPC already steal today (memory persists across saves)? */
+export function npcStoleToday(npc: Townsperson, day: number): boolean {
+  return (npc.memories ?? []).some((m) => m.event === NPC_COMMITTED_THEFT && m.day === day);
+}
+
+// ---------------------------------------------------------------------------
 // Village world events (deterministic daily flavor for Mosslight)
 // ---------------------------------------------------------------------------
 

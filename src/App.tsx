@@ -8,7 +8,7 @@ import IsoFieldView from './game/iso/IsoFieldView';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
 import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/iso/isoSprites';
-import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality, npcGold, adjustNPCGold } from './game/villageLife';
+import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality, npcGold, adjustNPCGold, npcCrimeUrge, npcStoleToday, NPC_COMMITTED_THEFT } from './game/villageLife';
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
 import { createBody, lootBody, type LootableBody } from './game/lootableBodies';
 import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
@@ -147,6 +147,7 @@ const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '880': 'NPCs commit crimes — hungry, broke townsfolk steal from each other and feed the existing crime, witness, memory and gossip pipeline',
   '879': 'Give NPCs personality-based fight-or-flight reactions, pursuit movement, and cooldown-based melee damage when attacked',
   '878': 'Make guards visibly sprint to wanted players before the flee, jail, or fine prompt appears',
   '877': 'Add a non-destructive Adventure Map export adapter for generated terrain, climate, river, plate, and biome data',
@@ -6182,6 +6183,63 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     }, 150);
     return () => window.clearInterval(timer);
   }, [bounty.amount, inPrison, chunk.x, chunk.y, guardEncounter]);
+  // BUILD 880: NPC crime — hungry, broke NPCs steal from nearby NPCs
+  // (SoX AIModule_Crime, need-driven). Feeds the existing crime → witness →
+  // memory pipeline; guards will react to NPC criminals in a later build.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (interiorRef.current || chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) return;
+      const clock = brainRef.current?.worldCore.getClock();
+      if (!clock) return;
+      const day = Math.floor(clock.day);
+      const tick = clock.tick ?? 0;
+      const folk = townsfolkRef.current;
+      let changed = false;
+      let next = folk;
+      const fired: string[] = [];
+      for (const npc of folk) {
+        if (npc.indoors || isNpcDead(npc, tick)) continue;
+        if (npcStoleToday(npc, day)) continue;
+        const urge = npcCrimeUrge(npc, clock);
+        if (!urge) continue;
+        // Victim: nearest other living, outdoor NPC within 30 units.
+        let victim: Townsperson | null = null;
+        let best = 30;
+        for (const other of folk) {
+          if (other.id === npc.id || other.indoors || isNpcDead(other, tick)) continue;
+          const d = Math.hypot(other.position.x - npc.position.x, other.position.y - npc.position.y);
+          if (d < best) { best = d; victim = other; }
+        }
+        if (!victim) continue;
+        const loot = Math.min(urge.loot, npcGold(victim, clock));
+        if (loot <= 0) continue;
+        const crime = createCrime('npc-crime-' + npc.id + '-' + day, 'theft', chunkRef.current, { x: npc.position.x, y: npc.position.y }, day, victim.id, npc.id);
+        const witnesses = findWitnesses(
+          { position: { x: npc.position.x, y: npc.position.y } },
+          folk.filter((w) => w.id !== npc.id && !isNpcDead(w, tick)).map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } }))
+        );
+        const memEvent = crimeMemoryEvent(crime);
+        const importance = crimeMemoryImportance(crime);
+        const vid = victim.id;
+        next = next.map((w) => {
+          if (w.id === npc.id) return addNPCMemory(adjustNPCGold(w, loot), NPC_COMMITTED_THEFT, day, 2);
+          if (w.id === vid) return addNPCMemory(adjustNPCGold(w, -loot), memEvent, day, importance);
+          if (witnesses.some((x) => x.npcId === w.id)) return addNPCMemory(w, memEvent, day, importance);
+          return w;
+        });
+        changed = true;
+        fired.push(`${npc.name} stole ${loot}g from ${victim.name}`);
+      }
+      if (changed) {
+        townsfolkRef.current = next;
+        setTownsfolk(next);
+        for (const text of fired) {
+          setLogs((cur) => [{ text: `📰 ${text} — witnesses are talking.`, color: 'orange' }, ...cur].slice(0, 3));
+        }
+      }
+    }, 45000);
+    return () => window.clearInterval(timer);
+  }, []);
   // BUILD 879: retaliation loop. Fighters refresh their pursuit target and
   // land real melee damage on a cooldown; it is disabled indoors and during
   // the guard's legal encounter prompt.

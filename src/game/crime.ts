@@ -26,6 +26,8 @@ export interface CrimeEvent {
   day: number;
   /** Victim NPC ID (if any). */
   victimId?: string;
+  /** BUILD 880: perpetrator NPC ID. Undefined = the player committed the crime. */
+  perpetratorId?: string;
   /** Severity 1-5 (1=minor, 5=heinous). */
   severity: number;
 }
@@ -79,6 +81,7 @@ export function findWitnesses(
 
 /**
  * Create a crime event. Pure.
+ * perpetratorId: NPC ID when an NPC committed it; omit for player crimes.
  */
 export function createCrime(
   id: string,
@@ -87,6 +90,7 @@ export function createCrime(
   position: { x: number; y: number },
   day: number,
   victimId?: string,
+  perpetratorId?: string,
 ): CrimeEvent {
   return {
     id,
@@ -95,21 +99,24 @@ export function createCrime(
     position: { ...position },
     day,
     victimId,
+    perpetratorId,
     severity: CRIME_SEVERITY[type],
   };
 }
 
 /**
  * Memory event string for a crime (integrates with villageLife addNPCMemory).
+ * NPC-perpetrated crimes use NPC_* variants so gossip distinguishes them.
  */
 export function crimeMemoryEvent(crime: CrimeEvent): string {
+  const npc = crime.perpetratorId !== undefined;
   switch (crime.type) {
-    case 'murder': return 'PLAYER_KILLED_SOMEONE';
-    case 'assault': return 'PLAYER_ATTACKED_ME';
-    case 'pickpocket': return 'PLAYER_STOLE_FROM_ME';
-    case 'theft': return 'PLAYER_STOLE_FROM_ME';
-    case 'trespass': return 'PLAYER_TRESPASSED';
-    case 'vandalism': return 'PLAYER_VANDALIZED';
+    case 'murder': return npc ? 'NPC_KILLED_SOMEONE' : 'PLAYER_KILLED_SOMEONE';
+    case 'assault': return npc ? 'NPC_ATTACKED_SOMEONE' : 'PLAYER_ATTACKED_ME';
+    case 'pickpocket': return npc ? 'NPC_STOLE_FROM_SOMEONE' : 'PLAYER_STOLE_FROM_ME';
+    case 'theft': return npc ? 'NPC_STOLE_FROM_SOMEONE' : 'PLAYER_STOLE_FROM_ME';
+    case 'trespass': return npc ? 'NPC_TRESPASSED' : 'PLAYER_TRESPASSED';
+    case 'vandalism': return npc ? 'NPC_VANDALIZED' : 'PLAYER_VANDALIZED';
   }
 }
 
