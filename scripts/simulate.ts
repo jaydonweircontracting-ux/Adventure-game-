@@ -5573,6 +5573,22 @@ console.log('Testing examine system...');
   const tom = masterForNpc('Tom');
   assert(tom && tom.skillId === 'smithing', 'Skills: Tom teaches smithing');
   assert(masterForNpc('Nobody') === undefined, 'Skills: non-master returns undefined');
+
+  // BUILD 891: minimap radar — entity projection onto the radar circle.
+  const { radarDots, RADAR_COLORS, RADAR_RANGE } = await import('../src/game/minimapRadar');
+  const radarEnts = [
+    { position: { x: 130, y: 140 }, kind: 'npc' as const },
+    { position: { x: 190, y: 140 }, kind: 'monster' as const },
+    { position: { x: 5000, y: 5000 }, kind: 'loot' as const },
+  ];
+  const dots = radarDots(radarEnts, { x: 130, y: 140 }, 60, 60, 58);
+  assert(dots.length === 3, 'Radar: all entities project');
+  assert(dots[0].x === 60 && dots[0].y === 60, 'Radar: player-adjacent entity at center');
+  assert(dots[1].x === 118 && dots[1].y === 60, `Radar: east entity projects east: ${dots[1].x},${dots[1].y}`);
+  const rimmed = Math.hypot(dots[2].x - 60, dots[2].y - 60);
+  assert(rimmed <= 58 && rimmed >= 54, `Radar: far entity clamped to rim: ${rimmed}`);
+  assert(dots[1].kind === 'monster' && RADAR_COLORS.monster === '#ff4444', 'Radar: kind colors');
+  assert(RADAR_RANGE === 60, 'Radar: range constant');
   const checkOk = apprenticeshipCheck({ str: 15, dex: 8, int: 8, luk: 8 }, tom!);
   assert(checkOk.ok, 'Skills: meets stat requirement');
   const checkFail = apprenticeshipCheck({ str: 5, dex: 8, int: 8, luk: 8 }, tom!);

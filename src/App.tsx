@@ -42,6 +42,7 @@ import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cell
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds, type TouchHoldState, type TouchEventKind } from './game/touchInput';
 // BUILD 704: stamina/energy for sprinting.
 import { createStamina, tickStamina, canRun, staminaFrac, type StaminaState } from './game/stamina';
+import { radarDots, RADAR_COLORS, RADAR_RANGE, type RadarEntity } from './game/minimapRadar';
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, describeLoot, withProvenance, provenanceLabel, type GeneratedItem, type EncumbranceTier } from './game/items';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, applyPersonalityTone, type DialogueTopicId } from './game/dialogue';
@@ -140,13 +141,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '892';
+const BUILD_NUMBER = '893';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '893': 'Minimap radar mode — 📡 Radar toggle shows NPC/monster/critter/loot dots on a range-ring sweep instead of terrain (tap-to-move still works)',
   '892': 'Debug overlay measures game-loop CPU time and slow simulation frames to help pinpoint stutter',
   '891': 'Debug performance panel shows FPS, average frame interval, worst frame interval, and slow-frame count to help diagnose stutter',
   '890': 'Examine provenance — looted equipment remembers its previous owners ("Previously owned by Ham") in the inventory and survives save/load',
@@ -3916,7 +3918,8 @@ function questGiverFaceRole(name: string): string {
 }
 
 // BUILD 609: Circular minimap — shows nearby terrain, buildings, player.
-function MiniMap({ chunk, position, onTap }: { chunk: Point; position: Point; onTap?: (worldPos: Point) => void }) {
+// BUILD 891: radar mode — entity dots (NPC/monster/critter/loot) around the player.
+function MiniMap({ chunk, position, onTap, mode = 'terrain', radarEntities = [] }: { chunk: Point; position: Point; onTap?: (worldPos: Point) => void; mode?: 'terrain' | 'radar'; radarEntities?: RadarEntity[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const size = 120;
   useEffect(() => {
@@ -3931,6 +3934,50 @@ function MiniMap({ chunk, position, onTap }: { chunk: Point; position: Point; on
     g.beginPath();
     g.arc(R, R, R - 2, 0, Math.PI * 2);
     g.clip();
+    if (mode === 'radar') {
+      // Radar: dark sweep, range rings, entity dots.
+      g.fillStyle = '#0d1620';
+      g.fillRect(0, 0, size, size);
+      g.strokeStyle = 'rgba(120, 180, 220, 0.35)';
+      g.lineWidth = 1;
+      for (const rr of [R / 2, R - 2]) {
+        g.beginPath();
+        g.arc(R, R, rr, 0, Math.PI * 2);
+        g.stroke();
+      }
+      // Cardinal ticks.
+      g.strokeStyle = 'rgba(120, 180, 220, 0.25)';
+      g.beginPath();
+      g.moveTo(R, 4); g.lineTo(R, 10);
+      g.moveTo(R, size - 10); g.lineTo(R, size - 4);
+      g.moveTo(4, R); g.lineTo(10, R);
+      g.moveTo(size - 10, R); g.lineTo(size - 4, R);
+      g.stroke();
+      const dots = radarDots(radarEntities, position, R, R, R - 2);
+      for (const d of dots) {
+        g.fillStyle = RADAR_COLORS[d.kind];
+        g.beginPath();
+        g.arc(d.x, d.y, d.kind === 'loot' ? 2 : 3, 0, Math.PI * 2);
+        g.fill();
+      }
+      // Player (white dot, center)
+      g.fillStyle = '#fff';
+      g.beginPath();
+      g.arc(R, R, 4, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#9fd8ff';
+      g.font = '9px sans-serif';
+      g.textAlign = 'center';
+      g.fillText('RADAR', R, size - 8);
+      g.restore();
+      // Circle border
+      g.strokeStyle = '#7fb8e0';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(R, R, R - 2, 0, Math.PI * 2);
+      g.stroke();
+      return;
+    }
     // Background (dark)
     g.fillStyle = '#1a2a1a';
     g.fillRect(0, 0, size, size);
@@ -3986,7 +4033,7 @@ function MiniMap({ chunk, position, onTap }: { chunk: Point; position: Point; on
     g.beginPath();
     g.arc(R, R, R - 2, 0, Math.PI * 2);
     g.stroke();
-  }, [chunk.x, chunk.y, Math.round(position.x / 10), Math.round(position.y / 10)]);
+  }, [chunk.x, chunk.y, Math.round(position.x / 10), Math.round(position.y / 10), mode, radarEntities]);
   return (
     <canvas
       ref={canvasRef}
@@ -3998,7 +4045,7 @@ function MiniMap({ chunk, position, onTap }: { chunk: Point; position: Point; on
         borderRadius: '50%', zIndex: 100, pointerEvents: onTap ? 'auto' : 'none',
         boxShadow: '0 2px 8px rgba(0,0,0,0.5)', cursor: onTap ? 'crosshair' : 'default',
       }}
-      aria-label="Minimap — tap to move"
+      aria-label={mode === 'radar' ? 'Radar — nearby entities' : 'Minimap — tap to move'}
       onClick={(e) => {
         if (!onTap) return;
         const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
@@ -4007,9 +4054,11 @@ function MiniMap({ chunk, position, onTap }: { chunk: Point; position: Point; on
         // Reject taps outside the circle.
         const dx = tapX - 60, dy = tapY - 60;
         if (Math.sqrt(dx*dx + dy*dy) > 58) return;
-        // Convert to world coordinates: 0.214 px per field unit (building scale).
-        const worldX = position.x + dx / 0.214;
-        const worldY = position.y + dy / 0.214;
+        // Convert to world coordinates: terrain mode shows ~2 chunks
+        // (0.214 px per field unit); radar mode shows RADAR_RANGE units.
+        const pxPerUnit = mode === 'radar' ? 58 / RADAR_RANGE : 0.214;
+        const worldX = position.x + dx / pxPerUnit;
+        const worldY = position.y + dy / pxPerUnit;
         onTap({ x: worldX, y: worldY });
       }}
     />
@@ -4356,6 +4405,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [editorTool, setEditorTool] = useState<EditorTool>('select');
   // BUILD 822: let the player hide the minimap without opening another menu.
   const [minimapHidden, setMinimapHidden] = useState(false);
+  // BUILD 891: minimap mode — terrain (BUILD 609) or radar (entity dots).
+  const [minimapMode, setMinimapMode] = useState<'terrain' | 'radar'>('terrain');
   const [showGrid, setShowGrid] = useState(false);
   const [showChunkBounds, setShowChunkBounds] = useState(false);
   // BUILD 843: persistent per-chunk offsets for generated vegetation.
@@ -9365,6 +9416,21 @@ if (active) {
       {/* BUILD 697: Hide minimap while a market stall shop is open. */}
       {/* inputLocked covers the bag, journal, dungeon and world-map overlays. */}
       {!interior && !optionsOpen && !inputLocked && !mapOpen && shopStallIndex === null && (
+        <>
+        <button
+          type="button"
+          aria-label={minimapMode === 'radar' ? 'Show terrain minimap' : 'Show entity radar'}
+          title={minimapMode === 'radar' ? 'Terrain map' : 'Radar'}
+          onClick={() => setMinimapMode((m) => (m === 'radar' ? 'terrain' : 'radar'))}
+          data-testid="button-minimap-mode"
+          style={{
+            position: 'fixed', top: minimapHidden ? 44 : 172, right: 10, zIndex: 101,
+            padding: '4px 7px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.35)',
+            background: minimapMode === 'radar' ? 'rgba(60,110,150,0.95)' : 'rgba(20,30,38,0.9)',
+            color: '#fff', fontSize: 10, fontWeight: 600,
+            cursor: 'pointer', touchAction: 'manipulation',
+          }}
+        >{minimapMode === 'radar' ? '🗺️ Map' : '📡 Radar'}</button>
         <button
           type="button"
           aria-label={minimapHidden ? 'Show minimap' : 'Hide minimap'}
@@ -9377,11 +9443,22 @@ if (active) {
             cursor: 'pointer', touchAction: 'manipulation',
           }}
         >{minimapHidden ? 'Show map' : 'Hide map'}</button>
+        </>
       )}
       {!minimapHidden && !interior && !optionsOpen && !inputLocked && !mapOpen && shopStallIndex === null && (
         <MiniMap
           chunk={chunk}
           position={position}
+          mode={minimapMode}
+          radarEntities={minimapMode === 'radar' ? ((): RadarEntity[] => {
+            const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+            const out: RadarEntity[] = [];
+            for (const n of townsfolk) if (!n.indoors && !isNpcDead(n, tick) && !isNpcJailed(n, tick)) out.push({ position: { x: n.position.x, y: n.position.y }, kind: 'npc' });
+            for (const m of monsters) if (m.disposition !== 'defeated') out.push({ position: { x: m.position.x, y: m.position.y }, kind: 'monster' });
+            for (const g of goats) if (g.disposition !== 'defeated') out.push({ position: { x: g.position.x, y: g.position.y }, kind: 'critter' });
+            for (const d of droppedLoot) out.push({ position: { x: d.position.x, y: d.position.y }, kind: 'loot' });
+            return out;
+          })() : undefined}
           onTap={(worldPos) => {
             // BUILD 666: Minimap click-to-move (OSRS-style).
             // BUILD 668: Use A* pathfinding to navigate around obstacles.
