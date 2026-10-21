@@ -10,7 +10,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, NPC_RESPAWN_TICKS, npcKillExperienceReward, killExperienceForLevel, NPC_FIGHT_ATTACK_COOLDOWN_MS, NPC_FIGHT_CHASE_STEP_MULT, marketRoutine, marketBrowseVisit, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, NPC_RESPAWN_TICKS, npcKillExperienceReward, killExperienceForLevel, NPC_FIGHT_ATTACK_COOLDOWN_MS, NPC_FIGHT_CHASE_STEP_MULT, shouldReplanFightPath, NPC_FIGHT_REPATH_INTERVAL_MS, NPC_FIGHT_REPATH_SHIFT, NPC_FIGHT_MAX_PLAN_FAILURES, marketRoutine, marketBrowseVisit, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
 
 /**
  * BUILD 699: Test anchors need all household homeKeys. Uses the real
@@ -1192,6 +1192,135 @@ console.log('Testing NPC kill XP + fight-back cadence/chase (BUILD 918)...');
   const chaseSpeed = 0.22 * NPC_FIGHT_CHASE_STEP_MULT / 0.12;
   assert(chaseSpeed > 5, `Fight chase speed should exceed 5 u/s, got ${chaseSpeed.toFixed(2)}`);
   assert(NPC_FIGHT_CHASE_STEP_MULT > 1.5, 'Fight chase must outrun the flee-run multiplier');
+}
+
+// ---- 13a3. Pathfinding combat pursuit (BUILD 919) ----
+console.log('Testing pathfinding combat pursuit (BUILD 919)...');
+{
+  // Replan decision: pure, cadence-bounded (the BUILD 905 guard).
+  const pathLike = (dest: { x: number; y: number }, index: number, len: number) =>
+    ({ waypoints: new Array(len).fill({ x: 0, y: 0 }), index, destination: dest }) as never;
+  assert(shouldReplanFightPath(undefined, { x: 10, y: 10 }, 0, undefined), 'No combat route should plan one');
+  assert(!shouldReplanFightPath(pathLike({ x: 10, y: 10 }, 0, 5), { x: 10, y: 10 }, 500, 0),
+    'Fresh live route to an unmoved target should not replan');
+  assert(!shouldReplanFightPath(pathLike({ x: 10, y: 10 }, 0, 5), { x: 11, y: 10 }, 500, 0),
+    'Small target drift inside the interval should not replan');
+  assert(shouldReplanFightPath(pathLike({ x: 10, y: 10 }, 0, 5), { x: 20, y: 10 }, 500, 0),
+    'A 10-unit target jump should replan immediately even inside the interval');
+  assert(shouldReplanFightPath(pathLike({ x: 10, y: 10 }, 0, 5), { x: 13, y: 10 }, 2000, 0),
+    'Drift past the interval should replan');
+  assert(!shouldReplanFightPath(pathLike({ x: 10, y: 10 }, 5, 5), { x: 10, y: 10 }, 500, 0),
+    'Consumed route inside the interval should not spin a search every tick');
+  assert(shouldReplanFightPath(pathLike({ x: 10, y: 10 }, 5, 5), { x: 10, y: 10 }, 2000, 0),
+    'Consumed route past the interval should replan');
+  // A failed plan stores an EMPTY route (consumed), so its retries obey
+  // the same interval instead of firing instantly — the kite2 regression,
+  // where 3 instant failures dropped a fight whose target was only briefly
+  // unroutable (teleport into a building cluster / deep water).
+  assert(!shouldReplanFightPath(pathLike({ x: 10, y: 10 }, 0, 0), { x: 10, y: 10 }, 500, 0),
+    'Failed-plan route inside the interval should not retry instantly');
+  assert(shouldReplanFightPath(pathLike({ x: 10, y: 10 }, 0, 0), { x: 10, y: 10 }, 2000, 0),
+    'Failed-plan route past the interval should retry on cadence');
+  assert(shouldReplanFightPath(pathLike({ x: 10, y: 10 }, 0, 0), { x: 20, y: 10 }, 500, 0),
+    'Failed-plan route should retry immediately if the target jumps');
+  // Cadence bounds: worst case is one search per interval per fighter.
+  assert(NPC_FIGHT_REPATH_INTERVAL_MS >= 1000 && NPC_FIGHT_REPATH_INTERVAL_MS <= 3000,
+    `Combat repath interval should bound searches below 1/sec, got ${NPC_FIGHT_REPATH_INTERVAL_MS} ms`);
+  assert(NPC_FIGHT_MAX_PLAN_FAILURES >= 2 && NPC_FIGHT_MAX_PLAN_FAILURES <= 5,
+    `Unreachable give-up should take a few plans, got ${NPC_FIGHT_MAX_PLAN_FAILURES}`);
+  assert(NPC_FIGHT_REPATH_SHIFT >= 4 && NPC_FIGHT_REPATH_SHIFT <= 10,
+    `Immediate-replan shift should be ~1-2 A* cells, got ${NPC_FIGHT_REPATH_SHIFT}`);
+
+  const anchors: TownsfolkAnchors = { points: {}, plaza: { x: 0, y: 0 }, stalls: [], gardens: [], patrol: [] };
+  const clock = { tick: 0, year: 1, month: 1, week: 1, day: 5, hour: 10, minuteOfDay: 600, second: 0, season: 'spring' as const };
+  const idleResolver = () => ({ activity: 'Waiting', target: { x: 10, y: 10 }, indoors: false });
+
+  // A: a building between NPC and target — the NPC must go AROUND it,
+  // never through it, and still arrive in range.
+  {
+    const building = { left: 40, top: 40, right: 60, bottom: 60 };
+    const nav = { housing: {}, doors: [], obstacles: [building] } as unknown as TownsfolkNavContext;
+    let fighter = {
+      id: 'test-fighter', name: 'Test Fighter', archetype: 'guard',
+      position: { x: 20, y: 50 }, facing: 'right' as const,
+      indoors: false, location: 'OUTDOOR' as const,
+      fightBackUntilTick: 100000, fightBackTarget: { x: 80, y: 50 },
+    } as unknown as Townsperson;
+    let sawRoute = false;
+    let wentAround = false;
+    let everInside = false;
+    let nowMs = 0;
+    for (let tick = 0; tick < 200; tick++) {
+      nowMs += 120;
+      fighter = advanceTownsfolk([fighter], anchors, clock, nav, 0.22, idleResolver, nowMs)[0];
+      if (fighter.fightPath) sawRoute = true;
+      const p = fighter.position;
+      if (p.x > building.left && p.x < building.right && p.y > building.top && p.y < building.bottom) everInside = true;
+      if (p.x > building.left && p.x < building.right && Math.abs(p.y - 50) > 4) wentAround = true;
+      if (Math.hypot(p.x - 80, p.y - 50) <= 1.35) break;
+    }
+    assert(sawRoute, 'Fighting NPC should plan an A* combat route');
+    assert(!everInside, 'Fighting NPC must never step inside the building rect');
+    assert(wentAround, 'Fighting NPC should deviate around the building instead of pushing into it');
+    assert(Math.hypot(fighter.position.x - 80, fighter.position.y - 50) <= 1.35,
+      `Fighting NPC should arrive in range, ended at (${fighter.position.x.toFixed(1)}, ${fighter.position.y.toFixed(1)})`);
+  }
+
+  // B: target sealed inside a ring of walls — plans fail, the NPC waits
+  // (no search spam, no wall-walking), then drops the fight to schedule.
+  {
+    const ring = [
+      { left: 40, top: 40, right: 44, bottom: 80 },
+      { left: 76, top: 40, right: 80, bottom: 80 },
+      { left: 40, top: 40, right: 80, bottom: 44 },
+      { left: 40, top: 76, right: 80, bottom: 80 },
+    ];
+    const nav = { housing: {}, doors: [], obstacles: ring } as unknown as TownsfolkNavContext;
+    let fighter = {
+      id: 'test-fighter', name: 'Test Fighter', archetype: 'guard',
+      position: { x: 20, y: 60 }, facing: 'right' as const,
+      indoors: false, location: 'OUTDOOR' as const,
+      fightBackUntilTick: 100000, fightBackTarget: { x: 60, y: 60 },
+    } as unknown as Townsperson;
+    let nowMs = 0;
+    let minDistToTarget = Infinity;
+    let everInsideInterior = false;
+    let stillFightingAtTick10 = false;
+    for (let tick = 0; tick < 48; tick++) {
+      nowMs += 120;
+      fighter = advanceTownsfolk([fighter], anchors, clock, nav, 0.22, idleResolver, nowMs)[0];
+      minDistToTarget = Math.min(minDistToTarget, Math.hypot(fighter.position.x - 60, fighter.position.y - 60));
+      if (fighter.position.x > 44 && fighter.position.x < 76 && fighter.position.y > 44 && fighter.position.y < 76) everInsideInterior = true;
+      if (tick === 10) stillFightingAtTick10 = fighter.fightBackUntilTick !== undefined;
+    }
+    assert(stillFightingAtTick10,
+      'Unreachable target should still be fought after ~1.2 s of waiting (bounded wait, not an instant drop)');
+    assert(fighter.fightBackUntilTick === undefined && fighter.fightBackTarget === undefined,
+      'Unreachable target should drop the fight after bounded retries');
+    // The NPC waits in place while plans fail, then walks to schedule
+    // (toward (10,10), away from the target) — it never closes on the
+    // sealed target and never enters the sealed interior or a wall.
+    assert(minDistToTarget >= 39.9, `Sealed target should never be approached, closest was ${minDistToTarget.toFixed(2)}`);
+    assert(!everInsideInterior, 'Fighter must never enter the sealed interior');
+    assert(!ring.some((o) => fighter.position.x > o.left && fighter.position.x < o.right && fighter.position.y > o.top && fighter.position.y < o.bottom),
+      'Fighter must never enter a wall rect');
+  }
+
+  // C: combat pursuit state is transient — never serialized.
+  {
+    const fighter = {
+      id: 'test-fighter', name: 'Test Fighter', archetype: 'guard',
+      position: { x: 20, y: 50 }, facing: 'right' as const,
+      indoors: false, location: 'OUTDOOR' as const,
+      fightBackUntilTick: 100000, fightBackTarget: { x: 80, y: 50 },
+      fightPath: { waypoints: [{ x: 30, y: 50 }], index: 0, destination: { x: 80, y: 50 } },
+      fightPathPlannedAtMs: 1234, fightPathFailures: 1,
+    } as unknown as Townsperson;
+    const saved = serializeTownsfolk([fighter])[0];
+    const keys = Object.keys(saved);
+    assert(!keys.includes('fightPath') && !keys.includes('fightPathPlannedAtMs') && !keys.includes('fightPathFailures'),
+      'Combat pursuit fields must not leak into saves');
+  }
 }
 
 // ---- 13a1. Creature target acquisition (BUILD 914) ----

@@ -106,6 +106,18 @@ export type Townsperson = {
   fightBackCreatureId?: number;
   fightBackCreatureKind?: 'goat' | 'monster';
   /**
+   * BUILD 919: active combat-pursuit route — A* waypoints toward the live
+   * fightBackTarget. Transient like the other fight fields (never
+   * serialized: serializeTownsfolk picks fields explicitly). Kept separate
+   * from `path` so combat routing never pollutes schedule pathing, and
+   * schedule pathing never resumes a stale combat route.
+   */
+  fightPath?: NavPath;
+  /** Real-time ms of the last combat-path plan attempt (rate limit). */
+  fightPathPlannedAtMs?: number;
+  /** Consecutive failed combat-path plans; the fight is dropped at the cap. */
+  fightPathFailures?: number;
+  /**
    * BUILD 704: true while the NPC is actively running (fleeing). Walk is the
    * default; the renderer picks the run cycle only when this is true.
    */
@@ -902,6 +914,61 @@ export const NPC_FIGHT_ATTACK_COOLDOWN_MS = 900;
 export const NPC_FIGHT_CHASE_STEP_MULT = 3.2;
 
 /**
+ * BUILD 919: rate limit for combat-pursuit replans. advanceOne runs on the
+ * 120 ms movement interval, so 1500 ms is ~12 ticks: a fighting NPC runs
+ * at most ~0.67 A* searches per second, and only while it is actually
+ * fighting (a handful of NPCs at most). Compare BUILD 905's lag bomb:
+ * every NPC with an unreachable schedule destination retrying a full-grid
+ * A* every 120 ms tick, forever (~25 searches/sec). The interval alone
+ * bounds combat search load two orders of magnitude below that storm.
+ */
+export const NPC_FIGHT_REPATH_INTERVAL_MS = 1500;
+
+/**
+ * BUILD 919: target movement (in field units) that forces an immediate
+ * combat replan even inside the interval — 6 units is 1.5 A* cells, so
+ * ordinary kiting (the target moves ~0.7 units per 120 ms tick) never
+ * triggers it; only a genuine jump (door entry, teleport, sprint burst
+ * across the threshold) does.
+ */
+export const NPC_FIGHT_REPATH_SHIFT = 6;
+
+/**
+ * BUILD 919: consecutive failed combat-path plans after which the NPC
+ * drops the fight and falls back to its schedule — the bounded give-up
+ * for unreachable targets (behind a building interior, across an
+ * unpathable gap). At the 1500 ms interval this spans ~4.5 s of waiting,
+ * then silence: no search spam, no wall-swinging forever.
+ */
+export const NPC_FIGHT_MAX_PLAN_FAILURES = 3;
+
+/**
+ * BUILD 919: should the fighting NPC (re)plan its combat route? Pure.
+ * - No route: plan one.
+ * - Route consumed (NPC arrived at the old destination): replan only on
+ *   the interval or a big target jump — never every tick.
+ * - Route live: replan immediately only on a big target jump; otherwise
+ *   replan on the interval once the target has drifted at least 2 units
+ *   (so a kiting target gets a fresh route ~1.5 s at a time, not a stale
+ *   one, and a stationary target costs zero searches).
+ */
+export function shouldReplanFightPath(
+  path: NavPath | undefined,
+  target: NavPoint,
+  nowMs: number,
+  plannedAtMs: number | undefined,
+): boolean {
+  if (!path) return true;
+  const shift = Math.hypot(path.destination.x - target.x, path.destination.y - target.y);
+  if (path.index >= path.waypoints.length) {
+    return nowMs - (plannedAtMs ?? 0) >= NPC_FIGHT_REPATH_INTERVAL_MS || shift >= NPC_FIGHT_REPATH_SHIFT;
+  }
+  if (shift >= NPC_FIGHT_REPATH_SHIFT) return true;
+  if (shift >= 2 && nowMs - (plannedAtMs ?? 0) >= NPC_FIGHT_REPATH_INTERVAL_MS) return true;
+  return false;
+}
+
+/**
  * BUILD 918: character-XP value of a kill, by victim effective level.
  * Mirrors goatExperienceReward in App.tsx exactly (base 25, floor 5,
  * -2 per player level above 1, -1 per victim level above the player's,
@@ -1124,6 +1191,81 @@ function homeDoorFor(npc: Townsperson, nav: TownsfolkNavContext): DoorwayLink | 
   return nav.doors.find((d) => d.id === home.doorwayId);
 }
 
+type FightPursuitResult = {
+  /** NPC with position/path/facing updated for this tick. */
+  npc: Townsperson;
+  /** True when no route exists right now: hold position, retry on cadence. */
+  waiting: boolean;
+  /** True when the target proved unreachable: the caller drops the fight. */
+  gaveUpFight: boolean;
+};
+
+/**
+ * BUILD 919: one combat-pursuit step for a fighting NPC. The NPC follows
+ * an A* route (pathTo: building avoidance, road preference, water costs)
+ * toward the live target instead of steering straight at it, so walls no
+ * longer strand it. Planning obeys shouldReplanFightPath, so searches are
+ * bounded (~0.67/sec per fighter worst case); a null plan increments the
+ * failure count and stores an EMPTY route, which puts the retry on the same
+ * 1500 ms cadence (a transiently unroutable target does not drop the fight
+ * in milliseconds), and at NPC_FIGHT_MAX_PLAN_FAILURES spaced failures the
+ * fight is dropped. The NPC never walks through a building: routes come from
+ * the same pathfinder schedule movement uses, and a null route waits instead
+ * of falling back to a straight line through the wall.
+ */
+function stepFightPursuit(
+  npc: Townsperson,
+  target: TownsfolkPoint,
+  nav: TownsfolkNavContext,
+  chaseStep: number,
+  nowMs: number,
+): FightPursuitResult {
+  let path = npc.fightPath;
+  if (shouldReplanFightPath(path, target, nowMs, npc.fightPathPlannedAtMs)) {
+    const fresh = pathTo(npc.position, target, nav.obstacles, nav.roadPiece, nav.chunk);
+    if (!fresh) {
+      const failures = (npc.fightPathFailures ?? 0) + 1;
+      if (failures >= NPC_FIGHT_MAX_PLAN_FAILURES) {
+        return { npc, waiting: false, gaveUpFight: true };
+      }
+      // A failed plan stores an EMPTY route (index 0 >= 0 waypoints =
+      // consumed), NOT undefined: shouldReplanFightPath replans instantly
+      // for an undefined route, so the old code retried 3 times in ~360 ms
+      // and dropped a fight whose target was only transiently unroutable
+      // (teleport into a building cluster / deep water). The empty route
+      // puts retries on the same 1500 ms cadence as live routes — or
+      // immediately if the target jumps >= 6 units, in case it re-entered
+      // reachability. Only persistently unroutable targets (3 spaced
+      // failures, ~3 s) drop the fight.
+      return {
+        npc: { ...npc, fightPath: { waypoints: [], index: 0, destination: { ...target }, replanCooldown: REPLAN_COOLDOWN_TICKS }, fightPathPlannedAtMs: nowMs, fightPathFailures: failures },
+        waiting: true,
+        gaveUpFight: false,
+      };
+    }
+    path = fresh;
+    npc = { ...npc, fightPath: path, fightPathPlannedAtMs: nowMs, fightPathFailures: 0 };
+  }
+  const res = stepAlongPath(path!, npc.position, chaseStep);
+  if (res.arrived) {
+    // Route consumed but the target is still out of range (it moved, or
+    // the validated destination stopped short of it). Hold here: the next
+    // ticks replan on cadence via shouldReplanFightPath instead of
+    // spinning a search every 120 ms. The consumed route stays stored so
+    // the interval gate applies.
+    return {
+      npc: { ...npc, fightPath: { ...res.path }, moving: false, running: false, activity: 'Fighting back!' },
+      waiting: false,
+      gaveUpFight: false,
+    };
+  }
+  return {
+    npc: { ...npc, position: res.position, fightPath: res.path, facing: res.facing, moving: true, running: true, activity: 'Fighting back!' },
+    waiting: false,
+    gaveUpFight: false,
+  };
+}
+
 /**
  * Step one NPC physically. The schedule (townsfolkTarget) decides WHAT the
  * NPC wants; this decides HOW they get there — always by walking, never by
@@ -1136,6 +1278,8 @@ function advanceOne(
   nav: TownsfolkNavContext,
   step: number,
   resolveTarget: (npc: Townsperson, anchors: TownsfolkAnchors, clock: WorldClockState) => TownsfolkTarget = townsfolkTarget,
+  /** Real-time ms for combat-pursuit repath cadence (BUILD 919). Defaults to wall clock; sim tests pass explicit values for determinism. */
+  nowMs: number = Date.now(),
 ): Townsperson {
   // --- DEAD (BUILD 441): skip entirely until respawn. ---
   if (npc.deadUntilTick !== undefined) {
@@ -1152,25 +1296,37 @@ function advanceOne(
   }
 
   // --- BUILD 879: retaliating NPCs chase the player and suspend their schedule. ---
+  // --- BUILD 919: the chase follows an A* route (stepFightPursuit) instead
+  // of steering straight at the target, so a building between NPC and
+  // target no longer strands it. Attack range and the 918 real-time hit
+  // cadence are untouched — only how the NPC GETS there changed.
   if (!npc.indoors && npc.fightBackUntilTick !== undefined && npc.fightBackTarget) {
     if (clock.tick < npc.fightBackUntilTick) {
-      const dx = npc.fightBackTarget.x - npc.position.x;
-      const dy = npc.fightBackTarget.y - npc.position.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > 1.35) {
-        // BUILD 918: a fighting NPC RUNS at the target (see
-        // NPC_FIGHT_CHASE_STEP_MULT). The old 1.35 multiplier was slower
-        // than the player's walk, so a kiting player was never caught.
-        const chaseStep = step * NPC_FIGHT_CHASE_STEP_MULT;
-        const nx = dx / (dist || 1), ny = dy / (dist || 1);
-        const facing: TownsfolkFacing = Math.abs(nx) >= Math.abs(ny)
-          ? (nx >= 0 ? 'right' : 'left')
-          : (ny >= 0 ? 'down' : 'up');
-        return { ...npc, position: { x: npc.position.x + nx * Math.min(chaseStep, dist - 1.1), y: npc.position.y + ny * Math.min(chaseStep, dist - 1.1) }, facing, moving: true, running: true, activity: 'Fighting back!' };
+      const target = npc.fightBackTarget;
+      const dist = Math.hypot(target.x - npc.position.x, target.y - npc.position.y);
+      if (dist <= 1.35) {
+        // In range: attacking stance (hits land via the App combat loop).
+        // Drop any stale combat route.
+        return { ...npc, fightPath: undefined, fightPathPlannedAtMs: undefined, fightPathFailures: undefined, moving: false, running: false, activity: npc.fightBackCreatureId != null ? 'Attacking the creature!' : 'Attacking the player' };
       }
-      return { ...npc, moving: false, running: false, activity: npc.fightBackCreatureId != null ? 'Attacking the creature!' : 'Attacking the player' };
+      // BUILD 918: a fighting NPC RUNS at the target (see
+      // NPC_FIGHT_CHASE_STEP_MULT). The old 1.35 multiplier was slower
+      // than the player's walk, so a kiting player was never caught.
+      const chaseStep = step * NPC_FIGHT_CHASE_STEP_MULT;
+      const pursuit = stepFightPursuit(npc, target, nav, chaseStep, nowMs);
+      if (pursuit.gaveUpFight) {
+        // Target unreachable after repeated plans: drop the fight and fall
+        // through to schedule — the same exit as fight expiry below.
+        npc = { ...npc, fightBackUntilTick: undefined, fightBackTarget: undefined, fightBackNextAttackAtMs: undefined, fightBackCreatureId: undefined, fightBackCreatureKind: undefined, fightPath: undefined, fightPathPlannedAtMs: undefined, fightPathFailures: undefined, running: false };
+      } else if (pursuit.waiting) {
+        // No route right now: hold position, retry on cadence.
+        return { ...pursuit.npc, moving: false, running: false, activity: 'Fighting back!' };
+      } else {
+        return pursuit.npc;
+      }
+    } else {
+      npc = { ...npc, fightBackUntilTick: undefined, fightBackTarget: undefined, fightBackNextAttackAtMs: undefined, fightBackCreatureId: undefined, fightBackCreatureKind: undefined, fightPath: undefined, fightPathPlannedAtMs: undefined, fightPathFailures: undefined, running: false };
     }
-    npc = { ...npc, fightBackUntilTick: undefined, fightBackTarget: undefined, fightBackNextAttackAtMs: undefined, fightBackCreatureId: undefined, fightBackCreatureKind: undefined, running: false };
   }
 
   // --- FLEEING (BUILD 436): run away from the attacker, skip schedule. ---
@@ -1528,8 +1684,10 @@ export function advanceTownsfolk(
    * circular import.
    */
   resolveTarget: (npc: Townsperson, anchors: TownsfolkAnchors, clock: WorldClockState) => TownsfolkTarget = townsfolkTarget,
+  /** Real-time ms for combat-pursuit repath cadence (BUILD 919); defaults to wall clock. */
+  nowMs: number = Date.now(),
 ): Townsperson[] {
-  return separateCrowd(folk.map((npc) => advanceOne(npc, anchors, clock, nav, step, resolveTarget)));
+  return separateCrowd(folk.map((npc) => advanceOne(npc, anchors, clock, nav, step, resolveTarget, nowMs)));
 }
 
 /**

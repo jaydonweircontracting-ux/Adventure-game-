@@ -1,6 +1,6 @@
 {
-  "build": "918",
-  "note": "Two long-standing combat fixes. First, killing a townsfolk now earns XP exactly like killing a creature: a commoner pays what a goat does, a guard pays what a tougher monster does, and the same goes for simulated adventurers and travelers you kill — awarded once at death, through the same XP grant as every other kill. Second, NPCs that fight back now actually keep fighting: their hit cooldown was counted in world-clock ticks (one tick every 3 seconds, so a second hit could not land for over two minutes) — it now runs in real time at roughly one hit per second, like creature attacks — and fighting NPCs run after you instead of trailing behind at a walk, so a player who walks away still gets caught and hit, while sprinting away still escapes. The same fixes apply to NPCs fighting creatures",
-  "timestamp": "2026-10-21T00:15:25.250Z",
-  "cacheBuster": "mvhd279e"
+  "build": "919",
+  "note": "Fighting NPCs can now chase you around buildings instead of getting stuck on the wall. A retaliating townsfolk or guard follows a real path — the same pathfinder their daily walks use, with road preference and building avoidance — and replans at most about once every second and a half while you move, so there is no performance cost like the old pathfinding lag. If you get somewhere truly unreachable, they wait a few seconds and then give up and go back to their day instead of swinging at a wall forever. Hit speed, damage, and XP are unchanged",
+  "timestamp": "2026-10-21T02:16:47.526Z",
+  "cacheBuster": "mvhheaau"
 }
