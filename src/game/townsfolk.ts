@@ -88,8 +88,15 @@ export type Townsperson = {
   /** BUILD 879: hostile response to an attacker; target position is refreshed by the world combat loop. */
   fightBackUntilTick?: number;
   fightBackTarget?: TownsfolkPoint;
-  /** World tick when this NPC may next land a melee hit on the player. */
-  fightBackNextAttackTick?: number;
+  /**
+   * BUILD 918: real-time (Date.now) moment when this NPC may next land a
+   * melee hit. Was `fightBackNextAttackTick` in world-clock ticks until
+   * BUILD 918: the world clock ticks once per 3 s of real time, so the
+   * old 48-tick cooldown meant ~144 s between hits after the first —
+   * NPCs landed one hit per fight. Melee cadence is a real-time combat
+   * property (cf. GOAT_ATTACK_COOLDOWN_MS), not a world-clock property.
+   */
+  fightBackNextAttackAtMs?: number;
   /**
    * BUILD 914: when the fight-back target is a creature (not the player),
    * the creature's id and population. The world combat loop refreshes
@@ -876,6 +883,49 @@ export function npcMaxHp(npc: Townsperson): number {
   return npc.archetype === 'guard' ? 60 : 30;
 }
 
+/**
+ * BUILD 918: real-time cooldown between an NPC's landed melee hits while
+ * fighting back (vs the player or a creature). Matches the creature
+ * family cadence (GOAT_ATTACK_COOLDOWN_MS = 1000 ms in App.tsx).
+ */
+export const NPC_FIGHT_ATTACK_COOLDOWN_MS = 900;
+
+/**
+ * BUILD 918: step multiplier for a fighting NPC's pursuit in advanceOne.
+ * At the App's standard step (0.22 units per 120 ms advance) this is
+ * ~5.9 units/s — a genuine run: faster than the player's walk (~5 u/s),
+ * so a fighting NPC closes on a walking/kiter player and keeps landing
+ * hits, but slower than the player's sprint (1.75x walk), so sprinting
+ * away remains a real escape. The old 1.35 multiplier (~2.5 u/s) could
+ * never close on a moving player at all.
+ */
+export const NPC_FIGHT_CHASE_STEP_MULT = 3.2;
+
+/**
+ * BUILD 918: character-XP value of a kill, by victim effective level.
+ * Mirrors goatExperienceReward in App.tsx exactly (base 25, floor 5,
+ * -2 per player level above 1, -1 per victim level above the player's,
+ * +1 per 5 INT) so an NPC kill pays on the same scale as a creature
+ * kill of the same effective level. Pure.
+ */
+export function killExperienceForLevel(victimLevel: number, playerLevel: number, intStat: number): number {
+  const progressionPenalty = Math.max(0, playerLevel - 1) * 2;
+  const monsterPenalty = Math.max(0, victimLevel - playerLevel);
+  return Math.max(5, 25 - progressionPenalty - monsterPenalty) + Math.floor(intStat / 5);
+}
+
+/**
+ * BUILD 918: XP the PLAYER earns for personally killing this NPC.
+ * Effective level derives from the NPC's HP pool on the goat HP scale
+ * (32 HP at level 1, +12 per level): a 30 HP commoner is a level-1
+ * victim (same as a goat or a trivial monster); a 60 HP guard is
+ * level 3 — worth at least a comparable monster. Pure.
+ */
+export function npcKillExperienceReward(npc: Townsperson, playerLevel: number, intStat: number): number {
+  const effectiveLevel = 1 + Math.max(0, Math.floor((npcMaxHp(npc) - 32) / 12));
+  return killExperienceForLevel(effectiveLevel, playerLevel, intStat);
+}
+
 /** Current HP (defaults to full). */
 export function npcHp(npc: Townsperson): number {
   return npc.hp ?? npcMaxHp(npc);
@@ -900,7 +950,7 @@ export function damageNpc(npc: Townsperson, damage: number, from: TownsfolkPoint
     return {
       ...npc, hp: 0, deadUntilTick: tick + NPC_RESPAWN_TICKS,
       fleeUntilTick: undefined, fleeFrom: undefined,
-      fightBackUntilTick: undefined, fightBackTarget: undefined, running: false,
+      fightBackUntilTick: undefined, fightBackTarget: undefined, fightBackNextAttackAtMs: undefined, running: false,
     };
   }
   // BUILD 901: clear 60/40 fight-or-flight roll for every adult townsperson.
@@ -1108,7 +1158,10 @@ function advanceOne(
       const dy = npc.fightBackTarget.y - npc.position.y;
       const dist = Math.hypot(dx, dy);
       if (dist > 1.35) {
-        const chaseStep = step * 1.35;
+        // BUILD 918: a fighting NPC RUNS at the target (see
+        // NPC_FIGHT_CHASE_STEP_MULT). The old 1.35 multiplier was slower
+        // than the player's walk, so a kiting player was never caught.
+        const chaseStep = step * NPC_FIGHT_CHASE_STEP_MULT;
         const nx = dx / (dist || 1), ny = dy / (dist || 1);
         const facing: TownsfolkFacing = Math.abs(nx) >= Math.abs(ny)
           ? (nx >= 0 ? 'right' : 'left')
@@ -1117,7 +1170,7 @@ function advanceOne(
       }
       return { ...npc, moving: false, running: false, activity: npc.fightBackCreatureId != null ? 'Attacking the creature!' : 'Attacking the player' };
     }
-    npc = { ...npc, fightBackUntilTick: undefined, fightBackTarget: undefined, fightBackNextAttackTick: undefined, fightBackCreatureId: undefined, fightBackCreatureKind: undefined, running: false };
+    npc = { ...npc, fightBackUntilTick: undefined, fightBackTarget: undefined, fightBackNextAttackAtMs: undefined, fightBackCreatureId: undefined, fightBackCreatureKind: undefined, running: false };
   }
 
   // --- FLEEING (BUILD 436): run away from the attacker, skip schedule. ---

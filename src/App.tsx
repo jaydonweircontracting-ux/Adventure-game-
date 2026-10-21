@@ -51,7 +51,7 @@ import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasCo
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, townsfolkRosterEntries, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, marketStallsFromDecor, arterialWaypointsFromDecor, marketBrowseVisit, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, townsfolkRosterEntries, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, npcKillExperienceReward, killExperienceForLevel, NPC_FIGHT_ATTACK_COOLDOWN_MS, marketStallsFromDecor, arterialWaypointsFromDecor, marketBrowseVisit, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 // BUILD 683: unified Mosslight rects (single source in settlements.ts).
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
 import { mosslightEngineChunkLayout, mosslightEngineLanes, mosslightEngineProps, mosslightFillerRects } from '@/game/mosslightLayout';
@@ -144,13 +144,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '917';
+const BUILD_NUMBER = '918';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '918': 'Two long-standing combat fixes. First, killing a townsfolk now earns XP exactly like killing a creature: a commoner pays what a goat does, a guard pays what a tougher monster does, and the same goes for simulated adventurers and travelers you kill — awarded once at death, through the same XP grant as every other kill. Second, NPCs that fight back now actually keep fighting: their hit cooldown was counted in world-clock ticks (one tick every 3 seconds, so a second hit could not land for over two minutes) — it now runs in real time at roughly one hit per second, like creature attacks — and fighting NPCs run after you instead of trailing behind at a walk, so a player who walks away still gets caught and hit, while sprinting away still escapes. The same fixes apply to NPCs fighting creatures',
   '917': 'Stray trouble at the town edge: the wilderness safety zone around Mosslight is relaxed at the outskirts only. Once in a while a lone wolf, slime or rat wanders into the edge of town and picks a fight with whoever it finds there — townsfolk fight back or flee, guards move in, and the body is lootable like any other kill. The plaza and market heart stay completely safe: strays arrive only at the outskirts and their hunting range cannot reach the town center',
   '914': 'Wilderness ecology expansion — larger herds in meadows, more wildlife in forests and shorelines, direwolves reserved for deeper wilderness, and richer slime, bat, rat, wolf, and spider encounters outside the protected starting settlement',
   '916': 'Landscape overhaul: the ground no longer renders as a two-tone checkerboard quilt. Town ground is worn grass and packed earth instead of beach sand, farm plots read as wheat, crops and tilled soil with plough rows, dirt lanes feather into the land and fade across fields instead of streaking through them, and rivers and lakes are smooth layered water with soft blended shorelines — no more giant navy checkerboard. Every surface now shades in smooth continuous tones that flow across tiles',
@@ -6625,6 +6626,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (interiorRef.current || inPrison || guardEncounter || gameOverRef.current ||
           chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) return;
       const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+      // BUILD 918: melee cadence runs on wall-clock time (the loop itself
+      // ticks every 150 ms). The old code compared world-clock ticks, which
+      // advance once per 3 s — a 48-tick cooldown was ~144 s between hits.
+      const nowMs = Date.now();
       const player = positionRef.current;
       let changed = false;
       let damageTaken = 0;
@@ -6659,7 +6664,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         const engagement = engagements.get(npc.id);
         if (engagement && npc.fightBackUntilTick === undefined) {
           changed = true;
-          return { ...npc, fightBackUntilTick: tick + 900, fightBackTarget: { ...engagement.position }, fightBackCreatureId: engagement.id, fightBackCreatureKind: engagement.entityKind, fightBackNextAttackTick: Math.min(npc.fightBackNextAttackTick ?? tick, tick + 12), moving: true, running: true, activity: 'Fighting back!' };
+          return { ...npc, fightBackUntilTick: tick + 900, fightBackTarget: { ...engagement.position }, fightBackCreatureId: engagement.id, fightBackCreatureKind: engagement.entityKind, fightBackNextAttackAtMs: Math.min(npc.fightBackNextAttackAtMs ?? Infinity, nowMs + 200), moving: true, running: true, activity: 'Fighting back!' };
         }
         if (npc.fightBackUntilTick === undefined || tick >= npc.fightBackUntilTick) return npc;
         // BUILD 914: retaliation against a creature — chase the creature's
@@ -6670,29 +6675,31 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             : monstersRef.current.find((m) => m.id === npc.fightBackCreatureId);
           if (!creature || creature.disposition === 'defeated' || creature.hp <= 0) {
             changed = true;
-            return { ...npc, fightBackUntilTick: undefined, fightBackTarget: undefined, fightBackNextAttackTick: undefined, fightBackCreatureId: undefined, fightBackCreatureKind: undefined, running: false };
+            return { ...npc, fightBackUntilTick: undefined, fightBackTarget: undefined, fightBackNextAttackAtMs: undefined, fightBackCreatureId: undefined, fightBackCreatureKind: undefined, running: false };
           }
           const refreshed = { ...npc, fightBackTarget: { ...creature.position } };
           const dist = Math.hypot(npc.position.x - creature.position.x, npc.position.y - creature.position.y);
-          if (dist > 1.8 || tick < (npc.fightBackNextAttackTick ?? 0)) {
+          if (dist > 1.8 || nowMs < (npc.fightBackNextAttackAtMs ?? 0)) {
             if (refreshed.fightBackTarget?.x !== npc.fightBackTarget?.x || refreshed.fightBackTarget?.y !== npc.fightBackTarget?.y) changed = true;
             return refreshed;
           }
           pendingNpcCreatureHits.push({ entityKind: npc.fightBackCreatureKind, creatureId: npc.fightBackCreatureId, damage: npc.archetype === 'guard' || npc.archetype === 'smith' ? 7 : 4, attackerName: npc.name });
           changed = true;
-          return { ...refreshed, fightBackNextAttackTick: tick + 48, moving: false, running: false, activity: 'Attacking the creature!' };
+          return { ...refreshed, fightBackNextAttackAtMs: nowMs + NPC_FIGHT_ATTACK_COOLDOWN_MS, moving: false, running: false, activity: 'Attacking the creature!' };
         }
         const refreshed = { ...npc, fightBackTarget: { ...player } };
         const dist = Math.hypot(npc.position.x - player.x, npc.position.y - player.y);
-        if (dist > 1.8 || tick < (npc.fightBackNextAttackTick ?? 0)) {
+        if (dist > 1.8 || nowMs < (npc.fightBackNextAttackAtMs ?? 0)) {
           if (refreshed.fightBackTarget?.x !== npc.fightBackTarget?.x || refreshed.fightBackTarget?.y !== npc.fightBackTarget?.y) changed = true;
           return refreshed;
         }
-        // A slow, readable melee cadence gives the player a chance to escape.
+        // BUILD 918: a real-time ~0.9 s cadence (was 48 world ticks ≈ 144 s).
+        // Still slow and readable — the player can escape — but a fight
+        // that lasts now actually trades blows instead of one hit and silence.
         damageTaken += npc.archetype === 'guard' || npc.archetype === 'smith' ? 7 : 4;
         attackerName = npc.name;
         changed = true;
-        return { ...refreshed, fightBackNextAttackTick: tick + 48, moving: false, running: false, activity: 'Attacking the player' };
+        return { ...refreshed, fightBackNextAttackAtMs: nowMs + NPC_FIGHT_ATTACK_COOLDOWN_MS, moving: false, running: false, activity: 'Attacking the player' };
       });
       if (changed) {
         townsfolkRef.current = next;
@@ -7979,6 +7986,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 if (hurt.deadUntilTick !== undefined) {
                   spawnCombatText('KILLED', npc.position, 'critical');
                   setLogs((cur) => [{ text: `You killed ${npc.name}!`, color: 'red' }, ...cur].slice(0, 3));
+                  // BUILD 918: a player kill of a townsfolk pays character XP
+                  // exactly like a creature kill (same grant, same level-up
+                  // handling). NPC kills previously paid nothing anywhere.
+                  grantCombatXp(npcKillExperienceReward(npc, playerLevelRef.current, playerStatsRef.current.int), npc.position);
                   // BUILD 521: Record murder crime, notify witnesses via NPC memory.
                   // Witnesses will propagate via the existing gossip system.
                   try {
@@ -8079,6 +8090,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                   spawnCombatText('KILLED', targetNpc.position, 'critical');
                   playCombatSound('scream', muted);
                   setLogs((currentLogs) => [{ text: `You killed ${targetNpc.name}!`, color: 'red' }, ...currentLogs].slice(0, 3));
+                  // BUILD 918: player-killed townsfolk pay XP (see arc-sweep branch).
+                  grantCombatXp(npcKillExperienceReward(targetNpc, playerLevelRef.current, playerStatsRef.current.int), targetNpc.position);
                   targetNpcIdRef.current = null;
                   setTargetNpcId(null);
                 } else {
@@ -8228,6 +8241,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                   spawnCombatText('KILLED', npc.position, 'critical');
                   playCombatSound('scream', muted);
                   setLogs((currentLogs) => [{ text: `You killed ${npc.name}!`, color: 'red' }, ...currentLogs].slice(0, 3));
+                  // BUILD 918: player-killed townsfolk pay XP (see arc-sweep branch).
+                  grantCombatXp(npcKillExperienceReward(npc, playerLevelRef.current, playerStatsRef.current.int), npc.position);
                 } else {
                   // Scream and flee.
                   const scream = screamFor(npc);
@@ -8285,6 +8300,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 spawnCombatText('KILLED', pos, 'critical');
                 playCombatSound('scream', muted);
                 setLogs((currentLogs) => [{ text: `You killed the ${species}!`, color: 'red' }, ...currentLogs].slice(0, 3));
+                // BUILD 918: wildlife kills pay XP like any other animal
+                // kill (level-1 scale) — this was another dead award path.
+                grantCombatXp(killExperienceForLevel(1, playerLevelRef.current, playerStatsRef.current.int), pos);
                 // Remove from field + drop loot (meat/hide).
                 const next = wildlifeRef.current.filter((a) => a.id !== id);
                 wildlifeRef.current = next;
@@ -8344,6 +8362,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                   if (hurt.deadUntilTick !== undefined) {
                     spawnCombatText('KILLED', npc.position, 'critical');
                     setLogs((cur) => [{ text: `You killed ${npc.name}!`, color: 'red' }, ...cur].slice(0, 3));
+                    // BUILD 918: player-killed townsfolk pay XP (see arc-sweep branch).
+                    grantCombatXp(npcKillExperienceReward(npc, playerLevelRef.current, playerStatsRef.current.int), npc.position);
                   } else {
                     spawnCombatText(`-${Math.round(damage)}`, npc.position, 'damage');
                     const scream = screamFor(npc);
@@ -8358,6 +8378,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                     fieldNpcHpRef.current.delete(nearest.id);
                     spawnCombatText('KILLED', nearest.position, 'critical');
                     setLogs((cur) => [{ text: `You killed ${nearest!.name}!`, color: 'red' }, ...cur].slice(0, 3));
+                    // BUILD 918: simulated adventurers and travelers are
+                    // people too — a player kill pays XP on the same scale
+                    // (adventurers fight, so they count as level-2 victims;
+                    // travelers as level-1). No XP for anything else here.
+                    grantCombatXp(killExperienceForLevel(nearest.kind === 'adventurer' ? 2 : 1, playerLevelRef.current, playerStatsRef.current.int), nearest.position);
                     if (nearest.kind === 'adventurer') {
                       const next = simulatedAdventurersRef.current.filter((a) => a.id !== nearest!.id);
                       simulatedAdventurersRef.current = next;
@@ -11660,7 +11685,7 @@ if (active) {
           const pursuing = townsfolkRef.current.map((npc) =>
             npc.archetype === 'guard' && !npc.indoors && !isNpcDead(npc, tick)
               ? { ...npc, fightBackUntilTick: tick + 900, fightBackTarget: { ...player },
-                  fightBackNextAttackTick: Math.min(npc.fightBackNextAttackTick ?? tick, tick + 12),
+                  fightBackNextAttackAtMs: Math.min(npc.fightBackNextAttackAtMs ?? Infinity, Date.now() + 200),
                   fleeUntilTick: undefined, fleeFrom: undefined, moving: true, running: true,
                   activity: 'Pursuing a fleeing criminal' }
               : npc);

@@ -10,7 +10,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, NPC_RESPAWN_TICKS, marketRoutine, marketBrowseVisit, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, NPC_RESPAWN_TICKS, npcKillExperienceReward, killExperienceForLevel, NPC_FIGHT_ATTACK_COOLDOWN_MS, NPC_FIGHT_CHASE_STEP_MULT, marketRoutine, marketBrowseVisit, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
 
 /**
  * BUILD 699: Test anchors need all household homeKeys. Uses the real
@@ -1157,6 +1157,41 @@ console.log('Testing townsfolk living-town simulation...');
   // Creature fight state is transient: it is not part of the save format.
   const fighterSave = serializeTownsfolk([fighter]);
   assert(!('fightBackCreatureId' in fighterSave[0]), 'Creature fight state must not be serialized');
+}
+
+// ---- 13a2. NPC kill XP + fight-back cadence/chase (BUILD 918) ----
+console.log('Testing NPC kill XP + fight-back cadence/chase (BUILD 918)...');
+{
+  // Minimal fixtures: npcKillExperienceReward only reads the archetype
+  // (via npcMaxHp), so no full Townsperson is needed here.
+  type NpcLike = Parameters<typeof npcKillExperienceReward>[0];
+  const commoner = { archetype: 'commoner' } as unknown as NpcLike;
+  const guard = { archetype: 'guard' } as unknown as NpcLike;
+  // Base scale: a commoner at player level 1 pays the goat base (25).
+  assert(killExperienceForLevel(1, 1, 0) === 25, 'Level-1 victim should pay the 25 base');
+  assert(npcKillExperienceReward(commoner, 1, 0) === 25, 'Commoner kill should pay the same as a trivial creature');
+  // A guard (60 HP -> effective level 3) pays at least a comparable monster,
+  // and strictly more than a commoner is not required — the shared formula
+  // penalizes higher-level victims against a level-1 player, exactly like
+  // creature kills. What matters: guard >= 20 and >= commoner at level 3+.
+  const guardXpL1 = npcKillExperienceReward(guard, 1, 0);
+  assert(guardXpL1 === 23, `Guard kill at level 1 should be 23 (25 - 2 monster penalty), got ${guardXpL1}`);
+  assert(npcKillExperienceReward(guard, 3, 0) === 21, 'Guard kill at level 3 should equal a level-3 monster kill (25 - 4 progression)');
+  assert(npcKillExperienceReward(commoner, 3, 0) === 21, 'Commoner kill at level 3 should decay with player level');
+  // Floor: no kill pays less than 5, however strong the player is.
+  assert(npcKillExperienceReward(commoner, 99, 0) === 5, 'XP must floor at 5');
+  // INT bonus mirrors the creature formula.
+  assert(npcKillExperienceReward(commoner, 1, 10) === 27, 'INT 10 should add +2 XP');
+  // Cooldown is a real-time combat property (~1 s), not world ticks: a
+  // 48-tick cooldown at 3 s/tick was ~144 s between hits (the BUILD 918 bug).
+  assert(NPC_FIGHT_ATTACK_COOLDOWN_MS >= 500 && NPC_FIGHT_ATTACK_COOLDOWN_MS <= 1500,
+    `NPC fight cadence should be a sub-1.5 s real-time cooldown, got ${NPC_FIGHT_ATTACK_COOLDOWN_MS} ms`);
+  // Chase speed: at the App's 0.22 step per 120 ms advance, the fight
+  // chase must exceed the player's ~5 u/s walk, so a kiting player is
+  // actually caught; the old 1.35 multiplier was ~2.5 u/s (never catches).
+  const chaseSpeed = 0.22 * NPC_FIGHT_CHASE_STEP_MULT / 0.12;
+  assert(chaseSpeed > 5, `Fight chase speed should exceed 5 u/s, got ${chaseSpeed.toFixed(2)}`);
+  assert(NPC_FIGHT_CHASE_STEP_MULT > 1.5, 'Fight chase must outrun the flee-run multiplier');
 }
 
 // ---- 13a1. Creature target acquisition (BUILD 914) ----

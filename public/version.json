@@ -1,6 +1,6 @@
 {
-  "build": "917",
-  "note": "Stray trouble at the town edge: the wilderness safety zone around Mosslight is relaxed at the outskirts only. Once in a while a lone wolf, slime or rat wanders into the edge of town and picks a fight with whoever it finds there — townsfolk fight back or flee, guards move in, and the body is lootable like any other kill. The plaza and market heart stay completely safe: strays arrive only at the outskirts and their hunting range cannot reach the town center",
-  "timestamp": "2026-10-20T15:35:19.623Z",
-  "cacheBuster": "mvguhcug"
+  "build": "918",
+  "note": "Two long-standing combat fixes. First, killing a townsfolk now earns XP exactly like killing a creature: a commoner pays what a goat does, a guard pays what a tougher monster does, and the same goes for simulated adventurers and travelers you kill — awarded once at death, through the same XP grant as every other kill. Second, NPCs that fight back now actually keep fighting: their hit cooldown was counted in world-clock ticks (one tick every 3 seconds, so a second hit could not land for over two minutes) — it now runs in real time at roughly one hit per second, like creature attacks — and fighting NPCs run after you instead of trailing behind at a walk, so a player who walks away still gets caught and hit, while sprinting away still escapes. The same fixes apply to NPCs fighting creatures",
+  "timestamp": "2026-10-21T00:15:25.250Z",
+  "cacheBuster": "mvhd279e"
 }
