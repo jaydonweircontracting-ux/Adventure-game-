@@ -281,18 +281,23 @@ export function horseTarget(
 ): HorseTarget {
   const stable = findStable(stables, horse.stableId);
   const mins = Math.floor(clock.hour) * 60 + (Math.floor(clock.minuteOfDay) % 60);
+  const totalMins = Math.floor(clock.day) * 1440 + mins;
   const daySalt = Math.floor(clock.day) * 911;
   const seed = characterSeed(3, horse.id, 0);
 
   if (horse.owner === 'wild' || !stable || !ownerProfile) {
-    // Wild horses wander-graze slowly; ownerless stable horses graze nearby.
+    // Wild horses wander-graze slowly around their anchor. BUILD 925: the
+    // old per-minute hash position teleported up to ~140 units every tick
+    // (41 u/s measured) — a slow continuous circuit replaces it.
     if (horse.owner === 'wild' || !stable) {
+      const phase = townsfolkHash(seed, 82) * Math.PI * 2;
+      const angle = (totalMins / 60) * 0.25 + phase; // ~0.6 units per tick
       return {
         activity: 'grazing',
         chunk: { ...horse.chunk },
         position: {
-          x: 20 + townsfolkHash(seed, 80 + (mins % 1440)) * 100,
-          y: 20 + townsfolkHash(seed, 81 + (mins % 1440)) * 100,
+          x: horse.position.x + Math.cos(angle) * 14,
+          y: horse.position.y + Math.sin(angle) * 10,
         },
       };
     }
@@ -304,9 +309,16 @@ export function horseTarget(
     };
   }
 
-  // Owner's daily loop, jittered per horse-day.
+  // Owner's daily loop, jittered per horse-day. Window times are the
+  // schedule (unchanged by BUILD 925); what changed is the PATH between
+  // them: the old model teleported at every window boundary (midday ride
+  // -> stable snapped ~100 units, afternoon patrol snapped back, the
+  // morning ride jumped ~30-57 units at arriveAt, the evening led leg ran
+  // at up to ~13 u/s). Every leg below starts exactly where the previous
+  // leg ended, and every leg speed is capped at a sane value, so the
+  // fastest a horse can ever move is its own ride speed.
   const mountAt = 390 + Math.floor(townsfolkHash(seed, 1 + daySalt) * 60);      // 6:30-7:30
-  const arriveAt = mountAt + 45;                                                // ride to work
+  const arriveAt = mountAt + 45;                                                // lead-out ends
   const noonStabledAt = 690 + Math.floor(townsfolkHash(seed, 2 + daySalt) * 60); // 11:30-12:30
   const afternoonRideAt = 780 + Math.floor(townsfolkHash(seed, 3 + daySalt) * 60); // 13:00-14:00
   const returnAt = 1080 + Math.floor(townsfolkHash(seed, 4 + daySalt) * 60);     // 18:00-19:00
@@ -315,66 +327,86 @@ export function horseTarget(
   // Destination: merchants/caravan workers ride toward the market; military
   // occupations ride the patrol circuit; others ride out to their workplace.
   const dest = destinationFor(ownerProfile, seed);
+  const at = (position: HorsePoint, activity: HorseActivity): HorseTarget => ({
+    activity, chunk: { ...stable.chunk }, position: { ...position },
+  });
 
   // BUILD 912: merchant/trader/caravan owners haul a cart on roughly half
-  // their days (deterministic per horse-day) instead of riding: slower
-  // outbound leg, cart parked at the market through the work windows, and a
-  // hauling return in the evening window. The renderer draws the cart +
-  // seated driver for this activity; all other occupations never haul.
+  // their days (deterministic per horse-day) instead of riding. BUILD 925:
+  // the cart now rides to the market at cart speed and dwells there (the
+  // old code snapped it to the market at arriveAt even mid-route), then
+  // turns around wherever it is and rides home, arriving exactly at
+  // nightAt — never faster than cart speed, never a teleport.
   const haulsToday = (ownerProfile.occupation === 'merchant'
     || ownerProfile.occupation === 'trader'
     || ownerProfile.occupation === 'caravanWorker')
     && townsfolkHash(seed, 7 + daySalt) < 0.5;
   if (haulsToday) {
-    if (mins >= nightAt || mins < mountAt - 30) {
-      return { activity: 'stabled', chunk: { ...stable.chunk }, position: { ...stable.position } };
-    }
-    if (mins >= returnAt) {
-      const t = (mins - returnAt) / 30;
-      return { activity: 'hauling', chunk: { ...stable.chunk }, position: lerp(dest, stable.position, t) };
-    }
-    if (mins >= arriveAt) {
-      return { activity: 'hauling', chunk: { ...stable.chunk }, position: { ...dest } };
+    const cartSpeed = Math.max(0.05, horse.speed * 0.55);
+    if (mins >= nightAt || mins < mountAt - 30) return at(stable.position, 'stabled');
+    const haulDist = Math.hypot(dest.x - stable.position.x, dest.y - stable.position.y);
+    const haulMins = Math.max(1, Math.ceil(haulDist / cartSpeed));
+    const haulStart = Math.max(mountAt + 1, nightAt - haulMins);
+    if (mins >= haulStart) {
+      // Turn around wherever the cart is at departure time (at the market
+      // on any normal-length haul) and ride home, arriving at nightAt.
+      const from = ridePos(stable.position, dest, seed, haulStart - mountAt, cartSpeed);
+      return at(lerp(from, stable.position, (mins - haulStart) / (nightAt - haulStart)), 'hauling');
     }
     if (mins >= mountAt) {
-      return {
-        activity: 'hauling',
-        chunk: { ...stable.chunk },
-        position: ridePos(stable.position, dest, seed, mins - mountAt, horse.speed * 0.55),
-      };
+      return at(ridePos(stable.position, dest, seed, mins - mountAt, cartSpeed), 'hauling');
     }
-    return { activity: 'stabled', chunk: { ...stable.chunk }, position: { ...stable.position } };
+    return at(stable.position, 'stabled');
   }
 
-  if (mins >= nightAt || mins < mountAt - 30) {
-    return { activity: 'stabled', chunk: { ...stable.chunk }, position: { ...stable.position } };
-  }
-  if (mins >= returnAt) {
-    const t = (mins - returnAt) / 30;
-    return {
-      activity: 'being_led',
-      chunk: { ...stable.chunk },
-      position: lerp(dest, stable.position, t),
-    };
+  // Ridden day, as one continuous journey:
+  //   lead-out  stable -> stable+10 (owner leads the horse out)
+  //   ride      stable+10 -> dest at the horse's own speed, then dwell
+  //   midday    parked where the ride ended (the workplace, not a snap home)
+  //   patrol    circuit anchored at the parked spot (zero offset at start)
+  //   led home  end-anchored at nightAt at owner walk speed
+  //   night     stabled (the led leg ends exactly at the stable)
+  const leadEnd = { x: stable.position.x + 10, y: stable.position.y };
+  const rideEnd = ridePos(leadEnd, dest, seed, noonStabledAt - arriveAt, horse.speed);
+  const patrolPhase = townsfolkHash(seed, 91) * Math.PI * 2;
+  const circuitOffset = (m: number) => {
+    const angle = (m / 60) * horse.speed * 0.8 + patrolPhase;
+    return { x: Math.cos(angle) * 18, y: Math.sin(angle) * 14 };
+  };
+  const patrolAt = (m: number) => {
+    const off = circuitOffset(m);
+    const start = circuitOffset(afternoonRideAt);
+    return { x: rideEnd.x + off.x - start.x, y: rideEnd.y + off.y - start.y };
+  };
+  const patrolEnd = patrolAt(returnAt);
+  // Evening led leg: the owner walks the horse home, so it runs at walk
+  // speed (1.5 field units per game-minute ~= player walk) and starts
+  // whenever it must to arrive at nightAt — early for far workplaces,
+  // never faster, never a snap. Clamped to start no earlier than the
+  // afternoon patrol begins (pathological speeds/distances only). The
+  // +36 margin covers the led leg starting from a different point on the
+  // patrol circuit than patrolEnd (the circuit's major diameter), so the
+  // leg's true length can never outrun its budgeted minutes.
+  const ledDist = Math.hypot(patrolEnd.x - stable.position.x, patrolEnd.y - stable.position.y);
+  const ledMins = Math.max(1, Math.ceil((ledDist + 36) / NPC_LED_SPEED_U_PER_MIN));
+  const ledStart = Math.max(afternoonRideAt, nightAt - ledMins);
+
+  if (mins >= nightAt || mins < mountAt - 30) return at(stable.position, 'stabled');
+  if (mins >= ledStart) {
+    const ledFrom = ledStart >= returnAt ? patrolEnd : patrolAt(ledStart);
+    return at(lerp(ledFrom, stable.position, (mins - ledStart) / (nightAt - ledStart)), 'being_led');
   }
   if (mins >= afternoonRideAt) {
-    return { activity: 'ridden', chunk: { ...stable.chunk }, position: patrolPos(dest, seed, mins, horse.speed) };
+    // After patrol hours but before the led leg starts (short trip home):
+    // wait with the horse where the patrol ended.
+    return at(mins >= returnAt ? patrolEnd : patrolAt(mins), 'ridden');
   }
-  if (mins >= noonStabledAt) {
-    return { activity: 'stabled', chunk: { ...stable.chunk }, position: { ...stable.position } };
-  }
-  if (mins >= arriveAt) {
-    return { activity: 'ridden', chunk: { ...stable.chunk }, position: ridePos(stable.position, dest, seed, mins - mountAt, horse.speed) };
-  }
+  if (mins >= noonStabledAt) return at(rideEnd, 'stabled');
+  if (mins >= arriveAt) return at(ridePos(leadEnd, dest, seed, mins - arriveAt, horse.speed), 'ridden');
   if (mins >= mountAt) {
-    const t = (mins - mountAt) / 45;
-    return {
-      activity: 'being_led',
-      chunk: { ...stable.chunk },
-      position: lerp(stable.position, { x: stable.position.x + 10, y: stable.position.y }, t),
-    };
+    return at(lerp(stable.position, leadEnd, (mins - mountAt) / 45), 'being_led');
   }
-  return { activity: 'stabled', chunk: { ...stable.chunk }, position: { ...stable.position } };
+  return at(stable.position, 'stabled');
 }
 
 function lerp(a: HorsePoint, b: HorsePoint, t: number): HorsePoint {
@@ -388,21 +420,33 @@ function ridePos(from: HorsePoint, to: HorsePoint, seed: number, minutesRiding: 
   const dy = to.y - from.y;
   const dist = Math.max(1, Math.hypot(dx, dy));
   const traveled = Math.min(dist, minutesRiding * speed);
-  const bob = Math.sin(minutesRiding * 0.7 + seed) * 1.5;
+  // BUILD 925: arrived means arrived — the gait bob applies only while
+  // moving. The old code bobbed even at the clamp, so a parked cart never
+  // sat exactly at the market (and the 912 sim assertion on y=50 broke
+  // the moment the cart dwelled at its destination).
+  if (traveled >= dist) return { x: to.x, y: to.y };
+  // Fade the bob out as the destination approaches, so the arrival tick
+  // is a pure ride step (<= speed x 10 min per tick) rather than ride
+  // step plus a vanishing bob.
+  const bob = Math.sin(minutesRiding * 0.7 + seed) * 1.5 * (1 - traveled / dist);
   return {
     x: from.x + (dx / dist) * traveled,
     y: from.y + (dy / dist) * traveled + bob,
   };
 }
 
-/** Slow patrol circuit around the destination while ridden. */
-function patrolPos(dest: HorsePoint, seed: number, mins: number, speed: number): HorsePoint {
-  const angle = (mins / 60) * speed * 0.8 + townsfolkHash(seed, 91) * Math.PI * 2;
-  return {
-    x: dest.x + Math.cos(angle) * 18,
-    y: dest.y + Math.sin(angle) * 14,
-  };
-}
+/**
+ * BUILD 925: the speed cap for every NPC-horse leg that is not the horse's
+ * own ride. The evening led leg runs at owner walk speed: player walk is
+ * ~5 field units per real second at phone width, and a world tick is 3
+ * real seconds per 10 game-minutes, so 5 u/s = 1.5 u/game-minute. The
+ * cart return uses the cart's own slower speed (0.55x ride); the ride
+ * itself is already capped by horse.speed (0.9-1.5 u/min = 3-5 u/s).
+ * With the renderer interpolating over the full 3 s tick (see
+ * IsoFieldView), rendered speed equals analytic speed — nothing here can
+ * exceed ~5 u/s, below the player's own horse (1.75x walk).
+ */
+const NPC_LED_SPEED_U_PER_MIN = 1.5;
 
 function destinationFor(owner: CharacterProfile, seed: number): HorsePoint {
   // Field-unit anchor within the settlement chunk for this occupation.

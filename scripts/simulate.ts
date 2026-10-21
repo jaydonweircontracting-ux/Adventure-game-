@@ -1931,6 +1931,85 @@ console.log('Testing town ground accents (BUILD 924)...');
   assert(!drawProceduralGroundAccent(mockCtx(), 'desert', 3, 7, 0, 0), 'desert must never get meadow accents');
   assert(!drawProceduralGroundAccent(mockCtx(), 'ocean', 3, 7, 0, 0), 'ocean must never get meadow accents');
 }
+// ---- 13a1e. NPC horse speed cap (BUILD 925) ----
+// The old analytic horse day teleported at every window boundary: the
+// midday ride -> stabled step snapped ~100 units, the afternoon patrol
+// snapped back, the morning ride jumped ~30-57 units at arriveAt, the
+// evening led leg ran at up to ~13 u/s, and wild horses re-rolled a
+// random position every minute (up to 41 u/s). 925 makes the day one
+// continuous journey and caps every leg: ride at horse.speed (3-5 u/s),
+// the led leg at owner walk speed (1.5 u/min = 5 u/s), the cart at
+// 0.55x ride, wild wander at ~0.2 u/s. A world tick is 3 real seconds
+// per 10 game-minutes, so per-tick displacement / 3 = analytic u/s.
+console.log('Testing NPC horse speed cap (BUILD 925)...');
+{
+  const horsesMod = await import('../src/game/horses');
+  const settlement = { id: 'testville', chunk: { x: 0, y: 0 }, kind: 'town' as const };
+  const stable = horsesMod.stableFor(settlement);
+  const mkProfile = (id: string, occupation: string) => ({
+    id, name: id, occupation, wealth: 60, faction: 'aldoria',
+  }) as unknown as import('../src/game/characterGen').CharacterProfile;
+  const mkHorse = (id: string, owner: string, speed = 1.5) => ({
+    id, name: id, owner, chunk: { ...stable.chunk }, position: { ...stable.position },
+    health: 100, maxHealth: 100, speed, inventory: [], stableId: stable.id,
+    currentRider: null, color: 'bay',
+  });
+  const baseClock = new WorldCore(1).getClock();
+  const clockAt = (day: number, mins: number) => ({
+    ...baseClock, day, hour: Math.floor(mins / 60), minuteOfDay: mins,
+  });
+  // Max per-tick displacement over two full days, per horse. 15 units per
+  // tick = 5 u/s (the walk-speed cap); the ride itself tops out at
+  // horse.speed x 10 min = 15. Anything above that is a teleport.
+  const maxStepOverDays = (horse: ReturnType<typeof mkHorse>, owner: ReturnType<typeof mkProfile> | null) => {
+    let max = 0;
+    let prev: { x: number; y: number } | null = null;
+    for (let day = 1; day <= 2; day++) {
+      for (let mins = 0; mins < 1440; mins += 10) {
+        const t = horsesMod.horseTarget(horse, owner, [stable], clockAt(day, mins));
+        if (prev) max = Math.max(max, Math.hypot(t.position.x - prev.x, t.position.y - prev.y));
+        prev = t.position;
+      }
+    }
+    return max;
+  };
+  const guard = mkProfile('prof-guard-925', 'guard');
+  const guardHorse = mkHorse('horse-test-guard-925', guard.id, 1.5);
+  const guardMax = maxStepOverDays(guardHorse, guard);
+  assert(guardMax <= 15.5, `Ridden guard horse max tick step ${guardMax} exceeds the 5 u/s cap`);
+  const merchant = mkProfile('prof-merchant-925', 'merchant');
+  const merchantHorse = mkHorse('horse-test-merchant-925', merchant.id, 1.2);
+  let haulDay = -1;
+  for (let day = 1; day <= 40; day++) {
+    if (horsesMod.horseTarget(merchantHorse, merchant, [stable], clockAt(day, 600)).activity === 'hauling') { haulDay = day; break; }
+  }
+  assert(haulDay > 0, 'Merchant should haul on some day in 1..40');
+  let cartMax = 0;
+  let prev: { x: number; y: number } | null = null;
+  for (let mins = 0; mins < 1440; mins += 10) {
+    const t = horsesMod.horseTarget(merchantHorse, merchant, [stable], clockAt(haulDay, mins));
+    if (prev) cartMax = Math.max(cartMax, Math.hypot(t.position.x - prev.x, t.position.y - prev.y));
+    prev = t.position;
+  }
+  assert(cartMax <= 15.5, `Hauling cart max tick step ${cartMax} exceeds the 5 u/s cap`);
+  // Wild horses stay near their anchor instead of re-rolling the field.
+  const wildHorse = mkHorse('horse-wild-925', 'wild', 1.0);
+  wildHorse.position = { x: 60, y: 60 };
+  let wildMax = 0;
+  let wildFar = 0;
+  prev = null;
+  for (let day = 1; day <= 2; day++) {
+    for (let mins = 0; mins < 1440; mins += 10) {
+      const t = horsesMod.horseTarget(wildHorse, null, [stable], clockAt(day, mins));
+      assert(t.activity === 'grazing', `Wild horse should graze, got ${t.activity}`);
+      if (prev) wildMax = Math.max(wildMax, Math.hypot(t.position.x - prev.x, t.position.y - prev.y));
+      wildFar = Math.max(wildFar, Math.hypot(t.position.x - 60, t.position.y - 60));
+      prev = t.position;
+    }
+  }
+  assert(wildMax <= 2, `Wild horse max tick step ${wildMax} should be a slow wander`);
+  assert(wildFar <= 20, `Wild horse wandered ${wildFar} from its anchor, should stay near it`);
+}
 console.log('Testing ambient market life (BUILD 694)...');
 {
   const mkAnchors = (stalls: TownsfolkPoint[], arterials?: TownsfolkPoint[]): TownsfolkAnchors => ({

@@ -2365,7 +2365,10 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           seenHorses.add(h.id);
           // Interpolate between clock samples (same pattern as npcInterp,
           // longer clamp: horse samples arrive per world-clock tick and a
-          // ridden horse covers real distance between them).
+          // ridden horse covers real distance between them). BUILD 925:
+          // the clamp is the full 3000 ms tick interval, so rendered speed
+          // equals analytic speed — the old 2500 ms cap compressed every
+          // segment by 1.2x on top of the analytic jumps.
           let hx = h.position.x, hy = h.position.y;
           let hMoving = false;
           const prev = horseInterp.get(h.id);
@@ -2374,7 +2377,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             hx = prev && !jumped ? prev.cx : h.position.x;
             hy = prev && !jumped ? prev.cy : h.position.y;
             const observedTick = prev ? nowMs - prev.t : 900;
-            const duration = jumped ? 0 : Math.max(200, Math.min(2500, observedTick));
+            const duration = jumped ? 0 : Math.max(200, Math.min(3000, observedTick));
             horseInterp.set(h.id, { px: hx, py: hy, cx: h.position.x, cy: h.position.y, t: nowMs, duration });
           } else {
             const k = prev.duration === 0 ? 1 : Math.min(1, Math.max(0, (nowMs - prev.t) / prev.duration));
