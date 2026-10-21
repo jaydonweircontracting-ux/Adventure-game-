@@ -123,7 +123,7 @@ import { behaviorForCreature, preferredRangeFor, shouldStand, shouldRetarget, vo
 import { mitigateDamage, mitigationForCreature, creatureDefenseForLevel, creatureArmorForLevel, playerArmorForRoll, playerResistPercents, rangedHitChance, creatureArcherSkill, normalizeRangedSkill } from '@/game/mitigation';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, LOCKPICK_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
-import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, questProgressText, questRumors, serializeQuestStates, parseQuestStates, markerForGiver, type QuestState, type QuestEvent, type QuestDef } from '@/game/quests';
+import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, questProgressText, questMissionText, questRumors, serializeQuestSave, parseQuestSave, writeQuestEventToStorage, markerForGiver, type QuestState, type QuestEvent, type QuestDef, type QuestStorage } from '@/game/quests';
 import { chestsForChunk, attemptLockpick, serializeOpenedChests, parseOpenedChests, type LockedChest } from '@/game/lockpicking';
 import { sitesForActiveStages, resolveSiteChunk, chunkSatisfiesStage, type ActiveQuestStage } from '@/game/questSites';
 import { playCombatSound } from '@/game/effects';
@@ -152,7 +152,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '935';
+const BUILD_NUMBER = '936';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -169,6 +169,7 @@ const BUILD_NOTES: Record<string, string> = {
   '932': 'Sneak mode is here: tap the eye button to slip into the shadows. While sneaking, folk are far less likely to notice you — only someone standing close by counts as a witness, so an unseen crime leaves no wanted level at all. Walk up to someone while sneaking and a Pickpocket button appears: the prompt shows your real chance and exactly what you stand to lift — a spare from their stash when they have one to spare, otherwise a share of their purse — and a clean lift lands straight in your pack with nobody the wiser. Get caught and they cry out, the sneak breaks, and the guards hear about it through the usual witness reports. And a first strike from the shadows hits twice as hard: attack an unsuspecting villager while sneaking and the blow deals double damage — drop them unseen and you stay hidden.',
   '933': 'Sneak mode, finished: sneaking now fools monsters as well as people — a creature only notices you within 12 paces while you sneak (down from 24), and a beast already chasing you does not lose you just because you duck into the shadows. While sneaking your figure visibly dims so you can see at a glance that you are hidden. Folk you have alerted now remember it through save and reload — no more getting forgiven by quitting — and a first strike from the shadows now also hits twice as hard against wandering adventurers and travelers, not just villagers.',
   '935': 'Combat now mitigates damage in two stages, like a real defense: a blow first rolls against the defender\u2019s defense, then against their armor — and a fully stopped blow shows BLOCKED instead of dealing damage. Tough monsters shrug off more of a weak hit, and a well-geared hero shrugs off more of a monster\u2019s — your armor now genuinely protects you. Arrows also lose accuracy with distance: shots are surest up close and in the middle band where archers hold their ground, and a long shot may miss outright and show MISS. Elemental weaknesses and resistances are in the data too — fire stings slimes and trolls harder than before, and gear that resists fire, ice, or lightning now genuinely blunts those blows.',
+  '936': 'Quests now track real progress instead of a yes-or-no flag: every quest step counts on its own meter, and the log shows the count as you go — slay rats and it reads "Rats slain: 3/5", gather silk and it reads "Spider silk collected: 4/6". Work you do before picking a quest up counts too: rats you already killed are already on the meter when you accept, and a step you finished early waits for you instead of making you redo it. Old saves carry over untouched — a finished quest stays finished, and half-finished progress stays exactly where you left it.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
   '925': 'Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported',
@@ -3753,7 +3754,7 @@ function QuestLogPanel({ questStates, playerLevel, silkCount, onAcceptQuest, onW
               <ol className="quest-card-stages">
                 {def.stages.map((s, index) => (
                   <li key={s.id} className={index < state.stageIndex ? 'is-done' : index === state.stageIndex ? 'is-current' : ''}>
-                    {index < state.stageIndex ? '✓ ' : ''}{index === state.stageIndex ? questProgressText(def, state) : s.description}
+                    {index < state.stageIndex ? '✓ ' : ''}{index === state.stageIndex ? questProgressText(def, state) : index > state.stageIndex ? questMissionText(s, state.progress[s.id] ?? 0) : s.description}
                   </li>
                 ))}
               </ol>
@@ -5324,6 +5325,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // Quest system: active/completed quest states (pure logic in src/game/quests.ts).
   const [questStates, setQuestStates] = useState<QuestState[]>([]);
   const questStatesRef = useRef<QuestState[]>([]);
+  // BUILD 936: the quest storage store (mission ranges). Lives beside
+  // questStatesRef and follows the same lifecycle: fresh on a new game
+  // (GameField remount), restored from the save's questLog on load.
+  const questStorageRef = useRef<QuestStorage>({});
   // Lockpicking: opened locked-chest ids (pure logic in src/game/lockpicking.ts).
   const [openedChests, setOpenedChests] = useState<string[]>([]);
   const openedChestsRef = useRef<string[]>([]);
@@ -6518,7 +6523,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     carriage: serializeCarriage(carriageEarningsRef.current),
     carriageTravel: carriageTravelRef.current ?? undefined,
     escortHired: escortHiredRef.current,
-    questLog: serializeQuestStates(questStatesRef.current),
+    questLog: serializeQuestSave(questStatesRef.current, questStorageRef.current),
     openedChests: serializeOpenedChests(openedChestsRef.current),
     lootedPois: serializeOpenedChests(lootedPoisRef.current),
     civ: civRef.current ? serializeCivilization(civRef.current) : undefined,
@@ -6691,8 +6696,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       setLogs((currentLogs) => [{ text: `Your carriage journey to ${savedRide.destName} resumes.`, color: 'blue' }, ...currentLogs].slice(0, 3));
     }
     escortHiredRef.current = !!loadState.escortHired; setEscortHired(!!loadState.escortHired);
-    const restoredQuests = loadState.questLog ? parseQuestStates(loadState.questLog) : [];
-    questStatesRef.current = restoredQuests; setQuestStates(restoredQuests);
+    const restoredQuests = loadState.questLog ? parseQuestSave(loadState.questLog) : { states: [], storage: {} };
+    questStorageRef.current = restoredQuests.storage;
+    questStatesRef.current = restoredQuests.states; setQuestStates(restoredQuests.states);
     const restoredChests = parseOpenedChests(loadState.openedChests);
     openedChestsRef.current = restoredChests; setOpenedChests(restoredChests);
     const restoredLooted = parseOpenedChests(loadState.lootedPois);
@@ -9507,6 +9513,11 @@ if (active) {
 
   const emitQuestEvent = (event: QuestEvent) => {
     const withDay = { ...event, day: event.day ?? currentWorldDay() };
+    // BUILD 936: one storage write for every quest (accepted or not), then
+    // each active quest gates its current stage on its key. Pre-progress on
+    // future stages refreshes the log silently — no log spam for it.
+    const storage = writeQuestEventToStorage(questStorageRef.current, withDay);
+    questStorageRef.current = storage;
     const completedDefs: QuestDef[] = [];
     const advancedTitles: string[] = [];
     let changed = false;
@@ -9514,8 +9525,9 @@ if (active) {
       if (st.status !== 'active') return st;
       const def = questById(st.questId);
       if (!def) return st;
-      const res = advanceQuestStage(st, def, withDay);
-      if (!res.advanced) return st;
+      const res = advanceQuestStage(st, def, storage, withDay);
+      if (res.state !== st) changed = true;
+      if (!res.advanced) return res.state;
       changed = true;
       if (res.completed) completedDefs.push(def);
       else advancedTitles.push(def.title + ' — ' + questProgressText(def, res.state));
@@ -9534,7 +9546,12 @@ if (active) {
     if (questStatesRef.current.some((s) => s.questId === questId)) return;
     const day = currentWorldDay();
     // Accepting IS talking to the giver: the opening talk stage completes at once.
-    const res = advanceQuestStage(startQuest(def, day), def, { type: 'talk', target: def.giver.name, day });
+    // BUILD 936: the talk write lands in the store first, so startQuest seeds
+    // from it (including any pre-progress on later stages).
+    const talkEvent: QuestEvent = { type: 'talk', target: def.giver.name, day };
+    const storage = writeQuestEventToStorage(questStorageRef.current, talkEvent);
+    questStorageRef.current = storage;
+    const res = advanceQuestStage(startQuest(def, day, storage), def, storage, talkEvent);
     const next = [...questStatesRef.current, res.state];
     questStatesRef.current = next;
     setQuestStates(next);

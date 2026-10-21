@@ -6,10 +6,12 @@
 // - Quest givers are NPCs who live IN houses around Mosslight Crossing
 //   (chunk 4,7 and neighbors). The player must find the house and talk to
 //   the giver; the `hint` field is the rumor-style pointer that leads there.
-// - Progression is pure: advanceQuestStage(state, def, event) returns the
+// - Progression is pure: writeQuestEventToStorage writes an event to the
+//   storage store, advanceQuestStage(state, def, storage, event) returns the
 //   updated state and whether the quest completed. Rendering and NPC
 //   dialogue wiring happens in App.tsx; this module owns data + rules.
-// - Serialization is plain JSON of QuestState[] — the world save owns it.
+// - Serialization is plain JSON of quest states + the storage store
+//   (schema 2; schema-1 saves migrate) — the world save owns it.
 import { townsfolkHash } from './townsfolk';
 import { DEFAULT_WORLD_SEED } from './worldCore';
 
@@ -25,6 +27,11 @@ export type QuestStage = {
   count?: number;
   /** Starting progress for the log display. */
   progress?: number;
+  /**
+   * BUILD 936: short log label for range missions, e.g. 'Rats slain' renders
+   * as 'Rats slain: 3/5' from the mission's storage-key value.
+   */
+  label?: string;
 };
 
 export type QuestGiver = {
@@ -92,7 +99,7 @@ export const QUESTS: QuestDef[] = [
     },
     stages: [
       { id: 'talk-mira', kind: 'talk', description: 'Talk to Mira at the Rusty Tankard', target: 'Mira' },
-      { id: 'kill-rats', kind: 'kill', description: 'Descend through the hatch behind the bar and kill the cellar rats (0/5)', target: 'rat', count: 5 },
+      { id: 'kill-rats', kind: 'kill', description: 'Descend through the hatch behind the bar and kill the cellar rats (0/5)', target: 'rat', count: 5, label: 'Rats slain' },
       { id: 'return-mira', kind: 'talk', description: 'Return to Mira', target: 'Mira' },
     ],
     rewards: { coins: 25, xp: 40, items: ['Rat-skin gloves', 'Bread'] },
@@ -128,7 +135,7 @@ export const QUESTS: QuestDef[] = [
     },
     stages: [
       { id: 'talk-aldric', kind: 'talk', description: 'Talk to Aldric at his farmhouse', target: 'Aldric' },
-      { id: 'kill-wolves', kind: 'kill', description: 'Drive off the wolf pack (0/4)', target: 'wolf', count: 4 },
+      { id: 'kill-wolves', kind: 'kill', description: 'Drive off the wolf pack (0/4)', target: 'wolf', count: 4, label: 'Wolves driven off' },
       { id: 'report-aldric', kind: 'talk', description: 'Report back to Aldric', target: 'Aldric' },
     ],
     rewards: { coins: 70, xp: 140, items: ['Wolf-pelt cloak', 'Iron dagger'] },
@@ -146,7 +153,7 @@ export const QUESTS: QuestDef[] = [
     },
     stages: [
       { id: 'talk-elsa', kind: 'talk', description: 'Talk to Elsa by the guild', target: 'Elsa' },
-      { id: 'collect-silk', kind: 'collect', description: 'Collect giant spider silk (0/6)', target: 'spider_silk', count: 6 },
+      { id: 'collect-silk', kind: 'collect', description: 'Collect giant spider silk (0/6)', target: 'spider_silk', count: 6, label: 'Spider silk collected' },
       { id: 'weave-bowstring', kind: 'craft', description: 'Weave the silk into a bowstring', target: 'bowstring' },
       { id: 'return-elsa', kind: 'talk', description: 'Bring the bowstring to Elsa', target: 'Elsa' },
     ],
@@ -165,7 +172,7 @@ export const QUESTS: QuestDef[] = [
     },
     stages: [
       { id: 'talk-rowan', kind: 'talk', description: 'Talk to Rowan at the guild barracks', target: 'Rowan' },
-      { id: 'clear-camp', kind: 'kill', description: 'Defeat the Redbrand bandits (0/6)', target: 'bandit', count: 6 },
+      { id: 'clear-camp', kind: 'kill', description: 'Defeat the Redbrand bandits (0/6)', target: 'bandit', count: 6, label: 'Redbrand bandits defeated' },
       { id: 'report-rowan', kind: 'talk', description: 'Report back to Rowan', target: 'Rowan' },
     ],
     rewards: { coins: 150, xp: 320, items: ['Guard\'s longsword', 'Iron shield', 'Stolen strongbox'] },
@@ -184,7 +191,7 @@ export const QUESTS: QuestDef[] = [
     stages: [
       { id: 'talk-aldous', kind: 'talk', description: 'Talk to Father Aldous at the chapel', target: 'Father Aldous' },
       { id: 'enter-crypt', kind: 'explore', description: 'Enter the ancient crypt north of town', target: 'crypt' },
-      { id: 'recover-relic', kind: 'collect', description: 'Recover the funerary mask (0/1)', target: 'funerary_mask', count: 1 },
+      { id: 'recover-relic', kind: 'collect', description: 'Recover the funerary mask (0/1)', target: 'funerary_mask', count: 1, label: 'Funerary mask recovered' },
       { id: 'return-aldous', kind: 'talk', description: 'Return the relic to Father Aldous', target: 'Father Aldous' },
     ],
     rewards: { coins: 220, xp: 480, items: ['Blessed amulet', 'Ancient bronze sword', 'Holy water'] },
@@ -221,7 +228,7 @@ export const QUESTS: QuestDef[] = [
     },
     stages: [
       { id: 'talk-kess', kind: 'talk', description: 'Talk to Kess at the bridge house', target: 'Kess' },
-      { id: 'slay-troll', kind: 'kill', description: 'Slay the bridge troll (0/1)', target: 'troll', count: 1 },
+      { id: 'slay-troll', kind: 'kill', description: 'Slay the bridge troll (0/1)', target: 'troll', count: 1, label: 'Bridge troll slain' },
       { id: 'report-kess', kind: 'talk', description: 'Tell Kess the bridge is safe', target: 'Kess' },
     ],
     rewards: { coins: 500, xp: 950, items: ['Trollbone club', 'Bridge-keeper\'s helm', 'Greater healing potion'] },
@@ -239,7 +246,7 @@ export const QUESTS: QuestDef[] = [
     },
     stages: [
       { id: 'talk-bram', kind: 'talk', description: 'Talk to Bram at the riverside hut', target: 'Bram' },
-      { id: 'get-map', kind: 'collect', description: 'Take the Old Merchant\'s Map (0/1)', target: 'old_merchants_map', count: 1 },
+      { id: 'get-map', kind: 'collect', description: 'Take the Old Merchant\'s Map (0/1)', target: 'old_merchants_map', count: 1, label: "Old Merchant's Map taken" },
       { id: 'find-cache', kind: 'explore', description: 'Follow the map\'s clues to the sunken cache', target: 'buried_treasure' },
       { id: 'split-bram', kind: 'talk', description: 'Return to Bram with his share', target: 'Bram' },
     ],
@@ -259,9 +266,9 @@ export const QUESTS: QuestDef[] = [
     },
     stages: [
       { id: 'audience', kind: 'talk', description: 'Seek audience with Steward Anselm in the guild hall', target: 'Steward Anselm' },
-      { id: 'seal-ember', kind: 'collect', description: 'Recover the Ember Seal from the old battlefield (0/1)', target: 'ember_seal', count: 1 },
-      { id: 'seal-tide', kind: 'collect', description: 'Recover the Tide Seal from the drowned mine (0/1)', target: 'tide_seal', count: 1 },
-      { id: 'seal-thorn', kind: 'collect', description: 'Recover the Thorn Seal from the overgrown keep (0/1)', target: 'thorn_seal', count: 1 },
+      { id: 'seal-ember', kind: 'collect', description: 'Recover the Ember Seal from the old battlefield (0/1)', target: 'ember_seal', count: 1, label: 'Ember Seal recovered' },
+      { id: 'seal-tide', kind: 'collect', description: 'Recover the Tide Seal from the drowned mine (0/1)', target: 'tide_seal', count: 1, label: 'Tide Seal recovered' },
+      { id: 'seal-thorn', kind: 'collect', description: 'Recover the Thorn Seal from the overgrown keep (0/1)', target: 'thorn_seal', count: 1, label: 'Thorn Seal recovered' },
       { id: 'confront', kind: 'explore', description: 'Confront what remains at the Ashen Keep', target: 'ruin' },
       { id: 'return-anselm', kind: 'talk', description: 'Return the seals to Steward Anselm', target: 'Steward Anselm' },
     ],
@@ -303,20 +310,96 @@ export function storyQuest(): QuestDef {
 }
 
 // ---------------------------------------------------------------------------
+// BUILD 936: storage-key mission ranges (Tibia portable item 3).
+//
+// A mission is a NUMERIC RANGE on a named storage key, not a boolean flag:
+//   key = `quest:<questId>:<stageId>`, range = [0, stage.count ?? 1].
+// The store is global per player: ANY system can advance ANY mission by
+// writing a number to its key, decoupled from quest acceptance and from the
+// linear stage pipeline. Stage ORDER stays linear (stageIndex only moves on
+// matching events), but progress is not: kills, collections, and talks that
+// happen before accepting, or while on an earlier stage, are recorded in the
+// store and honored when the player reaches that stage (pre-progress).
+// Start is 0, not Tibia's 1: the game's existing progress text is 0-based
+// ('(0/5)'), so the range keeps the game's own numbering.
+//
+// Write/gate split (single writer, no double-counting):
+// - writeQuestEventToStorage(storage, event) is the ONLY writer: it adds
+//   event.count (default 1) to every matching mission key across ALL quests,
+//   clamped at the range end. App calls it once per event, before advancing.
+// - advanceQuestStage(state, def, storage, event) only READS the store: it
+//   refreshes the state's progress mirror from the store, then advances the
+//   current stage when its key reached the range end.
+// QuestState.progress is a derived mirror of the store for this quest's
+// stages, kept so the log and dialogue keep reading state, not the store.
+// ---------------------------------------------------------------------------
+
+/** Global per-player quest storage: storage key → current number. */
+export type QuestStorage = Record<string, number>;
+
+/** Storage key for one mission: `quest:<questId>:<stageId>`. */
+export function questStorageKey(questId: string, stageId: string): string {
+  return `quest:${questId}:${stageId}`;
+}
+
+/** The numeric range of a mission: start 0 → end (count ?? 1). */
+export function missionRange(stage: QuestStage): { start: number; end: number } {
+  return { start: 0, end: Math.max(1, Math.floor(stage.count ?? 1)) };
+}
+
+/** This quest's stage values from the store, clamped to each range. */
+export function snapshotQuestProgress(def: QuestDef, storage: QuestStorage): Record<string, number> {
+  const progress: Record<string, number> = {};
+  for (const stage of def.stages) {
+    const { start, end } = missionRange(stage);
+    const raw = storage[questStorageKey(def.id, stage.id)];
+    progress[stage.id] = typeof raw === 'number' && Number.isFinite(raw)
+      ? Math.min(end, Math.max(start, Math.floor(raw)))
+      : start;
+  }
+  return progress;
+}
+
+function progressMirrorEqual(def: QuestDef, a: Record<string, number>, b: Record<string, number>): boolean {
+  return def.stages.every((stage) => (a[stage.id] ?? 0) === (b[stage.id] ?? 0));
+}
+
+/**
+ * The single writer: adds an event's count to every matching mission key
+ * across all quests (default QUESTS), clamped at each range end. Returns the
+ * same store reference when nothing matched.
+ */
+export function writeQuestEventToStorage(storage: QuestStorage, event: QuestEvent, defs: QuestDef[] = QUESTS): QuestStorage {
+  let next: QuestStorage | null = null;
+  for (const def of defs) {
+    for (const stage of def.stages) {
+      if (!stageMatchesEvent(stage, event)) continue;
+      const key = questStorageKey(def.id, stage.id);
+      const { end } = missionRange(stage);
+      const gained = event.count ?? 1;
+      const value = Math.min(end, Math.max(0, Math.floor((storage[key] ?? 0) + gained)));
+      if (value === (storage[key] ?? 0)) continue;
+      if (!next) next = { ...storage };
+      next[key] = value;
+    }
+  }
+  return next ?? storage;
+}
+
+// ---------------------------------------------------------------------------
 // Pure quest-log logic
 // ---------------------------------------------------------------------------
 
-/** Initial state for a quest the player just picked up. */
-export function startQuest(def: QuestDef, day: number): QuestState {
-  const progress: Record<string, number> = {};
-  def.stages.forEach((stage) => {
-    progress[stage.id] = stage.progress ?? 0;
-  });
+/**
+ * Initial state for a quest the player just picked up. Progress is seeded
+ * from the storage store, so work done before accepting is honored.
+ */
+export function startQuest(def: QuestDef, day: number, storage: QuestStorage = {}): QuestState {
   return {
     questId: def.id,
     status: 'active',
     stageIndex: 0,
-    progress,
+    progress: snapshotQuestProgress(def, storage),
     startedDay: Math.max(1, Math.floor(day)),
   };
 }
@@ -350,31 +433,33 @@ export type AdvanceResult = {
 };
 
 /**
- * Applies one game event to a quest's current stage. Pure: returns a new
- * state object. Kill/collect stages accumulate progress; talk/visit/craft/
- * explore stages complete on a single matching event.
+ * Applies one game event to a quest's current stage. Pure: reads the store
+ * (the caller writes first via writeQuestEventToStorage) and returns a new
+ * state object. The state's progress mirror is refreshed from the store on
+ * every call, so pre-progress on future stages is visible; the same state
+ * reference is returned when neither the mirror nor the stage moved.
+ * A matching event advances the current stage when its key reached the range
+ * end — including a pre-completed stage, which advances on next contact.
  */
-export function advanceQuestStage(state: QuestState, def: QuestDef, event: QuestEvent): AdvanceResult {
-  if (state.status !== 'active') return { state, completed: false, advanced: false };
+export function advanceQuestStage(state: QuestState, def: QuestDef, storage: QuestStorage, event: QuestEvent): AdvanceResult {
+  const mirror = snapshotQuestProgress(def, storage);
+  const mirrored = progressMirrorEqual(def, state.progress, mirror) ? state : { ...state, progress: mirror };
+  if (state.status !== 'active') return { state: mirrored, completed: false, advanced: false };
   const stage = def.stages[state.stageIndex];
-  if (!stage) return { state, completed: false, advanced: false };
-  if (!stageMatchesEvent(stage, event)) return { state, completed: false, advanced: false };
+  if (!stage) return { state: mirrored, completed: false, advanced: false };
+  if (!stageMatchesEvent(stage, event)) return { state: mirrored, completed: false, advanced: false };
 
-  const needed = stage.count ?? 1;
-  const gained = event.count ?? 1;
-  const nextProgress = { ...state.progress };
-  nextProgress[stage.id] = Math.min(needed, (nextProgress[stage.id] ?? 0) + gained);
-  const stageDone = nextProgress[stage.id] >= needed;
+  const { end } = missionRange(stage);
+  const stageDone = (mirror[stage.id] ?? 0) >= end;
 
   if (!stageDone) {
-    return { state: { ...state, progress: nextProgress }, completed: false, advanced: true };
+    return { state: mirrored, completed: false, advanced: true };
   }
   const nextIndex = state.stageIndex + 1;
   if (nextIndex >= def.stages.length) {
     return {
       state: {
-        ...state,
-        progress: nextProgress,
+        ...mirrored,
         stageIndex: nextIndex,
         status: 'completed',
         completedDay: event.day !== undefined ? Math.max(1, Math.floor(event.day)) : state.startedDay,
@@ -384,7 +469,7 @@ export function advanceQuestStage(state: QuestState, def: QuestDef, event: Quest
     };
   }
   return {
-    state: { ...state, progress: nextProgress, stageIndex: nextIndex },
+    state: { ...mirrored, stageIndex: nextIndex },
     completed: false,
     advanced: true,
   };
@@ -398,8 +483,21 @@ export function questRewards(def: QuestDef): QuestRewards {
 export function questProgressText(def: QuestDef, state: QuestState): string {
   const stage = def.stages[state.stageIndex];
   if (!stage) return 'Complete';
-  if ((stage.count ?? 1) > 1) {
-    return `${state.progress[stage.id] ?? 0}/${stage.count} ${stage.description.replace(/\(\d+\/\d+\)/g, '').trim()}`;
+  return questMissionText(stage, state.progress[stage.id] ?? 0);
+}
+
+/**
+ * Dynamic log text for one mission, rendered from its storage-key value —
+ * never a static string. Labeled range missions read 'Label: value/end'
+ * ('Rats slain: 3/5'); unlabeled stages keep their description (0→1 ranges
+ * such as talk/visit/explore/craft show no number, as before).
+ */
+export function questMissionText(stage: QuestStage, value: number): string {
+  const { end } = missionRange(stage);
+  const clamped = Math.min(end, Math.max(0, Math.floor(value)));
+  if (stage.label) return `${stage.label}: ${clamped}/${end}`;
+  if (end > 1) {
+    return `${clamped}/${end} ${stage.description.replace(/\(\d+\/\d+\)/g, '').trim()}`;
   }
   return stage.description;
 }
@@ -440,43 +538,103 @@ export function questRumors(def: QuestDef): string[] {
 // Serialization
 // ---------------------------------------------------------------------------
 
-const QUEST_SCHEMA = 1;
+const QUEST_SCHEMA = 2;
 
 export type QuestSave = {
   schema: number;
   states: QuestState[];
+  /** BUILD 936: the storage-key store; schema-1 saves migrate into it. */
+  storage?: QuestStorage;
 };
 
-function normalizeState(raw: Partial<QuestState>): QuestState | null {
+function normalizeState(raw: Partial<QuestState>, storage: QuestStorage): QuestState | null {
   if (!raw || typeof raw.questId !== 'string') return null;
-  if (!questById(raw.questId)) return null;
+  const def = questById(raw.questId);
+  if (!def) return null;
   const status: QuestStatus = raw.status === 'active' || raw.status === 'completed' ? raw.status : 'available';
+  let stageIndex = Math.max(0, Math.floor(raw.stageIndex ?? 0));
+  if (stageIndex > def.stages.length) stageIndex = def.stages.length;
+  if (status === 'completed') stageIndex = def.stages.length;
   return {
     questId: raw.questId,
     status,
-    stageIndex: Math.max(0, Math.floor(raw.stageIndex ?? 0)),
-    progress: raw.progress && typeof raw.progress === 'object' ? { ...raw.progress } : {},
+    stageIndex,
+    progress: snapshotQuestProgress(def, storage),
     startedDay: raw.startedDay !== undefined ? Math.max(1, Math.floor(raw.startedDay)) : undefined,
     completedDay: raw.completedDay !== undefined ? Math.max(1, Math.floor(raw.completedDay)) : undefined,
   };
 }
 
-/** Plain JSON of QuestState[] for the world save. */
-export function serializeQuestStates(states: QuestState[]): string {
-  return JSON.stringify({ schema: QUEST_SCHEMA, states } satisfies QuestSave);
+/** Keeps only known mission keys, with finite values clamped to each range. */
+function sanitizeStorage(raw: unknown): QuestStorage {
+  const storage: QuestStorage = {};
+  if (!raw || typeof raw !== 'object') return storage;
+  const record = raw as Record<string, unknown>;
+  for (const def of QUESTS) {
+    for (const stage of def.stages) {
+      const key = questStorageKey(def.id, stage.id);
+      const value = record[key];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        const { start, end } = missionRange(stage);
+        storage[key] = Math.min(end, Math.max(start, Math.floor(value)));
+      }
+    }
+  }
+  return storage;
 }
 
-export function parseQuestStates(json: string): QuestState[] {
+/** Plain JSON of quest states + the storage store for the world save. */
+export function serializeQuestSave(states: QuestState[], storage: QuestStorage): string {
+  return JSON.stringify({ schema: QUEST_SCHEMA, states, storage } satisfies QuestSave);
+}
+
+export type ParsedQuestSave = { states: QuestState[]; storage: QuestStorage };
+
+export function parseQuestSave(json: string): ParsedQuestSave {
+  const empty: ParsedQuestSave = { states: [], storage: {} };
   try {
     const parsed = JSON.parse(json) as Partial<QuestSave>;
-    if (!parsed || parsed.schema !== QUEST_SCHEMA || !Array.isArray(parsed.states)) return [];
-    const states: QuestState[] = [];
-    for (const raw of parsed.states) {
-      const normalized = normalizeState(raw);
-      if (normalized) states.push(normalized);
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.states)) return empty;
+    if (parsed.schema === QUEST_SCHEMA) {
+      const storage = sanitizeStorage(parsed.storage);
+      const states: QuestState[] = [];
+      for (const raw of parsed.states) {
+        const normalized = normalizeState(raw, storage);
+        if (normalized) states.push(normalized);
+      }
+      return { states, storage };
     }
-    return states;
+    if (parsed.schema === 1) {
+      // Migration: build the store from the old per-stage progress maps.
+      // A completed quest's missions all sit at their range ends; an active
+      // quest keeps its recorded progress; anything unrecorded starts at 0.
+      // Nothing the player earned is reset.
+      const storage: QuestStorage = {};
+      const raws: Partial<QuestState>[] = [];
+      for (const raw of parsed.states) {
+        if (!raw || typeof raw.questId !== 'string') continue;
+        const def = questById(raw.questId);
+        if (!def) continue;
+        raws.push(raw);
+        const progress = raw.progress && typeof raw.progress === 'object' ? raw.progress : {};
+        for (const stage of def.stages) {
+          const { end } = missionRange(stage);
+          const recorded = progress[stage.id];
+          const value = typeof recorded === 'number' && Number.isFinite(recorded)
+            ? Math.min(end, Math.max(0, Math.floor(recorded)))
+            : 0;
+          storage[questStorageKey(def.id, stage.id)] = raw.status === 'completed' ? end : value;
+        }
+      }
+      const states: QuestState[] = [];
+      for (const raw of raws) {
+        const normalized = normalizeState(raw, storage);
+        if (normalized) states.push(normalized);
+      }
+      return { states, storage };
+    }
+    return empty;
   } catch {
-    return [];
+    return empty;
   }
 }

@@ -8,9 +8,13 @@ import {
   availableQuests,
   advanceQuestStage,
   questProgressText,
-  serializeQuestStates,
-  parseQuestStates,
+  serializeQuestSave,
+  parseQuestSave,
+  writeQuestEventToStorage,
   type QuestState,
+  type QuestDef,
+  type QuestEvent,
+  type QuestStorage,
 } from '../../src/game/quests';
 import {
   QUEST_SITES,
@@ -29,6 +33,14 @@ function assert(condition: boolean, message: string) {
   else { failed++; if (failures.length < 20) failures.push(message); }
 }
 
+// BUILD 936: events write to the storage store first, then advance gates on
+// the keys — the same two-step pattern App.tsx uses per event.
+let QS: QuestStorage = {};
+function step(state: QuestState, def: QuestDef, event: QuestEvent) {
+  QS = writeQuestEventToStorage(QS, event);
+  return advanceQuestStage(state, def, QS, event);
+}
+
 // ---- 1. Quest defs: ten quests, levels 1-10, story quest present ----
 assert(QUESTS.length === 10, 'ten quest defs');
 const levels = QUESTS.map((q) => q.level).sort((a, b) => a - b);
@@ -41,54 +53,54 @@ assert(story !== undefined && story.stages.length === 6, 'story quest has six st
 const rats = questById('rats-in-the-cellar')!;
 let ratsState = startQuest(rats, 12);
 assert(ratsState.status === 'active' && ratsState.stageIndex === 0, 'quest starts at stage 0');
-const acceptRes = advanceQuestStage(ratsState, rats, { type: 'talk', target: 'Mira', day: 12 });
+const acceptRes = step(ratsState, rats, { type: 'talk', target: 'Mira', day: 12 });
 assert(acceptRes.advanced && !acceptRes.completed, 'accept talk advances to stage 1');
 assert(acceptRes.state.stageIndex === 1, 'stage index moved past talk');
 ratsState = acceptRes.state;
 
 // ---- 3. Kill events accumulate ----
 for (let i = 0; i < 4; i++) {
-  const res = advanceQuestStage(ratsState, rats, { type: 'kill', target: 'rat' });
+  const res = step(ratsState, rats, { type: 'kill', target: 'rat' });
   assert(res.advanced && !res.completed, `rat kill ${i + 1} accumulates`);
   ratsState = res.state;
 }
 assert(ratsState.progress['kill-rats'] === 4, 'kill progress tracked');
-const finalKill = advanceQuestStage(ratsState, rats, { type: 'kill', target: 'rat' });
+const finalKill = step(ratsState, rats, { type: 'kill', target: 'rat' });
 assert(finalKill.advanced && !finalKill.completed, 'fifth rat completes kill stage');
 assert(finalKill.state.stageIndex === 2, 'moved to return stage');
 ratsState = finalKill.state;
 
 // ---- 4. Return talk completes the quest ----
-const done = advanceQuestStage(ratsState, rats, { type: 'talk', target: 'Mira', day: 13 });
+const done = step(ratsState, rats, { type: 'talk', target: 'Mira', day: 13 });
 assert(done.completed && done.state.status === 'completed', 'return talk completes quest');
 assert(done.state.completedDay === 13, 'completedDay recorded');
 
 // ---- 5. Explore events now match explore stages ----
 const heirloom = questById('lost-heirloom')!;
-let heirloomState = advanceQuestStage(startQuest(heirloom, 5), heirloom, { type: 'talk', target: 'Mabel', day: 5 }).state;
-const exploreRes = advanceQuestStage(heirloomState, heirloom, { type: 'explore', target: 'buried_treasure', day: 5 });
+let heirloomState = step(startQuest(heirloom, 5), heirloom, { type: 'talk', target: 'Mabel', day: 5 }).state;
+const exploreRes = step(heirloomState, heirloom, { type: 'explore', target: 'buried_treasure', day: 5 });
 assert(exploreRes.advanced && !exploreRes.completed, 'explore event matches explore stage');
 assert(exploreRes.state.stageIndex === 2, 'explore advanced to return stage');
 
 // ---- 6. Collect + craft (silk quest) ----
 const silk = questById('silk-for-the-seamstress')!;
-let silkState = advanceQuestStage(startQuest(silk, 5), silk, { type: 'talk', target: 'Elsa', day: 5 }).state;
-const collectRes = advanceQuestStage(silkState, silk, { type: 'collect', target: 'spider_silk', count: 6 });
+let silkState = step(startQuest(silk, 5), silk, { type: 'talk', target: 'Elsa', day: 5 }).state;
+const collectRes = step(silkState, silk, { type: 'collect', target: 'spider_silk', count: 6 });
 assert(collectRes.advanced && collectRes.state.stageIndex === 2, 'collecting 6 silk reaches craft stage');
 silkState = collectRes.state;
-const craftRes = advanceQuestStage(silkState, silk, { type: 'craft', target: 'bowstring' });
+const craftRes = step(silkState, silk, { type: 'craft', target: 'bowstring' });
 assert(craftRes.advanced && craftRes.state.stageIndex === 3, 'craft bowstring advances');
 
 // ---- 7. Visit events (caravan quest) ----
 const caravan = questById('caravan-guard')!;
-let caravanState = advanceQuestStage(startQuest(caravan, 5), caravan, { type: 'talk', target: 'Cedric', day: 5 }).state;
-const visitRes = advanceQuestStage(caravanState, caravan, { type: 'visit', target: 'greenfield' });
+let caravanState = step(startQuest(caravan, 5), caravan, { type: 'talk', target: 'Cedric', day: 5 }).state;
+const visitRes = step(caravanState, caravan, { type: 'visit', target: 'greenfield' });
 assert(visitRes.advanced && visitRes.state.stageIndex === 2, 'visit greenfield advances');
 
 // ---- 8. Wrong events do not advance ----
-const wrong = advanceQuestStage(silkState, silk, { type: 'kill', target: 'spider' });
+const wrong = step(silkState, silk, { type: 'kill', target: 'spider' });
 assert(!wrong.advanced, 'kill does not advance a craft stage');
-const wrongTarget = advanceQuestStage(ratsState, rats, { type: 'kill', target: 'wolf' });
+const wrongTarget = step(ratsState, rats, { type: 'kill', target: 'wolf' });
 assert(!wrongTarget.advanced, 'wrong kill target does not advance');
 
 // ---- 9. availableQuests level gating ----
@@ -105,12 +117,12 @@ const progressState: QuestState = { ...startQuest(rats, 1), stageIndex: 1, progr
 assert(questProgressText(rats, progressState).includes('3/5'), 'progress text shows 3/5');
 
 // ---- 11. Serialization round-trip ----
-const json = serializeQuestStates([done.state, progressState]);
-const parsed = parseQuestStates(json);
+const json = serializeQuestSave([done.state, progressState], QS);
+const parsed = parseQuestSave(json).states;
 assert(parsed.length === 2, 'round-trip keeps both states');
 assert(parsed[0].status === 'completed' && parsed[0].completedDay === 13, 'round-trip keeps completion');
-assert(parseQuestStates('not json').length === 0, 'bad json parses to empty');
-assert(parseQuestStates(JSON.stringify({ schema: 1, states: [{ questId: 'nope' }] })).length === 0, 'unknown quest dropped');
+assert(parseQuestSave('not json').states.length === 0, 'bad json parses to empty');
+assert(parseQuestSave(JSON.stringify({ schema: 1, states: [{ questId: 'nope' }] })).states.length === 0, 'unknown quest dropped');
 
 // ---- 12. Quest sites ----
 assert(QUEST_SITES.length >= 9, 'site table populated');

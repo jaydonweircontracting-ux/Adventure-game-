@@ -29,8 +29,13 @@ import {
   advanceQuestStage,
   questRewards,
   questRumors,
-  serializeQuestStates,
-  parseQuestStates,
+  serializeQuestSave,
+  parseQuestSave,
+  writeQuestEventToStorage,
+  type QuestState,
+  type QuestDef,
+  type QuestEvent,
+  type QuestStorage,
 } from '../../src/game/quests';
 
 let passed = 0;
@@ -40,6 +45,14 @@ const failures: string[] = [];
 function assert(condition: boolean, message: string) {
   if (condition) { passed++; }
   else { failed++; if (failures.length < 30) failures.push(message); }
+}
+
+// BUILD 936: events write to the storage store first, then advance gates on
+// the keys — the same two-step pattern App.tsx uses per event.
+let QS: QuestStorage = {};
+function step(state: QuestState, def: QuestDef, event: QuestEvent) {
+  QS = writeQuestEventToStorage(QS, event);
+  return advanceQuestStage(state, def, QS, event);
 }
 
 // ---- 1. POI determinism: same chunk + seed -> identical POIs ----
@@ -249,30 +262,32 @@ assert(rats !== undefined, 'rats-in-the-cellar missing');
 if (rats) {
   let state = startQuest(rats, 5);
   assert(state.status === 'active' && state.stageIndex === 0 && state.startedDay === 5, 'startQuest state wrong');
-  // Wrong event type does nothing.
-  let res = advanceQuestStage(state, rats, { type: 'kill', target: 'rat' });
-  assert(!res.advanced && res.state === state, 'talk stage should ignore kill events');
+  // BUILD 936: a kill during the talk stage does not advance the stage, but
+  // it IS recorded in the store (pre-progress on the future kill mission).
+  let res = step(state, rats, { type: 'kill', target: 'rat' });
+  assert(!res.advanced && res.state.stageIndex === 0, 'talk stage should not advance on kill events');
+  assert(QS['quest:rats-in-the-cellar:kill-rats'] === 1, 'kill during talk stage pre-records the kill mission');
   // Talk to Mira.
-  res = advanceQuestStage(state, rats, { type: 'talk', target: 'Mira' });
+  res = step(state, rats, { type: 'talk', target: 'Mira' });
   assert(res.advanced && !res.completed && res.state.stageIndex === 1, 'talk stage did not advance');
   state = res.state;
-  // Kill 5 rats across events (partial progress).
-  res = advanceQuestStage(state, rats, { type: 'kill', target: 'rat', count: 2 });
+  // Kill the remaining rats across events (1 pre-recorded + 2 + 3, clamped at 5).
+  res = step(state, rats, { type: 'kill', target: 'rat', count: 2 });
   assert(res.advanced && !res.completed && res.state.stageIndex === 1, 'partial kill should stay on stage');
-  assert(res.state.progress['kill-rats'] === 2, 'kill progress not tracked');
+  assert(res.state.progress['kill-rats'] === 3, 'kill progress not tracked');
   state = res.state;
-  res = advanceQuestStage(state, rats, { type: 'kill', target: 'rat', count: 3 });
+  res = step(state, rats, { type: 'kill', target: 'rat', count: 3 });
   assert(res.advanced && !res.completed && res.state.stageIndex === 2, 'kill stage did not complete at 5 rats');
   state = res.state;
   // Wrong NPC talk does nothing.
-  res = advanceQuestStage(state, rats, { type: 'talk', target: 'Bram' });
+  res = step(state, rats, { type: 'talk', target: 'Bram' });
   assert(!res.advanced, 'talk to wrong NPC should not advance');
   // Return to Mira with day set.
-  res = advanceQuestStage(state, rats, { type: 'talk', target: 'Mira', day: 6 });
+  res = step(state, rats, { type: 'talk', target: 'Mira', day: 6 });
   assert(res.completed && res.state.status === 'completed', 'quest did not complete');
   assert(res.state.completedDay === 6, 'completedDay not set from event day');
   // Completed quests ignore further events.
-  const done = advanceQuestStage(res.state, rats, { type: 'talk', target: 'Mira' });
+  const done = step(res.state, rats, { type: 'talk', target: 'Mira' });
   assert(!done.advanced && !done.completed, 'completed quest should ignore events');
   // Rewards.
   const rewards = questRewards(rats);
@@ -316,15 +331,15 @@ console.log('Testing quest serialization...');
 {
   const silk = questById('silk-for-the-seamstress')!;
   let state = startQuest(silk, 10);
-  state = advanceQuestStage(state, silk, { type: 'talk', target: 'Elsa' }).state;
-  state = advanceQuestStage(state, silk, { type: 'collect', target: 'spider_silk', count: 6 }).state;
+  state = step(state, silk, { type: 'talk', target: 'Elsa' }).state;
+  state = step(state, silk, { type: 'collect', target: 'spider_silk', count: 6 }).state;
   const states = [state, { ...startQuest(questById('wolf-pack')!, 11), status: 'completed' as const, completedDay: 13, stageIndex: 3 }];
-  const roundTripped = parseQuestStates(serializeQuestStates(states));
+  const roundTripped = parseQuestSave(serializeQuestSave(states, QS)).states;
   assert(JSON.stringify(roundTripped) === JSON.stringify(states), 'Quest serialization round-trip failed');
-  assert(JSON.stringify(parseQuestStates('garbage')) === '[]', 'parseQuestStates should return [] for garbage');
+  assert(JSON.stringify(parseQuestSave('garbage').states) === '[]', 'parseQuestSave should return [] for garbage');
   // Unknown quest ids are dropped on load.
-  const withBogus = parseQuestStates(JSON.stringify({ schema: 1, states: [...states, { questId: 'nope', status: 'active', stageIndex: 0, progress: {} }] }));
-  assert(withBogus.length === states.length, 'parseQuestStates should drop unknown quest ids');
+  const withBogus = parseQuestSave(JSON.stringify({ schema: 1, states: [...states, { questId: 'nope', status: 'active', stageIndex: 0, progress: {} }] })).states;
+  assert(withBogus.length === states.length, 'parseQuestSave should drop unknown quest ids');
 }
 
 // ---- Results ----
