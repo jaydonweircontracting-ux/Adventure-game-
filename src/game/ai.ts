@@ -72,6 +72,13 @@ export type UpdateGoatOpts = {
    *  victim across town, untouchable (measured in the BUILD 914 browser
    *  verification: a guard dealt 0 damage over a full 60-HP fight). */
   meleeStandOff?: number;
+  /** BUILD 933: chase-gate distance (defaults to GOAT_CHASE_RANGE). The App
+   *  loops pass the reduced sneak range (12) for a sneaking player the
+   *  creature is not already fighting, so acquisition gating in
+   *  creatureCombat.ts is not bypassed by the chase itself. An already
+   *  engaged creature keeps the normal gate — its lock/leash, not this
+   *  number, decides when the fight ends. */
+  chaseRange?: number;
 };
 
 // Resolve a desired move against solid geometry. Tries the full move first,
@@ -174,7 +181,7 @@ export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint,
   }
   const canStartAttack = cooldown <= 0 && isAdjacentAndFacing(goat.position, player, facing, playerFacing, GOAT_MELEE_RANGE);
   if (canStartAttack) return { goat: { ...goat, state: 'attack', attackTimer: GOAT_ATTACK_WINDUP_MS, attackHitApplied: false, attackCooldown: 0, facing, attacking: true, moving: false }, attackHit: false };
-  if (distance <= GOAT_CHASE_RANGE) {
+  if (distance <= (opts?.chaseRange ?? GOAT_CHASE_RANGE)) {
     // Give up the chase when the player lures the goat out of its territory.
     if (shouldReturnHome(goat, player) && goat.spawnPosition) {
       const homePosition = moveTowards(goat.position, goat.spawnPosition, GOAT_CHASE_SPEED, deltaMs);

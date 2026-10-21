@@ -20,6 +20,7 @@ import {
   isoPlayerFaceForScreenDeltaSticky, type Face4, type Face8,
 } from './isoSprites';
 import { CharacterAnimator, drawIsoCharacter, preloadCharacterSprites, variantLook, type LookRef } from './characterSystem';
+import { SNEAK_PLAYER_OPACITY } from '../sneak';
 import { lookWithoutLootedGear } from '../npcGear';
 import { artUrl } from '../artCache';
 import { computeDirtPathGeometry, buildDirtPath2D, DIRT_LAYER_STYLE } from './dirtPaths';
@@ -312,6 +313,8 @@ interface IsoFieldViewProps {
   // BUILD 704: explicit player run state (from the stamina system in App).
   // When set, overrides the animator's speed heuristic for the player.
   playerRunning?: boolean;
+  // BUILD 933: player is sneaking — the player figure draws dimmed.
+  playerSneaking?: boolean;
   // BUILD 459: collision box debug — red = current box, green = draggable proposed box
   collisionDebug?: boolean;
   // BUILD 851: user-placed Asset Studio sprites rendered in the live isometric world.
@@ -591,11 +594,11 @@ function roadBlendFor(road: string, lx: number, ly: number): number {
   return 0.3 + 0.7 * Math.min(1, Math.max(0, d) / 2.5);
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
-  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -855,7 +858,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
     // walk/idle state and speed-tied walk phase; the draw is feet-anchored.
     // BUILD 704: explicit `running` overrides the animator's speed heuristic
     // (NPC fleeing, player sprinting). Undefined = heuristic as before.
-    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, size?: number, running?: boolean, dead = false, liftPx = 0, attacking = false) => {
+    const drawPerson = (d: Drawable[], tx: number, ty: number, facing: Face8, moving: boolean, look: LookRef, now: number, animKey: string, size?: number, running?: boolean, dead = false, liftPx = 0, attacking = false, alpha?: number) => {
       const c = isoToScreen(tx, ty);
       let anim = charAnims.get(animKey);
       // Dead NPCs play the Death clip and hold its last frame. Recreate the
@@ -882,6 +885,8 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             // BUILD 912: a lifted character (rider/driver) casts no ground
             // shadow of its own — the horse/cart below draws it.
             shadow: liftPx > 0 ? false : undefined,
+            // BUILD 933: only the sneaking player passes an alpha.
+            alpha,
           });
         },
       });
@@ -2478,7 +2483,9 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       // BUILD 912: when mounted, the player is lifted onto the horse drawn
       // above (seat lift, no own ground shadow).
       drawPerson(drawables, playerX, playerY, playerFace.f, playerMoving, live.playerLook ?? 0, nowMs, 'player',
-        undefined, live.playerRunning === true, false, live.playerMounted ? HORSE_SEAT_LIFT : 0);
+        undefined, live.playerRunning === true, false, live.playerMounted ? HORSE_SEAT_LIFT : 0, undefined,
+        // BUILD 933: the sneaking player draws dimmed; everyone else is full opacity.
+        live.playerSneaking ? SNEAK_PLAYER_OPACITY : undefined);
       for (const k of charAnims.keys()) if (!seenAnims.has(k)) charAnims.delete(k);
       // BUILD 707: prune interpolation entries for NPCs no longer drawn.
       for (const k of npcInterp.keys()) if (!seenAnims.has(k)) npcInterp.delete(k);

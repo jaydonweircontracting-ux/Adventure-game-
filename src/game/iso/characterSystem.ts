@@ -326,6 +326,10 @@ export interface DrawCharacterOptions {
   shadow?: boolean;
   /** Base body override (e.g. skeleton enemies). */
   base?: RpgBase;
+  /** BUILD 933: overall opacity (default 1). The sneaking player draws
+   *  dimmed; the shadow dims with the body, which reads as one ghosted
+   *  figure rather than a solid body on a faint shadow. */
+  alpha?: number;
 }
 
 /** Simple placeholder when no sprite art is available (fallback). */
@@ -375,6 +379,11 @@ const lastEquipmentSprites = new WeakMap<CharacterAnimator, Map<string, HTMLImag
  */
 export function drawIsoCharacter(o: DrawCharacterOptions): void {
   const g = o.g;
+  // BUILD 933: dim the whole figure (sprite, layers, shadow, placeholder)
+  // when alpha < 1. The nested hurt-flash save/restore composes correctly
+  // inside this scope (it restores to this alpha, not to 1).
+  const alpha = o.alpha ?? 1;
+  if (alpha < 1) { g.save(); g.globalAlpha = alpha; }
   const size = o.size ?? 64;
   const L = resolveLook(o.look);
   const base = o.base ?? L.base;
@@ -463,6 +472,7 @@ export function drawIsoCharacter(o: DrawCharacterOptions): void {
     g.restore();
   }
   if (!drew) drawVectorPlaceholder(g, o.x, o.y - lift, walking, o.nowMs);
+  if (alpha < 1) g.restore();
 }
 
 /** Re-export cache stats for the debug tool. */

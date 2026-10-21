@@ -57,6 +57,24 @@ export const SNEAK_STEALTH_DAMAGE_MULT = 2;
 /** Pickpocket awareness forced on an alerted target (cf. 0.1 sleeping). */
 export const SNEAK_ALERTED_AWARENESS = 0.9;
 
+/** BUILD 933: player sprite opacity while sneaking (field views). 1 = full. */
+export const SNEAK_PLAYER_OPACITY = 0.55;
+
+/**
+ * BUILD 933: sanitize a saved alerted-id list (the parallel save field in
+ * App's SaveGameData). Old saves carry no field (→ empty); garbage entries
+ * are dropped; duplicates collapse. The alerted set itself is a Set in App,
+ * so this is the only shape the save/load path needs.
+ */
+export function sanitizeAlertedIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const id of value) {
+    if (typeof id === 'string' && id.length > 0 && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
 export type SneakWitness = { npcId: string; confidence: number };
 export type NpcPosition = { id: string; position: { x: number; y: number } };
 

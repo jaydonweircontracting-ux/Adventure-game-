@@ -1,6 +1,6 @@
 {
-  "build": "932",
-  "note": "Sneak mode is here: tap the eye button to slip into the shadows. While sneaking, folk are far less likely to notice you — only someone standing close by counts as a witness, so an unseen crime leaves no wanted level at all. Walk up to someone while sneaking and a Pickpocket button appears: the prompt shows your real chance and exactly what you stand to lift — a spare from their stash when they have one to spare, otherwise a share of their purse — and a clean lift lands straight in your pack with nobody the wiser. Get caught and they cry out, the sneak breaks, and the guards hear about it through the usual witness reports. And a first strike from the shadows hits twice as hard: attack an unsuspecting villager while sneaking and the blow deals double damage — drop them unseen and you stay hidden.",
-  "timestamp": "2026-10-21T07:43:07.222Z",
-  "cacheBuster": "mvht1y3b"
+  "build": "933",
+  "note": "Sneak mode, finished: sneaking now fools monsters as well as people — a creature only notices you within 12 paces while you sneak (down from 24), and a beast already chasing you does not lose you just because you duck into the shadows. While sneaking your figure visibly dims so you can see at a glance that you are hidden. Folk you have alerted now remember it through save and reload — no more getting forgiven by quitting — and a first strike from the shadows now also hits twice as hard against wandering adventurers and travelers, not just villagers.",
+  "timestamp": "2026-10-21T16:04:48.561Z",
+  "cacheBuster": "mviaz4fl"
 }

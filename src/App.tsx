@@ -17,7 +17,7 @@ import { moralityLine, npcMorality, mayInitiateLethalAggression, moralityTier } 
 import { addCrimeToBounty, wantedLevel, emptyBounty, bountyForTown, totalBounty, clearTownBounty, migrateBounty, townIdForChunk, createPendingReport, advancePendingReports, type BountyState, type PendingReport } from './game/bounty';
 import { pickpocketChance, resolvePickpocket } from './game/pickpocket';
 // BUILD 932: sneak mode — detection, witness filtering, stealth damage, stash pickpocketing.
-import { SNEAK_PICKPOCKET_RANGE, SNEAK_ALERTED_AWARENESS, isStealthUndetected, stealthDamage, filterSneakWitnesses, choosePickpocketLoot, canOfferPickpocket, type PickpocketLoot } from './game/sneak';
+import { SNEAK_PICKPOCKET_RANGE, SNEAK_ALERTED_AWARENESS, SNEAK_PLAYER_OPACITY, sanitizeAlertedIds, isStealthUndetected, stealthDamage, filterSneakWitnesses, choosePickpocketLoot, canOfferPickpocket, type PickpocketLoot } from './game/sneak';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { isRecord, isFiniteNumber } from '@/game/shared/guards';
@@ -111,13 +111,13 @@ import { probeMonsterSheets, isMonsterSheetFailed, onMonsterSheetFailure } from 
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc, traceLineBlocked, getDirection, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH, type CombatDirection } from '@/game/combat';
-import { chooseCreatureTarget, pickGuardCreatureTarget, creatureTargetKey, type CreatureTargetChoice, type GuardThreatCandidate } from '@/game/creatureCombat';
+import { chooseCreatureTarget, pickGuardCreatureTarget, creatureTargetKey, sneakEngagementRange, type CreatureTargetChoice, type GuardThreatCandidate } from '@/game/creatureCombat';
 import { strayGateDecision, strayKindForRoll, straySpawnPoints, pickStraySpawnPoint, TOWN_STRAY_CHECK_INTERVAL_MS, TOWN_STRAY_COOLDOWN_MS, TOWN_STRAY_ROAM_RADIUS } from '@/game/townStrays';
 import { renderGroundDetail, type GroundDetailSpec, type GroundHills } from '@/game/groundDetail';
 // BUILD 355: elevation hills/cliffs (CraftPix island kit tiles).
 import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type ElevContext } from '@/game/elevation';
 import { ensureKitTileset, onKitTilesetLoaded } from '@/game/kitAssets';
-import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS, gearForMonster, bonesForMonster } from '@/game/ai';
+import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS, GOAT_CHASE_RANGE, gearForMonster, bonesForMonster } from '@/game/ai';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, LOCKPICK_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
 import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, questProgressText, questRumors, serializeQuestStates, parseQuestStates, markerForGiver, type QuestState, type QuestEvent, type QuestDef } from '@/game/quests';
@@ -149,7 +149,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '932';
+const BUILD_NUMBER = '933';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -164,6 +164,7 @@ const BUILD_NOTES: Record<string, string> = {
   '929': 'The Sunken Crypt dungeon now has named bosses: Grimmaw the Hollow Alpha, Mother Vexa the Ember Matron, Scribe Morvain Keeper of Bone, and Warden Karst the Last Warden. Each appears at most once per descent, guards a hand-crafted chamber, and drops bonus gold and a potion when it falls. Also fixed: one dungeon vault could wall off a corridor and strand the rooms behind it — vault placement now re-checks reachability after every vault it stamps',
   '930': 'The Sunken Crypt dungeon now has shops: Ember Provisions (Old Kess) and Cinder Apothecary (Vesper) sell potions and rations at the same prices as the town stalls. Walk up to a shopkeeper to browse — buying costs no turn, the keeper cannot be attacked or looted, and stock runs out as you buy. A new shop with fresh stock appears on each floor.',
   '932': 'Sneak mode is here: tap the eye button to slip into the shadows. While sneaking, folk are far less likely to notice you — only someone standing close by counts as a witness, so an unseen crime leaves no wanted level at all. Walk up to someone while sneaking and a Pickpocket button appears: the prompt shows your real chance and exactly what you stand to lift — a spare from their stash when they have one to spare, otherwise a share of their purse — and a clean lift lands straight in your pack with nobody the wiser. Get caught and they cry out, the sneak breaks, and the guards hear about it through the usual witness reports. And a first strike from the shadows hits twice as hard: attack an unsuspecting villager while sneaking and the blow deals double damage — drop them unseen and you stay hidden.',
+  '933': 'Sneak mode, finished: sneaking now fools monsters as well as people — a creature only notices you within 12 paces while you sneak (down from 24), and a beast already chasing you does not lose you just because you duck into the shadows. While sneaking your figure visibly dims so you can see at a glance that you are hidden. Folk you have alerted now remember it through save and reload — no more getting forgiven by quitting — and a first strike from the shadows now also hits twice as hard against wandering adventurers and travelers, not just villagers.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
   '925': 'Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported',
   '924': 'Mosslight ground is alive now: flowers and grass tufts grow through the town at the same rate as the wild meadows — same flowers, same grass, on every town yard and square. Roads, farm plots, and doorways are untouched',
@@ -1794,6 +1795,10 @@ type SaveGameData = {
   npcStates: TownNpc[];
   simulatedAdventurers: SimulatedAdventurer[];
   townsfolk: TownsfolkSave[];
+  // BUILD 933: NPC ids alerted by the player's sneak actions. Persisted so
+  // a reload no longer forgives them (the 932 session-transient limit).
+  // Old saves carry no field and restore to empty.
+  alertedNpcIds?: string[];
   goats: GoatState[];
   interiorId: string | null;
   interiorPosition: Point;
@@ -5527,11 +5532,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // player is in Mosslight Crossing (simulation LOD).
   const [townsfolk, setTownsfolk] = useState<Townsperson[]>([]);
   const townsfolkRef = useRef<Townsperson[]>([]);
-  // BUILD 932: sneak mode — TRANSIENT, never saved. A fresh load, a return
-  // to the title, or a GameField remount all start unsneaking; the toggle
-  // is the only way in. Alerted NPCs are session memory too: an NPC who
-  // caught you or survived your stealth hit stays alerted for the session,
-  // so re-sneaking up to them earns no stealth bonus.
+  // BUILD 932: sneak mode itself is TRANSIENT, never saved. A fresh load, a
+  // return to the title, or a GameField remount all start unsneaking; the
+  // toggle is the only way in. BUILD 933: the ALERTED set is the exception
+  // — it persists in the save (alertedNpcIds) so a reload no longer
+  // forgives an NPC who caught you or survived your stealth hit; they
+  // still grant no stealth bonus until a New Game (title unmount) clears it.
   const [sneaking, setSneaking] = useState(false);
   const sneakingRef = useRef(false);
   const alertedNpcIdsRef = useRef<Set<string>>(new Set());
@@ -5717,6 +5723,24 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       markNpcAlerted(npc.id);
       breakSneak();
       setLogs((cur) => [{ text: `Sneak attack! ${npc.name} spots you — double damage, but the sneak is broken.`, color: 'orange' }, ...cur].slice(0, 3));
+    }
+  };
+  // BUILD 933: adventurer/traveler stealth strikes mirror the townsfolk
+  // semantics WITHOUT a crime path (none exists for them, and none is
+  // invented here): a survived stealth hit alerts them and breaks sneak,
+  // a non-stealth hit marks them alerted (an open hit detects you), and
+  // a stealth kill leaves sneak as-is. Their ids ('kael',
+  // 'traveler-link-…') can never collide with 'townsfolk-N', so the
+  // shared alerted set stays clean.
+  const afterFieldNpcStealthStrike = (id: string, stealth: boolean, dead: boolean) => {
+    if (!stealth) {
+      markNpcAlerted(id);
+      if (sneakingRef.current) breakSneak();
+      return;
+    }
+    if (!dead) {
+      markNpcAlerted(id);
+      breakSneak();
     }
   };
   // BUILD 932: returns the witness count, so stealth-attack callers know
@@ -6467,6 +6491,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     npcStates,
     simulatedAdventurers,
     townsfolk: serializeTownsfolk(townsfolkRef.current),
+    // BUILD 933: persist the sneak alerted set alongside the roster.
+    alertedNpcIds: [...alertedNpcIdsRef.current],
     goats,
     // BUILD 522: Lootable bodies.
     bodies: bodiesRef.current,
@@ -6623,6 +6649,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       townsfolkRef.current = restored;
       setTownsfolk(restored);
     }
+    // BUILD 933: restore the sneak alerted set UNCONDITIONALLY (never merge
+    // with the live set): loading an old save, or a save made before anyone
+    // was alerted, clears it; loading a save made after an alert restores
+    // exactly that set, so alerted NPCs still grant no stealth bonus and
+    // still count as witnesses per the 932 rules. New Game needs no extra
+    // reset: it runs through the title, which unmounts GameField and drops
+    // this ref with it (the 926 reset-path pattern for GameField state).
+    alertedNpcIdsRef.current = new Set(sanitizeAlertedIds(loadState.alertedNpcIds));
     interiorDoorwayIdRef.current = null;
     interiorEntryChunkRef.current = { x: loadState.chunk.x, y: loadState.chunk.y };
     interiorRef.current = null; setInterior(null);
@@ -7736,11 +7770,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // acquisition re-runs at most every 400ms per creature — between runs
   // the existing lock is only validated, never re-picked, so a creature
   // with no victim in range costs one map lookup per frame.
-  const resolveCreatureCombatTarget = (entityKind: 'goat' | 'monster', creature: GoatState): { choice: CreatureTargetChoice; position: Point; facing: CombatDirection } => {
+  const resolveCreatureCombatTarget = (entityKind: 'goat' | 'monster', creature: GoatState): { choice: CreatureTargetChoice; position: Point; facing: CombatDirection; playerLocked: boolean } => {
     const playerPos = positionRef.current;
     const playerFacing = facingRef.current as CombatDirection;
     if (creature.disposition !== 'aggressive' || chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) {
-      return { choice: { kind: 'player' }, position: playerPos, facing: playerFacing };
+      return { choice: { kind: 'player' }, position: playerPos, facing: playerFacing, playerLocked: false };
     }
     const key = creatureTargetKey(entityKind, creature.id);
     const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
@@ -7750,7 +7784,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const candidates = townsfolkRef.current
         .filter((n) => !n.indoors && !isNpcDead(n, tick) && !isNpcJailed(n, tick))
         .map((n) => ({ npcId: n.id, position: n.position }));
-      choice = chooseCreatureTarget({ creaturePos: creature.position, current: choice, playerPos, npcs: candidates });
+      // BUILD 933: sneaking gates fresh player acquisition to 12u; a held
+      // player lock is never dropped by this flag (see creatureCombat.ts).
+      choice = chooseCreatureTarget({ creaturePos: creature.position, current: choice, playerPos, npcs: candidates, playerSneaking: sneakingRef.current });
       if (choice) creatureTargetsRef.current.set(key, choice);
       else creatureTargetsRef.current.delete(key);
       creatureAcquireAtRef.current.set(key, now + 400);
@@ -7761,11 +7797,15 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // NPCs don't get the player's facing-dodge: pass the facing as if
         // the victim were turned toward its attacker, so updateGoat's
         // adjacency check measures distance, not the victim's facing.
-        return { choice, position: npc.position, facing: getDirection(npc.position, creature.position) };
+        return { choice, position: npc.position, facing: getDirection(npc.position, creature.position), playerLocked: false };
       }
       creatureTargetsRef.current.delete(key);
     }
-    return { choice: { kind: 'player' }, position: playerPos, facing: playerFacing };
+    // BUILD 933: playerLocked is true only when the stored lock is the
+    // player — the fallback player target (no lock) reads false, so the
+    // loops can tell "already fighting the player" from "no target yet"
+    // and gate only the latter by the sneak range.
+    return { choice: { kind: 'player' }, position: playerPos, facing: playerFacing, playerLocked: creatureTargetsRef.current.get(key)?.kind === 'player' };
   };
 
   // BUILD 914: a hostile creature's landed hit on a townsfolk. Damage runs
@@ -8624,7 +8664,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const stats = playerStatsRef.current;
               const critical = Math.random() < playerCriticalChanceForStats(stats);
               const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
-              const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult);
+              // BUILD 933: stealth ×2 for adventurers/travelers too (same
+              // undetected rule as townsfolk; no crime path is added).
+              const fieldStealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, id);
+              const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, id));
               const newHp = curHp - damage;
               const pos = (attackTarget as { position: { x: number; y: number } }).position;
               const name = (attackTarget as { name: string }).name || 'NPC';
@@ -8633,6 +8676,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 spawnCombatText('KILLED', pos, 'critical');
                 playCombatSound('scream', muted);
                 setLogs((currentLogs) => [{ text: `You killed ${name}!`, color: 'red' }, ...currentLogs].slice(0, 3));
+                afterFieldNpcStealthStrike(id, fieldStealthStrike, true);
                 // Remove the NPC from the field.
                 if (attackTarget.entityKind === 'adventurer') {
                   const next = simulatedAdventurersRef.current.filter((a) => a.id !== id);
@@ -8644,6 +8688,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 spawnCombatText(`-${Math.round(damage)}`, pos, 'damage');
                 playCombatSound('scream', muted);
                 setLogs((currentLogs) => [{ text: `You hit ${name} for ${Math.round(damage)}!`, color: 'red' }, ...currentLogs].slice(0, 3));
+                afterFieldNpcStealthStrike(id, fieldStealthStrike, false);
               }
             } else if (attackTarget.entityKind === 'wildlife') {
               // BUILD 627: Wildlife (deer etc.) takes damage via wildlifeHpRef.
@@ -8740,11 +8785,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 } else {
                   const maxHp = 30;
                   const curHp = fieldNpcHpRef.current.get(nearest.id) ?? maxHp;
-                  const newHp = curHp - damage;
+                  // BUILD 933: stealth ×2 for adventurers/travelers (the
+                  // townsfolk branch above applies its own ×2 to the shared
+                  // base damage separately — this wraps only this branch).
+                  const fallbackStealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, nearest.id);
+                  const fieldDamage = Math.max(1, stealthDamage(damage, sneakingRef.current, alertedNpcIdsRef.current, nearest.id));
+                  const newHp = curHp - fieldDamage;
                   if (newHp <= 0) {
                     fieldNpcHpRef.current.delete(nearest.id);
                     spawnCombatText('KILLED', nearest.position, 'critical');
                     setLogs((cur) => [{ text: `You killed ${nearest!.name}!`, color: 'red' }, ...cur].slice(0, 3));
+                    afterFieldNpcStealthStrike(nearest.id, fallbackStealthStrike, true);
                     // BUILD 918: simulated adventurers and travelers are
                     // people too — a player kill pays XP on the same scale
                     // (adventurers fight, so they count as level-2 victims;
@@ -8757,7 +8808,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                     }
                   } else {
                     fieldNpcHpRef.current.set(nearest.id, newHp);
-                    spawnCombatText(`-${Math.round(damage)}`, nearest.position, 'damage');
+                    spawnCombatText(`-${Math.round(fieldDamage)}`, nearest.position, 'damage');
+                    afterFieldNpcStealthStrike(nearest.id, fallbackStealthStrike, false);
                   }
                 }
                 playCombatSound('scream', muted);
@@ -8861,7 +8913,18 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           // the player — updateGoat is target-agnostic, so feed it the
           // resolved victim. Player separation applies only to player fights.
           const targetInfo = resolveCreatureCombatTarget('goat', goat);
-          const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, threatLevel: targetInfo.choice.kind === 'player' ? playerLevelRef.current : undefined }, targetInfo.position, targetInfo.facing, currentGoats, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk), meleeStandOff: targetInfo.choice.kind === 'npc' ? 1.6 : undefined });
+          // BUILD 933: sneak chase gate. A creature already fighting the
+          // player keeps the normal 24u gate (its lock/leash ends the fight,
+          // never the sneak toggle); a creature not yet on the player only
+          // engages inside 12u while sneaking. In town the lock map decides
+          // "already fighting"; outside town there is no lock, so the
+          // creature's own chase/attack state is the engagement record.
+          // NPC targets are never gated by this (creature-vs-NPC unchanged).
+          const goatTargetIsPlayer = targetInfo.choice.kind === 'player';
+          const goatUsesAcquisition = goat.disposition === 'aggressive' && currentChunk.x === TOWNSFOLK_CHUNK.x && currentChunk.y === TOWNSFOLK_CHUNK.y;
+          const goatEngagedOnPlayer = goatTargetIsPlayer && (goatUsesAcquisition ? targetInfo.playerLocked : (goat.state === 'chase' || goat.state === 'attack'));
+          const goatChaseRange = sneakEngagementRange(sneakingRef.current, goatEngagedOnPlayer, GOAT_CHASE_RANGE);
+          const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, threatLevel: targetInfo.choice.kind === 'player' ? playerLevelRef.current : undefined }, targetInfo.position, targetInfo.facing, currentGoats, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk), meleeStandOff: targetInfo.choice.kind === 'npc' ? 1.6 : undefined, chaseRange: goatChaseRange });
           let next = result.goat;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: goat.position, moving: false };
           if (targetInfo.choice.kind === 'player') {
@@ -8924,7 +8987,16 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           // BUILD 914: monsters pick victims the same way goats do — a
           // townsfolk can be the target instead of the player.
           const targetInfo = resolveCreatureCombatTarget('monster', monster);
-          const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false, threatLevel: targetInfo.choice.kind === 'player' ? playerLevelRef.current : undefined }, targetInfo.position, targetInfo.facing, currentMonsters, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk), meleeStandOff: targetInfo.choice.kind === 'npc' ? 1.6 : undefined });
+          // BUILD 933: same sneak chase gate as the goat loop (see there):
+          // engaged creatures keep the 24u gate, unengaged ones only pick
+          // up a sneaking player inside 12u. Also gates the archer volley
+          // below, so an unengaged archer cannot shoot a player it has
+          // not detected.
+          const monsterTargetIsPlayer = targetInfo.choice.kind === 'player';
+          const monsterUsesAcquisition = monster.disposition === 'aggressive' && currentChunk.x === TOWNSFOLK_CHUNK.x && currentChunk.y === TOWNSFOLK_CHUNK.y;
+          const monsterEngagedOnPlayer = monsterTargetIsPlayer && (monsterUsesAcquisition ? targetInfo.playerLocked : (monster.state === 'chase' || monster.state === 'attack'));
+          const monsterChaseRange = sneakEngagementRange(sneakingRef.current, monsterEngagedOnPlayer, GOAT_CHASE_RANGE);
+          const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false, threatLevel: targetInfo.choice.kind === 'player' ? playerLevelRef.current : undefined }, targetInfo.position, targetInfo.facing, currentMonsters, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk), meleeStandOff: targetInfo.choice.kind === 'npc' ? 1.6 : undefined, chaseRange: monsterChaseRange });
           let next = { ...result.goat, kind: monster.kind, id: monster.id, variant: monster.variant, ranged: monster.ranged, spawnPosition: monster.spawnPosition, roamRadius: monster.roamRadius, level: monster.level, maxHp: monster.maxHp, wanderSeed: monster.wanderSeed, hitFlash: monster.hitFlash, respawnTicks: monster.respawnTicks } as MonsterState;
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: monster.position, moving: false };
           if (result.attackHit) {
@@ -8941,7 +9013,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           // townsfolk, so an archer whose victim is an NPC closes to melee.
           if (next.ranged && targetInfo.choice.kind === 'player' && next.disposition === 'aggressive' && next.attackCooldown <= 0) {
             const distToPlayer = Math.hypot(next.position.x - currentPlayer.x, next.position.y - currentPlayer.y);
-            if (distToPlayer > 7 && distToPlayer <= 30) {
+            // BUILD 933: an unengaged archer holds fire on a sneaking player
+            // beyond 12u (same detection rule as the chase gate); an archer
+            // already fighting the player keeps its normal 30u volley range.
+            if (distToPlayer > 7 && distToPlayer <= sneakEngagementRange(sneakingRef.current, monsterEngagedOnPlayer, 30)) {
               const dist = distToPlayer || 1;
               const arrow: ArrowState = { id: arrowIdRef.current++, chunk: { ...currentChunk }, position: { ...next.position }, dx: (currentPlayer.x - next.position.x) / dist, dy: (currentPlayer.y - next.position.y) / dist, traveled: 0, damage: goatAttackDamageForLevel(next.level), critical: false, hostile: true };
               arrowsRef.current = [...arrowsRef.current, arrow]; setArrows(arrowsRef.current);
@@ -11981,7 +12056,7 @@ if (active) {
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
             <IsoFieldView placedAssets={customPlacedAssets} editorPlacedObjects={placedObjects} playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} dispositions={disposition} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? monsters.filter((m) => m.stray) : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash, stray: m.stray }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
-              zoom={isoZoom} onZoomChange={setIsoZoom}
+              zoom={isoZoom} onZoomChange={setIsoZoom} playerSneaking={sneaking}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {
                 targetGoatIdRef.current = null;
@@ -13393,7 +13468,7 @@ if (active) {
           })()}
           </div>
           {!mounted && !isoFieldBeta && <div ref={playerElementRef} className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
-             data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: gameZoom !== 1 ? playerScreenPct(position.x / FIELD_SIZE, gameZoom) + '%' : fieldPct(position.x), top: gameZoom !== 1 ? playerScreenPct(position.y / FIELD_SIZE, gameZoom) + '%' : fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, ...(gameZoom !== 1 ? { transform: `translate(-50%, -50%) scale(${gameZoom})` } : {}) } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
+             data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: gameZoom !== 1 ? playerScreenPct(position.x / FIELD_SIZE, gameZoom) + '%' : fieldPct(position.x), top: gameZoom !== 1 ? playerScreenPct(position.y / FIELD_SIZE, gameZoom) + '%' : fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, ...(gameZoom !== 1 ? { transform: `translate(-50%, -50%) scale(${gameZoom})` } : {}), ...(sneaking ? { opacity: SNEAK_PLAYER_OPACITY } : {}) } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
             {equippedDagger && <span className="player-dagger" aria-label="Equipped dagger" />}

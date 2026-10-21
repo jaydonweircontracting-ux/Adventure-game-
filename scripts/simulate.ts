@@ -11,7 +11,7 @@ import { SHOP_CATALOG } from '../src/game/shops';
 import { generateLayout, layoutRng, selectLayoutKind } from '../src/game/dungeonLayouts';
 import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai';
 import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '../src/game/combat';
-import { chooseCreatureTarget, pickGuardCreatureTarget, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
+import { chooseCreatureTarget, pickGuardCreatureTarget, sneakEngagementRange, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
 import { strayGateDecision, strayKindForRoll, straySpawnPoints, pickStraySpawnPoint, isTownEdgePosition, isTownCenterPosition, TOWN_STRAY_CHANCE, TOWN_STRAY_ROAM_RADIUS, TOWN_CENTER_SAFE_RADIUS } from '../src/game/townStrays';
 import { createAgent, stepAgent, AGENT_MOVE_SPEED, type AgentWorld } from '../src/game/gameplayAgent';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
@@ -63,7 +63,7 @@ import { SHOP_CATALOG, createStallStock, type StallShopDef } from '../src/game/s
 import { variantLook } from '../src/game/iso/characterSystem';
 import { bountyForCrime, addCrimeToBounty, wantedLevel, emptyBounty, bountyForTown, totalBounty, clearTownBounty, migrateBounty, townIdForChunk, createPendingReport, advancePendingReports } from '../src/game/bounty';
 import { pickpocketChance, resolvePickpocket } from '../src/game/pickpocket';
-import { SNEAK_PICKPOCKET_RANGE, SNEAK_WITNESS_RADIUS, SNEAK_STEALTH_DAMAGE_MULT, isStealthUndetected, stealthDamage, filterSneakWitnesses, stealableStashGear, choosePickpocketLoot } from '../src/game/sneak';
+import { SNEAK_PICKPOCKET_RANGE, SNEAK_WITNESS_RADIUS, SNEAK_STEALTH_DAMAGE_MULT, SNEAK_PLAYER_OPACITY, sanitizeAlertedIds, isStealthUndetected, stealthDamage, filterSneakWitnesses, stealableStashGear, choosePickpocketLoot } from '../src/game/sneak';
 import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } from '../src/game/landmarkGrid';
 import { elementalMultiplier, elementalInteraction, strongAgainst, ELEMENTS } from '../src/game/elements';
 import { COMPANION_SPECIES, companionStatsForLevel, companionXpForLevel } from '../src/game/companions';
@@ -7526,6 +7526,40 @@ console.log('Testing examine system...');
   const lootItem = choosePickpocketLoot('guard', ['iron_sword'], ['dagger']);
   assert(lootItem.kind === 'item' && lootItem.baseId === 'dagger', 'Sneak: loot prefers a stealable stash piece');
   assert(choosePickpocketLoot('commoner', [], []).kind === 'gold', 'Sneak: no stash piece means gold');
+}
+
+// BUILD 933: sneak continuation — creature detection, dimmed sprite flag,
+// persisted alerted set, adventurer/traveler stealth damage. (Runs after the
+// BUILD 694 crash point in a full run; the standalone verify933 script is
+// the executing proof for these.)
+{
+  // Creature acquisition: sneaking player at 12u is acquired, at 13u not;
+  // non-sneaking player at 24u is acquired, at 25u not (boundary inclusive).
+  const at = (d: number, sneaking: boolean, current: CreatureTargetChoice | null = null) =>
+    chooseCreatureTarget({ creaturePos: { x: 0, y: 0 }, current, playerPos: { x: d, y: 0 }, npcs: [], playerSneaking: sneaking });
+  assert(at(12, true)?.kind === 'player', 'Sneak933: sneaking player at 12u acquired');
+  assert(at(13, true) === null, 'Sneak933: sneaking player at 13u not acquired');
+  assert(at(24, false)?.kind === 'player', 'Sneak933: non-sneaking player at 24u acquired');
+  assert(at(25, false) === null, 'Sneak933: non-sneaking player at 25u not acquired');
+  // A held player lock survives the sneak toggle (no aggro drop), even
+  // beyond the sneak range but inside the leash.
+  assert(at(20, true, { kind: 'player' })?.kind === 'player', 'Sneak933: held player lock survives sneak toggle');
+  assert(at(35, true, { kind: 'player' })?.kind === 'player', 'Sneak933: held lock inside leash survives');
+  // NPC acquisition is unchanged by sneak: an NPC at 20u is picked over a
+  // sneaking player at 15u (player out of sneak range, NPC in range).
+  const npcPick = chooseCreatureTarget({ creaturePos: { x: 0, y: 0 }, current: null, playerPos: { x: 15, y: 0 }, npcs: [{ npcId: 'townsfolk-1', position: { x: 20, y: 0 } }], playerSneaking: true });
+  assert(npcPick?.kind === 'npc' && npcPick.npcId === 'townsfolk-1', 'Sneak933: NPC acquisition unchanged by sneak');
+  // Engagement-range helper: 12 while sneaking and unengaged, normal otherwise.
+  assert(sneakEngagementRange(true, false, 24) === 12, 'Sneak933: unengaged sneak range 12');
+  assert(sneakEngagementRange(true, true, 24) === 24, 'Sneak933: engaged sneak keeps normal range');
+  assert(sneakEngagementRange(false, false, 24) === 24, 'Sneak933: non-sneak range unchanged');
+  assert(sneakEngagementRange(true, false, 30) === 12, 'Sneak933: archer volley also gated to 12');
+  // Alerted-id sanitize: old saves (no field) → empty; garbage dropped.
+  assert(JSON.stringify(sanitizeAlertedIds(undefined)) === '[]', 'Sneak933: missing field restores empty');
+  assert(JSON.stringify(sanitizeAlertedIds(['townsfolk-1', 7, '', 'townsfolk-1', 'kael'])) === '["townsfolk-1","kael"]', 'Sneak933: garbage dropped, dupes collapsed');
+  // Dim constant: sneaking renders at 0.55, full otherwise (the renderer
+  // applies this constant; the value itself is the contract).
+  assert(SNEAK_PLAYER_OPACITY === 0.55, 'Sneak933: sneak opacity 0.55');
 }
 
 // ---- BUILD 594: deterministic geology layer (ore deposits) ----

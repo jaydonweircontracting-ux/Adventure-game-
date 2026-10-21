@@ -37,6 +37,26 @@ export type CreatureTargetCandidate = {
 
 /** Matches GOAT_CHASE_RANGE in ai.ts: beyond this, creatures never engage. */
 export const CREATURE_ACQUIRE_RANGE = 24;
+/**
+ * BUILD 933: a sneaking player is acquired at a REDUCED range — mirrors
+ * SNEAK_WITNESS_RADIUS in sneak.ts (12u vs the normal 24u). Only fresh
+ * acquisition of the player is gated: a creature that already holds the
+ * player as its lock keeps the lock until the leash/flee rules release it
+ * (never silently dropped because sneak was toggled), and creature-vs-NPC
+ * acquisition is unchanged.
+ */
+export const SNEAK_CREATURE_ACQUIRE_RANGE = 12;
+
+/**
+ * BUILD 933: the player-engagement range for a creature that is not
+ * already fighting the player. Used by the App loops for the melee chase
+ * gate (updateGoat) and the archer volley gate, so a sneaking player
+ * outside 12 units is not engaged by any path — not just the acquisition
+ * pick. An already-engaged creature keeps its normal range.
+ */
+export function sneakEngagementRange(sneaking: boolean, engaged: boolean, normalRange: number): number {
+  return sneaking && !engaged ? SNEAK_CREATURE_ACQUIRE_RANGE : normalRange;
+}
 /** A locked target is held until it gets this far away (hysteresis so a
  *  victim hovering at the acquire edge doesn't flicker the lock). */
 export const CREATURE_LEASH_RANGE = 36;
@@ -65,6 +85,10 @@ export type ChooseCreatureTargetArgs = {
   playerPos: CombatPoint | null;
   /** Townsfolk candidates (already filtered by the caller). */
   npcs: CreatureTargetCandidate[];
+  /** BUILD 933: true while the player is sneaking. Gates FRESH player
+   *  acquisition to SNEAK_CREATURE_ACQUIRE_RANGE; a held player lock is
+   *  never dropped by this flag (the lock-hold branch below ignores it). */
+  playerSneaking?: boolean;
 };
 
 /**
@@ -72,7 +96,7 @@ export type ChooseCreatureTargetArgs = {
  * Returns null when no victim is in acquire range and no valid lock exists.
  */
 export function chooseCreatureTarget(args: ChooseCreatureTargetArgs): CreatureTargetChoice | null {
-  const { creaturePos, current, playerPos, npcs } = args;
+  const { creaturePos, current, playerPos, npcs, playerSneaking = false } = args;
 
   // Distance to the current lock, or null when the lock is broken
   // (target gone, or beyond the leash).
@@ -100,22 +124,43 @@ export function chooseCreatureTarget(args: ChooseCreatureTargetArgs): CreatureTa
   }
 
   if (current && currentDist !== null) {
-    // Lock holds unless a challenger is dramatically closer.
-    if (best && best.d <= CREATURE_ACQUIRE_RANGE && best.d < currentDist * CREATURE_SWITCH_RATIO) {
+    // Lock holds unless a challenger is dramatically closer. BUILD 933: a
+    // sneaking player challenger must ALSO be inside the reduced sneak
+    // range to steal a lock; a held player lock itself is never dropped
+    // by sneak (this branch returns `current` untouched otherwise).
+    const bestRange = best?.choice.kind === 'player' && playerSneaking
+      ? SNEAK_CREATURE_ACQUIRE_RANGE
+      : CREATURE_ACQUIRE_RANGE;
+    if (best && best.d <= bestRange && best.d < currentDist * CREATURE_SWITCH_RATIO) {
       return best.choice;
     }
     return current;
   }
-  // No valid lock: acquire the nearest victim inside acquire range.
-  // `best` already holds the nearest non-lock victim; when the broken lock
-  // was the player, the player was excluded from `best`, so re-include the
-  // player as a fresh candidate.
-  let nearest: { choice: CreatureTargetChoice; d: number } | null = best;
-  if (current?.kind === 'player' && playerPos) {
-    const d = dist(creaturePos, playerPos);
-    if (!nearest || d < nearest.d) nearest = { choice: { kind: 'player' }, d };
+  // No valid lock: acquire the nearest victim inside ITS acquire range.
+  // BUILD 933: the player candidate uses the reduced sneak range while
+  // sneaking; NPC candidates always use the normal range. Per-candidate
+  // ranges replace the old single-nearest check, because a sneaking player
+  // nearer than an in-range NPC must not shadow that NPC (creature-vs-NPC
+  // acquisition is unchanged). Tie behavior matches the pre-933
+  // construction exactly: the player was added to `best` first, so ties
+  // go to the player — except when the broken lock was the player, where
+  // re-inclusion required strictly closer.
+  const playerD = playerPos ? dist(creaturePos, playerPos) : null;
+  const playerInRange = playerD !== null
+    && playerD <= (playerSneaking ? SNEAK_CREATURE_ACQUIRE_RANGE : CREATURE_ACQUIRE_RANGE);
+  let npcBest: { npcId: string; d: number } | null = null;
+  for (const c of npcs) {
+    if (current?.kind === 'npc' && current.npcId === c.npcId) continue;
+    const d = dist(creaturePos, c.position);
+    if (!npcBest || d < npcBest.d) npcBest = { npcId: c.npcId, d };
   }
-  if (nearest && nearest.d <= CREATURE_ACQUIRE_RANGE) return nearest.choice;
+  const npcInRange = npcBest !== null && npcBest.d <= CREATURE_ACQUIRE_RANGE;
+  if (playerInRange && npcInRange) {
+    const playerWins = current?.kind === 'player' ? playerD! < npcBest!.d : playerD! <= npcBest!.d;
+    return playerWins ? { kind: 'player' } : { kind: 'npc', npcId: npcBest!.npcId };
+  }
+  if (playerInRange) return { kind: 'player' };
+  if (npcInRange) return { kind: 'npc', npcId: npcBest!.npcId };
   return null;
 }
 
