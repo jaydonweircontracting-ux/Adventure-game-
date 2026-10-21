@@ -11,7 +11,8 @@ import { SHOP_CATALOG } from '../src/game/shops';
 import { generateLayout, layoutRng, selectLayoutKind } from '../src/game/dungeonLayouts';
 import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai';
 import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '../src/game/combat';
-import { chooseCreatureTarget, pickGuardCreatureTarget, sneakEngagementRange, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
+import { chooseCreatureTarget, pickGuardCreatureTarget, sneakEngagementRange, CREATURE_ACQUIRE_RANGE, SNEAK_CREATURE_ACQUIRE_RANGE, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
+import { behaviorForCreature, behaviorKindKeys, preferredRangeFor, hashRoll, shouldStand, shouldRetarget, isBehaviorFleeing, voiceLine } from '../src/game/creatureBehavior';
 import { strayGateDecision, strayKindForRoll, straySpawnPoints, pickStraySpawnPoint, isTownEdgePosition, isTownCenterPosition, TOWN_STRAY_CHANCE, TOWN_STRAY_ROAM_RADIUS, TOWN_CENTER_SAFE_RADIUS } from '../src/game/townStrays';
 import { createAgent, stepAgent, AGENT_MOVE_SPEED, type AgentWorld } from '../src/game/gameplayAgent';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
@@ -1380,6 +1381,96 @@ console.log('Testing pathfinding combat pursuit (BUILD 919)...');
   assert(noPick === null, 'Guard should ignore creatures that are not menacing');
   const farPick = pickGuardCreatureTarget(guardPos, [{ entityKind: 'monster', id: 4, position: { x: 40, y: 0 }, menacing: true }]);
   assert(farPick === null, 'Guard should not engage beyond sight range');
+}
+
+// ---- 13a1m. Creature behavior blocks (BUILD 934, Tibia item 1) ----
+console.log('Testing creature behavior blocks (BUILD 934)...');
+{
+  const wolf = behaviorForCreature('wolf');
+  assert(wolf.standChance === 0.2, 'Behavior: wolf stand chance 0.2');
+  assert(wolf.retargetIntervalMs === 3000 && wolf.retargetChance === 0.25, 'Behavior: wolf retarget 3000ms/0.25');
+  assert(wolf.fleeHpRatio === 0.25 && wolf.canFlee === true, 'Behavior: wolf flees at 0.25');
+  const ogre = behaviorForCreature('ogre');
+  assert(ogre.standChance === 0.85, 'Behavior: ogre stand chance 0.85');
+  const slime = behaviorForCreature('slime');
+  assert(slime.canFlee === false, 'Behavior: slime never flees');
+  const skeleton = behaviorForCreature('skeleton');
+  assert(skeleton.canFlee === false, 'Behavior: skeleton never flees');
+  const dragon = behaviorForCreature('dragon');
+  assert(dragon.retargetIntervalMs === 4000 && dragon.retargetChance === 0.1 && dragon.fleeHpRatio === 0.3, 'Behavior: dragon retarget 4000/0.1, flee 0.3');
+  assert(behaviorForCreature('WOLF').standChance === 0.2, 'Behavior: kind lookup is case-insensitive');
+  assert(behaviorForCreature('no-such-kind').standChance === 0.4, 'Behavior: unknown kind gets the default block');
+  assert(preferredRangeFor(wolf, false) === 4, 'Behavior: melee preferred range 4');
+  assert(preferredRangeFor(wolf, true) === 14, 'Behavior: ranged preferred range 14');
+  // Table invariant: melee hold range never exceeds melee reach, ranged
+  // band stays inside the archer volley band, chances are probabilities.
+  for (const kind of behaviorKindKeys()) {
+    const b = behaviorForCreature(kind);
+    assert(b.preferredRange <= 4, `Behavior: ${kind} melee range must not exceed melee reach`);
+    assert(b.rangedPreferredRange > 7 && b.rangedPreferredRange <= 30, `Behavior: ${kind} ranged band must sit inside the volley band`);
+    assert(b.standChance >= 0 && b.standChance <= 1, `Behavior: ${kind} stand chance is a probability`);
+    assert(b.retargetChance >= 0 && b.retargetChance <= 1, `Behavior: ${kind} retarget chance is a probability`);
+    assert(b.fleeHpRatio >= 0 && b.fleeHpRatio <= 1, `Behavior: ${kind} flee ratio is a fraction`);
+  }
+  // Flee predicate: above never, at-or-below always, incapable never.
+  assert(isBehaviorFleeing(wolf, 26, 100) === false, 'Behavior: wolf above 0.25 never flees');
+  assert(isBehaviorFleeing(wolf, 25, 100) === true, 'Behavior: wolf at exactly 0.25 flees');
+  assert(isBehaviorFleeing(wolf, 10, 100) === true, 'Behavior: wolf below 0.25 flees');
+  assert(isBehaviorFleeing(slime, 1, 100) === false, 'Behavior: slime never flees even at 1 HP');
+  assert(isBehaviorFleeing(skeleton, 1, 100) === false, 'Behavior: skeleton never flees even at 1 HP');
+  // Rolls are pure: same seed + bucket, same roll; always in [0, 1).
+  assert(hashRoll('monster:7', 42) === hashRoll('monster:7', 42), 'Behavior: hash roll is deterministic');
+  assert(hashRoll('monster:7', 42) >= 0 && hashRoll('monster:7', 42) < 1, 'Behavior: hash roll is in [0, 1)');
+  assert(shouldStand({ ...wolf, standChance: 1 }, 'monster:7', 5000) === true, 'Behavior: stand chance 1 always stands');
+  assert(shouldStand({ ...wolf, standChance: 0 }, 'monster:7', 5000) === false, 'Behavior: stand chance 0 never stands');
+  // Retarget: before the interval never; at/after it, chance decides.
+  assert(shouldRetarget(wolf, 'monster:7', 2999, 0) === false, 'Behavior: no retarget before the interval');
+  assert(shouldRetarget({ ...wolf, retargetChance: 1 }, 'monster:7', 3000, 0) === true, 'Behavior: retarget chance 1 always re-evaluates at the interval');
+  assert(shouldRetarget({ ...wolf, retargetChance: 0 }, 'monster:7', 3000, 0) === false, 'Behavior: retarget chance 0 never re-evaluates');
+  // Voices: deterministic pick, empty list yields nothing.
+  assert(voiceLine([], 'monster:7', 'acquire') === null, 'Behavior: empty voice list yields no line');
+  assert(voiceLine(wolf.voices.acquire, 'monster:7', 'acquire') === voiceLine(wolf.voices.acquire, 'monster:7', 'acquire'), 'Behavior: voice pick is deterministic');
+  assert(wolf.voices.acquire.includes(voiceLine(wolf.voices.acquire, 'monster:7', 'acquire')!), 'Behavior: voice pick comes from the table');
+  // Sneak ranges untouched by the behavior work.
+  assert(CREATURE_ACQUIRE_RANGE === 24, 'Behavior: normal acquisition still 24');
+  assert(SNEAK_CREATURE_ACQUIRE_RANGE === 12, 'Behavior: sneak acquisition still 12');
+  // updateGoat integration: a ranged creature approaches to its band and holds it.
+  const mkCreature = (x: number, hp: number, maxHp: number): GoatAIEntity => ({
+    position: { x, y: 0 }, facing: 'left', state: 'idle', disposition: 'aggressive',
+    hp, maxHp, attackCooldown: 0, attackTimer: 0, attackHitApplied: false,
+    hurtTimer: 0, moving: false, attacking: false, level: 1,
+  });
+  let archer = mkCreature(20, 100, 100);
+  const archerBehavior = { preferredRange: 14, stand: false, fleeHpRatio: 0.3, canFlee: true };
+  for (let i = 0; i < 200; i++) archer = updateGoat(archer, { x: 0, y: 0 }, 'right', [archer], 100, { behavior: archerBehavior }).goat;
+  const archerDist = Math.hypot(archer.position.x - 0, archer.position.y - 0);
+  assert(Math.abs(archerDist - 14) < 0.01, `Behavior: ranged creature holds its 14u band (got ${archerDist})`);
+  // A ranged creature rushed inside its band steps back out to it.
+  let rushed = mkCreature(10, 100, 100);
+  rushed = updateGoat(rushed, { x: 0, y: 0 }, 'right', [rushed], 100, { behavior: archerBehavior }).goat;
+  const rushedDist = Math.hypot(rushed.position.x - 0, rushed.position.y - 0);
+  assert(Math.abs(rushedDist - 14) < 0.01, `Behavior: rushed archer steps back to 14u (got ${rushedDist})`);
+  // A melee creature closes to the old 4u ring exactly.
+  let melee = mkCreature(20, 100, 100);
+  const meleeBehavior = { preferredRange: 4, stand: false, fleeHpRatio: 0.25, canFlee: true };
+  for (let i = 0; i < 200; i++) melee = updateGoat(melee, { x: 0, y: 0 }, 'right', [melee], 100, { behavior: meleeBehavior }).goat;
+  const meleeDist = Math.hypot(melee.position.x - 0, melee.position.y - 0);
+  assert(Math.abs(meleeDist - 4) < 0.5, `Behavior: melee creature closes to the 4u ring (got ${meleeDist})`);
+  // A won stand roll holds ground this tick.
+  const stood = updateGoat(mkCreature(20, 100, 100), { x: 0, y: 0 }, 'right', [mkCreature(20, 100, 100)], 100, { behavior: { ...meleeBehavior, stand: true } }).goat;
+  assert(stood.position.x === 20 && stood.moving === false, 'Behavior: standing creature holds its position');
+  // Flee flag: below threshold flees and moves away; above does not; incapable never does.
+  const fleer = updateGoat(mkCreature(10, 20, 100), { x: 0, y: 0 }, 'right', [mkCreature(10, 20, 100)], 100, { behavior: meleeBehavior }).goat;
+  assert(fleer.fleeing === true && fleer.position.x > 10, 'Behavior: wounded wolf flees away from its target');
+  const holder = updateGoat(mkCreature(10, 30, 100), { x: 0, y: 0 }, 'right', [mkCreature(10, 30, 100)], 100, { behavior: meleeBehavior }).goat;
+  assert(holder.fleeing !== true, 'Behavior: wolf above its flee threshold does not flee');
+  const slimeFleer = updateGoat(mkCreature(10, 1, 100), { x: 0, y: 0 }, 'right', [mkCreature(10, 1, 100)], 100, { behavior: { preferredRange: 4, stand: false, fleeHpRatio: 0, canFlee: false } }).goat;
+  assert(slimeFleer.fleeing !== true, 'Behavior: slime never flees even at 1 HP');
+  // NPC targets keep the 1.6 retaliation standoff even with a behavior block.
+  let npcFighter = mkCreature(20, 100, 100);
+  for (let i = 0; i < 200; i++) npcFighter = updateGoat(npcFighter, { x: 0, y: 0 }, 'right', [npcFighter], 100, { meleeStandOff: 1.6, behavior: { stand: false, fleeHpRatio: 0.25, canFlee: true } }).goat;
+  const npcDist = Math.hypot(npcFighter.position.x - 0, npcFighter.position.y - 0);
+  assert(Math.abs(npcDist - 1.6) < 0.5, `Behavior: NPC-target standoff stays 1.6 (got ${npcDist})`);
 }
 
 // BUILD 921: NPC worn gear drops + corpse unequip.

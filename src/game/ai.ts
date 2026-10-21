@@ -1,7 +1,7 @@
 import { getDirection, isAdjacentAndFacing, type CombatDirection, type CombatPoint } from './combat';
 
 export type GoatAIState = 'idle' | 'chase' | 'attack' | 'hurt' | 'die';
-export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean; spawnPosition?: CombatPoint; roamRadius?: number; level?: number; provoked?: boolean; threatLevel?: number };
+export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean; spawnPosition?: CombatPoint; roamRadius?: number; level?: number; provoked?: boolean; threatLevel?: number; fleeing?: boolean };
 export const GOAT_CHASE_RANGE = 24;
 // Keep hostile goats close enough that sprites nearly touch the player:
 // melee happens up close, and the player's 5-unit swing reach connects.
@@ -79,6 +79,20 @@ export type UpdateGoatOpts = {
    *  engaged creature keeps the normal gate — its lock/leash, not this
    *  number, decides when the fight ends. */
   chaseRange?: number;
+  /** BUILD 934: per-kind behavior block (creatureBehavior.ts), resolved
+   *  by the caller from the creature's kind. preferredRange is the
+   *  fight range for THIS target (callers pass it only for player
+   *  targets; NPC targets keep meleeStandOff so 915 retaliation lands).
+   *  stand is the precomputed staticattack roll for this frame (the
+   *  caller hashes key + time bucket; updateGoat stays pure). When
+   *  omitted, movement/flee behave exactly as before (standoff 4,
+   *  never stand, global 0.3 flee threshold, always flees). */
+  behavior?: {
+    preferredRange?: number;
+    stand?: boolean;
+    fleeHpRatio?: number;
+    canFlee?: boolean;
+  };
 };
 
 // Resolve a desired move against solid geometry. Tries the full move first,
@@ -147,12 +161,12 @@ function keepMeleeDistance(position: CombatPoint, player: CombatPoint, playerFac
 export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint, playerFacing: CombatDirection, goats: GoatAIEntity[], deltaMs: number, opts?: UpdateGoatOpts): { goat: T; attackHit: boolean } {
   const cooldown = Math.max(0, goat.attackCooldown - deltaMs);
   const hurtTimer = Math.max(0, goat.hurtTimer - deltaMs);
-  if (goat.hp <= 0 || goat.disposition === 'defeated') return { goat: { ...goat, disposition: 'defeated', state: 'die', moving: false, attacking: false, attackCooldown: cooldown, hurtTimer, attackTimer: 0, attackHitApplied: false }, attackHit: false };
-  if (goat.state === 'hurt' && hurtTimer > 0) return { goat: { ...goat, hurtTimer, attackCooldown: cooldown, moving: false, attacking: false }, attackHit: false };
+  if (goat.hp <= 0 || goat.disposition === 'defeated') return { goat: { ...goat, disposition: 'defeated', state: 'die', moving: false, attacking: false, attackCooldown: cooldown, hurtTimer, attackTimer: 0, attackHitApplied: false, fleeing: false }, attackHit: false };
+  if (goat.state === 'hurt' && hurtTimer > 0) return { goat: { ...goat, hurtTimer, attackCooldown: cooldown, moving: false, attacking: false, fleeing: goat.fleeing ?? false }, attackHit: false };
 
   const distance = Math.hypot(player.x - goat.position.x, player.y - goat.position.y);
   if (goat.disposition !== 'aggressive') {
-    return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false }, attackHit: false };
+    return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false, fleeing: false }, attackHit: false };
   }
   // Common sense: don't pick fights you can't win. An unprovoked creature
   // won't start a fight with a foe far above its own level — it holds still
@@ -160,34 +174,49 @@ export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint,
   const selfLevel = goat.level ?? 1;
   const threatLevel = goat.threatLevel;
   if (!goat.provoked && threatLevel !== undefined && threatLevel > selfLevel + GOAT_OUTMATCHED_LEVEL_GAP) {
-    return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false }, attackHit: false };
+    return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false, fleeing: false }, attackHit: false };
   }
 
   const facing = getDirection(goat.position, player);
-  const lowHealth = goat.hp / Math.max(1, goat.maxHp) <= GOAT_FLEE_HP_RATIO;
+  // BUILD 934: per-kind flee threshold + capability (defaults preserve
+  // the old global 0.3 / always-flee behavior for callers without a
+  // behavior block). Fleeing keeps disposition aggressive so the
+  // creature stays targetable and killable; the home-range clamp stops
+  // the flight at the roam edge, so flight can never strand a quest.
+  const fleeRatio = opts?.behavior?.fleeHpRatio ?? GOAT_FLEE_HP_RATIO;
+  const canFlee = opts?.behavior?.canFlee ?? true;
+  const lowHealth = canFlee && goat.hp / Math.max(1, goat.maxHp) <= fleeRatio;
   if (lowHealth) {
     const fled = moveAwayFrom(goat.position, player, GOAT_FLEE_SPEED, deltaMs);
     const clamped = clampToHomeRange(fled, goat.spawnPosition, goat.roamRadius);
     const { position, moved } = resolveCollisionMove(goat.position, clamped, opts?.isBlocked);
-    return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(player, position), moving: moved, attacking: false }, attackHit: false };
+    return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(player, position), moving: moved, attacking: false, fleeing: true }, attackHit: false };
   }
   if (goat.state === 'attack') {
     const attackTimer = goat.attackTimer - deltaMs;
     if (attackTimer <= 0 && !goat.attackHitApplied) {
       const attackHit = isAdjacentAndFacing(goat.position, player, facing, playerFacing, GOAT_MELEE_RANGE);
-      return { goat: { ...goat, state: 'chase', attackTimer: 0, attackHitApplied: true, attackCooldown: GOAT_ATTACK_COOLDOWN_MS, attacking: false, moving: false }, attackHit };
+      return { goat: { ...goat, state: 'chase', attackTimer: 0, attackHitApplied: true, attackCooldown: GOAT_ATTACK_COOLDOWN_MS, attacking: false, moving: false, fleeing: false }, attackHit };
     }
-    return { goat: { ...goat, attackTimer, attackCooldown: cooldown, attacking: attackTimer > 0, moving: false }, attackHit: false };
+    return { goat: { ...goat, attackTimer, attackCooldown: cooldown, attacking: attackTimer > 0, moving: false, fleeing: false }, attackHit: false };
   }
   const canStartAttack = cooldown <= 0 && isAdjacentAndFacing(goat.position, player, facing, playerFacing, GOAT_MELEE_RANGE);
-  if (canStartAttack) return { goat: { ...goat, state: 'attack', attackTimer: GOAT_ATTACK_WINDUP_MS, attackHitApplied: false, attackCooldown: 0, facing, attacking: true, moving: false }, attackHit: false };
+  if (canStartAttack) return { goat: { ...goat, state: 'attack', attackTimer: GOAT_ATTACK_WINDUP_MS, attackHitApplied: false, attackCooldown: 0, facing, attacking: true, moving: false, fleeing: false }, attackHit: false };
   if (distance <= (opts?.chaseRange ?? GOAT_CHASE_RANGE)) {
     // Give up the chase when the player lures the goat out of its territory.
     if (shouldReturnHome(goat, player) && goat.spawnPosition) {
       const homePosition = moveTowards(goat.position, goat.spawnPosition, GOAT_CHASE_SPEED, deltaMs);
       const clamped = clampToHomeRange(homePosition, goat.spawnPosition, goat.roamRadius);
       const { position, moved } = resolveCollisionMove(goat.position, clamped, opts?.isBlocked);
-      return { goat: { ...goat, position, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(position, goat.spawnPosition), moving: moved, attacking: false }, attackHit: false };
+      return { goat: { ...goat, position, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(position, goat.spawnPosition), moving: moved, attacking: false, fleeing: false }, attackHit: false };
+    }
+    // BUILD 934: staticattack — a won stand roll holds ground this
+    // frame instead of stepping. Buckets rotate every 500ms (the caller
+    // hashes key + bucket), so a high-stand creature still advances in
+    // expectation and can never stall forever. The attack check above
+    // runs before movement, so standing never costs a landed hit.
+    if (opts?.behavior?.stand === true) {
+      return { goat: { ...goat, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing, moving: false, attacking: false, fleeing: false }, attackHit: false };
     }
     const separation = goats.reduce((force, other) => {
       if (other === goat) return force;
@@ -198,9 +227,14 @@ export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint,
     }, { x: 0, y: 0 });
     const chasedPosition = moveTowards(goat.position, player, GOAT_CHASE_SPEED, deltaMs, separation);
     const rangedPosition = clampToHomeRange(chasedPosition, goat.spawnPosition, goat.roamRadius);
-    const desired = keepMeleeDistance(rangedPosition, player, playerFacing, opts?.meleeStandOff ?? GOAT_MELEE_RANGE);
+    // BUILD 934: preferred fight range for this target (player targets
+    // only — callers leave it undefined for NPC targets so the 1.6
+    // retaliation standoff from BUILD 915 still applies there). A
+    // ranged creature pushed inside its band steps back out to it;
+    // a melee creature keeps the old 4-unit ring exactly.
+    const desired = keepMeleeDistance(rangedPosition, player, playerFacing, opts?.behavior?.preferredRange ?? opts?.meleeStandOff ?? GOAT_MELEE_RANGE);
     const { position, moved } = resolveCollisionMove(goat.position, desired, opts?.isBlocked);
-    return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(position, player), moving: moved, attacking: false }, attackHit: false };
+    return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(position, player), moving: moved, attacking: false, fleeing: false }, attackHit: false };
   }
-  return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false }, attackHit: false };
+  return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false, fleeing: false }, attackHit: false };
 }

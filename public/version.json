@@ -1,6 +1,6 @@
 {
-  "build": "933",
-  "note": "Sneak mode, finished: sneaking now fools monsters as well as people — a creature only notices you within 12 paces while you sneak (down from 24), and a beast already chasing you does not lose you just because you duck into the shadows. While sneaking your figure visibly dims so you can see at a glance that you are hidden. Folk you have alerted now remember it through save and reload — no more getting forgiven by quitting — and a first strike from the shadows now also hits twice as hard against wandering adventurers and travelers, not just villagers.",
-  "timestamp": "2026-10-21T16:04:48.561Z",
-  "cacheBuster": "mviaz4fl"
+  "build": "934",
+  "note": "Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.",
+  "timestamp": "2026-10-21T17:48:00.936Z",
+  "cacheBuster": "mvienui0"
 }
