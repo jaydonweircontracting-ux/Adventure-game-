@@ -63,6 +63,7 @@ import { SHOP_CATALOG, createStallStock, type StallShopDef } from '../src/game/s
 import { variantLook } from '../src/game/iso/characterSystem';
 import { bountyForCrime, addCrimeToBounty, wantedLevel, emptyBounty, bountyForTown, totalBounty, clearTownBounty, migrateBounty, townIdForChunk, createPendingReport, advancePendingReports } from '../src/game/bounty';
 import { pickpocketChance, resolvePickpocket } from '../src/game/pickpocket';
+import { SNEAK_PICKPOCKET_RANGE, SNEAK_WITNESS_RADIUS, SNEAK_STEALTH_DAMAGE_MULT, isStealthUndetected, stealthDamage, filterSneakWitnesses, stealableStashGear, choosePickpocketLoot } from '../src/game/sneak';
 import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } from '../src/game/landmarkGrid';
 import { elementalMultiplier, elementalInteraction, strongAgainst, ELEMENTS } from '../src/game/elements';
 import { COMPANION_SPECIES, companionStatsForLevel, companionXpForLevel } from '../src/game/companions';
@@ -7472,6 +7473,59 @@ console.log('Testing examine system...');
   // Failure.
   r = resolvePickpocket(0.5, 0.8);
   assert(r.outcome === 'failure', 'Pickpocket: high roll = failure');
+}
+
+// BUILD 932: sneak mode — detection, witness filtering, stealth damage,
+// stash pickpocketing. (Runs after the BUILD 694 crash point in a full run;
+// the standalone verify932 script is the executing proof for these.)
+{
+  assert(SNEAK_PICKPOCKET_RANGE === 8, 'Sneak: pickpocket range 8');
+  assert(SNEAK_WITNESS_RADIUS === 12, 'Sneak: witness radius 12 vs normal 25');
+  assert(SNEAK_STEALTH_DAMAGE_MULT === 2, 'Sneak: stealth damage x2');
+
+  // Undetected only while sneaking and not alerted.
+  const alerted = new Set<string>(['townsfolk-3']);
+  assert(isStealthUndetected(true, new Set(), 'townsfolk-1') === true, 'Sneak: sneaking + unalerted = undetected');
+  assert(isStealthUndetected(true, alerted, 'townsfolk-3') === false, 'Sneak: alerted target detects you');
+  assert(isStealthUndetected(false, new Set(), 'townsfolk-1') === false, 'Sneak: not sneaking = detected');
+
+  // Stealth damage doubles only when undetected.
+  assert(stealthDamage(10, true, new Set(), 'townsfolk-1') === 20, 'Sneak: undetected hit x2');
+  assert(stealthDamage(10, true, alerted, 'townsfolk-3') === 10, 'Sneak: alerted target takes normal damage');
+  assert(stealthDamage(10, false, new Set(), 'townsfolk-1') === 10, 'Sneak: non-sneak hit normal');
+
+  // Witness filtering: 12u boundary inclusive, farther dropped, unknown dropped.
+  const wit = [
+    { npcId: 'a', confidence: 1 }, { npcId: 'b', confidence: 0.8 },
+    { npcId: 'c', confidence: 0.5 }, { npcId: 'd', confidence: 0.3 },
+    { npcId: 'ghost', confidence: 1 },
+  ];
+  const roster = [
+    { id: 'a', position: { x: 5, y: 0 } },
+    { id: 'b', position: { x: 12, y: 0 } },
+    { id: 'c', position: { x: 12.5, y: 0 } },
+    { id: 'd', position: { x: 25, y: 0 } },
+  ];
+  const kept = filterSneakWitnesses(wit, roster, { x: 0, y: 0 });
+  assert(kept.map((w) => w.npcId).join(',') === 'a,b', 'Sneak: only witnesses within 12u count');
+
+  // Stash theft: a spare dagger under a worn iron sword is stealable.
+  assert(stealableStashGear('guard', ['iron_sword'], ['dagger']).join(',') === 'dagger', 'Sneak: spare under worn best is stealable');
+  // The only weapon is never stealable (removing it drops the weapon score).
+  assert(stealableStashGear('commoner', [], ['dagger']).length === 0, 'Sneak: only weapon is not stealable');
+  // A spare helmet under a worn leather cap is stealable.
+  assert(stealableStashGear('guard', ['iron_sword', 'leather_cap'], ['cloth_hood']).join(',') === 'cloth_hood', 'Sneak: spare armor under worn best is stealable');
+  // A farmer's hand axe is a trade tool even when it is not the best weapon.
+  assert(stealableStashGear('farmer', ['steel_blade'], ['hand_axe']).length === 0, 'Sneak: last trade tool is not stealable');
+  // Children never have stealable gear.
+  assert(stealableStashGear('child', [], ['dagger']).length === 0, 'Sneak: children never stealable');
+  // Worn gear itself never appears (it is not in the stash list).
+  assert(stealableStashGear('guard', ['iron_sword'], []).length === 0, 'Sneak: empty stash, nothing stealable');
+
+  // Loot choice: item first, gold fallback.
+  const lootItem = choosePickpocketLoot('guard', ['iron_sword'], ['dagger']);
+  assert(lootItem.kind === 'item' && lootItem.baseId === 'dagger', 'Sneak: loot prefers a stealable stash piece');
+  assert(choosePickpocketLoot('commoner', [], []).kind === 'gold', 'Sneak: no stash piece means gold');
 }
 
 // ---- BUILD 594: deterministic geology layer (ore deposits) ----

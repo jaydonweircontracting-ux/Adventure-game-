@@ -5775,6 +5775,42 @@ body {
   color: #172819 !important;
 }
 
+/* BUILD 932: sneak + pickpocket buttons join the fixed combat cluster
+   (attack 86, run 148, sneak 210, pickpocket 272) — without this they flow
+   into the HUD container and end up under the player card, untappable. */
+.field-sneak-button,
+.field-pickpocket-button {
+  position: fixed !important;
+  right: max(16px, env(safe-area-inset-right)) !important;
+  z-index: 30000 !important;
+  display: grid !important;
+  place-items: center !important;
+  width: 52px !important;
+  height: 52px !important;
+  min-width: 52px !important;
+  min-height: 52px !important;
+  border: 2px solid rgba(255, 230, 175, .9) !important;
+  border-radius: 50% !important;
+  color: #fff4d8 !important;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, .55) !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  touch-action: none !important;
+}
+.field-sneak-button {
+  bottom: max(210px, calc(env(safe-area-inset-bottom) + 198px)) !important;
+  background: rgba(40, 40, 90, .96) !important;
+}
+.field-sneak-button.is-sneaking {
+  background: rgba(90, 90, 160, .96) !important;
+  border-color: #b9b9f0 !important;
+}
+.field-pickpocket-button {
+  bottom: max(272px, calc(env(safe-area-inset-bottom) + 260px)) !important;
+  background: rgba(90, 64, 30, .96) !important;
+}
+
 /* BUILD 907: selective corpse-loot panel; touch-sized actions and safe mobile width. */
 .body-loot-backdrop { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 14px; background: rgba(12, 17, 20, .58); pointer-events: auto; }
 .body-loot-panel { width: min(360px, 100%); max-height: min(78%, 520px); overflow: auto; padding: 16px; border: 2px solid #8a6846; border-radius: 12px; background: #f0e2c8; color: #35281d; box-shadow: 0 8px 28px rgba(0,0,0,.4); font-family: inherit; }

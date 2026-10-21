@@ -16,6 +16,8 @@ import { resolveNpcGearVisit, gearExamineLine, effectiveOwnedGear, effectiveWeal
 import { moralityLine, npcMorality, mayInitiateLethalAggression, moralityTier } from './game/npcMorality';
 import { addCrimeToBounty, wantedLevel, emptyBounty, bountyForTown, totalBounty, clearTownBounty, migrateBounty, townIdForChunk, createPendingReport, advancePendingReports, type BountyState, type PendingReport } from './game/bounty';
 import { pickpocketChance, resolvePickpocket } from './game/pickpocket';
+// BUILD 932: sneak mode — detection, witness filtering, stealth damage, stash pickpocketing.
+import { SNEAK_PICKPOCKET_RANGE, SNEAK_ALERTED_AWARENESS, isStealthUndetected, stealthDamage, filterSneakWitnesses, choosePickpocketLoot, canOfferPickpocket, type PickpocketLoot } from './game/sneak';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { isRecord, isFiniteNumber } from '@/game/shared/guards';
@@ -147,7 +149,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '931';
+const BUILD_NUMBER = '932';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -161,6 +163,7 @@ const BUILD_NOTES: Record<string, string> = {
   '928': 'The Sunken Crypt dungeon no longer repeats one skeleton: every floor now rolls one of three layouts — the classic chambered galleries, looped galleries where rooms connect in rings so a blocked corridor never strands you, or rough cellular caverns carved by cave generation. Vault rooms still hide in every layout, the stairs are always reachable, and the dungeon panel names the layout you are standing in. Also fixed: the classic map had a door and a pool that were walled off and unreachable — they are joined to the east room now',
   '929': 'The Sunken Crypt dungeon now has named bosses: Grimmaw the Hollow Alpha, Mother Vexa the Ember Matron, Scribe Morvain Keeper of Bone, and Warden Karst the Last Warden. Each appears at most once per descent, guards a hand-crafted chamber, and drops bonus gold and a potion when it falls. Also fixed: one dungeon vault could wall off a corridor and strand the rooms behind it — vault placement now re-checks reachability after every vault it stamps',
   '930': 'The Sunken Crypt dungeon now has shops: Ember Provisions (Old Kess) and Cinder Apothecary (Vesper) sell potions and rations at the same prices as the town stalls. Walk up to a shopkeeper to browse — buying costs no turn, the keeper cannot be attacked or looted, and stock runs out as you buy. A new shop with fresh stock appears on each floor.',
+  '932': 'Sneak mode is here: tap the eye button to slip into the shadows. While sneaking, folk are far less likely to notice you — only someone standing close by counts as a witness, so an unseen crime leaves no wanted level at all. Walk up to someone while sneaking and a Pickpocket button appears: the prompt shows your real chance and exactly what you stand to lift — a spare from their stash when they have one to spare, otherwise a share of their purse — and a clean lift lands straight in your pack with nobody the wiser. Get caught and they cry out, the sneak breaks, and the guards hear about it through the usual witness reports. And a first strike from the shadows hits twice as hard: attack an unsuspecting villager while sneaking and the blow deals double damage — drop them unseen and you stay hidden.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
   '925': 'Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported',
   '924': 'Mosslight ground is alive now: flowers and grass tufts grow through the town at the same rate as the wild meadows — same flowers, same grass, on every town yard and square. Roads, farm plots, and doorways are untouched',
@@ -4133,6 +4136,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 589: ref tracking inventory prop for test hooks (gold observation).
   const inventoryRef = useRef(inventory);
   useEffect(() => { inventoryRef.current = inventory; }, [inventory]);
+  // BUILD 932: same mirror for the equipment list (pickpocketed items).
+  const equipmentRef = useRef(equipment);
+  useEffect(() => { equipmentRef.current = equipment; }, [equipment]);
   // Debug tap marks (?debugDoors=1): user taps to mark where they think the
   // invisible exit/entrance is; rendered as lime green dots with coordinates.
   const [debugMarks, setDebugMarks] = useState<Point[]>([]);
@@ -4926,6 +4932,136 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     }
   };
   // BUILD 374: run a context-menu action, then close the menu.
+  // BUILD 932: shared pickpocket attempt — the context menu (BUILD 526/527)
+  // and the new sneak prompt both run through here, so the chance, loot,
+  // and crime paths cannot drift apart. The prompt precomputes its inputs
+  // at open (so what it shows is what the confirm attempts); the menu
+  // computes fresh inputs at action time.
+  type PickpocketInputs = { chance: number; loot: PickpocketLoot; lootLabel: string; purse: number; day: number };
+  const pickpocketInputsFor = (npc: Townsperson): PickpocketInputs => {
+    const clock = brainRef.current?.worldCore.getClock();
+    const hour = clock ? clock.hour : 12;
+    const day = clock ? clock.day : 1;
+    const playerPos = positionRef.current;
+    const dx = playerPos.x - npc.position.x;
+    const dy = playerPos.y - npc.position.y;
+    const facing = npc.facing; // 'up' | 'down' | 'left' | 'right'
+    let isBehind = false;
+    if (facing === 'up') isBehind = dy > 0;
+    else if (facing === 'down') isBehind = dy < 0;
+    else if (facing === 'left') isBehind = dx > 0;
+    else if (facing === 'right') isBehind = dx < 0;
+    // Awareness: patrolling guards are alert, sleepers are oblivious — and
+    // an NPC alerted by an earlier sneak action is near-maximally aware.
+    const act = npc.activity || '';
+    let npcAwareness = 0.5;
+    if (act === 'Patrolling') npcAwareness = 0.8;
+    else if (act === 'Sleeping') npcAwareness = 0.1;
+    else if (act === 'Minding the stall' || act === 'Tending crops') npcAwareness = 0.4;
+    else if (act === 'Off duty' || act === 'At home') npcAwareness = 0.3;
+    if (alertedNpcIdsRef.current.has(npc.id)) npcAwareness = SNEAK_ALERTED_AWARENESS;
+    const npcBusy = act === 'Minding the stall' || act === 'Tending crops' || act === 'Having lunch' || act === 'Evening at the Tankard';
+    const purse = clock ? npcGold(npc, clock) : 20;
+    const arch = npc.archetype || 'commoner';
+    let targetDifficulty = 0.2;
+    if (arch === 'guard') targetDifficulty = 0.8;
+    else if (arch === 'merchant') targetDifficulty = 0.4;
+    else if (arch === 'child') targetDifficulty = 0.1;
+    const chance = pickpocketChance({ isBehind, npcAwareness, npcBusy, hour, itemValue: purse, targetDifficulty });
+    // Loot: a stealable stash spare first (worn gear never), else purse gold.
+    const owned = effectiveOwnedGear({ id: npc.id, archetype: arch, ownedGear: npc.ownedGear, wealthGoal: npc.wealthGoal });
+    const loot = choosePickpocketLoot(arch, wornGearBaseIds(npc.id), owned);
+    const lootLabel = loot.kind === 'item'
+      ? gearNameForBaseId(loot.baseId)
+      : `a share of ${npc.name}'s purse (up to ${Math.max(1, Math.floor(purse * 0.5))} gold)`;
+    return { chance, loot, lootLabel, purse, day };
+  };
+  const executePickpocket = (npc: Townsperson, precomputed?: PickpocketInputs) => {
+    const playerPos = positionRef.current;
+    const dist = Math.hypot(playerPos.x - npc.position.x, playerPos.y - npc.position.y);
+    if (dist > SNEAK_PICKPOCKET_RANGE) {
+      setLogs((cur) => [{ text: 'Too far to pickpocket.', color: 'orange' }, ...cur].slice(0, 3));
+      return;
+    }
+    const inputs = precomputed ?? pickpocketInputsFor(npc);
+    const result = resolvePickpocket(inputs.chance, Math.random());
+    if (result.outcome === 'success' || result.outcome === 'critical') {
+      // Undetected lift: no alert, no crime, sneak stays on.
+      if (inputs.loot.kind === 'item' && isKnownBaseId(inputs.loot.baseId)) {
+        const baseId = inputs.loot.baseId;
+        const owned = effectiveOwnedGear({ id: npc.id, archetype: npc.archetype || 'commoner', ownedGear: npc.ownedGear, wealthGoal: npc.wealthGoal });
+        const remaining = [...owned];
+        const idx = remaining.indexOf(baseId);
+        if (idx >= 0) remaining.splice(idx, 1);
+        // Store the explicit list: leaving ownedGear undefined would
+        // regenerate the seed-derived starting stash — and the stolen piece.
+        const updated = townsfolkRef.current.map((w) => w.id === npc.id ? { ...w, ownedGear: remaining } : w);
+        townsfolkRef.current = updated;
+        setTownsfolk(updated);
+        const generated = generateItem(new ItemRng(Date.now() ^ baseId.split('').reduce((a, c) => a + c.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current), undefined, baseId);
+        onEquipmentChange((prev) => [...prev, withProvenance(generated, npc.name)]);
+        setLogs((cur) => [{ text: `Pickpocketed ${generated.name} from ${npc.name}!`, color: 'gold' }, ...cur].slice(0, 3));
+        spawnCombatText(generated.name, npc.position, 'reward');
+      } else {
+        // Gold fallback — steal from the victim's actual purse, don't mint.
+        const maxSteal = Math.max(1, Math.floor(inputs.purse * (result.outcome === 'critical' ? 0.5 : 0.25)));
+        const gold = Math.min(maxSteal, inputs.purse);
+        if (gold > 0) {
+          const updated = townsfolkRef.current.map((w) => w.id === npc.id ? { ...w, goldDelta: (w.goldDelta ?? 0) - gold } : w);
+          townsfolkRef.current = updated;
+          setTownsfolk(updated);
+          // BUILD 932 fix: the BUILD 526 code passed { gold }, but the
+          // player inventory's gold field is `coins` (applyLoot reads
+          // loot.coins) — so pickpocketed gold vanished: the victim lost
+          // it and the player never gained it. `coins` credits it for real.
+          onLoot({ coins: gold });
+          setLogs((cur) => [{ text: `Pickpocketed ${gold} gold from ${npc.name}!`, color: 'gold' }, ...cur].slice(0, 3));
+          spawnCombatText('+' + gold + 'g', npc.position, 'reward');
+        } else {
+          setLogs((cur) => [{ text: `${npc.name} has no gold to steal.`, color: 'orange' }, ...cur].slice(0, 3));
+        }
+      }
+    } else if (result.outcome === 'partial') {
+      // Noticed but not caught: suspicious, and the sneak breaks.
+      setLogs((cur) => [{ text: `${npc.name} notices something suspicious...`, color: 'orange' }, ...cur].slice(0, 3));
+      const updated = townsfolkRef.current.map((w) => w.id === npc.id ? addNPCMemory(w, 'PLAYER_SUSPICIOUS', inputs.day, 1) : w);
+      townsfolkRef.current = updated;
+      setTownsfolk(updated);
+      markNpcAlerted(npc.id);
+      breakSneak();
+    } else {
+      // Failure: caught! Record crime — while sneaking, only observers
+      // within the sneak witness radius count (the victim, at distance 0,
+      // always counts); otherwise the full BUILD 926 witness set. Capture
+      // the pre-break sneak state first: breakSneak clears the ref below.
+      setLogs((cur) => [{ text: `${npc.name} catches you pickpocketing!`, color: 'red' }, ...cur].slice(0, 3));
+      const wasSneaking = sneakingRef.current;
+      markNpcAlerted(npc.id);
+      breakSneak();
+      try {
+        const crime = createCrime('crime-' + Date.now().toString(36), 'pickpocket', chunkRef.current, { x: npc.position.x, y: npc.position.y }, inputs.day, npc.id);
+        const tickNow = brainRef.current?.worldCore.getClock().tick ?? 0;
+        const rawWitnesses = findWitnesses(
+          { position: { x: npc.position.x, y: npc.position.y } },
+          townsfolkRef.current.filter((w) => !isNpcDead(w, tickNow)).map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } }))
+        );
+        const witnesses = wasSneaking
+          ? filterSneakWitnesses(rawWitnesses, townsfolkRef.current.map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } })), { x: npc.position.x, y: npc.position.y })
+          : rawWitnesses;
+        const memEvent = crimeMemoryEvent(crime);
+        const importance = crimeMemoryImportance(crime);
+        const updated = townsfolkRef.current.map((w) => {
+          const isVictim = w.id === npc.id;
+          const isWitness = witnesses.find((x) => x.npcId === w.id);
+          return (isVictim || isWitness) ? addNPCMemory(w, memEvent, inputs.day, importance) : w;
+        });
+        townsfolkRef.current = updated;
+        setTownsfolk(updated);
+        // BUILD 926: no instant bounty — a pending witness report.
+        registerPlayerCrime(crime.id, crime.severity, witnesses, inputs.day);
+      } catch { /* best-effort */ }
+    }
+  };
   const runContextAction = (actionId: MenuAction['id']) => {
     const m = contextMenu;
     setContextMenu(null);
@@ -4950,100 +5086,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       setLogs((currentLogs) => [{ text: `Targeting ${npcTarget.npc.name} — chasing!`, color: 'red' }, ...currentLogs].slice(0, 3));
     }
     else if (actionId === 'pickpocket' && m.target.kind === 'npc') {
-      // BUILD 526: Pickpocket attempt — uses pickpocket.ts logic, feeds crime system.
-      const npc = m.target.npc;
-      const playerPos = positionRef.current;
-      const dx = playerPos.x - npc.position.x;
-      const dy = playerPos.y - npc.position.y;
-      // Behind check: player is behind NPC based on NPC facing.
-      // Facing: assume npc.facing is a direction; simplify to distance-based for now.
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > 8) {
-        setLogs((cur) => [{ text: 'Too far to pickpocket.', color: 'orange' }, ...cur].slice(0, 3));
-      } else {
-        const clock = brainRef.current?.worldCore.getClock();
-        const hour = clock ? clock.hour : 12;
-        const day = clock ? clock.day : 1;
-        // BUILD 527: Real pickpocket factors — no more hardcoded inputs.
-        // Behind: player is behind NPC based on NPC facing direction.
-        const facing = npc.facing; // 'up' | 'down' | 'left' | 'right'
-        let isBehind = false;
-        if (facing === 'up') isBehind = dy > 0; // NPC faces north (-y), behind is south (+y)
-        else if (facing === 'down') isBehind = dy < 0; // NPC faces south (+y), behind is north (-y)
-        else if (facing === 'left') isBehind = dx > 0; // NPC faces west (-x), behind is east (+x)
-        else if (facing === 'right') isBehind = dx < 0; // NPC faces east (+x), behind is west (-x)
-        // Awareness: patrolling guards are alert, sleepers are oblivious.
-        const act = npc.activity || '';
-        let npcAwareness = 0.5;
-        if (act === 'Patrolling') npcAwareness = 0.8;
-        else if (act === 'Sleeping') npcAwareness = 0.1;
-        else if (act === 'Minding the stall' || act === 'Tending crops') npcAwareness = 0.4;
-        else if (act === 'Off duty' || act === 'At home') npcAwareness = 0.3;
-        // Busy: working/eating NPCs are distracted.
-        const npcBusy = act === 'Minding the stall' || act === 'Tending crops' || act === 'Having lunch' || act === 'Evening at the Tankard';
-        // Real purse value via npcGold (deterministic + goldDelta).
-        const purse = clock ? npcGold(npc, clock) : 20;
-        // Difficulty by archetype: guards hard, children easy.
-        const arch = npc.archetype || 'commoner';
-        let targetDifficulty = 0.2;
-        if (arch === 'guard') targetDifficulty = 0.8;
-        else if (arch === 'merchant') targetDifficulty = 0.4;
-        else if (arch === 'child') targetDifficulty = 0.1;
-        const chance = pickpocketChance({
-          isBehind,
-          npcAwareness,
-          npcBusy,
-          hour,
-          itemValue: purse,
-          targetDifficulty,
-        });
-        const roll = Math.random();
-        const result = resolvePickpocket(chance, roll);
-        if (result.outcome === 'success' || result.outcome === 'critical') {
-          // Steal from the victim's actual purse — don't mint gold.
-          const maxSteal = Math.max(1, Math.floor(purse * (result.outcome === 'critical' ? 0.5 : 0.25)));
-          const gold = Math.min(maxSteal, purse);
-          if (gold > 0) {
-            // Deduct from victim's purse via goldDelta (persisted).
-            const updated = townsfolkRef.current.map((w) => w.id === npc.id ? { ...w, goldDelta: (w.goldDelta ?? 0) - gold } : w);
-            townsfolkRef.current = updated;
-            setTownsfolk(updated);
-            onLoot({ gold } as GoatLoot);
-            setLogs((cur) => [{ text: `Pickpocketed ${gold} gold from ${npc.name}!`, color: 'gold' }, ...cur].slice(0, 3));
-            spawnCombatText('+' + gold + 'g', npc.position, 'reward');
-          } else {
-            setLogs((cur) => [{ text: `${npc.name} has no gold to steal.`, color: 'orange' }, ...cur].slice(0, 3));
-          }
-        } else if (result.outcome === 'partial') {
-          setLogs((cur) => [{ text: `${npc.name} notices something suspicious...`, color: 'orange' }, ...cur].slice(0, 3));
-          // Add suspicious memory.
-          const updated = townsfolkRef.current.map((w) => w.id === npc.id ? addNPCMemory(w, 'PLAYER_SUSPICIOUS', day, 1) : w);
-          townsfolkRef.current = updated;
-          setTownsfolk(updated);
-        } else {
-          // Failure: caught! Record crime.
-          setLogs((cur) => [{ text: `${npc.name} catches you pickpocketing!`, color: 'red' }, ...cur].slice(0, 3));
-          try {
-            const crime = createCrime('crime-' + Date.now().toString(36), 'pickpocket', chunkRef.current, { x: npc.position.x, y: npc.position.y }, day, npc.id);
-            const tickNow = brainRef.current?.worldCore.getClock().tick ?? 0;
-            const witnesses = findWitnesses(
-              { position: { x: npc.position.x, y: npc.position.y } },
-              townsfolkRef.current.filter((w) => !isNpcDead(w, tickNow)).map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } }))
-            );
-            const memEvent = crimeMemoryEvent(crime);
-            const importance = crimeMemoryImportance(crime);
-            const updated = townsfolkRef.current.map((w) => {
-              const isVictim = w.id === npc.id;
-              const isWitness = witnesses.find((x) => x.npcId === w.id);
-              return (isVictim || isWitness) ? addNPCMemory(w, memEvent, day, importance) : w;
-            });
-            townsfolkRef.current = updated;
-            setTownsfolk(updated);
-            // BUILD 926: no instant bounty — a pending witness report.
-            registerPlayerCrime(crime.id, crime.severity, witnesses, day);
-          } catch { /* best-effort */ }
-        }
-      }
+      // BUILD 526/527 pickpocket, now shared with the BUILD 932 sneak prompt.
+      executePickpocket(m.target.npc);
     }
     else if (actionId === 'enter' && m.target.kind === 'door') enterDoorway(m.target.doorway, chunk);
     else if (actionId === 'take' && m.target.kind === 'drop') pickupDrop(m.target.drop);
@@ -5483,6 +5527,30 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // player is in Mosslight Crossing (simulation LOD).
   const [townsfolk, setTownsfolk] = useState<Townsperson[]>([]);
   const townsfolkRef = useRef<Townsperson[]>([]);
+  // BUILD 932: sneak mode — TRANSIENT, never saved. A fresh load, a return
+  // to the title, or a GameField remount all start unsneaking; the toggle
+  // is the only way in. Alerted NPCs are session memory too: an NPC who
+  // caught you or survived your stealth hit stays alerted for the session,
+  // so re-sneaking up to them earns no stealth bonus.
+  const [sneaking, setSneaking] = useState(false);
+  const sneakingRef = useRef(false);
+  const alertedNpcIdsRef = useRef<Set<string>>(new Set());
+  const toggleSneak = () => {
+    const next = !sneakingRef.current;
+    sneakingRef.current = next;
+    setSneaking(next);
+    setLogs((cur) => [{ text: next ? 'You slip into the shadows…' : 'You step out of the shadows.', color: next ? 'blue' : 'gray' }, ...cur].slice(0, 3));
+  };
+  const breakSneak = () => {
+    if (!sneakingRef.current) return;
+    sneakingRef.current = false;
+    setSneaking(false);
+  };
+  const markNpcAlerted = (npcId: string) => { alertedNpcIdsRef.current.add(npcId); };
+  // BUILD 932: pickpocket prompt state — null when closed. The prompt shows
+  // the exact chance and loot the confirm will attempt (computed at open).
+  type SneakPromptState = { npcId: string; npcName: string; chance: number; loot: PickpocketLoot; lootLabel: string; purse: number; day: number };
+  const [sneakPrompt, setSneakPrompt] = useState<SneakPromptState | null>(null);
   // BUILD 736: autonomous stone workers share the existing Mosslight resource ledger.
   const settlementEconomyRef = useRef<SettlementEconomyState>(createSettlementEconomyState());
   const settlementEconomyLoadedRef = useRef(false);
@@ -5628,17 +5696,49 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     setLogs((cur) => [{ text: `Took ${takenLabel} from ${body.npcName}'s body.`, color: 'gold' }, ...cur].slice(0, 3));
     if (updatedBody.looted) setActiveLootBodyId(null);
   };
-  const recordTownspersonCrime = (npc: Townsperson, type: 'assault' | 'murder') => {
+  // BUILD 932: resolve a melee hit landed from sneak. Detection ends the
+  // sneak for that encounter: a survived stealth hit alerts the victim, and
+  // an observed stealth kill breaks sneak (the witnesses already ran the
+  // normal report flow). An UNDETECTED kill leaves sneak on — you were
+  // never seen, so you stay hidden. A NON-stealth hit also alerts: someone
+  // struck in the open has detected you, so re-sneaking up to them later
+  // earns no stealth bonus (and a sneak-mode hit on an alerted target
+  // breaks sneak the same way a survived stealth hit does).
+  const afterStealthStrike = (npc: Townsperson, stealth: boolean, dead: boolean, witnessCount: number) => {
+    if (!stealth) {
+      markNpcAlerted(npc.id);
+      if (sneakingRef.current) breakSneak();
+      return;
+    }
+    if (dead) {
+      if (witnessCount > 0) breakSneak();
+      else setLogs((cur) => [{ text: 'Nobody saw that.', color: 'blue' }, ...cur].slice(0, 3));
+    } else {
+      markNpcAlerted(npc.id);
+      breakSneak();
+      setLogs((cur) => [{ text: `Sneak attack! ${npc.name} spots you — double damage, but the sneak is broken.`, color: 'orange' }, ...cur].slice(0, 3));
+    }
+  };
+  // BUILD 932: returns the witness count, so stealth-attack callers know
+  // whether the strike was observed. While sneaking, only observers within
+  // the sneak witness radius count (victim at distance 0 always counts for
+  // assault); non-sneak crimes are byte-identical to BUILD 926.
+  const recordTownspersonCrime = (npc: Townsperson, type: 'assault' | 'murder'): number => {
     try {
       const clock = brainRef.current?.worldCore.getClock(); const day = clock ? Math.floor(clock.day) : 1; const tick = clock?.tick ?? 0;
       const crime = createCrime('crime-' + Date.now().toString(36), type, chunkRef.current, { x: npc.position.x, y: npc.position.y }, day, npc.id);
-      const witnesses = findWitnesses({ position: { x: npc.position.x, y: npc.position.y } }, townsfolkRef.current.filter((w) => !isNpcDead(w, tick) && !(type === 'murder' && w.id === npc.id)).map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } })));
+      const rawWitnesses = findWitnesses({ position: { x: npc.position.x, y: npc.position.y } }, townsfolkRef.current.filter((w) => !isNpcDead(w, tick) && !(type === 'murder' && w.id === npc.id)).map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } })));
+      const witnesses = sneakingRef.current
+        ? filterSneakWitnesses(rawWitnesses, townsfolkRef.current.map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } })), { x: npc.position.x, y: npc.position.y })
+        : rawWitnesses;
       const event = crimeMemoryEvent(crime); const importance = crimeMemoryImportance(crime);
       const updated = townsfolkRef.current.map((w) => (w.id === npc.id || witnesses.some((wit) => wit.npcId === w.id)) ? addNPCMemory(w, event, day, importance) : w);
       townsfolkRef.current = updated; setTownsfolk(updated);
       // BUILD 926: no instant bounty — a pending witness report.
       registerPlayerCrime(crime.id, crime.severity, witnesses, day);
+      return witnesses.length;
     } catch { /* crime consequences must not interrupt combat */ }
+    return 0;
   };
   const [cornStalks, setCornStalks] = useState<CornStalk[]>(() => {
     const startChunk = { x: 4, y: 7 };
@@ -5977,6 +6077,21 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           score: npcMorality(n), mayInitiate: mayInitiateLethalAggression(n),
           tier: moralityTier(n), line: moralityLine(n),
         })),
+        // BUILD 932: sneak state + pickpocket verification hooks.
+        getSneakState: () => ({ sneaking: sneakingRef.current, alerted: [...alertedNpcIdsRef.current] }),
+        getEquipmentNames: () => equipmentRef.current.map((it) => it.name),
+        // LOCALHOST ONLY: select an NPC exactly as tapping their sprite
+        // does for targeting (the pickpocket button gates on this id).
+        targetNpcForTest: (npcId: string) => {
+          if (typeof window === 'undefined') return false;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return false;
+          const npc = townsfolkRef.current.find((n) => n.id === npcId);
+          if (!npc) return false;
+          targetNpcIdRef.current = npc.id;
+          setTargetNpcId(npc.id);
+          return true;
+        },
         // BUILD 912: Phase C verification — mount state, the analytic world
         // horses (same horseTarget resolution the renderer consumes), and
         // lootable bodies.
@@ -8195,10 +8310,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               if (nearestNpc) {
                 const npc = nearestNpc;
                 const stats = playerStatsRef.current;
-                const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
+                // BUILD 932: stealth strike — double damage when the target
+                // has not detected the sneaking player (melee only).
+                const stealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, npc.id);
+                const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1), sneakingRef.current, alertedNpcIdsRef.current, npc.id));
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
                 setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
-                if (hurt.deadUntilTick === undefined) recordTownspersonCrime(npc, 'assault');
+                const assaultWitnesses = hurt.deadUntilTick === undefined ? recordTownspersonCrime(npc, 'assault') : 0;
+                if (hurt.deadUntilTick === undefined) afterStealthStrike(npc, stealthStrike, false, assaultWitnesses);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
                 townsfolkRef.current = nextFolk;
                 setTownsfolk(nextFolk);
@@ -8211,6 +8330,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                   grantCombatXp(npcKillExperienceReward(npc, playerLevelRef.current, playerStatsRef.current.int), npc.position);
                   // BUILD 521: Record murder crime, notify witnesses via NPC memory.
                   // Witnesses will propagate via the existing gossip system.
+                  // BUILD 932: witness count escapes the try for the stealth rule.
+                  let killWitnessCount = 0;
                   try {
                     const clock = brainRef.current?.worldCore.getClock();
                     const day = clock ? clock.day : 1;
@@ -8222,12 +8343,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                       day,
                       npc.id
                     );
-                    const witnesses = findWitnesses(
+                    const rawWitnesses = findWitnesses(
                       { position: { x: npc.position.x, y: npc.position.y } },
                       townsfolkRef.current
                         .filter((w) => w.id !== npc.id && !isNpcDead(w, tick))
                         .map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } }))
                     );
+                    // BUILD 932: while sneaking, only close observers count.
+                    const witnesses = sneakingRef.current
+                      ? filterSneakWitnesses(rawWitnesses, townsfolkRef.current.map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } })), { x: npc.position.x, y: npc.position.y })
+                      : rawWitnesses;
+                    killWitnessCount = witnesses.length;
                     if (witnesses.length > 0) {
                       const memEvent = crimeMemoryEvent(crime);
                       const importance = crimeMemoryImportance(crime);
@@ -8270,6 +8396,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                       setBodies(nextBodies);
                     }
                   } catch { /* body creation is best-effort */ }
+                  // BUILD 932: undetected kill leaves sneak on; observed kill breaks it.
+                  afterStealthStrike(npc, stealthStrike, true, killWitnessCount);
                 } else {
                   spawnCombatText(`-${Math.round(damage)}`, npc.position, 'damage');
                   const scream = screamFor(npc);
@@ -8307,14 +8435,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 const stats = playerStatsRef.current;
                 const critical = Math.random() < playerCriticalChanceForStats(stats);
                 const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
-                const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult);
+                // BUILD 932: stealth strike — double damage when undetected.
+                const stealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, targetNpc.id);
+                const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, targetNpc.id));
                 const hurt = damageNpc(targetNpc, damage, attackerPos, tick);
                 setDisposition((prev) => ({ ...prev, [targetNpc.id]: adjustDisposition(prev[targetNpc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
-                recordTownspersonCrime(targetNpc, hurt.deadUntilTick !== undefined ? 'murder' : 'assault');
+                const crimeWitnesses = recordTownspersonCrime(targetNpc, hurt.deadUntilTick !== undefined ? 'murder' : 'assault');
                 if (hurt.deadUntilTick !== undefined) dropTownspersonBody(targetNpc);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === targetNpc.id ? hurt : n);
                 townsfolkRef.current = nextFolk;
                 setTownsfolk(nextFolk);
+                afterStealthStrike(targetNpc, stealthStrike, hurt.deadUntilTick !== undefined, crimeWitnesses);
                 if (hurt.deadUntilTick !== undefined) {
                   spawnCombatText('KILLED', targetNpc.position, 'critical');
                   playCombatSound('scream', muted);
@@ -8457,14 +8588,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 const stats = playerStatsRef.current;
                 const critical = Math.random() < playerCriticalChanceForStats(stats);
                 const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
-                const damage = playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
+                // BUILD 932: stealth strike — double damage when undetected.
+                const stealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, npc.id);
+                const damage = stealthDamage(playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, npc.id);
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
                 setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
-                recordTownspersonCrime(npc, hurt.deadUntilTick !== undefined ? 'murder' : 'assault');
+                const crimeWitnesses = recordTownspersonCrime(npc, hurt.deadUntilTick !== undefined ? 'murder' : 'assault');
                 if (hurt.deadUntilTick !== undefined) dropTownspersonBody(npc);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
                 townsfolkRef.current = nextFolk;
                 setTownsfolk(nextFolk);
+                afterStealthStrike(npc, stealthStrike, hurt.deadUntilTick !== undefined, crimeWitnesses);
                 if (hurt.deadUntilTick !== undefined) {
                   // Killed!
                   spawnCombatText('KILLED', npc.position, 'critical');
@@ -8581,20 +8715,24 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * beerDamageMultiplier(beerBuffUntil) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
                 if (nearest.kind === 'townsfolk') {
                   const npc = townsfolkRef.current.find((n) => n.id === nearest!.id)!;
-                  const hurt = damageNpc(npc, damage, attackerPos, tick);
-                  setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
-                  recordTownspersonCrime(npc, hurt.deadUntilTick !== undefined ? 'murder' : 'assault');
+                  // BUILD 932: stealth strike — double damage when undetected.
+                  const stealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, npc.id);
+                  const stealthDamageValue = stealthDamage(damage, sneakingRef.current, alertedNpcIdsRef.current, npc.id);
+                  const hurt = damageNpc(npc, stealthDamageValue, attackerPos, tick);
+                  setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(stealthDamageValue / 2))) }));
+                  const crimeWitnesses = recordTownspersonCrime(npc, hurt.deadUntilTick !== undefined ? 'murder' : 'assault');
                   if (hurt.deadUntilTick !== undefined) dropTownspersonBody(npc);
                   const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
                   townsfolkRef.current = nextFolk;
                   setTownsfolk(nextFolk);
+                  afterStealthStrike(npc, stealthStrike, hurt.deadUntilTick !== undefined, crimeWitnesses);
                   if (hurt.deadUntilTick !== undefined) {
                     spawnCombatText('KILLED', npc.position, 'critical');
                     setLogs((cur) => [{ text: `You killed ${npc.name}!`, color: 'red' }, ...cur].slice(0, 3));
                     // BUILD 918: player-killed townsfolk pay XP (see arc-sweep branch).
                     grantCombatXp(npcKillExperienceReward(npc, playerLevelRef.current, playerStatsRef.current.int), npc.position);
                   } else {
-                    spawnCombatText(`-${Math.round(damage)}`, npc.position, 'damage');
+                    spawnCombatText(`-${Math.round(stealthDamageValue)}`, npc.position, 'damage');
                     const scream = screamFor(npc);
                     barksRef.current[npc.id] = { text: scream, until: Date.now() + 3000 };
                     setBarks((prev) => ({ ...prev, [npc.id]: scream }));
@@ -9312,6 +9450,19 @@ if (active) {
   const horseHere = horse.chunk.x === chunk.x && horse.chunk.y === chunk.y;
   const horseDistance = Math.hypot(position.x - horse.position.x, position.y - horse.position.y);
   const canMount = !mounted && horseHere && horseDistance <= HORSE_MOUNT_DISTANCE;
+  // BUILD 932: pickpocket button target — sneaking, with a live targeted
+  // NPC within pickpocket range. Targeted-only, no nearest fallback: the
+  // button must never offer to rob someone the player didn't select.
+  const pickpocketTarget: Townsperson | null = (() => {
+    if (!targetNpcId) return null;
+    const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+    const npc = townsfolk.find((n) => n.id === targetNpcId) ?? null;
+    return npc && canOfferPickpocket(sneaking, targetNpcId, npc, position, isNpcDead(npc, tick)) ? npc : null;
+  })();
+  const openSneakPrompt = (npc: Townsperson) => {
+    const inputs = pickpocketInputsFor(npc);
+    setSneakPrompt({ npcId: npc.id, npcName: npc.name, chance: inputs.chance, loot: inputs.loot, lootLabel: inputs.lootLabel, purse: inputs.purse, day: inputs.day });
+  };
   const showHorse = mounted || horseHere;
   const horseDisplayPosition = mounted ? position : horse.position;
 
@@ -13971,6 +14122,21 @@ if (active) {
           {/* BUILD 704: run toggle + stamina bar. Tapping toggles sprint;
               Shift on keyboard holds to run. Stamina drains while running. */}
           <button className={'icon-button field-run-button' + (runToggleUi ? ' is-running' : '')} onClick={() => { const next = !runToggleRef.current; runToggleRef.current = next; setRunToggleUi(next); }} aria-label={runToggleUi ? 'Stop running' : 'Run (toggle)'} title="Toggle run · Shift" data-testid="button-run-toggle" style={runToggleUi ? { background: 'rgba(120, 200, 120, .35)', borderColor: '#7cc47c' } : undefined}>🏃</button>
+          {/* BUILD 932: sneak toggle — transient mode, never saved. While on,
+              only close observers count as witnesses and undetected strikes
+              deal double damage. Mounting/sprinting are unchanged. */}
+          <button className={'icon-button field-sneak-button' + (sneaking ? ' is-sneaking' : '')} onClick={toggleSneak} disabled={inputLocked} aria-label={sneaking ? 'Stop sneaking' : 'Sneak'} aria-pressed={sneaking} title={sneaking ? 'Sneaking — harder to notice' : 'Sneak'} data-testid="button-sneak-toggle" style={sneaking ? { background: 'rgba(90, 90, 160, .45)', borderColor: '#8a8ad0' } : undefined}>👁️</button>
+          {/* BUILD 932: pickpocket button — only while sneaking with a live
+              targeted NPC in range. Opens the prompt; it never steals
+              directly, so the shown chance and loot are what you attempt. */}
+          {pickpocketTarget && (
+            <button className="icon-button field-pickpocket-button" onClick={() => openSneakPrompt(pickpocketTarget)} disabled={inputLocked} aria-label={'Pickpocket ' + pickpocketTarget.name} title={'Pickpocket ' + pickpocketTarget.name} data-testid="button-pickpocket">🎒</button>
+          )}
+          {sneaking && (
+            <div role="status" aria-label="Sneaking" data-testid="hud-sneaking" style={{ position: 'absolute', right: 12, bottom: 336, zIndex: 10, fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'rgba(30,30,70,.55)', color: '#b9b9f0' }}>
+              👁️ Sneaking — harder to notice
+            </div>
+          )}
           {(staminaUi < 100 || playerRunningUi) && (
             <div className="field-stamina-bar" role="status" aria-label={'Stamina ' + staminaUi + '%'} data-testid="hud-stamina" style={{ position: 'absolute', right: 12, bottom: 76, width: 110, height: 7, background: 'rgba(0,0,0,.45)', borderRadius: 4, overflow: 'hidden', zIndex: 10 }}>
               <div style={{ width: staminaUi + '%', height: '100%', background: staminaUi > 30 ? '#7cc47c' : '#d46a5a', borderRadius: 4, transition: 'width .15s' }} />
@@ -13997,6 +14163,22 @@ if (active) {
             <h2 className="game-over-title">GAME OVER</h2>
             <p className="game-over-sub">Your adventure has ended.</p>
             <button className="game-over-button" onClick={onOpenMenu}>Return to Title</button>
+          </div>
+        </div>
+      )}
+      {/* BUILD 932: pickpocket prompt — shows the exact chance and loot the
+          Steal button will attempt (computed at open, reused at confirm). */}
+      {sneakPrompt && (
+        <div role="dialog" aria-label={'Pickpocket ' + sneakPrompt.npcName} data-testid="sneak-prompt" style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.55)' }}>
+          <div style={{ background: '#1c211b', border: '1px solid #c99b49', borderRadius: 12, padding: 16, maxWidth: 320, width: '88%', color: '#e8e2d0' }}>
+            <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>🎒 Pickpocket {sneakPrompt.npcName}</h2>
+            <p style={{ margin: '0 0 8px', fontSize: 13, lineHeight: 1.5 }}>You stand to lift: <strong>{sneakPrompt.lootLabel}</strong></p>
+            <p style={{ margin: '0 0 8px', fontSize: 13, lineHeight: 1.5 }}>Chance: <strong>{Math.round(sneakPrompt.chance * 100)}%</strong> — a clean lift lands in your pack unnoticed; getting caught breaks the sneak and reports through the usual witness flow.</p>
+            <p style={{ margin: '0 0 12px', fontSize: 12, color: '#b9b39a' }}>Worn gear is never lifted — only a spare from their stash, or purse gold.</p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button data-testid="button-pickpocket-confirm" onClick={() => { const npc = townsfolkRef.current.find((n) => n.id === sneakPrompt.npcId); const prompt = sneakPrompt; setSneakPrompt(null); if (npc) executePickpocket(npc, prompt); }} style={{ flex: 1, padding: 11, borderRadius: 8, border: '1px solid #c99b49', background: '#c99b49', color: '#1c211b', fontWeight: 800 }}>Steal</button>
+              <button data-testid="button-pickpocket-cancel" onClick={() => setSneakPrompt(null)} style={{ flex: 1, padding: 11, borderRadius: 8, border: '1px solid #5a6157', background: '#2a2f28', color: '#e8e2d0', fontWeight: 700 }}>Cancel</button>
+            </div>
           </div>
         </div>
       )}
