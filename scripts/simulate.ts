@@ -123,6 +123,7 @@ import { PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP, collisionBoxes
 import { oreNodesForChunk, mineralRichness, geoHash, oreKindFor, GEOLOGY_CELL } from '../src/game/geology';
 import { createEmptySkills, awardXp, levelForXp, xpForLevel, xpToNextLevel, SKILLS, WOODCUTTING_XP_PER_TREE, SKILL_MASTERS, masterForNpc, apprenticeshipCheck, apprenticeXpBonus } from '../src/game/skills';
 import { ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset, isoViewportCovered, isoVisibleTileRange } from '../src/game/iso/isoChunks';
+import { rotateIsoScreen, unrotateIsoScreen, rotatedDepth, rotateFace8, rotateCritterDir, rotatedGridBounds, rotatedVisibleTileRange, sanitizeIsoRotation } from '../src/game/iso/rotation';
 // BUILD 702: barbarian.ts replaced by rpgSprites.ts (import removed)
 
 let passed = 0;
@@ -2175,6 +2176,32 @@ console.log('Testing special-ability vocabulary (BUILD 943)...');
   assert(Math.abs(chased.goat.position.x - 8) < 1e-9, 'Ability943: chase speed 8 moves 8u in one second');
   const chasedDefault = updateGoat(goatBase, { x: 20, y: 0 }, 'right', [goatBase], 1000, {});
   assert(Math.abs(chasedDefault.goat.position.x - 4) < 1e-9, 'Ability943: no chase speed means the old 4 u/s');
+}
+
+// ---- 13a1d. Camera rotation (BUILD 944) ----
+// View-only: the sim has no rendering, so this section proves the rotation
+// module loads in the harness and its core identities hold. The throwing
+// standalone script (scripts/verify-rotation-944.ts) is the real proof —
+// sim asserts are collected, not thrown, and the pre-existing BUILD 694
+// crash below blocks the Results print.
+console.log('Testing camera rotation (BUILD 944)...');
+{
+  const pts = [{ x: 0, y: 0 }, { x: 32, y: 16 }, { x: -32, y: 16 }, { x: 64, y: 0 }, { x: 100, y: -40 }];
+  for (const p of pts) {
+    assert(rotateIsoScreen(p.x, p.y, 0).x === p.x && rotateIsoScreen(p.x, p.y, 0).y === p.y, 'Rot944: k=0 screen identity');
+    const u = unrotateIsoScreen(rotateIsoScreen(p.x, p.y, 1).x, rotateIsoScreen(p.x, p.y, 1).y, 1);
+    assert(Math.abs(u.x - p.x) < 1e-9 && Math.abs(u.y - p.y) < 1e-9, 'Rot944: k=1 round-trip');
+    let q = p;
+    for (let i = 0; i < 4; i++) q = rotateIsoScreen(q.x, q.y, 1);
+    assert(Math.abs(q.x - p.x) < 1e-9 && Math.abs(q.y - p.y) < 1e-9, 'Rot944: 4x k=1 identity');
+  }
+  assert(rotateIsoScreen(32, 16, 1).x === -32 && rotateIsoScreen(32, 16, 1).y === 16, 'Rot944: worked example (32,16) k=1 -> (-32,16)');
+  assert(rotatedDepth(5, 3, 0) === 8 && rotatedDepth(5, 3, 1) === 2 && rotatedDepth(5, 3, 2) === -8 && rotatedDepth(5, 3, 3) === -2, 'Rot944: depth at all 4 orientations');
+  assert(rotateFace8('downright', 1) === 'downleft' && rotateFace8('down', 1) === 'left' && rotateFace8('up', 2) === 'down', 'Rot944: facing cycle');
+  assert(rotateCritterDir('NE', 1) === 'SE' && rotateCritterDir('NW', 1) === 'NE', 'Rot944: critter cycle');
+  assert(JSON.stringify(rotatedGridBounds(1, 280, 64, 0)) === JSON.stringify(isoChunkGridBounds(1, 280, 64)), 'Rot944: k=0 bounds equal isoChunkGridBounds');
+  assert(JSON.stringify(rotatedVisibleTileRange(0, 4480, 1200, 800, 1, 0)) === JSON.stringify(isoVisibleTileRange(0, 4480, 1200, 800, 1)), 'Rot944: k=0 range equal isoVisibleTileRange');
+  assert(sanitizeIsoRotation(2) === 2 && sanitizeIsoRotation(4) === 0 && sanitizeIsoRotation('x') === 0, 'Rot944: sanitize');
 }
 
 // ---- 13a1c. NPC morality levels (BUILD 923) ----

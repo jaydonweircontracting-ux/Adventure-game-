@@ -13,7 +13,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { startBrowserGameLoop, type BrowserGameLoop } from '../engine/browserGameEngine';
 import { drawProceduralGroundAccent, drawProceduralTree, drawProceduralTreeLod, drawProceduralPathDetail, drawBuildingGroundDress, drawProceduralBoulder } from '../engine/proceduralWorldArt';
-import { isoToScreen, screenToTile, TILE_W, TILE_H } from './projection';
+import { isoToScreen as isoToScreenBase, screenToTile, TILE_W, TILE_H } from './projection';
+import { rotateIsoScreen, unrotateIsoScreen, rotatedDepth, rotateFace8, rotatedGridBounds, rotatedVisibleTileRange, type IsoRotation } from './rotation';
 import { createBoundedCache } from '../rendering/boundedCache';
 import { FrameMetrics } from '../rendering/frameMetrics';
 import {
@@ -70,8 +71,7 @@ import { waterGridForChunk, waterDepthAt, waterKindAt, waterGridAt, type WaterGr
 // BUILD 376: multi-chunk rendering so generated terrain fills the whole
 // screen at every zoom level — no blue void where nothing was generated.
 import {
-  ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset,
-  isoVisibleTileRange,
+  ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, clampChunkOffset,
 } from './isoChunks';
 
 // BUILD 692: cached textured dirt-path layers per decor chunk. Lanes are
@@ -298,6 +298,8 @@ interface IsoFieldViewProps {
   // BUILD 684: floating combat text — rendered in iso (were 2D-DOM only).
   damageTexts?: Array<{ id: number; text: string; position: Point; kind: string }>;
   zoom: number; // BUILD 372: zoom is owned by App so the main zoom buttons drive it
+  // BUILD 944: camera rotation (0..3, 90 deg steps) owned by App; iso field view only.
+  rotation?: IsoRotation;
   // BUILD 720: selected new-model RPG appearance for the live player.
   playerLook?: LookRef;
   onZoomChange: (z: number) => void;
@@ -594,7 +596,7 @@ function roadBlendFor(road: string, lx: number, ly: number): number {
   return 0.3 + 0.7 * Math.min(1, Math.max(0, d) / 2.5);
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, zoom, rotation = 0, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
@@ -711,6 +713,10 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
 
+  // BUILD 944: camera rotation lives in App; mirror to a ref for the rAF loop and canvas listeners.
+  const rotationRef = useRef<IsoRotation>(rotation);
+  rotationRef.current = rotation;
+
   useEffect(() => {
     preloadCharacterSprites(); // BUILD 702: RPG character sprite pack
     preloadIsoTiles(); // BUILD 389: landscape tileset
@@ -720,19 +726,28 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
     // BUILD 710: favor low-latency opaque canvas composition on mobile GPUs.
     const g = canvas.getContext('2d', { alpha: false, desynchronized: true })!;
     const N = FIELD_SIZE;
+    // BUILD 944: rotation is view-only. Shadow isoToScreen inside this effect
+    // so every anchor (ground, buildings, actors, tap hit-tests) renders
+    // through the rotated projection; sprite images still draw upright at
+    // rotated anchors. dep() is the rotated painter depth.
+    const isoToScreen = (tx: number, ty: number) => {
+      const p = isoToScreenBase(tx, ty);
+      return rotateIsoScreen(p.x, p.y, rotationRef.current);
+    };
+    const dep = (x: number, y: number) => rotatedDepth(x, y, rotationRef.current);
+    let lastRotK = rotationRef.current;
     // BUILD 376: map bounds in world px (tile space == field units, 1:1)
     // covering the whole rendered chunk grid, so the camera never reveals
     // ungenerated void — the old single-chunk bounds are what left the blue
     // background visible around the map diamond.
-    const gb = isoChunkGridBounds(R, N, MARGIN);
-    const minX = gb.minX, maxX = gb.maxX, minY = gb.minY, maxY = gb.maxY;
-    const cx = gb.cx, cy = gb.cy;
-
-    const clampCam = (c: { x: number; y: number }, zm: number, wpx: number, hpx: number) => {
+    // BUILD 944: the clamp bounds are recomputed per frame from the ROTATED
+    // grid bounds (the rotated diamond's own bounds, not the rotated
+    // bounding box). At k = 0 this equals the old isoChunkGridBounds.
+    const clampCam = (c: { x: number; y: number }, zm: number, wpx: number, hpx: number, b: { minX: number; maxX: number; minY: number; maxY: number; cx: number; cy: number }) => {
       const hw = wpx / (2 * zm), hh = hpx / (2 * zm);
-      const ox = (maxX - minX) / 2 - hw, oy = (maxY - minY) / 2 - hh;
-      c.x = Math.max(cx - Math.abs(ox), Math.min(cx + Math.abs(ox), c.x));
-      c.y = Math.max(cy - Math.abs(oy), Math.min(cy + Math.abs(oy), c.y));
+      const ox = (b.maxX - b.minX) / 2 - hw, oy = (b.maxY - b.minY) / 2 - hh;
+      c.x = Math.max(b.cx - Math.abs(ox), Math.min(b.cx + Math.abs(ox), c.x));
+      c.y = Math.max(b.cy - Math.abs(oy), Math.min(b.cy + Math.abs(oy), c.y));
     };
 
     const cam = { x: 0, y: 0 };
@@ -872,12 +887,12 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       // when the clip ends — so holding this flag yields a readable swing
       // cadence instead of damage ticking off a standing sprite.
       if (attacking && !dead) anim.setState('attack');
-      anim.update({ x: tx, y: ty, moving: dead ? false : moving, facing, nowMs: now, running: dead ? false : running });
+      anim.update({ x: tx, y: ty, moving: dead ? false : moving, facing: rotateFace8(facing, rotationRef.current), nowMs: now, running: dead ? false : running });
       d.push({
         // BUILD 812: Keep the player above oversized house artwork. Sorting
         // only by world feet coordinates is insufficient for tall sprites whose
         // visible pixels extend well beyond their logical footprint.
-        depth: animKey === 'player' ? Number.POSITIVE_INFINITY : tx + ty + 0.01, draw: (g2) => {
+        depth: animKey === 'player' ? Number.POSITIVE_INFINITY : dep(tx, ty) + 0.01, draw: (g2) => {
           drawIsoCharacter({
             g: g2, x: c.x, y: c.y - liftPx, look, nowMs: now, animator: anim,
             // BUILD 699: children render smaller.
@@ -966,13 +981,20 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       if (dbgFace) { playerFace.f = dbgFace; playerMoving = true; }
       prevP.x = playerX; prevP.y = playerY;
 
-      // camera follows the player
+      // camera follows the player (BUILD 944: target is the ROTATED anchor;
+      // the -24 body-center nudge is screen-space, applied AFTER rotation).
       const target = isoToScreen(playerX, playerY);
       target.y -= 24;
-      const k = 1 - Math.exp(-dt / 78);
-      cam.x += (target.x - cam.x) * k;
-      cam.y += (target.y - cam.y) * k;
-      clampCam(cam, zm, wpx, hpx);
+      const rotK = rotationRef.current;
+      if (rotK !== lastRotK) {
+        // Snap on orientation change: never lerp across the world mid-rotation.
+        cam.x = target.x; cam.y = target.y; lastRotK = rotK;
+      } else {
+        const k = 1 - Math.exp(-dt / 78);
+        cam.x += (target.x - cam.x) * k;
+        cam.y += (target.y - cam.y) * k;
+      }
+      clampCam(cam, zm, wpx, hpx, rotatedGridBounds(R, N, MARGIN, rotK));
 
       // background — BUILD 376: dark neutral fallback. Generated terrain now
       // covers the whole viewport at every zoom, so this should never show;
@@ -995,7 +1017,9 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       // two-corner range missed the tiles covering the viewport's top and
       // bottom edges, leaving black bars). Out-of-grid tiles reuse the
       // edge-clamped scene, so the view fills the whole screen at every zoom.
-      const { x0, x1, y0, y1 } = isoVisibleTileRange(cam.x, cam.y, wpx, hpx, zm);
+      // BUILD 944: the range runs through rotatedVisibleTileRange, which
+      // unrotates the viewport corners first; at k = 0 it is identical.
+      const { x0, x1, y0, y1 } = rotatedVisibleTileRange(cam.x, cam.y, wpx, hpx, zm, rotationRef.current);
       // BUILD 712: shared viewport test. Off-screen props stay in world data
       // but never enter the depth-sort queue or execute canvas drawing.
       const viewHalfW = (wpx / 2) / zm;
@@ -1026,7 +1050,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       const groundWorldH = groundCacheH / groundCacheScale;
       const groundKey = [
         chunk.x, chunk.y, zm, wpx, hpx, useChunkLOD, showDetail, tilesOn,
-        skipFarm, hedgeReady,
+        skipFarm, hedgeReady, rotationRef.current,
       ].join('|');
       const viewportInsideCache = !!groundCacheBounds &&
         cam.x - viewHalfW >= groundCacheBounds.originX &&
@@ -1048,7 +1072,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         const cacheCenterX = originX + groundWorldW / 2;
         const cacheCenterY = originY + groundWorldH / 2;
         const { x0: groundX0, x1: groundX1, y0: groundY0, y1: groundY1 } =
-          isoVisibleTileRange(cacheCenterX, cacheCenterY, groundCacheW, groundCacheH, groundCacheScale);
+          rotatedVisibleTileRange(cacheCenterX, cacheCenterY, groundCacheW, groundCacheH, groundCacheScale, rotationRef.current);
         farmsteadQueue.length = 0;
         // BUILD 916: water depth at any tile in the scene grid (same
         // sampling as the per-tile wet test, including the BUILD 610
@@ -1460,7 +1484,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       };
       for (const sc of scenes) {
         const bx = sc.ox * N, by = sc.oy * N;
-        for (const b of sc.buildings) {
+        for (const b of [...sc.buildings].sort((a, b2) => dep(a.position.x, a.position.y) - dep(b2.position.x, b2.position.y))) {
           // BUILD 910 (Phase A2): every building renders the two-layer
           // starter-house treatment (roofless interior base + roof overlay
           // that hides while the player is under it). BUILD 805 hid all
@@ -1499,7 +1523,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         // beyond its logical footprint. Always draw its sprite before the player
         // so the player remains visible when walking across/over the house image.
         // Collision and doorway logic remain tied to the original footprint.
-        const buildingDepth = position.x + position.y - 0.02;
+        const buildingDepth = dep(position.x, position.y) - 0.02;
 
         // BUILD 910 (Phase A2): the BUILD 769 procedural floor-plan
         // cutaway is gone. Every building now uses the starter-house
@@ -1711,7 +1735,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         if (fc.x < cam.x - fvhw - 100 || fc.x > cam.x + fvhw + 100 ||
             fc.y < cam.y - fvhh - 150 || fc.y > cam.y + fvhh + 192) continue;
         drawables.push({
-          depth: f.x + f.y,
+          depth: dep(f.x, f.y),
           draw: (g2) => {
             const kind = f.barn ? 'house-timber' : 'hut-thatched';
             const sprite = bldImgs[kind];
@@ -1749,7 +1773,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           const a = isoToScreen(x0, y0), b = isoToScreen(x1, y1);
           // Simple wall: draw as a thick line with stone texture
           drawables.push({
-            depth: (x0 + x1) / 2 + (y0 + y1) / 2,
+            depth: dep((x0 + x1) / 2, (y0 + y1) / 2),
             draw: (g2) => {
               g2.strokeStyle = wallColor;
               g2.lineWidth = 10;
@@ -1800,7 +1824,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           if (c.x < cam.x - propViewHalfW - 100 || c.x > cam.x + propViewHalfW + 100 || c.y < cam.y - propViewHalfH - 150 || c.y > cam.y + propViewHalfH + 128) continue;
           const img = propImgs[pr.asset];
           drawables.push({
-            depth: px + py,
+            depth: dep(px, py),
             draw: (g2) => {
               if (img && img.complete && img.naturalWidth > 0) {
                 // BUILD 713: street lamps are intentionally larger so they
@@ -1833,7 +1857,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           if (!anchorVisible(c, 36, 104, 18)) continue;
         const s = 0.7 + t.scale * 0.6;
         drawables.push({
-          depth: tx2 + ty2, draw: (g2) => {
+          depth: dep(tx2, ty2), draw: (g2) => {
             if (zm < 0.42 || adaptiveTreeLod) drawProceduralTreeLod(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
             else drawProceduralTree(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
           },
@@ -1853,7 +1877,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         const rockScreen = isoToScreen(rockX, rockY);
         if (anchorVisible(rockScreen, 38, 48, 20)) {
           drawables.push({
-            depth: rockX + rockY,
+            depth: dep(rockX, rockY),
             draw: (g2) => drawProceduralBoulder(g2, rockScreen.x, rockScreen.y, zm < 0.42 ? 0.72 : 1),
           });
         }
@@ -1874,7 +1898,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           if (!anchorVisible(c, 18, 20, 10)) continue;
           const oreCol = ORE_COLORS[o.kind] || '#8a8a8a';
           drawables.push({
-            depth: ox2 + oy2, draw: (g2) => {
+            depth: dep(ox2, oy2), draw: (g2) => {
               // BUILD 734: render the authoritative starting deposit as a large boulder.
               if (o.id === 'tutorial-stone-deposit-4-7') {
                 // BUILD 735: deliberately oversized landmark rock, visible at normal zoom.
@@ -1904,7 +1928,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             const bx2 = body.position.x + bx, by2 = body.position.y + by;
             const bc = isoToScreen(bx2, by2);
             drawables.push({
-              depth: bx2 + by2 + 0.002,
+              depth: dep(bx2, by2) + 0.002,
               draw: (g2, now) => {
                 g2.save();
                 // BUILD 912: an unlooted body advertises itself — a soft
@@ -1947,7 +1971,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             const dx2 = d.position.x + bx, dy2 = d.position.y + by;
             const dc = isoToScreen(dx2, dy2);
             drawables.push({
-              depth: dx2 + dy2 + 0.001, draw: (g2, now) => {
+              depth: dep(dx2, dy2) + 0.001, draw: (g2, now) => {
                 const pulse = 1 + Math.sin(now / 300 + d.id) * 0.12;
                 const s = 9 * pulse;
                 g2.fillStyle = 'rgba(255, 215, 100, 0.35)';
@@ -1978,8 +2002,8 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           // BUILD 712: avoid pose and draw-queue work for unseen wildlife.
           if (!anchorVisible(isoToScreen(pose.x, pose.y), 48, 60, 24)) continue;
           drawables.push({
-            depth: pose.x + pose.y + 0.005,
-            draw: (g2) => { drawCritter(g2, c, nowMs, isoToScreen); },
+            depth: dep(pose.x, pose.y) + 0.005,
+            draw: (g2) => { drawCritter(g2, c, nowMs, isoToScreen, rotationRef.current); },
           });
         }
       }
@@ -2031,7 +2055,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           const hasBeenAttacked = npc.hp != null || npc.fleeUntilTick != null || npc.deadUntilTick != null;
           const canTalk = !hasBeenAttacked && playerDistance <= 8.5;
           drawables.push({
-            depth: selectedX + selectedY - 0.025,
+            depth: dep(selectedX, selectedY) - 0.025,
             draw: (g2) => {
               g2.save();
               g2.strokeStyle = '#ffd34d';
@@ -2096,7 +2120,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           const damaged = npcHpNow != null && npcHpNow < npcMaxHpNow;
           const hpFrac = damaged ? Math.max(0, npcHpNow / Math.max(1, npcMaxHpNow)) : 1;
           drawables.push({
-            depth: ix + iy + 0.05,
+            depth: dep(ix, iy) + 0.05,
             draw: (g2) => {
               g2.save();
               g2.font = 'bold 11px sans-serif';
@@ -2122,7 +2146,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         if (live.npcSpeechEnabled && !npcIsDead) {
           const line = NPC_CHATTER_LINES[Math.floor(nowMs / 4600 + npcSpeechSeedFor(npc.id)) % NPC_CHATTER_LINES.length];
           drawables.push({
-            depth: ix + iy + 0.04,
+            depth: dep(ix, iy) + 0.04,
             draw: (g2) => {
               g2.save();
               g2.font = '10px sans-serif';
@@ -2182,7 +2206,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           // player sprite when zooming in. Fixed 36 world units scales
           // with the world exactly like characters and buildings.
           const s = 36;
-          const depth = gx + gy;
+          const depth = dep(gx, gy);
           // Sprite dimensions per kind (strips animate, wolf is a single image)
           let frameW = 32, frameH = 41, isStrip = true;
           if (kind === 'direwolf') { frameW = 32; frameH = 32; isStrip = false; }
@@ -2264,7 +2288,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           const mx = monster.position.x, my = monster.position.y;
           const selected = live.selectedMonsterId === monster.id;
           const tone = monster.kind === 'dragon' ? '#5f9b43' : monster.kind === 'snake' ? '#6d9142' : monster.kind === 'soldier' ? '#8a9ba8' : '#8b6349';
-          drawables.push({ depth: mx + my - (selected ? 0.03 : 0), draw: (g) => {
+          drawables.push({ depth: dep(mx, my) - (selected ? 0.03 : 0), draw: (g) => {
             g.save();
             g.fillStyle = 'rgba(0,0,0,0.24)'; g.beginPath(); g.ellipse(c.x, c.y + 2, 13, 4, 0, 0, Math.PI * 2); g.fill();
             if (selected) { g.strokeStyle = '#ffd34d'; g.fillStyle = 'rgba(255,197,45,0.16)'; g.lineWidth = 2.5; g.beginPath(); g.ellipse(c.x, c.y - 2, 22, 8, 0, 0, Math.PI * 2); g.fill(); g.stroke(); }
@@ -2286,14 +2310,14 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         const anim: MonsterAnim = animForMonsterState({ dead: monster.disposition === 'defeated', hitFlash: !!monster.hitFlash, attacking: !!monster.attacking, moving: !!monster.moving });
         const animDef = def.animations[anim];
         const col = monsterAnimFrameFor(def, anim, nowMs, monster.id);
-        const row = animDef.row === 'facing' ? (def.facingRows[monster.facing] ?? def.facingRows.down) : animDef.row;
+        const row = animDef.row === 'facing' ? (def.facingRows[rotateFace8(monster.facing as Face8, rotationRef.current)] ?? def.facingRows.down) : animDef.row;
         const size = def.displaySize * (def.variants[monster.variant || 'default']?.scale ?? 1);
         const left = c.x - size * def.anchor.x, top = c.y - size * def.anchor.y;
         const isSelected = live.selectedMonsterId === monster.id;
         if (isSelected) {
-          drawables.push({ depth: mx + my - 0.03, draw: (g) => { g.save(); g.strokeStyle = '#ffd34d'; g.fillStyle = 'rgba(255, 197, 45, 0.16)'; g.lineWidth = 2.5; g.beginPath(); g.ellipse(c.x, c.y - 2, 22, 8, 0, 0, Math.PI * 2); g.fill(); g.stroke(); g.restore(); } });
+          drawables.push({ depth: dep(mx, my) - 0.03, draw: (g) => { g.save(); g.strokeStyle = '#ffd34d'; g.fillStyle = 'rgba(255, 197, 45, 0.16)'; g.lineWidth = 2.5; g.beginPath(); g.ellipse(c.x, c.y - 2, 22, 8, 0, 0, Math.PI * 2); g.fill(); g.stroke(); g.restore(); } });
         }
-        drawables.push({ depth: mx + my, draw: (g) => {
+        drawables.push({ depth: dep(mx, my), draw: (g) => {
           g.save();
           const variantFilter = def.variants[monster.variant || 'default']?.filter;
           if (variantFilter) g.filter = variantFilter;
@@ -2324,7 +2348,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           const w = box.hw * 2 * (s / 24);
           const h = box.hh * 2 * (s / 24);
           drawables.push({
-            depth: gx + gy + 0.01,
+            depth: dep(gx, gy) + 0.01,
             draw: (g: CanvasRenderingContext2D) => {
               g.strokeStyle = '#ff0000';
               g.lineWidth = 2;
@@ -2344,7 +2368,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           const w = gb.hw * 2 * (s / 24);
           const h = gb.hh * 2 * (s / 24);
           drawables.push({
-            depth: gx + gy + 0.02,
+            depth: dep(gx, gy) + 0.02,
             draw: (g: CanvasRenderingContext2D) => {
               g.strokeStyle = '#00ff00';
               g.lineWidth = 2;
@@ -2399,7 +2423,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           const hc = isoToScreen(hx, hy);
           if (!anchorVisible(hc, 90, 90, 30)) continue;
           const coat = horseCoat(h.color);
-          const poseFlip = horsePoseForFace(face);
+          const poseFlip = horsePoseForFace(rotateFace8(face, rotationRef.current));
           const phase = (nowMs / 1000) * 9;
           const activity = h.activity;
           const fv = horseFacingVector(face);
@@ -2409,18 +2433,18 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             const cartX = hx - fv.x * HORSE_CART_TRAIL, cartY = hy - fv.y * HORSE_CART_TRAIL;
             const cc = isoToScreen(cartX, cartY);
             drawables.push({
-              depth: cartX + cartY + 0.006,
+              depth: dep(cartX, cartY) + 0.006,
               draw: (g2) => { drawIsoCart(g2, cc.x, cc.y, { pose: poseFlip.pose, flip: poseFlip.flip, moving: hMoving, phase, nowMs }); },
             });
             drawables.push({
-              depth: hx + hy + 0.008,
+              depth: dep(hx, hy) + 0.008,
               draw: (g2) => { drawIsoHorse(g2, hc.x, hc.y, { coat, pose: poseFlip.pose, flip: poseFlip.flip, moving: hMoving, phase, nowMs, saddle: false }); },
             });
             drawPerson(drawables, cartX, cartY, face, hMoving, h.id, nowMs, 'driver-' + h.id,
               undefined, false, false, HORSE_CART_SEAT_LIFT);
           } else if (activity === 'ridden') {
             drawables.push({
-              depth: hx + hy + 0.008,
+              depth: dep(hx, hy) + 0.008,
               draw: (g2) => { drawIsoHorse(g2, hc.x, hc.y, { coat, pose: poseFlip.pose, flip: poseFlip.flip, moving: hMoving, phase, nowMs, saddle: true }); },
             });
             // The owner rides: a real character (deterministic look from
@@ -2429,7 +2453,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               undefined, false, false, HORSE_SEAT_LIFT);
           } else {
             drawables.push({
-              depth: hx + hy + 0.008,
+              depth: dep(hx, hy) + 0.008,
               draw: (g2) => { drawIsoHorse(g2, hc.x, hc.y, { coat, pose: poseFlip.pose, flip: poseFlip.flip, moving: hMoving, phase, nowMs, saddle: false }); },
             });
             if (activity === 'being_led') {
@@ -2447,9 +2471,9 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         if (parked) {
           const pc = isoToScreen(parked.position.x, parked.position.y);
           if (anchorVisible(pc, 90, 90, 30)) {
-            const poseFlip = horsePoseForFace(parked.facing);
+            const poseFlip = horsePoseForFace(rotateFace8(parked.facing as Face8, rotationRef.current));
             drawables.push({
-              depth: parked.position.x + parked.position.y + 0.008,
+              depth: dep(parked.position.x, parked.position.y) + 0.008,
               draw: (g2) => {
                 drawIsoHorse(g2, pc.x, pc.y, {
                   coat: horseCoat('bay'), pose: poseFlip.pose, flip: poseFlip.flip,
@@ -2463,10 +2487,10 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         // facing and gait tied to the player's own movement.
         if (live.playerMounted) {
           const mc = isoToScreen(playerX, playerY);
-          const poseFlip = horsePoseForFace(playerFace.f);
+          const poseFlip = horsePoseForFace(rotateFace8(playerFace.f, rotationRef.current));
           const phase = (nowMs / 1000) * 10.5;
           drawables.push({
-            depth: playerX + playerY + 0.009,
+            depth: dep(playerX, playerY) + 0.009,
             draw: (g2) => {
               drawIsoHorse(g2, mc.x, mc.y, {
                 coat: horseCoat('bay'), pose: poseFlip.pose, flip: poseFlip.flip,
@@ -2501,7 +2525,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         const assets = (liveRef.current.placedAssets || [])
           .filter((asset) => asset.visible !== false && asset.chunk === activeChunkKey)
           .slice()
-          .sort((a, b) => (a.layer ?? 0) - (b.layer ?? 0) || a.y - b.y);
+          .sort((a, b) => (a.layer ?? 0) - (b.layer ?? 0) || (rotationRef.current === 0 ? a.y - b.y : dep(a.x, a.y) - dep(b.x, b.y)));
         for (const asset of assets) {
           if (!Number.isFinite(asset.x) || !Number.isFinite(asset.y)) continue;
           const image = placedAssetImage(asset.src);
@@ -2524,7 +2548,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         const activeChunkKey = liveRef.current.chunk.x + ',' + liveRef.current.chunk.y;
         const houseImage = placedAssetImage(sharedHouseSpriteUrl);
         if (houseImage.complete && houseImage.naturalWidth > 0) {
-          const houses = (liveRef.current.editorPlacedObjects || []).filter((o) => o.kind === 'house' && o.chunk === activeChunkKey).slice().sort((a, b) => a.y - b.y);
+          const houses = (liveRef.current.editorPlacedObjects || []).filter((o) => o.kind === 'house' && o.chunk === activeChunkKey).slice().sort((a, b) => rotationRef.current === 0 ? a.y - b.y : dep(a.x, a.y) - dep(b.x, b.y));
           for (const house of houses) {
             if (!Number.isFinite(house.x) || !Number.isFinite(house.y)) continue;
             const p = isoToScreen(house.x, house.y);
@@ -2840,7 +2864,8 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           }
         }
         // otherwise walk to the tapped tile (field units == tile space)
-        const t = screenToTile(wx, wy);
+        const uw = unrotateIsoScreen(wx, wy, rotationRef.current);
+        const t = screenToTile(uw.x, uw.y);
         const tx = Math.min(N - 1, Math.max(0, t.tx));
         const ty = Math.min(N - 1, Math.max(0, t.ty));
         tapMove({ x: tx, y: ty });
@@ -2865,7 +2890,8 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       const wpx = rect.width || 1, hpx = rect.height || 1;
       const wx = (sx - wpx / 2) / zm + cam.x;
       const wy = (sy - hpx / 2) / zm + cam.y;
-      const t = screenToTile(wx, wy);
+      const uw = unrotateIsoScreen(wx, wy, rotationRef.current);
+      const t = screenToTile(uw.x, uw.y);
       const tx = Math.min(N - 1, Math.max(0, t.tx));
       const ty = Math.min(N - 1, Math.max(0, t.ty));
       tapMove({ x: tx, y: ty });

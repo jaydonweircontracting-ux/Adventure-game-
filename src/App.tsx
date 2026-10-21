@@ -5,6 +5,7 @@ import DevConsole from './game/dev/DevConsole';
 import IsoRoomDemo from './game/iso/IsoRoom';
 import RpgPreview from './game/iso/RpgPreview';
 import IsoFieldView from './game/iso/IsoFieldView';
+import { type IsoRotation, sanitizeIsoRotation } from './game/iso/rotation';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
 import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/iso/isoSprites';
@@ -160,7 +161,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '943';
+const BUILD_NUMBER = '944';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -184,6 +185,7 @@ const BUILD_NOTES: Record<string, string> = {
   '941': 'Alternate Advancement is here: kills now also feed a separate AA pool — 20 even-match kills earn one AA point, weaker kills pay less, stronger pay more, trivial kills pay nothing. Spend points in the Skills panel on ranked abilities: Toughness, Heavy Blows, Deadeye, and Strong Back, each up to rank 5. Total spend earns display titles, from Wanderer up to Legend of the Wilds. Normal XP and levels are untouched, and there is no level cap to reach first — AA runs alongside levels from the start.',
   '942': 'Spells now run on a formula grammar instead of hardcoded numbers: every spell effect is a base value plus a numbered formula, so damage, range, and armor scale by rule rather than by special case. Ember Bolt still hits for 7 plus intellect at range 6, Veil Step still moves exactly 2 tiles, and Frost Ward still grants 3 armor — none of those numbers changed. What did change is Frost Ward itself: it is now a real buff, so recasting it refreshes instead of stacking more armor, and the next wound removes the bonus along with the ward instead of leaving the armor on forever. The tavern beer buff still lasts 60 seconds.',
   '943': 'Monsters now carry special abilities: wolves snap twice per attack, bandits land triple dagger strikes, ogres and trolls fly into a rage when badly hurt and hit harder and move faster, and dragons strike four times, hunt you across a wider territory, and ignore townsfolk to come for you alone. Slimes stay close to home and never notice a sneaking player, spiders also ignore sneaking prey, and rats, bats, snakes, and deer flee faster than before. Rampage is not in: the game has no multi-target melee to build it on, and no effect immunities exist yet because nothing overworld slows, stuns, or fears anything.',
+  '944': 'The camera can now rotate: press the left or right arrow key to turn the view a quarter-turn at a time, or tap the small left and right arrow buttons under the zoom controls on the left side of the screen. Four turns bring you back to the starting view. Only the view turns — the world, your character, and everything in it stay exactly where they are, and tapping a spot still walks you to that spot at every angle. Your up and down arrows, WASD keys, on-screen D-pad, and tap-to-move all still move you exactly as before, and the game remembers which way you left the camera facing when you save and load.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
   '925': 'Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported',
@@ -1832,6 +1834,9 @@ type SaveGameData = {
   // points, total spent, purchased ranks). Old saves carry no field and
   // restore to empty — AA is additive, never a reset of anything else.
   aa?: AaState;
+  // BUILD 944: iso camera rotation (0..3). View-only; old saves carry no
+  // field and restore to 0 (default view), never faked history.
+  cameraRotation?: number;
   goats: GoatState[];
   interiorId: string | null;
   interiorPosition: Point;
@@ -5315,6 +5320,16 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // effect mounts once, so it can't close over the state value).
   const isoZoomRef = useRef(isoZoom);
   useEffect(() => { isoZoomRef.current = isoZoom; }, [isoZoom]);
+  // BUILD 944: camera rotation (0..3, 90° steps) for the iso field view.
+  // View-only: the world never changes, only the rendering transform.
+  // Ref mirror so the keyboard handler and test hooks read it synchronously.
+  const [cameraRotation, setCameraRotation] = useState<IsoRotation>(0);
+  const cameraRotationRef = useRef<IsoRotation>(0);
+  const rotateCamera = (dir: -1 | 1) => {
+    const next = ((cameraRotationRef.current + (dir === 1 ? 1 : 3)) % 4) as IsoRotation;
+    cameraRotationRef.current = next;
+    setCameraRotation(next);
+  };
   const toggleMarkerMode = () => {
     const next = !markerMode;
     debugDoors = next;
@@ -6294,6 +6309,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // BUILD 938: codex counts for verification (read-only; mirrors
         // the panel's counts so a browser kill can prove the wiring).
         getCodex: () => ({ ...bestiaryRef.current }),
+        // BUILD 944: camera rotation for verification (read-only).
+        getCameraRotation: () => cameraRotationRef.current,
         // BUILD 538: remove a test goat by id (cleanup). Localhost only.
         removeTestGoat: (id: number) => {
           if (typeof window === 'undefined') return false;
@@ -6788,6 +6805,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     ),
     // BUILD 941: persist AA state (credits, points, spent, ranks).
     aa: { ...aaStateRef.current, ranks: { ...aaStateRef.current.ranks } },
+    // BUILD 944: persist camera rotation (view-only; old saves have none).
+    cameraRotation: cameraRotationRef.current,
     // BUILD 881: Persist skill-master apprenticeships.
     apprenticeships: { ...apprenticeshipsRef.current },
     // BUILD 704: Persist player stamina.
@@ -6943,6 +6962,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const restoredFactions = sanitizeFactionStandings(loadState.factionStandings);
     factionStandingsRef.current = restoredFactions;
     setFactionStandings(restoredFactions);
+    // BUILD 944: restore camera rotation (old saves have none -> 0).
+    const restoredRotation = sanitizeIsoRotation(loadState.cameraRotation);
+    cameraRotationRef.current = restoredRotation; setCameraRotation(restoredRotation);
     interiorDoorwayIdRef.current = null;
     interiorEntryChunkRef.current = { x: loadState.chunk.x, y: loadState.chunk.y };
     interiorRef.current = null; setInterior(null);
@@ -8407,6 +8429,15 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (event.code === 'Space' || event.code === 'KeyF') { event.preventDefault(); attackGoat(); return; }
       // BUILD 704: Shift hold-to-run (works alongside the touch toggle).
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') { shiftHeldRef.current = true; return; }
+      // BUILD 944: left/right arrows rotate the camera (mouse/tap-to-move
+      // and the D-pad cover movement, so the arrows are free for the camera).
+      // Repeat presses are ignored: one press = one 90° step, holding the
+      // key never spins the camera. Left = counterclockwise, right = clockwise.
+      if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
+        if (!event.repeat) rotateCamera(event.code === 'ArrowRight' ? 1 : -1);
+        event.preventDefault();
+        return;
+      }
       const direction = directionKeys[event.code];
       if (!direction) return;
       event.preventDefault();
@@ -8415,6 +8446,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const onKeyUp = (event: KeyboardEvent) => {
       // BUILD 704: release Shift hold-to-run.
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') { shiftHeldRef.current = false; return; }
+      // BUILD 944: arrow keyup never touches keysRef — a user holding KeyA
+      // (moving left) who taps ArrowLeft to rotate must keep moving when
+      // ArrowLeft is released; only KeyA's own keyup stops that movement.
+      if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') { event.preventDefault(); return; }
       const direction = directionKeys[event.code];
       if (!direction) return;
       event.preventDefault();
@@ -12764,7 +12799,7 @@ if (active) {
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
             <IsoFieldView placedAssets={customPlacedAssets} editorPlacedObjects={placedObjects} playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} dispositions={disposition} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? monsters.filter((m) => m.stray || m.raid) : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash, stray: m.stray }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
-              zoom={isoZoom} onZoomChange={setIsoZoom} playerSneaking={sneaking}
+              rotation={cameraRotation} zoom={isoZoom} onZoomChange={setIsoZoom} playerSneaking={sneaking}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {
                 targetGoatIdRef.current = null;
@@ -14885,6 +14920,35 @@ if (active) {
               +
             </button>
           </div>
+          {/* BUILD 944: camera rotation row, under the zoom row in the left
+              column — same 40×40 black/white-border buttons, same tight-row
+              styling. Iso field view only (rotation does not apply to the
+              2D DOM view or interiors). Left = counterclockwise, right =
+              clockwise, exactly like the arrow keys. */}
+          {isoFieldBeta && !interior && (
+          <div style={{ display: 'flex', gap: 4, marginTop: 8, alignItems: 'center', pointerEvents: 'auto' }}>
+            <button
+              type="button"
+              onClick={() => rotateCamera(-1)}
+              disabled={inputLocked}
+              style={{ width: '40px', height: '40px', fontSize: '20px', fontWeight: 'bold', background: 'rgba(0,0,0,0.85)', color: '#fff', border: '2px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
+              aria-label="Rotate camera left"
+              data-testid="button-rotate-camera-left"
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              onClick={() => rotateCamera(1)}
+              disabled={inputLocked}
+              style={{ width: '40px', height: '40px', fontSize: '20px', fontWeight: 'bold', background: 'rgba(0,0,0,0.85)', color: '#fff', border: '2px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
+              aria-label="Rotate camera right"
+              data-testid="button-rotate-camera-right"
+            >
+              →
+            </button>
+          </div>
+          )}
           </div> {/* Close left column */}
           {/* BUILD 685: tutorial objective banner — top-center below the HUD,
               pointer-events none so it never blocks taps (only the × opts back in). */}
