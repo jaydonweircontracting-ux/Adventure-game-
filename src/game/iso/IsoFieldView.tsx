@@ -1231,10 +1231,21 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             // soil read wrong; plots get hedge/fence boundaries instead.
             const dn = (sandy || farmCode > 0) ? -1 : decorTileFor(terr, wxW, wyW, 0, 0);
             if (dn >= 0) drawDecor(groundCacheG, dn, p.x, p.y);
-            else if (!sandy && farmCode === 0) {
+            else if (farmCode === 0 && (townM > 0 || !sandy)) {
               // HTML5 canvas accents add warm, storybook ground detail without
               // new image assets or per-frame drawing cost (this is cached).
-              drawProceduralGroundAccent(groundCacheG, terr, wxW, wyW, p.x, p.y);
+              // BUILD 924: town ground gets the same flower/tuft accents as
+              // the wilderness, at the same rate — previously the 695 sandy
+              // gate left the whole packed-earth core with no decor AND no
+              // accents (the dead-flat read from the BUILD 916 after-shots).
+              // Decor sprites stay off sandy town ground (695: rocks would
+              // litter the streets); only the grass/flower accents come in.
+              // Town ground is grass-based (worn grass -> packed earth), so
+              // the meadow accent set is the right one regardless of the
+              // chunk's world biome. Non-town tiles are unchanged (chunk
+              // biome, same pass). Roads, farm plots, and wet tiles are
+              // excluded by the outer conditions, as before.
+              drawProceduralGroundAccent(groundCacheG, townM > 0 ? 'meadow' : terr, wxW, wyW, p.x, p.y);
             }
             // BUILD 698: farmland plot boundaries (hedges/fences) and
             // farmstead building sites (drawn as drawables after the pass).

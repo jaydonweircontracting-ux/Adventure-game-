@@ -1890,6 +1890,47 @@ console.log('Testing horse art + hauling (BUILD 912)...');
   assert(mixHexColor('#000000', '#ffffff', 0.5) === '#808080', 'mixHexColor midpoint must be mid-gray');
   assert(shadeHexColor('#77a45b', 1) === '#77a45b', 'shadeHexColor 1 must be identity');
 }
+// ---- 13a1d. Town ground accents (BUILD 924) ----
+// The BUILD 695 sandy gate left Mosslight's packed-earth core with no decor
+// sprites AND no ground accents — dead-flat town ground next to flowered
+// wilderness. 924 routes town tiles through the same accent pass at the
+// same rate (the iso branch passes 'meadow' for town tiles; the pass
+// itself is unchanged for wilderness). The painter is a canvas function,
+// so the sim drives it with a counting mock context (only save/restore/
+// fillRect/fillStyle/globalAlpha are touched by the accent shapes).
+console.log('Testing town ground accents (BUILD 924)...');
+{
+  const { drawProceduralGroundAccent } = await import('../src/game/engine/proceduralWorldArt');
+  const mockCtx = () => {
+    const ctx = {
+      save() {}, restore() {}, fillRect() {},
+      fillStyle: '', globalAlpha: 1,
+    } as unknown as CanvasRenderingContext2D;
+    return ctx;
+  };
+  // The shipped rate: about one accent in four otherwise-empty tiles.
+  let drawn = 0;
+  for (let i = 0; i < 2000; i++) {
+    if (drawProceduralGroundAccent(mockCtx(), 'meadow', i, 7, 0, 0)) drawn++;
+  }
+  assert(drawn > 300 && drawn < 650, `meadow accent rate should be ~24%, got ${drawn}/2000`);
+  // Deterministic: the same tile draws (or not) identically every call.
+  const once = (x: number, y: number): boolean => drawProceduralGroundAccent(mockCtx(), 'meadow', x, y, 0, 0);
+  for (let i = 0; i < 200; i++) {
+    assert(once(i, 11) === once(i, 11), 'town accents must be deterministic per tile');
+  }
+  // Default density must equal the long-standing behavior exactly.
+  let dflt = 0;
+  let explicit = 0;
+  for (let i = 0; i < 2000; i++) {
+    if (drawProceduralGroundAccent(mockCtx(), 'meadow', i, 7, 0, 0)) dflt++;
+    if (drawProceduralGroundAccent(mockCtx(), 'meadow', i, 7, 0, 0, 1)) explicit++;
+  }
+  assert(dflt === explicit, `default density must match explicit 1 (${dflt} vs ${explicit})`);
+  // Non-grass biomes still refuse.
+  assert(!drawProceduralGroundAccent(mockCtx(), 'desert', 3, 7, 0, 0), 'desert must never get meadow accents');
+  assert(!drawProceduralGroundAccent(mockCtx(), 'ocean', 3, 7, 0, 0), 'ocean must never get meadow accents');
+}
 console.log('Testing ambient market life (BUILD 694)...');
 {
   const mkAnchors = (stalls: TownsfolkPoint[], arterials?: TownsfolkPoint[]): TownsfolkAnchors => ({

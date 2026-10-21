@@ -25,12 +25,16 @@ export function drawProceduralGroundAccent(
   worldY: number,
   x: number,
   y: number,
+  densityScale = 1,
 ): boolean {
   if (biome !== 'meadow' && biome !== 'forest' && biome !== 'tundra' && biome !== 'shore') return false;
 
   const h = tileHash(worldX, worldY, 0xCA2A);
   // Richer cozy ground: about one accent in four otherwise-empty tiles, still sparse enough to avoid a noisy grid.
-  if (h % 100 >= 24) return false;
+  // BUILD 924: densityScale lets a caller thin the pass without changing
+  // which tiles are chosen — same hash gate, lower threshold. Default 1
+  // preserves the long-standing wilderness rate exactly.
+  if (h % 100 >= 24 * densityScale) return false;
 
   const px = x + 4 + ((h >>> 8) % 5) * 2;
   const py = y - 3 - ((h >>> 13) % 4) * 2;

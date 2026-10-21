@@ -1,6 +1,6 @@
 {
-  "build": "923",
-  "note": "Villagers now have a sense of character: most folk will never start a lethal fight with another villager — only a rare unsettled few ever would. Guards, priests, and children never start one at all. Self-defense, guard duty, and creature fights are unchanged. Examine a villager to see what kind of character they are",
-  "timestamp": "2026-10-21T03:33:39.284Z",
-  "cacheBuster": "mvhk54r8"
+  "build": "924",
+  "note": "Mosslight ground is alive now: flowers and grass tufts grow through the town at the same rate as the wild meadows — same flowers, same grass, on every town yard and square. Roads, farm plots, and doorways are untouched",
+  "timestamp": "2026-10-21T04:01:10.935Z",
+  "cacheBuster": "mvhl4j6g"
 }
