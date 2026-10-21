@@ -26,6 +26,7 @@ import {
   type NPCMemory,
 } from './townsfolk';
 import type { WorldClockState } from './worldCore';
+import { effectiveWealthGoal, lifestyleTier } from './npcGearEconomy';
 
 // ---------------------------------------------------------------------------
 // Personality & age (pure, derived from the NPC's persistent seed)
@@ -206,7 +207,11 @@ export function villageTarget(
   // alone. Self-terminating: 'A pint with friends' is a social activity, so
   // the need refills and the schedule resumes.
   const personality = npcPersonality(npc);
-  if (needs.social < 32 && personality.sociability > 0.3) {
+  // BUILD 922: lifestyle tie-in — NPCs doing well (wealth at 2× their
+  // savings goal) can afford the tavern life, so they seek company there
+  // even when less sociable. Pure: gold/goal derive from (npc, clock).
+  const tier = lifestyleTier(npcGold(npc, clock), effectiveWealthGoal(npc));
+  if (needs.social < 32 && (personality.sociability > 0.3 || tier >= 2)) {
     const tavern = anchors.points.tavern ?? anchors.plaza;
     return {
       activity: 'A pint with friends',

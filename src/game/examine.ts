@@ -35,6 +35,8 @@ export interface ExamineContext {
   activity?: string;
   personality?: string;
   ageBracket?: string;
+  /** BUILD 922: gear-economy line (want/need, savings goal, lifestyle). */
+  gearLine?: string;
   rarity?: 'common' | 'uncommon' | 'rare' | 'legendary';
   level?: number;
   buildingType?: string;
@@ -173,6 +175,8 @@ function npcExamine(ref: ExamineRef, rng: () => number): { name: string; text: s
   else if (/walk|travel|road/.test(act)) text += ' They seem to be heading somewhere with purpose.';
   if (ctx.ageBracket === 'child' && !/child/.test(text)) text += ' Young, but already learning the trade.';
   if (ctx.ageBracket === 'elder' && !/elder/.test(text)) text += ' There is a lifetime of stories behind those eyes.';
+  // BUILD 922: gear-economy line — what they want, what they're saving for.
+  if (ctx.gearLine) text += ' ' + ctx.gearLine;
   const pers = (ctx.personality || '').toLowerCase();
   if (pers === 'outgoing') text += ' They have a warm, outgoing manner.';
   else if (pers === 'reserved') text += ' They keep to themselves, mostly.';

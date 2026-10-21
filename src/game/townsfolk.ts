@@ -78,6 +78,18 @@ export type Townsperson = {
   age?: 'child' | 'young' | 'adult' | 'elder';
   /** Player-driven gold adjustments (tips, gifts). Base purse is derived. */
   goldDelta?: number;
+  /**
+   * BUILD 922: gear-economy stash — item-base ids this NPC owns beyond its
+   * worn outfit (bought upgrades, spares). Undefined = the seed-derived
+   * starting stash (see npcGearEconomy.effectiveOwnedGear); worn gear is
+   * never stored here and never sold.
+   */
+  ownedGear?: string[];
+  /**
+   * BUILD 922: aspiration — the gold target this NPC is saving toward.
+   * Undefined = the seed-derived default; ratchets upward when met.
+   */
+  wealthGoal?: number;
   /** Bounded event memories (max 12, pruned by importance). */
   memories?: NPCMemory[];
   // --- Flee state (BUILD 436): set when the player attacks the NPC. ---
@@ -850,6 +862,9 @@ export type TownsfolkSave = {
   age?: 'child' | 'young' | 'adult' | 'elder';
   goldDelta?: number;
   memories?: NPCMemory[];
+  /** BUILD 922: gear-economy stash + wealth goal (optional — old saves restore fine). */
+  ownedGear?: string[];
+  wealthGoal?: number;
   /** BUILD 885: jail sentence end tick (optional — old saves restore fine). */
   jailedUntilTick?: number;
 };
@@ -871,6 +886,8 @@ export function serializeTownsfolk(folk: Townsperson[]): TownsfolkSave[] {
     age: npc.age,
     goldDelta: npc.goldDelta,
     memories: npc.memories?.map((m) => ({ ...m })),
+    ownedGear: npc.ownedGear ? [...npc.ownedGear] : undefined,
+    wealthGoal: npc.wealthGoal,
     jailedUntilTick: npc.jailedUntilTick,
   }));
 }
@@ -1128,6 +1145,9 @@ export function isTownsfolkSave(value: unknown): value is TownsfolkSave {
   if (v.age !== undefined && !['child', 'young', 'adult', 'elder'].includes(v.age as string)) return false;
   if (v.goldDelta !== undefined && !Number.isFinite(v.goldDelta)) return false;
   if (v.memories !== undefined && !Array.isArray(v.memories)) return false;
+  // BUILD 922: optional gear-economy fields — validate leniently, ignore if malformed.
+  if (v.ownedGear !== undefined && (!Array.isArray(v.ownedGear) || !(v.ownedGear as unknown[]).every((g) => typeof g === 'string'))) return false;
+  if (v.wealthGoal !== undefined && !Number.isFinite(v.wealthGoal)) return false;
   if (v.jailedUntilTick !== undefined && !Number.isFinite(v.jailedUntilTick)) return false;
   return true;
 }
@@ -1167,6 +1187,8 @@ export function restoreTownsfolk(folk: Townsperson[], saved: unknown): Townspers
       age: s.age ?? npc.age,
       goldDelta: s.goldDelta ?? npc.goldDelta,
       memories: memories ?? npc.memories,
+      ownedGear: s.ownedGear ? [...s.ownedGear] : npc.ownedGear,
+      wealthGoal: s.wealthGoal ?? npc.wealthGoal,
       jailedUntilTick: s.jailedUntilTick ?? npc.jailedUntilTick,
     };
   });

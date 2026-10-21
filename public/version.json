@@ -1,6 +1,6 @@
 {
-  "build": "921",
-  "note": "Dead NPCs now drop the weapons and armor they were actually wearing — a guard corpse holds its sword, breastplate, helmet and shield as real loot you can take and equip, not placeholder gold. Taking a piece visibly strips it off the corpse: loot the sword and the hand is empty, take everything and the body is bare of gear. Unlooted gear stays on the body through save and reload, and looted gear never comes back",
-  "timestamp": "2026-10-21T02:53:44.873Z",
-  "cacheBuster": "mvhipt7t"
+  "build": "922",
+  "note": "Villagers now care about their gear: they want better weapons, save toward a gold goal, and buy upgrades at market stalls when they can afford them — a guard with a rusty sword will come home with a steel blade. They also sell spare gear back to stalls, but never at a cost to themselves: never their only weapon, never their last piece of armor, never the tool their job needs, and never a sale that leaves them worse equipped. Examine a villager to see what they want and what they are saving for, and watch for the ones doing well enough to enjoy the tavern life",
+  "timestamp": "2026-10-21T03:20:20.781Z",
+  "cacheBuster": "mvhjo0mm"
 }

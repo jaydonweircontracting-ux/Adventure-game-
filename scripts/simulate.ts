@@ -48,6 +48,8 @@ import { dangerForBiome, accumulateDanger, BIOME_DANGERS } from '../src/game/env
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance, CRIME_SEVERITY } from '../src/game/crime';
 import { createBody, generateBodyLoot, lootBody, takeBodyLootSelection } from '../src/game/lootableBodies';
 import { wornGearBaseIds, lootedGearBaseIds, lookWithoutLootedGear, baseIdForFolder, isGearFolder, gearNameForBaseId, isKnownBaseId } from '../src/game/npcGear';
+import { gearScore, gearWant, canSellGear, effectiveOwnedGear, effectiveWealthGoal, startingOwnedGear, ratchetWealthGoal, lifestyleTier, resolveNpcGearVisit, gearExamineLine, stallGoodForBase } from '../src/game/npcGearEconomy';
+import { SHOP_CATALOG, createStallStock, type StallShopDef } from '../src/game/shops';
 import { variantLook } from '../src/game/iso/characterSystem';
 import { bountyForCrime, addCrimeToBounty, wantedLevel, emptyBounty } from '../src/game/bounty';
 import { pickpocketChance, resolvePickpocket } from '../src/game/pickpocket';
@@ -1432,6 +1434,125 @@ console.log('Testing NPC worn gear drops (BUILD 921)...');
   // extra and breaks nothing.
   const emptyBody = createBody('b-empty', 'npc-x', 'X', 'citizen', { x: 4, y: 7 }, { x: 1, y: 1 }, 1, 1);
   assert(emptyBody.loot.items.length === 0, 'Gear: body without gear has empty item loot');
+}
+
+// BUILD 922: NPC gear economy — want/need/value, guarded selling, aspiration.
+console.log('Testing NPC gear economy (BUILD 922)...');
+{
+  // Value scores come from existing base stats: strictly ordered by power.
+  assert(gearScore('rusty_sword') < gearScore('iron_sword'), 'GearEco: rusty < iron sword');
+  assert(gearScore('iron_sword') < gearScore('steel_blade'), 'GearEco: iron < steel blade');
+  assert(gearScore('cloth_hood') < gearScore('leather_cap'), 'GearEco: hood < cap');
+  assert(gearScore('leather_cap') < gearScore('iron_helm'), 'GearEco: cap < helm');
+  assert(gearScore('chainmail') < gearScore('plate_armor'), 'GearEco: chainmail < plate');
+  assert(gearScore('dagger') < gearScore('mace'), 'GearEco: dagger < mace');
+  assert(gearScore('no_such_base') === 0, 'GearEco: unknown base scores 0, never crashes');
+  // Equipped best is the max across worn + owned, per slot.
+  // (Equipped-best helper is exercised through gearWant/canSellGear below;
+  // worn [] + owned [steel] must beat worn [rusty] + owned [] in want terms.)
+  const wantRusty = gearWant('guard', ['rusty_sword', 'cloth_hood'], [], ['swords']);
+  assert(wantRusty?.kind === 'want' && wantRusty.targetGood === 'swords' && wantRusty.targetBaseId === 'steel_blade', 'GearEco: rusty sword wants steel blade');
+  const wantSteel = gearWant('guard', ['steel_blade', 'cloth_hood'], [], ['swords', 'daggers', 'bow']);
+  assert(wantSteel === null, 'GearEco: steel blade wants nothing from the arms goods');
+  // Unarmed is a NEED (any shop weapon fills it); children never want gear.
+  const wantUnarmed = gearWant('commoner', ['cloth_hood'], [], ['swords', 'daggers']);
+  assert(wantUnarmed?.kind === 'need' && wantUnarmed.slot === 'weapon' && wantUnarmed.targetBaseId === 'steel_blade', 'GearEco: unarmed NPC needs the strongest offered weapon');
+  assert(gearWant('child', [], [], ['swords']) === null, 'GearEco: children never want gear');
+  // Weapon upgrades stay within combat style: a sword-fighter wants no bow.
+  const wantBowMismatch = gearWant('guard', ['dagger', 'cloth_hood'], [], ['bow']);
+  assert(wantBowMismatch === null, 'GearEco: melee wielder does not want a ranged bow');
+  // Armor need outranks a weapon upgrade, and has no shop source (honest null).
+  const wantArmor = gearWant('guard', ['rusty_sword'], [], ['swords']);
+  assert(wantArmor?.kind === 'need' && wantArmor.slot === 'armor' && wantArmor.targetGood === null, 'GearEco: armor need reported with no invented shop source');
+
+  // --- Guardrail (c): exactly one weapon, offered any price, must refuse.
+  // Price is not an input to canSellGear — refusal is absolute, not an offer.
+  assert(!canSellGear('guard', [], ['steel_blade'], 'steel_blade').ok, 'GearEco: only weapon can never be sold');
+  // --- Guardrail (a): unique best may not go; a spare duplicate may.
+  const downgrade = canSellGear('guard', ['rusty_sword', 'cloth_hood'], ['steel_blade'], 'steel_blade');
+  assert(!downgrade.ok && downgrade.reason === 'downgrade', 'GearEco: selling the unique best weapon is a downgrade');
+  assert(canSellGear('guard', ['rusty_sword', 'cloth_hood'], ['steel_blade', 'steel_blade'], 'steel_blade').ok, 'GearEco: selling a spare duplicate is allowed');
+  // --- Guardrail (b): last trade tool never goes; a spare tool may.
+  const tool = canSellGear('farmer', ['war_axe', 'cloth_hood'], ['hand_axe'], 'hand_axe');
+  assert(!tool.ok && tool.reason === 'trade-tool', 'GearEco: farmer selling its last hand axe loses income');
+  assert(canSellGear('farmer', ['war_axe', 'cloth_hood'], ['hand_axe', 'hand_axe'], 'hand_axe').ok, 'GearEco: selling a spare hand axe is allowed');
+  // --- Guardrail (c), armor half: last armor piece never goes; a spare may.
+  const lastArmor = canSellGear('guard', ['rusty_sword'], ['cloth_hood'], 'cloth_hood');
+  assert(!lastArmor.ok && lastArmor.reason === 'defenseless', 'GearEco: selling the last armor piece leaves them defenseless');
+  assert(canSellGear('guard', ['rusty_sword', 'cloth_hood'], ['cloth_hood'], 'cloth_hood').ok, 'GearEco: selling spare armor is allowed');
+  // Worn gear is never sellable (its render is deterministic from the id).
+  assert(!canSellGear('guard', ['steel_blade', 'cloth_hood'], [], 'steel_blade').ok, 'GearEco: worn gear is not sellable');
+  assert(!canSellGear('child', [], ['dagger'], 'dagger').ok, 'GearEco: children never sell gear');
+  // Stall mapping: weapons sell back as their goods; armor has no stall buyer.
+  assert(stallGoodForBase('steel_blade') === 'swords', 'GearEco: steel blade sells back as swords');
+  assert(stallGoodForBase('dagger') === 'daggers', 'GearEco: dagger sells back as daggers');
+  assert(stallGoodForBase('cloth_hood') === null, 'GearEco: armor has no stall buyer');
+
+  // --- One-visit decisions (the real App wiring path, pure).
+  const armsDef: StallShopDef = {
+    index: 99, merchantName: 'Test', shopName: 'Test Arms', flavor: '',
+    goods: (['swords', 'daggers', 'bow'] as const).map((key) => ({ key, ...SHOP_CATALOG[key] })),
+  };
+  const armsStock = createStallStock(armsDef, 5);
+  // Buy: rusty sword + 100g at an Arms stall -> steel blade, gold and stock move together.
+  const buy = resolveNpcGearVisit({
+    holder: { id: 'eco-buy-1', archetype: 'guard', ownedGear: [], wealthGoal: 500 },
+    wornBaseIds: ['rusty_sword', 'cloth_hood'], gold: 100, stall: armsDef, stock: armsStock,
+  });
+  assert(buy.action === 'buy' && buy.boughtGood === 'swords' && buy.boughtBaseId === 'steel_blade', 'GearEco: visit buys the upgrade');
+  assert(buy.ownedGear.includes('steel_blade'), 'GearEco: bought blade lands in the stash');
+  assert(buy.goldDelta === -SHOP_CATALOG['swords'].buyPrice, 'GearEco: buy moves gold by the catalog price');
+  assert(buy.stock.stock['swords'] === (armsStock.stock['swords'] ?? 0) - 1, 'GearEco: buy decrements shared stall stock');
+  assert(buy.stock.merchantGold === armsStock.merchantGold + SHOP_CATALOG['swords'].buyPrice, 'GearEco: buy conserves gold into merchantGold');
+  assert(buy.bark !== null && buy.bark.length > 0, 'GearEco: buy produces a visible bark');
+  // Unaffordable: 10g cannot buy a 60g sword; nothing moves.
+  const poor = resolveNpcGearVisit({
+    holder: { id: 'eco-poor-1', archetype: 'guard', ownedGear: [], wealthGoal: 500 },
+    wornBaseIds: ['rusty_sword', 'cloth_hood'], gold: 10, stall: armsDef, stock: armsStock,
+  });
+  assert(poor.action === 'none' && poor.goldDelta === 0 && poor.ownedGear.length === 0, 'GearEco: unaffordable want buys nothing');
+  // Sell: mace worn + spare dagger in stash -> dagger sells for the catalog sell price.
+  const sell = resolveNpcGearVisit({
+    holder: { id: 'eco-sell-1', archetype: 'guard', ownedGear: ['dagger'], wealthGoal: 500 },
+    wornBaseIds: ['mace', 'cloth_hood'], gold: 50, stall: armsDef, stock: armsStock,
+  });
+  assert(sell.action === 'sell' && sell.soldBaseId === 'dagger' && sell.price === SHOP_CATALOG['daggers'].sellPrice, 'GearEco: visit sells the spare dagger at the catalog price');
+  assert(sell.goldDelta === SHOP_CATALOG['daggers'].sellPrice && !sell.ownedGear.includes('dagger'), 'GearEco: sale moves gold and removes the item together');
+  assert(sell.stock === armsStock, 'GearEco: sale does not touch stall stock (stalls buy at unlimited demand, like player sales)');
+  // Aspiration: goal ratchets once met, and tiers read off progress.
+  assert(ratchetWealthGoal(100, 50) === 100, 'GearEco: unmet goal does not ratchet');
+  assert(ratchetWealthGoal(100, 120) === 155, 'GearEco: met goal ratchets x1.3 + 25');
+  assert(lifestyleTier(10, 100) === 0 && lifestyleTier(60, 100) === 1 && lifestyleTier(150, 100) === 2 && lifestyleTier(250, 100) === 3, 'GearEco: lifestyle tiers track goal progress');
+  // Starting stash is deterministic per id; children start empty.
+  assert(JSON.stringify(startingOwnedGear('eco-id-1', 'guard')) === JSON.stringify(startingOwnedGear('eco-id-1', 'guard')), 'GearEco: starting stash deterministic per id');
+  assert(startingOwnedGear('eco-id-1', 'child').length === 0, 'GearEco: children start with no stash');
+  assert(effectiveOwnedGear({ id: 'eco-id-1', archetype: 'guard' }).length === startingOwnedGear('eco-id-1', 'guard').length, 'GearEco: undefined stash falls back to the starting stash');
+  assert(effectiveOwnedGear({ id: 'eco-id-1', archetype: 'guard', ownedGear: [] }).length === 0, 'GearEco: explicit empty stash stays empty');
+  assert(effectiveWealthGoal({ id: 'eco-id-1', archetype: 'guard' }) >= 80, 'GearEco: wealth goal defaults to a seed value');
+  // Examine line: want + savings goal are player-readable.
+  const line = gearExamineLine({ id: 'eco-ex-1', archetype: 'guard', ownedGear: [], wealthGoal: 500 }, ['rusty_sword', 'cloth_hood'], 40);
+  assert(/better weapon/i.test(line) && /saving toward 500 gold/i.test(line), 'GearEco: examine line shows want + savings goal');
+  const richLine = gearExamineLine({ id: 'eco-ex-2', archetype: 'guard', ownedGear: [], wealthGoal: 100 }, ['steel_blade', 'cloth_hood'], 300);
+  assert(/finer things/i.test(richLine), 'GearEco: thriving NPCs get the lifestyle line');
+
+  // Save/load: stash + goal round-trip; malformed entries fall back to fresh.
+  const fixture = {
+    id: 'eco-save-1', name: 'Eco', gender: 'male' as const, archetype: 'guard' as const,
+    role: 'warrior' as const, seed: 123, homeKey: 'home-1', home: { x: 0, y: 0 },
+    position: { x: 0, y: 0 }, facing: 'down' as const, moving: false, activity: 'At home',
+    indoors: false, location: 'OUTDOOR' as const,
+    ownedGear: ['dagger', 'steel_blade'], wealthGoal: 240,
+  };
+  const savedEco = serializeTownsfolk([fixture])[0];
+  assert(JSON.stringify(savedEco.ownedGear) === JSON.stringify(['dagger', 'steel_blade']), 'GearEco: stash serializes');
+  assert(savedEco.wealthGoal === 240, 'GearEco: wealth goal serializes');
+  const freshEco = { ...fixture, ownedGear: undefined, wealthGoal: undefined };
+  const restoredEco = restoreTownsfolk([freshEco], [savedEco])[0];
+  assert(JSON.stringify(restoredEco.ownedGear) === JSON.stringify(['dagger', 'steel_blade']), 'GearEco: stash restores');
+  assert(restoredEco.wealthGoal === 240, 'GearEco: wealth goal restores');
+  const junkEco = { ...savedEco, ownedGear: [42, null] };
+  const junkRestored = restoreTownsfolk([freshEco], [junkEco])[0];
+  assert(junkRestored.ownedGear === undefined, 'GearEco: malformed stash falls back to fresh');
 }
 
 // ---- 13a1b. Town-edge strays (BUILD 917) ----

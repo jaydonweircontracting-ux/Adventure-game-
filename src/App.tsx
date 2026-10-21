@@ -12,6 +12,7 @@ import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propa
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
 import { createBody, takeBodyLootSelection, type LootableBody } from './game/lootableBodies';
 import { wornGearBaseIds, lootedGearBaseIds, gearNameForBaseId, isKnownBaseId } from './game/npcGear';
+import { resolveNpcGearVisit, gearExamineLine, effectiveOwnedGear, effectiveWealthGoal } from './game/npcGearEconomy';
 import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
 import { pickpocketChance, resolvePickpocket } from './game/pickpocket';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
@@ -145,13 +146,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '921';
+const BUILD_NUMBER = '922';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '922': 'Villagers now care about their gear: they want better weapons, save toward a gold goal, and buy upgrades at market stalls when they can afford them — a guard with a rusty sword will come home with a steel blade. They also sell spare gear back to stalls, but never at a cost to themselves: never their only weapon, never their last piece of armor, never the tool their job needs, and never a sale that leaves them worse equipped. Examine a villager to see what they want and what they are saving for, and watch for the ones doing well enough to enjoy the tavern life',
   '921': 'Dead NPCs now drop the weapons and armor they were actually wearing — a guard corpse holds its sword, breastplate, helmet and shield as real loot you can take and equip, not placeholder gold. Taking a piece visibly strips it off the corpse: loot the sword and the hand is empty, take everything and the body is bare of gear. Unlooted gear stays on the body through save and reload, and looted gear never comes back',
   '920': 'Minimap travel finally listens to you: tapping the minimap still sends your character walking to that spot, but any tap on the field, D-pad press, or attack now cancels the trip instantly and your character does what you just told it to do instead. Before this fix, a field tap during minimap travel was silently ignored because the old minimap route kept steering the character to the original destination. Tapping the minimap again still retargets to the new spot, and untouched trips still arrive normally',
   '918': 'Two long-standing combat fixes. First, killing a townsfolk now earns XP exactly like killing a creature: a commoner pays what a goat does, a guard pays what a tougher monster does, and the same goes for simulated adventurers and travelers you kill — awarded once at death, through the same XP grant as every other kill. Second, NPCs that fight back now actually keep fighting: their hit cooldown was counted in world-clock ticks (one tick every 3 seconds, so a second hit could not land for over two minutes) — it now runs in real time at roughly one hit per second, like creature attacks — and fighting NPCs run after you instead of trailing behind at a walk, so a player who walks away still gets caught and hit, while sprinting away still escapes. The same fixes apply to NPCs fighting creatures',
@@ -4866,9 +4868,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (npc) {
       const pers = npcPersonality(npc);
       const persDesc = pers.sociability >= 0.66 ? 'outgoing' : pers.sociability <= 0.33 ? 'reserved' : pers.diligence >= 0.66 ? 'hardworking' : 'easygoing';
+      // BUILD 922: gear-economy line — what they want, what they're saving for.
+      const npcClock = brainRef.current?.worldCore.getClock();
+      const npcPurse = npcClock ? npcGold(npc, npcClock) : 20;
       const ref: ExamineRef = {
         kind: 'npc', id: 'npc-' + npc.id, name: npc.name,
-        ctx: { role: npc.role, archetype: npc.archetype, activity: npc.activity, personality: persDesc, ageBracket: npc.age },
+        ctx: { role: npc.role, archetype: npc.archetype, activity: npc.activity, personality: persDesc, ageBracket: npc.age,
+          gearLine: gearExamineLine({ id: npc.id, archetype: npc.archetype, ownedGear: npc.ownedGear, wealthGoal: npc.wealthGoal }, wornGearBaseIds(npc.id), npcPurse) },
       };
       setContextMenu({ x: clientX, y: clientY, ref, actions: menuActionsFor(ref), target: { kind: 'npc', npc } });
       return;
@@ -5894,6 +5900,20 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           id: n.id, name: n.name, x: n.position.x, y: n.position.y,
           activity: n.activity, archetype: n.archetype,
         })),
+        // BUILD 922: gear-economy state for verification — stored fields are
+        // null until a gear event fires, so a non-null stored value proves a
+        // live transaction (or goal ratchet) happened in this session.
+        getNpcGear: () => {
+          const clock = brainRef.current?.worldCore.getClock();
+          return townsfolkRef.current.map((n) => ({
+            id: n.id, name: n.name, archetype: n.archetype, activity: n.activity,
+            storedOwnedGear: n.ownedGear ?? null,
+            effectiveOwnedGear: effectiveOwnedGear({ id: n.id, archetype: n.archetype, ownedGear: n.ownedGear, wealthGoal: n.wealthGoal }),
+            storedWealthGoal: n.wealthGoal ?? null,
+            effectiveWealthGoal: effectiveWealthGoal({ id: n.id, archetype: n.archetype, ownedGear: n.ownedGear, wealthGoal: n.wealthGoal }),
+            gold: clock ? npcGold(n, clock) : null,
+          }));
+        },
         // BUILD 912: Phase C verification — mount state, the analytic world
         // horses (same horseTarget resolution the renderer consumes), and
         // lootable bodies.
@@ -6943,13 +6963,42 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             const def = stallShopDef(visit.stallIndex);
             const purse = npcGold(npc, folkClock);
             const pick = npcShoppingPick(npc.seed, npc.archetype, today, visit.visitIndex, def, purse);
-            if (!pick) continue;
-            const state = restockStall(def, shopStocksRef.current[visit.stallIndex], today);
-            const result = buyFromStall(def, state, pick.itemKey, purse);
-            if (!result.ok) continue;
-            folk = folk.map((w) => (w.id === npc.id ? adjustNPCGold(w, -result.coinsSpent) : w));
+            if (pick) {
+              const state = restockStall(def, shopStocksRef.current[visit.stallIndex], today);
+              const result = buyFromStall(def, state, pick.itemKey, purse);
+              if (!result.ok) continue;
+              folk = folk.map((w) => (w.id === npc.id ? adjustNPCGold(w, -result.coinsSpent) : w));
+              folkTouched = true;
+              syncShopStocks({ ...shopStocksRef.current, [visit.stallIndex]: result.state });
+              continue;
+            }
+            // BUILD 922: gear economy — one gear event per visit, under the
+            // same dedup key as the purchase above (the key is already
+            // recorded, so this never double-fires). Dead/jailed NPCs don't
+            // trade. The pure decision returns owned/gold/goal/stock as one
+            // result, applied atomically below — one side can never survive
+            // without the other. Sales mirror player stall sales (stalls buy
+            // catalog goods at unlimited demand, no merchantGold deduction).
+            if (isNpcDead(npc, folkClock.tick ?? 0) || isNpcJailed(npc, folkClock.tick ?? 0)) continue;
+            const gear = resolveNpcGearVisit({
+              holder: { id: npc.id, archetype: npc.archetype, ownedGear: npc.ownedGear, wealthGoal: npc.wealthGoal },
+              wornBaseIds: wornGearBaseIds(npc.id),
+              gold: purse,
+              stall: def,
+              stock: restockStall(def, shopStocksRef.current[visit.stallIndex], today),
+            });
+            if (gear.action === 'none') continue;
+            folk = folk.map((w) => (w.id === npc.id
+              ? { ...adjustNPCGold(w, gear.goldDelta), ownedGear: [...gear.ownedGear], wealthGoal: gear.wealthGoal }
+              : w));
             folkTouched = true;
-            syncShopStocks({ ...shopStocksRef.current, [visit.stallIndex]: result.state });
+            if (gear.action === 'buy') {
+              syncShopStocks({ ...shopStocksRef.current, [visit.stallIndex]: gear.stock });
+            }
+            if (gear.bark) {
+              barksRef.current[npc.id] = { text: gear.bark, until: Date.now() + 4000 };
+              setBarks((prev) => ({ ...prev, [npc.id]: gear.bark as string }));
+            }
           }
           if (seen) { npcPurchasesRef.current = seen; setNpcPurchases(seen); }
           if (folkTouched) { townsfolkRef.current = folk; setTownsfolk(folk); }
