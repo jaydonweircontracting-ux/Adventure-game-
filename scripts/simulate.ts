@@ -15,6 +15,7 @@ import { chooseCreatureTarget, pickGuardCreatureTarget, sneakEngagementRange, CR
 import { behaviorForCreature, behaviorKindKeys, preferredRangeFor, hashRoll, shouldStand, shouldRetarget, isBehaviorFleeing, voiceLine } from '../src/game/creatureBehavior';
 import { mitigateDamage, mitigationForCreature, mitigationKindKeys, creatureDefenseForLevel, creatureArmorForLevel, playerArmorForRoll, playerResistPercents, rangedBandFor, rangedHitChance, creatureArcherSkill, normalizeRangedSkill, RANGED_HIT_CHANCE_CAP } from '../src/game/mitigation';
 import { strayGateDecision, strayKindForRoll, straySpawnPoints, pickStraySpawnPoint, isTownEdgePosition, isTownCenterPosition, TOWN_STRAY_CHANCE, TOWN_STRAY_ROAM_RADIUS, TOWN_CENTER_SAFE_RADIUS } from '../src/game/townStrays';
+import { raidAdvance, raidFireChance, raidLeaderName, raidShouldFire, raidWaveKinds, raidWavePositions, RAID_CHECK_INTERVAL_MS, RAID_CHASE_STANDOFF, RAID_ESCALATION_DELAY_MS, RAID_ESCALATION_WINDOW_MS, RAID_INTERVAL_MS, RAID_MARGIN_MS, RAID_MAX_DURATION_MS, RAID_ROAM_RADIUS, RAID_WARNING_MS, RAID_WAVE_1_SIZE, RAID_WAVE_2_SIZE, RAID_LEADER_HP_MULT, type RaidState } from '../src/game/raids';
 import { createAgent, stepAgent, AGENT_MOVE_SPEED, type AgentWorld } from '../src/game/gameplayAgent';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
@@ -1538,6 +1539,90 @@ console.log('Testing two-stage mitigation (BUILD 935)...');
   assert(rangedHitChance(5, 100, () => 0.74).hit === true && rangedHitChance(5, 100, () => 0.75).hit === false, 'Mitigation: hit boundary is roll*100 < chance');
   assert(creatureArcherSkill(1) === 45 && creatureArcherSkill(10) === 90, 'Mitigation: creature archer skill is 40 + level*5');
   assert(normalizeRangedSkill(4) === 20 && normalizeRangedSkill(20) === 100 && normalizeRangedSkill(30) === 100, 'Mitigation: player skill is dex*5 clamped to 100');
+}
+
+// ---- 13a1o. Raid scheduler + staged waves (BUILD 937, Tibia item 4) ----
+console.log('Testing raid scheduler (BUILD 937)...');
+{
+  // Interval-scaled firing chance: Tibia's chance = CHECK / interval.
+  assert(raidFireChance(60000, 1800000) === 60000 / 1800000, 'Raid: 60 s check over 30 min interval is 1/30');
+  assert(raidFireChance(RAID_CHECK_INTERVAL_MS, RAID_INTERVAL_MS) > 0 && raidFireChance(RAID_CHECK_INTERVAL_MS, RAID_INTERVAL_MS) < 1, 'Raid: shipped chance is a proper probability');
+  assert(raidFireChance(0, 1000) === 0 && raidFireChance(2000, 1000) === 1 && raidFireChance(1000, 0) === 1, 'Raid: chance clamps at 0 and 1');
+  // One-at-a-time: a live stray blocks the raid; the margin blocks it;
+  // an active raid never re-fires; only idle + margin + roll fires.
+  const base = { stage: 'idle' as const, aliveStrays: 0, marginReady: true, roll: 0.01, chance: 1 / 30 };
+  assert(raidShouldFire(base) === true, 'Raid: idle + margin + winning roll fires');
+  assert(raidShouldFire({ ...base, aliveStrays: 1 }) === false, 'Raid: a live stray blocks firing');
+  assert(raidShouldFire({ ...base, marginReady: false }) === false, 'Raid: the quiet margin blocks firing');
+  assert(raidShouldFire({ ...base, stage: 'wave' }) === false, 'Raid: an active raid never re-fires');
+  assert(raidShouldFire({ ...base, roll: 0.5 }) === false, 'Raid: a losing roll does not fire');
+  // Full stage script on the clock: warning -> wave (+leader) ->
+  // escalation (only if uncleared) -> larger wave -> cleared end.
+  let st: RaidState = { stage: 'warning', firedAt: 1000, stageAt: 1000 };
+  let res = raidAdvance(st, 1000 + RAID_WARNING_MS - 1, 0);
+  assert(res.next.stage === 'warning' && res.actions.length === 0, 'Raid: warning holds until its window ends');
+  res = raidAdvance(st, 1000 + RAID_WARNING_MS, 0);
+  assert(res.next.stage === 'wave' && res.actions.join(',') === 'spawnWave1,spawnLeader', 'Raid: warning ends in wave + leader');
+  st = res.next;
+  res = raidAdvance(st, 1000 + RAID_WARNING_MS + RAID_ESCALATION_WINDOW_MS - 1, 2);
+  assert(res.next.stage === 'wave' && res.actions.length === 0, 'Raid: wave holds while creatures live and the window runs');
+  res = raidAdvance(st, 1000 + RAID_WARNING_MS + RAID_ESCALATION_WINDOW_MS, 2);
+  assert(res.next.stage === 'escalating' && res.actions.join(',') === 'broadcastEscalation', 'Raid: uncleared wave escalates');
+  st = res.next;
+  res = raidAdvance(st, 1000 + RAID_WARNING_MS + RAID_ESCALATION_WINDOW_MS + RAID_ESCALATION_DELAY_MS, 2);
+  assert(res.next.stage === 'wave2' && res.actions.join(',') === 'spawnWave2', 'Raid: escalation ends in the larger wave');
+  st = res.next;
+  res = raidAdvance(st, 1000 + RAID_WARNING_MS + RAID_ESCALATION_WINDOW_MS + RAID_ESCALATION_DELAY_MS + 1, 0);
+  assert(res.next.stage === 'idle' && res.actions.join(',') === 'endCleared', 'Raid: clearing the larger wave ends the raid');
+  // Cleared beats escalation on the same frame: a wave finished exactly
+  // as its window ends never escalates.
+  st = { stage: 'wave', firedAt: 1000, stageAt: 2000 };
+  res = raidAdvance(st, 2000 + RAID_ESCALATION_WINDOW_MS, 0);
+  assert(res.next.stage === 'idle' && res.actions.join(',') === 'endCleared', 'Raid: cleared beats escalation on the same frame');
+  // Cleared during the escalation delay cancels the larger wave.
+  st = { stage: 'escalating', firedAt: 1000, stageAt: 2000 };
+  res = raidAdvance(st, 2000 + RAID_ESCALATION_DELAY_MS - 1, 0);
+  assert(res.next.stage === 'idle' && res.actions.join(',') === 'endCleared', 'Raid: clearing during escalation cancels wave 2');
+  // Max duration disperses even an uncleared raid (no softlock, and
+  // dispersal beats a pending escalation on the same frame).
+  st = { stage: 'wave', firedAt: 1000, stageAt: 2000 };
+  res = raidAdvance(st, 1000 + RAID_MAX_DURATION_MS, 3);
+  assert(res.next.stage === 'idle' && res.actions.join(',') === 'endDispersed', 'Raid: max duration disperses an uncleared raid');
+  // Idle is a no-op; constants sanity.
+  res = raidAdvance({ stage: 'idle', firedAt: 0, stageAt: 0 }, 999999, 0);
+  assert(res.next.stage === 'idle' && res.actions.length === 0, 'Raid: idle advances to nothing');
+  assert(RAID_MARGIN_MS === 600000 && RAID_MAX_DURATION_MS === 600000 && RAID_WAVE_1_SIZE === 3 && RAID_WAVE_2_SIZE === 5 && RAID_LEADER_HP_MULT === 1.5, 'Raid: shipped constants are the documented values');
+  // Named leader label.
+  assert(raidLeaderName('wolf') === 'Raid Wolf' && raidLeaderName('') === 'Raid Creature', 'Raid: leader names label the kind');
+  // Wave kinds come from the stray table; sizes match the script.
+  let rollSeq = [0.1, 0.6, 0.9];
+  let ri = 0;
+  assert(JSON.stringify(raidWaveKinds(3, () => rollSeq[ri++ % 3])) === JSON.stringify(['wolf', 'slime', 'rat']), 'Raid: wave kinds follow the stray table');
+  // Wave placement: every emitted position is an edge position, never
+  // inside the plaza heart, and a full chase from it (roam radius +
+  // melee standoff) can never come within 78 of the center. Anchors
+  // include the worst case: edge midpoints exactly 114 out.
+  const free = () => true;
+  const center = 140;
+  for (const anchor of [{ x: 140, y: 26 }, { x: 26, y: 140 }, { x: 70, y: 26 }, { x: 254, y: 210 }]) {
+    for (const size of [RAID_WAVE_1_SIZE, RAID_WAVE_2_SIZE]) {
+      for (const pos of raidWavePositions(anchor, size, free, 280)) {
+        assert(isTownEdgePosition(pos, 280), `Raid: wave position ${pos.x},${pos.y} is in the edge band`);
+        assert(!isTownCenterPosition(pos, 280), `Raid: wave position ${pos.x},${pos.y} is outside the plaza heart`);
+        const chaseFloor = Math.hypot(pos.x - center, pos.y - center) - RAID_ROAM_RADIUS - RAID_CHASE_STANDOFF;
+        assert(chaseFloor > 78, `Raid: chase from ${pos.x},${pos.y} cannot come within 78 of center (floor ${chaseFloor})`);
+      }
+    }
+  }
+  // Inward offsets fall back to the anchor rather than breaking the
+  // floor: the (140,26) anchor's inward offset (0,10) would sit 104
+  // out (floor 70), so the wave contains the anchor, not the offset.
+  const inward = raidWavePositions({ x: 140, y: 26 }, 3, free, 280);
+  assert(inward.some((p) => p.x === 140 && p.y === 26), 'Raid: inward offsets fall back to the anchor');
+  assert(!inward.some((p) => p.x === 140 && p.y === 36), 'Raid: no wave position breaks the chase floor');
+  // A blocked anchor skips its creature instead of placing illegally.
+  const blocked = raidWavePositions({ x: 140, y: 26 }, 3, () => false, 280);
+  assert(blocked.length === 0, 'Raid: a blocked anchor spawns nothing');
 }
 
 // BUILD 921: NPC worn gear drops + corpse unequip.

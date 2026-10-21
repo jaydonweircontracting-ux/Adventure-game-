@@ -113,6 +113,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { isInMeleeArc, traceLineBlocked, getDirection, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH, type CombatDirection } from '@/game/combat';
 import { chooseCreatureTarget, pickGuardCreatureTarget, creatureTargetKey, sneakEngagementRange, type CreatureTargetChoice, type GuardThreatCandidate } from '@/game/creatureCombat';
 import { strayGateDecision, strayKindForRoll, straySpawnPoints, pickStraySpawnPoint, TOWN_STRAY_CHECK_INTERVAL_MS, TOWN_STRAY_COOLDOWN_MS, TOWN_STRAY_ROAM_RADIUS } from '@/game/townStrays';
+import { raidAdvance, raidFireChance, raidLeaderName, raidShouldFire, raidWaveKinds, raidWavePositions, RAID_CHECK_INTERVAL_MS, RAID_ESCALATION_WINDOW_MS, RAID_INTERVAL_MS, RAID_MARGIN_MS, RAID_MAX_DURATION_MS, RAID_ROAM_RADIUS, RAID_WARNING_MS, RAID_WAVE_1_SIZE, RAID_WAVE_2_SIZE, RAID_LEADER_HP_MULT, type RaidState } from '@/game/raids';
 import { renderGroundDetail, type GroundDetailSpec, type GroundHills } from '@/game/groundDetail';
 // BUILD 355: elevation hills/cliffs (CraftPix island kit tiles).
 import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type ElevContext } from '@/game/elevation';
@@ -152,7 +153,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '936';
+const BUILD_NUMBER = '937';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -1614,7 +1615,9 @@ type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'ogre' | 'elf' |
 // BUILD 917: `stray` marks a deliberate town-edge stray (townStrays.ts).
 // The render suppression in the settlement safety zone lets flagged
 // strays through and keeps hiding everything else.
-type MonsterState = GoatState & { kind: MonsterKind; variant?: string; ranged?: boolean; gear: GoatLoot; stray?: boolean };
+// BUILD 937: `raid` marks a raid-wave creature (raids.ts) — same
+// render pass as strays; `name` is the named leader's label.
+type MonsterState = GoatState & { kind: MonsterKind; variant?: string; ranged?: boolean; gear: GoatLoot; stray?: boolean; raid?: boolean; name?: string };
 const GOAT_STEP = 0.5;
 // Ambient birds: lightweight wildlife, deterministic per chunk, not persisted.
 type BirdStateName = 'idle' | 'hop' | 'peck' | 'fly';
@@ -5800,6 +5803,37 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const strayCheckAccRef = useRef(0);
   const strayNextAtRef = useRef(0);
   const strayWasAliveRef = useRef(false);
+  // BUILD 937: raid scheduler state — the pure stage machine's current
+  // stage, ms accumulated toward the next 60 s scheduler roll, and the
+  // earliest rAF timestamp a new raid may fire (quiet margin). All
+  // timestamps are rAF `now` values (performance.now). Transient by
+  // design: never saved (monsters never are).
+  const raidStateRef = useRef<RaidState>({ stage: 'idle', firedAt: 0, stageAt: 0 });
+  const raidCheckAccRef = useRef(0);
+  const raidMarginUntilRef = useRef(0);
+  // BUILD 937: shared town-edge monster construction — the 917 stray
+  // path and the raid path build identical creatures (table stats,
+  // edge position, roam anchor); only the flags differ. Callers append
+  // to monstersRef themselves so batched wave spawns get unique ids.
+  const buildEdgeMonster = (kind: MonsterKind, pos: { x: number; y: number }, opts: { stray?: boolean; raid?: boolean; name?: string; hpMult?: number }): MonsterState => {
+    const spec = MONSTER_SPAWN_TABLE.find((s) => s.kind === kind) ?? MONSTER_SPAWN_TABLE[0];
+    const seed = Math.abs(Math.floor(Math.random() * 1000000000));
+    const level = monsterLevelForChunk(TOWNSFOLK_CHUNK, seed % 5, playerLevelRef.current);
+    const maxHp = Math.round(goatMaxHpForLevel(level) * spec.hpMult * (opts.hpMult ?? 1));
+    const variant = spec.variants[seed % spec.variants.length];
+    const id = monstersRef.current.reduce((max, m) => Math.max(max, m.id), -1) + 1;
+    return {
+      id, kind, variant, ranged: false, gear: gearForMonster(kind, variant, false),
+      position: { ...pos }, spawnPosition: { ...pos }, roamRadius: TOWN_STRAY_ROAM_RADIUS,
+      facing: pos.x < FIELD_SIZE / 2 ? 'right' : 'left',
+      level, hp: maxHp, maxHp, disposition: 'aggressive',
+      attackCooldown: 0, respawnTicks: 0, wanderSeed: seed, moving: false, attacking: false,
+      state: 'idle', hurtTimer: 0, attackTimer: 0, attackHitApplied: false, hitFlash: false,
+      ...(opts.stray ? { stray: true } : {}),
+      ...(opts.raid ? { raid: true } : {}),
+      ...(opts.name ? { name: opts.name } : {}),
+    };
+  };
   // BUILD 917: spawn one stray hostile at the town outskirts. Shared by
   // the organic gate in the field loop and the localhost test hook, so
   // a staged stray is identical to a natural one. Placement, stats and
@@ -5812,25 +5846,47 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const pos = pickStraySpawnPoint(candidates, startIndex, (p) => !isFieldPositionBlocked(p, TOWNSFOLK_CHUNK));
     if (!pos) return -1;
     const kind = (forcedKind ?? strayKindForRoll(Math.random())) as MonsterKind;
-    const spec = MONSTER_SPAWN_TABLE.find((s) => s.kind === kind) ?? MONSTER_SPAWN_TABLE[0];
-    const seed = Math.abs(Math.floor(Math.random() * 1000000000));
-    const level = monsterLevelForChunk(TOWNSFOLK_CHUNK, seed % 5, playerLevelRef.current);
-    const maxHp = Math.round(goatMaxHpForLevel(level) * spec.hpMult);
-    const variant = spec.variants[seed % spec.variants.length];
-    const id = monstersRef.current.reduce((max, m) => Math.max(max, m.id), -1) + 1;
-    const monster: MonsterState = {
-      id, kind, variant, ranged: false, gear: gearForMonster(kind, variant, false),
-      position: { ...pos }, spawnPosition: { ...pos }, roamRadius: TOWN_STRAY_ROAM_RADIUS,
-      facing: pos.x < FIELD_SIZE / 2 ? 'right' : 'left',
-      level, hp: maxHp, maxHp, disposition: 'aggressive',
-      attackCooldown: 0, respawnTicks: 0, wanderSeed: seed, moving: false, attacking: false,
-      state: 'idle', hurtTimer: 0, attackTimer: 0, attackHitApplied: false, hitFlash: false,
-      stray: true,
-    };
+    const monster = buildEdgeMonster(kind, pos, { stray: true });
     const next = [...monstersRef.current, monster];
     monstersRef.current = next; setMonsters(next);
     setLogs((currentLogs) => [{ text: `A stray ${kind} has wandered into the town outskirts.`, color: 'orange' }, ...currentLogs].slice(0, 3));
-    return id;
+    return monster.id;
+  };
+  // BUILD 937: raid wave spawner — anchor is a 917 edge point, kinds
+  // from the stray table, positions validated by raidWavePositions
+  // (edge band, never the plaza heart, never blocked). Appends
+  // incrementally so ids stay unique. Returns the number actually
+  // spawned (may be fewer than requested, never an illegal position).
+  const spawnRaidWave = (size: number): number => {
+    const candidates = straySpawnPoints(FIELD_SIZE);
+    const startIndex = Math.floor(Math.random() * candidates.length);
+    const anchor = pickStraySpawnPoint(candidates, startIndex, (p) => !isFieldPositionBlocked(p, TOWNSFOLK_CHUNK));
+    if (!anchor) return 0;
+    const kinds = raidWaveKinds(size, Math.random);
+    const positions = raidWavePositions(anchor, size, (p) => !isFieldPositionBlocked(p, TOWNSFOLK_CHUNK), FIELD_SIZE);
+    let count = 0;
+    for (let i = 0; i < positions.length; i++) {
+      const monster = buildEdgeMonster(kinds[i] as MonsterKind, positions[i], { raid: true });
+      monstersRef.current = [...monstersRef.current, monster];
+      count++;
+    }
+    if (count > 0) setMonsters(monstersRef.current);
+    return count;
+  };
+  // BUILD 937: named raid leader — same type table, a name label, HP x
+  // RAID_LEADER_HP_MULT, everything else identical to a wave creature.
+  // Returns the leader's name label, or null when no edge point is free.
+  const spawnRaidLeader = (): string | null => {
+    const candidates = straySpawnPoints(FIELD_SIZE);
+    const startIndex = Math.floor(Math.random() * candidates.length);
+    const anchor = pickStraySpawnPoint(candidates, startIndex, (p) => !isFieldPositionBlocked(p, TOWNSFOLK_CHUNK));
+    if (!anchor) return null;
+    const kind = strayKindForRoll(Math.random()) as MonsterKind;
+    const name = raidLeaderName(kind);
+    const monster = buildEdgeMonster(kind, anchor, { raid: true, name, hpMult: RAID_LEADER_HP_MULT });
+    const next = [...monstersRef.current, monster];
+    monstersRef.current = next; setMonsters(next);
+    return name;
   };
   const [birds, setBirds] = useState<BirdState[]>(() => birdsForChunk({ x: 4, y: 7 }));
   const birdsRef = useRef<BirdState[]>(birds);
@@ -6233,9 +6289,30 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           if (chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) return -1;
           return spawnTownStray(kind);
         },
+        // BUILD 937: force a raid into its warning stage with the stage
+        // clock already past the warning window, so the next field-loop
+        // frame spawns wave 1 + the leader through the organic path.
+        // Skips the scheduler roll/margin/stray guard, but emits the
+        // same warning broadcast an organic firing would. LOCALHOST ONLY.
+        forceRaidForTest: () => {
+          if (typeof window === 'undefined') return false;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return false;
+          if (chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) return false;
+          if (interiorRef.current) return false;
+          const t = performance.now();
+          raidStateRef.current = { stage: 'warning', firedAt: t, stageAt: t - RAID_WARNING_MS - 1 };
+          setLogs((currentLogs) => [{ text: 'Raid warning: hostile creatures are massing at the town outskirts!', color: 'orange' }, ...currentLogs].slice(0, 3));
+          return true;
+        },
+        getRaidForTest: () => ({
+          stage: raidStateRef.current.stage,
+          aliveRaid: monstersRef.current.reduce((n, m) => n + (m.raid && m.disposition !== 'defeated' ? 1 : 0), 0),
+          marginMsRemaining: Math.max(0, raidMarginUntilRef.current - performance.now()),
+        }),
         getCreaturesForTest: () => ({
           goats: goatsRef.current.map((g) => ({ id: g.id, kind: g.kind, x: g.position.x, y: g.position.y, hp: g.hp, maxHp: g.maxHp, disposition: g.disposition, state: g.state, target: creatureTargetsRef.current.get(creatureTargetKey('goat', g.id)) ?? null })),
-          monsters: monstersRef.current.map((m) => ({ id: m.id, kind: m.kind, x: m.position.x, y: m.position.y, hp: m.hp, maxHp: m.maxHp, disposition: m.disposition, state: m.state, stray: m.stray ?? false, target: creatureTargetsRef.current.get(creatureTargetKey('monster', m.id)) ?? null })),
+          monsters: monstersRef.current.map((m) => ({ id: m.id, kind: m.kind, x: m.position.x, y: m.position.y, hp: m.hp, maxHp: m.maxHp, disposition: m.disposition, state: m.state, stray: m.stray ?? false, raid: m.raid ?? false, name: m.name ?? null, target: creatureTargetsRef.current.get(creatureTargetKey('monster', m.id)) ?? null })),
         }),
         getNpcCombatForTest: (name: string) => {
           const npc = townsfolkRef.current.find((n) => n.name === name);
@@ -9051,12 +9128,65 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         strayCheckAccRef.current += elapsed * 1000;
         if (strayCheckAccRef.current >= TOWN_STRAY_CHECK_INTERVAL_MS) {
           strayCheckAccRef.current = 0;
-          if (strayGateDecision({ aliveStrays, cooldownReady: now >= strayNextAtRef.current, roll: Math.random() })) {
+          // BUILD 937: an active raid suppresses stray spawns (the raid
+          // wins once it has fired; a live stray blocks the raid below).
+          if (raidStateRef.current.stage === 'idle' && strayGateDecision({ aliveStrays, cooldownReady: now >= strayNextAtRef.current, roll: Math.random() })) {
             spawnTownStray();
+          }
+        }
+        // BUILD 937: raid scheduler — 60 s ticks, interval-scaled chance,
+        // quiet margin (also from game start: the first town visit
+        // starts it), one-at-a-time with strays, staged script on the
+        // field-loop clock. Runs before the monster update so a fresh
+        // wave acts this same frame.
+        if (raidMarginUntilRef.current === 0) {
+          raidMarginUntilRef.current = now + RAID_MARGIN_MS;
+        }
+        raidCheckAccRef.current += elapsed * 1000;
+        if (raidStateRef.current.stage === 'idle' && raidCheckAccRef.current >= RAID_CHECK_INTERVAL_MS) {
+          raidCheckAccRef.current = 0;
+          // Recomputed after the stray gate so a stray spawned this
+          // very frame still blocks the raid.
+          const aliveStraysNow = monstersRef.current.reduce((n, m) => n + (m.stray && m.disposition !== 'defeated' ? 1 : 0), 0);
+          if (raidShouldFire({ stage: raidStateRef.current.stage, aliveStrays: aliveStraysNow, marginReady: now >= raidMarginUntilRef.current, roll: Math.random(), chance: raidFireChance(RAID_CHECK_INTERVAL_MS, RAID_INTERVAL_MS) })) {
+            raidStateRef.current = { stage: 'warning', firedAt: now, stageAt: now };
+            setLogs((currentLogs) => [{ text: 'Raid warning: hostile creatures are massing at the town outskirts!', color: 'orange' }, ...currentLogs].slice(0, 3));
+          }
+        }
+        const aliveRaid = monstersRef.current.reduce((n, m) => n + (m.raid && m.disposition !== 'defeated' ? 1 : 0), 0);
+        const raidRes = raidAdvance(raidStateRef.current, now, aliveRaid);
+        raidStateRef.current = raidRes.next;
+        for (const action of raidRes.actions) {
+          if (action === 'spawnWave1') {
+            const n = spawnRaidWave(RAID_WAVE_1_SIZE);
+            if (n > 0) setLogs((currentLogs) => [{ text: `A raid surges in at the town edge — ${n} creatures!`, color: 'orange' }, ...currentLogs].slice(0, 3));
+          } else if (action === 'spawnLeader') {
+            const name = spawnRaidLeader();
+            if (name) setLogs((currentLogs) => [{ text: `${name} leads the raid!`, color: 'orange' }, ...currentLogs].slice(0, 3));
+          } else if (action === 'broadcastEscalation') {
+            setLogs((currentLogs) => [{ text: 'The raid presses on — more creatures pour in!', color: 'orange' }, ...currentLogs].slice(0, 3));
+          } else if (action === 'spawnWave2') {
+            const n = spawnRaidWave(RAID_WAVE_2_SIZE);
+            if (n > 0) setLogs((currentLogs) => [{ text: `The raid swells — ${n} more creatures at the edge!`, color: 'orange' }, ...currentLogs].slice(0, 3));
+          } else if (action === 'endCleared') {
+            raidMarginUntilRef.current = now + RAID_MARGIN_MS;
+            setLogs((currentLogs) => [{ text: 'The raid is broken — the outskirts are quiet.', color: 'green' }, ...currentLogs].slice(0, 3));
+          } else if (action === 'endDispersed') {
+            raidMarginUntilRef.current = now + RAID_MARGIN_MS;
+            const remaining = monstersRef.current.filter((m) => !(m.raid && m.disposition !== 'defeated'));
+            monstersRef.current = remaining; setMonsters(remaining);
+            setLogs((currentLogs) => [{ text: 'The raid scatters back into the wilds.', color: 'orange' }, ...currentLogs].slice(0, 3));
           }
         }
       } else {
         strayCheckAccRef.current = 0;
+        // BUILD 937: leaving the town field ends an active raid (its
+        // creatures vanish with the chunk's monster regeneration) and
+        // starts the quiet margin, so re-entry cannot instantly re-fire.
+        if (raidStateRef.current.stage !== 'idle') {
+          raidStateRef.current = { stage: 'idle', firedAt: 0, stageAt: 0 };
+          raidMarginUntilRef.current = now + RAID_MARGIN_MS;
+        }
       }
       // Hostile monsters (goblins, bandits): same combat AI as goats.
       if (!interiorRef.current && monstersRef.current.length > 0) {
@@ -12189,7 +12319,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView placedAssets={customPlacedAssets} editorPlacedObjects={placedObjects} playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} dispositions={disposition} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? monsters.filter((m) => m.stray) : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash, stray: m.stray }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
+            <IsoFieldView placedAssets={customPlacedAssets} editorPlacedObjects={placedObjects} playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} dispositions={disposition} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? monsters.filter((m) => m.stray || m.raid) : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash, stray: m.stray }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               zoom={isoZoom} onZoomChange={setIsoZoom} playerSneaking={sneaking}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {
@@ -12521,8 +12651,8 @@ if (active) {
             ))}
           </div>
           <div className="field-monsters" aria-label="Hostile monsters">
-            {/* BUILD 750: suppress stale/previously spawned hostile sprites throughout the full town safety zone, even if an old runtime state survives after chunk entry. BUILD 917: deliberate town-edge strays (flagged at spawn) pass. */}
-            {(isStartingSettlementSafetyZone(chunk) ? monsters.filter((m) => m.stray) : monsters).map((monster) => {
+            {/* BUILD 750: suppress stale/previously spawned hostile sprites throughout the full town safety zone, even if an old runtime state survives after chunk entry. BUILD 917: deliberate town-edge strays (flagged at spawn) pass. BUILD 937: raid-wave creatures pass the same way. */}
+            {(isStartingSettlementSafetyZone(chunk) ? monsters.filter((m) => m.stray || m.raid) : monsters).map((monster) => {
               const dead = monster.disposition === 'defeated';
               const anim = animForMonsterState({ dead, hitFlash: monster.hitFlash, attacking: monster.attacking, moving: monster.moving });
               const sprite = resolveMonsterSprite(monster.kind);

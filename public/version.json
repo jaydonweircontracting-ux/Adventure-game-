@@ -1,6 +1,6 @@
 {
-  "build": "936",
-  "note": "Quests now track real progress instead of a yes-or-no flag: every quest step counts on its own meter, and the log shows the count as you go — slay rats and it reads \"Rats slain: 3/5\", gather silk and it reads \"Spider silk collected: 4/6\". Work you do before picking a quest up counts too: rats you already killed are already on the meter when you accept, and a step you finished early waits for you instead of making you redo it. Old saves carry over untouched — a finished quest stays finished, and half-finished progress stays exactly where you left it.",
-  "timestamp": "2026-10-21T20:34:26.990Z",
-  "cacheBuster": "mviklvsq"
+  "build": "937",
+  "note": "",
+  "timestamp": "2026-10-21T20:47:50.372Z",
+  "cacheBuster": "mvil33ok"
 }
