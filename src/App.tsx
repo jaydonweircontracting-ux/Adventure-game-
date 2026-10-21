@@ -122,6 +122,8 @@ import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS, GOAT_CHASE_RANGE, 
 import { behaviorForCreature, preferredRangeFor, shouldStand, shouldRetarget, voiceLine } from '@/game/creatureBehavior';
 // BUILD 935: two-stage mitigation + element percents + immunities + ranged falloff.
 import { mitigateDamage, mitigationForCreature, creatureDefenseForLevel, creatureArmorForLevel, playerArmorForRoll, playerResistPercents, rangedHitChance, creatureArcherSkill, normalizeRangedSkill } from '@/game/mitigation';
+// BUILD 938: creature codex / bestiary (Tibia item 5) — kill counts, tiers, charm total.
+import { BESTIARY_ENTRIES, BESTIARY_TIERS, BESTIARY_CHARM_POINTS, bestiaryLabelForKind, bestiaryTierForKills, bestiaryCharmTotal, recordBestiaryKill, sanitizeBestiaryCounts, isBestiaryKind } from '@/game/bestiary';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, LOCKPICK_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
 import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, questProgressText, questMissionText, questRumors, serializeQuestSave, parseQuestSave, writeQuestEventToStorage, markerForGiver, type QuestState, type QuestEvent, type QuestDef, type QuestStorage } from '@/game/quests';
@@ -153,7 +155,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '937';
+const BUILD_NUMBER = '938';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -171,6 +173,7 @@ const BUILD_NOTES: Record<string, string> = {
   '933': 'Sneak mode, finished: sneaking now fools monsters as well as people — a creature only notices you within 12 paces while you sneak (down from 24), and a beast already chasing you does not lose you just because you duck into the shadows. While sneaking your figure visibly dims so you can see at a glance that you are hidden. Folk you have alerted now remember it through save and reload — no more getting forgiven by quitting — and a first strike from the shadows now also hits twice as hard against wandering adventurers and travelers, not just villagers.',
   '935': 'Combat now mitigates damage in two stages, like a real defense: a blow first rolls against the defender\u2019s defense, then against their armor — and a fully stopped blow shows BLOCKED instead of dealing damage. Tough monsters shrug off more of a weak hit, and a well-geared hero shrugs off more of a monster\u2019s — your armor now genuinely protects you. Arrows also lose accuracy with distance: shots are surest up close and in the middle band where archers hold their ground, and a long shot may miss outright and show MISS. Elemental weaknesses and resistances are in the data too — fire stings slimes and trolls harder than before, and gear that resists fire, ice, or lightning now genuinely blunts those blows.',
   '936': 'Quests now track real progress instead of a yes-or-no flag: every quest step counts on its own meter, and the log shows the count as you go — slay rats and it reads "Rats slain: 3/5", gather silk and it reads "Spider silk collected: 4/6". Work you do before picking a quest up counts too: rats you already killed are already on the meter when you accept, and a step you finished early waits for you instead of making you redo it. Old saves carry over untouched — a finished quest stays finished, and half-finished progress stays exactly where you left it.',
+  '938': 'There is now a Creature Codex in the options menu: every beast you slay is recorded by kind, and the codex shows how many of each you have killed, how close you are to the next tier, and how hard and how common each kind is. Kill 50 of a kind to reach Prowess, 500 for Expertise, 1000 for Mastery — and every mastered entry earns 50 charm points, tracked at the top of the page. A kind you have never slain stays hidden as ??? until your first kill of it, and creatures slain by villagers or guards do not count — the codex is your hunting record alone. Tiers and charm points are display only: they give no combat bonuses, and no charm shop exists yet. Dungeon creatures are not tracked, since dungeon kills run on a separate engine.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
   '925': 'Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported',
@@ -1809,6 +1812,9 @@ type SaveGameData = {
   // a reload no longer forgives them (the 932 session-transient limit).
   // Old saves carry no field and restore to empty.
   alertedNpcIds?: string[];
+  // BUILD 938: creature codex kill counts, keyed by kind (tiers and charm
+  // totals are derived from counts, never stored separately).
+  bestiary?: Record<string, number>;
   goats: GoatState[];
   interiorId: string | null;
   interiorPosition: Point;
@@ -5566,7 +5572,33 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     sneakingRef.current = false;
     setSneaking(false);
   };
-  const markNpcAlerted = (npcId: string) => { alertedNpcIdsRef.current.add(npcId); };
+  const markNpcAlerted = (npcId: string) => { alertedNpcIdsRef.current.add(npcId); }
+  // BUILD 938: creature codex — player kill counts per kind. Ref is the
+  // source of truth (save reads it); state mirrors it for the panel.
+  // New Game needs no extra reset: it runs through the title, which
+  // unmounts GameField and drops this ref with it (the 926 pattern).
+  const bestiaryRef = useRef<Record<string, number>>({});
+  const [bestiaryCounts, setBestiaryCounts] = useState<Record<string, number>>({});
+  const [codexOpen, setCodexOpen] = useState(false);
+  // BUILD 938: record ONE player kill. Called only from player-attack
+  // kill branches (monster, goat, cellar rat, wildlife) — NPC-vs-creature
+  // kills (BUILD 915) never reach this function, so they cannot count.
+  // Unknown kinds are ignored by recordBestiaryKill itself.
+  const recordPlayerKillForCodex = (kind: string | undefined | null) => {
+    if (!isBestiaryKind(kind)) return;
+    const result = recordBestiaryKill(bestiaryRef.current, kind);
+    if (result.counts === bestiaryRef.current) return;
+    bestiaryRef.current = result.counts;
+    setBestiaryCounts(result.counts);
+    const label = bestiaryLabelForKind(kind || '');
+    if (result.discovered) {
+      setLogs((cur) => [{ text: `Codex: New entry — ${label}!`, color: 'blue' }, ...cur].slice(0, 3));
+    } else if (result.tierReached) {
+      const count = result.counts[(kind || '').toLowerCase()] || 0;
+      const charmNote = result.tierReached === 'Mastery' ? `, +${BESTIARY_CHARM_POINTS} charm points` : '';
+      setLogs((cur) => [{ text: `Codex: ${label} reached ${result.tierReached} (${count} kills${charmNote}).`, color: 'blue' }, ...cur].slice(0, 3));
+    }
+  };;
   // BUILD 932: pickpocket prompt state — null when closed. The prompt shows
   // the exact chance and loot the confirm will attempt (computed at open).
   type SneakPromptState = { npcId: string; npcName: string; chance: number; loot: PickpocketLoot; lootLabel: string; purse: number; day: number };
@@ -6131,6 +6163,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           goatsRef.current = next; setGoats(next);
           return id;
         },
+        // BUILD 938: codex counts for verification (read-only; mirrors
+        // the panel's counts so a browser kill can prove the wiring).
+        getCodex: () => ({ ...bestiaryRef.current }),
         // BUILD 538: remove a test goat by id (cleanup). Localhost only.
         removeTestGoat: (id: number) => {
           if (typeof window === 'undefined') return false;
@@ -6585,6 +6620,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     townsfolk: serializeTownsfolk(townsfolkRef.current),
     // BUILD 933: persist the sneak alerted set alongside the roster.
     alertedNpcIds: [...alertedNpcIdsRef.current],
+    // BUILD 938: persist codex kill counts (tiers/charm derived on load).
+    bestiary: { ...bestiaryRef.current },
     goats,
     // BUILD 522: Lootable bodies.
     bodies: bodiesRef.current,
@@ -6749,6 +6786,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // reset: it runs through the title, which unmounts GameField and drops
     // this ref with it (the 926 reset-path pattern for GameField state).
     alertedNpcIdsRef.current = new Set(sanitizeAlertedIds(loadState.alertedNpcIds));
+    // BUILD 938: restore codex counts (old saves have none -> empty codex,
+    // never faked history; tiers/charm derive from counts on render).
+    const restoredBestiary = sanitizeBestiaryCounts(loadState.bestiary);
+    bestiaryRef.current = restoredBestiary;
+    setBestiaryCounts(restoredBestiary);
     interiorDoorwayIdRef.current = null;
     interiorEntryChunkRef.current = { x: loadState.chunk.x, y: loadState.chunk.y };
     interiorRef.current = null; setInterior(null);
@@ -8040,6 +8082,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         emitQuestEvent({ type: 'kill', target: monsterTarget.kind });
         const xpReward = goatExperienceReward(monsterTarget, playerLevelRef.current, playerStatsRef.current);
         grantCombatXp(xpReward, hitPosition);
+        // BUILD 938: codex — player kill only; NPC-vs-creature kills
+        // never reach this branch, so they cannot count.
+        recordPlayerKillForCodex(monsterTarget.kind);
       }
     } else {
       let updatedGoats = goatsRef.current.map((goat) => goat.id === attackTarget.id ? { ...goat, hp: nextHp, position: goat.position, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, respawnTicks: defeated ? 0 : goat.respawnTicks } : goat);
@@ -8049,6 +8094,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       window.setTimeout(() => setGoats((current) => current.map((goat) => goat.id === attackTarget.id ? { ...goat, hitFlash: false } : goat)), 100);
       setLogs((currentLogs) => [{ text: defeated ? 'Goat defeated. It drops experience and gold.' : blocked && !defeated ? 'Your blow is blocked by the goat!' : 'You hit the goat for ' + finalDamage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
       if (defeated) {
+        // BUILD 938: codex — goat-kind kill (goat/deer/boar/badger/direwolf).
+        recordPlayerKillForCodex((attackTarget as GoatState).kind || 'goat');
         const lootType = GOAT_LOOT_TYPES[Math.floor(Math.random() * GOAT_LOOT_TYPES.length)];
         const lootAmount = Math.floor(Math.random() * (2 + Math.floor(playerStatsRef.current.luk / 10))) + 1;
         const loot: GoatLoot = { [lootType]: lootAmount };
@@ -8120,6 +8167,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       emitQuestEvent({ type: 'kill', target: 'rat' });
       const xpReward = goatExperienceReward({ level: 1 } as GoatState, playerLevelRef.current, playerStatsRef.current);
       grantCombatXp(xpReward, hitPosition);
+      // BUILD 938: codex — cellar rat counts as rat.
+      recordPlayerKillForCodex('rat');
     }
   };
 
@@ -8853,6 +8902,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 droppedLootRef.current = [...droppedLootRef.current, drop];
                 setDroppedLoot(droppedLootRef.current);
                 emitQuestEvent({ type: 'kill', target: species });
+                // BUILD 938: codex — wildlife species kill (wolf/boar/fox/
+                // bear/crab count; unknown species are ignored by the hook).
+                recordPlayerKillForCodex(species);
               } else {
                 wildlifeHpRef.current.set(id, newHp);
                 spawnCombatText(`-${Math.round(damage)}`, pos, 'damage');
@@ -13855,6 +13907,10 @@ if (active) {
                   <span className="options-action-icon"><BookOpen size={17} /></span>
                   <span><strong>📖 Journal</strong><small>Quests, discoveries, and rumors</small></span>
                 </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); setCodexOpen(true); }} data-testid="button-options-codex">
+                  <span className="options-action-icon"><BookOpen size={17} /></span>
+                  <span><strong>📖 Creature Codex</strong><small>Kill counts, tiers, and charm points</small></span>
+                </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMarkerMode(); }} data-testid="button-debug-markers">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>Debug: {markerMode ? 'Hide' : 'Show'} Markers</strong><small>{markerMode ? 'Hide dots' : 'Green=triggers, Red=remove'}</small></span>
@@ -14411,6 +14467,48 @@ if (active) {
                    </div>
                  );
                })}
+             </div>
+           </section>
+         )}
+         {/* BUILD 938: creature codex panel (Tibia item 5). Same drawer
+             pattern as the skills panel above; GameField-local state, so
+             no parent plumbing. Undiscovered kinds render as ??? with no
+             stats; the first kill reveals the full entry. */}
+         {codexOpen && (
+           <section id="codex-panel" className="field-log-drawer" aria-label="Creature Codex" data-testid="panel-codex">
+             <div className="field-log-heading">
+               <h2>Creature Codex</h2>
+               <button className="field-log-close" onClick={() => setCodexOpen(false)} aria-label="Close codex" data-testid="button-close-codex"><X size={16} /></button>
+             </div>
+             <div className="log-list">
+               <div className="log-row" data-testid="codex-charm-total">
+                 <span aria-hidden="true">✦</span>
+                 <span><strong>{bestiaryCharmTotal(bestiaryCounts)} charm points</strong> <small>Tracked only — no charm unlocks exist yet, and tiers give no combat bonuses.</small></span>
+               </div>
+               <div className="log-row" data-testid="codex-tier-scale">
+                 <span aria-hidden="true">🏆</span>
+                 <span><small>Tiers: {BESTIARY_TIERS.map((t) => `${t.name} ${t.kills}`).join(' · ')} kills. Player kills only — creatures slain by NPCs do not count.</small></span>
+               </div>
+               {[...BESTIARY_ENTRIES]
+                 .map((e) => ({ ...e, kills: bestiaryCounts[e.kind] || 0 }))
+                 .sort((a, b) => (b.kills > 0 ? 1 : 0) - (a.kills > 0 ? 1 : 0) || b.kills - a.kills || a.kind.localeCompare(b.kind))
+                 .map((row) => {
+                   const progress = bestiaryTierForKills(row.kills);
+                   return (
+                     <div className="log-row" key={row.kind} data-testid={`codex-row-${row.kind}`}>
+                       <span aria-hidden="true">{row.kills > 0 ? '🐾' : '?'}</span>
+                       {row.kills > 0 ? (
+                         <span><strong>{bestiaryLabelForKind(row.kind)}</strong> <small>{row.kills} kills • {progress.tier ? `${progress.tier} tier` : 'Unranked'} • {progress.nextTier ? `${row.kills}/${progress.nextTier.kills} to ${progress.nextTier.name}` : 'Mastered'} • {row.difficulty} • {row.occurrence}{progress.tier === 'Mastery' ? ` • +${BESTIARY_CHARM_POINTS} ✦` : ''}</small></span>
+                       ) : (
+                         <span><strong>???</strong> <small>Undiscovered — defeat one to reveal it.</small></span>
+                       )}
+                     </div>
+                   );
+                 })}
+               <div className="log-row" data-testid="codex-dungeon-note">
+                 <span aria-hidden="true">🕳️</span>
+                 <span><small>Dungeon creatures are not tracked — dungeon kills use a separate engine.</small></span>
+               </div>
              </div>
            </section>
          )}

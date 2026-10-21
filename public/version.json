@@ -1,6 +1,6 @@
 {
-  "build": "937",
-  "note": "",
-  "timestamp": "2026-10-21T20:47:50.372Z",
-  "cacheBuster": "mvil33ok"
+  "build": "938",
+  "note": "There is now a Creature Codex in the options menu: every beast you slay is recorded by kind, and the codex shows how many of each you have killed, how close you are to the next tier, and how hard and how common each kind is. Kill 50 of a kind to reach Prowess, 500 for Expertise, 1000 for Mastery — and every mastered entry earns 50 charm points, tracked at the top of the page. A kind you have never slain stays hidden as ??? until your first kill of it, and creatures slain by villagers or guards do not count — the codex is your hunting record alone. Tiers and charm points are display only: they give no combat bonuses, and no charm shop exists yet. Dungeon creatures are not tracked, since dungeon kills run on a separate engine.",
+  "timestamp": "2026-10-21T21:06:23.185Z",
+  "cacheBuster": "mvilqyc2"
 }

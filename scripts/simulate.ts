@@ -16,6 +16,7 @@ import { behaviorForCreature, behaviorKindKeys, preferredRangeFor, hashRoll, sho
 import { mitigateDamage, mitigationForCreature, mitigationKindKeys, creatureDefenseForLevel, creatureArmorForLevel, playerArmorForRoll, playerResistPercents, rangedBandFor, rangedHitChance, creatureArcherSkill, normalizeRangedSkill, RANGED_HIT_CHANCE_CAP } from '../src/game/mitigation';
 import { strayGateDecision, strayKindForRoll, straySpawnPoints, pickStraySpawnPoint, isTownEdgePosition, isTownCenterPosition, TOWN_STRAY_CHANCE, TOWN_STRAY_ROAM_RADIUS, TOWN_CENTER_SAFE_RADIUS } from '../src/game/townStrays';
 import { raidAdvance, raidFireChance, raidLeaderName, raidShouldFire, raidWaveKinds, raidWavePositions, RAID_CHECK_INTERVAL_MS, RAID_CHASE_STANDOFF, RAID_ESCALATION_DELAY_MS, RAID_ESCALATION_WINDOW_MS, RAID_INTERVAL_MS, RAID_MARGIN_MS, RAID_MAX_DURATION_MS, RAID_ROAM_RADIUS, RAID_WARNING_MS, RAID_WAVE_1_SIZE, RAID_WAVE_2_SIZE, RAID_LEADER_HP_MULT, type RaidState } from '../src/game/raids';
+import { BESTIARY_ENTRIES, BESTIARY_TIERS, BESTIARY_CHARM_POINTS, bestiaryEntryForKind, bestiaryTierForKills, bestiaryCharmTotal, recordBestiaryKill, sanitizeBestiaryCounts, isBestiaryKind } from '../src/game/bestiary';
 import { createAgent, stepAgent, AGENT_MOVE_SPEED, type AgentWorld } from '../src/game/gameplayAgent';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
@@ -1623,6 +1624,61 @@ console.log('Testing raid scheduler (BUILD 937)...');
   // A blocked anchor skips its creature instead of placing illegally.
   const blocked = raidWavePositions({ x: 140, y: 26 }, 3, () => false, 280);
   assert(blocked.length === 0, 'Raid: a blocked anchor spawns nothing');
+}
+
+// ---- 13a1p. Creature codex / bestiary (BUILD 938, Tibia item 5) ----
+console.log('Testing creature codex (BUILD 938)...');
+{
+  // Completeness: every 934 behavior kind and every 935 mitigation kind
+  // has a codex entry, so the tables cannot drift apart silently.
+  for (const kind of behaviorKindKeys()) assert(isBestiaryKind(kind), `Codex: behavior kind ${kind} has an entry`);
+  for (const kind of mitigationKindKeys()) assert(isBestiaryKind(kind), `Codex: mitigation kind ${kind} has an entry`);
+  // Wildlife-only kinds are present; unkillable rabbit is not.
+  assert(isBestiaryKind('fox') && isBestiaryKind('bear') && isBestiaryKind('crab'), 'Codex: fox/bear/crab entries exist');
+  assert(!isBestiaryKind('rabbit'), 'Codex: rabbit has no entry (spawns disabled, unkillable)');
+  assert(BESTIARY_ENTRIES.length === 24, 'Codex: 24 entries (21 table kinds + fox/bear/crab)');
+  // Tier thresholds: just below / at / above each tier (inclusive).
+  assert(bestiaryTierForKills(0).tier === null && bestiaryTierForKills(0).nextTier?.name === 'Prowess', 'Codex: 0 kills is unranked, next is Prowess');
+  assert(bestiaryTierForKills(49).tier === null, 'Codex: 49 kills is still unranked');
+  assert(bestiaryTierForKills(50).tier === 'Prowess', 'Codex: 50 kills IS Prowess');
+  assert(bestiaryTierForKills(499).tier === 'Prowess', 'Codex: 499 kills is still Prowess');
+  assert(bestiaryTierForKills(500).tier === 'Expertise', 'Codex: 500 kills IS Expertise');
+  assert(bestiaryTierForKills(999).tier === 'Expertise', 'Codex: 999 kills is still Expertise');
+  const mastered = bestiaryTierForKills(1000);
+  assert(mastered.tier === 'Mastery' && mastered.nextTier === null, 'Codex: 1000 kills IS Mastery, no next tier');
+  assert(BESTIARY_TIERS[0].kills === 50 && BESTIARY_TIERS[1].kills === 500 && BESTIARY_TIERS[2].kills === 1000, 'Codex: tier scale is 50/500/1000');
+  // Kill recording: increments, discovery, tier crossing, unknown ignored.
+  const first = recordBestiaryKill({}, 'wolf');
+  assert(first.counts.wolf === 1 && first.discovered === true && first.tierReached === null, 'Codex: first kill discovers, no tier');
+  const toProwess = recordBestiaryKill({ wolf: 49 }, 'wolf');
+  assert(toProwess.counts.wolf === 50 && toProwess.discovered === false && toProwess.tierReached === 'Prowess', 'Codex: 50th kill reaches Prowess');
+  const toMastery = recordBestiaryKill({ wolf: 999 }, 'wolf');
+  assert(toMastery.counts.wolf === 1000 && toMastery.tierReached === 'Mastery', 'Codex: 1000th kill reaches Mastery');
+  const mid = recordBestiaryKill({ wolf: 100 }, 'wolf');
+  assert(mid.counts.wolf === 101 && mid.tierReached === null, 'Codex: mid-tier kill crosses nothing');
+  const unknown = recordBestiaryKill({ wolf: 5 }, 'notakind');
+  assert(unknown.counts.wolf === 5 && !('notakind' in unknown.counts), 'Codex: unknown kind never invents an entry');
+  const cased = recordBestiaryKill({}, 'Wolf');
+  assert(cased.counts.wolf === 1, 'Codex: kind keys are case-insensitive');
+  // Charm total: 50 per mastered entry only, nothing for partial tiers.
+  assert(BESTIARY_CHARM_POINTS === 50, 'Codex: charm value is 50');
+  assert(bestiaryCharmTotal({}) === 0, 'Codex: empty codex charms 0');
+  assert(bestiaryCharmTotal({ wolf: 1000 }) === 50, 'Codex: one mastered entry charms 50');
+  assert(bestiaryCharmTotal({ wolf: 1000, rat: 999, dragon: 1000 }) === 100, 'Codex: 999 kills charms nothing');
+  // Sanitize: unknown keys dropped, negatives floored, floats floored, NaN dropped.
+  const clean = sanitizeBestiaryCounts({ wolf: 12, nope: 5, rat: -3, bat: 2.7, slime: NaN });
+  assert(clean.wolf === 12 && !('nope' in clean) && clean.rat === 0 && clean.bat === 2 && !('slime' in clean), 'Codex: sanitize drops/fixes bad values');
+  assert(Object.keys(sanitizeBestiaryCounts(undefined)).length === 0, 'Codex: missing save field restores empty');
+  // Difficulty/occurrence completeness for every behavior kind.
+  for (const kind of behaviorKindKeys()) {
+    const entry = bestiaryEntryForKind(kind);
+    assert(entry !== undefined && ['trivial', 'easy', 'medium', 'hard'].includes(entry.difficulty) && ['common', 'uncommon', 'rare'].includes(entry.occurrence), `Codex: ${kind} has difficulty + occurrence`);
+  }
+  // Spot derivations from spawn data.
+  assert(bestiaryEntryForKind('dragon')?.difficulty === 'hard' && bestiaryEntryForKind('dragon')?.occurrence === 'rare', 'Codex: dragon is hard/rare');
+  assert(bestiaryEntryForKind('rat')?.difficulty === 'trivial' && bestiaryEntryForKind('rat')?.occurrence === 'common', 'Codex: rat is trivial/common');
+  assert(bestiaryEntryForKind('direwolf')?.difficulty === 'hard' && bestiaryEntryForKind('direwolf')?.occurrence === 'rare', 'Codex: direwolf is hard/rare (boss kind)');
+  assert(bestiaryEntryForKind('soldier')?.occurrence === 'uncommon', 'Codex: soldier is uncommon (road + coin-flip gate)');
 }
 
 // BUILD 921: NPC worn gear drops + corpse unequip.
