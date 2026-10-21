@@ -1,6 +1,6 @@
 {
   "build": "927",
-  "note": "",
-  "timestamp": "2026-10-21T05:55:22.224Z",
-  "cacheBuster": "mvhp7do1"
+  "note": "The Sunken Crypt dungeon now hides hand-crafted vault rooms: treasure hoards, monster dens, shrines, a lava forge, a bone crypt and more, tucked into every level. Walk into one and the game names it — its gold-ringed rooms hold real monsters and real loot. Also fixed: a slain monster no longer blocks the tile it died on, so a killed guardian can no longer seal a corridor behind it",
+  "timestamp": "2026-10-21T05:59:56.148Z",
+  "cacheBuster": "mvhpd911"
 }
