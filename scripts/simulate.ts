@@ -17,6 +17,7 @@ import { mitigateDamage, mitigationForCreature, mitigationKindKeys, creatureDefe
 import { strayGateDecision, strayKindForRoll, straySpawnPoints, pickStraySpawnPoint, isTownEdgePosition, isTownCenterPosition, TOWN_STRAY_CHANCE, TOWN_STRAY_ROAM_RADIUS, TOWN_CENTER_SAFE_RADIUS } from '../src/game/townStrays';
 import { raidAdvance, raidFireChance, raidLeaderName, raidShouldFire, raidWaveKinds, raidWavePositions, RAID_CHECK_INTERVAL_MS, RAID_CHASE_STANDOFF, RAID_ESCALATION_DELAY_MS, RAID_ESCALATION_WINDOW_MS, RAID_INTERVAL_MS, RAID_MARGIN_MS, RAID_MAX_DURATION_MS, RAID_ROAM_RADIUS, RAID_WARNING_MS, RAID_WAVE_1_SIZE, RAID_WAVE_2_SIZE, RAID_LEADER_HP_MULT, type RaidState } from '../src/game/raids';
 import { BESTIARY_ENTRIES, BESTIARY_TIERS, BESTIARY_CHARM_POINTS, bestiaryEntryForKind, bestiaryTierForKills, bestiaryCharmTotal, recordBestiaryKill, sanitizeBestiaryCounts, isBestiaryKind } from '../src/game/bestiary';
+import { AA_ABILITIES, AA_CREDITS_PER_POINT, AA_EVEN_KILLS_PER_POINT, AA_TITLES, aaBonusesForRanks, aaBuyRank, aaCostForRank, aaCreditsForKill, aaTitleForSpent, accrueAaKill, createEmptyAa, sanitizeAa } from '../src/game/aa';
 import { tierForStanding, effectiveStanding, tierForNpc, standingFor, factionForNpc, factionForQuestLocation, applyFactionHarm, applyFactionQuestGain, factionExamineLine, factionDialogueLine, sanitizeFactionStandings } from '../src/game/faction';
 import { createAgent, stepAgent, AGENT_MOVE_SPEED, type AgentWorld } from '../src/game/gameplayAgent';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
@@ -1914,6 +1915,83 @@ console.log('Testing NPC gear economy (BUILD 922)...');
   const junkEco = { ...savedEco, ownedGear: [42, null] };
   const junkRestored = restoreTownsfolk([freshEco], [junkEco])[0];
   assert(junkRestored.ownedGear === undefined, 'GearEco: malformed stash falls back to fresh');
+}
+
+// ---- 13a1r. Alternate Advancement (BUILD 941, EQEmu item 3) ----
+// Separate AA pool, normalized to 20 even-match kills per point. The game
+// has no level cap (uncapped floor(xp/100)+1) and no consider colors, so
+// AA is a parallel track and the scale is a victim-vs-player delta scale
+// (stated adaptation, never EQEmu colors). Placed before the BUILD 694
+// crash point so it runs in a full suite.
+console.log('Testing Alternate Advancement (BUILD 941)...');
+{
+  // Normalization scale: trivial 0, weaker less, even base, stronger more.
+  assert(AA_CREDITS_PER_POINT === 100, 'AA: 100 credits per point');
+  assert(AA_EVEN_KILLS_PER_POINT === 20, 'AA: 20 even kills per point');
+  assert(aaCreditsForKill(1, 1) === 5, 'AA: even kill pays 5 credits');
+  assert(aaCreditsForKill(1, 7) === 0, 'AA: delta -6 is trivial, 0 credits');
+  assert(aaCreditsForKill(2, 7) === 2, 'AA: delta -5 pays 2 credits');
+  assert(aaCreditsForKill(4, 7) === 2, 'AA: delta -3 pays 2 credits');
+  assert(aaCreditsForKill(6, 7) === 4, 'AA: delta -1 pays 4 credits');
+  assert(aaCreditsForKill(8, 7) === 7, 'AA: delta +1 pays 7 credits');
+  assert(aaCreditsForKill(9, 7) === 7, 'AA: delta +2 pays 7 credits');
+  assert(aaCreditsForKill(10, 7) === 10, 'AA: delta +3 pays 10 credits');
+  assert(aaCreditsForKill(50, 1) === 10, 'AA: far stronger caps at 10 credits');
+  // Point award exactly at threshold, never before.
+  let aa = createEmptyAa();
+  for (let i = 0; i < 19; i++) aa = accrueAaKill(aa, 5, 5).state;
+  assert(aa.points === 0 && aa.credits === 95, 'AA: 19 even kills is 95 credits, no point');
+  const mixed = accrueAaKill(aa, 4, 5);
+  assert(mixed.state.points === 0 && mixed.state.credits === 99, 'AA: weaker kill tops up to 99, still no point');
+  const tipped = accrueAaKill(mixed.state, 5, 5);
+  assert(tipped.pointsGained === 1 && tipped.state.points === 1 && tipped.state.credits === 4, 'AA: 20th even kill awards exactly 1 point, 4 credits carry');
+  const twenty = (() => { let s = createEmptyAa(); for (let i = 0; i < 20; i++) s = accrueAaKill(s, 5, 5).state; return s; })();
+  assert(twenty.points === 1 && twenty.credits === 0, 'AA: 20 even kills is exactly 1 point');
+  const trivial = accrueAaKill(createEmptyAa(), 1, 10);
+  assert(trivial.pointsGained === 0 && trivial.state.credits === 0, 'AA: trivial kill accrues nothing');
+  // Accrual never touches normal XP: the state carries no XP field at all.
+  assert(JSON.stringify(Object.keys(tipped.state).sort()) === JSON.stringify(['credits', 'points', 'ranks', 'spent']), 'AA: accrual state has no XP field');
+  // Ranked purchases: escalating cost, deduction, refusal, max rank.
+  assert(AA_ABILITIES.length === 4, 'AA: exactly 4 abilities');
+  assert(aaCostForRank(1) === 1 && aaCostForRank(2) === 2 && aaCostForRank(5) === 5, 'AA: rank r costs r points');
+  let wallet = { ...createEmptyAa(), points: 3 };
+  const buy1 = aaBuyRank(wallet, 'toughness');
+  assert(buy1.ok && buy1.state.points === 2 && buy1.state.ranks.toughness === 1 && buy1.state.spent === 1, 'AA: rank 1 costs 1 point');
+  const buy2 = aaBuyRank(buy1.state, 'toughness');
+  assert(buy2.ok && buy2.state.points === 0 && buy2.state.ranks.toughness === 2 && buy2.state.spent === 3, 'AA: rank 2 costs 2 points');
+  const broke = aaBuyRank(buy2.state, 'power');
+  assert(!broke.ok && broke.state.points === 0 && (broke.state.ranks.power ?? 0) === 0, 'AA: insufficient points refused, state unchanged');
+  const unknown = aaBuyRank(buy2.state, 'no-such-ability');
+  assert(!unknown.ok, 'AA: unknown ability refused');
+  let maxed = { ...createEmptyAa(), points: 100 };
+  for (let i = 0; i < 5; i++) maxed = aaBuyRank(maxed, 'power').state;
+  assert(maxed.ranks.power === 5, 'AA: 5 ranks purchasable');
+  const over = aaBuyRank(maxed, 'power');
+  assert(!over.ok && over.state.ranks.power === 5, 'AA: 6th rank refused at max');
+  // Bonuses derive from ranks, existing values only.
+  const bonuses = aaBonusesForRanks({ toughness: 2, power: 3, precision: 2, burden: 1 });
+  assert(bonuses.maxHp === 20 && bonuses.damage === 3 && Math.abs(bonuses.crit - 0.02) < 1e-9 && bonuses.carry === 8, 'AA: bonuses are 20 HP, 3 dmg, 2% crit, 8 carry');
+  assert(JSON.stringify(aaBonusesForRanks({})) === JSON.stringify({ maxHp: 0, damage: 0, crit: 0, carry: 0 }), 'AA: no ranks means no bonuses');
+  // Titles follow total spend, original world names.
+  assert(aaTitleForSpent(0) === 'Wanderer', 'AA: 0 spent is Wanderer');
+  assert(aaTitleForSpent(4) === 'Wanderer', 'AA: 4 spent is still Wanderer');
+  assert(aaTitleForSpent(5) === 'Wayfarer', 'AA: 5 spent is Wayfarer');
+  assert(aaTitleForSpent(14) === 'Wayfarer', 'AA: 14 spent is still Wayfarer');
+  assert(aaTitleForSpent(15) === 'Veteran of the Far Meadow', 'AA: 15 spent is Veteran');
+  assert(aaTitleForSpent(29) === 'Veteran of the Far Meadow', 'AA: 29 spent is still Veteran');
+  assert(aaTitleForSpent(30) === 'Champion of Mosslight', 'AA: 30 spent is Champion');
+  assert(aaTitleForSpent(49) === 'Champion of Mosslight', 'AA: 49 spent is still Champion');
+  assert(aaTitleForSpent(50) === 'Legend of the Wilds', 'AA: 50 spent is Legend');
+  assert(aaTitleForSpent(60) === 'Legend of the Wilds', 'AA: 60 spent stays Legend');
+  assert(AA_TITLES.every((t) => !/eq|everquest/i.test(t.title)), 'AA: no EQ title names');
+  // Save round-trip + sanitize: overflow converts, ranks clamp, junk drops.
+  const saved = { credits: 250, points: 2, spent: 999, ranks: { toughness: 99, power: 2, bogus: 3 } };
+  const clean = sanitizeAa(saved);
+  assert(clean.points === 4 && clean.credits === 50, 'AA: 250 credits normalizes to 2 points + 50 credits');
+  assert(clean.ranks.toughness === 5 && clean.ranks.power === 2 && !('bogus' in clean.ranks), 'AA: ranks clamp to max, unknown ids dropped');
+  assert(clean.spent === 18, 'AA: spent recomputed from kept ranks (15 + 3)');
+  assert(JSON.stringify(sanitizeAa(undefined)) === JSON.stringify(createEmptyAa()), 'AA: missing save field restores empty');
+  assert(JSON.stringify(sanitizeAa({ credits: -5, points: -2, ranks: { power: -1 } })) === JSON.stringify(createEmptyAa()), 'AA: negative values sanitize to empty');
 }
 
 // ---- 13a1c. NPC morality levels (BUILD 923) ----

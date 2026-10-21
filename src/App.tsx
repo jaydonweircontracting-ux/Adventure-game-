@@ -56,7 +56,8 @@ import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasCo
 import { shouldBark, barkFor, seedForName, type BarkContext } from './game/npcBarks';
 import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type GeneratedWorldTile, type WorldMapBiome } from '@/game/worldMap';
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, townsfolkRosterEntries, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, npcKillExperienceReward, killExperienceForLevel, NPC_FIGHT_ATTACK_COOLDOWN_MS, marketStallsFromDecor, arterialWaypointsFromDecor, marketBrowseVisit, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, townsfolkRosterEntries, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, npcKillExperienceReward, npcEffectiveLevel, killExperienceForLevel, NPC_FIGHT_ATTACK_COOLDOWN_MS, marketStallsFromDecor, arterialWaypointsFromDecor, marketBrowseVisit, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
+import { AA_ABILITIES, AA_CREDITS_PER_POINT, AA_EVEN_KILLS_PER_POINT, aaBonusesForRanks, aaBuyRank, aaCostForRank, aaTitleForSpent, accrueAaKill, createEmptyAa, sanitizeAa, type AaState } from '@/game/aa';
 // BUILD 683: unified Mosslight rects (single source in settlements.ts).
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
 import { mosslightEngineChunkLayout, mosslightEngineLanes, mosslightEngineProps, mosslightFillerRects } from '@/game/mosslightLayout';
@@ -158,7 +159,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '940';
+const BUILD_NUMBER = '941';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -179,6 +180,7 @@ const BUILD_NOTES: Record<string, string> = {
   '938': 'There is now a Creature Codex in the options menu: every beast you slay is recorded by kind, and the codex shows how many of each you have killed, how close you are to the next tier, and how hard and how common each kind is. Kill 50 of a kind to reach Prowess, 500 for Expertise, 1000 for Mastery — and every mastered entry earns 50 charm points, tracked at the top of the page. A kind you have never slain stays hidden as ??? until your first kill of it, and creatures slain by villagers or guards do not count — the codex is your hunting record alone. Tiers and charm points are display only: they give no combat bonuses, and no charm shop exists yet. Dungeon creatures are not tracked, since dungeon kills run on a separate engine.',
   '939': 'Towns now remember how they feel about you: every town and village tracks a standing from Ally down to Scowls, and the tier shows in villager dialogue and when you examine someone. Hitting a villager lowers their town standing, killing one drops it hard, and finishing a quest for a town raises it. Guards start wary of you while priests and children start welcoming, so the same standing can read differently from person to person. Standing is separate from bounty: paying a fine or serving jail clears what you owe, but it does not repair what a town thinks of you. No prices, dialogue, or guard behavior change with standing yet — the tier is display only for now.',
   '940': 'Quests grew a task shell: six quests are now multi-part tasks you can work on in any order — guard the caravan to Greenfield and Oakrest, gather the three Aldorian seals, and more. The rat cellar only counts kills in Mosslight itself, the caravan run repeats every 30 days and the rat cellar every 14, and finishing a task pays gold, XP, and town standing at once. Your progress on converted quests carries over untouched. Skill and spell objectives are not in yet — there is no skill-gain or overworld casting event for them to match — and shared party tasks are not built, since this is a single-player game.',
+  '941': 'Alternate Advancement is here: kills now also feed a separate AA pool — 20 even-match kills earn one AA point, weaker kills pay less, stronger pay more, trivial kills pay nothing. Spend points in the Skills panel on ranked abilities: Toughness, Heavy Blows, Deadeye, and Strong Back, each up to rank 5. Total spend earns display titles, from Wanderer up to Legend of the Wilds. Normal XP and levels are untouched, and there is no level cap to reach first — AA runs alongside levels from the start.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
   '925': 'Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported',
@@ -1759,14 +1761,14 @@ const PLAYER_STAT_POINTS_PER_LEVEL = 5;
 const GOAT_LOOT_TYPES: Array<keyof GameInventory> = ['goatHorns', 'fabric', 'coins'];
 const initialInventory: GameInventory = { coins: 0, goatHorns: 0, fabric: 0, daggers: 0, cloths: 0, bone: 0, pelt: 0, fang: 0, corn: 0, wood: 0, stone: 0, silk: 0, bow: 0, beer: 0, lockpicks: 0, shirts: 0, swords: 0, healthPotion: 0 };
 
-function playerMaxHpForStats(stats: PlayerStats) {
-  return PLAYER_MAX_HP + stats.int * 3;
+function playerMaxHpForStats(stats: PlayerStats, aaBonusHp: number = 0) {
+  return PLAYER_MAX_HP + stats.int * 3 + aaBonusHp;
 }
 function playerDamageForStats(stats: PlayerStats, equipmentBonus: number = 0) {
   return PLAYER_BASE_ATTACK_DAMAGE + stats.str + equipmentBonus;
 }
-function playerCriticalChanceForStats(stats: PlayerStats) {
-  return Math.min(0.35, stats.luk * 0.01);
+function playerCriticalChanceForStats(stats: PlayerStats, aaBonusCrit: number = 0) {
+  return Math.min(0.35, stats.luk * 0.01 + aaBonusCrit);
 }
 
 type SaveGameData = {
@@ -1823,6 +1825,10 @@ type SaveGameData = {
   // BUILD 939: EQEmu faction standings, keyed by faction id (landmark
   // town/village name). Tiers derive from standings on render.
   factionStandings?: Record<string, number>;
+  // BUILD 941: EQEmu Alternate Advancement state (AA credits, unspent
+  // points, total spent, purchased ranks). Old saves carry no field and
+  // restore to empty — AA is additive, never a reset of anything else.
+  aa?: AaState;
   goats: GoatState[];
   interiorId: string | null;
   interiorPosition: Point;
@@ -4215,7 +4221,7 @@ function MiniMap({ chunk, position, onTap, mode = 'terrain', radarEntities = [] 
   );
 }
 
-function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onTaskStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, onResolveBounty, bounty, muted, onToggleMute, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onTaskStatesChange: (states: TaskState[]) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number, townId: string) => void; onResolveBounty: (townId: string) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
+function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onTaskStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, onResolveBounty, bounty, muted, onToggleMute, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onTaskStatesChange: (states: TaskState[]) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number, townId: string) => void; onResolveBounty: (townId: string) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void; getAaMaxHpBonus: () => number } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
   // BUILD 476: equipment damage bonus from found items.
   const equipmentDamageBonus = totalEquipmentStats(equipment).damage ?? 0;
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
@@ -5352,6 +5358,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // highlight. staminaRef is authoritative; staminaUi throttles re-renders.
   const runToggleRef = useRef(false);
   const shiftHeldRef = useRef(false);
+  // BUILD 941: Alternate Advancement state. Declared early: the carry
+  // effect, menu bridge, and heal paths below all read it. Separate pool
+  // from normal XP; ranks derive bonuses, titles derive from total spend.
+  const [aaState, setAaState] = useState<AaState>(() => createEmptyAa());
+  const aaStateRef = useRef<AaState>(aaState);
+  // BUILD 941: derived AA bonuses, ref-mirrored for combat sites (same
+  // pattern as playerStatsRef: every mutation sets ref before state).
+  const aaBonusesRef = useRef(aaBonusesForRanks(aaState.ranks));
   const staminaRef = useRef<StaminaState>(createStamina());
   const playerRunningRef = useRef(false);
   const [runToggleUi, setRunToggleUi] = useState(false);
@@ -5365,7 +5379,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // Ref feeds the movement loop; UI state shows the weight widget.
   useEffect(() => {
     const weight = carriedWeight(inventory as unknown as Record<string, number>, equipment);
-    const capacity = carryCapacity(playerStats.str);
+    // BUILD 941: capacity includes AA Strong Back ranks.
+    const capacity = carryCapacity(playerStats.str) + aaBonusesRef.current.carry;
     const tier = encumbranceTier(weight, capacity);
     encumbranceRef.current = tier;
     setCarryUi((prev) =>
@@ -5373,7 +5388,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         ? prev
         : { weight, capacity, tier },
     );
-  }, [inventory, equipment, playerStats]);
+  }, [inventory, equipment, playerStats, aaState]);
   // BUILD 704: mirrors playerRunningRef for the iso views (updates only on
   // walk<->run transitions, so no render spam).
   const [playerRunningUi, setPlayerRunningUi] = useState(false);
@@ -6037,10 +6052,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   useEffect(() => {
     // BUILD 478: heal player (for health potions).
     const healPlayer = (amount: number) => {
-      const maxHp = playerMaxHpForStats(playerStatsRef.current);
+      const maxHp = playerMaxHpForStats(playerStatsRef.current, aaBonusesRef.current.maxHp);
       setPlayerHp((current) => Math.min(maxHp, current + amount));
     };
-    menuBridgeRef.current = { openOptions: () => setOptionsOpen(true), openSkills: () => setSkillsOpen(true), getTime: () => time, acceptQuest, acceptTask, emitQuestEvent, getKingdomLabels: () => kingdomLabelPoints(ensureCiv()), getTradeRoutes: () => tradeRoutePolylines(ensureCiv()), healPlayer };
+    menuBridgeRef.current = { openOptions: () => setOptionsOpen(true), openSkills: () => setSkillsOpen(true), getTime: () => time, acceptQuest, acceptTask, emitQuestEvent, getKingdomLabels: () => kingdomLabelPoints(ensureCiv()), getTradeRoutes: () => tradeRoutePolylines(ensureCiv()), healPlayer, getAaMaxHpBonus: () => aaBonusesRef.current.maxHp };
   });
   const wildlifeRef = useRef<WildlifeState[]>(wildlife);
   useEffect(() => { waterLifeRef.current = waterLife; }, [waterLife]);
@@ -6321,6 +6336,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         getSneakState: () => ({ sneaking: sneakingRef.current, alerted: [...alertedNpcIdsRef.current] }),
         // BUILD 939: faction standings verification hook.
         getFactionStandings: () => ({ ...factionStandingsRef.current }),
+        // BUILD 941: AA state for verification (read-only; mirrors the
+        // panel's state so a browser kill can prove accrual wiring).
+        getAa: () => ({ ...aaStateRef.current, ranks: { ...aaStateRef.current.ranks } }),
         getEquipmentNames: () => equipmentRef.current.map((it) => it.name),
         // LOCALHOST ONLY: select an NPC exactly as tapping their sprite
         // does for targeting (the pickpocket button gates on this id).
@@ -6765,6 +6783,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     skills: Object.fromEntries(
       Object.entries(skillsRef.current).map(([id, s]) => [id, { xp: s.xp }])
     ),
+    // BUILD 941: persist AA state (credits, points, spent, ranks).
+    aa: { ...aaStateRef.current, ranks: { ...aaStateRef.current.ranks } },
     // BUILD 881: Persist skill-master apprenticeships.
     apprenticeships: { ...apprenticeshipsRef.current },
     // BUILD 704: Persist player stamina.
@@ -6829,6 +6849,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           }
         }
         apprenticeshipsRef.current = ap; setApprenticeships({ ...ap });
+      }
+      // BUILD 941: restore AA state (sanitized; old saves carry no field
+      // and restore to empty — nothing else is touched).
+      {
+        const restoredAa = sanitizeAa(loadState.aa);
+        aaStateRef.current = restoredAa; aaBonusesRef.current = aaBonusesForRanks(restoredAa.ranks); setAaState(restoredAa);
       }
       // BUILD 704: restore player stamina (clamped, never exhausted on load).
       if (typeof loadState.stamina === 'number' && Number.isFinite(loadState.stamina)) {
@@ -7327,6 +7353,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   useEffect(() => { droppedLootRef.current = droppedLoot; }, [droppedLoot]);
   useEffect(() => { playerHpRef.current = playerHp; }, [playerHp]);
   useEffect(() => { playerXpRef.current = playerXp; }, [playerXp]);
+  useEffect(() => { aaStateRef.current = aaState; aaBonusesRef.current = aaBonusesForRanks(aaState.ranks); }, [aaState]);
   useEffect(() => { playerLevelRef.current = playerLevel; }, [playerLevel]);
   useEffect(() => { playerStatsRef.current = playerStats; }, [playerStats]);
   useEffect(() => { playerClassRef.current = playerClass; }, [playerClass]);
@@ -8017,10 +8044,25 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 326: shared XP grant + level-up handling for creature defeats
   // (field monsters and cellar rats). The goat branch keeps its own inline
   // copy because it also rescales goats on level-up.
-  const grantCombatXp = (xpReward: number, hitPosition: Point) => {
+  // BUILD 941: AA accrual for one player kill. Runs alongside normal XP,
+  // never instead of it — the XP lines below are byte-identical with or
+  // without a victim level. Only kills that already grant normal XP reach
+  // here (player kills only; NPC-vs-creature kills never call this).
+  const accrueAaForKill = (victimLevel: number, hitPosition: Point) => {
+    const result = accrueAaKill(aaStateRef.current, victimLevel, playerLevelRef.current);
+    if (result.state.credits === aaStateRef.current.credits && result.pointsGained === 0) return;
+    aaStateRef.current = result.state; aaBonusesRef.current = aaBonusesForRanks(result.state.ranks); setAaState(result.state);
+    if (result.pointsGained > 0) {
+      spawnCombatText('+' + result.pointsGained + ' AA point' + (result.pointsGained > 1 ? 's' : ''), hitPosition, 'reward');
+      setLogs((currentLogs) => [{ text: 'Alternate Advancement: ' + result.pointsGained + ' AA point' + (result.pointsGained > 1 ? 's' : '') + ' earned.', color: 'gold' }, ...currentLogs].slice(0, 3));
+    }
+  };
+
+  const grantCombatXp = (xpReward: number, hitPosition: Point, victimLevel?: number) => {
     const nextXp = playerXpRef.current + xpReward; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
     playerXpRef.current = nextXp; setPlayerXp(nextXp);
     spawnCombatText('+' + xpReward + ' XP', hitPosition, 'reward');
+    if (victimLevel !== undefined) accrueAaForKill(victimLevel, hitPosition);
     if (nextLevel > previousLevel) {
       const awardedStatPoints = (nextLevel - previousLevel) * PLAYER_STAT_POINTS_PER_LEVEL;
       playerLevelRef.current = nextLevel; setPlayerLevel(nextLevel); onStatPointsChange((current) => current + awardedStatPoints);
@@ -8210,7 +8252,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // Quest hook: kills feed kill stages (rats, wolves, bandits, trolls).
         emitQuestEvent({ type: 'kill', target: monsterTarget.kind });
         const xpReward = goatExperienceReward(monsterTarget, playerLevelRef.current, playerStatsRef.current);
-        grantCombatXp(xpReward, hitPosition);
+        grantCombatXp(xpReward, hitPosition, monsterTarget.level ?? 1);
         // BUILD 938: codex — player kill only; NPC-vs-creature kills
         // never reach this branch, so they cannot count.
         recordPlayerKillForCodex(monsterTarget.kind);
@@ -8258,6 +8300,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         const nextXp = playerXpRef.current + xpReward; const nextLevel = Math.floor(nextXp / 100) + 1; const previousLevel = playerLevelRef.current;
         playerXpRef.current = nextXp; setPlayerXp(nextXp);
         spawnCombatText('+' + xpReward + ' XP  +' + (loot.coins || 0) + ' gold', hitPosition, 'reward');
+        // BUILD 941: goat kills use the inline XP copy (it also rescales
+        // goats on level-up), so AA accrues here directly, same level.
+        accrueAaForKill(attackTarget.level ?? 1, hitPosition);
         if (nextLevel > previousLevel) {
           const awardedStatPoints = (nextLevel - previousLevel) * PLAYER_STAT_POINTS_PER_LEVEL;
           playerLevelRef.current = nextLevel; setPlayerLevel(nextLevel); onStatPointsChange((current) => current + awardedStatPoints);
@@ -8295,7 +8340,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       // Quest hook: cellar rat kills feed the kill-rats stage.
       emitQuestEvent({ type: 'kill', target: 'rat' });
       const xpReward = goatExperienceReward({ level: 1 } as GoatState, playerLevelRef.current, playerStatsRef.current);
-      grantCombatXp(xpReward, hitPosition);
+      grantCombatXp(xpReward, hitPosition, 1);
       // BUILD 938: codex — cellar rat counts as rat.
       recordPlayerKillForCodex('rat');
     }
@@ -8305,8 +8350,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const firePlayerArrow = (direction: Direction, targetId: number | null) => {
     const origin = { ...positionRef.current };
     const stats = playerStatsRef.current;
-    const critical = Math.random() < playerCriticalChanceForStats(stats);
-    const damage = Math.round(playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * BOW_ARROW_DAMAGE_MULT * beerDamageMultiplier(beerBuffUntil));
+    const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
+    const damage = Math.round(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * BOW_ARROW_DAMAGE_MULT * beerDamageMultiplier(beerBuffUntil));
     let dx = 0; let dy = 0;
     const target = targetId == null ? null : [...goatsRef.current, ...monstersRef.current].find((c) => c.id === targetId && c.disposition !== 'defeated');
     if (target && Math.hypot(target.position.x - origin.x, target.position.y - origin.y) <= ARROW_RANGE) {
@@ -8661,7 +8706,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 // BUILD 932: stealth strike — double damage when the target
                 // has not detected the sneaking player (melee only).
                 const stealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, npc.id);
-                const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1), sneakingRef.current, alertedNpcIdsRef.current, npc.id));
+                const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1), sneakingRef.current, alertedNpcIdsRef.current, npc.id));
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
                 setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
                 // BUILD 939: player harm moves the victim's faction standing.
@@ -8677,7 +8722,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                   // BUILD 918: a player kill of a townsfolk pays character XP
                   // exactly like a creature kill (same grant, same level-up
                   // handling). NPC kills previously paid nothing anywhere.
-                  grantCombatXp(npcKillExperienceReward(npc, playerLevelRef.current, playerStatsRef.current.int), npc.position);
+                  grantCombatXp(npcKillExperienceReward(npc, playerLevelRef.current, playerStatsRef.current.int), npc.position, npcEffectiveLevel(npc));
                   // BUILD 521: Record murder crime, notify witnesses via NPC memory.
                   // Witnesses will propagate via the existing gossip system.
                   // BUILD 932: witness count escapes the try for the stealth rule.
@@ -8783,11 +8828,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               if (dist <= PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS) {
                 swingDamageDealt = true;
                 const stats = playerStatsRef.current;
-                const critical = Math.random() < playerCriticalChanceForStats(stats);
+                const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
                 const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
                 // BUILD 932: stealth strike — double damage when undetected.
                 const stealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, targetNpc.id);
-                const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, targetNpc.id));
+                const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, targetNpc.id));
                 const hurt = damageNpc(targetNpc, damage, attackerPos, tick);
                 setDisposition((prev) => ({ ...prev, [targetNpc.id]: adjustDisposition(prev[targetNpc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
                 // BUILD 939: player harm moves the victim's faction standing.
@@ -8803,7 +8848,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                   playCombatSound('scream', muted);
                   setLogs((currentLogs) => [{ text: `You killed ${targetNpc.name}!`, color: 'red' }, ...currentLogs].slice(0, 3));
                   // BUILD 918: player-killed townsfolk pay XP (see arc-sweep branch).
-                  grantCombatXp(npcKillExperienceReward(targetNpc, playerLevelRef.current, playerStatsRef.current.int), targetNpc.position);
+                  grantCombatXp(npcKillExperienceReward(targetNpc, playerLevelRef.current, playerStatsRef.current.int), targetNpc.position, npcEffectiveLevel(targetNpc));
                   targetNpcIdRef.current = null;
                   setTargetNpcId(null);
                 } else {
@@ -8926,9 +8971,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               setLogs((currentLogs) => [{ text: 'Harvested ' + cornCount + ' corn.', color: 'blue' }, ...currentLogs].slice(0, 3));
             } else if (attackTarget.entityKind === 'cellar-rat') {
               const stats = playerStatsRef.current;
-              const critical = Math.random() < playerCriticalChanceForStats(stats);
+              const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
               const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
-              const damage = playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
+              const damage = playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
               const rat = cellarRatsRef.current.find((r) => r.id === attackTarget.id && r.hp > 0);
               if (rat) applyHitToCellarRat(rat, damage, critical);
             } else if (attackTarget.entityKind === 'townsfolk') {
@@ -8938,11 +8983,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               if (npc && !npc.indoors) {
                 const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
                 const stats = playerStatsRef.current;
-                const critical = Math.random() < playerCriticalChanceForStats(stats);
+                const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
                 const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
                 // BUILD 932: stealth strike — double damage when undetected.
                 const stealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, npc.id);
-                const damage = stealthDamage(playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, npc.id);
+                const damage = stealthDamage(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, npc.id);
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
                 setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
                 // BUILD 939: player harm moves the victim's faction standing.
@@ -8959,7 +9004,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                   playCombatSound('scream', muted);
                   setLogs((currentLogs) => [{ text: `You killed ${npc.name}!`, color: 'red' }, ...currentLogs].slice(0, 3));
                   // BUILD 918: player-killed townsfolk pay XP (see arc-sweep branch).
-                  grantCombatXp(npcKillExperienceReward(npc, playerLevelRef.current, playerStatsRef.current.int), npc.position);
+                  grantCombatXp(npcKillExperienceReward(npc, playerLevelRef.current, playerStatsRef.current.int), npc.position, npcEffectiveLevel(npc));
                 } else {
                   // Scream and flee.
                   const scream = screamFor(npc);
@@ -8976,12 +9021,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const maxHp = 30;
               const curHp = fieldNpcHpRef.current.get(id) ?? maxHp;
               const stats = playerStatsRef.current;
-              const critical = Math.random() < playerCriticalChanceForStats(stats);
+              const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
               const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
               // BUILD 933: stealth ×2 for adventurers/travelers too (same
               // undetected rule as townsfolk; no crime path is added).
               const fieldStealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, id);
-              const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, id));
+              const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, id));
               const newHp = curHp - damage;
               const pos = (attackTarget as { position: { x: number; y: number } }).position;
               const name = (attackTarget as { name: string }).name || 'NPC';
@@ -9012,13 +9057,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const maxHp = WILDLIFE_MAX_HP[species] ?? 15;
               const curHp = wildlifeHpRef.current.get(id) ?? maxHp;
               const stats = playerStatsRef.current;
-              const critical = Math.random() < playerCriticalChanceForStats(stats);
+              const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
               const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
               // BUILD 935: wildlife routes through the pipeline (level-1
               // equivalent: defense 1, armor 1). The branch's min-1 floor
               // is preserved — mitigation reduces toward it, not below it.
               const wildMitigation = mitigationForCreature(species);
-              const damage = Math.max(1, mitigateDamage({ raw: Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult), attackerElement: 'none', percents: wildMitigation.elementPercents, immunities: wildMitigation.immunities, defense: 1, armor: 1 }).damage);
+              const damage = Math.max(1, mitigateDamage({ raw: Math.max(1, playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult), attackerElement: 'none', percents: wildMitigation.elementPercents, immunities: wildMitigation.immunities, defense: 1, armor: 1 }).damage);
               const newHp = curHp - damage;
               const pos = (attackTarget as { position: { x: number; y: number } }).position;
               if (newHp <= 0) {
@@ -9028,7 +9073,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 setLogs((currentLogs) => [{ text: `You killed the ${species}!`, color: 'red' }, ...currentLogs].slice(0, 3));
                 // BUILD 918: wildlife kills pay XP like any other animal
                 // kill (level-1 scale) — this was another dead award path.
-                grantCombatXp(killExperienceForLevel(1, playerLevelRef.current, playerStatsRef.current.int), pos);
+                grantCombatXp(killExperienceForLevel(1, playerLevelRef.current, playerStatsRef.current.int), pos, 1);
                 // Remove from field + drop loot (meat/hide).
                 const next = wildlifeRef.current.filter((a) => a.id !== id);
                 wildlifeRef.current = next;
@@ -9048,9 +9093,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               }
             } else {
             const stats = playerStatsRef.current;
-            const critical = Math.random() < playerCriticalChanceForStats(stats);
+            const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
             const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
-            const damage = playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
+            const damage = playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
             applyPlayerHitToCreature(attackTarget as { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, damage, critical);
             } // end harvest else
           } else if (!swingDamageDealt) {
@@ -9078,7 +9123,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               }
               if (nearest) {
                 const stats = playerStatsRef.current;
-                const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * beerDamageMultiplier(beerBuffUntil) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
+                const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * beerDamageMultiplier(beerBuffUntil) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
                 if (nearest.kind === 'townsfolk') {
                   const npc = townsfolkRef.current.find((n) => n.id === nearest!.id)!;
                   // BUILD 932: stealth strike — double damage when undetected.
@@ -9098,7 +9143,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                     spawnCombatText('KILLED', npc.position, 'critical');
                     setLogs((cur) => [{ text: `You killed ${npc.name}!`, color: 'red' }, ...cur].slice(0, 3));
                     // BUILD 918: player-killed townsfolk pay XP (see arc-sweep branch).
-                    grantCombatXp(npcKillExperienceReward(npc, playerLevelRef.current, playerStatsRef.current.int), npc.position);
+                    grantCombatXp(npcKillExperienceReward(npc, playerLevelRef.current, playerStatsRef.current.int), npc.position, npcEffectiveLevel(npc));
                   } else {
                     spawnCombatText(`-${Math.round(stealthDamageValue)}`, npc.position, 'damage');
                     const scream = screamFor(npc);
@@ -9123,7 +9168,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                     // people too — a player kill pays XP on the same scale
                     // (adventurers fight, so they count as level-2 victims;
                     // travelers as level-1). No XP for anything else here.
-                    grantCombatXp(killExperienceForLevel(nearest.kind === 'adventurer' ? 2 : 1, playerLevelRef.current, playerStatsRef.current.int), nearest.position);
+                    grantCombatXp(killExperienceForLevel(nearest.kind === 'adventurer' ? 2 : 1, playerLevelRef.current, playerStatsRef.current.int), nearest.position, nearest.kind === 'adventurer' ? 2 : 1);
                     if (nearest.kind === 'adventurer') {
                       const next = simulatedAdventurersRef.current.filter((a) => a.id !== nearest!.id);
                       simulatedAdventurersRef.current = next;
@@ -10178,7 +10223,9 @@ if (active) {
   const playerRenderFacing = attackFacing ?? facing;
   const currentWorldTile = mapTileFor(chunk);
   const selectedGoat = targetGoatId === null ? null : goats.find((goat) => goat.id === targetGoatId && goat.disposition !== 'defeated') || null;
-  const playerMaxHp = playerMaxHpForStats(playerStats);
+  // BUILD 941: HUD max includes AA Toughness ranks (render-scope bonuses).
+  const aaBonuses = aaBonusesForRanks(aaState.ranks);
+  const playerMaxHp = playerMaxHpForStats(playerStats, aaBonuses.maxHp);
   const deletedHere = deletedGenTrees[chunkKey] ?? [];
   const fieldTrees = fieldTreesFor(chunk).filter((t) => !deletedHere.includes(t.id)).map((t) => {
     const saved = treePositionOverrides[chunkKey + ':' + t.id];
@@ -10273,6 +10320,28 @@ if (active) {
       return addNPCMemory(t, 'Talked with the traveler.', day, 1);
     });
     setTownsfolk([...townsfolkRef.current]);
+  };
+
+  // BUILD 941: buy one AA rank. Ref is set before state (combat sites
+  // read the ref); a Toughness purchase also heals the gained max HP so
+  // the rank is felt immediately instead of only on the next heal.
+  const buyAaRank = (abilityId: string) => {
+    const oldBonuses = aaBonusesForRanks(aaStateRef.current.ranks);
+    const result = aaBuyRank(aaStateRef.current, abilityId);
+    if (!result.ok) {
+      setLogs((currentLogs) => [{ text: result.reason ?? 'Cannot buy that rank.', color: 'gold' }, ...currentLogs].slice(0, 3));
+      return;
+    }
+    aaStateRef.current = result.state; setAaState(result.state);
+    const newBonuses = aaBonusesForRanks(result.state.ranks);
+    aaBonusesRef.current = newBonuses;
+    const hpDelta = newBonuses.maxHp - oldBonuses.maxHp;
+    if (hpDelta > 0) {
+      const maxHp = playerMaxHpForStats(playerStatsRef.current, newBonuses.maxHp);
+      playerHpRef.current = Math.min(maxHp, playerHpRef.current + hpDelta); setPlayerHp(playerHpRef.current);
+    }
+    const ability = AA_ABILITIES.find((a) => a.id === abilityId);
+    setLogs((currentLogs) => [{ text: `Alternate Advancement: ${ability ? ability.name : abilityId} rank ${result.state.ranks[abilityId]} purchased.`, color: 'gold' }, ...currentLogs].slice(0, 3));
   };
 
   // BUILD 881: skill-master apprenticeship. Masters never grant free XP —
@@ -10736,7 +10805,7 @@ if (active) {
     onLoot({ coins: -ROOM_PRICE } as GoatLoot);
     setTavernMenuOpen(false);
     const heal = () => {
-      const maxHp = playerMaxHpForStats(playerStatsRef.current);
+      const maxHp = playerMaxHpForStats(playerStatsRef.current, aaBonusesRef.current.maxHp);
       playerHpRef.current = maxHp; setPlayerHp(maxHp);
       setLogs((c) => [{ text: 'You wake at dawn fully rested. HP restored.', color: 'green' }, ...c].slice(0, 5));
     };
@@ -14793,6 +14862,26 @@ if (active) {
                <button className="field-log-close" onClick={() => setSkillsOpen(false)} aria-label="Close skills" data-testid="button-close-skills"><X size={16} /></button>
              </div>
              <div className="log-list">
+               {/* BUILD 941: Alternate Advancement. Same drawer as skills —
+                   no second sheet. Title follows total spend; progress,
+                   points, ranks, and Buy buttons live here. */}
+               <div className="log-row" data-testid="aa-header">
+                 <span aria-hidden="true">✦</span>
+                 <span><strong>Alternate Advancement — {aaTitleForSpent(aaState.spent)}</strong> <small>{aaState.points} AA point{aaState.points === 1 ? '' : 's'} unspent • {aaState.credits}/{AA_CREDITS_PER_POINT} credits to the next point ({AA_EVEN_KILLS_PER_POINT} even-match kills per point) • Bonuses: +{aaBonuses.maxHp} max HP, +{aaBonuses.damage} damage, +{Math.round(aaBonuses.crit * 100)}% crit, +{aaBonuses.carry} carry</small></span>
+               </div>
+               {AA_ABILITIES.map((ability) => {
+                 const rank = aaState.ranks[ability.id] ?? 0;
+                 const maxed = rank >= ability.maxRank;
+                 const cost = maxed ? 0 : aaCostForRank(rank + 1);
+                 const affordable = aaState.points >= cost;
+                 return (
+                   <div className="log-row" key={ability.id} data-testid={`aa-ability-${ability.id}`}>
+                     <span aria-hidden="true">⬢</span>
+                     <span><strong>{ability.name}</strong> <small>Rank {rank}/{ability.maxRank} • {ability.effect}{maxed ? ' • MAX' : ` • Next rank: ${cost} point${cost > 1 ? 's' : ''}`}</small></span>
+                     <button type="button" onClick={() => buyAaRank(ability.id)} disabled={maxed || !affordable} data-testid={`aa-buy-${ability.id}`} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #4caf50', background: maxed || !affordable ? '#333' : '#2e7d32', color: '#fff', fontSize: 12, cursor: maxed || !affordable ? 'default' : 'pointer' }}>{maxed ? 'Maxed' : `Buy (${cost})`}</button>
+                   </div>
+                 );
+               })}
                {Object.values(SKILLS).map((def) => {
                  const s = skills[def.id] || { xp: 0, level: 1 };
                  const prog = xpToNextLevel(s.xp);
@@ -15262,7 +15351,7 @@ function Home() {
       clearTimeout(timeout);
     };
   }, [manualCheckToken]);
-  const menuBridgeRef = useRef<{ openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null>(null);
+  const menuBridgeRef = useRef<{ openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void; getAaMaxHpBonus: () => number } | null>(null);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
   // BUILD 517: Map reveal (fog of war) — track visited chunks.
@@ -15312,7 +15401,8 @@ function Home() {
   const drinkPotion = () => {
     if (inventory.healthPotion < 1) return;
     setInventory((current) => ({ ...current, healthPotion: Math.max(0, current.healthPotion - 1) }));
-    const maxHp = playerMaxHpForStats(playerStats);
+    // BUILD 941: potion heals half of the EFFECTIVE max (base + AA ranks).
+    const maxHp = playerMaxHpForStats(playerStats) + (menuBridgeRef.current?.getAaMaxHpBonus?.() ?? 0);
     menuBridgeRef.current?.healPlayer(Math.round(maxHp * 0.5));
   };
   const beerBuffActive = Date.now() < beerBuffUntil;

@@ -1005,9 +1005,17 @@ export function killExperienceForLevel(victimLevel: number, playerLevel: number,
  * victim (same as a goat or a trivial monster); a 60 HP guard is
  * level 3 — worth at least a comparable monster. Pure.
  */
+/**
+ * BUILD 941: the NPC's effective victim level, factored out of
+ * npcKillExperienceReward (identical math) so AA accrual can use the same
+ * level without duplicating the formula.
+ */
+export function npcEffectiveLevel(npc: Townsperson): number {
+  return 1 + Math.max(0, Math.floor((npcMaxHp(npc) - 32) / 12));
+}
+
 export function npcKillExperienceReward(npc: Townsperson, playerLevel: number, intStat: number): number {
-  const effectiveLevel = 1 + Math.max(0, Math.floor((npcMaxHp(npc) - 32) / 12));
-  return killExperienceForLevel(effectiveLevel, playerLevel, intStat);
+  return killExperienceForLevel(npcEffectiveLevel(npc), playerLevel, intStat);
 }
 
 /** Current HP (defaults to full). */

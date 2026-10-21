@@ -1,6 +1,6 @@
 {
-  "build": "940",
-  "note": "Quests grew a task shell: six quests are now multi-part tasks you can work on in any order — guard the caravan to Greenfield and Oakrest, gather the three Aldorian seals, and more. The rat cellar only counts kills in Mosslight itself, the caravan run repeats every 30 days and the rat cellar every 14, and finishing a task pays gold, XP, and town standing at once. Your progress on converted quests carries over untouched. Skill and spell objectives are not in yet — there is no skill-gain or overworld casting event for them to match — and shared party tasks are not built, since this is a single-player game.",
-  "timestamp": "2026-10-21T21:52:43.161Z",
-  "cacheBuster": "mvinejdl"
+  "build": "941",
+  "note": "Alternate Advancement is here: kills now also feed a separate AA pool — 20 even-match kills earn one AA point, weaker kills pay less, stronger pay more, trivial kills pay nothing. Spend points in the Skills panel on ranked abilities: Toughness, Heavy Blows, Deadeye, and Strong Back, each up to rank 5. Total spend earns display titles, from Wanderer up to Legend of the Wilds. Normal XP and levels are untouched, and there is no level cap to reach first — AA runs alongside levels from the start.",
+  "timestamp": "2026-10-21T22:14:24.414Z",
+  "cacheBuster": "mvio6ffi"
 }
