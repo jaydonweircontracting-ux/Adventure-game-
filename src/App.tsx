@@ -13,6 +13,7 @@ import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } f
 import { createBody, takeBodyLootSelection, type LootableBody } from './game/lootableBodies';
 import { wornGearBaseIds, lootedGearBaseIds, gearNameForBaseId, isKnownBaseId } from './game/npcGear';
 import { resolveNpcGearVisit, gearExamineLine, effectiveOwnedGear, effectiveWealthGoal } from './game/npcGearEconomy';
+import { moralityLine, npcMorality, mayInitiateLethalAggression, moralityTier } from './game/npcMorality';
 import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
 import { pickpocketChance, resolvePickpocket } from './game/pickpocket';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
@@ -146,7 +147,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '922';
+const BUILD_NUMBER = '923';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -154,6 +155,7 @@ const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
   '922': 'Villagers now care about their gear: they want better weapons, save toward a gold goal, and buy upgrades at market stalls when they can afford them — a guard with a rusty sword will come home with a steel blade. They also sell spare gear back to stalls, but never at a cost to themselves: never their only weapon, never their last piece of armor, never the tool their job needs, and never a sale that leaves them worse equipped. Examine a villager to see what they want and what they are saving for, and watch for the ones doing well enough to enjoy the tavern life',
+  '923': 'Villagers now have a sense of character: most folk will never start a lethal fight with another villager — only a rare unsettled few ever would. Guards, priests, and children never start one at all. Self-defense, guard duty, and creature fights are unchanged. Examine a villager to see what kind of character they are',
   '921': 'Dead NPCs now drop the weapons and armor they were actually wearing — a guard corpse holds its sword, breastplate, helmet and shield as real loot you can take and equip, not placeholder gold. Taking a piece visibly strips it off the corpse: loot the sword and the hand is empty, take everything and the body is bare of gear. Unlooted gear stays on the body through save and reload, and looted gear never comes back',
   '920': 'Minimap travel finally listens to you: tapping the minimap still sends your character walking to that spot, but any tap on the field, D-pad press, or attack now cancels the trip instantly and your character does what you just told it to do instead. Before this fix, a field tap during minimap travel was silently ignored because the old minimap route kept steering the character to the original destination. Tapping the minimap again still retargets to the new spot, and untouched trips still arrive normally',
   '918': 'Two long-standing combat fixes. First, killing a townsfolk now earns XP exactly like killing a creature: a commoner pays what a goat does, a guard pays what a tougher monster does, and the same goes for simulated adventurers and travelers you kill — awarded once at death, through the same XP grant as every other kill. Second, NPCs that fight back now actually keep fighting: their hit cooldown was counted in world-clock ticks (one tick every 3 seconds, so a second hit could not land for over two minutes) — it now runs in real time at roughly one hit per second, like creature attacks — and fighting NPCs run after you instead of trailing behind at a walk, so a player who walks away still gets caught and hit, while sprinting away still escapes. The same fixes apply to NPCs fighting creatures',
@@ -4874,7 +4876,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const ref: ExamineRef = {
         kind: 'npc', id: 'npc-' + npc.id, name: npc.name,
         ctx: { role: npc.role, archetype: npc.archetype, activity: npc.activity, personality: persDesc, ageBracket: npc.age,
-          gearLine: gearExamineLine({ id: npc.id, archetype: npc.archetype, ownedGear: npc.ownedGear, wealthGoal: npc.wealthGoal }, wornGearBaseIds(npc.id), npcPurse) },
+          gearLine: gearExamineLine({ id: npc.id, archetype: npc.archetype, ownedGear: npc.ownedGear, wealthGoal: npc.wealthGoal }, wornGearBaseIds(npc.id), npcPurse),
+          // BUILD 923: morality line — what kind of character they are.
+          moralityLine: moralityLine(npc) },
       };
       setContextMenu({ x: clientX, y: clientY, ref, actions: menuActionsFor(ref), target: { kind: 'npc', npc } });
       return;
@@ -5914,6 +5918,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             gold: clock ? npcGold(n, clock) : null,
           }));
         },
+        // BUILD 923: morality state for verification — assignment live on
+        // the real roster, guards/priests never initiators, initiators rare.
+        getNpcMorality: () => townsfolkRef.current.map((n) => ({
+          id: n.id, name: n.name, archetype: n.archetype,
+          score: npcMorality(n), mayInitiate: mayInitiateLethalAggression(n),
+          tier: moralityTier(n), line: moralityLine(n),
+        })),
         // BUILD 912: Phase C verification — mount state, the analytic world
         // horses (same horseTarget resolution the renderer consumes), and
         // lootable bodies.

@@ -1,6 +1,6 @@
 {
-  "build": "922",
-  "note": "Villagers now care about their gear: they want better weapons, save toward a gold goal, and buy upgrades at market stalls when they can afford them — a guard with a rusty sword will come home with a steel blade. They also sell spare gear back to stalls, but never at a cost to themselves: never their only weapon, never their last piece of armor, never the tool their job needs, and never a sale that leaves them worse equipped. Examine a villager to see what they want and what they are saving for, and watch for the ones doing well enough to enjoy the tavern life",
-  "timestamp": "2026-10-21T03:20:20.781Z",
-  "cacheBuster": "mvhjo0mm"
+  "build": "923",
+  "note": "Villagers now have a sense of character: most folk will never start a lethal fight with another villager — only a rare unsettled few ever would. Guards, priests, and children never start one at all. Self-defense, guard duty, and creature fights are unchanged. Examine a villager to see what kind of character they are",
+  "timestamp": "2026-10-21T03:33:39.284Z",
+  "cacheBuster": "mvhk54r8"
 }

@@ -49,6 +49,8 @@ import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance, CR
 import { createBody, generateBodyLoot, lootBody, takeBodyLootSelection } from '../src/game/lootableBodies';
 import { wornGearBaseIds, lootedGearBaseIds, lookWithoutLootedGear, baseIdForFolder, isGearFolder, gearNameForBaseId, isKnownBaseId } from '../src/game/npcGear';
 import { gearScore, gearWant, canSellGear, effectiveOwnedGear, effectiveWealthGoal, startingOwnedGear, ratchetWealthGoal, lifestyleTier, resolveNpcGearVisit, gearExamineLine, stallGoodForBase } from '../src/game/npcGearEconomy';
+import { npcMorality, mayInitiateLethalAggression, moralityLine, moralityTier, damageNpcByNpc, MORALITY_LETHAL_THRESHOLD } from '../src/game/npcMorality';
+import { examineEntity } from '../src/game/examine';
 import { SHOP_CATALOG, createStallStock, type StallShopDef } from '../src/game/shops';
 import { variantLook } from '../src/game/iso/characterSystem';
 import { bountyForCrime, addCrimeToBounty, wantedLevel, emptyBounty } from '../src/game/bounty';
@@ -1553,6 +1555,97 @@ console.log('Testing NPC gear economy (BUILD 922)...');
   const junkEco = { ...savedEco, ownedGear: [42, null] };
   const junkRestored = restoreTownsfolk([freshEco], [junkEco])[0];
   assert(junkRestored.ownedGear === undefined, 'GearEco: malformed stash falls back to fresh');
+}
+
+// ---- 13a1c. NPC morality levels (BUILD 923) ----
+// Audit behind this build: no NPC-vs-NPC lethal initiation path exists in
+// the game today — every damageNpc() caller is a player attack, every
+// damageNpcByCreature() caller is a creature attack, the retaliation loop
+// only damages the player or a creature, and BUILD 880 crime is non-lethal
+// theft. So the gate is enforced at the canonical NPC-attacker entry point
+// (damageNpcByNpc) and tested directly, plus the visible Examine line.
+console.log('Testing NPC morality levels (BUILD 923)...');
+{
+  const moralFixture = (id: string, archetype: 'commoner' | 'guard' | 'priest' | 'child' | 'farmer', seed: number, extra: { age?: 'child' | 'young' | 'adult' | 'elder' } = {}) => ({
+    id, name: 'Mor', gender: 'male' as const, archetype, role: 'rogue' as const, seed,
+    homeKey: 'home-1', home: { x: 0, y: 0 }, position: { x: 0, y: 0 },
+    facing: 'down' as const, moving: false, activity: 'At home', indoors: false,
+    location: 'OUTDOOR' as const, ...extra,
+  });
+  // Distribution: most adults are law-abiding; a small low tail exists.
+  let lowCount = 0;
+  let lowSeed = -1;
+  let highSeed = -1;
+  for (let s = 0; s < 2000; s++) {
+    const m = npcMorality(moralFixture('m', 'commoner', s));
+    if (m < MORALITY_LETHAL_THRESHOLD) { lowCount++; if (lowSeed < 0) lowSeed = s; }
+    else if (highSeed < 0) highSeed = s;
+  }
+  assert(lowSeed >= 0 && highSeed >= 0, 'Morality: seed sweep must find both a low and a high commoner');
+  assert(lowCount > 0 && lowCount < 400, `Morality: low tail should be rare, got ${lowCount}/2000`);
+  // Guards, priests, children NEVER initiate, whatever their seed.
+  for (let s = 0; s < 200; s++) {
+    assert(!mayInitiateLethalAggression(moralFixture('g', 'guard', s)), 'Morality: guards never initiate');
+    assert(!mayInitiateLethalAggression(moralFixture('p', 'priest', s)), 'Morality: priests never initiate');
+    assert(!mayInitiateLethalAggression(moralFixture('c', 'child', s)), 'Morality: children never initiate');
+    assert(!mayInitiateLethalAggression(moralFixture('c2', 'commoner', s, { age: 'child' })), 'Morality: age-child never initiates');
+  }
+  assert(mayInitiateLethalAggression(moralFixture('l', 'commoner', lowSeed)), 'Morality: low-tail commoner may initiate');
+  assert(!mayInitiateLethalAggression(moralFixture('h', 'commoner', highSeed)), 'Morality: high commoner never initiates');
+  // Deterministic + save-stable: same npc, same score, across a round-trip.
+  const stable = moralFixture('s', 'farmer', 4242);
+  assert(npcMorality(stable) === npcMorality({ ...stable }), 'Morality: deterministic per npc');
+  const savedStable = serializeTownsfolk([stable])[0];
+  const restoredStable = restoreTownsfolk([{ ...stable }], [savedStable])[0];
+  assert(npcMorality(restoredStable) === npcMorality(stable), 'Morality: stable across save/load (seed-derived, no migration)');
+  // Gate, blocked: victim comes back byte-identical — no HP loss, no
+  // fight-back, no flee, no death, no state change at all.
+  const highAttacker = moralFixture('ha', 'commoner', highSeed);
+  const victim = moralFixture('v', 'commoner', 999);
+  const victimBefore = JSON.stringify(victim);
+  const blocked = damageNpcByNpc(highAttacker, victim, 10, { x: 1, y: 1 }, 100);
+  assert(blocked.blocked === true, 'Morality: high-morality attack must be blocked');
+  assert(blocked.victim === victim, 'Morality: blocked attack returns the same victim object');
+  assert(JSON.stringify(blocked.victim) === victimBefore, 'Morality: blocked attack changes nothing on the victim');
+  // Gate, allowed: low-morality attacker deals real damage and the victim
+  // responds (fight-or-flee) exactly as against a player attack.
+  const lowAttacker = moralFixture('la', 'commoner', lowSeed);
+  const hit = damageNpcByNpc(lowAttacker, moralFixture('v2', 'commoner', 999), 10, { x: 1, y: 1 }, 100);
+  assert(hit.blocked === false, 'Morality: low-morality attack must not be blocked');
+  assert(npcHp(hit.victim) === 20, 'Morality: allowed attack deals damage');
+  assert(hit.victim.fightBackUntilTick !== undefined || hit.victim.fleeUntilTick !== undefined, 'Morality: victim fights back or flees (self-defense)');
+  // Allowed lethal hit kills, like any other lethal damage.
+  const kill = damageNpcByNpc(lowAttacker, moralFixture('v3', 'commoner', 999), 40, { x: 1, y: 1 }, 100);
+  assert(kill.blocked === false && kill.victim.deadUntilTick !== undefined, 'Morality: allowed lethal hit kills');
+  // Explicitly UNCHANGED: player attacks, creature attacks, guard duty.
+  assert(npcHp(damageNpc(moralFixture('vp', 'commoner', 999), 10, { x: 1, y: 1 }, 100)) === 20, 'Morality: player damage path untouched');
+  assert(npcHp(damageNpcByCreature(moralFixture('vc', 'commoner', 999), 10, { x: 1, y: 1 }, 'monster', 7, 100)) === 20, 'Morality: creature damage path untouched');
+  // Non-lethal conflict untouched: a HIGH-morality NPC can still get a
+  // theft urge (theft is not lethal aggression and is not gated).
+  const clockAtNight = (day: number) => ({
+    tick: 0, year: 1, month: 1, week: 1, day, hour: 21, minuteOfDay: 1260, second: 0, season: 'spring' as const,
+  });
+  let theftFound = false;
+  for (let s = 0; s < 200 && !theftFound; s++) {
+    const thief = moralFixture('t', 'commoner', s);
+    if (npcMorality(thief) < MORALITY_LETHAL_THRESHOLD) continue;
+    for (let d = 0; d < 300; d++) {
+      if (npcCrimeUrge(thief, clockAtNight(d))) { theftFound = true; break; }
+    }
+  }
+  assert(theftFound, 'Morality: high-morality NPCs can still get theft urges (theft is not gated)');
+  // Roster: initiators are a small minority, never guards/priests.
+  const rosterAnchors = { points: {}, plaza: { x: 0, y: 0 }, stalls: [], gardens: [], patrol: [] } as TownsfolkAnchors;
+  const roster = createTownsfolk(rosterAnchors, 847291583);
+  const initiators = roster.filter(mayInitiateLethalAggression);
+  assert(initiators.length < roster.length * 0.25, `Morality: roster initiators must be a minority, got ${initiators.length}/${roster.length}`);
+  assert(!roster.some((n) => (n.archetype === 'guard' || n.archetype === 'priest') && mayInitiateLethalAggression(n)), 'Morality: no roster guard/priest initiates');
+  // Visible: Examine line exists for every tier and renders through examineEntity.
+  assert(moralityTier(moralFixture('x', 'commoner', lowSeed)) === 'dangerous', 'Morality: low tail tiers as dangerous');
+  assert(moralityTier(moralFixture('x', 'commoner', highSeed)) !== 'dangerous', 'Morality: high commoner is not dangerous');
+  const exLine = moralityLine(moralFixture('x', 'commoner', lowSeed));
+  const examined = examineEntity({ kind: 'npc', id: 'npc-moral-test', name: 'Test', ctx: { archetype: 'commoner', moralityLine: exLine } });
+  assert(examined.text.includes(exLine), 'Morality: Examine text includes the morality line');
 }
 
 // ---- 13a1b. Town-edge strays (BUILD 917) ----

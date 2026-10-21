@@ -37,6 +37,8 @@ export interface ExamineContext {
   ageBracket?: string;
   /** BUILD 922: gear-economy line (want/need, savings goal, lifestyle). */
   gearLine?: string;
+  /** BUILD 923: morality line (character hint, not a number). */
+  moralityLine?: string;
   rarity?: 'common' | 'uncommon' | 'rare' | 'legendary';
   level?: number;
   buildingType?: string;
@@ -177,6 +179,8 @@ function npcExamine(ref: ExamineRef, rng: () => number): { name: string; text: s
   if (ctx.ageBracket === 'elder' && !/elder/.test(text)) text += ' There is a lifetime of stories behind those eyes.';
   // BUILD 922: gear-economy line — what they want, what they're saving for.
   if (ctx.gearLine) text += ' ' + ctx.gearLine;
+  // BUILD 923: morality line — what kind of character they are.
+  if (ctx.moralityLine) text += ' ' + ctx.moralityLine;
   const pers = (ctx.personality || '').toLowerCase();
   if (pers === 'outgoing') text += ' They have a warm, outgoing manner.';
   else if (pers === 'reserved') text += ' They keep to themselves, mostly.';
