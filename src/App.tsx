@@ -144,13 +144,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '919';
+const BUILD_NUMBER = '920';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '920': 'Minimap travel finally listens to you: tapping the minimap still sends your character walking to that spot, but any tap on the field, D-pad press, or attack now cancels the trip instantly and your character does what you just told it to do instead. Before this fix, a field tap during minimap travel was silently ignored because the old minimap route kept steering the character to the original destination. Tapping the minimap again still retargets to the new spot, and untouched trips still arrive normally',
   '918': 'Two long-standing combat fixes. First, killing a townsfolk now earns XP exactly like killing a creature: a commoner pays what a goat does, a guard pays what a tougher monster does, and the same goes for simulated adventurers and travelers you kill — awarded once at death, through the same XP grant as every other kill. Second, NPCs that fight back now actually keep fighting: their hit cooldown was counted in world-clock ticks (one tick every 3 seconds, so a second hit could not land for over two minutes) — it now runs in real time at roughly one hit per second, like creature attacks — and fighting NPCs run after you instead of trailing behind at a walk, so a player who walks away still gets caught and hit, while sprinting away still escapes. The same fixes apply to NPCs fighting creatures',
   '919': 'Fighting NPCs can now chase you around buildings instead of getting stuck on the wall. A retaliating townsfolk or guard follows a real path — the same pathfinder their daily walks use, with road preference and building avoidance — and replans at most about once every second and a half while you move, so there is no performance cost like the old pathfinding lag. If you get somewhere truly unreachable, they wait a few seconds and then give up and go back to their day instead of swinging at a wall forever. Hit speed, damage, and XP are unchanged',
   '917': 'Stray trouble at the town edge: the wilderness safety zone around Mosslight is relaxed at the outskirts only. Once in a while a lone wolf, slime or rat wanders into the edge of town and picks a fight with whoever it finds there — townsfolk fight back or flee, guards move in, and the body is lootable like any other kill. The plaza and market heart stay completely safe: strays arrive only at the outskirts and their hunting range cannot reach the town center',
@@ -5683,6 +5684,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 668: A* path waypoints for minimap click-to-move.
   // When set, the player follows waypoints instead of straight-line steering.
   const tapMovePathRef = useRef<Point[] | null>(null);
+  // BUILD 920: cancel any tap-to-move/minimap travel (target + A* path).
+  // The minimap sets BOTH refs; every other travel setter must clear the
+  // stale path, or the loop keeps steering the old waypoints and a new
+  // tap looks ignored (the reported "can't move out of minimap travel").
+  const cancelTapMove = () => {
+    tapMoveTargetRef.current = null;
+    tapMovePathRef.current = null;
+  };
   // BUILD 442: NPC target system — tap an NPC's Attack action to chase them.
   const targetNpcIdRef = useRef<string | null>(null);
   // BUILD 719: tapping an NPC selects an interaction target; the context-menu
@@ -6428,6 +6437,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     } else {
       horsesRef.current = null;
     }
+    // BUILD 920: travel is ref-only (never serialized), so a load must drop
+    // any in-flight minimap travel — the player spawns in control, never
+    // auto-walking toward a destination from a previous session.
+    cancelTapMove();
     setNpcDialogue(null); setAttackFlash(null); setLogOpen(false); setMoving(false);
     if (loadState.brainState) {
       // Phase 1: persistent world time must survive a corrupt/incompatible
@@ -7866,6 +7879,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         }
       }
       const tapTarget = tapMoveTargetRef.current;
+      // BUILD 920: a waypoint path without a target is stale — drop it so
+      // no handler can ever leave the loop steering an abandoned route.
+      if (!tapTarget && tapMovePathRef.current) tapMovePathRef.current = null;
       // BUILD 668: Manual input cancels both tap-target and path.
       if (tapTarget && (input.x !== 0 || input.y !== 0)) {
         tapMoveTargetRef.current = null;
@@ -8832,6 +8848,9 @@ if (active) {
           : (targetMonsterIdRef.current === targetId
               ? monstersRef.current.find((monster) => monster.id === targetId && monster.disposition !== 'defeated' && monster.hp > 0)
               : goatsRef.current.find((goat) => goat.id === targetId && goat.disposition !== 'defeated' && goat.hp > 0)));
+    // BUILD 920: attacking is manual input — it cancels minimap travel so
+    // the player stands and fights instead of walking away mid-swing.
+    cancelTapMove();
     playerAttackStateRef.current = { active: true, direction: currentFacing, targetId: target?.id ?? null, elapsed: 0, hitApplied: false, ranged: inCellar ? false : bowEquipped };
     playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS;
     setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS);
@@ -9041,6 +9060,9 @@ if (active) {
     event.changedTouches.length > 0 ? event.changedTouches[0].identifier : undefined;
   const pressDirection = (direction: Direction, touchId?: number) => {
     if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode || moverMode || mapBuilderMode || assetPlacementMode || assetMoveMode) return;
+    // BUILD 920: a D-pad press is manual input — it cancels minimap travel
+    // immediately, not just when the loop next samples a held direction.
+    cancelTapMove();
     if (touchId === undefined) keysRef.current[direction] = true;
     else pressTouchHold(touchHoldsRef.current, direction, touchId);
     setMoving(true);
@@ -9052,6 +9074,8 @@ if (active) {
   const slideToDirection = (direction: Direction) => {
     if (!dpadActiveRef.current) return;
     if (inputLocked || optionsOpen || guardEncounter || waitingRef.current || tileEditMode || moverMode || mapBuilderMode || assetPlacementMode || assetMoveMode) return;
+    // BUILD 920: slide-to-change-direction is manual input too.
+    cancelTapMove();
     pressTouchHold(touchHoldsRef.current, direction, 1);
     setMoving(true);
   };
@@ -9104,6 +9128,9 @@ if (active) {
       positionRef.current = dismountPosition;
       setPosition(dismountPosition);
       setMounted(false);
+      // BUILD 920: dismounting is manual input — drop any minimap travel so
+      // the player is never stranded walking away on foot after dismounting.
+      cancelTapMove();
       setLogs((currentLogs) => [{ text: 'You dismount and leave the horse here.', color: '' }, ...currentLogs].slice(0, 3));
       return;
     }
@@ -9119,6 +9146,8 @@ if (active) {
     setPosition(mountPosition);
     setHorse({ chunk: currentChunk, position: mountPosition });
     setMounted(true);
+    // BUILD 920: mounting cancels minimap travel — the rider stays in control.
+    cancelTapMove();
     setLogs((currentLogs) => [{ text: 'You mount the horse. The road opens ahead.', color: 'blue' }, ...currentLogs].slice(0, 3));
   };
 
@@ -11621,8 +11650,8 @@ if (active) {
                 targetGoatIdRef.current = goat?.id ?? null;
                 setTargetGoatId(goat?.id ?? null);
               }}
-              onTapMove={(point) => { autoMineTargetRef.current = null; autoMineStartedRef.current = false; autoMineBestDistanceRef.current = Number.POSITIVE_INFINITY; tapMoveTargetRef.current = point; }}
-              onTapMine={(ore) => { if (ore.id !== 'tutorial-stone-deposit-4-7' || depletedOresRef.current[ore.id]) return; autoMineTargetRef.current = ore; autoMineStartedRef.current = false; autoMineBestDistanceRef.current = Math.hypot(positionRef.current.x - ore.fx, positionRef.current.y - ore.fy); tapMoveTargetRef.current = Math.hypot(positionRef.current.x - ore.fx, positionRef.current.y - ore.fy) > 15 ? { x: Math.max(2, ore.fx - 8), y: Math.max(2, ore.fy - 8) } : null; setLogs((logs) => [{ text: 'Mining stone… tap elsewhere or walk away to cancel.', color: 'blue' }, ...logs].slice(0, 3)); }}
+              onTapMove={(point) => { autoMineTargetRef.current = null; autoMineStartedRef.current = false; autoMineBestDistanceRef.current = Number.POSITIVE_INFINITY; tapMovePathRef.current = null; tapMoveTargetRef.current = point; }}
+              onTapMine={(ore) => { if (ore.id !== 'tutorial-stone-deposit-4-7' || depletedOresRef.current[ore.id]) return; autoMineTargetRef.current = ore; autoMineStartedRef.current = false; autoMineBestDistanceRef.current = Math.hypot(positionRef.current.x - ore.fx, positionRef.current.y - ore.fy); tapMovePathRef.current = null; tapMoveTargetRef.current = Math.hypot(positionRef.current.x - ore.fx, positionRef.current.y - ore.fy) > 15 ? { x: Math.max(2, ore.fx - 8), y: Math.max(2, ore.fy - 8) } : null; setLogs((logs) => [{ text: 'Mining stone… tap elsewhere or walk away to cancel.', color: 'blue' }, ...logs].slice(0, 3)); }}
               onTalkTo={(npc) => talkToTownsfolk(npc)}
               onShopStall={(stallIndex) => openShopStall(stallIndex)}
               droppedLoot={droppedLoot.filter((drop) => drop.chunk.x === chunk.x && drop.chunk.y === chunk.y)}
