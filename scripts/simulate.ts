@@ -9,10 +9,11 @@ import { SHOP_VAULT_DEFS, SHOP_FLOOR_CHANCE, DUNGEON_SHOP_ITEM } from '../src/ga
 import { TRAP_VAULT_DEFS, TRAP_FLOOR_CHANCE, eligibleTrapVaults, trapDefGeometryValid } from '../src/game/dungeonTraps';
 import { SHOP_CATALOG } from '../src/game/shops';
 import { generateLayout, layoutRng, selectLayoutKind } from '../src/game/dungeonLayouts';
-import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai';
+import { updateGoat, GOAT_CHASE_SPEED, GOAT_CHASE_RANGE, GOAT_FLEE_SPEED, type GoatAIEntity } from '../src/game/ai';
 import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '../src/game/combat';
-import { chooseCreatureTarget, pickGuardCreatureTarget, sneakEngagementRange, CREATURE_ACQUIRE_RANGE, SNEAK_CREATURE_ACQUIRE_RANGE, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
+import { chooseCreatureTarget, pickGuardCreatureTarget, sneakEngagementRange, CREATURE_ACQUIRE_RANGE, CREATURE_LEASH_RANGE, SNEAK_CREATURE_ACQUIRE_RANGE, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
 import { behaviorForCreature, behaviorKindKeys, preferredRangeFor, hashRoll, shouldStand, shouldRetarget, isBehaviorFleeing, voiceLine } from '../src/game/creatureBehavior';
+import { DEFAULT_ABILITIES, multiStrikeCount, isEnraged, enragedDamageMult, enragedChaseSpeed, clampToTether, suppressForSneakBlind } from '../src/game/creatureAbilities';
 import { mitigateDamage, mitigationForCreature, mitigationKindKeys, creatureDefenseForLevel, creatureArmorForLevel, playerArmorForRoll, playerResistPercents, rangedBandFor, rangedHitChance, creatureArcherSkill, normalizeRangedSkill, RANGED_HIT_CHANCE_CAP } from '../src/game/mitigation';
 import { calcSpellEffectValue, calcBuffDuration, resolveBuffStack, slotFromStackingFormula } from '../src/game/spellFormulas';
 import { BEER_BUFF_DURATION_MS } from '../src/game/tavern';
@@ -2081,6 +2082,99 @@ console.log('Testing spell formula grammar + stacking (BUILD 942)...');
   // Buff records are plain JSON-safe data (round-trip shape).
   const roundTripped = JSON.parse(JSON.stringify([{ id: 'frost-ward', slot: 0, armorBonus: 3, untilWound: true }]));
   assert(roundTripped[0].armorBonus === 3 && roundTripped[0].untilWound === true, 'Spell942: buff records round-trip through JSON');
+}
+
+// ---- 13a1t. Special-ability vocabulary (BUILD 943, EQEmu item 5) ----
+// EQEmu ability grammar as data on the 934 behavior blocks (rules only,
+// no EQ content). Placed before the BUILD 694 crash point so it runs in
+// a full suite. Rampage / Summon / Dual Wield / effect immunities are
+// NOT built (no multi-target melee, no summon/off-hand system, no
+// overworld effects exist) — the sweep asserts the effect-immunity
+// slot stays empty rather than inventing an effect to fill it.
+console.log('Testing special-ability vocabulary (BUILD 943)...');
+{
+  // Defaults equal the engine constants, so an unassigned kind behaves
+  // exactly as before this build.
+  assert(DEFAULT_ABILITIES.leashRange === CREATURE_LEASH_RANGE, 'Ability943: default leash equals the global leash');
+  assert(DEFAULT_ABILITIES.acquireRange === CREATURE_ACQUIRE_RANGE, 'Ability943: default acquire equals the global acquire');
+  assert(DEFAULT_ABILITIES.chaseRange === GOAT_CHASE_RANGE, 'Ability943: default chase equals the global chase gate');
+  assert(DEFAULT_ABILITIES.fleeSpeed === GOAT_FLEE_SPEED, 'Ability943: default flee speed equals the global flee speed');
+  assert(DEFAULT_ABILITIES.multiStrike === 'none' && multiStrikeCount(DEFAULT_ABILITIES) === 1, 'Ability943: default kind strikes once');
+  assert(DEFAULT_ABILITIES.enrageHpRatio === 0 && !isEnraged(DEFAULT_ABILITIES, 1, 100), 'Ability943: default kind never enrages');
+  assert(DEFAULT_ABILITIES.tetherRadius === 0 && !DEFAULT_ABILITIES.ignoreNpcVictims && !DEFAULT_ABILITIES.sneakBlind, 'Ability943: default kind has no tether or aggro immunity');
+  // Every shipped kind resolves full abilities; leash >= acquire (a
+  // creature never acquires a victim it instantly drops); strike
+  // counts stay in 1..4; the effect-immunity slot stays empty.
+  for (const kind of behaviorKindKeys()) {
+    const b = behaviorForCreature(kind);
+    assert(b.abilities !== undefined, `Ability943: ${kind} resolves abilities`);
+    assert(b.abilities.leashRange >= b.abilities.acquireRange, `Ability943: ${kind} leash (${b.abilities.leashRange}) >= acquire (${b.abilities.acquireRange})`);
+    assert(b.abilities.chaseRange > 0 && b.abilities.fleeSpeed > 0, `Ability943: ${kind} has positive chase/flee speeds`);
+    const strikes = multiStrikeCount(b.abilities);
+    assert(strikes >= 1 && strikes <= 4, `Ability943: ${kind} strikes ${strikes} (must be 1..4)`);
+    assert(b.abilities.effectImmunities.length === 0, `Ability943: ${kind} carries no invented effect immunity`);
+    assert(b.abilities.enrageHpRatio >= 0 && b.abilities.enrageHpRatio <= 1, `Ability943: ${kind} enrage ratio in range`);
+    // An enraged kind must have a visible enrage window: its enrage
+    // ratio sits strictly above its flee ratio, so between the two
+    // thresholds it fights enraged instead of fleeing.
+    if (b.abilities.enrageHpRatio > 0) {
+      assert(b.abilities.enrageHpRatio > b.fleeHpRatio, `Ability943: ${kind} enrage (${b.abilities.enrageHpRatio}) above flee (${b.fleeHpRatio})`);
+    }
+  }
+  // Spot assignments.
+  assert(multiStrikeCount(behaviorForCreature('wolf').abilities) === 2, 'Ability943: wolf flurries (2 strikes)');
+  assert(multiStrikeCount(behaviorForCreature('bandit').abilities) === 3, 'Ability943: bandit triples (3 strikes)');
+  assert(multiStrikeCount(behaviorForCreature('dragon').abilities) === 4, 'Ability943: dragon quads (4 strikes)');
+  assert(multiStrikeCount(behaviorForCreature('goblin').abilities) === 1, 'Ability943: unassigned goblin strikes once');
+  assert(behaviorForCreature('dragon').abilities.ignoreNpcVictims, 'Ability943: dragon hunts the player only');
+  assert(!behaviorForCreature('wolf').abilities.ignoreNpcVictims, 'Ability943: wolf still engages townsfolk');
+  assert(behaviorForCreature('slime').abilities.sneakBlind && behaviorForCreature('spider').abilities.sneakBlind, 'Ability943: slime and spider are sneak-blind');
+  assert(!behaviorForCreature('wolf').abilities.sneakBlind, 'Ability943: wolf still notices sneaking players');
+  assert(behaviorForCreature('slime').abilities.tetherRadius === 15, 'Ability943: slime tethered to 15u of spawn');
+  assert(behaviorForCreature('dragon').abilities.acquireRange === 32 && behaviorForCreature('dragon').abilities.leashRange === 60, 'Ability943: dragon spots far and holds the lock far');
+  assert(behaviorForCreature('wolf').abilities.leashRange === 48 && behaviorForCreature('wolf').abilities.chaseRange === 30, 'Ability943: wolf pursues farther');
+  assert(behaviorForCreature('rat').abilities.fleeSpeed === 3.5 && behaviorForCreature('deer').abilities.fleeSpeed === 4, 'Ability943: rat and deer flee faster');
+  // Enrage: at-or-below triggers, above does not; multiplier applies only then.
+  const trollAb = behaviorForCreature('troll').abilities;
+  assert(isEnraged(trollAb, 25, 100) && isEnraged(trollAb, 10, 100) && !isEnraged(trollAb, 26, 100), 'Ability943: troll enrages at-or-below 25%');
+  assert(enragedDamageMult(trollAb, 25, 100) === 1.5 && enragedDamageMult(trollAb, 26, 100) === 1, 'Ability943: troll damage multiplier only while enraged');
+  assert(enragedChaseSpeed(trollAb, 25, 100) === 6 && enragedChaseSpeed(trollAb, 26, 100) === undefined, 'Ability943: troll chase speed 6 only while enraged');
+  // Sneak-blind suppression decision: only a sneaking, unengaged, player target.
+  const slimeAb = behaviorForCreature('slime').abilities;
+  assert(suppressForSneakBlind(slimeAb, { sneaking: true, engagedOnPlayer: false, targetIsPlayer: true }), 'Ability943: sneak-blind suppresses a fresh sneaking player');
+  assert(!suppressForSneakBlind(slimeAb, { sneaking: true, engagedOnPlayer: true, targetIsPlayer: true }), 'Ability943: sneak-blind never suppresses a held fight');
+  assert(!suppressForSneakBlind(slimeAb, { sneaking: false, engagedOnPlayer: false, targetIsPlayer: true }), 'Ability943: sneak-blind needs an actually sneaking player');
+  assert(!suppressForSneakBlind(slimeAb, { sneaking: true, engagedOnPlayer: false, targetIsPlayer: false }), 'Ability943: sneak-blind never suppresses NPC fights');
+  // Tether clamp: inside returns the same reference; outside scales to the radius.
+  const home = { x: 0, y: 0 };
+  const inside = { x: 9, y: 0 };
+  assert(clampToTether(inside, home, 15) === inside, 'Ability943: tether leaves an inside position untouched');
+  const clamped = clampToTether({ x: 30, y: 0 }, home, 15);
+  assert(Math.abs(clamped.x - 15) < 1e-9 && Math.abs(clamped.y) < 1e-9, 'Ability943: tether pulls an outside position to the radius');
+  assert(clampToTether({ x: 30, y: 0 }, home, 0).x === 30, 'Ability943: no tether means no clamp');
+  assert(clampToTether({ x: 30, y: 0 }, undefined, 15).x === 30, 'Ability943: no spawn means no clamp');
+  // Acquisition with per-kind ranges: a dragon holds its lock to 60u
+  // and acquires at 32u; the globals still hold for unassigned kinds.
+  const dragonAb = behaviorForCreature('dragon').abilities;
+  const held = chooseCreatureTarget({ creaturePos: { x: 0, y: 0 }, current: { kind: 'player' }, playerPos: { x: 50, y: 0 }, npcs: [], leashRange: dragonAb.leashRange, acquireRange: dragonAb.acquireRange });
+  assert(held?.kind === 'player', 'Ability943: dragon holds its player lock at 50u');
+  const dropped = chooseCreatureTarget({ creaturePos: { x: 0, y: 0 }, current: { kind: 'player' }, playerPos: { x: 61, y: 0 }, npcs: [], leashRange: dragonAb.leashRange, acquireRange: dragonAb.acquireRange });
+  assert(dropped === null, 'Ability943: dragon drops its lock past 60u');
+  const acquired = chooseCreatureTarget({ creaturePos: { x: 0, y: 0 }, current: null, playerPos: { x: 30, y: 0 }, npcs: [], leashRange: dragonAb.leashRange, acquireRange: dragonAb.acquireRange });
+  assert(acquired?.kind === 'player', 'Ability943: dragon acquires a player at 30u');
+  const notAcquired = chooseCreatureTarget({ creaturePos: { x: 0, y: 0 }, current: null, playerPos: { x: 30, y: 0 }, npcs: [] });
+  assert(notAcquired === null, 'Ability943: globals still gate an unassigned kind at 24u');
+  // updateGoat movement knobs: suppression holds an idle creature,
+  // never blocks flight, and chase/flee speeds move the right distance.
+  const goatBase: GoatAIEntity = { position: { x: 0, y: 0 }, facing: 'right', state: 'idle', disposition: 'aggressive', hp: 100, maxHp: 100, attackCooldown: 0, attackTimer: 0, attackHitApplied: false, hurtTimer: 0, moving: false, attacking: false };
+  const suppressed = updateGoat(goatBase, { x: 10, y: 0 }, 'right', [goatBase], 1000, { suppressEngagement: true });
+  assert(suppressed.goat.state === 'idle' && suppressed.goat.position.x === 0 && !suppressed.attackHit, 'Ability943: suppressed idle creature holds still');
+  const fleeing = updateGoat({ ...goatBase, hp: 10 }, { x: 10, y: 0 }, 'right', [{ ...goatBase, hp: 10 }], 1000, { suppressEngagement: true, fleeSpeed: 3.5 });
+  assert(fleeing.goat.fleeing === true && fleeing.goat.position.x < 0, 'Ability943: suppression never blocks flight');
+  const chased = updateGoat(goatBase, { x: 20, y: 0 }, 'right', [goatBase], 1000, { chaseSpeed: 8 });
+  assert(Math.abs(chased.goat.position.x - 8) < 1e-9, 'Ability943: chase speed 8 moves 8u in one second');
+  const chasedDefault = updateGoat(goatBase, { x: 20, y: 0 }, 'right', [goatBase], 1000, {});
+  assert(Math.abs(chasedDefault.goat.position.x - 4) < 1e-9, 'Ability943: no chase speed means the old 4 u/s');
 }
 
 // ---- 13a1c. NPC morality levels (BUILD 923) ----

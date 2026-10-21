@@ -1,6 +1,6 @@
 {
-  "build": "942",
-  "note": "Spells now run on a formula grammar instead of hardcoded numbers: every spell effect is a base value plus a numbered formula, so damage, range, and armor scale by rule rather than by special case. Ember Bolt still hits for 7 plus intellect at range 6, Veil Step still moves exactly 2 tiles, and Frost Ward still grants 3 armor — none of those numbers changed. What did change is Frost Ward itself: it is now a real buff, so recasting it refreshes instead of stacking more armor, and the next wound removes the bonus along with the ward instead of leaving the armor on forever. The tavern beer buff still lasts 60 seconds.",
-  "timestamp": "2026-10-21T22:30:33.926Z",
-  "cacheBuster": "mvior7if"
+  "build": "943",
+  "note": "Monsters now carry special abilities: wolves snap twice per attack, bandits land triple dagger strikes, ogres and trolls fly into a rage when badly hurt and hit harder and move faster, and dragons strike four times, hunt you across a wider territory, and ignore townsfolk to come for you alone. Slimes stay close to home and never notice a sneaking player, spiders also ignore sneaking prey, and rats, bats, snakes, and deer flee faster than before. Rampage is not in: the game has no multi-target melee to build it on, and no effect immunities exist yet because nothing overworld slows, stuns, or fears anything.",
+  "timestamp": "2026-10-21T22:54:09.088Z",
+  "cacheBuster": "mvipljgh"
 }

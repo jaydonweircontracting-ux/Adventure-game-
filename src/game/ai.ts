@@ -93,6 +93,19 @@ export type UpdateGoatOpts = {
     fleeHpRatio?: number;
     canFlee?: boolean;
   };
+  /**
+   * BUILD 943: EQEmu ability movement knobs, resolved by the caller
+   * from the kind's ability block. chaseSpeed replaces GOAT_CHASE_SPEED
+   * in the chase and return-home branches (enraged creatures run
+   * faster); fleeSpeed replaces GOAT_FLEE_SPEED in the flee branch;
+   * suppressEngagement holds an UNENGAGED creature idle (sneak-blind
+   * kinds facing a sneaking player). All default to the old behavior
+   * when omitted — a caller that passes nothing gets byte-identical
+   * movement.
+   */
+  chaseSpeed?: number;
+  fleeSpeed?: number;
+  suppressEngagement?: boolean;
 };
 
 // Resolve a desired move against solid geometry. Tries the full move first,
@@ -187,10 +200,20 @@ export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint,
   const canFlee = opts?.behavior?.canFlee ?? true;
   const lowHealth = canFlee && goat.hp / Math.max(1, goat.maxHp) <= fleeRatio;
   if (lowHealth) {
-    const fled = moveAwayFrom(goat.position, player, GOAT_FLEE_SPEED, deltaMs);
+    const fled = moveAwayFrom(goat.position, player, opts?.fleeSpeed ?? GOAT_FLEE_SPEED, deltaMs);
     const clamped = clampToHomeRange(fled, goat.spawnPosition, goat.roamRadius);
     const { position, moved } = resolveCollisionMove(goat.position, clamped, opts?.isBlocked);
     return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(player, position), moving: moved, attacking: false, fleeing: true }, attackHit: false };
+  }
+  // BUILD 943: aggro immunity — an unengaged creature that must not
+  // engage (a sneak-blind kind facing a sneaking player) holds idle.
+  // Engaged creatures (chase/attack) are never suppressed: a held
+  // engagement is never dropped by an immunity, mirroring the 933
+  // sneak rule. This sits AFTER the flee branch, so a fleeing creature
+  // still flees under suppression, and only ever gates
+  // idle-to-chase/attack transitions (hurt/dead returned above).
+  if (opts?.suppressEngagement && (goat.state === 'idle' || goat.state === 'hurt')) {
+    return { goat: { ...goat, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, moving: false, attacking: false, fleeing: false }, attackHit: false };
   }
   if (goat.state === 'attack') {
     const attackTimer = goat.attackTimer - deltaMs;
@@ -205,7 +228,7 @@ export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint,
   if (distance <= (opts?.chaseRange ?? GOAT_CHASE_RANGE)) {
     // Give up the chase when the player lures the goat out of its territory.
     if (shouldReturnHome(goat, player) && goat.spawnPosition) {
-      const homePosition = moveTowards(goat.position, goat.spawnPosition, GOAT_CHASE_SPEED, deltaMs);
+      const homePosition = moveTowards(goat.position, goat.spawnPosition, opts?.chaseSpeed ?? GOAT_CHASE_SPEED, deltaMs);
       const clamped = clampToHomeRange(homePosition, goat.spawnPosition, goat.roamRadius);
       const { position, moved } = resolveCollisionMove(goat.position, clamped, opts?.isBlocked);
       return { goat: { ...goat, position, state: 'idle', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(position, goat.spawnPosition), moving: moved, attacking: false, fleeing: false }, attackHit: false };
@@ -225,7 +248,7 @@ export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint,
       const d = Math.hypot(dx, dy);
       return d > 0 && d < 6 ? { x: force.x + dx / d * (6 - d), y: force.y + dy / d * (6 - d) } : force;
     }, { x: 0, y: 0 });
-    const chasedPosition = moveTowards(goat.position, player, GOAT_CHASE_SPEED, deltaMs, separation);
+    const chasedPosition = moveTowards(goat.position, player, opts?.chaseSpeed ?? GOAT_CHASE_SPEED, deltaMs, separation);
     const rangedPosition = clampToHomeRange(chasedPosition, goat.spawnPosition, goat.roamRadius);
     // BUILD 934: preferred fight range for this target (player targets
     // only — callers leave it undefined for NPC targets so the 1.6

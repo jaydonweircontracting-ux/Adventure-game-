@@ -89,6 +89,16 @@ export type ChooseCreatureTargetArgs = {
    *  acquisition to SNEAK_CREATURE_ACQUIRE_RANGE; a held player lock is
    *  never dropped by this flag (the lock-hold branch below ignores it). */
   playerSneaking?: boolean;
+  /**
+   * BUILD 943: per-kind range overrides (EQEmu leash/chase-distance
+   * abilities, resolved by the caller from the kind's behavior block).
+   * Default to the globals when omitted, so every pre-943 caller is
+   * unchanged. Callers must pass leashRange >= acquireRange (the
+   * ability sweep asserts it) — a creature must never acquire a
+   * victim it instantly drops for being past its leash.
+   */
+  acquireRange?: number;
+  leashRange?: number;
 };
 
 /**
@@ -96,19 +106,22 @@ export type ChooseCreatureTargetArgs = {
  * Returns null when no victim is in acquire range and no valid lock exists.
  */
 export function chooseCreatureTarget(args: ChooseCreatureTargetArgs): CreatureTargetChoice | null {
-  const { creaturePos, current, playerPos, npcs, playerSneaking = false } = args;
+  const {
+    creaturePos, current, playerPos, npcs, playerSneaking = false,
+    acquireRange = CREATURE_ACQUIRE_RANGE, leashRange = CREATURE_LEASH_RANGE,
+  } = args;
 
   // Distance to the current lock, or null when the lock is broken
   // (target gone, or beyond the leash).
   let currentDist: number | null = null;
   if (current?.kind === 'player' && playerPos) {
     const d = dist(creaturePos, playerPos);
-    if (d <= CREATURE_LEASH_RANGE) currentDist = d;
+    if (d <= leashRange) currentDist = d;
   } else if (current?.kind === 'npc') {
     const locked = npcs.find((c) => c.npcId === current.npcId);
     if (locked) {
       const d = dist(creaturePos, locked.position);
-      if (d <= CREATURE_LEASH_RANGE) currentDist = d;
+      if (d <= leashRange) currentDist = d;
     }
   }
 
@@ -130,7 +143,7 @@ export function chooseCreatureTarget(args: ChooseCreatureTargetArgs): CreatureTa
     // by sneak (this branch returns `current` untouched otherwise).
     const bestRange = best?.choice.kind === 'player' && playerSneaking
       ? SNEAK_CREATURE_ACQUIRE_RANGE
-      : CREATURE_ACQUIRE_RANGE;
+      : acquireRange;
     if (best && best.d <= bestRange && best.d < currentDist * CREATURE_SWITCH_RATIO) {
       return best.choice;
     }
@@ -147,14 +160,14 @@ export function chooseCreatureTarget(args: ChooseCreatureTargetArgs): CreatureTa
   // re-inclusion required strictly closer.
   const playerD = playerPos ? dist(creaturePos, playerPos) : null;
   const playerInRange = playerD !== null
-    && playerD <= (playerSneaking ? SNEAK_CREATURE_ACQUIRE_RANGE : CREATURE_ACQUIRE_RANGE);
+    && playerD <= (playerSneaking ? SNEAK_CREATURE_ACQUIRE_RANGE : acquireRange);
   let npcBest: { npcId: string; d: number } | null = null;
   for (const c of npcs) {
     if (current?.kind === 'npc' && current.npcId === c.npcId) continue;
     const d = dist(creaturePos, c.position);
     if (!npcBest || d < npcBest.d) npcBest = { npcId: c.npcId, d };
   }
-  const npcInRange = npcBest !== null && npcBest.d <= CREATURE_ACQUIRE_RANGE;
+  const npcInRange = npcBest !== null && npcBest.d <= acquireRange;
   if (playerInRange && npcInRange) {
     const playerWins = current?.kind === 'player' ? playerD! < npcBest!.d : playerD! <= npcBest!.d;
     return playerWins ? { kind: 'player' } : { kind: 'npc', npcId: npcBest!.npcId };

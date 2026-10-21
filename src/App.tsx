@@ -121,6 +121,7 @@ import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type Ele
 import { ensureKitTileset, onKitTilesetLoaded } from '@/game/kitAssets';
 import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS, GOAT_CHASE_RANGE, gearForMonster, bonesForMonster } from '@/game/ai';
 import { behaviorForCreature, preferredRangeFor, shouldStand, shouldRetarget, voiceLine } from '@/game/creatureBehavior';
+import { multiStrikeCount, isEnraged, enragedDamageMult, enragedChaseSpeed, clampToTether, suppressForSneakBlind } from '@/game/creatureAbilities';
 // BUILD 935: two-stage mitigation + element percents + immunities + ranged falloff.
 import { mitigateDamage, mitigationForCreature, creatureDefenseForLevel, creatureArmorForLevel, playerArmorForRoll, playerResistPercents, rangedHitChance, creatureArcherSkill, normalizeRangedSkill } from '@/game/mitigation';
 // BUILD 938: creature codex / bestiary (Tibia item 5) — kill counts, tiers, charm total.
@@ -159,7 +160,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '942';
+const BUILD_NUMBER = '943';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -182,6 +183,7 @@ const BUILD_NOTES: Record<string, string> = {
   '940': 'Quests grew a task shell: six quests are now multi-part tasks you can work on in any order — guard the caravan to Greenfield and Oakrest, gather the three Aldorian seals, and more. The rat cellar only counts kills in Mosslight itself, the caravan run repeats every 30 days and the rat cellar every 14, and finishing a task pays gold, XP, and town standing at once. Your progress on converted quests carries over untouched. Skill and spell objectives are not in yet — there is no skill-gain or overworld casting event for them to match — and shared party tasks are not built, since this is a single-player game.',
   '941': 'Alternate Advancement is here: kills now also feed a separate AA pool — 20 even-match kills earn one AA point, weaker kills pay less, stronger pay more, trivial kills pay nothing. Spend points in the Skills panel on ranked abilities: Toughness, Heavy Blows, Deadeye, and Strong Back, each up to rank 5. Total spend earns display titles, from Wanderer up to Legend of the Wilds. Normal XP and levels are untouched, and there is no level cap to reach first — AA runs alongside levels from the start.',
   '942': 'Spells now run on a formula grammar instead of hardcoded numbers: every spell effect is a base value plus a numbered formula, so damage, range, and armor scale by rule rather than by special case. Ember Bolt still hits for 7 plus intellect at range 6, Veil Step still moves exactly 2 tiles, and Frost Ward still grants 3 armor — none of those numbers changed. What did change is Frost Ward itself: it is now a real buff, so recasting it refreshes instead of stacking more armor, and the next wound removes the bonus along with the ward instead of leaving the armor on forever. The tavern beer buff still lasts 60 seconds.',
+  '943': 'Monsters now carry special abilities: wolves snap twice per attack, bandits land triple dagger strikes, ogres and trolls fly into a rage when badly hurt and hit harder and move faster, and dragons strike four times, hunt you across a wider territory, and ignore townsfolk to come for you alone. Slimes stay close to home and never notice a sneaking player, spiders also ignore sneaking prey, and rats, bats, snakes, and deer flee faster than before. Rampage is not in: the game has no multi-target melee to build it on, and no effect immunities exist yet because nothing overworld slows, stuns, or fears anything.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
   '925': 'Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported',
@@ -8089,7 +8091,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     let choice = creatureTargetsRef.current.get(key) ?? null;
     const now = performance.now();
     if (now >= (creatureAcquireAtRef.current.get(key) ?? 0)) {
-      const candidates = townsfolkRef.current
+      // BUILD 943: per-kind ability ranges + aggro immunities. An
+      // ignoreNpcVictims kind never sees townsfolk candidates (player
+      // only); a sneak-blind kind facing a sneaking player it has not
+      // already locked never sees the player either — but a HELD player
+      // lock is never dropped by sneak-blindness (mirrors 933).
+      const behavior = behaviorForCreature(creature.kind);
+      const abilities = behavior.abilities;
+      const candidates = abilities.ignoreNpcVictims ? [] : townsfolkRef.current
         .filter((n) => !n.indoors && !isNpcDead(n, tick) && !isNpcJailed(n, tick))
         .map((n) => ({ npcId: n.id, position: n.position }));
       // BUILD 933: sneaking gates fresh player acquisition to 12u; a held
@@ -8101,11 +8110,15 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       // unchanged 915/933 acquisition above, so retargeting can never
       // pick a victim the normal rules would not, and never widens
       // sneak ranges or the guard witness radius.
-      const behavior = behaviorForCreature(creature.kind);
       const lastRetarget = creatureRetargetAtRef.current.get(key) ?? 0;
       const hadLock = choice !== null;
       if (!hadLock || shouldRetarget(behavior, key, now, lastRetarget)) {
-        choice = chooseCreatureTarget({ creaturePos: creature.position, current: choice, playerPos, npcs: candidates, playerSneaking: sneakingRef.current });
+        // BUILD 943: sneak-blindness hides a sneaking player from FRESH
+        // acquisition only (a held player lock keeps its playerPos);
+        // per-kind acquire/leash ranges replace the globals.
+        const heldPlayerLock = choice?.kind === 'player';
+        const sneakBlindActive = abilities.sneakBlind && sneakingRef.current && !heldPlayerLock;
+        choice = chooseCreatureTarget({ creaturePos: creature.position, current: choice, playerPos: sneakBlindActive ? null : playerPos, npcs: candidates, playerSneaking: sneakingRef.current, acquireRange: abilities.acquireRange, leashRange: abilities.leashRange });
         if (choice) creatureTargetsRef.current.set(key, choice);
         else creatureTargetsRef.current.delete(key);
         creatureRetargetAtRef.current.set(key, now);
@@ -9294,13 +9307,16 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const goatTargetIsPlayer = targetInfo.choice.kind === 'player';
           const goatUsesAcquisition = goat.disposition === 'aggressive' && currentChunk.x === TOWNSFOLK_CHUNK.x && currentChunk.y === TOWNSFOLK_CHUNK.y;
           const goatEngagedOnPlayer = goatTargetIsPlayer && (goatUsesAcquisition ? targetInfo.playerLocked : (goat.state === 'chase' || goat.state === 'attack'));
-          const goatChaseRange = sneakEngagementRange(sneakingRef.current, goatEngagedOnPlayer, GOAT_CHASE_RANGE);
           // BUILD 934: per-kind behavior. Preferred range applies to
           // player targets only (goats are never ranged); NPC targets
           // keep the 1.6 retaliation standoff via meleeStandOff.
+          // BUILD 943: per-kind chase range replaces the global gate;
+          // abilities ride alongside the behavior block.
           const goatBehavior = behaviorForCreature(goat.kind);
+          const goatAbilities = goatBehavior.abilities;
+          const goatChaseRange = sneakEngagementRange(sneakingRef.current, goatEngagedOnPlayer, goatAbilities.chaseRange);
           const goatKey = creatureTargetKey('goat', goat.id);
-          const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, threatLevel: targetInfo.choice.kind === 'player' ? playerLevelRef.current : undefined }, targetInfo.position, targetInfo.facing, currentGoats, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk), meleeStandOff: targetInfo.choice.kind === 'npc' ? 1.6 : undefined, chaseRange: goatChaseRange, behavior: { preferredRange: targetInfo.choice.kind === 'player' ? preferredRangeFor(goatBehavior, false) : undefined, stand: shouldStand(goatBehavior, goatKey, now), fleeHpRatio: goatBehavior.fleeHpRatio, canFlee: goatBehavior.canFlee } });
+          const result = updateGoat({ ...goat, state: goat.state ?? 'idle', hurtTimer: goat.hurtTimer ?? 0, attackTimer: goat.attackTimer ?? 0, attackHitApplied: goat.attackHitApplied ?? false, threatLevel: targetInfo.choice.kind === 'player' ? playerLevelRef.current : undefined }, targetInfo.position, targetInfo.facing, currentGoats, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk), meleeStandOff: targetInfo.choice.kind === 'npc' ? 1.6 : undefined, chaseRange: goatChaseRange, chaseSpeed: enragedChaseSpeed(goatAbilities, goat.hp, goat.maxHp), fleeSpeed: goatAbilities.fleeSpeed, suppressEngagement: suppressForSneakBlind(goatAbilities, { sneaking: sneakingRef.current, engagedOnPlayer: goatEngagedOnPlayer, targetIsPlayer: goatTargetIsPlayer }), behavior: { preferredRange: targetInfo.choice.kind === 'player' ? preferredRangeFor(goatBehavior, false) : undefined, stand: shouldStand(goatBehavior, goatKey, now), fleeHpRatio: goatBehavior.fleeHpRatio, canFlee: goatBehavior.canFlee } });
           let next = result.goat;
           // BUILD 934: acquire = idle -> chase/attack; flee = fleeing flag
           // flips on. Transitions only — no per-frame bark spam.
@@ -9322,20 +9338,39 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             }
           }
           if (result.attackHit) {
-            const damage = goatAttackDamageForLevel(goat.level);
+            // BUILD 943: enrage multiplies the base hit; multi-strike
+            // lands one mitigated strike per mode count (single-strike
+            // output is byte-identical to before: same text, same total).
+            const baseDamage = goatAttackDamageForLevel(goat.level);
+            const goatEnraged = isEnraged(goatAbilities, goat.hp, goat.maxHp);
+            const damage = baseDamage * enragedDamageMult(goatAbilities, goat.hp, goat.maxHp);
+            const strikes = multiStrikeCount(goatAbilities);
             if (targetInfo.choice.kind === 'npc') {
-              npcHits.push({ npcId: targetInfo.choice.npcId, damage, creatureId: goat.id, creaturePos: { ...goat.position }, label: goat.kind ?? 'goat' });
+              // One npcHit per strike: each mitigates separately inside
+              // applyCreatureHitToNpc, and a killing first strike is
+              // idempotent (same tick, same respawn timer) for the rest.
+              for (let s = 0; s < strikes; s++) {
+                npcHits.push({ npcId: targetInfo.choice.npcId, damage, creatureId: goat.id, creaturePos: { ...goat.position }, label: goat.kind ?? 'goat' });
+              }
             } else {
               // BUILD 935: creature hits on the player route through the
               // pipeline — attacker element, player armor (converted),
               // player gear resists. Player defense is 0 (no stat).
               const goatMitigation = mitigationForCreature(goat.kind);
               const playerMitStats = totalEquipmentStats(equipmentRef.current);
-              const mitigatedGoatDamage = mitigateDamage({ raw: damage, attackerElement: goatMitigation.attackElement, percents: playerResistPercents(playerMitStats), immunities: [], defense: 0, armor: playerArmorForRoll(playerMitStats.armor ?? 0) }).damage;
-              damageTaken += mitigatedGoatDamage;
-              spawnCombatText('-' + mitigatedGoatDamage, currentPlayer, 'damage'); playCombatSound('shing', muted);
+              let totalDamage = 0;
+              for (let s = 0; s < strikes; s++) {
+                totalDamage += mitigateDamage({ raw: damage, attackerElement: goatMitigation.attackElement, percents: playerResistPercents(playerMitStats), immunities: [], defense: 0, armor: playerArmorForRoll(playerMitStats.armor ?? 0) }).damage;
+              }
+              damageTaken += totalDamage;
+              spawnCombatText('-' + totalDamage + (strikes > 1 ? ' ×' + strikes : '') + (goatEnraged ? ' RAGE' : ''), currentPlayer, 'damage'); playCombatSound('shing', muted);
             }
           }
+          // BUILD 943: tether clamp — a tethered creature's final
+          // position is pulled back inside its tether radius from its
+          // spawn. Blocked clamp targets keep the pre-clamp position.
+          const tetheredGoatPos = clampToTether(next.position, next.spawnPosition, goatAbilities.tetherRadius);
+          if (tetheredGoatPos !== next.position && !isFieldPositionBlocked(tetheredGoatPos, currentChunk)) next = { ...next, position: tetheredGoatPos };
           return next;
         });
         if (damageTaken > 0) {
@@ -9445,14 +9480,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const monsterTargetIsPlayer = targetInfo.choice.kind === 'player';
           const monsterUsesAcquisition = monster.disposition === 'aggressive' && currentChunk.x === TOWNSFOLK_CHUNK.x && currentChunk.y === TOWNSFOLK_CHUNK.y;
           const monsterEngagedOnPlayer = monsterTargetIsPlayer && (monsterUsesAcquisition ? targetInfo.playerLocked : (monster.state === 'chase' || monster.state === 'attack'));
-          const monsterChaseRange = sneakEngagementRange(sneakingRef.current, monsterEngagedOnPlayer, GOAT_CHASE_RANGE);
           // BUILD 934: per-kind behavior. Preferred range applies to
           // player targets only (ranged instances hold the ranged band
           // and keep volleying; NPC targets keep the 1.6 retaliation
           // standoff and close to melee per BUILD 914).
+          // BUILD 943: per-kind chase range replaces the global gate;
+          // abilities ride alongside the behavior block.
           const monsterBehavior = behaviorForCreature(monster.kind);
+          const monsterAbilities = monsterBehavior.abilities;
+          const monsterChaseRange = sneakEngagementRange(sneakingRef.current, monsterEngagedOnPlayer, monsterAbilities.chaseRange);
           const monsterKey = creatureTargetKey('monster', monster.id);
-          const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false, threatLevel: targetInfo.choice.kind === 'player' ? playerLevelRef.current : undefined }, targetInfo.position, targetInfo.facing, currentMonsters, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk), meleeStandOff: targetInfo.choice.kind === 'npc' ? 1.6 : undefined, chaseRange: monsterChaseRange, behavior: { preferredRange: targetInfo.choice.kind === 'player' ? preferredRangeFor(monsterBehavior, monster.ranged === true) : undefined, stand: shouldStand(monsterBehavior, monsterKey, now), fleeHpRatio: monsterBehavior.fleeHpRatio, canFlee: monsterBehavior.canFlee } });
+          const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false, threatLevel: targetInfo.choice.kind === 'player' ? playerLevelRef.current : undefined }, targetInfo.position, targetInfo.facing, currentMonsters, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk), meleeStandOff: targetInfo.choice.kind === 'npc' ? 1.6 : undefined, chaseRange: monsterChaseRange, chaseSpeed: enragedChaseSpeed(monsterAbilities, monster.hp, monster.maxHp), fleeSpeed: monsterAbilities.fleeSpeed, suppressEngagement: suppressForSneakBlind(monsterAbilities, { sneaking: sneakingRef.current, engagedOnPlayer: monsterEngagedOnPlayer, targetIsPlayer: monsterTargetIsPlayer }), behavior: { preferredRange: targetInfo.choice.kind === 'player' ? preferredRangeFor(monsterBehavior, monster.ranged === true) : undefined, stand: shouldStand(monsterBehavior, monsterKey, now), fleeHpRatio: monsterBehavior.fleeHpRatio, canFlee: monsterBehavior.canFlee } });
           let next = { ...result.goat, kind: monster.kind, id: monster.id, variant: monster.variant, ranged: monster.ranged, spawnPosition: monster.spawnPosition, roamRadius: monster.roamRadius, level: monster.level, maxHp: monster.maxHp, wanderSeed: monster.wanderSeed, hitFlash: monster.hitFlash, respawnTicks: monster.respawnTicks, fleeing: result.goat.fleeing } as MonsterState;
           // BUILD 934: acquire = idle -> chase/attack; flee = fleeing flag
           // flips on. Transitions only — no per-frame bark spam.
@@ -9466,16 +9504,27 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           }
           if (next.moving && isFieldPositionBlocked(next.position, currentChunk)) next = { ...next, position: monster.position, moving: false };
           if (result.attackHit) {
-            const damage = goatAttackDamageForLevel(monster.level);
+            // BUILD 943: enrage + multi-strike, same shape as the goat
+            // loop (melee only — archer volleys below stay single
+            // arrows even for multi-strike kinds).
+            const baseDamage = goatAttackDamageForLevel(monster.level);
+            const monsterEnraged = isEnraged(monsterAbilities, monster.hp, monster.maxHp);
+            const damage = baseDamage * enragedDamageMult(monsterAbilities, monster.hp, monster.maxHp);
+            const strikes = multiStrikeCount(monsterAbilities);
             if (targetInfo.choice.kind === 'npc') {
-              npcHits.push({ npcId: targetInfo.choice.npcId, damage, creatureId: monster.id, creaturePos: { ...monster.position }, label: monster.kind });
+              for (let s = 0; s < strikes; s++) {
+                npcHits.push({ npcId: targetInfo.choice.npcId, damage, creatureId: monster.id, creaturePos: { ...monster.position }, label: monster.kind });
+              }
             } else {
               // BUILD 935: same pipeline as the goat loop.
               const monsterMitigation = mitigationForCreature(monster.kind);
               const playerMitStats = totalEquipmentStats(equipmentRef.current);
-              const mitigatedMonsterDamage = mitigateDamage({ raw: damage, attackerElement: monsterMitigation.attackElement, percents: playerResistPercents(playerMitStats), immunities: [], defense: 0, armor: playerArmorForRoll(playerMitStats.armor ?? 0) }).damage;
-              damageTaken += mitigatedMonsterDamage;
-              spawnCombatText('-' + mitigatedMonsterDamage, currentPlayer, 'damage'); playCombatSound('shing', muted);
+              let totalDamage = 0;
+              for (let s = 0; s < strikes; s++) {
+                totalDamage += mitigateDamage({ raw: damage, attackerElement: monsterMitigation.attackElement, percents: playerResistPercents(playerMitStats), immunities: [], defense: 0, armor: playerArmorForRoll(playerMitStats.armor ?? 0) }).damage;
+              }
+              damageTaken += totalDamage;
+              spawnCombatText('-' + totalDamage + (strikes > 1 ? ' ×' + strikes : '') + (monsterEnraged ? ' RAGE' : ''), currentPlayer, 'damage'); playCombatSound('shing', muted);
             }
           }
           // Ranged NPCs (bandit/goblin/orc archers) loose arrows at range instead of closing to melee.
@@ -9495,6 +9544,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               window.setTimeout(() => setMonsters((current) => current.map((m) => m.id === archerId ? { ...m, attacking: false } : m)), 350);
             }
           }
+          // BUILD 943: tether clamp, same shape as the goat loop.
+          const tetheredMonsterPos = clampToTether(next.position, next.spawnPosition, monsterAbilities.tetherRadius);
+          if (tetheredMonsterPos !== next.position && !isFieldPositionBlocked(tetheredMonsterPos, currentChunk)) next = { ...next, position: tetheredMonsterPos };
           return next;
         });
         if (damageTaken > 0) {

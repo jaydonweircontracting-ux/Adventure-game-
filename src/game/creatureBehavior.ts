@@ -43,6 +43,9 @@
  * Behavior decisions are per-tick movement, never saved state.
  */
 
+import type { CreatureAbilities } from './creatureAbilities';
+import { resolveAbilities } from './creatureAbilities';
+
 export type CreatureVoiceTable = {
   acquire: string[];
   flee: string[];
@@ -65,6 +68,13 @@ export type CreatureBehavior = {
   /** Capability flag: false means the creature never flees. */
   canFlee: boolean;
   voices: CreatureVoiceTable;
+  /**
+   * BUILD 943: EQEmu special-ability overrides for this kind (partial —
+   * behaviorForCreature resolves them against engine defaults, so an
+   * omitted field means "exactly as before"). The 934 knobs above are
+   * untouched; abilities extend the block, never rewrite it.
+   */
+  abilities?: Partial<CreatureAbilities>;
 };
 
 /** 500ms stand buckets: rolls are stable within a frame burst, rotate twice a second. */
@@ -119,6 +129,7 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       flee: ['The wolf tucks its tail and bolts.', 'The wolf yelps and flees into the brush.'],
       death: ['The wolf collapses with a final whine.'],
     },
+    abilities: { multiStrike: 'flurry', leashRange: 48, chaseRange: 30, fleeSpeed: 2.5 },
   },
   direwolf: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.15,
@@ -128,6 +139,7 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       flee: ['The direwolf limps away, snarling.'],
       death: ['The direwolf falls with a shuddering howl.'],
     },
+    abilities: { multiStrike: 'triple', leashRange: 48, chaseRange: 30, enrageHpRatio: 0.3, enrageDamageMult: 1.5, enrageSpeedMult: 1.5 },
   },
   slime: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.8,
@@ -137,6 +149,7 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       flee: [],
       death: ['The slime collapses into a puddle.'],
     },
+    abilities: { sneakBlind: true, acquireRange: 12, leashRange: 24, chaseRange: 12, tetherRadius: 15 },
   },
   rat: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.3,
@@ -146,6 +159,7 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       flee: ['The rat squeaks in terror and scurries away.'],
       death: ['The rat goes still.'],
     },
+    abilities: { fleeSpeed: 3.5 },
   },
   bat: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.4,
@@ -155,6 +169,7 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       flee: ['The bat flutters away into the dark.'],
       death: ['The bat crumples to the ground.'],
     },
+    abilities: { fleeSpeed: 3 },
   },
   spider: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.6,
@@ -164,6 +179,7 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       flee: ['The spider scuttles back into the shadows.'],
       death: ['The spider curls up and goes still.'],
     },
+    abilities: { sneakBlind: true },
   },
   goblin: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.4,
@@ -182,6 +198,7 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       flee: ['The bandit turns tail and runs!'],
       death: ['The bandit falls, cursing.'],
     },
+    abilities: { multiStrike: 'triple' },
   },
   orc: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.6,
@@ -200,6 +217,7 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       flee: [],
       death: ['The skeleton collapses into a pile of bones.'],
     },
+    abilities: { leashRange: 48 },
   },
   troll: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.85,
@@ -209,6 +227,7 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       flee: ['The troll retreats, grumbling.'],
       death: ['The troll crashes to the ground.'],
     },
+    abilities: { enrageHpRatio: 0.25, enrageDamageMult: 1.5, enrageSpeedMult: 1.5 },
   },
   ogre: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.85,
@@ -218,6 +237,7 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       flee: ['The ogre lumbers off, nursing its wounds.'],
       death: ['The ogre falls like a tree.'],
     },
+    abilities: { multiStrike: 'flurry', enrageHpRatio: 0.25, enrageDamageMult: 1.5, enrageSpeedMult: 1.5 },
   },
   elf: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.5,
@@ -245,6 +265,7 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       flee: ['The snake slithers away.'],
       death: ['The snake goes limp.'],
     },
+    abilities: { fleeSpeed: 3 },
   },
   dragon: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.7,
@@ -254,6 +275,7 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       flee: ['The dragon beats a retreat, wings thundering.'],
       death: ['The dragon crashes down in a heap of scales.'],
     },
+    abilities: { multiStrike: 'quad', enrageHpRatio: 0.4, enrageDamageMult: 1.5, enrageSpeedMult: 1.5, leashRange: 60, acquireRange: 32, chaseRange: 36, ignoreNpcVictims: true },
   },
   soldier: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.6,
@@ -281,6 +303,7 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       flee: ['The deer bounds away in panic.'],
       death: [],
     },
+    abilities: { fleeSpeed: 4 },
   },
   boar: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.6,
@@ -302,10 +325,16 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
   },
 };
 
-/** Behavior block for a creature kind (case-insensitive). Unknown kinds get the default block. */
-export function behaviorForCreature(kind: string | undefined): CreatureBehavior {
-  if (!kind) return DEFAULT_BEHAVIOR;
-  return BEHAVIOR_TABLE[kind.toLowerCase()] ?? DEFAULT_BEHAVIOR;
+/**
+ * Behavior block for a creature kind (case-insensitive). Unknown kinds
+ * get the default block. BUILD 943: the returned block always carries
+ * FULLY RESOLVED abilities (overrides filled from engine defaults),
+ * so callers never see an undefined abilities field — an unassigned
+ * kind resolves to DEFAULT_ABILITIES and behaves exactly as before.
+ */
+export function behaviorForCreature(kind: string | undefined): CreatureBehavior & { abilities: CreatureAbilities } {
+  const base = !kind ? DEFAULT_BEHAVIOR : (BEHAVIOR_TABLE[kind.toLowerCase()] ?? DEFAULT_BEHAVIOR);
+  return { ...base, abilities: resolveAbilities(base.abilities) };
 }
 
 /** All shipped kind keys (for sweeps asserting table invariants). */
