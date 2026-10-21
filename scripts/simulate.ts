@@ -2,9 +2,11 @@
 // Run with: npx tsx scripts/simulate.ts
 import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLevelFor } from '../src/game/worldMap';
 // BUILD 927: authored dungeon vaults (DCSS .des grammar, original content).
-import { createGame, descend, step, MONSTER_ENTRIES, type GameState as DungeonGameState } from '../src/game/stoneSoupEngine';
+import { createGame, descend, step, buyFromDungeonShop, openDungeonShop, closeDungeonShop, dungeonShopDisplay, MONSTER_ENTRIES, type GameState as DungeonGameState } from '../src/game/stoneSoupEngine';
 import { VAULT_CATALOG, eligibleVaults } from '../src/game/dungeonVaults';
 import { UNIQUE_DEFS, eligibleUniques } from '../src/game/dungeonUniques';
+import { SHOP_VAULT_DEFS, SHOP_FLOOR_CHANCE, DUNGEON_SHOP_ITEM } from '../src/game/dungeonShops';
+import { SHOP_CATALOG } from '../src/game/shops';
 import { generateLayout, layoutRng, selectLayoutKind } from '../src/game/dungeonLayouts';
 import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai';
 import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '../src/game/combat';
@@ -2169,7 +2171,7 @@ console.log('Testing authored dungeon vaults (BUILD 927)...');
   let sawAny = false;
   for (let seed = 1; seed <= 200; seed += 1) {
     const state = createGame(seed);
-    assert(state.vaults.length <= 4, `Vault927: seed ${seed} places at most 4 vaults (3 regular + 1 unique chamber)`);
+    assert(state.vaults.length <= 5, `Vault927: seed ${seed} places at most 5 vaults (3 regular + 1 unique chamber + 1 shop)`);
     if (state.vaults.length > 1) sawMulti = true;
     if (state.vaults.length > 0) sawAny = true;
     const reachable = bfsReachable(state);
@@ -2199,8 +2201,12 @@ console.log('Testing authored dungeon vaults (BUILD 927)...');
       }
       // BUILD 929: unique chambers are vaults too — look them up in the
       // unique catalog when the regular catalog misses.
+      // BUILD 930: shop vaults are vaults too — their maps carry no
+      // monster/item glyphs, so the glyph counts below are 0, matching
+      // the fact that a shop spawns no vault monsters or items.
       const def = VAULT_CATALOG.find((d) => d.name === vault.name)
-        ?? UNIQUE_DEFS.find((d) => d.chamber.name === vault.name)?.chamber;
+        ?? UNIQUE_DEFS.find((d) => d.chamber.name === vault.name)?.chamber
+        ?? SHOP_VAULT_DEFS.find((d) => d.vault.name === vault.name)?.vault;
       assert(def !== undefined, `Vault927: seed ${seed} placed vault is in the catalog`);
       expectVaultMonsters += glyphCount(def, (c) => c >= '1' && c <= '9');
       expectVaultItems += glyphCount(def, (c) => c >= 'a' && c <= 'z');
@@ -2312,7 +2318,7 @@ console.log('Testing authored dungeon vaults (BUILD 927)...');
     eligibleVaults(floor).some((d) => d.name === v.name)
     || UNIQUE_DEFS.some((d) => d.chamber.name === v.name && floor >= d.minDepth && floor <= d.maxDepth);
   assert(deep.vaults.every((v) => vaultEligible929(2, v)), 'Vault927: floor-2 vaults are depth-eligible');
-  assert(deep.vaults.length <= 4, 'Vault927: floor-2 vault count capped (3 regular + 1 unique chamber)');
+  assert(deep.vaults.length <= 5, 'Vault927: floor-2 vault count capped (3 regular + 1 unique chamber + 1 shop)');
   const stairs2 = stairsCell(deep)!;
   deep.player.x = stairs2.x;
   deep.player.y = stairs2.y;
@@ -2623,6 +2629,207 @@ console.log('Testing named dungeon uniques (BUILD 929)...');
     killed = true;
   }
   assert(killed, 'Unique929: a floor-1 unique could be killed in some seed');
+}
+
+// ---- 13a1j. Dungeon shop vaults (BUILD 930) ----
+// DCSS shop vaults, portable asset only (the pattern: a vault centered
+// on a shop, KFEAT s = any shop). Original Ember Vault shops, wired to
+// the EXISTING stall ledger (buyFromStall) and SHOP_CATALOG prices —
+// no invented prices, no new currency, no new economy.
+console.log('Testing dungeon shop vaults (BUILD 930)...');
+{
+  const WALKABLE930 = new Set(['floor', 'door', 'stairs', 'altar', 'water']);
+  const bfs930 = (state: DungeonGameState) => {
+    const seen = new Set<string>([`${state.player.x}:${state.player.y}`]);
+    const queue = [{ x: state.player.x, y: state.player.y }];
+    while (queue.length > 0) {
+      const cur = queue.pop()!;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const tile = state.tiles[cur.y + dy]?.[cur.x + dx];
+        if (!tile || !WALKABLE930.has(tile.kind)) continue;
+        const k = `${tile.x}:${tile.y}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        queue.push({ x: tile.x, y: tile.y });
+      }
+    }
+    return seen;
+  };
+  const stairs930 = (state: DungeonGameState) => {
+    for (const row of state.tiles) for (const tile of row) if (tile.kind === 'stairs') return tile;
+    return null;
+  };
+  const descendOnce930 = (state: DungeonGameState) => {
+    const st = stairs930(state);
+    assert(st !== null, 'Shop930: stairs exist before descend');
+    state.player.x = st.x;
+    state.player.y = st.y;
+    state.player.hp = state.player.maxHp = 1000;
+    descend(state);
+  };
+
+  // Catalog shape: 2 original shops, distinct keepers/names, goods
+  // priced exactly at the catalog's buyPrices, relic never sold.
+  assert(SHOP_VAULT_DEFS.length === 2, 'Shop930: two shop vault defs');
+  assert(SHOP_FLOOR_CHANCE === 0.75, 'Shop930: shop floor chance 0.75');
+  const keepers930 = SHOP_VAULT_DEFS.map((d) => d.keeperName);
+  assert(new Set(keepers930).size === 2, 'Shop930: keeper names distinct');
+  assert(new Set(SHOP_VAULT_DEFS.map((d) => d.shopName)).size === 2, 'Shop930: shop names distinct');
+  for (const def of SHOP_VAULT_DEFS) {
+    assert(def.vault.tags.includes('shop'), `Shop930: ${def.id} vault tagged shop`);
+    assert(def.vault.minDepth === 1, `Shop930: ${def.id} may appear on floor 1`);
+    assert(!def.goods.some((g) => g.key === 'swords' || g.key === 'bow'), `Shop930: ${def.id} sells no weapons`);
+    for (const g of def.goods) {
+      assert(g.key === 'healthPotion' || g.key === 'corn', `Shop930: ${def.id} sells only catalog consumables (${g.key})`);
+      assert(g.stock > 0, `Shop930: ${def.id} ${g.key} opens with stock`);
+    }
+    const width930 = def.vault.map[0].length;
+    assert(def.vault.map.every((row) => row.length === width930), `Shop930: ${def.id} map rectangular`);
+  }
+  // Prices ARE the catalog's; display text is the DUNGEON item's.
+  assert(DUNGEON_SHOP_ITEM.healthPotion === 'potion', 'Shop930: healthPotion maps to the dungeon potion');
+  assert(DUNGEON_SHOP_ITEM.corn === 'food', 'Shop930: corn maps to the dungeon ration');
+  assert(dungeonShopDisplay('healthPotion').name === 'Vermilion potion', 'Shop930: potion display is the dungeon item, not the catalog label');
+  assert(dungeonShopDisplay('corn').name === 'Iron ration', 'Shop930: ration display is the dungeon item, not the catalog label');
+  assert(dungeonShopDisplay('healthPotion').description === 'Restore 10 health.', 'Shop930: potion display never claims the catalog 50% heal');
+
+  // Placement sweep: at most 1 shop per floor, keeper on a floor cell
+  // inside its vault rect, no rect overlaps, reachability holds.
+  let shopFloors930 = 0;
+  let totalFloors930 = 0;
+  let sawShop930 = false;
+  for (let seed = 1; seed <= 200; seed += 1) {
+    const state = createGame(seed);
+    for (let floor = 1; floor <= 3; floor += 1) {
+      if (floor > 1) descendOnce930(state);
+      assert(state.floor === floor, `Shop930: seed ${seed} reaches floor ${floor}`);
+      totalFloors930 += 1;
+      assert(state.shops.length <= 1, `Shop930: seed ${seed} floor ${floor} has at most one shop`);
+      assert(state.activeShopId === null, `Shop930: seed ${seed} floor ${floor} starts with no open shop`);
+      if (state.shops.length === 1) {
+        shopFloors930 += 1;
+        sawShop930 = true;
+        const shop = state.shops[0];
+        const record = state.vaults.find((v) => v.name === shop.vaultName);
+        assert(record !== undefined, `Shop930: seed ${seed} floor ${floor} shop vault joins state.vaults`);
+        assert(shop.x >= record!.x && shop.x < record!.x + record!.width && shop.y >= record!.y && shop.y < record!.y + record!.height, `Shop930: seed ${seed} floor ${floor} keeper stands inside its vault rect`);
+        assert(state.tiles[shop.y][shop.x].kind === 'floor', `Shop930: seed ${seed} floor ${floor} keeper stands on a floor cell`);
+        assert(!state.monsters.some((m) => m.x === shop.x && m.y === shop.y), `Shop930: seed ${seed} floor ${floor} no monster shares the keeper tile`);
+        const reach = bfs930(state);
+        assert(reach.has(`${shop.x}:${shop.y}`), `Shop930: seed ${seed} floor ${floor} keeper cell reachable by tile kind`);
+        const stairs = stairs930(state);
+        assert(stairs !== null && reach.has(`${stairs.x}:${stairs.y}`), `Shop930: seed ${seed} floor ${floor} stairs reachable with a shop placed`);
+        // No shop rect overlaps any other vault rect.
+        for (const other of state.vaults) {
+          if (other === record) continue;
+          assert(!(record!.x < other.x + other.width && record!.x + record!.width > other.x && record!.y < other.y + other.height && record!.y + record!.height > other.y), `Shop930: seed ${seed} floor ${floor} shop rect overlaps ${other.name}`);
+        }
+        // Stock prices are the catalog's buyPrices, verbatim.
+        for (const good of shop.def.goods) {
+          assert(good.buyPrice === SHOP_CATALOG[good.key].buyPrice, `Shop930: seed ${seed} ${good.key} priced at the catalog buyPrice`);
+        }
+        // Determinism + JSON round-trip of the shop itself.
+        const again = createGame(seed);
+        for (let f = 1; f < floor; f += 1) descendOnce930(again);
+        assert(JSON.stringify(again.shops) === JSON.stringify(state.shops), `Shop930: seed ${seed} floor ${floor} shops deterministic`);
+        const restored = JSON.parse(JSON.stringify(state.shops));
+        assert(JSON.stringify(restored) === JSON.stringify(state.shops), `Shop930: seed ${seed} floor ${floor} shops JSON-round-trip`);
+      }
+    }
+  }
+  assert(sawShop930, 'Shop930: at least one shop appears in the sweep');
+  const rate930 = shopFloors930 / totalFloors930;
+  assert(rate930 > 0.3 && rate930 < 0.95, `Shop930: shop rate sane (got ${rate930.toFixed(2)}, expected ~0.75 minus anchor failures)`);
+
+  // Transaction tests on a real floor-1 shop: atomic buy, depletion,
+  // unaffordable, not-sold, not-open, walk-away closes, descend resets.
+  let txSeed930 = -1;
+  for (let seed = 1; seed <= 200 && txSeed930 === -1; seed += 1) {
+    if (createGame(seed).shops.length === 1) txSeed930 = seed;
+  }
+  assert(txSeed930 !== -1, 'Shop930: a floor-1 shop exists in some seed');
+  {
+    const state = createGame(txSeed930);
+    const shop = state.shops[0];
+    // Stand beside the keeper: a shop-interior floor cell adjacent to it.
+    const neighbors930 = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+      .map(([dx, dy]) => ({ x: shop.x + dx, y: shop.y + dy }))
+      .filter((p) => state.tiles[p.y]?.[p.x]?.kind === 'floor');
+    assert(neighbors930.length > 0, 'Shop930: keeper has an adjacent floor cell');
+    const stand930 = neighbors930[0];
+    state.player.x = stand930.x;
+    state.player.y = stand930.y;
+    const turnBefore930 = state.turn;
+    step(state, Math.sign(shop.x - state.player.x), Math.sign(shop.y - state.player.y));
+    assert(state.activeShopId === shop.id, 'Shop930: stepping onto the keeper opens the shop');
+    assert(state.player.x === stand930.x && state.player.y === stand930.y, 'Shop930: stepping onto the keeper does NOT move the player');
+    assert(state.turn === turnBefore930, 'Shop930: opening a shop costs no turn');
+    assert(state.log.some((l) => l.includes(shop.keeperName)), 'Shop930: opening greets with the keeper name');
+    assert(!state.monsters.some((m) => m.x === shop.x && m.y === shop.y), 'Shop930: keeper is not a monster (unattackable by construction)');
+
+    // Atomic buy: gold - price AND inventory +1 AND stock -1 AND
+    // merchantGold + price, in one call; turn still frozen.
+    const goldBefore930 = state.player.gold;
+    const invBefore930 = state.player.inventory.length;
+    const cornBefore930 = shop.stock.stock.corn ?? 0;
+    assert(cornBefore930 > 0, 'Shop930: fixture shop sells corn');
+    buyFromDungeonShop(state, shop.id, 'corn');
+    assert(state.player.gold === goldBefore930 - SHOP_CATALOG.corn.buyPrice, 'Shop930: buy charges exactly the catalog price');
+    assert(state.player.inventory.length === invBefore930 + 1, 'Shop930: buy adds exactly one item');
+    assert(state.player.inventory[state.player.inventory.length - 1].name === 'Iron ration', 'Shop930: bought corn arrives as the dungeon ration');
+    assert((shop.stock.stock.corn ?? 0) === cornBefore930 - 1, 'Shop930: buy depletes stock by one');
+    assert(shop.stock.merchantGold === SHOP_CATALOG.corn.buyPrice, 'Shop930: buy conserves gold into merchantGold');
+    assert(state.turn === turnBefore930, 'Shop930: buying costs no turn');
+    assert(state.activeShopId === shop.id, 'Shop930: shop stays open after a buy');
+
+    // Depletion: buy the rest of the corn, then the next buy refuses
+    // with gold and inventory untouched.
+    while ((shop.stock.stock.corn ?? 0) > 0) buyFromDungeonShop(state, shop.id, 'corn');
+    assert((shop.stock.stock.corn ?? 0) === 0, 'Shop930: corn sells out');
+    const goldSoldOut930 = state.player.gold;
+    const invSoldOut930 = state.player.inventory.length;
+    buyFromDungeonShop(state, shop.id, 'corn');
+    assert(state.player.gold === goldSoldOut930 && state.player.inventory.length === invSoldOut930, 'Shop930: sold-out buy changes nothing');
+    assert(state.log.some((l) => l.includes('Sold out.')), 'Shop930: sold-out buy says so');
+
+    // Unaffordable: gold 2 cannot buy a 12g potion.
+    state.player.gold = 2;
+    const invPoor930 = state.player.inventory.length;
+    buyFromDungeonShop(state, shop.id, 'healthPotion');
+    assert(state.player.gold === 2 && state.player.inventory.length === invPoor930, 'Shop930: unaffordable buy changes nothing');
+    assert(state.log.some((l) => l.includes("You can't afford that.")), 'Shop930: unaffordable buy says so');
+
+    // Not sold: the shop never carried beer.
+    buyFromDungeonShop(state, shop.id, 'beer');
+    assert(state.player.gold === 2 && state.player.inventory.length === invPoor930, 'Shop930: not-sold buy changes nothing');
+    assert(state.log.some((l) => l.includes("They don't sell that.")), 'Shop930: not-sold buy says so');
+
+    // Not open: closing the shop blocks remote buying.
+    closeDungeonShop(state);
+    assert(state.activeShopId === null, 'Shop930: close clears the open shop');
+    buyFromDungeonShop(state, shop.id, 'corn');
+    assert(state.player.gold === 2 && state.player.inventory.length === invPoor930, 'Shop930: closed-shop buy changes nothing');
+
+    // Walk-away closes: reopen, then step to a floor cell.
+    openDungeonShop(state, shop.id);
+    assert(state.activeShopId === shop.id, 'Shop930: browse button path reopens the shop');
+    const away930 = neighbors930.find((p) => !(p.x === stand930.x && p.y === stand930.y)) ?? stand930;
+    state.player.x = stand930.x;
+    state.player.y = stand930.y;
+    step(state, Math.sign(away930.x - state.player.x), Math.sign(away930.y - state.player.y));
+    assert(state.activeShopId === null, 'Shop930: walking away closes the shop');
+
+    // Descend regenerates: new floor, no open shop, fresh shop state.
+    const oldShopId930 = shop.id;
+    const st = stairs930(state)!;
+    state.player.x = st.x;
+    state.player.y = st.y;
+    state.player.hp = state.player.maxHp = 1000;
+    descend(state);
+    assert(state.floor === 2, 'Shop930: descend reaches floor 2');
+    assert(state.activeShopId === null, 'Shop930: descend closes any open shop');
+    assert(state.shops.every((s) => s.id !== oldShopId930), 'Shop930: descend replaces the floor-1 shop (fresh state, no carried stock)');
+  }
 }
 
 console.log('Testing ambient market life (BUILD 694)...');

@@ -1,6 +1,6 @@
 {
-  "build": "929",
-  "note": "The Sunken Crypt dungeon now has named bosses: Grimmaw the Hollow Alpha, Mother Vexa the Ember Matron, Scribe Morvain Keeper of Bone, and Warden Karst the Last Warden. Each appears at most once per descent, guards a hand-crafted chamber, and drops bonus gold and a potion when it falls. Also fixed: one dungeon vault could wall off a corridor and strand the rooms behind it — vault placement now re-checks reachability after every vault it stamps",
-  "timestamp": "2026-10-21T06:33:54.929Z",
-  "cacheBuster": "mvhqky5t"
+  "build": "930",
+  "note": "The Sunken Crypt dungeon now has shops: Ember Provisions (Old Kess) and Cinder Apothecary (Vesper) sell potions and rations at the same prices as the town stalls. Walk up to a shopkeeper to browse — buying costs no turn, the keeper cannot be attacked or looted, and stock runs out as you buy. A new shop with fresh stock appears on each floor.",
+  "timestamp": "2026-10-21T06:50:07.620Z",
+  "cacheBuster": "mvhr5sp1"
 }
