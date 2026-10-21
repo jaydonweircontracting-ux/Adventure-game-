@@ -53,7 +53,7 @@ import { npcMorality, mayInitiateLethalAggression, moralityLine, moralityTier, d
 import { examineEntity } from '../src/game/examine';
 import { SHOP_CATALOG, createStallStock, type StallShopDef } from '../src/game/shops';
 import { variantLook } from '../src/game/iso/characterSystem';
-import { bountyForCrime, addCrimeToBounty, wantedLevel, emptyBounty } from '../src/game/bounty';
+import { bountyForCrime, addCrimeToBounty, wantedLevel, emptyBounty, bountyForTown, totalBounty, clearTownBounty, migrateBounty, townIdForChunk, createPendingReport, advancePendingReports } from '../src/game/bounty';
 import { pickpocketChance, resolvePickpocket } from '../src/game/pickpocket';
 import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } from '../src/game/landmarkGrid';
 import { elementalMultiplier, elementalInteraction, strongAgainst, ELEMENTS } from '../src/game/elements';
@@ -2009,6 +2009,91 @@ console.log('Testing NPC horse speed cap (BUILD 925)...');
   }
   assert(wildMax <= 2, `Wild horse max tick step ${wildMax} should be a slow wander`);
   assert(wildFar <= 20, `Wild horse wandered ${wildFar} from its anchor, should stay near it`);
+}
+
+// ---- 13a1f. Witness-driven per-town bounty (BUILD 926) ----
+// A witnessed crime posts NO bounty at crime time: it creates a pending
+// report, and the bounty posts only when a surviving witness reaches a
+// guard, in that guard's town. Amounts are unchanged from BUILD 524.
+// Also covers the defeat -> New Game restart leak at the state-shape
+// level: a fresh life is emptyBounty() (no towns at all), and pre-926
+// global-bucket saves migrate into Mosslight Crossing intact.
+console.log('Testing witness-driven per-town bounty (BUILD 926)...');
+{
+  // Town identity comes from the existing settlement landmarks.
+  assert(townIdForChunk({ x: 4, y: 7 }) === 'Mosslight Crossing', 'Bounty926: Mosslight chunk maps to Mosslight Crossing');
+  assert(townIdForChunk({ x: 8, y: 7 }) === 'Ironwood Southhold', 'Bounty926: Ironwood chunk maps to Ironwood Southhold');
+  assert(townIdForChunk({ x: 4, y: 8 }) === null, 'Bounty926: non-settlement chunk has no town');
+  assert(townIdForChunk({ x: 136, y: -12 }) === null, 'Bounty926: dungeon chunk is not a town');
+
+  // Amounts unchanged, now bucketed per town.
+  let b = emptyBounty();
+  b = addCrimeToBounty(b, 'm1', 5, 1, 3, 'Mosslight Crossing');
+  assert(bountyForTown(b, 'Mosslight Crossing') === 313, 'Bounty926: murder 1 witness still 313 in its town');
+  assert(bountyForTown(b, 'Ironwood Southhold') === 0, 'Bounty926: same crime is 0 in another town');
+  assert(totalBounty(b) === 313, 'Bounty926: total sums towns');
+  b = addCrimeToBounty(b, 'm2', 5, 1, 4, 'Ironwood Southhold');
+  assert(totalBounty(b) === 626, 'Bounty926: two towns sum');
+  assert(bountyForTown(b, 'Mosslight Crossing') === 313, 'Bounty926: first town untouched by second');
+
+  // Resolving one town clears only that town (jail/fine in Mosslight
+  // must not pardon Ironwood, and vice versa).
+  const cleared = clearTownBounty(b, 'Mosslight Crossing');
+  assert(bountyForTown(cleared, 'Mosslight Crossing') === 0, 'Bounty926: resolve clears its town');
+  assert(bountyForTown(cleared, 'Ironwood Southhold') === 313, 'Bounty926: resolve leaves other towns alone');
+  assert(clearTownBounty(cleared, 'Nowhere') === cleared, 'Bounty926: clearing a clean town is a no-op');
+
+  // Old-shape saves migrate into Mosslight Crossing (the only town
+  // guards ever acted in); new-shape passes through; garbage empties.
+  const migrated = migrateBounty({ amount: 400, crimeIds: ['old1'], lastCrimeDay: 7 });
+  assert(bountyForTown(migrated, 'Mosslight Crossing') === 400, 'Bounty926: old global amount migrates to Mosslight');
+  assert(migrated.towns['Mosslight Crossing'].crimeIds.includes('old1'), 'Bounty926: migrated crime ids kept');
+  const passthrough = migrateBounty({ towns: { 'Ironwood Southhold': { amount: 50, crimeIds: [], lastCrimeDay: 1 } } });
+  assert(bountyForTown(passthrough, 'Ironwood Southhold') === 50, 'Bounty926: new-shape save passes through');
+  assert(totalBounty(migrateBounty(null)) === 0, 'Bounty926: garbage save migrates to empty');
+  assert(totalBounty(migrateBounty({ amount: 0, crimeIds: [], lastCrimeDay: 0 })) === 0, 'Bounty926: zero old bounty migrates to empty');
+
+  // Pending reports: the witness-reaches-guard lifecycle.
+  const alive = new Set(['w1', 'w2', 'g1']);
+  const nearGuard = new Set<string>();
+  const isAlive = (id: string) => alive.has(id);
+  const canReach = (id: string) => nearGuard.has(id);
+  const report = createPendingReport('c9', 5, 2, 9, ['w1', 'w2'], 'Mosslight Crossing');
+  // No witness near a guard yet: stays pending, posts nothing.
+  let step = advancePendingReports([report], isAlive, canReach);
+  assert(step.completed.length === 0 && step.remaining.length === 1, 'Bounty926: no guard contact = still pending');
+  // One witness reaches a guard: completes exactly once.
+  nearGuard.add('w2');
+  step = advancePendingReports([report], isAlive, canReach);
+  assert(step.completed.length === 1 && step.remaining.length === 0, 'Bounty926: witness reaching guard completes the report');
+  assert(step.completed[0].townId === 'Mosslight Crossing', 'Bounty926: completion posts in the report town');
+  // Completed report posts through the normal path, same amount.
+  const posted = addCrimeToBounty(emptyBounty(), step.completed[0].crimeId, step.completed[0].severity, step.completed[0].witnessCount, step.completed[0].day, step.completed[0].townId);
+  assert(bountyForTown(posted, 'Mosslight Crossing') === 375, 'Bounty926: reported murder 2 witnesses posts 375');
+
+  // Every witness dies before reporting: dropped, no bounty, ever.
+  const doomed = createPendingReport('c10', 5, 1, 9, ['w1'], 'Mosslight Crossing');
+  alive.delete('w1');
+  step = advancePendingReports([doomed], isAlive, canReach);
+  assert(step.completed.length === 0 && step.remaining.length === 0, 'Bounty926: all witnesses dead = report dropped, no bounty');
+  // One witness dies, another lives but is nowhere near a guard: the
+  // report survives on the survivor (it completes only on guard contact).
+  const mixed = createPendingReport('c11', 3, 2, 9, ['w1', 'w2'], 'Mosslight Crossing');
+  alive.add('w2');
+  nearGuard.delete('w2');
+  step = advancePendingReports([mixed], isAlive, canReach);
+  assert(step.remaining.length === 1, 'Bounty926: surviving witness keeps the report alive');
+  // A guard witness reaches a guard trivially (is a guard).
+  const guardReport = createPendingReport('c12', 5, 1, 9, ['g1'], 'Mosslight Crossing');
+  step = advancePendingReports([guardReport], isAlive, (id) => id === 'g1');
+  assert(step.completed.length === 1, 'Bounty926: guard witness completes immediately');
+
+  // Cross-town guard indifference, at the decision layer: the guard
+  // encounter reads bountyForTown(own town), which is 0 for Ironwood
+  // while Mosslight holds 313 — so no encounter, no pursuit, no arrest.
+  const mossOnly = addCrimeToBounty(emptyBounty(), 'mx', 5, 1, 2, 'Mosslight Crossing');
+  assert(wantedLevel(bountyForTown(mossOnly, 'Ironwood Southhold')) === 0, 'Bounty926: Ironwood guards see a clean player');
+  assert(wantedLevel(bountyForTown(mossOnly, 'Mosslight Crossing')) === 2, 'Bounty926: Mosslight guards see a wanted player');
 }
 console.log('Testing ambient market life (BUILD 694)...');
 {
@@ -6315,13 +6400,15 @@ console.log('Testing examine system...');
   assert(bountyForCrime(1, 3) === 18, 'Bounty: minor crime scales with witnesses');
 
   let b = emptyBounty();
-  assert(b.amount === 0, 'Bounty: starts at 0');
+  assert(totalBounty(b) === 0, 'Bounty: starts at 0');
   assert(wantedLevel(0) === 0, 'Bounty: 0 = clean');
 
-  b = addCrimeToBounty(b, 'c1', 5, 2, 10);
-  assert(b.amount > 0, 'Bounty: increases after witnessed murder');
-  assert(b.crimeIds.includes('c1'), 'Bounty: tracks crime IDs');
-  assert(b.lastCrimeDay === 10, 'Bounty: tracks day');
+  // BUILD 926: same amounts, now bucketed per town.
+  b = addCrimeToBounty(b, 'c1', 5, 2, 10, 'Mosslight Crossing');
+  assert(bountyForTown(b, 'Mosslight Crossing') > 0, 'Bounty: increases after witnessed murder');
+  assert(b.towns['Mosslight Crossing'].crimeIds.includes('c1'), 'Bounty: tracks crime IDs');
+  assert(b.towns['Mosslight Crossing'].lastCrimeDay === 10, 'Bounty: tracks day');
+  assert(bountyForTown(b, 'Ironwood Southhold') === 0, 'Bounty: other town stays clean');
 
   assert(wantedLevel(49) === 0, 'Bounty: <50 = clean');
   assert(wantedLevel(50) === 1, 'Bounty: 50+ = suspicious');
@@ -6329,8 +6416,8 @@ console.log('Testing examine system...');
   assert(wantedLevel(500) === 3, 'Bounty: 500+ = dangerous');
 
   // Unwitnessed crime doesn't add bounty.
-  const b2 = addCrimeToBounty(emptyBounty(), 'c2', 5, 0, 10);
-  assert(b2.amount === 0, 'Bounty: unwitnessed murder = no bounty');
+  const b2 = addCrimeToBounty(emptyBounty(), 'c2', 5, 0, 10, 'Mosslight Crossing');
+  assert(totalBounty(b2) === 0, 'Bounty: unwitnessed murder = no bounty');
 }
 
 // BUILD 525: Pickpocketing.

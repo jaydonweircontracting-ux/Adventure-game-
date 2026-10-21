@@ -9,12 +9,12 @@ import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/i
 import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/iso/isoSprites';
 import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality, npcGold, adjustNPCGold, npcCrimeUrge, npcStoleToday, NPC_COMMITTED_THEFT, NPC_WAS_ARRESTED, NPC_MARRIED_PLAYER, NPC_DIVORCED_PLAYER } from './game/villageLife';
-import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
+import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance, WITNESS_RADIUS } from './game/crime';
 import { createBody, takeBodyLootSelection, type LootableBody } from './game/lootableBodies';
 import { wornGearBaseIds, lootedGearBaseIds, gearNameForBaseId, isKnownBaseId } from './game/npcGear';
 import { resolveNpcGearVisit, gearExamineLine, effectiveOwnedGear, effectiveWealthGoal } from './game/npcGearEconomy';
 import { moralityLine, npcMorality, mayInitiateLethalAggression, moralityTier } from './game/npcMorality';
-import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
+import { addCrimeToBounty, wantedLevel, emptyBounty, bountyForTown, totalBounty, clearTownBounty, migrateBounty, townIdForChunk, createPendingReport, advancePendingReports, type BountyState, type PendingReport } from './game/bounty';
 import { pickpocketChance, resolvePickpocket } from './game/pickpocket';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -147,7 +147,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '925';
+const BUILD_NUMBER = '926';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -156,6 +156,7 @@ const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game
 const BUILD_NOTES: Record<string, string> = {
   '922': 'Villagers now care about their gear: they want better weapons, save toward a gold goal, and buy upgrades at market stalls when they can afford them — a guard with a rusty sword will come home with a steel blade. They also sell spare gear back to stalls, but never at a cost to themselves: never their only weapon, never their last piece of armor, never the tool their job needs, and never a sale that leaves them worse equipped. Examine a villager to see what they want and what they are saving for, and watch for the ones doing well enough to enjoy the tavern life',
   '923': 'Villagers now have a sense of character: most folk will never start a lethal fight with another villager — only a rare unsettled few ever would. Guards, priests, and children never start one at all. Self-defense, guard duty, and creature fights are unchanged. Examine a villager to see what kind of character they are',
+  '926': 'Bounty is now witness-driven and per-town: killing someone with no surviving witness leaves no bounty at all, and when a witness does report you to a guard, the bounty is posted in that guard’s town only — guards in other towns will not come after you for it. A witness who dies before reaching a guard cannot report you, and a guard who sees the crime himself reports it on the spot. Also fixed: starting a New Game after the defeat screen no longer carries your old life with it — bounty, gear, quests, journal, reputation and explored map all reset exactly like a fresh start, instead of only resetting on a page refresh',
   '925': 'Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported',
   '924': 'Mosslight ground is alive now: flowers and grass tufts grow through the town at the same rate as the wild meadows — same flowers, same grass, on every town yard and square. Roads, farm plots, and doorways are untouched',
   '921': 'Dead NPCs now drop the weapons and armor they were actually wearing — a guard corpse holds its sword, breastplate, helmet and shield as real loot you can take and equip, not placeholder gold. Taking a piece visibly strips it off the corpse: loot the sword and the hand is empty, take everything and the body is bare of gear. Unlooted gear stays on the body through save and reload, and looted gear never comes back',
@@ -2681,6 +2682,11 @@ function roadArmsForChunk(chunk: Point): RoadArms {
 // derived from the live doorway rects + world-editor offsets, so townsfolk
 // homes follow houses the player moves.
 const TOWNSFOLK_CHUNK: Point = { x: 4, y: 7 };
+// BUILD 926: the town whose guards receive witness reports. All townsfolk
+// (witnesses and guards alike) live in this chunk, so a report completed
+// here posts its bounty in this settlement — derived from the landmark
+// table, never hardcoded to a name.
+const REPORT_TOWN = townIdForChunk(TOWNSFOLK_CHUNK) ?? 'Mosslight Crossing';
 function townsfolkAnchors(offsets: Record<string, Point>): TownsfolkAnchors {
   const doorways = buildingDoorwaysFor(TOWNSFOLK_CHUNK);
   const points: Record<string, TownsfolkPoint> = {};
@@ -4115,7 +4121,7 @@ function MiniMap({ chunk, position, onTap, mode = 'terrain', radarEntities = [] 
   );
 }
 
-function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, onResolveBounty, bounty, muted, onToggleMute, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number) => void; onResolveBounty: () => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
+function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, onResolveBounty, bounty, muted, onToggleMute, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number, townId: string) => void; onResolveBounty: (townId: string) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
   // BUILD 476: equipment damage bonus from found items.
   const equipmentDamageBonus = totalEquipmentStats(equipment).damage ?? 0;
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
@@ -5028,7 +5034,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             });
             townsfolkRef.current = updated;
             setTownsfolk(updated);
-            onCrimeCommitted(crime.id, crime.severity, witnesses.length, day);
+            // BUILD 926: no instant bounty — a pending witness report.
+            registerPlayerCrime(crime.id, crime.severity, witnesses, day);
           } catch { /* best-effort */ }
         }
       }
@@ -5396,8 +5403,40 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // per-NPC disposition (0-100) and the Mosslight wanted level. Both persist
   // in the save under the optional `dialogue` field.
   const [townsfolkDialogue, setTownsfolkDialogue] = useState<Townsperson | null>(null);
-  const [guardEncounter, setGuardEncounter] = useState<{ guardId: string; guardName: string; bounty: number } | null>(null);
+  const [guardEncounter, setGuardEncounter] = useState<{ guardId: string; guardName: string; bounty: number; townId: string } | null>(null);
   const guardCooldownUntilRef = useRef(0);
+  // BUILD 926: witness-driven bounty. A witnessed player crime posts NO
+  // bounty at crime time — it creates a pending report. The report completes
+  // when a surviving witness reaches a guard (or IS a guard); only then does
+  // onCrimeCommitted post the bounty, in the report's town. Reports are
+  // transient (ref-only, never serialized): a save/load drops them, the same
+  // rule as tap-move travel (BUILD 920). Memories still land immediately —
+  // the witness remembers at once, but the bounty waits for the report.
+  const pendingReportsRef = useRef<PendingReport[]>([]);
+  // BUILD 926 verification: what the report tick last did (kept for tests).
+  const reportDiagRef = useRef({ instanceId: Math.random().toString(36).slice(2, 8), lastAction: 'none', lastFolkCount: -1, completions: 0, drops: 0 });
+  const registerPlayerCrime = (crimeId: string, severity: number, witnesses: Array<{ npcId: string }>, day: number) => {
+    if (witnesses.length === 0) return; // no witnesses, no report, no bounty
+    const tickNow = brainRef.current?.worldCore.getClock().tick ?? 0;
+    const isGuardWitness = witnesses.some((x) => {
+      const w = townsfolkRef.current.find((n) => n.id === x.npcId);
+      return w && w.archetype === 'guard' && !w.indoors && !isNpcDead(w, tickNow) && !isNpcJailed(w, tickNow);
+    });
+    if (isGuardWitness) {
+      // A guard witness already knows: the report completes on the spot
+      // (same precedent as the BUILD 885 on-the-spot NPC-crime arrest).
+      onCrimeCommitted(crimeId, severity, witnesses.length, day, REPORT_TOWN);
+      return;
+    }
+    pendingReportsRef.current = [...pendingReportsRef.current, createPendingReport(crimeId, severity, witnesses.length, day, witnesses.map((x) => x.npcId), REPORT_TOWN)];
+  };
+  // Resolving a town's bounty (jail or fine) also drops that town's pending
+  // reports — otherwise a witness could re-post a bounty the player just
+  // paid off, and the "bounty is cleared" promise would be a lie.
+  const resolveTownBounty = (townId: string) => {
+    pendingReportsRef.current = pendingReportsRef.current.filter((r) => r.townId !== townId);
+    onResolveBounty(townId);
+  };
   const [dialogueTopic, setDialogueTopic] = useState<DialogueTopicId | null>(null);
   // BUILD 654: Free-text dialogue input.
   const [dialogueInput, setDialogueInput] = useState('');
@@ -5462,6 +5501,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     };
   }
   useEffect(() => { townsfolkRef.current = townsfolk; }, [townsfolk]);
+  // BUILD 926: bounty prop mirrored to a ref so test hooks (assigned once at
+  // mount) read the LIVE bounty instead of the first render's frozen value.
+  // Without this, getBountyForTest always reported the mount-time bounty.
+  const bountyRef = useRef(bounty);
+  useEffect(() => { bountyRef.current = bounty; }, [bounty]);
   // Carriage fast-travel network: physical stations/stops, driver dialogue,
   // travel state. Stations are deterministic (module cache); the dialogue and
   // in-progress travel live here.
@@ -5587,7 +5631,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const event = crimeMemoryEvent(crime); const importance = crimeMemoryImportance(crime);
       const updated = townsfolkRef.current.map((w) => (w.id === npc.id || witnesses.some((wit) => wit.npcId === w.id)) ? addNPCMemory(w, event, day, importance) : w);
       townsfolkRef.current = updated; setTownsfolk(updated);
-      if (witnesses.length > 0) onCrimeCommitted(crime.id, crime.severity, witnesses.length, day);
+      // BUILD 926: no instant bounty — a pending witness report.
+      registerPlayerCrime(crime.id, crime.severity, witnesses, day);
     } catch { /* crime consequences must not interrupt combat */ }
   };
   const [cornStalks, setCornStalks] = useState<CornStalk[]>(() => {
@@ -6047,7 +6092,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             fleeing: npc.fleeUntilTick !== undefined,
           };
         },
-        getBountyForTest: () => ({ ...bounty }),
+        getBountyForTest: () => ({ ...bountyRef.current, total: totalBounty(bountyRef.current) }),
+        // BUILD 926: pending witness reports (transient, never saved).
+        getPendingReportsForTest: () => pendingReportsRef.current.map((r) => ({ ...r, witnessIds: [...r.witnessIds] })),
+        getReportDiagForTest: () => ({ ...reportDiagRef.current }),
         // BUILD 685: current tutorial objective banner text (null when hidden).
         getObjectiveBanner: () => tutorialObjectiveText({
           dismissed: tutorialBannerDismissedRef.current,
@@ -6582,9 +6630,18 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 878: a wanted encounter is proximity-triggered, never attack-triggered.
   // Guards visibly sprint toward a witnessed-crime suspect; only the guard's
   // actual arrival opens the flee / surrender / fine prompt.
+  // BUILD 926: guards respond ONLY to their own town's bounty. The effect
+  // already runs only in the townsfolk chunk, so the town is REPORT_TOWN;
+  // a bounty posted in any other town never triggers these guards.
+  const reportTownBounty = bountyForTown(bounty, REPORT_TOWN);
+  // BUILD 926: HUD wanted chip shows the current town's bounty when the
+  // player stands in a settlement, otherwise the total across towns (you
+  // are wanted somewhere, even if not here — but no guard here acts on it).
+  const hudTown = townIdForChunk(chunk);
+  const hudAmount = hudTown ? bountyForTown(bounty, hudTown) : totalBounty(bounty);
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (wantedLevel(bounty.amount) <= 0 || inPrison || interiorRef.current || guardEncounter || chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) return;
+      if (wantedLevel(reportTownBounty) <= 0 || inPrison || interiorRef.current || guardEncounter || chunkRef.current.x !== TOWNSFOLK_CHUNK.x || chunkRef.current.y !== TOWNSFOLK_CHUNK.y) return;
       const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
       const player = positionRef.current;
       const guards = townsfolkRef.current.filter((npc) => npc.archetype === 'guard' && !npc.indoors && !isNpcDead(npc, tick));
@@ -6597,7 +6654,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (nearestDistance <= 3.25 && Date.now() >= guardCooldownUntilRef.current) {
         setTownsfolkDialogue(null);
         setDialogueTopic(null);
-        setGuardEncounter((current) => current || { guardId: guard.id, guardName: guard.name, bounty: bounty.amount });
+        setGuardEncounter((current) => current || { guardId: guard.id, guardName: guard.name, bounty: reportTownBounty, townId: REPORT_TOWN });
         return;
       }
       // BUILD 901: every available guard responds to the active bounty. The
@@ -6628,7 +6685,48 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       }
     }, 150);
     return () => window.clearInterval(timer);
-  }, [bounty.amount, inPrison, chunk.x, chunk.y, guardEncounter]);
+  }, [reportTownBounty, inPrison, chunk.x, chunk.y, guardEncounter]);
+  // BUILD 926: witness-report tick. Every second, each pending report is
+  // advanced: it completes when any surviving witness can reach a guard
+  // (is a guard, or a living outdoor guard is within witness radius), and
+  // it is dropped when no witness is alive anymore. Completion posts the
+  // bounty in the report's town via the existing onCrimeCommitted path.
+  // NOT chunk-gated on purpose: witnesses report even while the player
+  // travels — fleeing to another town does not stop Mosslight's report,
+  // and guards there still ignore it (their effect reads only their town).
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (pendingReportsRef.current.length === 0 || gameOverRef.current) return;
+      const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
+      const folk = townsfolkRef.current;
+      const liveGuards = folk.filter((n) => n.archetype === 'guard' && !n.indoors && !isNpcDead(n, tick) && !isNpcJailed(n, tick));
+      const canReachGuard = (npcId: string): boolean => {
+        const w = folk.find((n) => n.id === npcId);
+        if (!w || w.indoors || isNpcDead(w, tick) || isNpcJailed(w, tick)) return false;
+        if (w.archetype === 'guard') return true;
+        return liveGuards.some((g) => Math.hypot(g.position.x - w.position.x, g.position.y - w.position.y) <= WITNESS_RADIUS);
+      };
+      const { completed, remaining } = advancePendingReports(
+        pendingReportsRef.current,
+        (npcId) => {
+          const w = folk.find((n) => n.id === npcId);
+          return !!w && !isNpcDead(w, tick);
+        },
+        canReachGuard,
+      );
+      if (completed.length === 0 && remaining.length === pendingReportsRef.current.length) { reportDiagRef.current.lastAction = 'kept'; reportDiagRef.current.lastFolkCount = folk.length; return; }
+      reportDiagRef.current.lastAction = completed.length > 0 ? 'completed' : 'dropped';
+      reportDiagRef.current.lastFolkCount = folk.length;
+      reportDiagRef.current.completions += completed.length;
+      reportDiagRef.current.drops += pendingReportsRef.current.length - remaining.length - completed.length;
+      pendingReportsRef.current = remaining;
+      for (const report of completed) {
+        onCrimeCommitted(report.crimeId, report.severity, report.witnessCount, report.day, report.townId);
+        setLogs((cur) => [{ text: `📰 A witness reported your crime to the guards in ${report.townId} — bounty posted.`, color: 'orange' }, ...cur].slice(0, 3));
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   // BUILD 880: NPC crime — hungry, broke NPCs steal from nearby NPCs
   // (SoX AIModule_Crime, need-driven). Feeds the existing crime → witness →
   // memory pipeline. BUILD 885: a guard witness arrests the thief on the spot
@@ -8135,8 +8233,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                       townsfolkRef.current = updated;
                       setTownsfolk(updated);
                       setLogs((cur) => [{ text: `${witnesses.length} witness${witnesses.length > 1 ? 'es' : ''} saw it!`, color: 'orange' }, ...cur].slice(0, 3));
-                      // BUILD 524: Update bounty for witnessed murder.
-                      onCrimeCommitted(crime.id, crime.severity, witnesses.length, day);
+                      // BUILD 926: no instant bounty — a pending witness
+                      // report. The bounty posts only when a surviving
+                      // witness reaches a guard, in that guard's town.
+                      registerPlayerCrime(crime.id, crime.severity, witnesses, day);
                     }
                   } catch { /* crime recording is best-effort */ }
                   // BUILD 522: Create lootable body.
@@ -11811,7 +11911,7 @@ if (active) {
     <div style={{ width: 'min(360px, 100%)', background: '#18251f', color: '#f5f3e8', border: '2px solid #c99b49', borderRadius: 12, padding: 20, boxShadow: '0 12px 40px rgba(0,0,0,.5)' }}>
       <div style={{ fontSize: 12, letterSpacing: 2, color: '#f0c46b', fontWeight: 800 }}>MOSSLIGHT TOWN WATCH</div>
       <h2 id="guard-encounter-title" style={{ margin: '8px 0', fontSize: 22 }}>{guardEncounter.guardName} steps in your path</h2>
-      <p style={{ lineHeight: 1.45 }}>“You are wanted in Mosslight Crossing. Your current bounty is {guardEncounter.bounty} gold. Come quietly, pay your fine, or try to run.”</p>
+      <p style={{ lineHeight: 1.45 }}>“You are wanted in {guardEncounter.townId}. Your current bounty is {guardEncounter.bounty} gold. Come quietly, pay your fine, or try to run.”</p>
       <div style={{ display: 'grid', gap: 8, marginTop: 16 }}>
         <button type="button" data-testid="guard-flee" onClick={() => {
           guardCooldownUntilRef.current = Date.now() + 12000;
@@ -11832,8 +11932,8 @@ if (active) {
           setGuardEncounter(null);
           setLogs((cur) => [{ text: 'You flee! The guard strikes as you run, and nearby guards are joining the chase. Keep fighting or get clear before they wear you down.', color: 'red' }, ...cur].slice(0, 3));
         }} style={{ padding: 11, borderRadius: 8, border: '1px solid #8d9b8f', background: '#293a31', color: '#fff', fontWeight: 700 }}>🏃 Flee</button>
-        <button type="button" data-testid="guard-jail" onClick={() => { setGuardEncounter(null); onResolveBounty(); setTownsfolkDialogue(null); setDialogueTopic(null); setWantedMosslight(0); onRestorePrison(true, { foundShiv: false, talkedToPrisoner: false, helpedPrisoner: false, escapeRoute: null }); setLogs((cur) => [{ text: 'The guard arrests you. You are taken to the town jail; your bounty is cleared.', color: 'red' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #8d9b8f', background: '#293a31', color: '#fff', fontWeight: 700 }}>⛓ Go to jail</button>
-        <button type="button" data-testid="guard-pay-fine" disabled={inventoryRef.current.coins < guardEncounter.bounty} onClick={() => { const fine = guardEncounter.bounty; if (inventoryRef.current.coins < fine) return; onLoot({ coins: -fine } as GoatLoot); onResolveBounty(); setGuardEncounter(null); setWantedMosslight(0); onRestoreReputation({ ...reputation, guards: reputation.guards + 2, mosslight: reputation.mosslight + 1 }); setLogs((cur) => [{ text: `You paid the ${fine} gold fine. The guard lets you go.`, color: 'gold' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #c99b49', background: inventoryRef.current.coins < guardEncounter.bounty ? '#414741' : '#c99b49', color: inventoryRef.current.coins < guardEncounter.bounty ? '#a8b0aa' : '#1c211b', fontWeight: 800, opacity: inventoryRef.current.coins < guardEncounter.bounty ? 0.6 : 1 }}>💰 Pay fine ({guardEncounter.bounty}g){inventoryRef.current.coins < guardEncounter.bounty ? ' — not enough gold' : ''}</button>
+        <button type="button" data-testid="guard-jail" onClick={() => { const townId = guardEncounter.townId; setGuardEncounter(null); resolveTownBounty(townId); setTownsfolkDialogue(null); setDialogueTopic(null); setWantedMosslight(0); onRestorePrison(true, { foundShiv: false, talkedToPrisoner: false, helpedPrisoner: false, escapeRoute: null }); setLogs((cur) => [{ text: 'The guard arrests you. You are taken to the town jail; your bounty is cleared.', color: 'red' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #8d9b8f', background: '#293a31', color: '#fff', fontWeight: 700 }}>⛓ Go to jail</button>
+        <button type="button" data-testid="guard-pay-fine" disabled={inventoryRef.current.coins < guardEncounter.bounty} onClick={() => { const fine = guardEncounter.bounty; if (inventoryRef.current.coins < fine) return; onLoot({ coins: -fine } as GoatLoot); resolveTownBounty(guardEncounter.townId); setGuardEncounter(null); setWantedMosslight(0); onRestoreReputation({ ...reputation, guards: reputation.guards + 2, mosslight: reputation.mosslight + 1 }); setLogs((cur) => [{ text: `You paid the ${fine} gold fine. The guard lets you go.`, color: 'gold' }, ...cur].slice(0, 3)); }} style={{ padding: 11, borderRadius: 8, border: '1px solid #c99b49', background: inventoryRef.current.coins < guardEncounter.bounty ? '#414741' : '#c99b49', color: inventoryRef.current.coins < guardEncounter.bounty ? '#a8b0aa' : '#1c211b', fontWeight: 800, opacity: inventoryRef.current.coins < guardEncounter.bounty ? 0.6 : 1 }}>💰 Pay fine ({guardEncounter.bounty}g){inventoryRef.current.coins < guardEncounter.bounty ? ' — not enough gold' : ''}</button>
       </div>
     </div>
   </div>
@@ -13717,9 +13817,9 @@ if (active) {
             {biomeDanger && (
               <span className="hud-buff-chip hud-danger-chip" role="status" aria-label={biomeDanger.label + ' danger'} title={biomeDanger.label + ': taking damage over time'} data-testid="hud-biome-danger">{biomeDanger.icon} {biomeDanger.label}</span>
             )}
-            {/* BUILD 524: Wanted indicator. */}
-            {wantedLevel(bounty.amount) > 0 && (
-              <span className="hud-buff-chip hud-wanted-chip" role="status" aria-label={'Wanted: ' + bounty.amount + ' gold bounty'} title={'Bounty: ' + bounty.amount + ' gold'} data-testid="hud-wanted">🚨 {bounty.amount}g</span>
+            {/* BUILD 524: Wanted indicator. BUILD 926: per-town amount. */}
+            {wantedLevel(hudAmount) > 0 && (
+              <span className="hud-buff-chip hud-wanted-chip" role="status" aria-label={hudTown ? 'Wanted in ' + hudTown + ': ' + hudAmount + ' gold bounty' : 'Wanted: ' + hudAmount + ' gold bounty'} title={hudTown ? 'Bounty in ' + hudTown + ': ' + hudAmount + ' gold' : 'Total bounty: ' + hudAmount + ' gold'} data-testid="hud-wanted">🚨 {hudAmount}g{hudTown ? ' · ' + hudTown : ''}</span>
             )}
             <div className="hud-quick-actions">
               <button className="hud-quick-button" onClick={() => setHpBoxHidden(true)} aria-label="Hide HP box" title="Hide HP box" data-testid="button-hide-hp-box"><EyeOff size={15} /></button>
@@ -14206,8 +14306,9 @@ function Home() {
   const [visitedChunks, setVisitedChunks] = useState<Set<string>>(new Set(['4,7']));
   // BUILD 524: Bounty/wanted system.
   const [bounty, setBounty] = useState<BountyState>(emptyBounty());
-  const handleCrimeCommitted = (crimeId: string, severity: number, witnessCount: number, day: number) => {
-    setBounty((prev) => addCrimeToBounty(prev, crimeId, severity, witnessCount, day));
+  // BUILD 926: a completed witness report posts the bounty in one town.
+  const handleCrimeCommitted = (crimeId: string, severity: number, witnessCount: number, day: number, townId: string) => {
+    setBounty((prev) => addCrimeToBounty(prev, crimeId, severity, witnessCount, day, townId));
   };
   const handleChunkChange = (c: { x: number; y: number }) => {
     setChunk(c);
@@ -14450,6 +14551,25 @@ function Home() {
     setEquippedShirt(false);
     setEquippedSword(false);
     setBarbHair('bald');
+    // BUILD 926: the defeat → New Game restart leaked previous-life state.
+    // A page refresh cleared it (fresh React state); the in-game path did
+    // not. Everything a life accumulates is reset here, exactly like a
+    // fresh start. GameField-internal state needs no reset: returning to
+    // the title unmounts GameField, so townsfolk, bodies, guard encounters
+    // and NPC memories die with it. Deliberately kept: muted (a setting),
+    // the new character's look (set by confirmCharacter just before this),
+    // and hasLocalSave (derived from localStorage, not a life).
+    setBounty(emptyBounty());
+    setEquipment([]);
+    setQuestStates([]);
+    setQuestPlayerLevel(1);
+    setVisitedChunks(new Set(['4,7']));
+    setJournal({ discoveredLocations: [], activeQuests: [], completedQuests: [], rumors: [], notes: [] });
+    setReputation({ mosslight: 0, guards: 0, merchants: 0, wilderness: 0 });
+    setBeerBuffUntil(0);
+    setEscapeSpawn(null);
+    setDungeonOpen(false);
+    setJournalOpen(false);
     // No prison opening for now: new games start directly in the world.
     setInPrison(false);
     setPrisonState({ foundShiv: false, talkedToPrisoner: false, helpedPrisoner: false, escapeRoute: null });
@@ -14537,9 +14657,10 @@ function Home() {
     if (parsed.visitedChunks && Array.isArray(parsed.visitedChunks)) {
       setVisitedChunks(new Set(parsed.visitedChunks));
     }
-    // BUILD 524: Restore bounty.
+    // BUILD 524: Restore bounty. BUILD 926: migrate the pre-926 global
+    // bucket into Mosslight Crossing (the only town guards acted in).
     if (parsed.bounty) {
-      setBounty(parsed.bounty);
+      setBounty(migrateBounty(parsed.bounty));
     }
     // BUILD 645: Restore issue tracker state from save.
     try {
@@ -14794,7 +14915,7 @@ function Home() {
       `}</style>
       <div className="game-layout">
             <GameCrashBoundary chunk={chunk}>
-            <GameField rpgConfig={{ look: playerRenderLook, forceIso: forceIsoField }} inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} mapOpen={mapOpen} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} onResolveBounty={() => setBounty(emptyBounty())} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
+            <GameField rpgConfig={{ look: playerRenderLook, forceIso: forceIsoField }} inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} mapOpen={mapOpen} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} onResolveBounty={(townId) => setBounty((prev) => clearTownBounty(prev, townId))} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
             </GameCrashBoundary>
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}

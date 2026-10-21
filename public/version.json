@@ -1,6 +1,6 @@
 {
-  "build": "925",
-  "note": "Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported",
-  "timestamp": "2026-10-21T04:21:29.072Z",
-  "cacheBuster": "mvhlun3k"
+  "build": "926",
+  "note": "Bounty is now witness-driven and per-town: killing someone with no surviving witness leaves no bounty at all, and when a witness does report you to a guard, the bounty is posted in that guard’s town only — guards in other towns will not come after you for it. A witness who dies before reaching a guard cannot report you, and a guard who sees the crime himself reports it on the spot. Also fixed: starting a New Game after the defeat screen no longer carries your old life with it — bounty, gear, quests, journal, reputation and explored map all reset exactly like a fresh start, instead of only resetting on a page refresh",
+  "timestamp": "2026-10-21T05:22:15.497Z",
+  "cacheBuster": "mvho0sp5"
 }
