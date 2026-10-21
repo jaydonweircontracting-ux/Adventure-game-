@@ -1,4 +1,5 @@
 import { placeVaults, type PlacedVault } from "./dungeonVaults";
+import { placeUniqueChamber } from "./dungeonUniques";
 import {
   DUNGEON_SPAWN,
   LAYOUT_DESCEND_FLAVOR,
@@ -49,6 +50,10 @@ export interface GroundItem extends Item {
 export interface Monster {
   id: string;
   name: string;
+  /** BUILD 929: epithet for named uniques ("the Hollow Alpha"). */
+  title?: string;
+  /** BUILD 929: true for a named one-per-run unique (DCSS place_unique). */
+  unique?: boolean;
   glyph: string;
   color: string;
   x: number;
@@ -103,6 +108,12 @@ export interface GameState {
   vaults: PlacedVault[];
   /** BUILD 928: which skeleton generated this level (rooms/loops/caves). */
   layout: DungeonLayoutKind;
+  /**
+   * BUILD 929: unique ids already placed this RUN (createGame starts
+   * empty; descend preserves it). A placed unique — killed or left
+   * alive — never spawns again on any later floor of the same run.
+   */
+  spawnedUniques: string[];
 }
 
 export const spellBook: Record<
@@ -447,6 +458,29 @@ export function createGame(seed = Math.floor(Date.now() % 1000000000), speciesIn
   );
   monsters.push(...vaults.monsters);
   groundItems.push(...vaults.groundItems);
+  // BUILD 929: at most one named unique per floor, placed by its tiny
+  // chamber vault through the same machinery (its record joins
+  // state.vaults, so first entry announces it and its tiles tint).
+  // Forbidden cells are recomputed AFTER the regular vaults so the
+  // chamber never paints over a vault monster or item.
+  const placedRects = vaults.placed.map((v) => ({ x: v.x, y: v.y, width: v.width, height: v.height }));
+  const uniqueChamber = placeUniqueChamber(
+    tiles,
+    random,
+    floor,
+    forbiddenCellsFor({ tiles, player, monsters, groundItems }),
+    placedRects,
+    { x: player.x, y: player.y },
+    new Set(),
+  );
+  const spawnedUniques: string[] = [];
+  let allVaults = vaults.placed;
+  if (uniqueChamber) {
+    monsters.push(...uniqueChamber.monsters);
+    groundItems.push(...uniqueChamber.groundItems);
+    spawnedUniques.push(uniqueChamber.uniqueId);
+    allVaults = [...vaults.placed, uniqueChamber.placed];
+  }
   const state: GameState = {
     width,
     height,
@@ -463,11 +497,38 @@ export function createGame(seed = Math.floor(Date.now() % 1000000000), speciesIn
       "The Ember Vault waits below. Every step spends a little of your luck.",
     ],
     lastAction: "You enter the first gallery.",
-    vaults: vaults.placed,
+    vaults: allVaults,
     layout,
+    spawnedUniques,
   };
   revealAround(state);
   return state;
+}
+
+/**
+ * BUILD 929: a named unique's death is recognizable and rewarding.
+ * Bonus gold plus a potion dropped at the death tile (or straight into
+ * the pack when the tile already holds an item). Normal monsters keep
+ * their existing kill rewards untouched.
+ */
+function uniqueDeathSpoils(state: GameState, monster: Monster) {
+  if (!monster.unique) return;
+  state.player.gold += 10;
+  const titled = monster.title ? `${monster.name}, ${monster.title}` : monster.name;
+  addLog(state, `${titled} is no more. The Ember Vault grows quieter.`);
+  const occupied = state.groundItems.some((item) => item.x === monster.x && item.y === monster.y);
+  if (!occupied) {
+    state.groundItems.push({
+      id: `item-unique-spoil-${monster.id}`,
+      ...GROUND_ITEM_TEMPLATES.potion,
+      x: monster.x,
+      y: monster.y,
+    });
+    addLog(state, `${monster.name} drops a vermilion potion.`);
+  } else {
+    state.player.inventory.push({ ...GROUND_ITEM_TEMPLATES.potion, id: `item-unique-spoil-${monster.id}` });
+    addLog(state, `You pocket a vermilion potion from ${monster.name}.`);
+  }
 }
 
 function gainXp(state: GameState, amount: number) {
@@ -535,6 +596,11 @@ export function step(state: GameState, dx: number, dy: number) {
   const targetY = state.player.y + dy;
   const monster = state.monsters.find((entry) => entry.x === targetX && entry.y === targetY && entry.hp > 0);
   if (monster) {
+    // BUILD 929: first blow against an unhurt unique announces the boss.
+    // (No new field needed: monsters never heal, so full HP means unhit.)
+    if (monster.unique && monster.hp === monster.maxHp) {
+      addLog(state, `You face ${monster.name}${monster.title ? `, ${monster.title}` : ''}!`);
+    }
     const damage = Math.max(1, state.player.strength + state.player.level - monster.armor);
     monster.hp = Math.max(0, monster.hp - damage);
     monster.asleep = false;
@@ -544,6 +610,7 @@ export function step(state: GameState, dx: number, dy: number) {
       gainXp(state, monster.xp);
       state.player.gold += 2 + state.floor;
       addLog(state, `${monster.name} falls. You find ${2 + state.floor} gold in the dust.`);
+      uniqueDeathSpoils(state, monster);
     }
     finishTurn(state);
     return state;
@@ -639,6 +706,9 @@ export function castSpell(state: GameState, spellId: SpellId) {
       return state;
     }
     const damage = 7 + state.player.intellect;
+    if (target.unique && target.hp === target.maxHp) {
+      addLog(state, `You face ${target.name}${target.title ? `, ${target.title}` : ''}!`);
+    }
     target.hp = Math.max(0, target.hp - damage);
     target.asleep = false;
     addLog(state, `Ember Bolt scorches ${target.name} for ${damage}.`);
@@ -646,6 +716,7 @@ export function castSpell(state: GameState, spellId: SpellId) {
       state.player.kills += 1;
       gainXp(state, target.xp);
       addLog(state, `${target.name} dissolves into sparks.`);
+      uniqueDeathSpoils(state, target);
     }
   } else if (spellId === "blink") {
     const candidates = [
@@ -704,7 +775,28 @@ export function descend(state: GameState) {
   );
   state.monsters.push(...vaults.monsters);
   state.groundItems.push(...vaults.groundItems);
-  state.vaults = vaults.placed;
+  // BUILD 929: one unique chamber per new floor, excluding every
+  // unique already placed this run (killed or left alive) — the
+  // one-per-run guarantee. spawnedUniques survives because descend
+  // mutates the same state object.
+  const deepRects = vaults.placed.map((v) => ({ x: v.x, y: v.y, width: v.width, height: v.height }));
+  const deepUnique = placeUniqueChamber(
+    state.tiles,
+    random,
+    state.floor,
+    forbiddenCellsFor(state),
+    deepRects,
+    { x: state.player.x, y: state.player.y },
+    new Set(state.spawnedUniques ?? []),
+  );
+  let deepVaults = vaults.placed;
+  if (deepUnique) {
+    state.monsters.push(...deepUnique.monsters);
+    state.groundItems.push(...deepUnique.groundItems);
+    state.spawnedUniques = [...(state.spawnedUniques ?? []), deepUnique.uniqueId];
+    deepVaults = [...vaults.placed, deepUnique.placed];
+  }
+  state.vaults = deepVaults;
   addLog(state, `You descend to depth ${state.floor}. The walls glow from within.${LAYOUT_DESCEND_FLAVOR[state.layout]}`);
   finishTurn(state);
   return state;

@@ -26,7 +26,9 @@
 // are still reachable from the player spawn, every stamped walkable
 // vault cell is reachable, and every previously reachable walkable cell
 // is still reachable. If no anchor validates, the vault is skipped —
-// a level is never broken to place a vault.
+// a level is never broken to place a vault. BUILD 929: "previously
+// reachable" is recomputed after each placement, so a later vault
+// cannot sever an earlier vault or its connector.
 //
 // NOTE on imports: stoneSoupEngine imports placeVaults, and this module
 // imports the shared monster/item tables back. Both reads happen only
@@ -41,6 +43,22 @@ export interface VaultMonsterSpec {
   kind: "beast" | "undead" | "cultist" | "guardian";
   /** Vault monsters default awake; dens set this true. */
   asleep?: boolean;
+  /**
+   * BUILD 929: when set, this spawn is a named unique (DCSS
+   * `place_unique`): the base roster entry is boosted by these
+   * multipliers and the monster carries the unique's name/title.
+   * The boost data travels inside the vault spec so this module
+   * never imports the unique catalog (no new import cycle).
+   */
+  unique?: {
+    id: string;
+    name: string;
+    title: string;
+    hpMult: number;
+    attackMult: number;
+    armorBonus: number;
+    xpMult: number;
+  };
 }
 
 export interface VaultItemSpec {
@@ -264,6 +282,14 @@ function tryPlaceOne(
   placedRects: { x: number; y: number; width: number; height: number }[],
   baseReachable: Set<string>,
   spawn: { x: number; y: number },
+  /**
+   * BUILD 929: id tag for the spawns. Default keeps the exact 927 ids
+   * (`vault-<floor>-<vaultIndex>`); unique chambers pass their own tag
+   * so their spawns stay distinct from regular vaults on the same floor
+   * while still carrying the `monster-vault-` / `item-vault-` prefix
+   * the 927/928 sim assertions count on.
+   */
+  idTag?: string,
 ): PlacedVault | null {
   const height = tiles.length;
   const width = tiles[0]?.length ?? 0;
@@ -486,8 +512,30 @@ function tryPlaceOne(
     const multiplier = 1 + (floor - 1) * 0.18;
     const monsters: Monster[] = stamp.monsterSpawns.map(({ spec, x, y }, i) => {
       const entry = MONSTER_ENTRIES.find((e) => e.kind === spec.kind) ?? MONSTER_ENTRIES[0];
+      // BUILD 929: a unique spawn keeps its base's glyph/color (no new
+      // art) but carries the unique's name/title and boosted stats.
+      if (spec.unique) {
+        const u = spec.unique;
+        return {
+          id: `monster-${idTag ?? `vault-${floor}-${vaultIndex}`}-${i}`,
+          name: u.name,
+          title: u.title,
+          unique: true,
+          glyph: entry.glyph,
+          color: entry.color,
+          x,
+          y,
+          hp: Math.round(entry.hp * multiplier * u.hpMult),
+          maxHp: Math.round(entry.hp * multiplier * u.hpMult),
+          attack: Math.round(entry.attack * multiplier * u.attackMult),
+          armor: entry.armor + u.armorBonus,
+          xp: Math.round(entry.xp * u.xpMult),
+          kind: entry.kind,
+          asleep: spec.asleep ?? false,
+        };
+      }
       return {
-        id: `monster-vault-${floor}-${vaultIndex}-${i}`,
+        id: `monster-${idTag ?? `vault-${floor}-${vaultIndex}`}-${i}`,
         name: entry.name,
         glyph: entry.glyph,
         color: entry.color,
@@ -504,7 +552,7 @@ function tryPlaceOne(
     });
     const groundItems: GroundItem[] = stamp.itemSpawns.map(({ spec, x, y }, i) => {
       const template = GROUND_ITEM_TEMPLATES[spec.template];
-      return { id: `item-vault-${floor}-${vaultIndex}-${i}`, ...template, x, y };
+      return { id: `item-${idTag ?? `vault-${floor}-${vaultIndex}`}-${i}`, ...template, x, y };
     });
     const placed: PlacedVault & { monsters: Monster[]; groundItems: GroundItem[] } = {
       name: def.name,
@@ -543,7 +591,15 @@ export function placeVaults(
   forbidden: ReadonlySet<string>,
   spawn: { x: number; y: number },
 ): VaultPlacement {
-  const baseReachable = reachableFrom(tiles, spawn);
+  // BUILD 929: the protected reachable set is recomputed after EVERY
+  // successful placement (see the loop below). Computing it once up
+  // front was a real bug, caught by the 929 sweep (seed 138, floor 3):
+  // Ambush Passage's connector ran through cells that Sunken Gallery
+  // later stamped to wall, orphaning the whole Ambush interior — and
+  // the old check never noticed, because it only protected cells that
+  // were reachable BEFORE any vault, not cells an earlier vault (or
+  // its connector) had made reachable.
+  let baseReachable = reachableFrom(tiles, spawn);
   const eligible = eligibleVaults(floor);
   if (eligible.length === 0 || baseReachable.size === 0) {
     return { placed: [], monsters: [], groundItems: [] };
@@ -590,6 +646,52 @@ export function placeVaults(
     monsters.push(...m);
     groundItems.push(...g);
     placedRects.push({ x: record.x, y: record.y, width: record.width, height: record.height });
+    // BUILD 929: grow the protected set to include this vault's cells
+    // and its connector, so the next vault cannot sever them.
+    baseReachable = reachableFrom(tiles, spawn);
   }
+  return { placed, monsters, groundItems };
+}
+
+/** BUILD 929: walkable cells reachable from spawn (shared with the unique-chamber placement, which validates against the post-regular-vault level). */
+export function reachableWalkableCells(
+  tiles: Tile[][],
+  spawn: { x: number; y: number },
+): Set<string> {
+  return reachableFrom(tiles, spawn);
+}
+
+/**
+ * BUILD 929: stamp ONE vault def (a unique chamber) into `tiles` using
+ * the exact same anchor/connector/reachability machinery as the regular
+ * pass. Returns null when no anchor validates — the caller keeps the
+ * level as-is. `idTag` keeps the chamber's spawns distinct from the
+ * regular vaults' on the same floor.
+ */
+export function placeSingleVault(
+  tiles: Tile[][],
+  def: VaultDef,
+  rng: VaultRng,
+  floor: number,
+  forbidden: ReadonlySet<string>,
+  placedRects: { x: number; y: number; width: number; height: number }[],
+  baseReachable: Set<string>,
+  spawn: { x: number; y: number },
+  idTag: string,
+): { placed: PlacedVault; monsters: Monster[]; groundItems: GroundItem[] } | null {
+  const result = tryPlaceOne(
+    tiles,
+    def,
+    rng,
+    floor,
+    0,
+    forbidden,
+    placedRects,
+    baseReachable,
+    spawn,
+    idTag,
+  ) as (PlacedVault & { monsters: Monster[]; groundItems: GroundItem[] }) | null;
+  if (!result) return null;
+  const { monsters, groundItems, ...placed } = result;
   return { placed, monsters, groundItems };
 }

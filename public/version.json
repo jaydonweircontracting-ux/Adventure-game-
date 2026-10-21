@@ -1,6 +1,6 @@
 {
-  "build": "928",
-  "note": "The Sunken Crypt dungeon no longer repeats one skeleton: every floor now rolls one of three layouts — the classic chambered galleries, looped galleries where rooms connect in rings so a blocked corridor never strands you, or rough cellular caverns carved by cave generation. Vault rooms still hide in every layout, the stairs are always reachable, and the dungeon panel names the layout you are standing in. Also fixed: the classic map had a door and a pool that were walled off and unreachable — they are joined to the east room now",
-  "timestamp": "2026-10-21T06:14:45.013Z",
-  "cacheBuster": "mvhpwavp"
+  "build": "929",
+  "note": "The Sunken Crypt dungeon now has named bosses: Grimmaw the Hollow Alpha, Mother Vexa the Ember Matron, Scribe Morvain Keeper of Bone, and Warden Karst the Last Warden. Each appears at most once per descent, guards a hand-crafted chamber, and drops bonus gold and a potion when it falls. Also fixed: one dungeon vault could wall off a corridor and strand the rooms behind it — vault placement now re-checks reachability after every vault it stamps",
+  "timestamp": "2026-10-21T06:33:54.929Z",
+  "cacheBuster": "mvhqky5t"
 }

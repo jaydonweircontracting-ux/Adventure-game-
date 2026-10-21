@@ -2,8 +2,9 @@
 // Run with: npx tsx scripts/simulate.ts
 import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLevelFor } from '../src/game/worldMap';
 // BUILD 927: authored dungeon vaults (DCSS .des grammar, original content).
-import { createGame, descend, step, type GameState as DungeonGameState } from '../src/game/stoneSoupEngine';
+import { createGame, descend, step, MONSTER_ENTRIES, type GameState as DungeonGameState } from '../src/game/stoneSoupEngine';
 import { VAULT_CATALOG, eligibleVaults } from '../src/game/dungeonVaults';
+import { UNIQUE_DEFS, eligibleUniques } from '../src/game/dungeonUniques';
 import { generateLayout, layoutRng, selectLayoutKind } from '../src/game/dungeonLayouts';
 import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai';
 import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '../src/game/combat';
@@ -2168,7 +2169,7 @@ console.log('Testing authored dungeon vaults (BUILD 927)...');
   let sawAny = false;
   for (let seed = 1; seed <= 200; seed += 1) {
     const state = createGame(seed);
-    assert(state.vaults.length <= 3, `Vault927: seed ${seed} places at most 3 vaults`);
+    assert(state.vaults.length <= 4, `Vault927: seed ${seed} places at most 4 vaults (3 regular + 1 unique chamber)`);
     if (state.vaults.length > 1) sawMulti = true;
     if (state.vaults.length > 0) sawAny = true;
     const reachable = bfsReachable(state);
@@ -2196,7 +2197,10 @@ console.log('Testing authored dungeon vaults (BUILD 927)...');
         const [x, y] = cell.split(':').map(Number);
         assert(WALKABLE.has(state.tiles[y][x].kind), `Vault927: seed ${seed} vault cell is walkable`);
       }
-      const def = VAULT_CATALOG.find((d) => d.name === vault.name)!;
+      // BUILD 929: unique chambers are vaults too — look them up in the
+      // unique catalog when the regular catalog misses.
+      const def = VAULT_CATALOG.find((d) => d.name === vault.name)
+        ?? UNIQUE_DEFS.find((d) => d.chamber.name === vault.name)?.chamber;
       assert(def !== undefined, `Vault927: seed ${seed} placed vault is in the catalog`);
       expectVaultMonsters += glyphCount(def, (c) => c >= '1' && c <= '9');
       expectVaultItems += glyphCount(def, (c) => c >= 'a' && c <= 'z');
@@ -2303,14 +2307,18 @@ console.log('Testing authored dungeon vaults (BUILD 927)...');
   deep.player.y = stairs1.y;
   descend(deep);
   assert(deep.floor === 2, 'Vault927: descend reaches floor 2');
-  assert(deep.vaults.every((v) => eligibleVaults(2).some((d) => d.name === v.name)), 'Vault927: floor-2 vaults are depth-eligible');
-  assert(deep.vaults.length <= 3, 'Vault927: floor-2 vault count capped');
+  // BUILD 929: unique chambers count as vaults here too (one per floor).
+  const vaultEligible929 = (floor: number, v: { name: string }) =>
+    eligibleVaults(floor).some((d) => d.name === v.name)
+    || UNIQUE_DEFS.some((d) => d.chamber.name === v.name && floor >= d.minDepth && floor <= d.maxDepth);
+  assert(deep.vaults.every((v) => vaultEligible929(2, v)), 'Vault927: floor-2 vaults are depth-eligible');
+  assert(deep.vaults.length <= 4, 'Vault927: floor-2 vault count capped (3 regular + 1 unique chamber)');
   const stairs2 = stairsCell(deep)!;
   deep.player.x = stairs2.x;
   deep.player.y = stairs2.y;
   descend(deep);
   assert(deep.floor === 3, 'Vault927: descend reaches floor 3');
-  assert(deep.vaults.every((v) => eligibleVaults(3).some((d) => d.name === v.name)), 'Vault927: floor-3 vaults are depth-eligible');
+  assert(deep.vaults.every((v) => vaultEligible929(3, v)), 'Vault927: floor-3 vaults are depth-eligible');
   const reach3 = bfsReachable(deep);
   assert(reach3.has(`${stairsCell(deep)!.x}:${stairsCell(deep)!.y}`), 'Vault927: floor-3 stairs stay reachable');
   for (const vault of deep.vaults) for (const cell of vault.cells) assert(reach3.has(cell), 'Vault927: floor-3 vault cells reachable');
@@ -2458,8 +2466,165 @@ console.log('Testing dungeon layout generators (BUILD 928)...');
   const kinds2 = deep.tiles.map((r) => r.map((t) => t.kind));
   const reach2 = bfs928(kinds2, { x: deep.player.x, y: deep.player.y });
   assert([...reach2].some((k) => { const [x, y] = k.split(':').map(Number); return deep.tiles[y][x].kind === 'stairs'; }), 'Layout928: floor-2 stairs reachable');
-  assert(deep.vaults.every((v) => eligibleVaults(2).some((d) => d.name === v.name)), 'Layout928: floor-2 vaults stay depth-eligible');
+  assert(deep.vaults.every((v) => eligibleVaults(2).some((d) => d.name === v.name) || UNIQUE_DEFS.some((d) => d.chamber.name === v.name && 2 >= d.minDepth && 2 <= d.maxDepth)), 'Layout928: floor-2 vaults stay depth-eligible (incl. unique chambers)');
 }
+// ---- 13a1i. Named dungeon uniques (BUILD 929) ----
+// DCSS place_unique, portable asset only (the pattern: a named monster
+// placed at most once per game by a tiny vault). All uniques are
+// original Ember Vault content — no DCSS unique is copied.
+console.log('Testing named dungeon uniques (BUILD 929)...');
+{
+  const WALKABLE929 = new Set(['floor', 'door', 'stairs', 'altar', 'water']);
+  const bfs929 = (state: DungeonGameState) => {
+    const seen = new Set<string>([`${state.player.x}:${state.player.y}`]);
+    const queue = [{ x: state.player.x, y: state.player.y }];
+    while (queue.length > 0) {
+      const cur = queue.pop()!;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const tile = state.tiles[cur.y + dy]?.[cur.x + dx];
+        if (!tile || !WALKABLE929.has(tile.kind)) continue;
+        const k = `${tile.x}:${tile.y}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        queue.push({ x: tile.x, y: tile.y });
+      }
+    }
+    return seen;
+  };
+  const stairs929 = (state: DungeonGameState) => {
+    for (const row of state.tiles) for (const tile of row) if (tile.kind === 'stairs') return tile;
+    return null;
+  };
+  const descendOnce929 = (state: DungeonGameState) => {
+    const st = stairs929(state);
+    assert(st !== null, 'Unique929: stairs exist before descend');
+    state.player.x = st.x;
+    state.player.y = st.y;
+    descend(state);
+  };
+
+  // Catalog shape: 4 original uniques, distinct ids/names, chambers
+  // tagged place_unique, digit '1' is the unique, base matches.
+  assert(UNIQUE_DEFS.length === 4, 'Unique929: roster holds 4 uniques');
+  const names929 = UNIQUE_DEFS.map((d) => d.name);
+  assert(new Set(UNIQUE_DEFS.map((d) => d.id)).size === 4, 'Unique929: unique ids distinct');
+  assert(new Set(names929).size === 4, 'Unique929: unique names distinct');
+  for (const forbidden of ['Sigmund', 'Iskenderun', 'Mara', 'Rupert', 'Erica', 'Joseph']) {
+    assert(!names929.includes(forbidden), `Unique929: no DCSS unique copied (${forbidden})`);
+  }
+  for (const def of UNIQUE_DEFS) {
+    assert(def.chamber.tags.includes('place_unique'), `Unique929: ${def.id} chamber tagged place_unique`);
+    assert(def.chamber.map.join('').includes('1'), `Unique929: ${def.id} chamber places digit 1`);
+    assert(def.chamber.mons[0]?.kind === def.base, `Unique929: ${def.id} chamber monster 1 is its base`);
+    assert(def.chamber.mons[0]?.unique?.id === def.id, `Unique929: ${def.id} chamber monster 1 carries the unique spec`);
+    assert(def.chamber.mons[0]?.unique?.name === def.name, `Unique929: ${def.id} spec name matches`);
+    assert(def.minDepth >= 1 && def.maxDepth >= def.minDepth, `Unique929: ${def.id} depth range sane`);
+  }
+
+  // Depth gating: floor 1 admits only the beast alpha; the Last Warden
+  // waits for depth 3; spawned uniques are excluded everywhere.
+  assert(eligibleUniques(1, new Set()).map((d) => d.id).join(',') === 'grimmaw', 'Unique929: floor 1 admits only grimmaw');
+  const floor2 = eligibleUniques(2, new Set()).map((d) => d.id).sort().join(',');
+  assert(floor2 === 'grimmaw,morvain,vexa', `Unique929: floor 2 admits grimmaw/morvain/vexa (${floor2})`);
+  assert(eligibleUniques(3, new Set()).length === 4, 'Unique929: floor 3 admits all four');
+  assert(eligibleUniques(3, new Set(['grimmaw', 'karst'])).every((d) => d.id !== 'grimmaw' && d.id !== 'karst'), 'Unique929: spawned uniques excluded');
+
+  // One-per-run sweep: floors 1-3, no unique repeats, no unique above
+  // its minimum depth, boosted stats, reachability holds with the
+  // chamber placed, determinism + round-trip.
+  let sawUniqueRun = false;
+  for (let seed = 1; seed <= 100; seed += 1) {
+    const state = createGame(seed);
+    state.player.hp = state.player.maxHp = 1000;
+    const runUniques: string[] = [];
+    const runFloors: Record<string, number> = {};
+    for (let floor = 1; floor <= 3; floor += 1) {
+      if (floor > 1) descendOnce929(state);
+      assert(state.floor === floor, `Unique929: seed ${seed} reaches floor ${floor}`);
+      const reach = bfs929(state);
+      for (let y = 0; y < 19; y += 1) for (let x = 0; x < 31; x += 1) {
+        if (WALKABLE929.has(state.tiles[y][x].kind)) {
+          assert(reach.has(`${x}:${y}`), `Unique929: seed ${seed} floor ${floor} cell ${x}:${y} orphaned`);
+        }
+      }
+      for (const m of state.monsters) {
+        if (!m.unique) continue;
+        const def = UNIQUE_DEFS.find((d) => d.name === m.name)!;
+        assert(def !== undefined, `Unique929: seed ${seed} unique ${m.name} is in the roster`);
+        assert(floor >= def.minDepth, `Unique929: seed ${seed} ${m.name} never above min depth`);
+        assert(!runUniques.includes(m.name), `Unique929: seed ${seed} ${m.name} placed twice in one run`);
+        runUniques.push(m.name);
+        runFloors[m.name] = floor;
+        const base = MONSTER_ENTRIES.find((e) => e.kind === def.base)!;
+        const mult = 1 + (floor - 1) * 0.18;
+        assert(m.hp === Math.round(base.hp * mult * def.hpMult), `Unique929: seed ${seed} ${m.name} hp boosted`);
+        assert(m.attack === Math.round(base.attack * mult * def.attackMult), `Unique929: seed ${seed} ${m.name} attack boosted`);
+        assert(m.xp === Math.round(base.xp * def.xpMult), `Unique929: seed ${seed} ${m.name} xp boosted`);
+        assert(m.title === def.title, `Unique929: seed ${seed} ${m.name} carries its title`);
+      }
+      assert(new Set(state.spawnedUniques).size === state.spawnedUniques.length, `Unique929: seed ${seed} spawnedUniques has no duplicates`);
+      assert(runUniques.length === state.spawnedUniques.length, `Unique929: seed ${seed} placed uniques match spawnedUniques`);
+    }
+    if (runUniques.length > 0) sawUniqueRun = true;
+  }
+  assert(sawUniqueRun, 'Unique929: uniques actually place across seeds');
+  const d1 = createGame(42);
+  const d2 = createGame(42);
+  assert(JSON.stringify(d1.spawnedUniques) === JSON.stringify(d2.spawnedUniques), 'Unique929: same seed spawns the same uniques');
+  assert(JSON.stringify(d1.monsters) === JSON.stringify(d2.monsters), 'Unique929: same seed places the same unique monsters');
+  const rt929 = JSON.parse(JSON.stringify(d1)) as DungeonGameState;
+  assert(JSON.stringify(rt929.spawnedUniques) === JSON.stringify(d1.spawnedUniques), 'Unique929: JSON round-trip keeps spawnedUniques');
+
+  // Death persistence: kill a floor-1 unique, descend twice, confirm
+  // it never reappears and its death is announced + rewarded.
+  let killed = false;
+  for (let seed = 1; seed <= 60 && !killed; seed += 1) {
+    const state = createGame(seed);
+    const unique = state.monsters.find((m) => m.unique);
+    if (!unique) continue;
+    state.player.hp = state.player.maxHp = 1000;
+    // Stand adjacent on a walkable, unoccupied cell.
+    let adjacent: { x: number; y: number } | null = null;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const nx = unique.x + dx;
+      const ny = unique.y + dy;
+      const tile = state.tiles[ny]?.[nx];
+      if (!tile || !WALKABLE929.has(tile.kind)) continue;
+      if (state.monsters.some((m) => m.hp > 0 && m.x === nx && m.y === ny)) continue;
+      adjacent = { x: nx, y: ny };
+      break;
+    }
+    if (!adjacent) continue;
+    state.player.x = adjacent.x;
+    state.player.y = adjacent.y;
+    const goldBefore = state.player.gold;
+    const dx = Math.sign(unique.x - state.player.x);
+    const dy = Math.sign(unique.y - state.player.y);
+    let steps = 0;
+    while (unique.hp > 0 && steps < 60 && state.phase === 'playing') {
+      step(state, dx, dy);
+      steps += 1;
+    }
+    assert(unique.hp === 0, `Unique929: seed ${seed} unique dies to melee`);
+    assert(state.log.some((l) => l.includes('is no more')), `Unique929: seed ${seed} unique death announced`);
+    assert(state.log.some((l) => l.includes(`You face ${unique.name}`)), `Unique929: seed ${seed} unique encounter announced`);
+    assert(state.player.gold >= goldBefore + 10, `Unique929: seed ${seed} unique death pays bonus gold`);
+    assert(
+      state.groundItems.some((i) => i.id.startsWith('item-unique-spoil-'))
+      || state.player.inventory.some((i) => i.id.startsWith('item-unique-spoil-')),
+      `Unique929: seed ${seed} unique death drops its potion`,
+    );
+    assert(state.spawnedUniques.includes(UNIQUE_DEFS.find((d) => d.name === unique.name)!.id), `Unique929: seed ${seed} killed unique recorded in spawnedUniques`);
+    const deadName = unique.name;
+    descendOnce929(state);
+    descendOnce929(state);
+    assert(!state.monsters.some((m) => m.unique && m.name === deadName), `Unique929: seed ${seed} killed unique never reappears`);
+    assert(state.spawnedUniques.includes(UNIQUE_DEFS.find((d) => d.name === deadName)!.id), `Unique929: seed ${seed} killed unique stays recorded`);
+    killed = true;
+  }
+  assert(killed, 'Unique929: a floor-1 unique could be killed in some seed');
+}
+
 console.log('Testing ambient market life (BUILD 694)...');
 {
   const mkAnchors = (stalls: TownsfolkPoint[], arterials?: TownsfolkPoint[]): TownsfolkAnchors => ({
