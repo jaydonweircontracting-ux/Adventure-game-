@@ -14,6 +14,9 @@
 //   (schema 2; schema-1 saves migrate) — the world save owns it.
 import { townsfolkHash } from './townsfolk';
 import { DEFAULT_WORLD_SEED } from './worldCore';
+// BUILD 940: task keys live in the same store (tasks.ts imports this
+// module type-only, so this value import cannot cycle).
+import { TASKS, taskActivities, taskStorageKey } from './tasks';
 
 export type QuestStageKind = 'talk' | 'kill' | 'collect' | 'visit' | 'craft' | 'explore';
 
@@ -79,6 +82,13 @@ export type QuestEvent = {
   target: string;
   count?: number;
   day?: number;
+  /**
+   * BUILD 940: zone context for task zone bounds — the player's chunk
+   * (and settlement, when resolvable) at event time. App fills it
+   * centrally; a bound task activity with no zone on the event never
+   * counts. Quest stages ignore it.
+   */
+  zone?: { chunk?: { x: number; y: number }; settlement?: string };
 };
 
 export const STORY_QUEST_ID = 'ashes-of-aldoria';
@@ -577,6 +587,19 @@ function sanitizeStorage(raw: unknown): QuestStorage {
       if (typeof value === 'number' && Number.isFinite(value)) {
         const { start, end } = missionRange(stage);
         storage[key] = Math.min(end, Math.max(start, Math.floor(value)));
+      }
+    }
+  }
+  // BUILD 940: task keys share this store; keep known ones, clamped to
+  // each activity's range. Unknown task keys are dropped, as before.
+  for (const taskDef of TASKS) {
+    const questDef = questById(taskDef.questId);
+    if (!questDef) continue;
+    for (const activity of taskActivities(questDef, taskDef)) {
+      const key = taskStorageKey(taskDef.id, activity.id);
+      const value = record[key];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        storage[key] = Math.min(activity.end, Math.max(0, Math.floor(value)));
       }
     }
   }

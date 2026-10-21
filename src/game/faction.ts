@@ -175,14 +175,27 @@ export function applyFactionHarm(
   return next;
 }
 
+/**
+ * BUILD 940: general standing mover. The quest gain below delegates to
+ * it; task reward bundles carry their own amount through this mover so
+ * a bundle is never forced to be +25.
+ */
+export function applyFactionGain(
+  standings: Record<string, number>,
+  factionId: string,
+  amount: number,
+): Record<string, number> {
+  const next = { ...standings };
+  next[factionId] = standingFor(standings, factionId) + Math.floor(amount);
+  return next;
+}
+
 /** Apply a completed-quest gain to one faction's standing. Pure. */
 export function applyFactionQuestGain(
   standings: Record<string, number>,
   factionId: string,
 ): Record<string, number> {
-  const next = { ...standings };
-  next[factionId] = standingFor(standings, factionId) + FACTION_QUEST_DELTA;
-  return next;
+  return applyFactionGain(standings, factionId, FACTION_QUEST_DELTA);
 }
 
 /**

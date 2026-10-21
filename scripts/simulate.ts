@@ -98,7 +98,8 @@ import { createMicroGrid, simulateMicroStep, igniteCell, countStates } from '../
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds } from '../src/game/touchInput';
-import { markerForGiver, questById, type QuestState } from '../src/game/quests';
+import { markerForGiver, questById, type QuestState, type QuestDef, type QuestStorage } from '../src/game/quests';
+import { TASKS, taskDefForQuest, isTaskDriven, taskActivities, taskStorageKey, snapshotTaskProgress, activityMatchesEvent, settlementForChunk, eventZoneForChunk, zoneMatchesActivity, writeTaskEventToStorage, resetTaskKeys, startTask, taskComplete, evaluateTaskState, taskAvailability, availableTasks, markerForTaskGiver, taskBundleFor, taskActivityText, serializeTaskSave, parseTaskSave, migrateTaskStates, type TaskDef, type TaskState } from '../src/game/tasks';
 import { initialCellarRats, CELLAR_RAT_ID_BASE, CELLAR_RAT_HP, CELLAR_RAT_COUNT } from '../src/game/cellarRats';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, adjustWanted } from '../src/game/dialogue';
 import { shouldBark, barkFor, seedForName } from '../src/game/npcBarks';
@@ -5387,6 +5388,120 @@ assert(!!heirloom, 'lost-heirloom quest missing');
 if (heirloom) {
   assert(markerForGiver(heirloom, []) === 'available', 'unaccepted heirloom should show !');
   assert(markerForGiver(heirloom, [{ questId: 'lost-heirloom', stageIndex: 1, status: 'active', counts: {}, startedAt: 0 }]) === null, 'explore stage must show no marker');
+}
+
+// ---- BUILD 940: EQEmu task shell (multi-activity tasks, zone bounds, replay) ----
+console.log('Testing task shell (BUILD 940)...');
+{
+  // Conversion set: 6 tasks wrap real quests; 4 quests stay linear.
+  assert(TASKS.length === 6, `expected 6 tasks, got ${TASKS.length}`);
+  for (const taskDef of TASKS) {
+    const questDef = questById(taskDef.questId);
+    assert(!!questDef, `task ${taskDef.id} wraps missing quest ${taskDef.questId}`);
+    if (questDef) assert(isTaskDriven(questDef.id), `${questDef.id} should be task-driven`);
+  }
+  for (const stayed of ['lost-heirloom', 'wolf-pack', 'bandit-toll', 'troll-bridge']) {
+    assert(!isTaskDriven(stayed), `${stayed} should stay a linear quest`);
+    assert(!taskDefForQuest(stayed), `${stayed} should have no task def`);
+  }
+  // Derived activities: caravan = 2 parallel visits; story = 3 seals + ruin; rats = 1 zone-bound kill.
+  const caravanQuest = questById('caravan-guard')!;
+  const caravanTask = taskDefForQuest('caravan-guard')!;
+  const caravanActivities = taskActivities(caravanQuest, caravanTask);
+  assert(caravanActivities.length === 2 && caravanActivities.every((a) => a.kind === 'visit'), 'caravan should have 2 visit activities');
+  const storyActivities = taskActivities(questById('ashes-of-aldoria')!, taskDefForQuest('ashes-of-aldoria')!);
+  assert(storyActivities.length === 4, `story should have 4 activities, got ${storyActivities.length}`);
+  const ratsActivities = taskActivities(questById('rats-in-the-cellar')!, taskDefForQuest('rats-in-the-cellar')!);
+  assert(ratsActivities.length === 1 && ratsActivities[0].zone?.settlement === 'Mosslight Crossing', 'rats activity should be Mosslight-bound');
+  // Talk stages are never activities.
+  assert(!caravanActivities.some((a) => a.id.startsWith('talk-')) && !storyActivities.some((a) => a.id.startsWith('talk-')), 'talk stages must not become activities');
+  // Zone helpers: only Mosslight's chunk resolves to a settlement.
+  assert(settlementForChunk({ x: 4, y: 7 }) === 'Mosslight Crossing', 'Mosslight chunk should resolve');
+  assert(settlementForChunk({ x: 6, y: 7 }) === undefined, 'other chunks must not resolve to a settlement');
+  assert(zoneMatchesActivity({ settlement: 'Mosslight Crossing' }, eventZoneForChunk({ x: 4, y: 7 })), 'Mosslight event should match Mosslight bound');
+  assert(!zoneMatchesActivity({ settlement: 'Mosslight Crossing' }, eventZoneForChunk({ x: 6, y: 7 })), 'outside event must not match Mosslight bound');
+  assert(!zoneMatchesActivity({ settlement: 'Mosslight Crossing' }, undefined), 'zoneless event must never match a bound');
+  assert(zoneMatchesActivity(undefined, undefined), 'unbounded activity counts everywhere');
+  // Synthetic task: writer + zone gate + optional + replay, end to end.
+  const synthQuest: QuestDef = {
+    id: 'synth-quest', title: 'Synth', level: 1,
+    giver: { name: 'Syn', location: 'Mosslight Crossing', hint: '' },
+    stages: [
+      { id: 'kill-a', kind: 'kill', description: 'Kill A', target: 'wolf', count: 2, label: 'Wolves' },
+      { id: 'opt-b', kind: 'collect', description: 'Collect B', target: 'silk', count: 1, label: 'Silk' },
+    ],
+    rewards: { coins: 10, xp: 20, items: [] },
+    description: 'Synthetic',
+  };
+  const synthTask: TaskDef = {
+    id: 'task-synth', questId: 'synth-quest', replayDays: 10,
+    overrides: { 'opt-b': { optional: true, rewards: { coins: 5, xp: 5, items: [] } } },
+  };
+  const synthDefs = [synthQuest];
+  const synthTasks = [synthTask];
+  let store: QuestStorage = {};
+  store = writeTaskEventToStorage(store, { type: 'kill', target: 'wolf' }, synthDefs, synthTasks);
+  assert(store[taskStorageKey('task-synth', 'kill-a')] === 1, 'writer should count a matching kill');
+  store = writeTaskEventToStorage(store, { type: 'kill', target: 'rat' }, synthDefs, synthTasks);
+  assert(store[taskStorageKey('task-synth', 'kill-a')] === 1, 'non-matching target must not count');
+  store = writeTaskEventToStorage(store, { type: 'kill', target: 'wolf', count: 5 }, synthDefs, synthTasks);
+  assert(store[taskStorageKey('task-synth', 'kill-a')] === 2, 'writer must clamp at the range end');
+  const sameRef = writeTaskEventToStorage(store, { type: 'kill', target: 'rat' }, synthDefs, synthTasks);
+  assert(sameRef === store, 'writer must return the same reference when nothing matched');
+  const synthActs = taskActivities(synthQuest, synthTask);
+  assert(activityMatchesEvent(synthActs[0], { type: 'kill', target: 'WOLF' }), 'matching is case-insensitive');
+  assert(!activityMatchesEvent(synthActs[0], { type: 'talk', target: 'wolf' }), 'kind must match');
+  // Required done (optional pending) still completes the task — optional
+  // steps never block — and a replay task flips to cooldown, not completed.
+  let state = startTask(synthQuest, synthTask, 3, store);
+  assert(state.status === 'active' && state.startedDay === 3, 'startTask should seed an active state');
+  let evaluation = evaluateTaskState(state, synthQuest, synthTask, store, 3);
+  assert(evaluation.completed && evaluation.newlyOptionalPaid.length === 0, 'required done must complete even with optional pending');
+  state = evaluation.state;
+  assert(state.status === 'cooldown' && state.availableDay === 13, 'replay task should cool down to day 13');
+  assert(taskAvailability(synthQuest, synthTask, state, 1, 12) === 'cooldown', 'before expiry must stay cooldown');
+  assert(taskAvailability(synthQuest, synthTask, state, 1, 13) === 'available', 'at expiry must be available again');
+  assert(!taskComplete(synthQuest, synthTask, {}), 'empty store must not complete');
+  assert(taskComplete(synthQuest, synthTask, store), 'required at end must complete regardless of optional');
+  // Optional bonus: fresh store, optional done first.
+  let store2: QuestStorage = {};
+  store2 = writeTaskEventToStorage(store2, { type: 'collect', target: 'silk' }, synthDefs, synthTasks);
+  const state2 = startTask(synthQuest, synthTask, 1, store2);
+  const eval2 = evaluateTaskState(state2, synthQuest, synthTask, store2, 1);
+  assert(eval2.newlyOptionalPaid.length === 1 && eval2.newlyOptionalPaid[0].id === 'opt-b', 'optional completion must be reported');
+  assert(!eval2.completed, 'optional alone must not complete the task');
+  assert(eval2.state.optionalPaid.includes('opt-b'), 'optional payment must be recorded');
+  const eval2b = evaluateTaskState(eval2.state, synthQuest, synthTask, store2, 1);
+  assert(eval2b.newlyOptionalPaid.length === 0, 'optional bundle must pay exactly once');
+  // Re-accept resets keys; first accept keeps pre-progress.
+  const reset = resetTaskKeys(store, synthQuest, synthTask);
+  assert(reset[taskStorageKey('task-synth', 'kill-a')] === 0, 'reset must zero activity keys');
+  // Bundle: wrapped quest rewards + Mosslight faction +25.
+  const bundle = taskBundleFor(questById('rats-in-the-cellar')!);
+  assert(bundle.coins === 25 && bundle.xp === 40, 'rats bundle should carry quest rewards');
+  assert(bundle.faction?.factionId === 'Mosslight Crossing' && bundle.faction?.amount === 25, 'rats bundle should carry +25 Mosslight standing');
+  // Save round-trip + migration from a linear quest state. (Round-trip
+  // uses a real task: parseTaskSave validates against TASKS, so a
+  // synthetic task id would rightly be dropped.)
+  const caravanState = startTask(caravanQuest, caravanTask, 1, {});
+  const saved = serializeTaskSave([caravanState]);
+  const parsed = parseTaskSave(saved, [caravanQuest], {});
+  assert(parsed.states.length === 1 && parsed.states[0].taskId === 'task-caravan-guard', 'task save should round-trip');
+  assert(parseTaskSave('not json', [caravanQuest], {}).states.length === 0, 'bad task save must restore empty');
+  const migrated = migrateTaskStates(
+    [{ questId: 'caravan-guard', status: 'active', stageIndex: 0, progress: {} }],
+    { 'quest:caravan-guard:visit-greenfield': 1 },
+    [],
+    [caravanQuest],
+  );
+  assert(migrated.questStates.length === 0, 'converted quest state must leave the quest list');
+  assert(migrated.taskStates.length === 1 && migrated.taskStates[0].status === 'active', 'converted quest state must become a task state');
+  assert(migrated.storage[taskStorageKey('task-caravan-guard', 'visit-greenfield')] === 1, 'quest key value must carry into the task key');
+  assert(taskActivityText({ id: 'x', kind: 'kill', targets: ['wolf'], label: 'Wolves', end: 4, optional: false }, 2) === 'Wolves: 2/4', 'activity text should render ranges');
+  assert(markerForTaskGiver(caravanQuest, caravanTask, [], 7, 1) === 'available', 'unaccepted task giver should show !');
+  assert(markerForTaskGiver(caravanQuest, caravanTask, [{ taskId: 'task-caravan-guard', status: 'active', progress: {}, optionalPaid: [] }], 7, 1) === null, 'active task giver must show no marker');
+  assert(availableTasks(7, [], 1, [caravanQuest]).length === 1, 'caravan task should be available at level 7');
+  assert(availableTasks(1, [], 1, [caravanQuest]).length === 0, 'caravan task should be level-gated');
 }
 
 // ---- BUILD 330: Oblivion-style dialogue (topics, disposition, wanted) ----

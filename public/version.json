@@ -1,6 +1,6 @@
 {
-  "build": "939",
-  "note": "Towns now remember how they feel about you: every town and village tracks a standing from Ally down to Scowls, and the tier shows in villager dialogue and when you examine someone. Hitting a villager lowers their town standing, killing one drops it hard, and finishing a quest for a town raises it. Guards start wary of you while priests and children start welcoming, so the same standing can read differently from person to person. Standing is separate from bounty: paying a fine or serving jail clears what you owe, but it does not repair what a town thinks of you. No prices, dialogue, or guard behavior change with standing yet — the tier is display only for now.",
-  "timestamp": "2026-10-21T21:30:47.309Z",
-  "cacheBuster": "mvimmc2k"
+  "build": "940",
+  "note": "Quests grew a task shell: six quests are now multi-part tasks you can work on in any order — guard the caravan to Greenfield and Oakrest, gather the three Aldorian seals, and more. The rat cellar only counts kills in Mosslight itself, the caravan run repeats every 30 days and the rat cellar every 14, and finishing a task pays gold, XP, and town standing at once. Your progress on converted quests carries over untouched. Skill and spell objectives are not in yet — there is no skill-gain or overworld casting event for them to match — and shared party tasks are not built, since this is a single-player game.",
+  "timestamp": "2026-10-21T21:52:43.161Z",
+  "cacheBuster": "mvinejdl"
 }

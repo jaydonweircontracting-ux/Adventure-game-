@@ -128,6 +128,8 @@ import { tierForStanding, standingFor, factionForNpc, factionForQuestLocation, a
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, LOCKPICK_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
 import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, questProgressText, questMissionText, questRumors, serializeQuestSave, parseQuestSave, writeQuestEventToStorage, markerForGiver, type QuestState, type QuestEvent, type QuestDef, type QuestStorage } from '@/game/quests';
+import { TASKS, taskDefById, taskDefForQuest, isTaskDriven, taskActivities, taskActivityText, taskProgressText, taskBundleFor, taskAvailability, availableTasks, markerForTaskGiver, startTask, evaluateTaskState, writeTaskEventToStorage, resetTaskKeys, eventZoneForChunk, serializeTaskSave, parseTaskSave, migrateTaskStates, type TaskState, type TaskDef, type TaskRewardBundle, type TaskActivity } from '@/game/tasks';
+import { applyFactionGain } from '@/game/faction';
 import { chestsForChunk, attemptLockpick, serializeOpenedChests, parseOpenedChests, type LockedChest } from '@/game/lockpicking';
 import { sitesForActiveStages, resolveSiteChunk, chunkSatisfiesStage, type ActiveQuestStage } from '@/game/questSites';
 import { playCombatSound } from '@/game/effects';
@@ -156,7 +158,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '939';
+const BUILD_NUMBER = '940';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -176,6 +178,7 @@ const BUILD_NOTES: Record<string, string> = {
   '936': 'Quests now track real progress instead of a yes-or-no flag: every quest step counts on its own meter, and the log shows the count as you go — slay rats and it reads "Rats slain: 3/5", gather silk and it reads "Spider silk collected: 4/6". Work you do before picking a quest up counts too: rats you already killed are already on the meter when you accept, and a step you finished early waits for you instead of making you redo it. Old saves carry over untouched — a finished quest stays finished, and half-finished progress stays exactly where you left it.',
   '938': 'There is now a Creature Codex in the options menu: every beast you slay is recorded by kind, and the codex shows how many of each you have killed, how close you are to the next tier, and how hard and how common each kind is. Kill 50 of a kind to reach Prowess, 500 for Expertise, 1000 for Mastery — and every mastered entry earns 50 charm points, tracked at the top of the page. A kind you have never slain stays hidden as ??? until your first kill of it, and creatures slain by villagers or guards do not count — the codex is your hunting record alone. Tiers and charm points are display only: they give no combat bonuses, and no charm shop exists yet. Dungeon creatures are not tracked, since dungeon kills run on a separate engine.',
   '939': 'Towns now remember how they feel about you: every town and village tracks a standing from Ally down to Scowls, and the tier shows in villager dialogue and when you examine someone. Hitting a villager lowers their town standing, killing one drops it hard, and finishing a quest for a town raises it. Guards start wary of you while priests and children start welcoming, so the same standing can read differently from person to person. Standing is separate from bounty: paying a fine or serving jail clears what you owe, but it does not repair what a town thinks of you. No prices, dialogue, or guard behavior change with standing yet — the tier is display only for now.',
+  '940': 'Quests grew a task shell: six quests are now multi-part tasks you can work on in any order — guard the caravan to Greenfield and Oakrest, gather the three Aldorian seals, and more. The rat cellar only counts kills in Mosslight itself, the caravan run repeats every 30 days and the rat cellar every 14, and finishing a task pays gold, XP, and town standing at once. Your progress on converted quests carries over untouched. Skill and spell objectives are not in yet — there is no skill-gain or overworld casting event for them to match — and shared party tasks are not built, since this is a single-player game.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
   '925': 'Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported',
@@ -1837,6 +1840,10 @@ type SaveGameData = {
   carriageTravel?: { destName: string; destChunk: Point; arrival: Point; totalTicks: number; doneTicks: number };
   escortHired?: boolean;
   questLog?: string;
+  // BUILD 940: task states (EQEmu shell). Progress lives in questLog's
+  // storage; this field carries only the task state list. Old saves
+  // carry no field and restore to empty (migration runs on load).
+  taskLog?: string;
   openedChests?: string;
   lootedPois?: string;
   civ?: string;
@@ -3623,7 +3630,7 @@ function WorldMap({ chunk, onClose, kingdomLabels, tradeRoutes, visitedChunks }:
     </div>
   );
 }
-function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion, equippedDagger, onToggleDagger, equippedBow, onToggleBow, equippedShirt, onToggleShirt, equippedSword, onToggleSword, barbHair, onCycleHair, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, questPlayerLevel, onAcceptQuest, onWeaveBowstring, onOpenSkills }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; onDrinkPotion: () => void; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; equippedShirt: boolean; onToggleShirt: () => void; equippedSword: boolean; onToggleSword: () => void; barbHair: string; onCycleHair: (dir: 1 | -1) => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onWeaveBowstring: () => void; onOpenSkills?: () => void }) {
+function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion, equippedDagger, onToggleDagger, equippedBow, onToggleBow, equippedShirt, onToggleShirt, equippedSword, onToggleSword, barbHair, onCycleHair, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, taskStates, questPlayerLevel, onAcceptQuest, onAcceptTask, onWeaveBowstring, onOpenSkills }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; onDrinkPotion: () => void; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; equippedShirt: boolean; onToggleShirt: () => void; equippedSword: boolean; onToggleSword: () => void; barbHair: string; onCycleHair: (dir: 1 | -1) => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; taskStates: TaskState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onAcceptTask: (questId: string) => void; onWeaveBowstring: () => void; onOpenSkills?: () => void }) {
   const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats' | 'quests'>('inventory');
   const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn + inventory.wood + (inventory.stone || 0) + inventory.silk + inventory.bow + inventory.beer + inventory.healthPotion + inventory.lockpicks + inventory.shirts + inventory.swords;
   const visibleItems = [
@@ -3726,7 +3733,7 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
             </div>
           )}</div>
           ) : activeTab === 'quests' ? (
-            <QuestLogPanel questStates={questStates} playerLevel={questPlayerLevel} silkCount={inventory.silk} onAcceptQuest={onAcceptQuest} onWeaveBowstring={onWeaveBowstring} />
+            <QuestLogPanel questStates={questStates} taskStates={taskStates} playerLevel={questPlayerLevel} silkCount={inventory.silk} onAcceptQuest={onAcceptQuest} onAcceptTask={onAcceptTask} onWeaveBowstring={onWeaveBowstring} />
           ) : <StatsPanel playerStats={playerStats} statPoints={statPoints} onAssign={onAssignStat} />}
         </div>
       </div>
@@ -3734,21 +3741,35 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
   );
 }
 
-function QuestLogPanel({ questStates, playerLevel, silkCount, onAcceptQuest, onWeaveBowstring }: { questStates: QuestState[]; playerLevel: number; silkCount: number; onAcceptQuest: (questId: string) => void; onWeaveBowstring: () => void }) {
+function QuestLogPanel({ questStates, taskStates, playerLevel, silkCount, onAcceptQuest, onAcceptTask, onWeaveBowstring }: { questStates: QuestState[]; taskStates: TaskState[]; playerLevel: number; silkCount: number; onAcceptQuest: (questId: string) => void; onAcceptTask: (questId: string) => void; onWeaveBowstring: () => void }) {
   const [questTab, setQuestTab] = useState<'active' | 'available' | 'completed'>('active');
   const byId = new Map(questStates.map((s) => [s.questId, s]));
-  const activeDefs = QUESTS.filter((def) => byId.get(def.id)?.status === 'active');
-  const completedDefs = QUESTS.filter((def) => byId.get(def.id)?.status === 'completed');
-  const availableDefs = availableQuests(playerLevel, questStates);
+  const taskById = new Map(taskStates.map((s) => [s.taskId, s]));
+  const activeDefs = QUESTS.filter((def) => !isTaskDriven(def.id) && byId.get(def.id)?.status === 'active');
+  const completedDefs = QUESTS.filter((def) => !isTaskDriven(def.id) && byId.get(def.id)?.status === 'completed');
+  const availableDefs = availableQuests(playerLevel, questStates).filter((def) => !isTaskDriven(def.id));
+  // BUILD 940: task-driven defs render from task state, in the same tabs.
+  // No world day here: cooldown tasks show their return day and the
+  // Accept button still calls acceptTask, which enforces the timer live.
+  const taskCards = TASKS.map((taskDef) => {
+    const def = questById(taskDef.questId);
+    if (!def) return null;
+    return { def, taskDef, state: taskById.get(taskDef.id) };
+  }).filter((c): c is { def: QuestDef; taskDef: TaskDef; state: TaskState | undefined } => c !== null);
+  const activeTasks = taskCards.filter((c) => c.state?.status === 'active');
+  const availableTasks = taskCards.filter((c) => !c.state && c.def.level <= playerLevel + 1);
+  const cooldownTasks = taskCards.filter((c) => c.state?.status === 'cooldown');
+  const completedTasks = taskCards.filter((c) => c.state?.status === 'completed');
   const shown = questTab === 'active' ? activeDefs : questTab === 'available' ? availableDefs : completedDefs;
+  const shownTasks = questTab === 'active' ? activeTasks : questTab === 'available' ? [...availableTasks, ...cooldownTasks] : completedTasks;
   return (
     <section className="quest-log-panel" role="tabpanel" aria-label="Quest log" data-testid="quest-log-panel">
       <div className="quest-log-tabs" role="tablist" aria-label="Quest lists">
-        <button className={'quest-log-tab ' + (questTab === 'active' ? 'is-active' : '')} onClick={() => setQuestTab('active')} data-testid="quest-tab-active">Active ({activeDefs.length})</button>
-        <button className={'quest-log-tab ' + (questTab === 'available' ? 'is-active' : '')} onClick={() => setQuestTab('available')} data-testid="quest-tab-available">Available ({availableDefs.length})</button>
-        <button className={'quest-log-tab ' + (questTab === 'completed' ? 'is-active' : '')} onClick={() => setQuestTab('completed')} data-testid="quest-tab-completed">Completed ({completedDefs.length})</button>
+        <button className={'quest-log-tab ' + (questTab === 'active' ? 'is-active' : '')} onClick={() => setQuestTab('active')} data-testid="quest-tab-active">Active ({activeDefs.length + activeTasks.length})</button>
+        <button className={'quest-log-tab ' + (questTab === 'available' ? 'is-active' : '')} onClick={() => setQuestTab('available')} data-testid="quest-tab-available">Available ({availableDefs.length + availableTasks.length + cooldownTasks.length})</button>
+        <button className={'quest-log-tab ' + (questTab === 'completed' ? 'is-active' : '')} onClick={() => setQuestTab('completed')} data-testid="quest-tab-completed">Completed ({completedDefs.length + completedTasks.length})</button>
       </div>
-      {shown.length === 0 && <div className="quest-log-empty">{questTab === 'active' ? 'No active quests. Find someone with a ! over their head.' : questTab === 'available' ? 'No quests available at your level yet. Keep exploring.' : 'No quests completed yet.'}</div>}
+      {shown.length === 0 && shownTasks.length === 0 && <div className="quest-log-empty">{questTab === 'active' ? 'No active quests. Find someone with a ! over their head.' : questTab === 'available' ? 'No quests available at your level yet. Keep exploring.' : 'No quests completed yet.'}</div>}
       {shown.map((def) => {
         const state = byId.get(def.id);
         const stage = state?.status === 'active' ? def.stages[state.stageIndex] : null;
@@ -3780,6 +3801,38 @@ function QuestLogPanel({ questStates, playerLevel, silkCount, onAcceptQuest, onW
           </article>
         );
       })}
+      {shownTasks.map(({ def, taskDef, state }) => {
+        const activities = taskActivities(def, taskDef);
+        const bundle = taskBundleFor(def);
+        const needsTaskWeave = !!state && state.status === 'active' && activities.some((a) => a.kind === 'craft' && a.targets.includes('bowstring') && (state.progress[a.id] ?? 0) < a.end);
+        return (
+          <article className={'quest-card' + (def.storyQuest ? ' is-story' : '')} key={taskDef.id} data-testid={'task-card-' + taskDef.id}>
+            <header className="quest-card-head">
+              <div>
+                <strong>{def.title}</strong>
+                {def.storyQuest && <span className="quest-story-badge" title="Main story quest">⭐ Story</span>}
+              </div>
+              <span className="quest-card-level">Lv {def.level}</span>
+            </header>
+            <p className="quest-card-desc">{def.description}</p>
+            <p className="quest-card-giver">🗣 {def.giver.name} — {def.giver.location}</p>
+            {state?.status === 'active' && (
+              <ol className="quest-card-stages">
+                {activities.map((a) => {
+                  const value = state.progress[a.id] ?? 0;
+                  const done = value >= a.end;
+                  return <li key={a.id} className={done ? 'is-done' : 'is-current'}>{done ? '✓ ' : ''}{taskActivityText(a, value)}{a.optional ? ' (optional)' : ''}{a.zone?.settlement ? ` — ${a.zone.settlement} only` : ''}</li>;
+                })}
+              </ol>
+            )}
+            <div className="quest-card-rewards" aria-label="Task rewards"><span>🪙 {bundle.coins}</span><span>✦ {bundle.xp} XP</span>{bundle.items.slice(0, 3).map((item) => <span key={item}>🎁 {item}</span>)}{bundle.faction && <span>🤝 {bundle.faction.factionId} +{bundle.faction.amount}</span>}</div>
+            {questTab === 'available' && !state && <button className="quest-accept-button" onClick={() => onAcceptTask(def.id)} data-testid={'button-task-accept-' + taskDef.id}>Accept task</button>}
+            {questTab === 'available' && state?.status === 'cooldown' && <div className="quest-card-done">Returns day {state.availableDay} <button className="quest-accept-button" onClick={() => onAcceptTask(def.id)} data-testid={'button-task-accept-' + taskDef.id}>Accept task</button></div>}
+            {questTab === 'completed' && <div className="quest-card-done">✓ Complete</div>}
+            {needsTaskWeave && <button className="quest-weave-button" onClick={onWeaveBowstring} disabled={silkCount < 6} data-testid="button-quest-weave">Weave bowstring ({silkCount}/6 silk)</button>}
+          </article>
+        );
+      })}
     </section>
   );
 }
@@ -3788,7 +3841,7 @@ function StatsPanel({ playerStats, statPoints, onAssign }: { playerStats: Player
   return <section className="satchel-stats-panel" role="tabpanel" aria-label="Adventurer Stats"><div className="satchel-stats-heading"><span className="atlas-eyebrow">Character growth</span><h3>Adventurer Stats</h3></div><div className="satchel-stats-points"><strong>{statPoints}</strong><span>unspent stat points</span><small>Every level grants 5 points. Spend them to shape your build.</small></div><div className="satchel-stats-list">{STAT_KEYS.map((stat) => <div className="satchel-stat-row" key={stat} data-testid={'stat-row-' + stat}><span className="satchel-stat-key">{stat.toUpperCase()}</span><span className="satchel-stat-copy"><strong>{statDetails[stat].label}</strong><small>{statDetails[stat].description}</small></span><b className="satchel-stat-value">{playerStats[stat]}</b><button className="satchel-stat-add" onClick={() => onAssign(stat)} disabled={statPoints < 1} aria-label={'Add 1 ' + statDetails[stat].label} data-testid={'button-add-stat-' + stat}><Plus size={14} /> +1</button></div>)}</div><div className="satchel-stats-footer">STR raises hit damage · DEX speeds attacks · INT raises max HP/XP · LUK improves crits and loot.</div></section>;
 }
 
-function InteriorRoom({ area, position, facing, moving, equippedDagger, equippedBow, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onTalkToQuestGiver, onEnterDungeon, onEnterCellar, onTavernSleep, cellarRats, onStrikeCellarRat, questStates, interiorTownsfolk, onTalkToTownsfolk }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; equippedBow: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onTalkToQuestGiver: (name: string) => void; onEnterDungeon: () => void; onEnterCellar: () => void; onTavernSleep: () => void; cellarRats: CellarRat[]; onStrikeCellarRat: (ratId: number) => void; questStates: QuestState[]; interiorTownsfolk: { npc: Townsperson; xPct: number; yPct: number }[]; onTalkToTownsfolk: (npc: Townsperson) => void }) {
+function InteriorRoom({ area, position, facing, moving, equippedDagger, equippedBow, attacking, attackSequence, simulatedAdventurers, selectedAdventurerId, onInspect, onTalkToSmith, onTalkToBartender, onTalkToPatron, onTalkToTeacher, onTalkToQuestGiver, onEnterDungeon, onEnterCellar, onTavernSleep, cellarRats, onStrikeCellarRat, questStates, taskStates, taskPlayerLevel, taskDay, interiorTownsfolk, onTalkToTownsfolk }: { area: InteriorArea; position: Point; facing: Direction; moving: boolean; equippedDagger: boolean; equippedBow: boolean; attacking: boolean; attackSequence: number; simulatedAdventurers: SimulatedAdventurer[]; selectedAdventurerId: string | null; onInspect: (adventurer: SimulatedAdventurer) => void; onTalkToSmith: () => void; onTalkToBartender: () => void; onTalkToPatron: (name: string, line: string) => void; onTalkToTeacher: (name: string, title: string, role: 'mage' | 'warrior' | 'rogue') => void; onTalkToQuestGiver: (name: string) => void; onEnterDungeon: () => void; onEnterCellar: () => void; onTavernSleep: () => void; cellarRats: CellarRat[]; onStrikeCellarRat: (ratId: number) => void; questStates: QuestState[]; taskStates: TaskState[]; taskPlayerLevel: number; taskDay: number; interiorTownsfolk: { npc: Townsperson; xPct: number; yPct: number }[]; onTalkToTownsfolk: (npc: Townsperson) => void }) {
   // Tavern patron nameplates auto-hide (bartender Mira's stays); tapping a patron pops theirs for 4s.
   const [shownPatron, setShownPatron] = useState<string | null>(null);
   const patronTimerRef = useRef<number | null>(null);
@@ -3807,7 +3860,14 @@ function InteriorRoom({ area, position, facing, moving, equippedDagger, equipped
       const giver = q.giver.name.toLowerCase();
       return giver === lowered || giver.includes(lowered) || lowered.includes(giver);
     });
-    return def ? markerForGiver(def, questStates) : null;
+    if (!def) return null;
+    // BUILD 940: task-driven givers show the task marker (never '?').
+    if (isTaskDriven(def.id)) {
+      const taskDef = taskDefForQuest(def.id);
+      if (!taskDef) return null;
+      return markerForTaskGiver(def, taskDef, taskStates, taskPlayerLevel, taskDay);
+    }
+    return markerForGiver(def, questStates);
   };
   const giverBadge = (name: string) => {
     const marker = giverMarker(name);
@@ -4155,7 +4215,7 @@ function MiniMap({ chunk, position, onTap, mode = 'terrain', radarEntities = [] 
   );
 }
 
-function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, onResolveBounty, bounty, muted, onToggleMute, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number, townId: string) => void; onResolveBounty: (townId: string) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
+function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onTaskStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, onResolveBounty, bounty, muted, onToggleMute, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onTaskStatesChange: (states: TaskState[]) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number, townId: string) => void; onResolveBounty: (townId: string) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
   // BUILD 476: equipment damage bonus from found items.
   const equipmentDamageBonus = totalEquipmentStats(equipment).damage ?? 0;
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
@@ -5341,6 +5401,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // Quest system: active/completed quest states (pure logic in src/game/quests.ts).
   const [questStates, setQuestStates] = useState<QuestState[]>([]);
   const questStatesRef = useRef<QuestState[]>([]);
+  // BUILD 940: task states (EQEmu shell; pure logic in src/game/tasks.ts).
+  // Same lifecycle as quest states; progress lives in questStorageRef.
+  const [taskStates, setTaskStates] = useState<TaskState[]>([]);
+  const taskStatesRef = useRef<TaskState[]>([]);
+  // Push task state to Home so the menu's quest log can render tasks.
+  useEffect(() => { onTaskStatesChange(taskStatesRef.current); }, [taskStates, onTaskStatesChange]);
   // BUILD 936: the quest storage store (mission ranges). Lives beside
   // questStatesRef and follows the same lifecycle: fresh on a new game
   // (GameField remount), restored from the save's questLog on load.
@@ -5974,7 +6040,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const maxHp = playerMaxHpForStats(playerStatsRef.current);
       setPlayerHp((current) => Math.min(maxHp, current + amount));
     };
-    menuBridgeRef.current = { openOptions: () => setOptionsOpen(true), openSkills: () => setSkillsOpen(true), getTime: () => time, acceptQuest, emitQuestEvent, getKingdomLabels: () => kingdomLabelPoints(ensureCiv()), getTradeRoutes: () => tradeRoutePolylines(ensureCiv()), healPlayer };
+    menuBridgeRef.current = { openOptions: () => setOptionsOpen(true), openSkills: () => setSkillsOpen(true), getTime: () => time, acceptQuest, acceptTask, emitQuestEvent, getKingdomLabels: () => kingdomLabelPoints(ensureCiv()), getTradeRoutes: () => tradeRoutePolylines(ensureCiv()), healPlayer };
   });
   const wildlifeRef = useRef<WildlifeState[]>(wildlife);
   useEffect(() => { waterLifeRef.current = waterLife; }, [waterLife]);
@@ -6153,6 +6219,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         getQuestState: (questId: string) => {
           const st = questStatesRef.current.find((s) => s.questId === questId);
           return st ? { status: st.status, stageIndex: st.stageIndex, progress: st.progress } : null;
+        },
+        // BUILD 940: expose task state for shell verification (same pattern).
+        getTaskState: (taskId: string) => {
+          const st = taskStatesRef.current.find((s) => s.taskId === taskId);
+          return st ? { status: st.status, progress: st.progress, optionalPaid: [...st.optionalPaid], availableDay: st.availableDay ?? null } : null;
         },
         // BUILD 589: expose gold via inventoryRef (no silent fallback).
         // Returns null if inventory unavailable, so tests can distinguish missing data.
@@ -6684,6 +6755,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     carriageTravel: carriageTravelRef.current ?? undefined,
     escortHired: escortHiredRef.current,
     questLog: serializeQuestSave(questStatesRef.current, questStorageRef.current),
+    taskLog: serializeTaskSave(taskStatesRef.current),
     openedChests: serializeOpenedChests(openedChestsRef.current),
     lootedPois: serializeOpenedChests(lootedPoisRef.current),
     civ: civRef.current ? serializeCivilization(civRef.current) : undefined,
@@ -6867,8 +6939,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     }
     escortHiredRef.current = !!loadState.escortHired; setEscortHired(!!loadState.escortHired);
     const restoredQuests = loadState.questLog ? parseQuestSave(loadState.questLog) : { states: [], storage: {} };
-    questStorageRef.current = restoredQuests.storage;
-    questStatesRef.current = restoredQuests.states; setQuestStates(restoredQuests.states);
+    // BUILD 940: task states restore beside quests; old linear states
+    // for converted quests migrate into task states (progress carried
+    // over via the shared store — nothing resets).
+    const restoredTasks = loadState.taskLog ? parseTaskSave(loadState.taskLog, QUESTS, restoredQuests.storage) : { states: [] };
+    const migrated = migrateTaskStates(restoredQuests.states, restoredQuests.storage, restoredTasks.states, QUESTS);
+    questStorageRef.current = migrated.storage;
+    questStatesRef.current = migrated.questStates; setQuestStates(migrated.questStates);
+    taskStatesRef.current = migrated.taskStates; setTaskStates(migrated.taskStates);
     const restoredChests = parseOpenedChests(loadState.openedChests);
     openedChestsRef.current = restoredChests; setOpenedChests(restoredChests);
     const restoredLooted = parseOpenedChests(loadState.lootedPois);
@@ -9761,11 +9839,16 @@ if (active) {
   };
 
   const emitQuestEvent = (event: QuestEvent) => {
-    const withDay = { ...event, day: event.day ?? currentWorldDay() };
+    // BUILD 940: zone context defaults to the player's chunk (Mosslight
+    // resolves to its settlement; every other chunk resolves to none).
+    const withDay = { ...event, day: event.day ?? currentWorldDay(), zone: event.zone ?? eventZoneForChunk(chunkRef.current) };
     // BUILD 936: one storage write for every quest (accepted or not), then
     // each active quest gates its current stage on its key. Pre-progress on
     // future stages refreshes the log silently — no log spam for it.
-    const storage = writeQuestEventToStorage(questStorageRef.current, withDay);
+    // BUILD 940: the same store takes task keys too (one write, both
+    // namespaces); the task loop below evaluates every active task.
+    const questStorage = writeQuestEventToStorage(questStorageRef.current, withDay);
+    const storage = writeTaskEventToStorage(questStorage, withDay, QUESTS);
     questStorageRef.current = storage;
     const completedDefs: QuestDef[] = [];
     const advancedTitles: string[] = [];
@@ -9782,11 +9865,85 @@ if (active) {
       else advancedTitles.push(def.title + ' — ' + questProgressText(def, res.state));
       return res.state;
     });
-    if (!changed) return;
-    questStatesRef.current = next;
-    setQuestStates(next);
+    const optionalPayouts: { bundle: TaskRewardBundle; questDef: QuestDef }[] = [];
+    const completedTasks: { questDef: QuestDef; taskDef: TaskDef }[] = [];
+    let tasksChanged = false;
+    const nextTasks = taskStatesRef.current.map((st) => {
+      if (st.status !== 'active') return st;
+      const taskDef = taskDefById(st.taskId);
+      const questDef = taskDef && questById(taskDef.questId);
+      if (!taskDef || !questDef) return st;
+      const evaluation = evaluateTaskState(st, questDef, taskDef, storage, withDay.day);
+      if (evaluation.state !== st) tasksChanged = true;
+      for (const activity of evaluation.newlyOptionalPaid) {
+        if (activity.rewards) optionalPayouts.push({ bundle: activity.rewards, questDef });
+      }
+      if (evaluation.completed) completedTasks.push({ questDef, taskDef });
+      return evaluation.state;
+    });
+    if (!changed && !tasksChanged) return;
+    if (changed) {
+      questStatesRef.current = next;
+      setQuestStates(next);
+    }
+    if (tasksChanged) {
+      taskStatesRef.current = nextTasks;
+      setTaskStates(nextTasks);
+    }
     if (advancedTitles.length) setLogs((currentLogs) => [...advancedTitles.map((text) => ({ text: 'Quest updated: ' + text, color: 'blue' as const })), ...currentLogs].slice(0, 5));
     for (const def of completedDefs) completeQuest(def);
+    for (const payout of optionalPayouts) payTaskBundle(payout.bundle, payout.questDef, true);
+    for (const { questDef, taskDef } of completedTasks) completeTask(questDef, taskDef);
+  };
+
+  // BUILD 940: pay a task bundle through the same paths as quest rewards
+  // (coins, XP, bow mapping + keepsakes, legacy reputation, 939 faction).
+  const payTaskBundle = (bundle: TaskRewardBundle, questDef: QuestDef, isBonus: boolean) => {
+    if (bundle.coins) onLoot({ coins: bundle.coins });
+    if (bundle.xp) grantQuestXp(bundle.xp);
+    if (bundle.items.includes('Hunting bow')) onLoot({ bow: 1 });
+    if (bundle.reputation) onQuestReputation(bundle.reputation);
+    if (bundle.faction) adjustFactionStanding(bundle.faction.factionId, (s) => applyFactionGain(s, bundle.faction!.factionId, bundle.faction!.amount));
+    const keepsakes = bundle.items.filter((name) => name !== 'Hunting bow');
+    const rewardText = `${isBonus ? 'Task bonus' : 'Task complete'}: ${questDef.title}! +${bundle.coins} gold, +${bundle.xp} XP` + (keepsakes.length ? ', ' + keepsakes.join(', ') : '') + (bundle.faction ? `, ${bundle.faction.factionId} standing ${bundle.faction.amount >= 0 ? '+' : ''}${bundle.faction.amount}` : '') + '.';
+    setLogs((currentLogs) => [{ text: rewardText, color: 'green' }, ...currentLogs].slice(0, 5));
+    if (!isBonus) {
+      spawnCombatText('TASK COMPLETE', positionRef.current, 'reward');
+      announceTaskRumors();
+    }
+  };
+
+  const completeTask = (questDef: QuestDef, taskDef: TaskDef) => {
+    void taskDef;
+    payTaskBundle(taskBundleFor(questDef), questDef, false);
+  };
+
+  const acceptTask = (questId: string) => {
+    const taskDef = taskDefForQuest(questId);
+    const questDef = questById(questId);
+    if (!taskDef || !questDef) return;
+    const day = currentWorldDay();
+    const existing = taskStatesRef.current.find((s) => s.taskId === taskDef.id);
+    if (existing && taskAvailability(questDef, taskDef, existing, playerLevelRef.current, day) !== 'available') {
+      // Timer feedback: a stale log button tap still tells the player when it returns.
+      if (existing.status === 'cooldown' && existing.availableDay !== undefined) {
+        setLogs((currentLogs) => [{ text: `${questDef.title} returns on day ${existing.availableDay}.`, color: 'blue' }, ...currentLogs].slice(0, 5));
+      }
+      return;
+    }
+    // Re-accept after a replay timer resets activities to start; a first
+    // accept keeps pre-progress (936 semantics).
+    let storage = questStorageRef.current;
+    if (existing) {
+      storage = resetTaskKeys(storage, questDef, taskDef);
+      questStorageRef.current = storage;
+    }
+    const state = startTask(questDef, taskDef, day, storage);
+    const next = existing ? taskStatesRef.current.map((s) => (s.taskId === taskDef.id ? state : s)) : [...taskStatesRef.current, state];
+    taskStatesRef.current = next;
+    setTaskStates(next);
+    setQuestDialog(null);
+    setLogs((currentLogs) => [{ text: `Task started: ${questDef.title}.`, color: 'green' }, ...currentLogs].slice(0, 5));
   };
 
   const acceptQuest = (questId: string) => {
@@ -9810,9 +9967,28 @@ if (active) {
 
   const questStateFor = (questId: string): QuestState | undefined => questStatesRef.current.find((s) => s.questId === questId);
 
+  // BUILD 940: task state by wrapped quest id.
+  const taskStateFor = (questId: string): TaskState | undefined => {
+    const taskDef = taskDefForQuest(questId);
+    if (!taskDef) return undefined;
+    return taskStatesRef.current.find((s) => s.taskId === taskDef.id);
+  };
+
   const openQuestDialog = (giverName: string) => {
     const def = QUESTS.find((q) => q.giver.name === giverName);
     if (!def) return;
+    // BUILD 940: task-driven givers open the task dialog instead; a
+    // completed one-time task thanks the player like a completed quest.
+    // Cooldown tasks still open the dialog (it shows the return day).
+    if (isTaskDriven(def.id)) {
+      const tstate = taskStateFor(def.id);
+      if (tstate?.status === 'completed') {
+        setLogs((currentLogs) => [{ text: `${giverName} thanks you again for your help.`, color: 'blue' }, ...currentLogs].slice(0, 5));
+        return;
+      }
+      setQuestDialog({ giverName, questId: def.id });
+      return;
+    }
     const state = questStateFor(def.id);
     if (state?.status === 'completed') {
       setLogs((currentLogs) => [{ text: `${giverName} thanks you again for your help.`, color: 'blue' }, ...currentLogs].slice(0, 5));
@@ -9823,15 +9999,25 @@ if (active) {
 
   const announceQuestRumors = () => {
     for (const def of availableQuests(playerLevelRef.current, questStatesRef.current)) {
+      if (isTaskDriven(def.id)) continue;
       if (questRumoredRef.current.has(def.id)) continue;
       questRumoredRef.current.add(def.id);
       onAddRumor(def.rumor ?? questRumors(def)[0], 'Quest: ' + def.title);
     }
   };
 
+  // BUILD 940: task rumors, same shape as quest rumors, deduped by quest id.
+  const announceTaskRumors = () => {
+    for (const { questDef } of availableTasks(playerLevelRef.current, taskStatesRef.current, currentWorldDay(), QUESTS)) {
+      if (questRumoredRef.current.has(questDef.id)) continue;
+      questRumoredRef.current.add(questDef.id);
+      onAddRumor(questDef.rumor ?? questRumors(questDef)[0], 'Task: ' + questDef.title);
+    }
+  };
+
   // Push quest state + level up to Home so the menu's quest log can render.
   useEffect(() => { onQuestStatesChange(questStatesRef.current, playerLevelRef.current); }, [questStates, onQuestStatesChange]);
-  useEffect(() => { onQuestStatesChange(questStatesRef.current, playerLevelRef.current); announceQuestRumors(); }, [playerLevel]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { onQuestStatesChange(questStatesRef.current, playerLevelRef.current); announceQuestRumors(); announceTaskRumors(); }, [playerLevel]); // eslint-disable-line react-hooks/exhaustive-deps
   // Quest site discovery: entering a site chunk advances matching explore/visit stages.
   useEffect(() => {
     const dungeonChunk = currentWorldTile.landmark && currentWorldTile.landmark.kind === 'dungeon' ? { ...chunkRef.current } : null;
@@ -9844,6 +10030,23 @@ if (active) {
       const activeStage: ActiveQuestStage = { questId: st.questId, kind: stage.kind, target: stage.target };
       if (chunkSatisfiesStage(activeStage, chunkRef.current, dungeonChunk)) {
         emitQuestEvent({ type: stage.kind === 'visit' ? 'visit' : 'explore', target: stage.target });
+      }
+    }
+    // BUILD 940: task visit/explore activities discover the same way —
+    // every incomplete activity is checked, not just a current stage.
+    for (const st of taskStatesRef.current) {
+      if (st.status !== 'active') continue;
+      const taskDef = taskDefById(st.taskId);
+      const def = taskDef && questById(taskDef.questId);
+      if (!taskDef || !def) continue;
+      for (const activity of taskActivities(def, taskDef)) {
+        if (activity.kind !== 'visit' && activity.kind !== 'explore') continue;
+        if ((st.progress[activity.id] ?? 0) >= activity.end) continue;
+        if (activity.targets.length === 0) continue;
+        const activeStage: ActiveQuestStage = { questId: st.taskId, kind: activity.kind, target: activity.targets[0] };
+        if (chunkSatisfiesStage(activeStage, chunkRef.current, dungeonChunk)) {
+          emitQuestEvent({ type: activity.kind, target: activity.targets[0] });
+        }
       }
     }
   }, [chunk]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -10893,7 +11096,7 @@ if (active) {
             }}
             playerRunning={playerRunningUi}
           />
-        ) : <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onEnterCellar={enterCellar} onTavernSleep={tavernSleepUntilMorning} cellarRats={cellarRats} onStrikeCellarRat={strikeCellarRat} questStates={questStates} interiorTownsfolk={interiorTownsfolk} onTalkToTownsfolk={talkToTownsfolk} />) : (
+        ) : <InteriorRoom area={interior} position={interiorPosition} facing={playerRenderFacing} moving={moving} equippedDagger={equippedDagger} equippedBow={equippedBow} attacking={attacking} attackSequence={attackSequence} simulatedAdventurers={simulatedAdventurers} selectedAdventurerId={selectedAdventurerId} onInspect={inspectAdventurer} onTalkToSmith={talkToSmith} onTalkToBartender={talkToBartender} onTalkToPatron={talkToPatron} onTalkToTeacher={talkToTavernTeacher} onTalkToQuestGiver={openQuestDialog} onEnterDungeon={onEnterDungeon} onEnterCellar={enterCellar} onTavernSleep={tavernSleepUntilMorning} cellarRats={cellarRats} onStrikeCellarRat={strikeCellarRat} questStates={questStates} taskStates={taskStates} taskPlayerLevel={playerLevel} taskDay={currentWorldDay()} interiorTownsfolk={interiorTownsfolk} onTalkToTownsfolk={talkToTownsfolk} />) : (
         <div className={'pixel-field world-field has-ground-detail world-region-' + currentWorldTile.regionStyle + ' map-terrain-' + currentWorldTile.terrain + (currentWorldTile.waterFeature ? ' world-is-' + currentWorldTile.waterFeature : '') + (startingArea ? ' starting-area' : '')} data-terrain={currentWorldTile.terrain} data-region={currentWorldTile.regionStyle} data-world-biome={currentWorldTile.worldBiome} style={{
           '--field-color': fieldPalette.field,
           '--path-color': fieldPalette.path,
@@ -12893,7 +13096,9 @@ if (active) {
                     const gname = q.giver.name.toLowerCase();
                     return gname === lowered || gname.includes(lowered) || lowered.includes(gname);
                   });
-                  const marker = def ? markerForGiver(def, questStates) : null;
+                  // BUILD 940: task-driven givers show the task marker (never '?').
+                  const taskDef = def ? taskDefForQuest(def.id) : undefined;
+                  const marker = !def ? null : taskDef ? markerForTaskGiver(def, taskDef, taskStates, playerLevel, currentWorldDay()) : markerForGiver(def, questStates);
                   if (marker === 'available') return <span className="quest-giver-badge" aria-hidden="true">!</span>;
                   if (marker === 'turnin') return <span className="quest-giver-badge is-turnin" aria-hidden="true">?</span>;
                   return null;
@@ -12910,6 +13115,20 @@ if (active) {
                 const def = questById(st.questId);
                 const stage = def?.stages[st.stageIndex];
                 if (def && stage && stage.target) stages.push({ questId: st.questId, kind: stage.kind, target: stage.target });
+              }
+              // BUILD 940: task visit/explore/collect activities mark sites
+              // too, so seals, masks, and route waystones render for tasks.
+              for (const st of taskStates) {
+                if (st.status !== 'active') continue;
+                const taskDef = taskDefById(st.taskId);
+                const def = taskDef && questById(taskDef.questId);
+                if (!taskDef || !def) continue;
+                for (const activity of taskActivities(def, taskDef)) {
+                  if (activity.kind !== 'visit' && activity.kind !== 'explore' && activity.kind !== 'collect') continue;
+                  if ((st.progress[activity.id] ?? 0) >= activity.end) continue;
+                  if (activity.targets.length === 0) continue;
+                  stages.push({ questId: st.taskId, kind: activity.kind, target: activity.targets[0] });
+                }
               }
               const dungeonChunk = currentWorldTile.landmark && currentWorldTile.landmark.kind === 'dungeon' ? { ...chunk } : null;
               return sitesForActiveStages(stages).map((site) => {
@@ -14241,6 +14460,52 @@ if (active) {
         {questDialog && (() => {
           const def = questById(questDialog.questId);
           if (!def) return null;
+          // BUILD 940: task-driven givers get the task dialog variant —
+          // activities instead of stages, no return-talk step (completion
+          // pays on the final activity), cooldown shows the return day.
+          const taskDef = taskDefForQuest(def.id);
+          if (taskDef) {
+            const tstate = taskStates.find((s) => s.taskId === taskDef.id);
+            const availability = taskAvailability(def, taskDef, tstate, playerLevel, currentWorldDay());
+            const activities = taskActivities(def, taskDef);
+            const bundle = taskBundleFor(def);
+            const mapActivity = activities.find((a) => a.kind === 'collect' && a.targets.includes('old_merchants_map'));
+            const showMapButton = !!tstate && tstate.status === 'active' && !!mapActivity && (tstate.progress[mapActivity.id] ?? 0) < mapActivity.end;
+            return (
+              <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="quest-dialogue-title" data-testid="overlay-quest-dialogue">
+                <div className="npc-dialogue-card quest-dialogue-card">
+                  <div className="dialogue-portrait is-face" style={facePortraitStyle(questGiverFaceRole(def.giver.name))}><span className="npc-sprite" /></div>
+                  <div className="npc-dialogue-copy">
+                    <span className="dialogue-kicker">Task {def.storyQuest ? '· ⭐ Story' : ''}</span>
+                    <h2 id="quest-dialogue-title">{def.title}</h2>
+                    <p>"{def.description}"</p>
+                    <p className="quest-dialogue-giver"><strong>{def.giver.name}</strong> · {def.giver.location}</p>
+                    {tstate?.status === 'active' && (
+                      <ol className="quest-card-stages">
+                        {activities.map((a) => {
+                          const value = tstate.progress[a.id] ?? 0;
+                          const done = value >= a.end;
+                          return <li key={a.id} className={done ? 'is-done' : 'is-current'}>{done ? '✓ ' : ''}{taskActivityText(a, value)}{a.optional ? ' (optional)' : ''}{a.zone?.settlement ? ` — ${a.zone.settlement} only` : ''}</li>;
+                        })}
+                      </ol>
+                    )}
+                    {tstate?.status === 'cooldown' && availability !== 'available' && (
+                      <p className="quest-dialogue-progress" data-testid="task-dialogue-cooldown">Returns day {tstate.availableDay}.</p>
+                    )}
+                    {tstate?.status === 'completed' && <div className="quest-card-done">✓ Complete</div>}
+                    <div className="quest-dialogue-rewards" aria-label="Task rewards">
+                      <span>🪙 {bundle.coins}</span><span>✦ {bundle.xp} XP</span>{bundle.items.map((item) => <span key={item}>🎁 {item}</span>)}{bundle.faction && <span>🤝 {bundle.faction.factionId} {bundle.faction.amount >= 0 ? '+' : ''}{bundle.faction.amount}</span>}
+                    </div>
+                    <div className="dialogue-options" role="group" aria-label="Task options">
+                      {availability === 'available' && <button type="button" className="dialogue-option" onClick={() => acceptTask(def.id)} data-testid="button-task-accept">Accept task</button>}
+                      {showMapButton && <button type="button" className="dialogue-option" onClick={() => emitQuestEvent({ type: 'collect', target: 'old_merchants_map' })} data-testid="button-quest-take-map">Take the Old Merchant's Map</button>}
+                      <button type="button" className="dialogue-option" onClick={() => setQuestDialog(null)} data-testid="button-quest-leave">Leave</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          }
           const state = questStates.find((s) => s.questId === def.id);
           const stage = state?.status === 'active' ? def.stages[state.stageIndex] : null;
           const talkToGiver = !!stage && stage.kind === 'talk' && !!stage.target && stage.target.toLowerCase() === def.giver.name.toLowerCase();
@@ -14997,7 +15262,7 @@ function Home() {
       clearTimeout(timeout);
     };
   }, [manualCheckToken]);
-  const menuBridgeRef = useRef<{ openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null>(null);
+  const menuBridgeRef = useRef<{ openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void } | null>(null);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
   // BUILD 517: Map reveal (fog of war) — track visited chunks.
@@ -15023,6 +15288,8 @@ function Home() {
   const [equipment, setEquipment] = useState<GeneratedItem[]>([]);
   // Quest log: states pushed up from GameField; the menu renders them.
   const [questStates, setQuestStates] = useState<QuestState[]>([]);
+  // BUILD 940: task states, same push pattern as quest states.
+  const [taskStates, setTaskStates] = useState<TaskState[]>([]);
   const [questPlayerLevel, setQuestPlayerLevel] = useState(1);
   const weaveBowstring = () => {
     if (inventory.silk < 6) return;
@@ -15613,12 +15880,12 @@ function Home() {
       `}</style>
       <div className="game-layout">
             <GameCrashBoundary chunk={chunk}>
-            <GameField rpgConfig={{ look: playerRenderLook, forceIso: forceIsoField }} inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} mapOpen={mapOpen} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} onResolveBounty={(townId) => setBounty((prev) => clearTownBounty(prev, townId))} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
+            <GameField rpgConfig={{ look: playerRenderLook, forceIso: forceIsoField }} inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} mapOpen={mapOpen} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onTaskStatesChange={(states) => { setTaskStates(states); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} onResolveBounty={(townId) => setBounty((prev) => clearTownBounty(prev, townId))} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
             </GameCrashBoundary>
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} kingdomLabels={menuBridgeRef.current?.getKingdomLabels() ?? []} tradeRoutes={menuBridgeRef.current?.getTradeRoutes() ?? []} visitedChunks={visitedChunks} />}
-          {inventoryOpen && <InventorySheet inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} onDrinkPotion={drinkPotion} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onOpenSkills={() => menuBridgeRef.current?.openSkills()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onWeaveBowstring={weaveBowstring} />}
+          {inventoryOpen && <InventorySheet inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} onDrinkPotion={drinkPotion} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onOpenSkills={() => menuBridgeRef.current?.openSkills()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} taskStates={taskStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onAcceptTask={(questId) => menuBridgeRef.current?.acceptTask(questId)} onWeaveBowstring={weaveBowstring} />}
           {journalOpen && (
             <div className="sheet journal-sheet" role="dialog" aria-label="Adventure journal" data-testid="journal-sheet">
               <div className="sheet-header">
