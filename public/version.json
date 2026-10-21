@@ -1,6 +1,6 @@
 {
-  "build": "927",
-  "note": "The Sunken Crypt dungeon now hides hand-crafted vault rooms: treasure hoards, monster dens, shrines, a lava forge, a bone crypt and more, tucked into every level. Walk into one and the game names it — its gold-ringed rooms hold real monsters and real loot. Also fixed: a slain monster no longer blocks the tile it died on, so a killed guardian can no longer seal a corridor behind it",
-  "timestamp": "2026-10-21T05:59:56.148Z",
-  "cacheBuster": "mvhpd911"
+  "build": "928",
+  "note": "The Sunken Crypt dungeon no longer repeats one skeleton: every floor now rolls one of three layouts — the classic chambered galleries, looped galleries where rooms connect in rings so a blocked corridor never strands you, or rough cellular caverns carved by cave generation. Vault rooms still hide in every layout, the stairs are always reachable, and the dungeon panel names the layout you are standing in. Also fixed: the classic map had a door and a pool that were walled off and unreachable — they are joined to the east room now",
+  "timestamp": "2026-10-21T06:14:45.013Z",
+  "cacheBuster": "mvhpwavp"
 }

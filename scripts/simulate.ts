@@ -4,6 +4,7 @@ import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLev
 // BUILD 927: authored dungeon vaults (DCSS .des grammar, original content).
 import { createGame, descend, step, type GameState as DungeonGameState } from '../src/game/stoneSoupEngine';
 import { VAULT_CATALOG, eligibleVaults } from '../src/game/dungeonVaults';
+import { generateLayout, layoutRng, selectLayoutKind } from '../src/game/dungeonLayouts';
 import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai';
 import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '../src/game/combat';
 import { chooseCreatureTarget, pickGuardCreatureTarget, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
@@ -2313,6 +2314,151 @@ console.log('Testing authored dungeon vaults (BUILD 927)...');
   const reach3 = bfsReachable(deep);
   assert(reach3.has(`${stairsCell(deep)!.x}:${stairsCell(deep)!.y}`), 'Vault927: floor-3 stairs stay reachable');
   for (const vault of deep.vaults) for (const cell of vault.cells) assert(reach3.has(cell), 'Vault927: floor-3 vault cells reachable');
+}
+// ---- 13a1h. Dungeon layout generators (BUILD 928) ----
+// DCSS top-5 item 2, portable asset only (the IDEA of a layout library
+// selected per level — loops + cellular first). No DCSS map or
+// parameter set is copied: all three generators are written for this
+// game's 31x19 Ember Vault grid and tuned by measurement here.
+console.log('Testing dungeon layout generators (BUILD 928)...');
+{
+  const WALKABLE928 = new Set(['floor', 'door', 'stairs', 'altar', 'water']);
+  const bfs928 = (kinds: string[][], start: { x: number; y: number }) => {
+    const seen = new Set<string>();
+    if (!WALKABLE928.has(kinds[start.y]?.[start.x] ?? '')) return seen;
+    const queue = [{ ...start }];
+    seen.add(`${start.x}:${start.y}`);
+    while (queue.length > 0) {
+      const cur = queue.pop()!;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const tile = kinds[cur.y + dy]?.[cur.x + dx];
+        if (!tile || !WALKABLE928.has(tile)) continue;
+        const k = `${cur.x + dx}:${cur.y + dy}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        queue.push({ x: cur.x + dx, y: cur.y + dy });
+      }
+    }
+    return seen;
+  };
+  const countKind = (kinds: string[][], kind: string) => kinds.flat().filter((k) => k === kind).length;
+
+  // Selector determinism: same (seed, floor), same pick, every floor.
+  for (const floor of [1, 2, 3, 5]) {
+    const a = selectLayoutKind(12345, floor);
+    const b = selectLayoutKind(12345, floor);
+    assert(a === b, `Layout928: selector is deterministic on floor ${floor}`);
+  }
+  // Selector distribution: every skeleton appears on floors 1 and 3,
+  // in roughly the designed mix (hash-spread, not stream-drawn — a
+  // single LCG draw made sequential seeds land in one band).
+  for (const floor of [1, 3]) {
+    const counts: Record<string, number> = { rooms: 0, loops: 0, caves: 0 };
+    for (let seed = 1; seed <= 500; seed += 1) counts[selectLayoutKind(seed, floor)] += 1;
+    for (const kind of ['rooms', 'loops', 'caves']) assert(counts[kind] >= 50, `Layout928: floor ${floor} rolls ${kind} often (${counts[kind]}/500)`);
+  }
+
+  // Raw-generator contract, per kind, across seeds and depths.
+  for (const kind of ['rooms', 'loops', 'caves'] as const) {
+    for (const floor of [1, 3]) {
+      for (let seed = 1; seed <= 60; seed += 1) {
+        const layout = generateLayout(kind, 31, 19, layoutRng(seed * 7919 + floor), floor);
+        assert(layout.kind === kind, `Layout928: ${kind} floor ${floor} seed ${seed} reports its own kind`);
+        const kinds = layout.kinds;
+        // Border walls intact.
+        for (let x = 0; x < 31; x += 1) assert(kinds[0][x] === 'wall' && kinds[18][x] === 'wall', `Layout928: ${kind} border holds`);
+        for (let y = 0; y < 19; y += 1) assert(kinds[y][0] === 'wall' && kinds[y][30] === 'wall', `Layout928: ${kind} border holds`);
+        // Spawn walkable, exactly one stairs, stairs reachable.
+        assert(WALKABLE928.has(kinds[4][5]), `Layout928: ${kind} spawn is walkable`);
+        assert(countKind(kinds, 'stairs') === 1, `Layout928: ${kind} has exactly one stairs`);
+        const reachable = bfs928(kinds, { x: 5, y: 4 });
+        assert(reachable.has(`${layout.stairs.x}:${layout.stairs.y}`), `Layout928: ${kind} stairs reachable`);
+        // Strong invariant: EVERY walkable cell reachable (no orphans).
+        let walkable = 0;
+        for (let y = 0; y < 19; y += 1) for (let x = 0; x < 31; x += 1) if (WALKABLE928.has(kinds[y][x])) {
+          walkable += 1;
+          assert(reachable.has(`${x}:${y}`), `Layout928: ${kind} walkable cell ${x}:${y} is orphaned`);
+        }
+        assert(walkable >= 60, `Layout928: ${kind} floor has room to play (${walkable})`);
+        // Altar gating + victory region.
+        if (floor >= 3) {
+          assert(layout.altar !== null && kinds[layout.altar.y][layout.altar.x] === 'altar', `Layout928: ${kind} floor 3 carries an altar`);
+          assert(layout.altar!.x >= 23 && layout.altar!.y <= 7, `Layout928: ${kind} altar sits in the victory region`);
+        } else {
+          assert(layout.altar === null && countKind(kinds, 'altar') === 0, `Layout928: ${kind} floor 1 has no altar`);
+        }
+        if (kind === 'rooms') {
+          assert(layout.stairs.x === 25 && layout.stairs.y === 14, 'Layout928: rooms keeps the classic stairs');
+          if (floor >= 3) assert(layout.altar!.x === 26 && layout.altar!.y === 4, 'Layout928: rooms keeps the classic altar');
+        }
+        if (kind === 'loops') {
+          assert(layout.rooms.length >= 4, `Layout928: loops has 4+ rooms (${layout.rooms.length})`);
+          const cycles = layout.connections.length - layout.rooms.length + 1;
+          assert(cycles >= 2, `Layout928: loops room graph has cycles (${cycles})`);
+        }
+        if (kind === 'caves') {
+          assert(layout.rooms.length === 0, 'Layout928: caves carry no rectangles');
+          assert(countKind(kinds, 'door') === 0, 'Layout928: raw caves carry no doors (vaults may still add them)');
+          assert(walkable >= 100 && walkable <= 400, `Layout928: caves read as caverns, not noise (${walkable} walkable)`);
+        }
+      }
+    }
+  }
+
+  // createGame integration: layout field valid, entities on walkable
+  // cells, vaults still place on EVERY skeleton.
+  const vaultKinds = new Set<string>();
+  for (let seed = 1; seed <= 200; seed += 1) {
+    const state = createGame(seed);
+    assert(['rooms', 'loops', 'caves'].includes(state.layout), `Layout928: seed ${seed} layout is a known kind`);
+    const kinds = state.tiles.map((r) => r.map((t) => t.kind));
+    const reachable = bfs928(kinds, { x: state.player.x, y: state.player.y });
+    assert(state.player.x === 5 && state.player.y === 4, `Layout928: seed ${seed} spawns at (5,4)`);
+    let walkable = 0;
+    for (let y = 0; y < 19; y += 1) for (let x = 0; x < 31; x += 1) if (WALKABLE928.has(kinds[y][x])) {
+      walkable += 1;
+      assert(reachable.has(`${x}:${y}`), `Layout928: seed ${seed} walkable cell ${x}:${y} orphaned after vaults`);
+    }
+    assert(state.monsters.filter((m) => !m.id.startsWith('monster-vault-')).length === 4, `Layout928: seed ${seed} has 4 base monsters`);
+    assert(state.groundItems.filter((i) => !i.id.startsWith('item-vault-')).length === 5, `Layout928: seed ${seed} has 5 base items`);
+    const entityCells = new Set<string>();
+    for (const m of state.monsters) {
+      const tile = state.tiles[m.y]?.[m.x];
+      assert(!!tile && (tile.kind === 'floor' || tile.kind === 'door'), `Layout928: seed ${seed} monster stands on ${tile?.kind}`);
+      assert(!entityCells.has(`${m.x}:${m.y}`), `Layout928: seed ${seed} monster cells are distinct`);
+      entityCells.add(`${m.x}:${m.y}`);
+    }
+    for (const item of state.groundItems) {
+      const tile = state.tiles[item.y]?.[item.x];
+      assert(!!tile && (tile.kind === 'floor' || tile.kind === 'door'), `Layout928: seed ${seed} item sits on ${tile?.kind}`);
+      assert(!entityCells.has(`${item.x}:${item.y}`), `Layout928: seed ${seed} item never shares a monster cell`);
+    }
+    if (state.vaults.length > 0) vaultKinds.add(state.layout);
+    for (const vault of state.vaults) for (const cell of vault.cells) assert(reachable.has(cell), `Layout928: seed ${seed} vault cell reachable`);
+  }
+  for (const kind of ['rooms', 'loops', 'caves']) assert(vaultKinds.has(kind), `Layout928: vaults place on ${kind} floors`);
+
+  // Determinism + round-trip: same seed, same skeleton, same vaults.
+  const la = createGame(42);
+  const lb = createGame(42);
+  assert(la.layout === lb.layout, 'Layout928: same seed picks the same layout');
+  assert(JSON.stringify(la.tiles.map((r) => r.map((t) => t.kind))) === JSON.stringify(lb.tiles.map((r) => r.map((t) => t.kind))), 'Layout928: same seed builds the same tiles');
+  assert(JSON.stringify(la.vaults) === JSON.stringify(lb.vaults), 'Layout928: same seed places the same vaults');
+  const rt = JSON.parse(JSON.stringify(la)) as DungeonGameState;
+  assert(rt.layout === la.layout, 'Layout928: JSON round-trip keeps layout');
+  assert(structuredClone(la).layout === la.layout, 'Layout928: structuredClone keeps layout');
+
+  // Descend: new floor, valid layout, stairs reachable, vaults eligible.
+  const deep = createGame(7);
+  const stairsA = (() => { for (const row of deep.tiles) for (const t of row) if (t.kind === 'stairs') return t; return null; })()!;
+  deep.player.x = stairsA.x;
+  deep.player.y = stairsA.y;
+  descend(deep);
+  assert(deep.floor === 2 && ['rooms', 'loops', 'caves'].includes(deep.layout), 'Layout928: descend lands on a valid layout');
+  const kinds2 = deep.tiles.map((r) => r.map((t) => t.kind));
+  const reach2 = bfs928(kinds2, { x: deep.player.x, y: deep.player.y });
+  assert([...reach2].some((k) => { const [x, y] = k.split(':').map(Number); return deep.tiles[y][x].kind === 'stairs'; }), 'Layout928: floor-2 stairs reachable');
+  assert(deep.vaults.every((v) => eligibleVaults(2).some((d) => d.name === v.name)), 'Layout928: floor-2 vaults stay depth-eligible');
 }
 console.log('Testing ambient market life (BUILD 694)...');
 {

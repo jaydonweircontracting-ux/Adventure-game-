@@ -1,4 +1,11 @@
 import { placeVaults, type PlacedVault } from "./dungeonVaults";
+import {
+  DUNGEON_SPAWN,
+  LAYOUT_DESCEND_FLAVOR,
+  generateLayout,
+  selectLayoutKind,
+  type DungeonLayoutKind,
+} from "./dungeonLayouts";
 
 export type TileKind =
   | "wall"
@@ -94,6 +101,8 @@ export interface GameState {
   lastAction: string;
   /** BUILD 927: vaults stamped into this level (plain data, clone-safe). */
   vaults: PlacedVault[];
+  /** BUILD 928: which skeleton generated this level (rooms/loops/caves). */
+  layout: DungeonLayoutKind;
 }
 
 export const spellBook: Record<
@@ -158,77 +167,22 @@ class Random {
 
 const key = (x: number, y: number) => `${x}:${y}`;
 
-function blankMap(width: number, height: number): Tile[][] {
-  return Array.from({ length: height }, (_, y) =>
-    Array.from({ length: width }, (_, x) => ({
-      x,
-      y,
-      kind: "wall" as TileKind,
-      seen: false,
-      visible: false,
-    })),
+/**
+ * BUILD 928: floor generation is now a layout dispatch. The selector
+ * hashes (seed, floor) — see dungeonLayouts for why a stream draw was
+ * wrong here — then the chosen generator builds the skeleton from the
+ * caller's stream. The classic rooms layout is preserved verbatim
+ * inside dungeonLayouts, and loops/caves join it. The returned kind is
+ * the GENERATED kind (a degenerate loops sample falls back to rooms
+ * and says so), never just the selected one.
+ */
+function makeMap(width: number, height: number, random: Random, floor: number, seed: number) {
+  const selected = selectLayoutKind(seed, floor);
+  const generated = generateLayout(selected, width, height, random, floor);
+  const tiles = generated.kinds.map((row, y) =>
+    row.map((kind, x) => ({ x, y, kind, seen: false, visible: false })),
   );
-}
-
-function carveRoom(tiles: Tile[][], x: number, y: number, width: number, height: number) {
-  for (let row = y; row < y + height; row += 1) {
-    for (let column = x; column < x + width; column += 1) {
-      if (tiles[row]?.[column]) tiles[row][column].kind = "floor";
-    }
-  }
-}
-
-function carveCorridor(tiles: Tile[][], fromX: number, fromY: number, toX: number, toY: number) {
-  let x = fromX;
-  let y = fromY;
-  while (x !== toX) {
-    tiles[y][x].kind = "floor";
-    x += x < toX ? 1 : -1;
-  }
-  while (y !== toY) {
-    tiles[y][x].kind = "floor";
-    y += y < toY ? 1 : -1;
-  }
-  tiles[y][x].kind = "floor";
-}
-
-function makeMap(width: number, height: number, random: Random, floor: number) {
-  const tiles = blankMap(width, height);
-  const rooms = [
-    { x: 2, y: 2, width: 8, height: 5 },
-    { x: 13, y: 2, width: 9, height: 6 },
-    { x: 24, y: 3, width: 5, height: 5 },
-    { x: 4, y: 11, width: 10, height: 5 },
-    { x: 18, y: 11, width: 10, height: 5 },
-  ];
-
-  rooms.forEach((room) => carveRoom(tiles, room.x, room.y, room.width, room.height));
-  for (let index = 0; index < rooms.length - 1; index += 1) {
-    const current = rooms[index];
-    const next = rooms[index + 1];
-    carveCorridor(
-      tiles,
-      current.x + Math.floor(current.width / 2),
-      current.y + Math.floor(current.height / 2),
-      next.x + Math.floor(next.width / 2),
-      next.y + Math.floor(next.height / 2),
-    );
-  }
-
-  tiles[8][15].kind = "door";
-  tiles[10][15].kind = "water";
-  tiles[10][16].kind = "water";
-  tiles[10][17].kind = "water";
-  if (floor >= 3) {
-    tiles[13][22].kind = "lava";
-    tiles[13][23].kind = "lava";
-  }
-  tiles[14][25].kind = "stairs";
-  tiles[4][26].kind = floor >= 3 ? "altar" : "floor";
-
-  return tiles.map((row) =>
-    row.map((tile) => ({ ...tile, kind: tile.kind === "floor" && random.next() < 0.025 ? "door" : tile.kind })),
-  );
+  return { tiles, layout: generated.kind };
 }
 
 function canStand(state: Pick<GameState, "tiles" | "monsters" | "player" | "groundItems">, x: number, y: number) {
@@ -325,8 +279,71 @@ function makeMonster(random: Random, floor: number, x: number, y: number, index:
   };
 }
 
-function makeGroundItems(random: Random, floor: number, tiles: Tile[][]): GroundItem[] {
-  const spots = [
+/**
+ * BUILD 928: entity spots for any skeleton. Classic positions are tried
+ * first (so the rooms layout keeps its exact old placements), then the
+ * shortfall is filled from shuffled walkable floor/door cells — never
+ * a wall, never spawn, never stairs/altar, never an avoided cell (the
+ * other entities). Minimum-distance preference keeps monsters out of
+ * the player's face at spawn; the fallback relaxes it rather than
+ * failing, so a small cavern still populates.
+ */
+function pickEntitySpots(
+  tiles: Tile[][],
+  random: Random,
+  count: number,
+  classic: [number, number][],
+  avoid: { x: number; y: number }[],
+): { x: number; y: number }[] {
+  const avoidKeys = new Set(avoid.map((p) => key(p.x, p.y)));
+  const usable = (x: number, y: number): boolean => {
+    const tile = tiles[y]?.[x];
+    if (!tile || (tile.kind !== "floor" && tile.kind !== "door")) return false;
+    if (avoidKeys.has(key(x, y))) return false;
+    return true;
+  };
+  const spots: { x: number; y: number }[] = [];
+  const taken = new Set<string>();
+  const take = (x: number, y: number): boolean => {
+    if (!usable(x, y) || taken.has(key(x, y))) return false;
+    taken.add(key(x, y));
+    spots.push({ x, y });
+    return true;
+  };
+  for (const [x, y] of classic) {
+    if (spots.length >= count) break;
+    take(x, y);
+  }
+  if (spots.length < count) {
+    const pool: { x: number; y: number }[] = [];
+    for (let y = 0; y < tiles.length; y += 1) {
+      for (let x = 0; x < tiles[0].length; x += 1) {
+        if (usable(x, y) && !taken.has(key(x, y))) pool.push({ x, y });
+      }
+    }
+    for (let i = pool.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(random.next() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    for (const minDist of [6, 3, 0]) {
+      for (const cell of pool) {
+        if (spots.length >= count) break;
+        if (Math.abs(cell.x - DUNGEON_SPAWN.x) + Math.abs(cell.y - DUNGEON_SPAWN.y) < minDist) continue;
+        take(cell.x, cell.y);
+      }
+      if (spots.length >= count) break;
+    }
+  }
+  return spots;
+}
+
+function makeGroundItems(
+  random: Random,
+  floor: number,
+  tiles: Tile[][],
+  avoid: { x: number; y: number }[] = [],
+): GroundItem[] {
+  const classic: [number, number][] = [
     [7, 4],
     [17, 5],
     [26, 5],
@@ -339,17 +356,16 @@ function makeGroundItems(random: Random, floor: number, tiles: Tile[][]): Ground
     GROUND_ITEM_TEMPLATES.food,
     GROUND_ITEM_TEMPLATES.relic,
   ];
-  return spots
-    .filter(([x, y]) => Boolean(tiles[y]?.[x]) && tiles[y][x].kind !== "wall")
-    .map(([x, y], index) => {
-      const template = names[(index + floor - 1) % names.length];
-      return {
-        id: `item-${floor}-${index}`,
-        ...template,
-        x,
-        y,
-      };
-    });
+  const spots = pickEntitySpots(tiles, random, classic.length, classic, avoid);
+  return spots.map(({ x, y }, index) => {
+    const template = names[(index + floor - 1) % names.length];
+    return {
+      id: `item-${floor}-${index}`,
+      ...template,
+      x,
+      y,
+    };
+  });
 }
 
 /** BUILD 927: cells a vault must never stamp over — the player spawn, the
@@ -372,7 +388,7 @@ export function createGame(seed = Math.floor(Date.now() % 1000000000), speciesIn
   const width = 31;
   const height = 19;
   const floor = 1;
-  const tiles = makeMap(width, height, random, floor);
+  const { tiles, layout } = makeMap(width, height, random, floor, seed);
   const chosenSpecies = species[speciesIndex] ?? species[0];
   const chosenBackground = backgrounds[backgroundIndex] ?? backgrounds[0];
   const player: Player = {
@@ -408,13 +424,18 @@ export function createGame(seed = Math.floor(Date.now() % 1000000000), speciesIn
     spells: chosenBackground.spells,
     statuses: [],
   };
-  const monsters = [
-    makeMonster(random, floor, 17, 5, 0),
-    makeMonster(random, floor, 26, 5, 1),
-    makeMonster(random, floor, 8, 13, 2),
-    makeMonster(random, floor, 21, 14, 3),
-  ];
-  const groundItems = makeGroundItems(random, floor, tiles);
+  // BUILD 928: classic spots first, walkable fill after — the rooms
+  // layout keeps its exact old placements; loops/caves populate from
+  // their own walkable cells instead of standing on walls.
+  const monsterSpots = pickEntitySpots(
+    tiles,
+    random,
+    4,
+    [[17, 5], [26, 5], [8, 13], [21, 14]],
+    [{ x: DUNGEON_SPAWN.x, y: DUNGEON_SPAWN.y }],
+  );
+  const monsters = monsterSpots.map((spot, index) => makeMonster(random, floor, spot.x, spot.y, index));
+  const groundItems = makeGroundItems(random, floor, tiles, monsters.map((m) => ({ x: m.x, y: m.y })));
   // BUILD 927: stamp authored vaults into the level (validated: the
   // stairs and every base entity stay reachable and unpainted-over).
   const vaults = placeVaults(
@@ -443,6 +464,7 @@ export function createGame(seed = Math.floor(Date.now() % 1000000000), speciesIn
     ],
     lastAction: "You enter the first gallery.",
     vaults: vaults.placed,
+    layout,
   };
   revealAround(state);
   return state;
@@ -658,15 +680,20 @@ export function descend(state: GameState) {
   }
   state.floor += 1;
   const random = new Random(state.seed + state.floor * 7919);
-  state.tiles = makeMap(state.width, state.height, random, state.floor);
+  const mapped = makeMap(state.width, state.height, random, state.floor, state.seed);
+  state.tiles = mapped.tiles;
+  state.layout = mapped.layout;
   state.player.x = 5;
   state.player.y = 4;
-  state.monsters = Array.from({ length: 4 + Math.min(3, state.floor) }, (_, index) => {
-    const positions = [[17, 5], [26, 5], [8, 13], [21, 14], [20, 4], [25, 14], [11, 14]];
-    const [x, y] = positions[index];
-    return makeMonster(random, state.floor, x, y, index);
-  });
-  state.groundItems = makeGroundItems(random, state.floor, state.tiles);
+  const descendSpots = pickEntitySpots(
+    state.tiles,
+    random,
+    4 + Math.min(3, state.floor),
+    [[17, 5], [26, 5], [8, 13], [21, 14], [20, 4], [25, 14], [11, 14]],
+    [{ x: DUNGEON_SPAWN.x, y: DUNGEON_SPAWN.y }],
+  );
+  state.monsters = descendSpots.map((spot, index) => makeMonster(random, state.floor, spot.x, spot.y, index));
+  state.groundItems = makeGroundItems(random, state.floor, state.tiles, state.monsters.map((m) => ({ x: m.x, y: m.y })));
   // BUILD 927: fresh vaults for the new depth (same placement rules).
   const vaults = placeVaults(
     state.tiles,
@@ -678,7 +705,7 @@ export function descend(state: GameState) {
   state.monsters.push(...vaults.monsters);
   state.groundItems.push(...vaults.groundItems);
   state.vaults = vaults.placed;
-  addLog(state, `You descend to depth ${state.floor}. The walls glow from within.`);
+  addLog(state, `You descend to depth ${state.floor}. The walls glow from within.${LAYOUT_DESCEND_FLAVOR[state.layout]}`);
   finishTurn(state);
   return state;
 }
