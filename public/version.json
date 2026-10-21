@@ -1,6 +1,6 @@
 {
   "build": "931",
-  "note": "",
-  "timestamp": "2026-10-21T07:11:03.080Z",
-  "cacheBuster": "mvhrwpew"
+  "note": "The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.",
+  "timestamp": "2026-10-21T07:18:49.318Z",
+  "cacheBuster": "mvhs6p5y"
 }
