@@ -1,3 +1,5 @@
+import { placeVaults, type PlacedVault } from "./dungeonVaults";
+
 export type TileKind =
   | "wall"
   | "floor"
@@ -90,6 +92,8 @@ export interface GameState {
   seed: number;
   log: string[];
   lastAction: string;
+  /** BUILD 927: vaults stamped into this level (plain data, clone-safe). */
+  vaults: PlacedVault[];
 }
 
 export const spellBook: Record<
@@ -230,7 +234,11 @@ function makeMap(width: number, height: number, random: Random, floor: number) {
 function canStand(state: Pick<GameState, "tiles" | "monsters" | "player" | "groundItems">, x: number, y: number) {
   const tile = state.tiles[y]?.[x];
   if (!tile || tile.kind === "wall" || tile.kind === "lava") return false;
-  if (state.monsters.some((monster) => monster.x === x && monster.y === y)) return false;
+  // BUILD 927: only LIVING monsters occupy a tile. Dead monsters used to
+  // block their death tile forever (invisible corpse, "The stone
+  // refuses your passage" on an empty floor) — a killed guardian could
+  // permanently seal the corridor or vault behind it.
+  if (state.monsters.some((monster) => monster.hp > 0 && monster.x === x && monster.y === y)) return false;
   if (state.player.x === x && state.player.y === y) return false;
   return true;
 }
@@ -257,13 +265,52 @@ function addLog(state: GameState, message: string) {
   state.lastAction = message;
 }
 
+/** BUILD 927: the dungeon roster, shared with the vault system. */
+export const MONSTER_ENTRIES = [
+  { name: "Cave Stalker", glyph: "s", color: "#d18d70", hp: 8, attack: 4, armor: 1, xp: 9, kind: "beast" as const },
+  { name: "Bone Scribe", glyph: "b", color: "#e2d7b2", hp: 11, attack: 5, armor: 2, xp: 13, kind: "undead" as const },
+  { name: "Ash Cultist", glyph: "c", color: "#d96b60", hp: 13, attack: 6, armor: 1, xp: 16, kind: "cultist" as const },
+  { name: "Vault Warden", glyph: "W", color: "#f0ba68", hp: 21, attack: 8, armor: 3, xp: 30, kind: "guardian" as const },
+];
+
+/** BUILD 927: the dungeon loot templates, shared with the vault system. */
+export const GROUND_ITEM_TEMPLATES = {
+  potion: {
+    name: "Vermilion potion",
+    kind: "potion" as const,
+    glyph: "!",
+    color: "#ef756b",
+    description: "Restore 10 health.",
+    value: 10,
+  },
+  scroll: {
+    name: "Scroll of Recall",
+    kind: "scroll" as const,
+    glyph: "?",
+    color: "#c9a7ff",
+    description: "A brittle route out of danger. Restores 5 mana.",
+    value: 5,
+  },
+  food: {
+    name: "Iron ration",
+    kind: "food" as const,
+    glyph: "%",
+    color: "#d9b67a",
+    description: "A dense meal. Restore 6 health.",
+    value: 6,
+  },
+  relic: {
+    name: "Shard of the First Flame",
+    kind: "relic" as const,
+    glyph: "*",
+    color: "#ffbd72",
+    description: "A warm relic that hums with the vault's heartbeat.",
+    value: 0,
+  },
+};
+
 function makeMonster(random: Random, floor: number, x: number, y: number, index: number): Monster {
-  const entries = [
-    { name: "Cave Stalker", glyph: "s", color: "#d18d70", hp: 8, attack: 4, armor: 1, xp: 9, kind: "beast" as const },
-    { name: "Bone Scribe", glyph: "b", color: "#e2d7b2", hp: 11, attack: 5, armor: 2, xp: 13, kind: "undead" as const },
-    { name: "Ash Cultist", glyph: "c", color: "#d96b60", hp: 13, attack: 6, armor: 1, xp: 16, kind: "cultist" as const },
-    { name: "Vault Warden", glyph: "W", color: "#f0ba68", hp: 21, attack: 8, armor: 3, xp: 30, kind: "guardian" as const },
-  ];
+  const entries = MONSTER_ENTRIES;
   const entry = entries[Math.min(entries.length - 1, random.int(0, floor > 2 ? 3 : 2))];
   const multiplier = 1 + (floor - 1) * 0.18;
   return {
@@ -287,38 +334,10 @@ function makeGroundItems(random: Random, floor: number, tiles: Tile[][]): Ground
     [22, 14],
   ];
   const names = [
-    {
-      name: "Vermilion potion",
-      kind: "potion" as const,
-      glyph: "!",
-      color: "#ef756b",
-      description: "Restore 10 health.",
-      value: 10,
-    },
-    {
-      name: "Scroll of Recall",
-      kind: "scroll" as const,
-      glyph: "?",
-      color: "#c9a7ff",
-      description: "A brittle route out of danger. Restores 5 mana.",
-      value: 5,
-    },
-    {
-      name: "Iron ration",
-      kind: "food" as const,
-      glyph: "%",
-      color: "#d9b67a",
-      description: "A dense meal. Restore 6 health.",
-      value: 6,
-    },
-    {
-      name: "Shard of the First Flame",
-      kind: "relic" as const,
-      glyph: "*",
-      color: "#ffbd72",
-      description: "A warm relic that hums with the vault's heartbeat.",
-      value: 0,
-    },
+    GROUND_ITEM_TEMPLATES.potion,
+    GROUND_ITEM_TEMPLATES.scroll,
+    GROUND_ITEM_TEMPLATES.food,
+    GROUND_ITEM_TEMPLATES.relic,
   ];
   return spots
     .filter(([x, y]) => Boolean(tiles[y]?.[x]) && tiles[y][x].kind !== "wall")
@@ -331,6 +350,21 @@ function makeGroundItems(random: Random, floor: number, tiles: Tile[][]): Ground
         y,
       };
     });
+}
+
+/** BUILD 927: cells a vault must never stamp over — the player spawn, the
+ * stairs/altar, and every base monster/item position. Scanned, not
+ * hardcoded, so the fixed base layout can move without breaking vaults. */
+function forbiddenCellsFor(state: Pick<GameState, "tiles" | "player" | "monsters" | "groundItems">): Set<string> {
+  const forbidden = new Set<string>([`${state.player.x}:${state.player.y}`]);
+  for (const row of state.tiles) {
+    for (const tile of row) {
+      if (tile.kind === "stairs" || tile.kind === "altar") forbidden.add(`${tile.x}:${tile.y}`);
+    }
+  }
+  for (const monster of state.monsters) forbidden.add(`${monster.x}:${monster.y}`);
+  for (const item of state.groundItems) forbidden.add(`${item.x}:${item.y}`);
+  return forbidden;
 }
 
 export function createGame(seed = Math.floor(Date.now() % 1000000000), speciesIndex = 0, backgroundIndex = 0): GameState {
@@ -380,13 +414,25 @@ export function createGame(seed = Math.floor(Date.now() % 1000000000), speciesIn
     makeMonster(random, floor, 8, 13, 2),
     makeMonster(random, floor, 21, 14, 3),
   ];
+  const groundItems = makeGroundItems(random, floor, tiles);
+  // BUILD 927: stamp authored vaults into the level (validated: the
+  // stairs and every base entity stay reachable and unpainted-over).
+  const vaults = placeVaults(
+    tiles,
+    random,
+    floor,
+    forbiddenCellsFor({ tiles, player, monsters, groundItems }),
+    { x: player.x, y: player.y },
+  );
+  monsters.push(...vaults.monsters);
+  groundItems.push(...vaults.groundItems);
   const state: GameState = {
     width,
     height,
     tiles,
     player,
     monsters,
-    groundItems: makeGroundItems(random, floor, tiles),
+    groundItems,
     floor,
     turn: 1,
     phase: "playing",
@@ -396,6 +442,7 @@ export function createGame(seed = Math.floor(Date.now() % 1000000000), speciesIn
       "The Ember Vault waits below. Every step spends a little of your luck.",
     ],
     lastAction: "You enter the first gallery.",
+    vaults: vaults.placed,
   };
   revealAround(state);
   return state;
@@ -442,7 +489,7 @@ function enemyTurn(state: GameState) {
       if (stepX === 0 && stepY === 0) continue;
       const nextX = monster.x + stepX;
       const nextY = monster.y + stepY;
-      const occupied = state.monsters.some((other) => other.id !== monster.id && other.x === nextX && other.y === nextY);
+      const occupied = state.monsters.some((other) => other.hp > 0 && other.id !== monster.id && other.x === nextX && other.y === nextY);
       if (canStand(state, nextX, nextY) && !occupied) {
         monster.x = nextX;
         monster.y = nextY;
@@ -490,6 +537,14 @@ export function step(state: GameState, dx: number, dy: number) {
   else if (tile.kind === "altar") addLog(state, "The old altar watches without blessing you.");
   else if (tile.kind === "water") addLog(state, "Cold underground water curls around your boots.");
   else addLog(state, "You move through the hush.");
+  // BUILD 927: first step into a vault names it in the existing log.
+  const vault = state.vaults?.find(
+    (entry) => !entry.announced && entry.cells.includes(`${targetX}:${targetY}`),
+  );
+  if (vault) {
+    vault.announced = true;
+    addLog(state, `You enter ${vault.name}. ${vault.flavor}`);
+  }
   const item = state.groundItems.find((entry) => entry.x === targetX && entry.y === targetY);
   if (item) addLog(state, `You see ${item.name} here. Press E to collect it.`);
   finishTurn(state);
@@ -612,6 +667,17 @@ export function descend(state: GameState) {
     return makeMonster(random, state.floor, x, y, index);
   });
   state.groundItems = makeGroundItems(random, state.floor, state.tiles);
+  // BUILD 927: fresh vaults for the new depth (same placement rules).
+  const vaults = placeVaults(
+    state.tiles,
+    random,
+    state.floor,
+    forbiddenCellsFor(state),
+    { x: state.player.x, y: state.player.y },
+  );
+  state.monsters.push(...vaults.monsters);
+  state.groundItems.push(...vaults.groundItems);
+  state.vaults = vaults.placed;
   addLog(state, `You descend to depth ${state.floor}. The walls glow from within.`);
   finishTurn(state);
   return state;

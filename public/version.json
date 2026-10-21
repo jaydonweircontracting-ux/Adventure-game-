@@ -1,6 +1,6 @@
 {
-  "build": "926",
-  "note": "Bounty is now witness-driven and per-town: killing someone with no surviving witness leaves no bounty at all, and when a witness does report you to a guard, the bounty is posted in that guard’s town only — guards in other towns will not come after you for it. A witness who dies before reaching a guard cannot report you, and a guard who sees the crime himself reports it on the spot. Also fixed: starting a New Game after the defeat screen no longer carries your old life with it — bounty, gear, quests, journal, reputation and explored map all reset exactly like a fresh start, instead of only resetting on a page refresh",
-  "timestamp": "2026-10-21T05:22:15.497Z",
-  "cacheBuster": "mvho0sp5"
+  "build": "927",
+  "note": "",
+  "timestamp": "2026-10-21T05:55:22.224Z",
+  "cacheBuster": "mvhp7do1"
 }

@@ -1,6 +1,9 @@
 // Simulation play-test: 10,000 iterations across world gen, AI, and spawn rules.
 // Run with: npx tsx scripts/simulate.ts
 import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLevelFor } from '../src/game/worldMap';
+// BUILD 927: authored dungeon vaults (DCSS .des grammar, original content).
+import { createGame, descend, step, type GameState as DungeonGameState } from '../src/game/stoneSoupEngine';
+import { VAULT_CATALOG, eligibleVaults } from '../src/game/dungeonVaults';
 import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai';
 import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '../src/game/combat';
 import { chooseCreatureTarget, pickGuardCreatureTarget, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
@@ -2094,6 +2097,222 @@ console.log('Testing witness-driven per-town bounty (BUILD 926)...');
   const mossOnly = addCrimeToBounty(emptyBounty(), 'mx', 5, 1, 2, 'Mosslight Crossing');
   assert(wantedLevel(bountyForTown(mossOnly, 'Ironwood Southhold')) === 0, 'Bounty926: Ironwood guards see a clean player');
   assert(wantedLevel(bountyForTown(mossOnly, 'Mosslight Crossing')) === 2, 'Bounty926: Mosslight guards see a wanted player');
+}
+// ---- 13a1g. Authored dungeon vaults (BUILD 927) ----
+// DCSS vault system, portable asset only (format + placement rules +
+// grammar): original vaults for this game's Ember Vault dungeon, stamped
+// into the generated level with accessibility validation. No DCSS vault
+// is copied (GPL + DCSS-specific references).
+console.log('Testing authored dungeon vaults (BUILD 927)...');
+{
+  const WALKABLE = new Set(['floor', 'door', 'stairs', 'altar', 'water']);
+  const bfsReachable = (state: DungeonGameState) => {
+    const seen = new Set<string>([`${state.player.x}:${state.player.y}`]);
+    const queue = [{ x: state.player.x, y: state.player.y }];
+    while (queue.length > 0) {
+      const cur = queue.pop()!;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const tile = state.tiles[cur.y + dy]?.[cur.x + dx];
+        if (!tile || !WALKABLE.has(tile.kind)) continue;
+        const k = `${tile.x}:${tile.y}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        queue.push({ x: tile.x, y: tile.y });
+      }
+    }
+    return seen;
+  };
+  const stairsCell = (state: DungeonGameState) => {
+    for (const row of state.tiles) for (const tile of row) if (tile.kind === 'stairs') return tile;
+    return null;
+  };
+  const glyphCount = (def: (typeof VAULT_CATALOG)[number], pred: (c: string) => boolean) =>
+    def.map.join('').split('').filter(pred).length;
+
+  // Catalog shape: headers + maps well-formed, glyph refs in range,
+  // lava only on depth-gated vaults, no stairs glyph anywhere (a vault
+  // must never move or duplicate the level's stairs).
+  const KNOWN_GLYPHS = new Set(['#', '.', '+', '~', '^', 'A', ' ']);
+  for (const def of VAULT_CATALOG) {
+    assert(def.name.length > 0, 'Vault927: every vault has a NAME');
+    assert(def.tags.length > 0, 'Vault927: every vault has TAGS');
+    assert(def.minDepth <= def.maxDepth, 'Vault927: DEPTH range is ordered');
+    assert(def.weight > 0, 'Vault927: WEIGHT is positive');
+    assert(def.map.length > 0, 'Vault927: every vault has a MAP');
+    const width = def.map[0].length;
+    for (const row of def.map) assert(row.length === width, `Vault927: ${def.name} rows are equal length`);
+    for (const ch of def.map.join('')) {
+      if (KNOWN_GLYPHS.has(ch)) continue;
+      if (ch >= '1' && ch <= '9') assert(Number(ch) <= def.mons.length, `Vault927: ${def.name} monster glyph in range`);
+      else if (ch >= 'a' && ch <= 'z') assert(ch.charCodeAt(0) - 97 < def.items.length, `Vault927: ${def.name} item glyph in range`);
+      else assert(false, `Vault927: ${def.name} has unknown glyph '${ch}'`);
+    }
+    assert(glyphCount(def, (c) => c === '.' || (c >= '1' && c <= '9') || (c >= 'a' && c <= 'z')) > 0, `Vault927: ${def.name} has walkable cells`);
+    if (def.map.join('').includes('^')) assert(def.minDepth >= 3, `Vault927: ${def.name} lava is depth-gated`);
+  }
+  assert(VAULT_CATALOG.length >= 8, 'Vault927: catalog holds 8+ original vaults');
+
+  // DEPTH filtering: floor 1 never gets a depth-2+ or depth-3+ vault.
+  const floor1Names = new Set(eligibleVaults(1).map((d) => d.name));
+  assert(!floor1Names.has("Cinder Forge"), 'Vault927: floor 1 excludes the depth-3 forge');
+  assert(!floor1Names.has("Warden's Gate"), 'Vault927: floor 1 excludes the depth-2 gate');
+  assert(!floor1Names.has('Bone Crypt'), 'Vault927: floor 1 excludes the depth-2 crypt');
+  assert(eligibleVaults(3).length === VAULT_CATALOG.length, 'Vault927: floor 3 admits the whole catalog');
+
+  // Placement across seeds: 1-3 vaults, never blocking the critical path.
+  const ROOM_CENTERS = ['6:4', '17:5', '26:5', '9:13', '23:13'];
+  const BASE_MONSTER_IDS = ['monster-1-0', 'monster-1-1', 'monster-1-2', 'monster-1-3'];
+  const BASE_ITEM_IDS = ['item-1-0', 'item-1-1', 'item-1-2', 'item-1-3', 'item-1-4'];
+  let sawMulti = false;
+  let sawAny = false;
+  for (let seed = 1; seed <= 200; seed += 1) {
+    const state = createGame(seed);
+    assert(state.vaults.length <= 3, `Vault927: seed ${seed} places at most 3 vaults`);
+    if (state.vaults.length > 1) sawMulti = true;
+    if (state.vaults.length > 0) sawAny = true;
+    const reachable = bfsReachable(state);
+    const stairs = stairsCell(state);
+    assert(stairs !== null && reachable.has(`${stairs.x}:${stairs.y}`), `Vault927: seed ${seed} stairs stay reachable`);
+    for (const center of ROOM_CENTERS) {
+      // A center may be painted over by a vault wall (harmless — the
+      // room stays enterable through its other cells), but it must
+      // never survive as an unreachable walkable cell.
+      const [cx, cy] = center.split(':').map(Number);
+      assert(reachable.has(center) || state.tiles[cy][cx].kind === 'wall', `Vault927: seed ${seed} room center ${center} stays reachable or is vault-painted`);
+    }
+    for (const id of BASE_MONSTER_IDS) assert(state.monsters.some((m) => m.id === id), `Vault927: seed ${seed} base monster ${id} survives`);
+    for (const id of BASE_ITEM_IDS) assert(state.groundItems.some((i) => i.id === id), `Vault927: seed ${seed} base item ${id} survives`);
+    const forbidden = new Set(['5:4', `${stairs!.x}:${stairs!.y}`]);
+    for (const m of state.monsters.filter((x) => BASE_MONSTER_IDS.includes(x.id))) forbidden.add(`${m.x}:${m.y}`);
+    for (const i of state.groundItems.filter((x) => BASE_ITEM_IDS.includes(x.id))) forbidden.add(`${i.x}:${i.y}`);
+    let expectVaultMonsters = 0;
+    let expectVaultItems = 0;
+    for (const vault of state.vaults) {
+      assert(vault.cells.length > 0, `Vault927: seed ${seed} ${vault.name} has cells`);
+      for (const cell of vault.cells) {
+        assert(reachable.has(cell), `Vault927: seed ${seed} vault cell ${cell} is reachable`);
+        assert(!forbidden.has(cell), `Vault927: seed ${seed} vault never paints a base entity cell`);
+        const [x, y] = cell.split(':').map(Number);
+        assert(WALKABLE.has(state.tiles[y][x].kind), `Vault927: seed ${seed} vault cell is walkable`);
+      }
+      const def = VAULT_CATALOG.find((d) => d.name === vault.name)!;
+      assert(def !== undefined, `Vault927: seed ${seed} placed vault is in the catalog`);
+      expectVaultMonsters += glyphCount(def, (c) => c >= '1' && c <= '9');
+      expectVaultItems += glyphCount(def, (c) => c >= 'a' && c <= 'z');
+      assert(!vault.announced, `Vault927: seed ${seed} fresh vault is unannounced`);
+    }
+    const actualVaultMonsters = state.monsters.filter((m) => m.id.startsWith('monster-vault-')).length;
+    const actualVaultItems = state.groundItems.filter((i) => i.id.startsWith('item-vault-')).length;
+    assert(actualVaultMonsters === expectVaultMonsters, `Vault927: seed ${seed} vault monsters spawn (${actualVaultMonsters} vs ${expectVaultMonsters})`);
+    assert(actualVaultItems === expectVaultItems, `Vault927: seed ${seed} vault items spawn (${actualVaultItems} vs ${expectVaultItems})`);
+    // Every vault monster/item sits on one of its own vault's cells.
+    for (const m of state.monsters.filter((x) => x.id.startsWith('monster-vault-'))) {
+      assert(state.vaults.some((v) => v.cells.includes(`${m.x}:${m.y}`)), `Vault927: seed ${seed} vault monster stands in a vault`);
+    }
+    for (const i of state.groundItems.filter((x) => x.id.startsWith('item-vault-'))) {
+      assert(state.vaults.some((v) => v.cells.includes(`${i.x}:${i.y}`)), `Vault927: seed ${seed} vault item sits in a vault`);
+    }
+  }
+  assert(sawAny, 'Vault927: placement actually fires across seeds');
+  assert(sawMulti, 'Vault927: multi-vault levels occur across seeds');
+
+  // Determinism: same seed, same level, same vaults.
+  const a = createGame(42);
+  const b = createGame(42);
+  assert(JSON.stringify(a.vaults) === JSON.stringify(b.vaults), 'Vault927: same seed places the same vaults');
+  assert(JSON.stringify(a.tiles.map((r) => r.map((t) => t.kind))) === JSON.stringify(b.tiles.map((r) => r.map((t) => t.kind))), 'Vault927: same seed builds the same tiles');
+
+  // Round-trip: JSON + structuredClone keep vaults, monsters, items.
+  const rt = JSON.parse(JSON.stringify(a)) as DungeonGameState;
+  assert(JSON.stringify(rt.vaults) === JSON.stringify(a.vaults), 'Vault927: JSON round-trip keeps vaults');
+  const cloned = structuredClone(a);
+  assert(JSON.stringify(cloned.vaults) === JSON.stringify(a.vaults), 'Vault927: structuredClone keeps vaults');
+  assert(cloned.monsters.length === a.monsters.length && cloned.groundItems.length === a.groundItems.length, 'Vault927: clone keeps vault spawns');
+
+  // First entry names the vault in the existing log, exactly once.
+  let announced = false;
+  for (let seed = 1; seed <= 200 && !announced; seed += 1) {
+    const state = createGame(seed);
+    if (state.vaults.length === 0) continue;
+    const vault = state.vaults[0];
+    const vaultSet = new Set(vault.cells);
+    const monsterCells = new Set(state.monsters.map((m) => `${m.x}:${m.y}`));
+    outer: for (const cell of vault.cells) {
+      const [x, y] = cell.split(':').map(Number);
+      if (monsterCells.has(cell)) continue;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        const tile = state.tiles[ny]?.[nx];
+        if (!tile || !WALKABLE.has(tile.kind) || vaultSet.has(`${nx}:${ny}`) || monsterCells.has(`${nx}:${ny}`)) continue;
+        state.player.x = nx;
+        state.player.y = ny;
+        state.player.hp = state.player.maxHp;
+        step(state, -dx, -dy);
+        assert(vault.announced, 'Vault927: stepping into a vault announces it');
+        assert(state.log[0].includes(vault.name), 'Vault927: announcement names the vault');
+        const count = state.log.filter((line) => line.includes(vault.name)).length;
+        step(state, dx, dy);
+        step(state, -dx, -dy);
+        assert(state.log.filter((line) => line.includes(vault.name)).length === count, 'Vault927: re-entry does not re-announce');
+        announced = true;
+        break outer;
+      }
+    }
+  }
+  assert(announced, 'Vault927: an entry announcement was observed');
+
+  // BUILD 927 corpse fix: a dead monster must not block its death tile.
+  // Found by the browser walk (a killed stalker sealed the corridor with
+  // "The stone refuses your passage" on an empty floor): canStand and
+  // the enemy-turn occupancy check both ignored hp.
+  {
+    const state = createGame(11);
+    const victim = state.monsters[0];
+    // Stand on a walkable tile adjacent to the victim (deterministic;
+    // greedy walking can stall on walls). The victim then attacks in
+    // place instead of wandering, so repeated steps kill it.
+    const spot = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: victim.x + dx, y: victim.y + dy }))
+      .find((p) => {
+        const t = state.tiles[p.y]?.[p.x];
+        return !!t && t.kind !== 'wall' && t.kind !== 'lava' && !state.monsters.some((m) => m.hp > 0 && m.x === p.x && m.y === p.y);
+      });
+    assert(!!spot, 'Vault927: a walkable tile sits adjacent to the test monster');
+    state.player.x = spot!.x;
+    state.player.y = spot!.y;
+    let guard = 0;
+    while (victim.hp > 0 && guard < 20) {
+      guard += 1;
+      step(state, Math.sign(victim.x - state.player.x), Math.sign(victim.y - state.player.y));
+      if (state.phase !== 'playing') break;
+    }
+    assert(victim.hp === 0, 'Vault927: the test monster dies');
+    assert(state.phase === 'playing', 'Vault927: the player survives the test kill');
+    const corpse = { x: victim.x, y: victim.y };
+    const dist = Math.abs(corpse.x - state.player.x) + Math.abs(corpse.y - state.player.y);
+    assert(dist === 1, 'Vault927: the player stands adjacent to the corpse');
+    step(state, Math.sign(corpse.x - state.player.x), Math.sign(corpse.y - state.player.y));
+    assert(state.player.x === corpse.x && state.player.y === corpse.y, 'Vault927: a corpse tile is walkable after the fix');
+  }
+
+  // Descend: fresh vaults per depth, still depth-filtered and reachable.
+  const deep = createGame(7);
+  const stairs1 = stairsCell(deep)!;
+  deep.player.x = stairs1.x;
+  deep.player.y = stairs1.y;
+  descend(deep);
+  assert(deep.floor === 2, 'Vault927: descend reaches floor 2');
+  assert(deep.vaults.every((v) => eligibleVaults(2).some((d) => d.name === v.name)), 'Vault927: floor-2 vaults are depth-eligible');
+  assert(deep.vaults.length <= 3, 'Vault927: floor-2 vault count capped');
+  const stairs2 = stairsCell(deep)!;
+  deep.player.x = stairs2.x;
+  deep.player.y = stairs2.y;
+  descend(deep);
+  assert(deep.floor === 3, 'Vault927: descend reaches floor 3');
+  assert(deep.vaults.every((v) => eligibleVaults(3).some((d) => d.name === v.name)), 'Vault927: floor-3 vaults are depth-eligible');
+  const reach3 = bfsReachable(deep);
+  assert(reach3.has(`${stairsCell(deep)!.x}:${stairsCell(deep)!.y}`), 'Vault927: floor-3 stairs stay reachable');
+  for (const vault of deep.vaults) for (const cell of vault.cells) assert(reach3.has(cell), 'Vault927: floor-3 vault cells reachable');
 }
 console.log('Testing ambient market life (BUILD 694)...');
 {
