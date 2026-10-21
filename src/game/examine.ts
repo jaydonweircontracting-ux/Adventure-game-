@@ -39,6 +39,8 @@ export interface ExamineContext {
   gearLine?: string;
   /** BUILD 923: morality line (character hint, not a number). */
   moralityLine?: string;
+  /** BUILD 939: faction line (faction tier for this NPC, prose). */
+  factionLine?: string;
   rarity?: 'common' | 'uncommon' | 'rare' | 'legendary';
   level?: number;
   buildingType?: string;
@@ -181,6 +183,8 @@ function npcExamine(ref: ExamineRef, rng: () => number): { name: string; text: s
   if (ctx.gearLine) text += ' ' + ctx.gearLine;
   // BUILD 923: morality line — what kind of character they are.
   if (ctx.moralityLine) text += ' ' + ctx.moralityLine;
+  // BUILD 939: faction line — how the NPC's faction regards the player.
+  if (ctx.factionLine) text += ' ' + ctx.factionLine;
   const pers = (ctx.personality || '').toLowerCase();
   if (pers === 'outgoing') text += ' They have a warm, outgoing manner.';
   else if (pers === 'reserved') text += ' They keep to themselves, mostly.';

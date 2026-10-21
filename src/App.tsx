@@ -124,6 +124,7 @@ import { behaviorForCreature, preferredRangeFor, shouldStand, shouldRetarget, vo
 import { mitigateDamage, mitigationForCreature, creatureDefenseForLevel, creatureArmorForLevel, playerArmorForRoll, playerResistPercents, rangedHitChance, creatureArcherSkill, normalizeRangedSkill } from '@/game/mitigation';
 // BUILD 938: creature codex / bestiary (Tibia item 5) — kill counts, tiers, charm total.
 import { BESTIARY_ENTRIES, BESTIARY_TIERS, BESTIARY_CHARM_POINTS, bestiaryLabelForKind, bestiaryTierForKills, bestiaryCharmTotal, recordBestiaryKill, sanitizeBestiaryCounts, isBestiaryKind } from '@/game/bestiary';
+import { tierForStanding, standingFor, factionForNpc, factionForQuestLocation, applyFactionHarm, applyFactionQuestGain, factionExamineLine, factionDialogueLine, sanitizeFactionStandings } from './game/faction';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, LOCKPICK_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
 import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, questProgressText, questMissionText, questRumors, serializeQuestSave, parseQuestSave, writeQuestEventToStorage, markerForGiver, type QuestState, type QuestEvent, type QuestDef, type QuestStorage } from '@/game/quests';
@@ -155,7 +156,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '938';
+const BUILD_NUMBER = '939';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -1815,6 +1816,9 @@ type SaveGameData = {
   // BUILD 938: creature codex kill counts, keyed by kind (tiers and charm
   // totals are derived from counts, never stored separately).
   bestiary?: Record<string, number>;
+  // BUILD 939: EQEmu faction standings, keyed by faction id (landmark
+  // town/village name). Tiers derive from standings on render.
+  factionStandings?: Record<string, number>;
   goats: GoatState[];
   interiorId: string | null;
   interiorPosition: Point;
@@ -4918,7 +4922,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         ctx: { role: npc.role, archetype: npc.archetype, activity: npc.activity, personality: persDesc, ageBracket: npc.age,
           gearLine: gearExamineLine({ id: npc.id, archetype: npc.archetype, ownedGear: npc.ownedGear, wealthGoal: npc.wealthGoal }, wornGearBaseIds(npc.id), npcPurse),
           // BUILD 923: morality line — what kind of character they are.
-          moralityLine: moralityLine(npc) },
+          moralityLine: moralityLine(npc),
+          // BUILD 939: faction line — how the NPC's faction regards you.
+          factionLine: factionExamineLine(factionForNpc(npc), standingFor(factionStandingsRef.current, factionForNpc(npc)), npc.archetype) },
       };
       setContextMenu({ x: clientX, y: clientY, ref, actions: menuActionsFor(ref), target: { kind: 'npc', npc } });
       return;
@@ -5578,6 +5584,38 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // New Game needs no extra reset: it runs through the title, which
   // unmounts GameField and drops this ref with it (the 926 pattern).
   const bestiaryRef = useRef<Record<string, number>>({});
+  // BUILD 939: EQEmu faction standings — per-player, per-faction numbers
+  // (EQEmu ladder: Ally..Scowls). Ref is the source of truth (save reads
+  // it); state mirrors it for the dialogue panel. SEPARATE from bounty
+  // (926): bounty is gold owed from witnessed crimes; standing moves
+  // immediately on the player's own harm/quest actions and is never
+  // copied from or into a bounty bucket. New Game resets via the title
+  // unmount, same as the 933/938 pattern.
+  const factionStandingsRef = useRef<Record<string, number>>({});
+  const [factionStandings, setFactionStandings] = useState<Record<string, number>>({});
+  // Move one faction's standing and log when the NPC-visible tier changes.
+  // `update` is a pure standings transform (harm or quest gain); the log
+  // fires only on a real tier change, so routine hits stay quiet.
+  const adjustFactionStanding = (factionId: string, update: (standings: Record<string, number>) => Record<string, number>) => {
+    const before = factionStandingsRef.current;
+    const after = update(before);
+    if (after[factionId] === before[factionId]) return;
+    factionStandingsRef.current = after;
+    setFactionStandings(after);
+    const beforeTier = tierForStanding(standingFor(before, factionId));
+    const afterTier = tierForStanding(standingFor(after, factionId));
+    if (beforeTier !== afterTier) {
+      // Faction-level tier (raw stored standing); an individual NPC's
+      // dialogue tier may differ by their archetype entry.
+      setLogs((cur) => [{ text: `Your standing with ${factionId} is now ${afterTier}.`, color: 'orange' }, ...cur].slice(0, 3));
+    }
+  };
+  // Player harm to a townsfolk moves that NPC's faction standing: a kill
+  // takes the kill delta INSTEAD of the hit delta (no double-count).
+  const applyPlayerHarmToFaction = (npc: { archetype?: string }, killed: boolean) => {
+    const factionId = factionForNpc(npc);
+    adjustFactionStanding(factionId, (s) => applyFactionHarm(s, factionId, killed));
+  };
   const [bestiaryCounts, setBestiaryCounts] = useState<Record<string, number>>({});
   const [codexOpen, setCodexOpen] = useState(false);
   // BUILD 938: record ONE player kill. Called only from player-attack
@@ -6209,6 +6247,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         })),
         // BUILD 932: sneak state + pickpocket verification hooks.
         getSneakState: () => ({ sneaking: sneakingRef.current, alerted: [...alertedNpcIdsRef.current] }),
+        // BUILD 939: faction standings verification hook.
+        getFactionStandings: () => ({ ...factionStandingsRef.current }),
         getEquipmentNames: () => equipmentRef.current.map((it) => it.name),
         // LOCALHOST ONLY: select an NPC exactly as tapping their sprite
         // does for targeting (the pickpocket button gates on this id).
@@ -6272,6 +6312,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           if (!npc) return false;
           const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
           const hurt = damageNpc(npc, amount, positionRef.current, tick);
+          // BUILD 939: the fixture wounds exactly like production, so it
+          // moves faction standing exactly like production harm does.
+          applyPlayerHarmToFaction(npc, hurt.deadUntilTick !== undefined);
           const next = townsfolkRef.current.map((n) => (n.id === npc.id ? hurt : n));
           townsfolkRef.current = next; setTownsfolk(next);
           if (hurt.deadUntilTick !== undefined) dropTownspersonBody(hurt);
@@ -6622,6 +6665,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     alertedNpcIds: [...alertedNpcIdsRef.current],
     // BUILD 938: persist codex kill counts (tiers/charm derived on load).
     bestiary: { ...bestiaryRef.current },
+    // BUILD 939: persist faction standings (tiers derived on load).
+    factionStandings: { ...factionStandingsRef.current },
     goats,
     // BUILD 522: Lootable bodies.
     bodies: bodiesRef.current,
@@ -6791,6 +6836,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const restoredBestiary = sanitizeBestiaryCounts(loadState.bestiary);
     bestiaryRef.current = restoredBestiary;
     setBestiaryCounts(restoredBestiary);
+    // BUILD 939: restore faction standings (old saves have none -> every
+    // faction at default 0 / Indifferently, never faked history).
+    const restoredFactions = sanitizeFactionStandings(loadState.factionStandings);
+    factionStandingsRef.current = restoredFactions;
+    setFactionStandings(restoredFactions);
     interiorDoorwayIdRef.current = null;
     interiorEntryChunkRef.current = { x: loadState.chunk.x, y: loadState.chunk.y };
     interiorRef.current = null; setInterior(null);
@@ -8535,6 +8585,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1), sneakingRef.current, alertedNpcIdsRef.current, npc.id));
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
                 setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
+                // BUILD 939: player harm moves the victim's faction standing.
+                applyPlayerHarmToFaction(npc, hurt.deadUntilTick !== undefined);
                 const assaultWitnesses = hurt.deadUntilTick === undefined ? recordTownspersonCrime(npc, 'assault') : 0;
                 if (hurt.deadUntilTick === undefined) afterStealthStrike(npc, stealthStrike, false, assaultWitnesses);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
@@ -8659,6 +8711,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, targetNpc.id));
                 const hurt = damageNpc(targetNpc, damage, attackerPos, tick);
                 setDisposition((prev) => ({ ...prev, [targetNpc.id]: adjustDisposition(prev[targetNpc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
+                // BUILD 939: player harm moves the victim's faction standing.
+                applyPlayerHarmToFaction(targetNpc, hurt.deadUntilTick !== undefined);
                 const crimeWitnesses = recordTownspersonCrime(targetNpc, hurt.deadUntilTick !== undefined ? 'murder' : 'assault');
                 if (hurt.deadUntilTick !== undefined) dropTownspersonBody(targetNpc);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === targetNpc.id ? hurt : n);
@@ -8812,6 +8866,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 const damage = stealthDamage(playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, npc.id);
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
                 setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
+                // BUILD 939: player harm moves the victim's faction standing.
+                applyPlayerHarmToFaction(npc, hurt.deadUntilTick !== undefined);
                 const crimeWitnesses = recordTownspersonCrime(npc, hurt.deadUntilTick !== undefined ? 'murder' : 'assault');
                 if (hurt.deadUntilTick !== undefined) dropTownspersonBody(npc);
                 const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
@@ -8951,6 +9007,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                   const stealthDamageValue = stealthDamage(damage, sneakingRef.current, alertedNpcIdsRef.current, npc.id);
                   const hurt = damageNpc(npc, stealthDamageValue, attackerPos, tick);
                   setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(stealthDamageValue / 2))) }));
+                  // BUILD 939: player harm moves the victim's faction standing.
+                  applyPlayerHarmToFaction(npc, hurt.deadUntilTick !== undefined);
                   const crimeWitnesses = recordTownspersonCrime(npc, hurt.deadUntilTick !== undefined ? 'murder' : 'assault');
                   if (hurt.deadUntilTick !== undefined) dropTownspersonBody(npc);
                   const nextFolk = townsfolkRef.current.map((n) => n.id === npc.id ? hurt : n);
@@ -9686,6 +9744,14 @@ if (active) {
     // 'Hunting bow' maps to the real bow item; other reward items are keepsakes named in the log.
     if (def.rewards.items.includes('Hunting bow')) onLoot({ bow: 1 });
     if (def.rewards.reputation) onQuestReputation(def.rewards.reputation);
+    // BUILD 939: completing a quest for a faction's member raises standing
+    // with that faction. Static givers all live in Mosslight Crossing;
+    // a quest whose giver location names no known faction gains nothing
+    // (generated quests have no giver town — stated, not faked). This is
+    // separate from the legacy reputation counter above: neither copies
+    // the other.
+    const questFaction = factionForQuestLocation(def.giver?.location);
+    if (questFaction) adjustFactionStanding(questFaction, (s) => applyFactionQuestGain(s, questFaction));
     const keepsakes = def.rewards.items.filter((name) => name !== 'Hunting bow');
     const rewardText = `Quest complete: ${def.title}! +${def.rewards.coins} gold, +${def.rewards.xp} XP` + (keepsakes.length ? ', ' + keepsakes.join(', ') : '') + '.';
     setLogs((currentLogs) => [{ text: rewardText, color: 'green' }, ...currentLogs].slice(0, 5));
@@ -14225,6 +14291,13 @@ if (active) {
                   <div className="dialogue-standing">
                     <span>Mosslight rep: <strong className={reputation.mosslight >= 0 ? 'rep-positive' : 'rep-negative'}>{reputation.mosslight >= 0 ? '+' : ''}{reputation.mosslight}</strong></span>
                     <span>Wanted: <strong>{wantedLabel(wantedMosslight)}</strong></span>
+                  </div>
+                  {/* BUILD 939: EQEmu faction standing — tier for THIS NPC
+                      (stored standing + their archetype entry), plus the
+                      raw stored standing. Separate from rep above and
+                      from bounty: it moves on harm/quest actions only. */}
+                  <div className="dialogue-standing" data-testid="faction-standing">
+                    <span>Faction: <strong>{factionDialogueLine(factionForNpc(npc), standingFor(factionStandings, factionForNpc(npc)), npc.archetype)}</strong></span>
                   </div>
                   {resp && <p className="dialogue-response">“{resp.text}”</p>}
                   {/* BUILD 654: Conversation history for free-text exchanges. */}

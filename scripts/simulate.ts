@@ -17,6 +17,7 @@ import { mitigateDamage, mitigationForCreature, mitigationKindKeys, creatureDefe
 import { strayGateDecision, strayKindForRoll, straySpawnPoints, pickStraySpawnPoint, isTownEdgePosition, isTownCenterPosition, TOWN_STRAY_CHANCE, TOWN_STRAY_ROAM_RADIUS, TOWN_CENTER_SAFE_RADIUS } from '../src/game/townStrays';
 import { raidAdvance, raidFireChance, raidLeaderName, raidShouldFire, raidWaveKinds, raidWavePositions, RAID_CHECK_INTERVAL_MS, RAID_CHASE_STANDOFF, RAID_ESCALATION_DELAY_MS, RAID_ESCALATION_WINDOW_MS, RAID_INTERVAL_MS, RAID_MARGIN_MS, RAID_MAX_DURATION_MS, RAID_ROAM_RADIUS, RAID_WARNING_MS, RAID_WAVE_1_SIZE, RAID_WAVE_2_SIZE, RAID_LEADER_HP_MULT, type RaidState } from '../src/game/raids';
 import { BESTIARY_ENTRIES, BESTIARY_TIERS, BESTIARY_CHARM_POINTS, bestiaryEntryForKind, bestiaryTierForKills, bestiaryCharmTotal, recordBestiaryKill, sanitizeBestiaryCounts, isBestiaryKind } from '../src/game/bestiary';
+import { tierForStanding, effectiveStanding, tierForNpc, standingFor, factionForNpc, factionForQuestLocation, applyFactionHarm, applyFactionQuestGain, factionExamineLine, factionDialogueLine, sanitizeFactionStandings } from '../src/game/faction';
 import { createAgent, stepAgent, AGENT_MOVE_SPEED, type AgentWorld } from '../src/game/gameplayAgent';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
@@ -1679,6 +1680,55 @@ console.log('Testing creature codex (BUILD 938)...');
   assert(bestiaryEntryForKind('rat')?.difficulty === 'trivial' && bestiaryEntryForKind('rat')?.occurrence === 'common', 'Codex: rat is trivial/common');
   assert(bestiaryEntryForKind('direwolf')?.difficulty === 'hard' && bestiaryEntryForKind('direwolf')?.occurrence === 'rare', 'Codex: direwolf is hard/rare (boss kind)');
   assert(bestiaryEntryForKind('soldier')?.occurrence === 'uncommon', 'Codex: soldier is uncommon (road + coin-flip gate)');
+}
+
+// ---- 13a1q. Faction ladder (BUILD 939, EQEmu item 1) ----
+console.log('Testing faction ladder (BUILD 939)...');
+{
+  // Tier boundaries: EQEmu default rule thresholds (Ally 1100, Warmly
+  // 750, Kindly 500, Amiably 100, Indifferently 0, Apprehensively -100,
+  // Dubiously -500, Threateningly -750, Scowls below).
+  const edges: [number, string][] = [
+    [1100, 'Ally'], [1099, 'Warmly'], [750, 'Warmly'], [749, 'Kindly'],
+    [500, 'Kindly'], [499, 'Amiably'], [100, 'Amiably'], [99, 'Indifferently'],
+    [0, 'Indifferently'], [-1, 'Apprehensively'], [-100, 'Apprehensively'],
+    [-101, 'Dubiously'], [-500, 'Dubiously'], [-501, 'Threateningly'],
+    [-750, 'Threateningly'], [-751, 'Scowls'], [-5000, 'Scowls'],
+  ];
+  for (const [value, tier] of edges) {
+    assert(tierForStanding(value) === tier, `Faction: ${value} is ${tier}`);
+  }
+  // Archetype entries shift the NPC-visible tier off the stored value.
+  assert(effectiveStanding(500, 'guard') === 475, 'Faction: guard entry -25');
+  assert(effectiveStanding(500, 'priest') === 525, 'Faction: priest entry +25');
+  assert(tierForNpc(500, 'guard') === 'Amiably', 'Faction: guard at 500 shows Amiably');
+  assert(tierForNpc(500, 'priest') === 'Kindly', 'Faction: priest at 500 shows Kindly');
+  assert(tierForNpc(0, undefined) === 'Indifferently', 'Faction: unknown archetype is neutral');
+  // Harm deltas: hit -10, kill -100 INSTEAD of hit (no double-count).
+  let st: Record<string, number> = {};
+  st = applyFactionHarm(st, 'Mosslight Crossing', false);
+  assert(st['Mosslight Crossing'] === -10, 'Faction: non-lethal hit is -10');
+  st = applyFactionHarm(st, 'Mosslight Crossing', true);
+  assert(st['Mosslight Crossing'] === -110, 'Faction: kill adds -100, not -110');
+  // Quest gain +25; per-faction independence.
+  st = applyFactionQuestGain(st, 'Mosslight Crossing');
+  assert(st['Mosslight Crossing'] === -85, 'Faction: quest gain is +25');
+  const other = applyFactionQuestGain(st, 'Seabreak');
+  assert(other['Mosslight Crossing'] === -85 && other['Seabreak'] === 25, 'Faction: towns are independent buckets');
+  // Quest giver location mapping.
+  assert(factionForQuestLocation('The Rusty Tankard tavern, Mosslight Crossing') === 'Mosslight Crossing', 'Faction: Mosslight giver maps to Mosslight');
+  assert(factionForQuestLocation('Farmhouse east of Mosslight Crossing') === 'Mosslight Crossing', 'Faction: Mosslight outskirt maps to Mosslight');
+  assert(factionForQuestLocation(undefined) === null, 'Faction: no location gains nothing');
+  assert(factionForQuestLocation('Somewhere far away') === null, 'Faction: unknown place gains nothing');
+  // Display lines carry tier + standing.
+  assert(factionDialogueLine('Mosslight Crossing', 125, 'guard').includes('Amiably') && factionDialogueLine('Mosslight Crossing', 125, 'guard').includes('125'), 'Faction: dialogue line shows tier + standing');
+  assert(factionExamineLine('Mosslight Crossing', 0, 'priest').includes('Indifferently'), 'Faction: examine line shows tier');
+  // Sanitize: known factions + finite numbers only; missing -> empty.
+  const clean = sanitizeFactionStandings({ 'Mosslight Crossing': 42, 'Seabreak': -7, 'Nope Town': 99, 'Bellwater': NaN, 'Fenmere Hamlet': 3.9 });
+  assert(clean['Mosslight Crossing'] === 42 && clean['Seabreak'] === -7 && !('Nope Town' in clean) && !('Bellwater' in clean) && clean['Fenmere Hamlet'] === 3, 'Faction: sanitize keeps known finite values, floors');
+  assert(Object.keys(sanitizeFactionStandings(undefined)).length === 0, 'Faction: missing save field restores empty (New Game default)');
+  assert(standingFor({}, 'Mosslight Crossing') === 0, 'Faction: untouched faction reads 0');
+  assert(factionForNpc({ archetype: 'guard' }) === 'Mosslight Crossing', 'Faction: townsfolk belong to Mosslight Crossing');
 }
 
 // BUILD 921: NPC worn gear drops + corpse unequip.
