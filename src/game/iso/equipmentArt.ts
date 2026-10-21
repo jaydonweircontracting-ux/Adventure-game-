@@ -127,6 +127,9 @@ export const ITEM_BASE_ART: Readonly<Record<string, readonly string[]>> = {
   iron_helm: ['ChainCoif'],
   steel_helm: ['DrkHelm'],
   mage_hood: ['DrkHood'],
+  // BUILD 921: helmet bases for variantLook folders that had no item form.
+  padded_coif: ['CoifMudam'],
+  dark_coif: ['DrkCoif'],
   // Armor
   cloth_robe: ['DrkArcaneShirt'],
   leather_armor: ['AhoulLeatherBreastplate'],
@@ -134,11 +137,18 @@ export const ITEM_BASE_ART: Readonly<Record<string, readonly string[]>> = {
   plate_armor: ['BreastPlate1'],
   mage_robe: ['DrkArcaneShirt'],
   traveler_cloak: ['DrkCloakFRONT'],
+  // BUILD 921: armor bases for variantLook folders that had no item form.
+  gilded_breastplate: ['BreastPlateGold'],
+  steel_breastplate: ['Breastplate2'],
+  dark_chestplate: ['DrkChestPlat'],
+  tribal_chestpiece: ['AhoulChestpiece1'],
   // Gloves
   cloth_gloves: ['DrkGluv'],
   leather_gloves: ['AhoulArmGuards'],
   gauntlets: ['DrkArmPlat'],
   silk_gloves: ['AhoulArmBand'],
+  // BUILD 921: arms base for the variantLook folder that had no item form.
+  tribal_shoulderpads: ['AhoulShoulderpads1'],
   // Boots
   worn_boots: ['BlackBoots'],
   leather_boots: ['DrkBoot'],

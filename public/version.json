@@ -1,6 +1,6 @@
 {
-  "build": "920",
-  "note": "Minimap travel finally listens to you: tapping the minimap still sends your character walking to that spot, but any tap on the field, D-pad press, or attack now cancels the trip instantly and your character does what you just told it to do instead. Before this fix, a field tap during minimap travel was silently ignored because the old minimap route kept steering the character to the original destination. Tapping the minimap again still retargets to the new spot, and untouched trips still arrive normally",
-  "timestamp": "2026-10-21T02:31:33.517Z",
-  "cacheBuster": "mvhhx9xs"
+  "build": "921",
+  "note": "Dead NPCs now drop the weapons and armor they were actually wearing — a guard corpse holds its sword, breastplate, helmet and shield as real loot you can take and equip, not placeholder gold. Taking a piece visibly strips it off the corpse: loot the sword and the hand is empty, take everything and the body is bare of gear. Unlooted gear stays on the body through save and reload, and looted gear never comes back",
+  "timestamp": "2026-10-21T02:53:44.873Z",
+  "cacheBuster": "mvhipt7t"
 }

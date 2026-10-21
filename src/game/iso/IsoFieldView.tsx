@@ -19,7 +19,8 @@ import { FrameMetrics } from '../rendering/frameMetrics';
 import {
   isoPlayerFaceForScreenDeltaSticky, type Face4, type Face8,
 } from './isoSprites';
-import { CharacterAnimator, drawIsoCharacter, preloadCharacterSprites, type LookRef } from './characterSystem';
+import { CharacterAnimator, drawIsoCharacter, preloadCharacterSprites, variantLook, type LookRef } from './characterSystem';
+import { lookWithoutLootedGear } from '../npcGear';
 import { artUrl } from '../artCache';
 import { computeDirtPathGeometry, buildDirtPath2D, DIRT_LAYER_STYLE } from './dirtPaths';
 // BUILD 389: user-supplied landscape tileset + ambient critters.
@@ -279,6 +280,11 @@ interface IsoFieldViewProps {
   // BUILD 731: lootable NPC corpses are also rendered/interacted with in iso mode.
   lootableBodies?: Array<{ id: string; npcName: string; position: Point }>;
   onLootBody?: (body: { id: string; position: Point }) => void;
+  // BUILD 921: gear already looted off each corpse, by NPC id (base ids from
+  // App's corpseLootedBases memo). Dead NPCs render with exactly these
+  // layers removed, so looting visibly unequips the corpse. Living NPCs
+  // are never stripped — the lookup below applies only to dead ones.
+  corpseLootedBases?: Record<string, string[]>;
   // BUILD 912: horses in iso — the player's mount state plus the analytic
   // world horses (src/game/horses.ts) for the home chunk. Until this build
   // the iso view drew no horses at all: mounting changed speed and the HUD
@@ -585,11 +591,11 @@ function roadBlendFor(road: string, lx: number, ly: number): number {
   return 0.3 + 0.7 * Math.min(1, Math.max(0, d) / 2.5);
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, playerMounted, playerHorse, worldHorses, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, zoom, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
-  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -2037,7 +2043,16 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             },
           });
         }
-        drawPerson(drawables, ix, iy, npc.facing as Face4, npc.moving, npc.id, nowMs, npc.id,
+        // BUILD 921: a dead NPC renders minus the gear already looted off
+        // its corpse (same hp<=0 condition as the Death pose below, so the
+        // strip applies exactly when the corpse pose plays). Living NPCs
+        // always render their full outfit — looting never undresses them.
+        const npcDeadForLook = npc.hp != null && npc.hp <= 0;
+        const lootedForNpc = npcDeadForLook ? live.corpseLootedBases?.[npc.id] : undefined;
+        const npcLook: LookRef = lootedForNpc && lootedForNpc.length > 0
+          ? lookWithoutLootedGear(variantLook(npc.id), lootedForNpc)
+          : npc.id;
+        drawPerson(drawables, ix, iy, npc.facing as Face4, npc.moving, npcLook, nowMs, npc.id,
           // BUILD 699: children are smaller (70% scale).
           // BUILD 704: fleeing NPCs run (explicit), everyone else walks.
           // BUILD 912: fight-back stance (in range, holding position) plays

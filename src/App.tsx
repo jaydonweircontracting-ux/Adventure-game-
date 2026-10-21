@@ -11,6 +11,7 @@ import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/i
 import { villageTarget, addNPCMemory, npcLifeSummary, villageEventsForDay, propagateRumors, npcRelationships, npcPersonality, npcGold, adjustNPCGold, npcCrimeUrge, npcStoleToday, NPC_COMMITTED_THEFT, NPC_WAS_ARRESTED, NPC_MARRIED_PLAYER, NPC_DIVORCED_PLAYER } from './game/villageLife';
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance } from './game/crime';
 import { createBody, takeBodyLootSelection, type LootableBody } from './game/lootableBodies';
+import { wornGearBaseIds, lootedGearBaseIds, gearNameForBaseId, isKnownBaseId } from './game/npcGear';
 import { addCrimeToBounty, wantedLevel, emptyBounty, type BountyState } from './game/bounty';
 import { pickpocketChance, resolvePickpocket } from './game/pickpocket';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
@@ -144,13 +145,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '920';
+const BUILD_NUMBER = '921';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '921': 'Dead NPCs now drop the weapons and armor they were actually wearing — a guard corpse holds its sword, breastplate, helmet and shield as real loot you can take and equip, not placeholder gold. Taking a piece visibly strips it off the corpse: loot the sword and the hand is empty, take everything and the body is bare of gear. Unlooted gear stays on the body through save and reload, and looted gear never comes back',
   '920': 'Minimap travel finally listens to you: tapping the minimap still sends your character walking to that spot, but any tap on the field, D-pad press, or attack now cancels the trip instantly and your character does what you just told it to do instead. Before this fix, a field tap during minimap travel was silently ignored because the old minimap route kept steering the character to the original destination. Tapping the minimap again still retargets to the new spot, and untouched trips still arrive normally',
   '918': 'Two long-standing combat fixes. First, killing a townsfolk now earns XP exactly like killing a creature: a commoner pays what a goat does, a guard pays what a tougher monster does, and the same goes for simulated adventurers and travelers you kill — awarded once at death, through the same XP grant as every other kill. Second, NPCs that fight back now actually keep fighting: their hit cooldown was counted in world-clock ticks (one tick every 3 seconds, so a second hit could not land for over two minutes) — it now runs in real time at roughly one hit per second, like creature attacks — and fighting NPCs run after you instead of trailing behind at a walk, so a player who walks away still gets caught and hit, while sprinting away still escapes. The same fixes apply to NPCs fighting creatures',
   '919': 'Fighting NPCs can now chase you around buildings instead of getting stuck on the wall. A retaliating townsfolk or guard follows a real path — the same pathfinder their daily walks use, with road preference and building avoidance — and replans at most about once every second and a half while you move, so there is no performance cost like the old pathfinding lag. If you get somewhere truly unreachable, they wait a few seconds and then give up and go back to their day instead of swinging at a wall forever. Hit speed, damage, and XP are unchanged',
@@ -5504,13 +5506,23 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 907: corpse interaction opens a selective, persistent loot panel.
   const [activeLootBodyId, setActiveLootBodyId] = useState<string | null>(null);
   const activeLootBody = bodies.find((body) => body.id === activeLootBodyId && !body.looted && body.chunk.x === chunk.x && body.chunk.y === chunk.y) ?? null;
+  // BUILD 921: gear already looted from each NPC's corpse, by NPC id — the
+  // iso view strips exactly these layers from the dead NPC's render, so
+  // looting visibly unequips the corpse. Last body per NPC wins (a
+  // respawned NPC's new corpse supersedes its old looted one); bodies
+  // without gear (pre-921 saves) strip nothing.
+  const corpseLootedBases = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const body of bodies) map[body.npcId] = lootedGearBaseIds(body.npcId, body.loot.items);
+    return map;
+  }, [bodies]);
   // BUILD 728: create one lootable body per death; the loot model supports future gear IDs.
   const dropTownspersonBody = (npc: Townsperson) => {
     const clock = brainRef.current?.worldCore.getClock();
     const day = clock ? clock.day : 1;
     const existing = bodiesRef.current.some((body) => !body.looted && body.npcId === npc.id && body.chunk.x === chunkRef.current.x && body.chunk.y === chunkRef.current.y);
     if (existing) return;
-    const body = createBody('body-' + npc.id + '-' + Date.now().toString(36), npc.id, npc.name, npc.role || npc.archetype || 'citizen', chunkRef.current, { x: npc.position.x, y: npc.position.y }, day, Math.abs(npc.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)));
+    const body = createBody('body-' + npc.id + '-' + Date.now().toString(36), npc.id, npc.name, npc.role || npc.archetype || 'citizen', chunkRef.current, { x: npc.position.x, y: npc.position.y }, day, Math.abs(npc.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)), wornGearBaseIds(npc.id));
     const nextBodies = [...bodiesRef.current, body]; bodiesRef.current = nextBodies; setBodies(nextBodies);
   };
   const lootTownspersonBody = (bodyId: string) => {
@@ -5535,14 +5547,23 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const inventoryLoot: Record<string, number> = {};
     if (taken.gold > 0) inventoryLoot.coins = taken.gold;
     if (taken.potions > 0) inventoryLoot.healthPotion = taken.potions;
+    const takenItemNames: string[] = [];
     if (taken.items.length > 0) {
       for (const selectedItemId of taken.items) {
-        const generated = generateItem(new ItemRng(Date.now() ^ selectedItemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current));
-        onEquipmentChange((prev) => [...prev, withProvenance({ ...generated, name: selectedItemId.replace(/[-_]/g, ' ') }, body.npcName)]);
+        // BUILD 921: body loot.items are item-base ids (npcGear) — generate
+        // that exact base, so a looted sword is the sword the NPC wore, not
+        // a random item renamed after it. Unknown ids keep the old
+        // random-generate-and-rename fallback instead of crashing.
+        const generated = isKnownBaseId(selectedItemId)
+          ? generateItem(new ItemRng(Date.now() ^ selectedItemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current), undefined, selectedItemId)
+          : generateItem(new ItemRng(Date.now() ^ selectedItemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current));
+        const item = isKnownBaseId(selectedItemId) ? generated : { ...generated, name: selectedItemId.replace(/[-_]/g, ' ') };
+        takenItemNames.push(item.name);
+        onEquipmentChange((prev) => [...prev, withProvenance(item, body.npcName)]);
       }
     }
     if (Object.keys(inventoryLoot).length) onLoot(inventoryLoot as GoatLoot);
-    const takenLabel = taken.gold > 0 ? `${taken.gold} coins` : taken.potions > 0 ? '1 health potion' : taken.items.map((item) => item.replace(/[-_]/g, ' ')).join(', ');
+    const takenLabel = taken.gold > 0 ? `${taken.gold} coins` : taken.potions > 0 ? '1 health potion' : takenItemNames.join(', ');
     setLogs((cur) => [{ text: `Took ${takenLabel} from ${body.npcName}'s body.`, color: 'gold' }, ...cur].slice(0, 3));
     if (updatedBody.looted) setActiveLootBodyId(null);
   };
@@ -5870,7 +5891,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         })),
         // BUILD 550: townsfolk positions for NPC visibility auditing.
         getTownsfolk: () => townsfolkRef.current.map((n) => ({
-          name: n.name, x: n.position.x, y: n.position.y,
+          id: n.id, name: n.name, x: n.position.x, y: n.position.y,
           activity: n.activity, archetype: n.archetype,
         })),
         // BUILD 912: Phase C verification — mount state, the analytic world
@@ -5896,6 +5917,22 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           id: b.id, npcName: b.npcName, chunk: { ...b.chunk }, x: b.position.x, y: b.position.y,
           gold: b.loot.gold, potions: b.loot.potions, items: [...b.loot.items], looted: b.looted,
         })),
+        // BUILD 921: open a corpse's loot panel deterministically (the
+        // production path is tapping the corpse sprite on the canvas).
+        openLootBodyForTest: (bodyId: string) => { lootTownspersonBody(bodyId); return true; },
+        // BUILD 921: corpse gear state for verification — what the NPC wore,
+        // what is already looted off the corpse, and what its body still
+        // holds. Mirrors the data IsoFieldView strips from the corpse render.
+        getCorpseGear: (npcId: string) => {
+          const worn = wornGearBaseIds(npcId);
+          const bodiesFor = bodiesRef.current.filter((b) => b.npcId === npcId);
+          const latest = bodiesFor[bodiesFor.length - 1];
+          return {
+            worn,
+            looted: latest ? lootedGearBaseIds(npcId, latest.loot.items) : [],
+            bodyItems: latest ? [...latest.loot.items] : [],
+          };
+        },
         // BUILD 912 test fixture: wound a townsfolk by name through the real
         // damageNpc path; a kill drops its body via dropTownspersonBody,
         // exactly like the production attack handlers. LOCALHOST ONLY.
@@ -8041,22 +8078,30 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                     }
                   } catch { /* crime recording is best-effort */ }
                   // BUILD 522: Create lootable body.
+                  // BUILD 921: same worn-gear loot as dropTownspersonBody,
+                  // plus its dedup guard — without it this melee path could
+                  // drop a second body for a kill another path already
+                  // bodied, duplicating the corpse's gear.
                   try {
                     const clock = brainRef.current?.worldCore.getClock();
                     const day = clock ? clock.day : 1;
-                    const body = createBody(
-                      'body-' + npc.id + '-' + Date.now().toString(36),
-                      npc.id,
-                      npc.name,
-                      npc.role || 'citizen',
-                      chunkRef.current,
-                      { x: npc.position.x, y: npc.position.y },
-                      day,
-                      Math.abs(npc.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0))
-                    );
-                    const nextBodies = [...bodiesRef.current, body];
-                    bodiesRef.current = nextBodies;
-                    setBodies(nextBodies);
+                    const alreadyBodied = bodiesRef.current.some((b) => !b.looted && b.npcId === npc.id && b.chunk.x === chunkRef.current.x && b.chunk.y === chunkRef.current.y);
+                    if (!alreadyBodied) {
+                      const body = createBody(
+                        'body-' + npc.id + '-' + Date.now().toString(36),
+                        npc.id,
+                        npc.name,
+                        npc.role || 'citizen',
+                        chunkRef.current,
+                        { x: npc.position.x, y: npc.position.y },
+                        day,
+                        Math.abs(npc.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)),
+                        wornGearBaseIds(npc.id)
+                      );
+                      const nextBodies = [...bodiesRef.current, body];
+                      bodiesRef.current = nextBodies;
+                      setBodies(nextBodies);
+                    }
                   } catch { /* body creation is best-effort */ }
                 } else {
                   spawnCombatText(`-${Math.round(damage)}`, npc.position, 'damage');
@@ -11657,6 +11702,7 @@ if (active) {
               droppedLoot={droppedLoot.filter((drop) => drop.chunk.x === chunk.x && drop.chunk.y === chunk.y)}
               onPickupDrop={(d) => { const full = droppedLootRef.current.find((x) => x.id === d.id); if (full) pickupDrop(full); }}
               lootableBodies={bodies.filter((body) => !body.looted && body.chunk.x === chunk.x && body.chunk.y === chunk.y).map((body) => ({ id: body.id, npcName: body.npcName, position: body.position }))}
+              corpseLootedBases={corpseLootedBases}
               onLootBody={(body) => lootTownspersonBody(body.id)}
               playerMounted={mounted}
               playerHorse={mounted ? null : (horseHere ? { position: horse.position, facing: horseFacing } : null)}
@@ -11747,7 +11793,7 @@ if (active) {
                               <div className="body-loot-item"><span><strong>🧪 Health potion</strong><small>{activeLootBody.loot.potions} remaining</small></span><button type="button" onClick={() => takeTownspersonLootItem(activeLootBody.id, 'potion')}>Take 1</button></div>
                             )}
                             {activeLootBody.loot.items.map((itemId, index) => (
-                              <div className="body-loot-item" key={itemId + '-' + index}><span><strong>🎒 {itemId.replace(/[-_]/g, ' ')}</strong><small>Item</small></span><button type="button" onClick={() => takeTownspersonLootItem(activeLootBody.id, 'item', itemId)}>Take</button></div>
+                              <div className="body-loot-item" key={itemId + '-' + index}><span><strong>🎒 {gearNameForBaseId(itemId)}</strong><small>Worn gear</small></span><button type="button" onClick={() => takeTownspersonLootItem(activeLootBody.id, 'item', itemId)}>Take</button></div>
                             ))}
                             {activeLootBody.loot.gold <= 0 && activeLootBody.loot.potions <= 0 && activeLootBody.loot.items.length === 0 && <p className="body-loot-empty">Nothing left to take.</p>}
                           </div>

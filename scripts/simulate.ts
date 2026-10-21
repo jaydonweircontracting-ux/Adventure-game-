@@ -46,7 +46,9 @@ import { dungeonTileSetCached, generateDungeon } from '../src/game/wfcDungeon';
 import { simTierForDistance, shouldUpdate, SIM_TIER_INTERVAL } from '../src/game/simLod';
 import { dangerForBiome, accumulateDanger, BIOME_DANGERS } from '../src/game/environmentalDanger';
 import { createCrime, findWitnesses, crimeMemoryEvent, crimeMemoryImportance, CRIME_SEVERITY } from '../src/game/crime';
-import { createBody, generateBodyLoot, lootBody } from '../src/game/lootableBodies';
+import { createBody, generateBodyLoot, lootBody, takeBodyLootSelection } from '../src/game/lootableBodies';
+import { wornGearBaseIds, lootedGearBaseIds, lookWithoutLootedGear, baseIdForFolder, isGearFolder, gearNameForBaseId, isKnownBaseId } from '../src/game/npcGear';
+import { variantLook } from '../src/game/iso/characterSystem';
 import { bountyForCrime, addCrimeToBounty, wantedLevel, emptyBounty } from '../src/game/bounty';
 import { pickpocketChance, resolvePickpocket } from '../src/game/pickpocket';
 import { getLandmarksForRegion, getLandmarksNearChunk, LANDMARK_REGION_SIZE } from '../src/game/landmarkGrid';
@@ -1365,6 +1367,71 @@ console.log('Testing pathfinding combat pursuit (BUILD 919)...');
   assert(noPick === null, 'Guard should ignore creatures that are not menacing');
   const farPick = pickGuardCreatureTarget(guardPos, [{ entityKind: 'monster', id: 4, position: { x: 40, y: 0 }, menacing: true }]);
   assert(farPick === null, 'Guard should not engage beyond sight range');
+}
+
+// BUILD 921: NPC worn gear drops + corpse unequip.
+console.log('Testing NPC worn gear drops (BUILD 921)...');
+{
+  // Deterministic: same NPC id always wears the same gear.
+  const g1 = wornGearBaseIds('npc-guard-7');
+  const g2 = wornGearBaseIds('npc-guard-7');
+  assert(JSON.stringify(g1) === JSON.stringify(g2), 'Gear: worn gear deterministic per NPC id');
+  // Find a well-geared NPC id (armored role: weapon + armor + headwear)
+  // so the take/strip assertions below actually exercise gear, not an
+  // empty list. Roles derive from hashSeed(id) % 5, so scanning ids works.
+  let gearedId = '';
+  let geared: string[] = [];
+  for (let i = 0; i < 200 && geared.length < 3; i++) {
+    const cand = wornGearBaseIds('npc-gear-test-' + i);
+    if (cand.length > geared.length) { geared = cand; gearedId = 'npc-gear-test-' + i; }
+  }
+  assert(geared.length >= 3, 'Gear: some NPC id wears 3+ gear pieces');
+  // Every gear base is a real catalog item with a display name.
+  for (const baseId of geared) {
+    assert(isKnownBaseId(baseId), `Gear: worn base ${baseId} exists in the catalog`);
+    assert(gearNameForBaseId(baseId).length > 0, `Gear: worn base ${baseId} has a name`);
+  }
+  // Coverage: across many NPC ids, every worn gear folder resolves to a
+  // base — no variantLook armor/headwear/arms folder is left undroppable.
+  for (let i = 0; i < 200; i++) {
+    const look = variantLook('npc-coverage-' + i);
+    for (const folder of look.equipment) {
+      if (isGearFolder(folder)) assert(baseIdForFolder(folder) !== null, `Gear: folder ${folder} has an item base`);
+    }
+  }
+  // Plain clothing is not gear: a shirt/pants folder never becomes loot.
+  assert(!isGearFolder('BlueVest'), 'Gear: shirt is clothing, not loot');
+  assert(!isGearFolder('BluePants'), 'Gear: pants are clothing, not loot');
+  assert(!isGearFolder('DreamWalkerHair1'), 'Gear: hair is not loot');
+  // Body creation carries worn gear alongside rolled gold/potions.
+  const gearBody = createBody('b-gear', gearedId, 'Guard', 'guard', { x: 4, y: 7 }, { x: 100, y: 100 }, 5, 42, geared);
+  assert(JSON.stringify(gearBody.loot.items) === JSON.stringify(geared), 'Gear: body holds the worn gear');
+  assert(gearBody.loot.gold > 0, 'Gear: body keeps its rolled gold too');
+  // Selective take removes exactly one gear piece; the rest stays, and
+  // re-taking the same piece is refused (no duplication).
+  {
+    const first = geared[0];
+    const res = takeBodyLootSelection(gearBody, { kind: 'item', itemId: first });
+    assert(res !== null, 'Gear: taking a worn piece succeeds');
+    assert(res!.taken.items[0] === first, 'Gear: taken piece is the selected one');
+    assert(!res!.updatedBody.loot.items.includes(first), 'Gear: taken piece leaves the body');
+    for (const rest of geared.slice(1)) assert(res!.updatedBody.loot.items.includes(rest), `Gear: untaken piece ${rest} stays on the body`);
+    assert(takeBodyLootSelection(res!.updatedBody, { kind: 'item', itemId: first }) === null, 'Gear: re-taking a looted piece is refused');
+    // Render strip: the corpse look loses exactly the looted layers.
+    const stripped = lookWithoutLootedGear(variantLook(gearedId), [first]);
+    const fullFolders = variantLook(gearedId).equipment;
+    const strippedFolders = stripped.equipment;
+    assert(strippedFolders.length < fullFolders.length, 'Gear: stripped corpse look has fewer layers');
+    for (const folder of fullFolders) {
+      if (!isGearFolder(folder)) assert(strippedFolders.includes(folder), `Gear: non-gear layer ${folder} survives stripping`);
+    }
+    // Looted-gear math: worn minus remaining = looted.
+    assert(JSON.stringify(lootedGearBaseIds(gearedId, res!.updatedBody.loot.items)) === JSON.stringify([first]), 'Gear: looted set is worn minus remaining');
+  }
+  // A body created without gear (old callers, old saves) drops nothing
+  // extra and breaks nothing.
+  const emptyBody = createBody('b-empty', 'npc-x', 'X', 'citizen', { x: 4, y: 7 }, { x: 1, y: 1 }, 1, 1);
+  assert(emptyBody.loot.items.length === 0, 'Gear: body without gear has empty item loot');
 }
 
 // ---- 13a1b. Town-edge strays (BUILD 917) ----
@@ -5905,6 +5972,7 @@ console.log('Testing examine system...');
   assert(updatedBody.looted, 'Body: marked looted');
   assert(updatedBody.loot.gold === 0, 'Body: loot emptied');
 }
+
 
 // BUILD 524: Bounty system.
 {

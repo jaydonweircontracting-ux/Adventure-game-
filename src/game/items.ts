@@ -145,6 +145,16 @@ export const ITEM_BASES: ItemBase[] = [
   { id: 'silver_amulet', name: 'Silver Amulet', slot: 'amulet', baseStats: {}, affixTags: ['utility', 'magic'], weight: 7 },
   { id: 'wolf_pendant', name: 'Wolf Pendant', slot: 'amulet', baseStats: { damage: 5 }, affixTags: ['utility'], weight: 5 },
   { id: 'traveler_cloak', name: "Traveler's Cloak", slot: 'armor', baseStats: { armor: 8, moveSpeed: 0.05 }, affixTags: ['defense', 'utility'], weight: 10 },
+  // BUILD 921: bases for the NPC variantLook armor/headwear/arms folders
+  // that previously had no item form, so a dead NPC's worn gear can drop
+  // as the real item instead of staying on the corpse forever.
+  { id: 'gilded_breastplate', name: 'Gilded Breastplate', slot: 'armor', baseStats: { armor: 26 }, affixTags: ['defense'], weight: 5 },
+  { id: 'steel_breastplate', name: 'Steel Breastplate', slot: 'armor', baseStats: { armor: 24 }, affixTags: ['defense'], weight: 6 },
+  { id: 'dark_chestplate', name: 'Dark Chestplate', slot: 'armor', baseStats: { armor: 22 }, affixTags: ['defense'], weight: 7 },
+  { id: 'tribal_chestpiece', name: 'Tribal Chestpiece', slot: 'armor', baseStats: { armor: 16 }, affixTags: ['defense'], weight: 7 },
+  { id: 'padded_coif', name: 'Padded Coif', slot: 'helmet', baseStats: { armor: 9 }, affixTags: ['defense'], weight: 8 },
+  { id: 'dark_coif', name: 'Dark Coif', slot: 'helmet', baseStats: { armor: 11 }, affixTags: ['defense'], weight: 7 },
+  { id: 'tribal_shoulderpads', name: 'Tribal Shoulderpads', slot: 'gloves', baseStats: { armor: 7 }, affixTags: ['defense'], weight: 8 },
 ];
 
 // ---------------------------------------------------------------------------

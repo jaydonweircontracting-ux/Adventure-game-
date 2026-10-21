@@ -54,6 +54,10 @@ export function generateBodyLoot(
 
 /**
  * Create a lootable body. Pure.
+ * BUILD 921: `gearItemIds` are the dead NPC's worn-gear item-base ids
+ * (see npcGear.wornGearBaseIds) — they join the rolled gold/potions as
+ * the body's item loot, so the corpse drops what it was wearing. Bodies
+ * created without gear (old callers, old saves) simply have no gear loot.
  */
 export function createBody(
   id: string,
@@ -64,6 +68,7 @@ export function createBody(
   position: { x: number; y: number },
   day: number,
   seed: number,
+  gearItemIds: string[] = [],
 ): LootableBody {
   return {
     id,
@@ -72,7 +77,7 @@ export function createBody(
     chunk: { ...chunk },
     position: { ...position },
     day,
-    loot: generateBodyLoot(npcRole, seed),
+    loot: { ...generateBodyLoot(npcRole, seed), items: [...gearItemIds] },
     looted: false,
   };
 }
