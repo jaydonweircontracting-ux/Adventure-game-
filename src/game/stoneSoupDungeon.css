@@ -31,3 +31,9 @@
 .ssd-shop-row button{padding:6px 8px;color:#e1c58d;background:#2b1d17;border:1px solid #7e5035;font:600 9px monospace;cursor:pointer}
 .ssd-shop-row button:disabled{opacity:.42;cursor:not-allowed}
 .ssd-shop-close{margin-top:10px;padding:6px 8px;color:#e1c58d;background:#2b1d17;border:1px solid #7e5035;font:600 9px monospace;cursor:pointer}
+/* BUILD 931: trap plates (armed = amber ring + `=` glyph), cracked
+   masonry (unfired hidden cells), spent plates (dim floor). */
+.ssd-tile.trap-plate{color:#f0c77b;box-shadow:inset 0 0 0 2px #d86f3e}
+.ssd-tile.trap-cracked{box-shadow:inset 0 0 0 1px rgba(216,111,62,.55)}
+.ssd-tile.trap-spent{color:#8a7a68}
+.ssd-legend-chip.ssd-chip-trap{background-image:none;background-color:#d86f3e}

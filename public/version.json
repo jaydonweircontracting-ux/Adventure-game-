@@ -1,6 +1,6 @@
 {
-  "build": "930",
-  "note": "The Sunken Crypt dungeon now has shops: Ember Provisions (Old Kess) and Cinder Apothecary (Vesper) sell potions and rations at the same prices as the town stalls. Walk up to a shopkeeper to browse — buying costs no turn, the keeper cannot be attacked or looted, and stock runs out as you buy. A new shop with fresh stock appears on each floor.",
-  "timestamp": "2026-10-21T06:50:07.620Z",
-  "cacheBuster": "mvhr5sp1"
+  "build": "931",
+  "note": "",
+  "timestamp": "2026-10-21T07:11:03.080Z",
+  "cacheBuster": "mvhrwpew"
 }

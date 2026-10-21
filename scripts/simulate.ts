@@ -6,6 +6,7 @@ import { createGame, descend, step, buyFromDungeonShop, openDungeonShop, closeDu
 import { VAULT_CATALOG, eligibleVaults } from '../src/game/dungeonVaults';
 import { UNIQUE_DEFS, eligibleUniques } from '../src/game/dungeonUniques';
 import { SHOP_VAULT_DEFS, SHOP_FLOOR_CHANCE, DUNGEON_SHOP_ITEM } from '../src/game/dungeonShops';
+import { TRAP_VAULT_DEFS, TRAP_FLOOR_CHANCE, eligibleTrapVaults, trapDefGeometryValid } from '../src/game/dungeonTraps';
 import { SHOP_CATALOG } from '../src/game/shops';
 import { generateLayout, layoutRng, selectLayoutKind } from '../src/game/dungeonLayouts';
 import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai';
@@ -2171,7 +2172,7 @@ console.log('Testing authored dungeon vaults (BUILD 927)...');
   let sawAny = false;
   for (let seed = 1; seed <= 200; seed += 1) {
     const state = createGame(seed);
-    assert(state.vaults.length <= 5, `Vault927: seed ${seed} places at most 5 vaults (3 regular + 1 unique chamber + 1 shop)`);
+    assert(state.vaults.length <= 6, `Vault927: seed ${seed} places at most 6 vaults (3 regular + 1 unique chamber + 1 shop + 1 trap)`);
     if (state.vaults.length > 1) sawMulti = true;
     if (state.vaults.length > 0) sawAny = true;
     const reachable = bfsReachable(state);
@@ -2204,9 +2205,13 @@ console.log('Testing authored dungeon vaults (BUILD 927)...');
       // BUILD 930: shop vaults are vaults too — their maps carry no
       // monster/item glyphs, so the glyph counts below are 0, matching
       // the fact that a shop spawns no vault monsters or items.
+      // BUILD 931: trap vaults are vaults too — their maps carry no
+      // monster/item glyphs, so the glyph counts below are 0, matching
+      // the fact that a trap spawns nothing at placement time.
       const def = VAULT_CATALOG.find((d) => d.name === vault.name)
         ?? UNIQUE_DEFS.find((d) => d.chamber.name === vault.name)?.chamber
-        ?? SHOP_VAULT_DEFS.find((d) => d.vault.name === vault.name)?.vault;
+        ?? SHOP_VAULT_DEFS.find((d) => d.vault.name === vault.name)?.vault
+        ?? TRAP_VAULT_DEFS.find((d) => d.vault.name === vault.name)?.vault;
       assert(def !== undefined, `Vault927: seed ${seed} placed vault is in the catalog`);
       expectVaultMonsters += glyphCount(def, (c) => c >= '1' && c <= '9');
       expectVaultItems += glyphCount(def, (c) => c >= 'a' && c <= 'z');
@@ -2318,7 +2323,7 @@ console.log('Testing authored dungeon vaults (BUILD 927)...');
     eligibleVaults(floor).some((d) => d.name === v.name)
     || UNIQUE_DEFS.some((d) => d.chamber.name === v.name && floor >= d.minDepth && floor <= d.maxDepth);
   assert(deep.vaults.every((v) => vaultEligible929(2, v)), 'Vault927: floor-2 vaults are depth-eligible');
-  assert(deep.vaults.length <= 5, 'Vault927: floor-2 vault count capped (3 regular + 1 unique chamber + 1 shop)');
+  assert(deep.vaults.length <= 6, 'Vault927: floor-2 vault count capped (3 regular + 1 unique chamber + 1 shop + 1 trap)');
   const stairs2 = stairsCell(deep)!;
   deep.player.x = stairs2.x;
   deep.player.y = stairs2.y;
@@ -2829,6 +2834,275 @@ console.log('Testing dungeon shop vaults (BUILD 930)...');
     assert(state.floor === 2, 'Shop930: descend reaches floor 2');
     assert(state.activeShopId === null, 'Shop930: descend closes any open shop');
     assert(state.shops.every((s) => s.id !== oldShopId930), 'Shop930: descend replaces the floor-1 shop (fresh state, no carried stock)');
+  }
+}
+
+// ---- 13a1k. Dungeon trap vaults (BUILD 931) ----
+// DCSS triggerables, portable asset only (the pattern: a vault room
+// with a pressure-plate trigger and a step callback — rats_trap.des
+// crumbles marked walls and releases the rats in the wall). Both
+// traps below are ORIGINAL Ember Vault content, placed LAST through
+// the 927 vault machinery, firing only on the player's own step.
+console.log('Testing dungeon trap vaults (BUILD 931)...');
+{
+  const WALKABLE931 = new Set(['floor', 'door', 'stairs', 'altar', 'water']);
+  const bfs931 = (state: DungeonGameState) => {
+    const seen = new Set<string>([`${state.player.x}:${state.player.y}`]);
+    const queue = [{ x: state.player.x, y: state.player.y }];
+    while (queue.length > 0) {
+      const cur = queue.pop()!;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const tile = state.tiles[cur.y + dy]?.[cur.x + dx];
+        if (!tile || !WALKABLE931.has(tile.kind)) continue;
+        const k = `${tile.x}:${tile.y}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        queue.push({ x: tile.x, y: tile.y });
+      }
+    }
+    return seen;
+  };
+  const stairs931 = (state: DungeonGameState) => {
+    for (const row of state.tiles) for (const tile of row) if (tile.kind === 'stairs') return tile;
+    return null;
+  };
+  const descendOnce931 = (state: DungeonGameState) => {
+    const st = stairs931(state);
+    assert(st !== null, 'Trap931: stairs exist before descend');
+    state.player.x = st.x;
+    state.player.y = st.y;
+    state.player.hp = state.player.maxHp = 1000;
+    descend(state);
+  };
+  const clearCell931 = (state: DungeonGameState, x: number, y: number) => {
+    state.monsters = state.monsters.filter((m) => !(m.x === x && m.y === y));
+  };
+  const triggerCount931 = (state: DungeonGameState, line: string) =>
+    state.log.filter((l) => l === line).length;
+  const stepOnto931 = (state: DungeonGameState, x: number, y: number) => {
+    assert(Math.abs(x - state.player.x) + Math.abs(y - state.player.y) === 1, `Trap931: scripted step to ${x}:${y} is adjacent`);
+    clearCell931(state, x, y);
+    step(state, Math.sign(x - state.player.x), Math.sign(y - state.player.y));
+    assert(state.player.x === x && state.player.y === y, `Trap931: scripted step lands on ${x}:${y}`);
+  };
+  const CACHE_NAMES931: Record<string, string> = {
+    potion: 'Vermilion potion',
+    scroll: 'Scroll of Recall',
+    food: 'Iron ration',
+    relic: 'Shard of the First Flame',
+  };
+
+  // Catalog shape: exactly two original traps, distinct names/ids,
+  // terrain-only maps, valid trigger geometry, roster kinds, dungeon
+  // loot templates, sane depths and weights.
+  assert(TRAP_VAULT_DEFS.length === 2, 'Trap931: two trap vault defs');
+  assert(TRAP_FLOOR_CHANCE === 0.6, 'Trap931: trap floor chance 0.6');
+  assert(new Set(TRAP_VAULT_DEFS.map((d) => d.id)).size === 2, 'Trap931: trap ids distinct');
+  assert(new Set(TRAP_VAULT_DEFS.map((d) => d.name)).size === 2, 'Trap931: trap names distinct');
+  assert(new Set(TRAP_VAULT_DEFS.map((d) => d.kind)).size === 2, 'Trap931: one release trap, one cache trap');
+  for (const def of TRAP_VAULT_DEFS) {
+    assert(def.tags.includes('trap'), `Trap931: ${def.id} tagged trap`);
+    assert(def.name.length > 0 && def.flavor.length > 0 && def.triggerLine.length > 0, `Trap931: ${def.id} has name/flavor/trigger line`);
+    assert(def.minDepth <= def.maxDepth, `Trap931: ${def.id} depth range ordered`);
+    assert(def.weight > 0, `Trap931: ${def.id} positive weight`);
+    const width931 = def.vault.map[0].length;
+    assert(def.vault.map.every((row) => row.length === width931), `Trap931: ${def.id} map rectangular`);
+    assert(def.vault.map.every((row) => [...row].every((c) => c === '#' || c === '.')), `Trap931: ${def.id} map is terrain only (no spawn glyphs)`);
+    assert(def.vault.mons.length === 0 && def.vault.items.length === 0, `Trap931: ${def.id} spawns nothing at placement`);
+    assert(trapDefGeometryValid(def), `Trap931: ${def.id} trigger geometry valid (plates on floor, hidden cells wall-adjacent-to-floor)`);
+    for (const rel of def.release) {
+      assert(MONSTER_ENTRIES.some((e) => e.kind === rel.kind), `Trap931: ${def.id} release kind ${rel.kind} is a roster kind`);
+    }
+    for (const c of def.cache) {
+      assert(c.template in CACHE_NAMES931, `Trap931: ${def.id} cache template ${c.template} is a dungeon loot template`);
+    }
+    assert(def.kind === 'release' ? def.release.length > 0 && def.cache.length === 0 : def.cache.length > 0 && def.release.length === 0, `Trap931: ${def.id} payload matches its kind`);
+  }
+  // Depth filtering: the warren haunts every depth, the cache only
+  // from depth 2 (a floor-1 player meets exactly one trap type).
+  assert(eligibleTrapVaults(1).map((d) => d.id).join(',') === 'gnawed-warren', 'Trap931: floor 1 admits only the warren');
+  assert(eligibleTrapVaults(2).map((d) => d.id).sort().join(',') === 'gnawed-warren,sealed-cache', 'Trap931: floor 2 admits both traps');
+
+  // Placement sweep: at most one trap per floor, vault record joins
+  // state.vaults, rects never overlap, nothing fires at placement,
+  // stairs stay reachable with the trap placed.
+  let trapFloors931 = 0;
+  let totalFloors931 = 0;
+  let sawRelease931 = false;
+  let sawCache931 = false;
+  for (let seed = 1; seed <= 200; seed += 1) {
+    const state = createGame(seed);
+    for (let floor = 1; floor <= 3; floor += 1) {
+      if (floor > 1) descendOnce931(state);
+      assert(state.floor === floor, `Trap931: seed ${seed} reaches floor ${floor}`);
+      totalFloors931 += 1;
+      assert(state.traps.length <= 1, `Trap931: seed ${seed} floor ${floor} has at most one trap`);
+      if (state.traps.length === 1) {
+        trapFloors931 += 1;
+        const trap = state.traps[0];
+        if (trap.kind === 'release') sawRelease931 = true;
+        if (trap.kind === 'cache') sawCache931 = true;
+        assert(!trap.fired, `Trap931: seed ${seed} floor ${floor} trap starts unfired`);
+        assert(!state.monsters.some((m) => m.id.startsWith('monster-trap-')), `Trap931: seed ${seed} floor ${floor} no trap monster at placement`);
+        assert(!state.groundItems.some((i) => i.id.startsWith('item-trap-')), `Trap931: seed ${seed} floor ${floor} no trap item at placement`);
+        assert(triggerCount931(state, trap.triggerLine) === 0, `Trap931: seed ${seed} floor ${floor} no trigger line at placement`);
+        const record = state.vaults.find((v) => v.name === trap.vaultName);
+        assert(record !== undefined, `Trap931: seed ${seed} floor ${floor} trap vault joins state.vaults`);
+        for (const key of [...trap.plates, ...trap.release.map((r) => `${r.x}:${r.y}`), ...trap.cache.map((c) => `${c.x}:${c.y}`)]) {
+          const [x, y] = key.split(':').map(Number);
+          assert(x >= record!.x && x < record!.x + record!.width && y >= record!.y && y < record!.y + record!.height, `Trap931: seed ${seed} floor ${floor} trap cell ${key} inside its vault rect`);
+        }
+        for (const other of state.vaults) {
+          if (other === record) continue;
+          assert(!(record!.x < other.x + other.width && record!.x + record!.width > other.x && record!.y < other.y + other.height && record!.y + record!.height > other.y), `Trap931: seed ${seed} floor ${floor} trap rect overlaps ${other.name}`);
+        }
+        const reach = bfs931(state);
+        const stairs = stairs931(state);
+        assert(stairs !== null && reach.has(`${stairs.x}:${stairs.y}`), `Trap931: seed ${seed} floor ${floor} stairs reachable with a trap placed`);
+        // Determinism + JSON round-trip of the trap itself.
+        const again = createGame(seed);
+        for (let f = 1; f < floor; f += 1) descendOnce931(again);
+        assert(JSON.stringify(again.traps) === JSON.stringify(state.traps), `Trap931: seed ${seed} floor ${floor} traps deterministic`);
+        const restored = JSON.parse(JSON.stringify(state.traps));
+        assert(JSON.stringify(restored) === JSON.stringify(state.traps), `Trap931: seed ${seed} floor ${floor} traps JSON-round-trip`);
+      }
+    }
+  }
+  assert(sawRelease931, 'Trap931: a release trap appears in the sweep');
+  assert(sawCache931, 'Trap931: a cache trap appears in the sweep');
+  const rate931 = trapFloors931 / totalFloors931;
+  assert(rate931 > 0.3 && rate931 < 0.95, `Trap931: trap rate sane (got ${rate931.toFixed(2)}, expected ~0.6 minus anchor failures)`);
+
+  // Detailed trigger exercise, once per kind: sight never fires, the
+  // plate fires exactly once, the payload is normal dungeon content,
+  // reachability holds AFTER firing, and descend replaces the trap.
+  const findTrapFloor931 = (kind: 'release' | 'cache') => {
+    for (let seed = 1; seed <= 200; seed += 1) {
+      const state = createGame(seed);
+      for (let floor = 1; floor <= 3; floor += 1) {
+        if (floor > 1) descendOnce931(state);
+        if (state.traps.length === 1 && state.traps[0].kind === kind) return state;
+      }
+    }
+    return null;
+  };
+  for (const kind of ['release', 'cache'] as const) {
+    const state = findTrapFloor931(kind);
+    assert(state !== null, `Trap931: a ${kind} trap floor exists in some seed`);
+    const trap = state!.traps[0];
+    const def = TRAP_VAULT_DEFS.find((d) => d.name === trap.vaultName)!;
+    assert(def !== undefined, `Trap931: ${kind} trap matches a catalog def`);
+    state!.player.hp = state!.player.maxHp = 1000;
+    const [px, py] = trap.plates[0].split(':').map(Number);
+    // Sight: stand two cells out, step to one cell out — the plate is
+    // revealed (radius 6) but the trap must NOT fire.
+    const twoOut = [[2, 0], [-2, 0], [0, 2], [0, -2]]
+      .map(([dx, dy]) => ({ x: px + dx, y: py + dy, mid: { x: px + Math.sign(dx), y: py + Math.sign(dy) } }))
+      .find((c) => state!.tiles[c.y]?.[c.x]?.kind === 'floor' && state!.tiles[c.mid.y]?.[c.mid.x]?.kind === 'floor');
+    assert(twoOut !== undefined, `Trap931: ${kind} plate has a walkable approach`);
+    clearCell931(state!, twoOut!.x, twoOut!.y);
+    clearCell931(state!, twoOut!.mid.x, twoOut!.mid.y);
+    state!.player.x = twoOut!.x;
+    state!.player.y = twoOut!.y;
+    step(state!, Math.sign(twoOut!.mid.x - state!.player.x), Math.sign(twoOut!.mid.y - state!.player.y));
+    assert(state!.player.x === twoOut!.mid.x && state!.player.y === twoOut!.mid.y, `Trap931: ${kind} approach step lands adjacent to the plate`);
+    assert(state!.tiles[py][px].visible === true, `Trap931: ${kind} plate is visible on approach`);
+    assert(!trap.fired, `Trap931: ${kind} approach does not fire the trap`);
+    assert(triggerCount931(state!, trap.triggerLine) === 0, `Trap931: ${kind} approach logs no trigger line`);
+    // Fire: step onto the plate. No damage from the trap itself, and
+    // the run is neither won nor lost by firing.
+    const hpBefore = state!.player.hp;
+    stepOnto931(state!, px, py);
+    assert(trap.fired, `Trap931: ${kind} plate step fires the trap`);
+    assert(triggerCount931(state!, trap.triggerLine) === 1, `Trap931: ${kind} trigger line logged exactly once`);
+    assert(state!.log[0] === trap.triggerLine, `Trap931: ${kind} trigger line is the newest log line`);
+    assert(state!.player.hp === hpBefore, `Trap931: ${kind} firing deals no instant damage`);
+    assert(state!.phase === 'playing', `Trap931: ${kind} firing leaves the run playing`);
+    for (const rel of trap.release) {
+      assert(state!.tiles[rel.y][rel.x].kind === 'floor', `Trap931: ${kind} release cell ${rel.x}:${rel.y} crumbles to floor`);
+    }
+    for (const c of trap.cache) {
+      assert(state!.tiles[c.y][c.x].kind === 'floor', `Trap931: ${kind} cache cell ${c.x}:${c.y} crumbles to floor`);
+    }
+    if (kind === 'release') {
+      const released = state!.monsters.filter((m) => m.id.startsWith('monster-trap-'));
+      assert(released.length === trap.release.length, `Trap931: release trap frees exactly its monsters`);
+      const mult = 1 + (state!.floor - 1) * 0.18;
+      for (const rel of trap.release) {
+        const monster = released.find((m) => m.id.endsWith(`-${rel.x}-${rel.y}`));
+        assert(monster !== undefined, `Trap931: release monster spawns for ${rel.x}:${rel.y}`);
+        const base = MONSTER_ENTRIES.find((e) => e.kind === rel.kind)!;
+        assert(monster!.hp === Math.round(base.hp * mult) && monster!.attack === Math.round(base.attack * mult), `Trap931: released ${rel.kind} uses depth-scaled roster stats, not boss numbers`);
+        assert(monster!.asleep === false, `Trap931: released ${rel.kind} wakes on release`);
+        assert(monster!.unique !== true, `Trap931: released ${rel.kind} is not a unique`);
+      }
+    } else {
+      const cached = state!.groundItems.filter((i) => i.id.startsWith('item-trap-'));
+      assert(cached.length === trap.cache.length, `Trap931: cache trap reveals exactly its loot`);
+      for (const c of trap.cache) {
+        const item = cached.find((i) => i.x === c.x && i.y === c.y);
+        assert(item !== undefined, `Trap931: cache item spawns at ${c.x}:${c.y}`);
+        assert(item!.name === CACHE_NAMES931[c.template], `Trap931: cache at ${c.x}:${c.y} is the ${c.template} dungeon item`);
+      }
+    }
+    // Post-trigger reachability: the 927 invariant, re-checked AFTER
+    // the trap fires — stairs reachable, no sealed walkable cell.
+    {
+      const reach = bfs931(state!);
+      const stairs = stairs931(state!);
+      assert(stairs !== null && reach.has(`${stairs.x}:${stairs.y}`), `Trap931: ${kind} stairs reachable after firing`);
+      for (const row of state!.tiles) for (const tile of row) {
+        if (WALKABLE931.has(tile.kind)) {
+          assert(reach.has(`${tile.x}:${tile.y}`), `Trap931: ${kind} walkable cell ${tile.x}:${tile.y} still reachable after firing`);
+        }
+      }
+    }
+    // Exactly-once: step off and back onto the spent plate — nothing
+    // new spawns, the trigger line never repeats.
+    const monsterCount = state!.monsters.length;
+    const plateNeighbors = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+      .map(([dx, dy]) => ({ x: px + dx, y: py + dy }))
+      .filter((p) => state!.tiles[p.y]?.[p.x]?.kind === 'floor');
+    assert(plateNeighbors.length > 0, `Trap931: ${kind} plate has a floor neighbor to step off to`);
+    let off = plateNeighbors.find((p) => !state!.monsters.some((m) => m.hp > 0 && m.x === p.x && m.y === p.y));
+    if (!off) {
+      clearCell931(state!, plateNeighbors[0].x, plateNeighbors[0].y);
+      off = plateNeighbors[0];
+    }
+    stepOnto931(state!, off!.x, off!.y);
+    stepOnto931(state!, px, py);
+    assert(state!.monsters.length === monsterCount, `Trap931: ${kind} re-stepping the spent plate spawns nothing`);
+    assert(triggerCount931(state!, trap.triggerLine) === 1, `Trap931: ${kind} trigger line never repeats`);
+    assert(trap.fired, `Trap931: ${kind} trap stays fired`);
+    // Released monsters are normal monsters: fightable, killable,
+    // and their kill pays the normal dungeon gold.
+    if (kind === 'release') {
+      const victim = state!.monsters.find((m) => m.id.startsWith('monster-trap-') && m.hp > 0)!;
+      assert(victim !== undefined, 'Trap931: a living released monster remains to fight');
+      const adjacent = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+        .map(([dx, dy]) => ({ x: victim.x + dx, y: victim.y + dy }))
+        .find((p) => state!.tiles[p.y]?.[p.x]?.kind === 'floor' && !state!.monsters.some((m) => m.hp > 0 && m.x === p.x && m.y === p.y));
+      assert(adjacent !== undefined, 'Trap931: a free cell beside the released monster exists');
+      state!.player.x = adjacent!.x;
+      state!.player.y = adjacent!.y;
+      state!.player.hp = state!.player.maxHp = 1000;
+      const hpBeforeFight = victim.hp;
+      step(state!, Math.sign(victim.x - state!.player.x), Math.sign(victim.y - state!.player.y));
+      assert(victim.hp < hpBeforeFight, 'Trap931: released monster takes damage from a step-attack');
+      assert(victim.asleep === false, 'Trap931: released monster is awake after being hit');
+      victim.hp = 1;
+      const goldBefore = state!.player.gold;
+      const killsBefore = state!.player.kills;
+      step(state!, Math.sign(victim.x - state!.player.x), Math.sign(victim.y - state!.player.y));
+      assert(victim.hp === 0, 'Trap931: released monster is killable');
+      assert(state!.player.gold === goldBefore + 2 + state!.floor, 'Trap931: released-monster kill pays normal dungeon gold');
+      assert(state!.player.kills === killsBefore + 1, 'Trap931: released-monster kill counts as a kill');
+      assert(state!.log.some((l) => l.includes('falls. You find')), 'Trap931: released-monster kill logs the normal death line');
+    }
+    // Descend replaces the trap: no carried state, no carried stock.
+    const oldTrapId = trap.id;
+    descendOnce931(state!);
+    assert(state!.traps.every((t) => t.id !== oldTrapId), `Trap931: ${kind} descend replaces the trap (fresh floor state)`);
   }
 }
 
