@@ -119,6 +119,8 @@ import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type Ele
 import { ensureKitTileset, onKitTilesetLoaded } from '@/game/kitAssets';
 import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS, GOAT_CHASE_RANGE, gearForMonster, bonesForMonster } from '@/game/ai';
 import { behaviorForCreature, preferredRangeFor, shouldStand, shouldRetarget, voiceLine } from '@/game/creatureBehavior';
+// BUILD 935: two-stage mitigation + element percents + immunities + ranged falloff.
+import { mitigateDamage, mitigationForCreature, creatureDefenseForLevel, creatureArmorForLevel, playerArmorForRoll, playerResistPercents, rangedHitChance, creatureArcherSkill, normalizeRangedSkill } from '@/game/mitigation';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, LOCKPICK_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
 import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, questProgressText, questRumors, serializeQuestStates, parseQuestStates, markerForGiver, type QuestState, type QuestEvent, type QuestDef } from '@/game/quests';
@@ -150,7 +152,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '934';
+const BUILD_NUMBER = '935';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -166,6 +168,7 @@ const BUILD_NOTES: Record<string, string> = {
   '930': 'The Sunken Crypt dungeon now has shops: Ember Provisions (Old Kess) and Cinder Apothecary (Vesper) sell potions and rations at the same prices as the town stalls. Walk up to a shopkeeper to browse — buying costs no turn, the keeper cannot be attacked or looted, and stock runs out as you buy. A new shop with fresh stock appears on each floor.',
   '932': 'Sneak mode is here: tap the eye button to slip into the shadows. While sneaking, folk are far less likely to notice you — only someone standing close by counts as a witness, so an unseen crime leaves no wanted level at all. Walk up to someone while sneaking and a Pickpocket button appears: the prompt shows your real chance and exactly what you stand to lift — a spare from their stash when they have one to spare, otherwise a share of their purse — and a clean lift lands straight in your pack with nobody the wiser. Get caught and they cry out, the sneak breaks, and the guards hear about it through the usual witness reports. And a first strike from the shadows hits twice as hard: attack an unsuspecting villager while sneaking and the blow deals double damage — drop them unseen and you stay hidden.',
   '933': 'Sneak mode, finished: sneaking now fools monsters as well as people — a creature only notices you within 12 paces while you sneak (down from 24), and a beast already chasing you does not lose you just because you duck into the shadows. While sneaking your figure visibly dims so you can see at a glance that you are hidden. Folk you have alerted now remember it through save and reload — no more getting forgiven by quitting — and a first strike from the shadows now also hits twice as hard against wandering adventurers and travelers, not just villagers.',
+  '935': 'Combat now mitigates damage in two stages, like a real defense: a blow first rolls against the defender\u2019s defense, then against their armor — and a fully stopped blow shows BLOCKED instead of dealing damage. Tough monsters shrug off more of a weak hit, and a well-geared hero shrugs off more of a monster\u2019s — your armor now genuinely protects you. Arrows also lose accuracy with distance: shots are surest up close and in the middle band where archers hold their ground, and a long shot may miss outright and show MISS. Elemental weaknesses and resistances are in the data too — fire stings slimes and trolls harder than before, and gear that resists fire, ice, or lightning now genuinely blunts those blows.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
   '925': 'Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported',
@@ -1563,7 +1566,7 @@ type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers
 type GoatLoot = Partial<GameInventory>;
 type DroppedLoot = { id: number; chunk: Point; position: Point; loot: GoatLoot };
 // Ranged combat: arrows fired by the player's bow and by bandit archers.
-type ArrowState = { id: number; chunk: Point; position: Point; dx: number; dy: number; traveled: number; damage: number; critical: boolean; hostile: boolean };
+type ArrowState = { id: number; chunk: Point; position: Point; dx: number; dy: number; traveled: number; damage: number; critical: boolean; hostile: boolean; kind?: string; level?: number };
 const ARROW_SPEED = 55; // field units per second
 const ARROW_RANGE = 34;
 const BOW_ARROW_DAMAGE_MULT = 0.9;
@@ -7834,6 +7837,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // player attack) but records NO crime and NO bounty — the player didn't
   // do this. Death drops the usual lootable body.
   const applyCreatureHitToNpc = (npcId: string, damage: number, creatureKind: 'goat' | 'monster', creatureId: number, creaturePos: Point, creatureLabel: string) => {
+    // BUILD 935: creature hits on NPCs route through the pipeline with
+    // identity defender values (NPCs carry no combat armor stat), so
+    // damage is unchanged today — but the attacker element flows, so a
+    // future NPC resist stat lands in one place.
+    const finalNpcDamage = mitigateDamage({ raw: damage, attackerElement: mitigationForCreature(creatureLabel).attackElement }).damage;
     const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
     let victim: Townsperson | undefined;
     let wasEngaged = false;
@@ -7841,7 +7849,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (n.id !== npcId) return n;
       victim = n;
       wasEngaged = n.fightBackUntilTick !== undefined || n.fleeUntilTick !== undefined;
-      return damageNpcByCreature(n, damage, creaturePos, creatureKind, creatureId, tick);
+      return damageNpcByCreature(n, finalNpcDamage, creaturePos, creatureKind, creatureId, tick);
     });
     if (!victim) return;
     const v = victim;
@@ -7858,7 +7866,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     }
     townsfolkRef.current = next;
     setTownsfolk(next);
-    spawnCombatText('-' + damage, victimHurt.position, 'damage');
+    spawnCombatText('-' + finalNpcDamage, victimHurt.position, 'damage');
     playCombatSound('shing', muted);
     if (victimHurt.deadUntilTick !== undefined) {
       dropTownspersonBody(victimHurt);
@@ -7875,14 +7883,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (entityKind === 'monster') {
       const target = monstersRef.current.find((m) => m.id === creatureId);
       if (!target || target.disposition === 'defeated') return;
-      const nextHp = Math.max(0, target.hp - damage);
+      // BUILD 935: NPC attacks are physical ('none'); same pipeline, defender's data.
+      const npcMonsterMitigation = mitigationForCreature(target.kind);
+      const finalNpcDamage = mitigateDamage({ raw: damage, attackerElement: 'none', percents: npcMonsterMitigation.elementPercents, immunities: npcMonsterMitigation.immunities, defense: creatureDefenseForLevel(target.level ?? 1), armor: creatureArmorForLevel(target.level ?? 1) }).damage;
+      const nextHp = Math.max(0, target.hp - finalNpcDamage);
       const defeated = nextHp <= 0;
       const updatedMonsters = monstersRef.current.map((m) => m.id === creatureId ? { ...m, hp: nextHp, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, provoked: true } : m);
       monstersRef.current = updatedMonsters; setMonsters(updatedMonsters);
-      spawnCombatText('-' + damage, target.position, 'damage');
+      spawnCombatText('-' + finalNpcDamage, target.position, 'damage');
       playCombatSound('shing', muted);
       window.setTimeout(() => setMonsters((current) => current.map((m) => m.id === creatureId ? { ...m, hitFlash: false } : m)), 100);
-      setLogs((cur) => [{ text: defeated ? `${attackerName} killed the ${target.kind}!` : `${attackerName} hits the ${target.kind} for ${damage} damage.`, color: defeated ? 'blue' : 'red' }, ...cur].slice(0, 3));
+      setLogs((cur) => [{ text: defeated ? `${attackerName} killed the ${target.kind}!` : `${attackerName} hits the ${target.kind} for ${finalNpcDamage} damage.`, color: defeated ? 'blue' : 'red' }, ...cur].slice(0, 3));
       if (defeated) {
         const loot: GoatLoot = { ...monsterLootForKind(target.kind), ...target.gear, ...bonesForMonster(target.kind) };
         const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: { ...target.position }, loot };
@@ -7892,15 +7903,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     }
     const target = goatsRef.current.find((g) => g.id === creatureId);
     if (!target || target.disposition === 'defeated') return;
-    const nextHp = Math.max(0, target.hp - damage);
+    // BUILD 935: NPC attacks on goats route through the same pipeline.
+    const finalNpcGoatDamage = mitigateDamage({ raw: damage, attackerElement: 'none', defense: creatureDefenseForLevel(target.level ?? 1), armor: creatureArmorForLevel(target.level ?? 1) }).damage;
+    const nextHp = Math.max(0, target.hp - finalNpcGoatDamage);
     const defeated = nextHp <= 0;
     const label = target.kind ?? 'goat';
     const updatedGoats = goatsRef.current.map((g) => g.id === creatureId ? { ...g, hp: nextHp, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, respawnTicks: defeated ? 0 : g.respawnTicks } : g);
     goatsRef.current = updatedGoats; setGoats(updatedGoats);
-    spawnCombatText('-' + damage, target.position, 'damage');
+    spawnCombatText('-' + finalNpcGoatDamage, target.position, 'damage');
     playCombatSound('baa', muted);
     window.setTimeout(() => setGoats((current) => current.map((g) => g.id === creatureId ? { ...g, hitFlash: false } : g)), 100);
-    setLogs((cur) => [{ text: defeated ? `${attackerName} killed the ${label}!` : `${attackerName} hits the ${label} for ${damage} damage.`, color: defeated ? 'blue' : 'red' }, ...cur].slice(0, 3));
+    setLogs((cur) => [{ text: defeated ? `${attackerName} killed the ${label}!` : `${attackerName} hits the ${label} for ${finalNpcGoatDamage} damage.`, color: defeated ? 'blue' : 'red' }, ...cur].slice(0, 3));
     if (defeated) {
       const lootType = GOAT_LOOT_TYPES[Math.floor(Math.random() * GOAT_LOOT_TYPES.length)];
       const loot: GoatLoot = { [lootType]: Math.floor(Math.random() * 3) + 1 };
@@ -7911,7 +7924,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   };
 
   const applyPlayerHitToCreature = (attackTarget: { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, damage: number, critical: boolean) => {
-    const nextHp = Math.max(0, attackTarget.hp - damage);
+    // BUILD 935: player attacks are physical ('none'); the defender's
+    // level-derived defense/armor rolls mitigate them. A fully
+    // blocked hit shows BLOCKED instead of -0.
+    const targetMitigation = mitigationForCreature(attackTarget.entityKind === 'monster' ? ((attackTarget as MonsterState).kind || 'creature') : 'goat');
+    const mitigated = mitigateDamage({ raw: damage, attackerElement: 'none', percents: targetMitigation.elementPercents, immunities: targetMitigation.immunities, defense: creatureDefenseForLevel(attackTarget.level ?? 1), armor: creatureArmorForLevel(attackTarget.level ?? 1) });
+    const finalDamage = mitigated.damage;
+    const blocked = mitigated.blocked && finalDamage === 0;
+    const nextHp = Math.max(0, attackTarget.hp - finalDamage);
     const defeated = nextHp <= 0;
     const hitPosition = { ...attackTarget.position };
     const targetLabel = attackTarget.entityKind === 'monster' ? ((attackTarget as MonsterState).kind || 'creature') : 'goat';
@@ -7919,14 +7939,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const monsterTarget = attackTarget as MonsterState;
       const updatedMonsters = monstersRef.current.map((monster) => monster.id === monsterTarget.id ? { ...monster, hp: nextHp, position: monster.position, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, provoked: true } : monster);
       monstersRef.current = updatedMonsters; setMonsters(updatedMonsters);
-      spawnCombatText((critical ? 'CRIT ' : '') + '-' + damage, hitPosition, critical ? 'critical' : 'damage');
+      spawnCombatText(blocked && !defeated ? 'BLOCKED' : (critical ? 'CRIT ' : '') + '-' + finalDamage, hitPosition, critical ? 'critical' : 'damage');
       playCombatSound('shing', muted);
       window.setTimeout(() => setMonsters((current) => current.map((monster) => monster.id === monsterTarget.id ? { ...monster, hitFlash: false } : monster)), 100);
       // BUILD 934: death voice appends to the existing defeat line (one
       // line, no extra log spam). NPC-kill deaths and goat defeat text
       // are unchanged — this rides the player-kill line only.
       const deathVoice = defeated ? voiceLine(behaviorForCreature(monsterTarget.kind).voices.death, creatureTargetKey('monster', monsterTarget.id), 'death') : null;
-      setLogs((currentLogs) => [{ text: defeated ? targetLabel + ' defeated.' + (deathVoice ? ' ' + deathVoice : '') : 'You hit the ' + targetLabel + ' for ' + damage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
+      setLogs((currentLogs) => [{ text: defeated ? targetLabel + ' defeated.' + (deathVoice ? ' ' + deathVoice : '') : blocked && !defeated ? 'Your blow is blocked by the ' + targetLabel + '!' : 'You hit the ' + targetLabel + ' for ' + finalDamage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
       if (defeated) {
         // RuneScape-style: the kill drops everything the monster was carrying
         // (wielded gear) plus bones for humanoids, on top of its normal loot.
@@ -7941,10 +7961,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     } else {
       let updatedGoats = goatsRef.current.map((goat) => goat.id === attackTarget.id ? { ...goat, hp: nextHp, position: goat.position, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, respawnTicks: defeated ? 0 : goat.respawnTicks } : goat);
       goatsRef.current = updatedGoats; setGoats(updatedGoats);
-      spawnCombatText((critical ? 'CRIT ' : '') + '-' + damage, hitPosition, critical ? 'critical' : 'damage');
+      spawnCombatText(blocked && !defeated ? 'BLOCKED' : (critical ? 'CRIT ' : '') + '-' + finalDamage, hitPosition, critical ? 'critical' : 'damage');
       playCombatSound('baa', muted);
       window.setTimeout(() => setGoats((current) => current.map((goat) => goat.id === attackTarget.id ? { ...goat, hitFlash: false } : goat)), 100);
-      setLogs((currentLogs) => [{ text: defeated ? 'Goat defeated. It drops experience and gold.' : 'You hit the goat for ' + damage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
+      setLogs((currentLogs) => [{ text: defeated ? 'Goat defeated. It drops experience and gold.' : blocked && !defeated ? 'Your blow is blocked by the goat!' : 'You hit the goat for ' + finalDamage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
       if (defeated) {
         const lootType = GOAT_LOOT_TYPES[Math.floor(Math.random() * GOAT_LOOT_TYPES.length)];
         const lootAmount = Math.floor(Math.random() * (2 + Math.floor(playerStatsRef.current.luk / 10))) + 1;
@@ -7996,15 +8016,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // straight into the inventory — a field-coordinate drop would land outside
   // the tavern when the player climbs back up.
   const applyHitToCellarRat = (rat: CellarRat, damage: number, critical: boolean) => {
-    const nextHp = Math.max(0, rat.hp - damage);
+    // BUILD 935: cellar rats route through the pipeline (kind 'rat', level 1).
+    const finalRatDamage = mitigateDamage({ raw: damage, attackerElement: 'none', defense: 1, armor: 1 }).damage;
+    const nextHp = Math.max(0, rat.hp - finalRatDamage);
     const defeated = nextHp <= 0;
     const hitPosition = { x: rat.x, y: rat.y };
     const updated = cellarRatsRef.current.map((r) => r.id === rat.id ? { ...r, hp: nextHp, hitFlash: true } : r);
     syncCellarRats(updated);
-    spawnCombatText((critical ? 'CRIT ' : '') + '-' + damage, hitPosition, critical ? 'critical' : 'damage');
+    spawnCombatText((critical ? 'CRIT ' : '') + '-' + finalRatDamage, hitPosition, critical ? 'critical' : 'damage');
     playCombatSound('shing', muted);
     window.setTimeout(() => syncCellarRats(cellarRatsRef.current.map((r) => r.id === rat.id ? { ...r, hitFlash: false } : r)), 100);
-    setLogs((currentLogs) => [{ text: defeated ? 'Rat defeated.' : 'You hit the rat for ' + damage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
+    setLogs((currentLogs) => [{ text: defeated ? 'Rat defeated.' : 'You hit the rat for ' + finalRatDamage + (critical ? ' critical' : '') + ' damage.', color: defeated ? 'blue' : 'red' }, ...currentLogs].slice(0, 3));
     if (defeated) {
       const loot: GoatLoot = monsterLootForKind('rat');
       if ((loot.coins || 0) > 0) {
@@ -8725,7 +8747,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const stats = playerStatsRef.current;
               const critical = Math.random() < playerCriticalChanceForStats(stats);
               const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
-              const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult);
+              // BUILD 935: wildlife routes through the pipeline (level-1
+              // equivalent: defense 1, armor 1). The branch's min-1 floor
+              // is preserved — mitigation reduces toward it, not below it.
+              const wildMitigation = mitigationForCreature(species);
+              const damage = Math.max(1, mitigateDamage({ raw: Math.max(1, playerDamageForStats(stats, equipmentDamageBonus) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult), attackerElement: 'none', percents: wildMitigation.elementPercents, immunities: wildMitigation.immunities, defense: 1, armor: 1 }).damage);
               const newHp = curHp - damage;
               const pos = (attackTarget as { position: { x: number; y: number } }).position;
               if (newHp <= 0) {
@@ -8982,8 +9008,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             if (targetInfo.choice.kind === 'npc') {
               npcHits.push({ npcId: targetInfo.choice.npcId, damage, creatureId: goat.id, creaturePos: { ...goat.position }, label: goat.kind ?? 'goat' });
             } else {
-              damageTaken += damage;
-              spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted);
+              // BUILD 935: creature hits on the player route through the
+              // pipeline — attacker element, player armor (converted),
+              // player gear resists. Player defense is 0 (no stat).
+              const goatMitigation = mitigationForCreature(goat.kind);
+              const playerMitStats = totalEquipmentStats(equipmentRef.current);
+              const mitigatedGoatDamage = mitigateDamage({ raw: damage, attackerElement: goatMitigation.attackElement, percents: playerResistPercents(playerMitStats), immunities: [], defense: 0, armor: playerArmorForRoll(playerMitStats.armor ?? 0) }).damage;
+              damageTaken += mitigatedGoatDamage;
+              spawnCombatText('-' + mitigatedGoatDamage, currentPlayer, 'damage'); playCombatSound('shing', muted);
             }
           }
           return next;
@@ -9067,8 +9099,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             if (targetInfo.choice.kind === 'npc') {
               npcHits.push({ npcId: targetInfo.choice.npcId, damage, creatureId: monster.id, creaturePos: { ...monster.position }, label: monster.kind });
             } else {
-              damageTaken += damage;
-              spawnCombatText('-' + damage, currentPlayer, 'damage'); playCombatSound('shing', muted);
+              // BUILD 935: same pipeline as the goat loop.
+              const monsterMitigation = mitigationForCreature(monster.kind);
+              const playerMitStats = totalEquipmentStats(equipmentRef.current);
+              const mitigatedMonsterDamage = mitigateDamage({ raw: damage, attackerElement: monsterMitigation.attackElement, percents: playerResistPercents(playerMitStats), immunities: [], defense: 0, armor: playerArmorForRoll(playerMitStats.armor ?? 0) }).damage;
+              damageTaken += mitigatedMonsterDamage;
+              spawnCombatText('-' + mitigatedMonsterDamage, currentPlayer, 'damage'); playCombatSound('shing', muted);
             }
           }
           // Ranged NPCs (bandit/goblin/orc archers) loose arrows at range instead of closing to melee.
@@ -9081,7 +9117,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             // already fighting the player keeps its normal 30u volley range.
             if (distToPlayer > 7 && distToPlayer <= sneakEngagementRange(sneakingRef.current, monsterEngagedOnPlayer, 30)) {
               const dist = distToPlayer || 1;
-              const arrow: ArrowState = { id: arrowIdRef.current++, chunk: { ...currentChunk }, position: { ...next.position }, dx: (currentPlayer.x - next.position.x) / dist, dy: (currentPlayer.y - next.position.y) / dist, traveled: 0, damage: goatAttackDamageForLevel(next.level), critical: false, hostile: true };
+              const arrow: ArrowState = { id: arrowIdRef.current++, chunk: { ...currentChunk }, position: { ...next.position }, dx: (currentPlayer.x - next.position.x) / dist, dy: (currentPlayer.y - next.position.y) / dist, traveled: 0, damage: goatAttackDamageForLevel(next.level), critical: false, hostile: true, kind: next.kind, level: next.level };
               arrowsRef.current = [...arrowsRef.current, arrow]; setArrows(arrowsRef.current);
               const archerId = next.id;
               next = { ...next, attackCooldown: 3200, state: 'attack' as GoatStateName, attackTimer: GOAT_ATTACK_WINDUP_MS, attackHitApplied: true, attacking: true };
@@ -9115,8 +9151,16 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           if (traveled >= ARROW_RANGE || position.x < 4 || position.x > 136 || position.y < 4 || position.y > 136) continue;
           if (arrow.hostile) {
             if (Math.hypot(position.x - currentPlayer.x, position.y - currentPlayer.y) < 3) {
-              playerDamageTaken += arrow.damage;
-              spawnCombatText('-' + arrow.damage, currentPlayer, 'damage');
+              // BUILD 935: hostile arrows roll distance-banded falloff at
+              // contact (traveled ≈ archer distance); a miss fizzles
+              // silently. A hit mitigates like any creature hit.
+              const falloff = rangedHitChance(traveled, creatureArcherSkill(arrow.level ?? 1));
+              if (!falloff.hit) continue;
+              const arrowMitigation = mitigationForCreature(arrow.kind);
+              const arrowMitStats = totalEquipmentStats(equipmentRef.current);
+              const mitigatedArrowDamage = mitigateDamage({ raw: arrow.damage, attackerElement: arrowMitigation.attackElement, percents: playerResistPercents(arrowMitStats), immunities: [], defense: 0, armor: playerArmorForRoll(arrowMitStats.armor ?? 0) }).damage;
+              playerDamageTaken += mitigatedArrowDamage;
+              spawnCombatText('-' + mitigatedArrowDamage, currentPlayer, 'damage');
               continue;
             }
           } else {
@@ -9124,6 +9168,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             const hitMonster = hitGoat ? null : monstersRef.current.find((monster) => monster.disposition !== 'defeated' && Math.hypot(position.x - monster.position.x, position.y - monster.position.y) < 3);
             const hit = hitGoat ? { ...hitGoat, entityKind: 'goat' as const } : hitMonster ? { ...hitMonster, entityKind: 'monster' as const } : null;
             if (hit) {
+              // BUILD 935: player arrows roll distance-banded falloff at
+              // contact; a miss consumes the arrow and shows MISS.
+              const playerFalloff = rangedHitChance(traveled, normalizeRangedSkill(playerStatsRef.current.dex));
+              if (!playerFalloff.hit) {
+                spawnCombatText('MISS', position, 'damage');
+                continue;
+              }
               applyPlayerHitToCreature(hit as { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, arrow.damage, arrow.critical);
               continue;
             }

@@ -13,6 +13,7 @@ import { updateGoat, GOAT_CHASE_SPEED, type GoatAIEntity } from '../src/game/ai'
 import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '../src/game/combat';
 import { chooseCreatureTarget, pickGuardCreatureTarget, sneakEngagementRange, CREATURE_ACQUIRE_RANGE, SNEAK_CREATURE_ACQUIRE_RANGE, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
 import { behaviorForCreature, behaviorKindKeys, preferredRangeFor, hashRoll, shouldStand, shouldRetarget, isBehaviorFleeing, voiceLine } from '../src/game/creatureBehavior';
+import { mitigateDamage, mitigationForCreature, mitigationKindKeys, creatureDefenseForLevel, creatureArmorForLevel, playerArmorForRoll, playerResistPercents, rangedBandFor, rangedHitChance, creatureArcherSkill, normalizeRangedSkill, RANGED_HIT_CHANCE_CAP } from '../src/game/mitigation';
 import { strayGateDecision, strayKindForRoll, straySpawnPoints, pickStraySpawnPoint, isTownEdgePosition, isTownCenterPosition, TOWN_STRAY_CHANCE, TOWN_STRAY_ROAM_RADIUS, TOWN_CENTER_SAFE_RADIUS } from '../src/game/townStrays';
 import { createAgent, stepAgent, AGENT_MOVE_SPEED, type AgentWorld } from '../src/game/gameplayAgent';
 import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
@@ -1471,6 +1472,72 @@ console.log('Testing creature behavior blocks (BUILD 934)...');
   for (let i = 0; i < 200; i++) npcFighter = updateGoat(npcFighter, { x: 0, y: 0 }, 'right', [npcFighter], 100, { meleeStandOff: 1.6, behavior: { stand: false, fleeHpRatio: 0.25, canFlee: true } }).goat;
   const npcDist = Math.hypot(npcFighter.position.x - 0, npcFighter.position.y - 0);
   assert(Math.abs(npcDist - 1.6) < 0.5, `Behavior: NPC-target standoff stays 1.6 (got ${npcDist})`);
+}
+
+// ---- 13a1n. Two-stage mitigation + element percents + immunities + ranged falloff (BUILD 935, Tibia item 2) ----
+console.log('Testing two-stage mitigation (BUILD 935)...');
+{
+  // Order: defense roll BEFORE armor roll, observable via a staged
+  // roll sequence. defense=10, armor=10, raw=25, rolls [1.0, 0.0]:
+  // defense-first -> 25-10=15, armor lo=5 hi=9 roll 0.0 -> 15-5=10.
+  // Armor-first would give 16, then defense roll 0.0 -> 11.
+  const staged: number[] = [1.0, 0.0];
+  let si = 0;
+  const stagedRoll = () => staged[si++ % staged.length];
+  assert(mitigateDamage({ raw: 25, attackerElement: 'none', defense: 10, armor: 10, roll: stagedRoll }).damage === 10, 'Mitigation: defense roll runs before armor roll');
+  // Full block: a defense roll that zeroes the hit SKIPS the armor
+  // roll entirely (exactly one roll consumed, even with armor 100).
+  let rollCount = 0;
+  const countingRoll = () => { rollCount++; return 1.0; };
+  const blocked = mitigateDamage({ raw: 15, attackerElement: 'none', defense: 20, armor: 100, roll: countingRoll });
+  assert(blocked.damage === 0 && blocked.blocked === true && blocked.immune === false, 'Mitigation: defense-zeroed hit is blocked');
+  assert(rollCount === 1, 'Mitigation: a blocked hit never reaches the armor roll');
+  // Armor roll bands: armor <= 3 subtracts exactly 1; armor 0 is a no-op.
+  assert(mitigateDamage({ raw: 10, attackerElement: 'none', armor: 3 }).damage === 9, 'Mitigation: armor 3 subtracts 1');
+  assert(mitigateDamage({ raw: 10, attackerElement: 'none', armor: 0 }).damage === 10, 'Mitigation: armor 0 is a no-op');
+  assert(mitigateDamage({ raw: 10, attackerElement: 'none', armor: 4, roll: () => 0.5 }).damage === 7.5, 'Mitigation: armor 4 rolls uniform(2, 3)');
+  // Identity: no defense, no armor, no percents, physical attack.
+  const ident = mitigateDamage({ raw: 25, attackerElement: 'none' });
+  assert(ident.damage === 25 && ident.blocked === false && ident.immune === false, 'Mitigation: empty pipeline is the identity');
+  assert(mitigateDamage({ raw: 0, attackerElement: 'none' }).blocked === true, 'Mitigation: zero raw damage is blocked');
+  // Element percents: positive resists, NEGATIVE amplifies, 'none' skips.
+  assert(mitigateDamage({ raw: 100, attackerElement: 'fire', percents: { fire: 50 } }).damage === 50, 'Mitigation: 50% fire resist halves');
+  assert(mitigateDamage({ raw: 100, attackerElement: 'fire', percents: { fire: -25 } }).damage === 125, 'Mitigation: -25% fire amplifies to 125');
+  assert(mitigateDamage({ raw: 100, attackerElement: 'none', percents: { fire: 50 } }).damage === 100, 'Mitigation: physical attacks skip percents');
+  // Immunity: checked BEFORE percents — even a -100% vulnerability
+  // cannot punch through an immunity.
+  const immune = mitigateDamage({ raw: 100, attackerElement: 'fire', percents: { fire: -100 }, immunities: ['fire'] });
+  assert(immune.damage === 0 && immune.immune === true, 'Mitigation: immunity blocks fully regardless of percent');
+  // Per-kind data: sparse, original values; case-insensitive lookup.
+  assert(mitigationForCreature('slime').elementPercents.fire === -25, 'Mitigation: slime fire -25');
+  assert(mitigationForCreature('skeleton').elementPercents.ice === 25, 'Mitigation: skeleton ice 25');
+  assert(mitigationForCreature('troll').elementPercents.fire === -25, 'Mitigation: troll fire -25');
+  assert(mitigationForCreature('DRAGON').attackElement === 'fire', 'Mitigation: dragon attacks are fire');
+  assert(mitigationForCreature('dragon').immunities.includes('fire'), 'Mitigation: dragon is fire-immune');
+  assert(mitigationForCreature('wolf').attackElement === 'none', 'Mitigation: wolf attacks are physical');
+  assert(mitigationForCreature('no-such-kind').attackElement === 'none', 'Mitigation: unknown kind gets the default');
+  // Table invariant: every behavior kind has a mitigation entry.
+  for (const kind of behaviorKindKeys()) {
+    assert(mitigationKindKeys().includes(kind), `Mitigation: behavior kind ${kind} has no mitigation entry`);
+  }
+  assert(mitigationKindKeys().includes('goat') && mitigationKindKeys().includes('deer') && mitigationKindKeys().includes('rat'), 'Mitigation: wildlife/cellar kinds covered');
+  // Level derivations and player conversions.
+  assert(creatureDefenseForLevel(5) === 5 && creatureArmorForLevel(9) === 9, 'Mitigation: creature defense/armor come from level');
+  assert(creatureDefenseForLevel(-3) === 0, 'Mitigation: negative level clamps to 0');
+  assert(playerArmorForRoll(47) === 11 && playerArmorForRoll(12) === 3 && playerArmorForRoll(25) === 6 && playerArmorForRoll(0) === 0, 'Mitigation: player armor converts /4');
+  const resists = playerResistPercents({ fireResist: 0.2, iceResist: 0.15 });
+  assert(resists.fire === 20 && resists.ice === 15 && resists.lightning === undefined, 'Mitigation: gear resists sum to percents');
+  assert(playerResistPercents({ fireResist: 1 }).fire === 90, 'Mitigation: resists clamp at 90');
+  // Ranged falloff bands and caps.
+  assert(rangedBandFor(8) === 'close' && rangedBandFor(8.1) === 'mid' && rangedBandFor(18) === 'mid' && rangedBandFor(18.1) === 'far', 'Mitigation: falloff bands at 8/18');
+  assert(RANGED_HIT_CHANCE_CAP === 75, 'Mitigation: one-handed cap is 75');
+  assert(rangedHitChance(5, 100, () => 0).chance === 75, 'Mitigation: close band caps at 75');
+  assert(rangedHitChance(12, 10, () => 0).chance === 32, 'Mitigation: mid band is min(skill,28)*2.40+8');
+  assert(rangedHitChance(25, 100, () => 0).chance === 75, 'Mitigation: far band caps at 75');
+  assert(rangedHitChance(5, 0, () => 0).chance === 1, 'Mitigation: close band floor is 1');
+  assert(rangedHitChance(5, 100, () => 0.74).hit === true && rangedHitChance(5, 100, () => 0.75).hit === false, 'Mitigation: hit boundary is roll*100 < chance');
+  assert(creatureArcherSkill(1) === 45 && creatureArcherSkill(10) === 90, 'Mitigation: creature archer skill is 40 + level*5');
+  assert(normalizeRangedSkill(4) === 20 && normalizeRangedSkill(20) === 100 && normalizeRangedSkill(30) === 100, 'Mitigation: player skill is dex*5 clamped to 100');
 }
 
 // BUILD 921: NPC worn gear drops + corpse unequip.
