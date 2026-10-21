@@ -2,7 +2,7 @@
 // Run with: npx tsx scripts/simulate.ts
 import { generateWorldMap, WORLD_MAP_BOUNDS, EXPANDED_WORLD_BOUNDS, elevationLevelFor } from '../src/game/worldMap';
 // BUILD 927: authored dungeon vaults (DCSS .des grammar, original content).
-import { createGame, descend, step, buyFromDungeonShop, openDungeonShop, closeDungeonShop, dungeonShopDisplay, MONSTER_ENTRIES, type GameState as DungeonGameState } from '../src/game/stoneSoupEngine';
+import { createGame, descend, step, castSpell, spellBook, buyFromDungeonShop, openDungeonShop, closeDungeonShop, dungeonShopDisplay, MONSTER_ENTRIES, type GameState as DungeonGameState } from '../src/game/stoneSoupEngine';
 import { VAULT_CATALOG, eligibleVaults } from '../src/game/dungeonVaults';
 import { UNIQUE_DEFS, eligibleUniques } from '../src/game/dungeonUniques';
 import { SHOP_VAULT_DEFS, SHOP_FLOOR_CHANCE, DUNGEON_SHOP_ITEM } from '../src/game/dungeonShops';
@@ -14,6 +14,8 @@ import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET
 import { chooseCreatureTarget, pickGuardCreatureTarget, sneakEngagementRange, CREATURE_ACQUIRE_RANGE, SNEAK_CREATURE_ACQUIRE_RANGE, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
 import { behaviorForCreature, behaviorKindKeys, preferredRangeFor, hashRoll, shouldStand, shouldRetarget, isBehaviorFleeing, voiceLine } from '../src/game/creatureBehavior';
 import { mitigateDamage, mitigationForCreature, mitigationKindKeys, creatureDefenseForLevel, creatureArmorForLevel, playerArmorForRoll, playerResistPercents, rangedBandFor, rangedHitChance, creatureArcherSkill, normalizeRangedSkill, RANGED_HIT_CHANCE_CAP } from '../src/game/mitigation';
+import { calcSpellEffectValue, calcBuffDuration, resolveBuffStack, slotFromStackingFormula } from '../src/game/spellFormulas';
+import { BEER_BUFF_DURATION_MS } from '../src/game/tavern';
 import { strayGateDecision, strayKindForRoll, straySpawnPoints, pickStraySpawnPoint, isTownEdgePosition, isTownCenterPosition, TOWN_STRAY_CHANCE, TOWN_STRAY_ROAM_RADIUS, TOWN_CENTER_SAFE_RADIUS } from '../src/game/townStrays';
 import { raidAdvance, raidFireChance, raidLeaderName, raidShouldFire, raidWaveKinds, raidWavePositions, RAID_CHECK_INTERVAL_MS, RAID_CHASE_STANDOFF, RAID_ESCALATION_DELAY_MS, RAID_ESCALATION_WINDOW_MS, RAID_INTERVAL_MS, RAID_MARGIN_MS, RAID_MAX_DURATION_MS, RAID_ROAM_RADIUS, RAID_WARNING_MS, RAID_WAVE_1_SIZE, RAID_WAVE_2_SIZE, RAID_LEADER_HP_MULT, type RaidState } from '../src/game/raids';
 import { BESTIARY_ENTRIES, BESTIARY_TIERS, BESTIARY_CHARM_POINTS, bestiaryEntryForKind, bestiaryTierForKills, bestiaryCharmTotal, recordBestiaryKill, sanitizeBestiaryCounts, isBestiaryKind } from '../src/game/bestiary';
@@ -1992,6 +1994,93 @@ console.log('Testing Alternate Advancement (BUILD 941)...');
   assert(clean.spent === 18, 'AA: spent recomputed from kept ranks (15 + 3)');
   assert(JSON.stringify(sanitizeAa(undefined)) === JSON.stringify(createEmptyAa()), 'AA: missing save field restores empty');
   assert(JSON.stringify(sanitizeAa({ credits: -5, points: -2, ranks: { power: -1 } })) === JSON.stringify(createEmptyAa()), 'AA: negative values sanitize to empty');
+}
+
+// ---- 13a1s. Spell formula grammar + stacking (BUILD 942, EQEmu item 4) ----
+// Numbered formula grammar + 201+ stacking slot arithmetic (rules only,
+// no EQ content). Placed before the BUILD 694 crash point so it runs in
+// a full suite. The dungeon is the only spell path, so the grammar
+// lands there; the overworld is untouched except the beer duration,
+// which now runs through the duration formula at the same 60 seconds.
+console.log('Testing spell formula grammar + stacking (BUILD 942)...');
+{
+  const v = (base: number, formula: number, level: number, extra: { max?: number; intellect?: number; ticsElapsed?: number } = {}) =>
+    calcSpellEffectValue({ def: { base, formula, max: extra.max, scale: extra.intellect !== undefined ? 'intellect' : undefined }, level, intellect: extra.intellect, ticsElapsed: extra.ticsElapsed });
+  // Formula table.
+  assert(v(10, 0, 5) === 10 && v(10, 100, 5) === 10, 'Spell942: formulas 0/100 are flat base');
+  assert(v(250, 60, 5) === 2 && v(250, 70, 5) === 2, 'Spell942: formulas 60/70 are base/100');
+  assert(v(10, 101, 7) === 13, 'Spell942: 101 is base + level/2');
+  assert(v(10, 102, 7) === 17, 'Spell942: 102 is base + level');
+  assert(v(10, 103, 7) === 24, 'Spell942: 103 is base + level*2');
+  assert(v(10, 104, 7) === 31, 'Spell942: 104 is base + level*3');
+  assert(v(10, 105, 7) === 38, 'Spell942: 105 is base + level*4');
+  assert(v(10, 119, 16) === 12, 'Spell942: 119 is base + level/8');
+  assert(v(10, 7, 3) === 31, 'Spell942: generic 1-99 is base + level*formula');
+  assert(v(20, 107, 0, { ticsElapsed: 4 }) === 16, 'Spell942: 107 degenerates base - tics');
+  assert(v(20, 108, 0, { ticsElapsed: 4 }) === 12, 'Spell942: 108 degenerates base - 2*tics');
+  assert(v(20, 109, 0, { ticsElapsed: 4 }) === 8, 'Spell942: 109 degenerates base - 3*tics');
+  // Down-growth sign rule: max < base mirrors the increment down, max is the floor.
+  assert(v(50, 102, 10, { max: 20 }) === 40, 'Spell942: downward spell subtracts the increment');
+  assert(v(50, 102, 40, { max: 20 }) === 20, 'Spell942: downward spell never drops below max');
+  assert(v(10, 102, 10, { max: 15 }) === 15, 'Spell942: upward spell caps at max');
+  assert(v(10, 102, 10) === 20, 'Spell942: max 0 means no cap');
+  assert(v(50, 0, 10, { max: 20 }) === 20, 'Spell942: flat form still caps at max, sign rule does not flip it');
+  // Duration formulas mirror the value grammar (units are caller-defined).
+  assert(calcBuffDuration({ base: 60, formula: 0 }, 0) === 60, 'Spell942: duration formula 0 is flat');
+  assert(calcBuffDuration({ base: 10, formula: 102 }, 7) === 17, 'Spell942: duration formula 102 scales with level');
+  assert(calcBuffDuration({ base: 250, formula: 60 }, 0) === 2, 'Spell942: duration formula 60 is base/100');
+  // Stacking slot arithmetic: slot = formula - 201.
+  assert(slotFromStackingFormula(201) === 0 && slotFromStackingFormula(202) === 1, 'Spell942: slot is formula - 201');
+  let threw = false;
+  try { slotFromStackingFormula(200); } catch { threw = true; }
+  assert(threw, 'Spell942: stacking formula below 201 throws');
+  assert(resolveBuffStack([], { id: 'a', stackingFormula: 201, stacking: 'overwrite' }).action === 'apply', 'Spell942: empty slot applies');
+  assert(resolveBuffStack([{ id: 'a', slot: 0 }], { id: 'a', stackingFormula: 201, stacking: 'block' }).action === 'refresh', 'Spell942: same buff refreshes, never stacks');
+  const over = resolveBuffStack([{ id: 'old', slot: 0 }], { id: 'new', stackingFormula: 201, stacking: 'overwrite' });
+  assert(over.action === 'apply' && (over as { replacesId: string }).replacesId === 'old', 'Spell942: overwrite replaces the occupant');
+  const blocked = resolveBuffStack([{ id: 'old', slot: 0 }], { id: 'new', stackingFormula: 201, stacking: 'block' });
+  assert(blocked.action === 'blocked' && (blocked as { blockedBy: string }).blockedBy === 'old', 'Spell942: block refuses the incoming buff');
+  assert(resolveBuffStack([{ id: 'old', slot: 0 }], { id: 'new', stackingFormula: 202, stacking: 'block' }).action === 'apply', 'Spell942: different slots coexist');
+  // Spell conversions preserve the old numbers exactly.
+  assert(spellBook['ember-bolt'].formulas.damage?.base === 7 && spellBook['ember-bolt'].formulas.damage?.formula === 102, 'Spell942: ember damage def is 7 + input');
+  assert(calcSpellEffectValue({ def: spellBook['ember-bolt'].formulas.damage!, level: 1, intellect: 9 }) === 16, 'Spell942: ember at intellect 9 is 16, the old 7 + 9');
+  assert(calcSpellEffectValue({ def: spellBook['ember-bolt'].formulas.range!, level: 1 }) === 6, 'Spell942: ember range is 6');
+  assert(calcSpellEffectValue({ def: spellBook.blink.formulas.distance!, level: 1 }) === 2, 'Spell942: veil step distance is 2');
+  assert(calcSpellEffectValue({ def: spellBook['frost-ward'].formulas.armor!, level: 1 }) === 3, 'Spell942: frost ward armor is 3');
+  assert(BEER_BUFF_DURATION_MS === 60000, 'Spell942: beer duration is still 60 seconds via formula');
+  // Live casts: ember damage, veil distance, ward apply/refresh/consume.
+  const emberGame = createGame(12345, 0, 0);
+  const emberTarget = emberGame.monsters.find((m) => m.hp > 0);
+  assert(emberTarget !== undefined, 'Spell942: ember fixture has a monster');
+  if (emberTarget) {
+    emberTarget.x = emberGame.player.x + 2;
+    emberTarget.y = emberGame.player.y;
+    castSpell(emberGame, 'ember-bolt');
+    assert(emberGame.log.some((line) => /Ember Bolt scorches .* for 13/.test(line)), 'Spell942: ember cast deals 7 + intellect 6 = 13');
+  }
+  const blinkGame = createGame(12345, 0, 2);
+  const bx = blinkGame.player.x, by = blinkGame.player.y;
+  castSpell(blinkGame, 'blink');
+  assert(Math.abs(blinkGame.player.x - bx) + Math.abs(blinkGame.player.y - by) === 2, 'Spell942: veil step moves exactly 2 tiles');
+  // Cinder Elf (mp 15) so three ward casts (4 mp each) all land; Ashen
+  // Human's mp 10 would fizzle the third cast and mask the consume.
+  const wardGame = createGame(12345, 2, 1);
+  const baseArmor = wardGame.player.armor;
+  castSpell(wardGame, 'frost-ward');
+  assert(wardGame.player.armor === baseArmor + 3 && wardGame.player.buffs.length === 1 && wardGame.player.statuses.includes('Frost Ward'), 'Spell942: ward applies +3 armor with one buff record');
+  castSpell(wardGame, 'frost-ward');
+  assert(wardGame.player.armor === baseArmor + 3 && wardGame.player.buffs.length === 1, 'Spell942: ward recast refreshes, does not stack armor');
+  const foe = wardGame.monsters.find((m) => m.hp > 0);
+  assert(foe !== undefined, 'Spell942: ward fixture has a foe');
+  if (foe) {
+    foe.x = wardGame.player.x + 1;
+    foe.y = wardGame.player.y;
+    castSpell(wardGame, 'frost-ward');
+    assert(wardGame.player.buffs.length === 0 && !wardGame.player.statuses.includes('Frost Ward') && wardGame.player.armor === baseArmor, 'Spell942: next wound consumes the ward and its armor');
+  }
+  // Buff records are plain JSON-safe data (round-trip shape).
+  const roundTripped = JSON.parse(JSON.stringify([{ id: 'frost-ward', slot: 0, armorBonus: 3, untilWound: true }]));
+  assert(roundTripped[0].armorBonus === 3 && roundTripped[0].untilWound === true, 'Spell942: buff records round-trip through JSON');
 }
 
 // ---- 13a1c. NPC morality levels (BUILD 923) ----

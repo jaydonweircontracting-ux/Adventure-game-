@@ -4,6 +4,9 @@
 // unit-tested without pulling in the whole React app. The UI in App.tsx
 // imports these.
 
+// BUILD 942: buff-duration formula (beer duration, below).
+import { calcBuffDuration } from "./spellFormulas";
+
 export type FieldRectLike = { left: number; top: number; right: number; bottom: number };
 
 // Two guest-room wings built behind the Rusty Tankard so the tavern reads as a
@@ -21,8 +24,15 @@ export const LOCKPICK_PRICE = 15;
 export const ESCORT_BONUS_XP = 100;
 export const XP_PER_LEVEL = 100;
 // Beer buff: +50% attack for one minute of wall-clock time.
+// BUILD 942: the duration is computed by the buff-duration formula
+// (formula 0 = flat base, 60 seconds) instead of a bare constant —
+// the value is unchanged (60,000 ms). The multiplier itself is the
+// buff's effect magnitude, not a duration, so it stays a constant.
+// The beer mechanism stays timestamp-based (session-only, never
+// saved); re-drinking while active already refreshes the timestamp,
+// which is the stacking engine's same-buff refresh rule.
 export const BEER_BUFF_MULTIPLIER = 1.5;
-export const BEER_BUFF_DURATION_MS = 60 * 1000;
+export const BEER_BUFF_DURATION_MS = calcBuffDuration({ base: 60, formula: 0 }, 0) * 1000;
 
 /** Level for a given XP total (levels cost 100 XP each, starting at level 1). */
 export function levelForXp(xp: number): number {

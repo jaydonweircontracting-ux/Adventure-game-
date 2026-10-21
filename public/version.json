@@ -1,6 +1,6 @@
 {
-  "build": "941",
-  "note": "Alternate Advancement is here: kills now also feed a separate AA pool — 20 even-match kills earn one AA point, weaker kills pay less, stronger pay more, trivial kills pay nothing. Spend points in the Skills panel on ranked abilities: Toughness, Heavy Blows, Deadeye, and Strong Back, each up to rank 5. Total spend earns display titles, from Wanderer up to Legend of the Wilds. Normal XP and levels are untouched, and there is no level cap to reach first — AA runs alongside levels from the start.",
-  "timestamp": "2026-10-21T22:14:24.414Z",
-  "cacheBuster": "mvio6ffi"
+  "build": "942",
+  "note": "Spells now run on a formula grammar instead of hardcoded numbers: every spell effect is a base value plus a numbered formula, so damage, range, and armor scale by rule rather than by special case. Ember Bolt still hits for 7 plus intellect at range 6, Veil Step still moves exactly 2 tiles, and Frost Ward still grants 3 armor — none of those numbers changed. What did change is Frost Ward itself: it is now a real buff, so recasting it refreshes instead of stacking more armor, and the next wound removes the bonus along with the ward instead of leaving the armor on forever. The tavern beer buff still lasts 60 seconds.",
+  "timestamp": "2026-10-21T22:30:33.926Z",
+  "cacheBuster": "mvior7if"
 }

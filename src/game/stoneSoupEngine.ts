@@ -3,6 +3,13 @@ import { placeUniqueChamber } from "./dungeonUniques";
 import { DUNGEON_SHOP_ITEM, placeShop, type DungeonShop } from "./dungeonShops";
 import { placeTrap, type PlacedTrap } from "./dungeonTraps";
 import { buyFromStall, type ShopItemKey } from "./shops";
+// BUILD 942: spell formula grammar + stacking resolution (EQEmu item 4).
+import {
+  calcSpellEffectValue,
+  resolveBuffStack,
+  slotFromStackingFormula,
+  type SpellEffectDef,
+} from "./spellFormulas";
 import {
   DUNGEON_SPAWN,
   LAYOUT_DESCEND_FLAVOR,
@@ -70,6 +77,23 @@ export interface Monster {
   asleep?: boolean;
 }
 
+/**
+ * BUILD 942: a live dungeon buff record (plain data, JSON-safe). The
+ * armorBonus is stored on the record so removal subtracts exactly what
+ * the cast added — Frost Ward used to leak +3 armor forever (the
+ * status string was consumed on the next wound but the armor never
+ * came off) and recasting stacked +3 again. Both are fixed by routing
+ * the ward through the stacking engine: same-buff recast refreshes,
+ * and the wound consumes the bonus with the status.
+ */
+export interface DungeonBuff {
+  id: string;
+  slot: number;
+  armorBonus: number;
+  /** True when the buff ends on the next wound instead of after tics. */
+  untilWound: boolean;
+}
+
 export interface Player {
   name: string;
   species: string;
@@ -92,6 +116,8 @@ export interface Player {
   inventory: Item[];
   spells: SpellId[];
   statuses: string[];
+  /** BUILD 942: live buffs (run-only; the dungeon is not persisted). */
+  buffs: DungeonBuff[];
 }
 
 export interface GameState {
@@ -127,9 +153,40 @@ export interface GameState {
   traps: PlacedTrap[];
 }
 
+/**
+ * BUILD 942: every spell's numbers are formula definitions, not
+ * hardcoded constants. The conversions below PRESERVE the old numbers
+ * exactly: Ember Bolt dealt 7 + intellect at range <= 6 (its formula
+ * 102 input is intellect, since that is what the old value scaled
+ * with); Veil Step moved exactly 2 tiles; Frost Ward gave exactly +3
+ * armor. Costs are not formula values and stay as listed.
+ */
+export interface SpellFormulaSet {
+  damage?: SpellEffectDef;
+  range?: SpellEffectDef;
+  distance?: SpellEffectDef;
+  armor?: SpellEffectDef;
+}
+
+export interface SpellBuffDef {
+  id: string;
+  stackingFormula: number;
+  stacking: 'overwrite' | 'block';
+  /** Trigger-based duration: ends on the next wound, not after tics. */
+  durationKind: 'until-wound';
+}
+
 export const spellBook: Record<
   SpellId,
-  { name: string; cost: number; glyph: string; description: string; color: string }
+  {
+    name: string;
+    cost: number;
+    glyph: string;
+    description: string;
+    color: string;
+    formulas: SpellFormulaSet;
+    buff?: SpellBuffDef;
+  }
 > = {
   "ember-bolt": {
     name: "Ember Bolt",
@@ -137,6 +194,10 @@ export const spellBook: Record<
     glyph: "✦",
     description: "A searing mote that strikes the nearest foe in your sight.",
     color: "#ff9b63",
+    formulas: {
+      damage: { base: 7, formula: 102, scale: 'intellect' },
+      range: { base: 6, formula: 0 },
+    },
   },
   blink: {
     name: "Veil Step",
@@ -144,6 +205,9 @@ export const spellBook: Record<
     glyph: "◇",
     description: "Slip through the veil to a nearby safe tile.",
     color: "#9dc7ff",
+    formulas: {
+      distance: { base: 2, formula: 0 },
+    },
   },
   "frost-ward": {
     name: "Frost Ward",
@@ -151,6 +215,10 @@ export const spellBook: Record<
     glyph: "❈",
     description: "Harden your skin with rime. Gain armor until your next wound.",
     color: "#a8e8ff",
+    formulas: {
+      armor: { base: 3, formula: 0 },
+    },
+    buff: { id: 'frost-ward', stackingFormula: 201, stacking: 'overwrite', durationKind: 'until-wound' },
   },
 };
 
@@ -450,6 +518,7 @@ export function createGame(seed = Math.floor(Date.now() % 1000000000), speciesIn
     ],
     spells: chosenBackground.spells,
     statuses: [],
+    buffs: [],
   };
   // BUILD 928: classic spots first, walkable fill after — the rooms
   // layout keeps its exact old placements; loops/caves populate from
@@ -620,7 +689,15 @@ function enemyTurn(state: GameState) {
     if (distance === 1) {
       const damage = Math.max(1, monster.attack - Math.floor(player.armor * 0.65));
       player.hp = Math.max(0, player.hp - damage);
-      player.statuses = player.statuses.filter((status) => status !== "Frost Ward");
+      // BUILD 942: a wound consumes until-wound buffs — the bonus
+      // comes off with the status (the old code dropped the string
+      // but kept the armor forever).
+      const spent = player.buffs.filter((buff) => buff.untilWound);
+      for (const buff of spent) player.armor -= buff.armorBonus;
+      if (spent.length > 0) {
+        player.buffs = player.buffs.filter((buff) => !buff.untilWound);
+        player.statuses = player.statuses.filter((status) => status !== "Frost Ward");
+      }
       addLog(state, `${monster.name} strikes you for ${damage}.`);
       if (player.hp === 0) {
         state.phase = "defeat";
@@ -835,15 +912,18 @@ export function castSpell(state: GameState, spellId: SpellId) {
   }
   state.player.mp -= spell.cost;
   if (spellId === "ember-bolt") {
+    // BUILD 942: range + damage come from the spell's formula defs
+    // (range 6, damage 7 + intellect — the old numbers, via formula).
+    const range = calcSpellEffectValue({ def: spell.formulas.range!, level: state.player.level });
     const target = state.monsters
-      .filter((monster) => monster.hp > 0 && Math.abs(monster.x - state.player.x) + Math.abs(monster.y - state.player.y) <= 6)
+      .filter((monster) => monster.hp > 0 && Math.abs(monster.x - state.player.x) + Math.abs(monster.y - state.player.y) <= range)
       .sort((a, b) => Math.abs(a.x - state.player.x) + Math.abs(a.y - state.player.y) - (Math.abs(b.x - state.player.x) + Math.abs(b.y - state.player.y)))[0];
     if (!target) {
       addLog(state, "The ember bolt fizzles. No enemy answers your call.");
       state.player.mp += spell.cost;
       return state;
     }
-    const damage = 7 + state.player.intellect;
+    const damage = calcSpellEffectValue({ def: spell.formulas.damage!, level: state.player.level, intellect: state.player.intellect });
     if (target.unique && target.hp === target.maxHp) {
       addLog(state, `You face ${target.name}${target.title ? `, ${target.title}` : ''}!`);
     }
@@ -857,11 +937,13 @@ export function castSpell(state: GameState, spellId: SpellId) {
       uniqueDeathSpoils(state, target);
     }
   } else if (spellId === "blink") {
+    // BUILD 942: step distance comes from the formula def (2 tiles).
+    const distance = calcSpellEffectValue({ def: spell.formulas.distance!, level: state.player.level });
     const candidates = [
-      [state.player.x + 2, state.player.y],
-      [state.player.x - 2, state.player.y],
-      [state.player.x, state.player.y + 2],
-      [state.player.x, state.player.y - 2],
+      [state.player.x + distance, state.player.y],
+      [state.player.x - distance, state.player.y],
+      [state.player.x, state.player.y + distance],
+      [state.player.x, state.player.y - distance],
     ].filter(([x, y]) => canStand(state, x, y));
     const destination = candidates[0];
     if (!destination) {
@@ -873,9 +955,32 @@ export function castSpell(state: GameState, spellId: SpellId) {
     state.player.y = destination[1];
     addLog(state, "You step sideways through the veil.");
   } else {
-    state.player.armor += 3;
-    state.player.statuses = ["Frost Ward"];
-    addLog(state, "Rime locks over your skin. You feel briefly unbreakable.");
+    // BUILD 942: Frost Ward goes through the stacking engine. Same-buff
+    // recast refreshes (no second +3 — the old code stacked armor on
+    // every recast); a blocked occupant would refuse the cast and
+    // refund the mana. The bonus lives on the buff record so the next
+    // wound removes exactly what the cast added.
+    const buffDef = spell.buff!;
+    const outcome = resolveBuffStack(state.player.buffs, buffDef);
+    if (outcome.action === 'blocked') {
+      addLog(state, "The rime will not take hold while another ward grips you.");
+      state.player.mp += spell.cost;
+      return state;
+    }
+    if (outcome.action === 'refresh') {
+      addLog(state, "The rime holds steady over your skin.");
+    } else {
+      const armorBonus = calcSpellEffectValue({ def: spell.formulas.armor!, level: state.player.level });
+      if (outcome.replacesId) {
+        const old = state.player.buffs.find((buff) => buff.id === outcome.replacesId);
+        if (old) state.player.armor -= old.armorBonus;
+        state.player.buffs = state.player.buffs.filter((buff) => buff.id !== outcome.replacesId);
+      }
+      state.player.armor += armorBonus;
+      state.player.buffs = [...state.player.buffs, { id: buffDef.id, slot: slotFromStackingFormula(buffDef.stackingFormula), armorBonus, untilWound: true }];
+      state.player.statuses = ["Frost Ward"];
+      addLog(state, "Rime locks over your skin. You feel briefly unbreakable.");
+    }
   }
   finishTurn(state);
   return state;
