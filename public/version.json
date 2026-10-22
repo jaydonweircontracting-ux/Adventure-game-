@@ -1,6 +1,6 @@
 {
-  "build": "959",
-  "note": "Mosslight is rebuilt from the ground up with the Kenney town kit: every house is now a different building assembled from real wall, door, window, roof, chimney, balcony, banner, and awning pieces — wide five-bay cottages and grand halls, two-story towers and tall townhouses, a balcony house, banner shops, and an awning shop — instead of one shared house picture. The town itself is re-laid: the six cottages now stand in two neat rows near the core instead of scattered at the edges, more roadside houses fill the town out, a windmill stands in town, and Rodwan trees line the streets and parks. Every house still works exactly as before: doors sit exactly where their triggers, exits, and path ends are, NPCs now sort correctly in front of and behind houses instead of clipping through them, and moving a house with the debug mover still moves its door with it. The tutorial house keeps its own art, and the watermill piece is in the game files but not placed yet because no town spot has water for it to sit beside.",
-  "timestamp": "2026-10-22T06:23:42.866Z",
-  "cacheBuster": "mvj5nok3"
+  "build": "960",
+  "note": "Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.",
+  "timestamp": "2026-10-22T06:42:41.488Z",
+  "cacheBuster": "mvj6c34g"
 }

@@ -1190,6 +1190,19 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           }
         }
       } else {
+      // BUILD 960: rotated tile-step vectors, computed once per repaint.
+      // The shadowed isoToScreen is R(θ)∘base and base is linear in
+      // (tx,ty), so these steps are exact: the rotated half-axes below
+      // are (stepTx∓stepTy)/2, i.e. R(θ) applied to (32,0) and (0,16).
+      const _o960 = isoToScreen(0, 0);
+      const _sx960 = isoToScreen(1, 0);
+      const _sy960 = isoToScreen(0, 1);
+      const stepTx960 = { x: _sx960.x - _o960.x, y: _sx960.y - _o960.y };
+      const stepTy960 = { x: _sy960.x - _o960.x, y: _sy960.y - _o960.y };
+      const hx960 = (stepTx960.x - stepTy960.x) / 2;
+      const hy960 = (stepTx960.y - stepTy960.y) / 2;
+      const vx960 = (stepTx960.x + stepTy960.x) / 2;
+      const vy960 = (stepTx960.y + stepTy960.y) / 2;
       for (let ty = groundY0; ty <= groundY1; ty++) {
         for (let tx = groundX0; tx <= groundX1; tx++) {
           const { ox, oy, lx, ly } = isoTileChunkOffset(tx, ty, N);
@@ -1216,15 +1229,25 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           const roadHere = isOcean ? false : isRoadTileFor(sc, lx, ly);
           const p = isoToScreen(tx, ty);
           const hw = TILE_W / 2, hh = TILE_H / 2;
-          // BUILD 698: expand sand/road diamonds ~1px so AA seams can't show
-          // the dark background — the "graph paper" grid lines.
-          // BUILD 916: flat fills replaced the overlapping tileset blocks on
-          // EVERY surface, so every diamond expands — otherwise the seam
-          // grid shows through the flat water/grass/plots.
-          const ex = 1;
+          // BUILD 960: paint the tile's TRUE rotated cell — the quad
+          // through its four rotated corners (N/E/S/W = p ∓(vx,vy),
+          // p ±(hx,hy)) — NOT the fixed (hw,hh) diamond. The fixed diamond
+          // is the unrotated cell shape placed at a rotated anchor: at
+          // 0°/90°/180°/270° it contains the true cell, but at in-between
+          // angles (worst at 45°, where the true cell is a 45.2×22.6
+          // rectangle) the true cell's corners poke outside it, leaving
+          // a small unpainted diamond hole at every tile corner — the
+          // #0e1713 background showing through as the dark-diamond grid
+          // the user reported when rotating. The quad shares edges with
+          // its neighbors exactly (the map is linear), so adjacent quads
+          // tile without gaps; the 1.10 centroid scale replaces the old
+          // ex=1 expansion for AA seams (BUILD 698/916 intent preserved).
+          const QS = 1.10;
           groundCacheG.beginPath();
-          groundCacheG.moveTo(p.x, p.y - hh - ex); groundCacheG.lineTo(p.x + hw + ex, p.y);
-          groundCacheG.lineTo(p.x, p.y + hh + ex); groundCacheG.lineTo(p.x - hw - ex, p.y);
+          groundCacheG.moveTo(p.x - vx960 * QS, p.y - vy960 * QS);
+          groundCacheG.lineTo(p.x + hx960 * QS, p.y + hy960 * QS);
+          groundCacheG.lineTo(p.x + vx960 * QS, p.y + vy960 * QS);
+          groundCacheG.lineTo(p.x - hx960 * QS, p.y - hy960 * QS);
           groundCacheG.closePath();
           // BUILD 369 (Phase 2b): authoritative rivers/lakes; road crossings draw as bridges.
           let wet = false;
