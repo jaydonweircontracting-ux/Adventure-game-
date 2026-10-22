@@ -1,6 +1,6 @@
 {
-  "build": "954",
-  "note": "The camera now turns in finer, smoother steps: a quick tap turns it 45 degrees with a short smooth glide through the angles in between instead of jumping, so eight taps make a full turn and every stop lines up with a character facing direction. Holding a button still spins the view slowly and continuously at 45 degrees per second until you let go, and tapping one side while the other side is still held no longer fights the spin. Movement stays world-relative at every angle, and your exact camera angle is saved and restored as before.",
-  "timestamp": "2026-10-22T02:49:42.078Z",
-  "cacheBuster": "mviy0gjj"
+  "build": "955",
+  "note": "Conversations now go deeper: asking about someone, their work, rumors, or the town unlocks a follow-up question in the same conversation, so you can press further instead of hitting the same four topics — and closing the conversation resets the topics (everything is re-explorable next time) without ever resetting how much they like you. You can also haggle in conversation: compliments warm people up (+6), jokes land (+3) unless they already dislike you (−2), boasting annoys (−3), and insults sting (−10), each once per conversation — and how much they like you now shows in their prices and in what they will tell you (cold acquaintances withhold, warm friends share hints and charge less, admired friends charge 20% less). Merchant townsfolk finally sell from inside conversation: a Browse wares button opens their own goods, bought through the same shop system with the same weight limit — and anyone who is not a merchant has no shop at all. Faction standing is untouched and separate.",
+  "timestamp": "2026-10-22T03:14:39.286Z",
+  "cacheBuster": "mviywjsm"
 }

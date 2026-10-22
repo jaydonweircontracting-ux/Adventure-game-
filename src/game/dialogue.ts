@@ -3,7 +3,11 @@
 // Disposition (0-100) tones every response; the renderer shows the town
 // reputation and wanted level in the dialogue window header.
 
-export type DialogueTopicId = 'who' | 'work' | 'rumors' | 'town' | 'bye';
+export type DialogueTopicId =
+  | 'who' | 'work' | 'rumors' | 'town' | 'bye'
+  /** BUILD 955 follow-ups: unlocked by visiting their parent topic in the
+   * SAME conversation (session state only — see DialogueSession). */
+  | 'family' | 'workDetail' | 'rumorDetail' | 'townDetail';
 
 export interface DialogueTopic {
   id: DialogueTopicId;
@@ -29,6 +33,170 @@ export function topicsFor(archetype: string): DialogueTopic[] {
 }
 
 export type DispositionTier = 'cold' | 'wary' | 'neutral' | 'warm' | 'admiring';
+
+// ---------------------------------------------------------------------------
+// BUILD 955: topic deepening + haggle + price scaling.
+//
+// SESSION vs PERSISTENT, stated plainly — this is the separation the whole
+// build rests on:
+// - SESSION state (DialogueSession: which topics were visited, which haggle
+//   moves were used) lives ONLY in the open conversation. Closing the
+//   conversation — by Goodbye, by the ✕ button, or by the NPC dying —
+//   throws it away, so every topic is re-explorable next conversation.
+// - PERSISTENT state (per-NPC disposition, quest state, rumors filed in the
+//   journal) lives OUTSIDE the session and is NEVER reset by closing a
+//   conversation. A compliment that moved disposition +6 stays +6.
+// Nothing in this section reads or writes faction standing (BUILD 939):
+// disposition is per-NPC, faction standing is per-town, and the two buckets
+// are never copied into each other.
+// ---------------------------------------------------------------------------
+
+/** Per-conversation session state. Transient — never saved, never loaded. */
+export interface DialogueSession {
+  /** Topics chosen in THIS conversation, in order (no duplicates). */
+  visited: DialogueTopicId[];
+  /** Haggle moves used in THIS conversation (each move once per conversation). */
+  haggleUsed: HaggleMove[];
+}
+
+/** Fresh session: nothing visited, no haggle move spent. Pure. */
+export function newDialogueSession(): DialogueSession {
+  return { visited: [], haggleUsed: [] };
+}
+
+/** Record a topic choice in the session. Pure — the input is never mutated. */
+export function visitTopic(session: DialogueSession, topic: DialogueTopicId): DialogueSession {
+  const visited = session.visited.includes(topic)
+    ? [...session.visited]
+    : [...session.visited, topic];
+  return { visited, haggleUsed: [...session.haggleUsed] };
+}
+
+/** Parent topic that unlocks each follow-up, or null for base topics. Pure. */
+export function followUpParent(topic: DialogueTopicId): DialogueTopicId | null {
+  switch (topic) {
+    case 'family': return 'who';
+    case 'workDetail': return 'work';
+    case 'rumorDetail': return 'rumors';
+    case 'townDetail': return 'town';
+    default: return null;
+  }
+}
+
+const FOLLOW_UP_LABELS: Record<string, string> = {
+  family: '↳ Ask about their family',
+  workDetail: '↳ Ask for more detail',
+  rumorDetail: '↳ Press for more',
+  townDetail: '↳ Ask about the town in detail',
+};
+
+/**
+ * Topics offered right now: the base list, plus each follow-up whose parent
+ * was visited in THIS session, inserted right after its parent. Goodbye
+ * always stays last. Pure.
+ */
+export function sessionTopics(archetype: string, session: DialogueSession): DialogueTopic[] {
+  const base = topicsFor(archetype);
+  const out: DialogueTopic[] = [];
+  for (const t of base) {
+    out.push(t);
+    if (t.id === 'bye') continue;
+    for (const follow of ['family', 'workDetail', 'rumorDetail', 'townDetail'] as DialogueTopicId[]) {
+      if (followUpParent(follow) === t.id && session.visited.includes(t.id)) {
+        out.push({ id: follow, label: FOLLOW_UP_LABELS[follow] });
+      }
+    }
+  }
+  return out;
+}
+
+// --- Haggle: Oblivion-inspired MECHANICS only. All lines below are original
+// writing for this game; no Oblivion text, content, or lore is copied. ---
+
+export type HaggleMove = 'compliment' | 'joke' | 'boast' | 'insult';
+
+export const HAGGLE_MOVES: Array<{ id: HaggleMove; label: string }> = [
+  { id: 'compliment', label: '💬 Pay a compliment' },
+  { id: 'joke', label: '😄 Tell a joke' },
+  { id: 'boast', label: '🦚 Boast about yourself' },
+  { id: 'insult', label: '😠 Insult them' },
+];
+
+/**
+ * Disposition delta for a haggle move at the CURRENT disposition. Stated
+ * exactly, no hidden rolls:
+ * - compliment: +6, always.
+ * - joke: +3 when the NPC is not cold (disposition >= 20); −2 when cold —
+ *   a joke falls flat with someone who already dislikes you.
+ * - boast: −3. People tire of bragging.
+ * - insult: −10.
+ * The caller clamps with adjustDisposition; each move is usable once per
+ * conversation (see canHaggle). Pure.
+ */
+export function haggleMoveDelta(move: HaggleMove, disposition: number): number {
+  switch (move) {
+    case 'compliment': return 6;
+    case 'joke': return disposition >= 20 ? 3 : -2;
+    case 'boast': return -3;
+    case 'insult': return -10;
+  }
+}
+
+/** True when this haggle move is still unused in this session. Pure. */
+export function canHaggle(session: DialogueSession, move: HaggleMove): boolean {
+  return !session.haggleUsed.includes(move);
+}
+
+/** Mark a haggle move used in the session. Pure — the input is never mutated. */
+export function useHaggleMove(session: DialogueSession, move: HaggleMove): DialogueSession {
+  if (session.haggleUsed.includes(move)) return session;
+  return { visited: [...session.visited], haggleUsed: [...session.haggleUsed, move] };
+}
+
+/** The NPC's spoken reaction to a haggle move. Original writing. Pure. */
+export function haggleReaction(move: HaggleMove, disposition: number, newDisposition: number): string {
+  const fell = newDisposition < disposition;
+  switch (move) {
+    case 'compliment':
+      return fell
+        ? 'A compliment, and you mean it? ...Thank you. That is kind.'
+        : 'Well! Flattery will get you... well, somewhere. Thank you, traveler.';
+    case 'joke':
+      return fell
+        ? 'I am not in the mood for jokes from strangers.'
+        : 'Ha! Alright, that one earned a smile. You\'re alright, traveler.';
+    case 'boast':
+      return 'Yes, yes — very impressive. Is there something you actually wanted?';
+    case 'insult':
+      return 'Watch your tongue. I have no patience for that.';
+  }
+}
+
+// --- Price scaling: disposition moves prices through the EXISTING stall
+// pricing (buyFromStall ledger) — this is only the multiplier, never a
+// second pricing system. Sell prices are untouched: haggling affects what
+// YOU pay, not what a merchant pays you. ---
+
+/**
+ * Buy-price multiplier by disposition tier. Stated exactly:
+ * cold 1.25 (they charge you more), wary 1.15, neutral 1.00, warm 0.90,
+ * admiring 0.80 (a friend's price). Applies to dialogue purchases only —
+ * field stalls have no NPC disposition, so they always pay 1.00. Pure.
+ */
+export function priceMultiplierForDisposition(disposition: number): number {
+  switch (dispositionTier(disposition)) {
+    case 'cold': return 1.25;
+    case 'wary': return 1.15;
+    case 'neutral': return 1.0;
+    case 'warm': return 0.9;
+    case 'admiring': return 0.8;
+  }
+}
+
+/** Adjusted buy price: base × multiplier, rounded, never below 1 gold. Pure. */
+export function adjustedPrice(basePrice: number, disposition: number): number {
+  return Math.max(1, Math.round(basePrice * priceMultiplierForDisposition(disposition)));
+}
 
 /** Disposition tier from a 0-100 value. Pure. */
 export function dispositionTier(d: number): DispositionTier {
@@ -272,6 +440,8 @@ export function responseForBase(ctx: DialogueContext, topic: DialogueTopicId): D
       if (isBryn && !cold) {
         return { text: `Mosslight Crossing is northwest of here — just follow the road. You'll find the tavern, the smith, and the chapel there. The guards patrol the roads, so you should be safe.` };
       }
+      // BUILD 955: disposition gates town talk — cold or wary NPCs withhold.
+      if (cold) return { text: 'Town business is not for strangers. Ask someone who likes you.' };
       const rep = ctx.townReputation;
       const standing = rep >= 10
         ? 'Folk speak well of you here — you\'ve earned it.'
@@ -288,6 +458,50 @@ export function responseForBase(ctx: DialogueContext, topic: DialogueTopicId): D
         case 'warm': return { text: 'Always good talking to you.' };
         case 'admiring': return { text: 'Come back soon — it\'s never dull when you\'re around!' };
       }
+    }
+    // BUILD 955 follow-ups: only offered after their parent topic was
+    // visited in THIS session (see sessionTopics). Responses are gated by
+    // disposition exactly like the base topics.
+    case 'family': {
+      const kin = (ctx.relationships ?? []).find((r) => r.kind === 'family' || r.kind === 'friend');
+      if (cold || !kin) {
+        return { text: cold ? 'My family is none of your business.' : `It's just me and the work, mostly. Family's scattered — the road takes people.` };
+      }
+      const bond = kin.kind === 'family' ? 'Blood is blood' : 'Closer than blood, some days';
+      return { text: `${kin.kind === 'family' ? 'My kin' : 'My good friend'} ${kin.targetName} is around here too. ${bond} — we look out for each other.` };
+    }
+    case 'workDetail': {
+      const lines: Record<string, string> = {
+        farmer: 'The trick is the rotation — corn one year, barley the next, never twice on the same strip. The soil pays you back if you let it rest.',
+        merchant: 'Margins are thin on the road goods and fat on the local ones. Corn and beer move every day; blades move once a season but pay for the month.',
+        priest: 'The chapel roof leaks over the north pew. I catch it in a bucket and nobody has complained yet — the faithful are kind that way.',
+        guard: 'The night watch walks the north road in pairs. One carries the lantern, the other carries the spear, and they swap at the halfway stone.',
+        smith: 'Quench in oil for a tool, in water for a blade, and never quench angry — the steel takes your mood with it, or so my master claimed.',
+        child: 'The best hiding spot is inside the old cart by the mill. But don\'t tell anyone I told you. Actually — tell everyone. Then they\'ll never check the rain barrel.',
+      };
+      return { text: lines[ctx.archetype] ?? 'There is more to it than it looks. Give me a season and I could show you.' };
+    }
+    case 'rumorDetail': {
+      // BUILD 955: the deep rumor is the high-disposition content — cold or
+      // wary NPCs withhold, neutral NPCs repeat the ordinary pool, warm and
+      // admiring NPCs share a hint they tell few others.
+      if (cold) return { text: `I've told you enough. Come back when we're on better terms.` };
+      if (tier === 'warm' || tier === 'admiring') {
+        const hint = WARM_RUMORS[Math.floor(hash2(ctx.seed, 9203) * WARM_RUMORS.length)];
+        return { text: `Since we're speaking plainly: ${hint}`, rumor: hint };
+      }
+      const rumor = RUMORS[Math.floor(hash2(ctx.seed, 9202) * RUMORS.length)];
+      return { text: `That's really all I know. Well — ${rumor}`, rumor };
+    }
+    case 'townDetail': {
+      if (cold) return { text: 'I have said enough about the town.' };
+      const details = [
+        'The Rusty Tankard pours the best ale this side of Eastmarch, and the worst gossip. Both are worth the price.',
+        'The guild hall takes in travelers with a trade and sends them out with work. If you have hands, they have a use for them.',
+        'The market stalls open with the sun. Get there early for corn, late for bargains — the merchants would rather sell cheap than haul it home.',
+        'The chapel bell still rings with its crack. Father Aldous says a cracked bell rings truer, because it has survived something.',
+      ];
+      return { text: details[Math.floor(hash2(ctx.seed, 9201) * details.length)] };
     }
   }
 }

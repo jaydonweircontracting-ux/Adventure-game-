@@ -162,6 +162,45 @@ export function stallShopDef(index: number): StallShopDef {
   };
 }
 
+/** Deterministic 32-bit hash of a string (FNV-1a). Local — keeps the module pure. */
+function stringHash(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/**
+ * BUILD 955: a merchant NPC's personal wares, through the SAME stall
+ * machinery. Audit finding: no townsfolk NPC owns goods today — stalls are
+ * decor-owned (stallShopDef, keyed by stall index) and dungeon keepers sell
+ * through the dungeon engine's own UI — so a dialogue shop cannot point at
+ * an existing NPC-owned stock. Instead, merchant-archetype townsfolk get a
+ * deterministic shop def seeded by their NPC id: same NPC → same shop, same
+ * catalog prices, same ledger (buyFromStall). Every other archetype gets
+ * nothing — no buy option is ever shown for an NPC with no goods.
+ */
+export function merchantShopDef(npcId: string, npcName: string): StallShopDef {
+  const rng = mulberry32Local(stringHash(npcId || npcName));
+  const specialty = STALL_SPECIALTIES[Math.floor(rng() * STALL_SPECIALTIES.length)];
+  const pool = [...specialty.goods];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const count = 3 + Math.floor(rng() * 2);
+  const goods: StallGood[] = pool.slice(0, count).map((key) => ({ key, ...SHOP_CATALOG[key] }));
+  return {
+    index: -1,
+    merchantName: npcName,
+    shopName: `${npcName}'s Wares`,
+    flavor: specialty.greetings[Math.floor(rng() * specialty.greetings.length)],
+    goods,
+  };
+}
+
 /** Goods the stall buys from the player (sell section of the UI). */
 export function stallBuyList(): StallGood[] {
   return (Object.keys(SHOP_CATALOG) as ShopItemKey[])
@@ -207,26 +246,39 @@ export type BuyResult =
  * BUILD 700: the price moves into the merchant's gold (gold conservation —
  * every coinsSpent leaving the buyer lands in state.merchantGold).
  */
+/**
+ * Attempt to buy one unit of itemKey from the stall.
+ * Guards (in order): the stall sells it → stock remains → player can afford it.
+ * Idempotent under double-tap: the second call sees the updated stock.
+ * BUILD 700: the price moves into the merchant's gold (gold conservation —
+ * every coinsSpent leaving the buyer lands in state.merchantGold).
+ * BUILD 955: priceMultiplier scales the charged price through this SAME
+ * ledger (dialogue purchases pass the disposition multiplier; every other
+ * caller passes nothing and pays exactly 1.00 — byte-identical behavior).
+ * The charged price is rounded and never below 1 gold.
+ */
 export function buyFromStall(
   def: StallShopDef,
   state: StallStockState,
   itemKey: ShopItemKey,
   coins: number,
+  priceMultiplier = 1,
 ): BuyResult {
   const good = def.goods.find((g) => g.key === itemKey);
   if (!good || good.buyPrice <= 0) return { ok: false, reason: 'not-sold', state };
+  const price = Math.max(1, Math.round(good.buyPrice * (Number.isFinite(priceMultiplier) ? priceMultiplier : 1)));
   const have = Math.max(0, Math.floor(state.stock[itemKey] ?? 0));
   if (have < 1) return { ok: false, reason: 'sold-out', state };
-  if (!Number.isFinite(coins) || coins < good.buyPrice) return { ok: false, reason: 'no-gold', state };
+  if (!Number.isFinite(coins) || coins < price) return { ok: false, reason: 'no-gold', state };
   return {
     ok: true,
     state: {
       stock: { ...state.stock, [itemKey]: have - 1 },
       lastRestockDay: state.lastRestockDay,
-      merchantGold: Math.max(0, Math.floor(state.merchantGold ?? 0)) + good.buyPrice,
+      merchantGold: Math.max(0, Math.floor(state.merchantGold ?? 0)) + price,
     },
-    coinsSpent: good.buyPrice,
-    price: good.buyPrice,
+    coinsSpent: price,
+    price,
   };
 }
 
@@ -253,28 +305,50 @@ export function sellToStall(itemKey: ShopItemKey, have: number): SellResult {
  * clamps stock counts to finite non-negative integers. Unknown stall indexes
  * are kept — restockStall rebuilds them against the current defs on open.
  */
+/** Validate one stock value. Shared by both sanitizers — never duplicated. */
+function sanitizeOneStock(v: unknown): StallStockState | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const vv = v as { stock?: unknown; lastRestockDay?: unknown };
+  const day = typeof vv.lastRestockDay === 'number' && Number.isFinite(vv.lastRestockDay)
+    ? Math.floor(vv.lastRestockDay) : -1;
+  const stock: Partial<Record<ShopItemKey, number>> = {};
+  if (vv.stock && typeof vv.stock === 'object' && !Array.isArray(vv.stock)) {
+    for (const [ik, iv] of Object.entries(vv.stock as Record<string, unknown>)) {
+      if (!(ik in SHOP_CATALOG)) continue;
+      if (typeof iv !== 'number' || !Number.isFinite(iv)) continue;
+      stock[ik as ShopItemKey] = Math.max(0, Math.floor(iv));
+    }
+  }
+  // BUILD 700: merchant gold restores too (old saves predate it → 0).
+  const mg = (vv as { merchantGold?: unknown }).merchantGold;
+  const merchantGold = typeof mg === 'number' && Number.isFinite(mg) ? Math.max(0, Math.floor(mg)) : 0;
+  return { stock, lastRestockDay: day, merchantGold };
+}
+
 export function sanitizeStallStocks(raw: unknown): Record<number, StallStockState> {
   const out: Record<number, StallStockState> = {};
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     const index = Number(k);
     if (!Number.isInteger(index) || index < 0) continue;
-    if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
-    const vv = v as { stock?: unknown; lastRestockDay?: unknown };
-    const day = typeof vv.lastRestockDay === 'number' && Number.isFinite(vv.lastRestockDay)
-      ? Math.floor(vv.lastRestockDay) : -1;
-    const stock: Partial<Record<ShopItemKey, number>> = {};
-    if (vv.stock && typeof vv.stock === 'object' && !Array.isArray(vv.stock)) {
-      for (const [ik, iv] of Object.entries(vv.stock as Record<string, unknown>)) {
-        if (!(ik in SHOP_CATALOG)) continue;
-        if (typeof iv !== 'number' || !Number.isFinite(iv)) continue;
-        stock[ik as ShopItemKey] = Math.max(0, Math.floor(iv));
-      }
-    }
-    // BUILD 700: merchant gold restores too (old saves predate it → 0).
-    const mg = (vv as { merchantGold?: unknown }).merchantGold;
-    const merchantGold = typeof mg === 'number' && Number.isFinite(mg) ? Math.max(0, Math.floor(mg)) : 0;
-    out[index] = { stock, lastRestockDay: day, merchantGold };
+    const clean = sanitizeOneStock(v);
+    if (clean) out[index] = clean;
+  }
+  return out;
+}
+
+/**
+ * BUILD 955: sanitize merchant-NPC shop stocks, keyed by NPC id (not stall
+ * index). Same per-entry validation as sanitizeStallStocks, string keys.
+ * Old saves have no such field → empty → fresh stocks on first trade.
+ */
+export function sanitizeNamedStocks(raw: unknown): Record<string, StallStockState> {
+  const out: Record<string, StallStockState> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof k !== 'string' || k.length === 0 || k.length > 120) continue;
+    const clean = sanitizeOneStock(v);
+    if (clean) out[k] = clean;
   }
   return out;
 }

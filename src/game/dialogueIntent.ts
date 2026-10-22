@@ -53,6 +53,22 @@ const TOPIC_KEYWORDS: Record<DialogueTopicId, [string[], number][]> = {
     [['goodbye', 'bye', 'farewell', 'see you', 'later', 'got to go'], 3],
     [['leave', 'go now'], 1],
   ],
+  // BUILD 955 follow-ups: free text can reach them directly (the response
+  // backend handles every topic), but the BUTTONS only offer a follow-up
+  // after its parent was visited in this session (see sessionTopics).
+  family: [
+    [['your family', 'your kin', 'family', 'parents', 'brother', 'sister'], 3],
+  ],
+  workDetail: [
+    [['more about your work', 'work detail', 'tell me more about your work'], 3],
+    [['detail', 'more detail'], 1],
+  ],
+  rumorDetail: [
+    [['more rumors', 'more gossip', 'anything else', 'press for more'], 3],
+  ],
+  townDetail: [
+    [['more about the town', 'town detail', 'tell me more about mosslight'], 3],
+  ],
 };
 
 // Greeting patterns — map to 'who' (introduction flow).

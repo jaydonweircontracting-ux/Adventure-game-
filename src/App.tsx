@@ -44,7 +44,7 @@ import ChunkZoneSelector from './game/dev/ChunkZoneSelector';
 import { organicTownSpecs } from './game/organicTowns';
 import { npcEntryPoint, facingForDelta, type NpcFacing } from './game/npcEntry';
 // BUILD 697: market stall shops — pure defs + guarded transactions.
-import { stallShopDef, stallBuyList, createStallStock, restockStall, buyFromStall, sellToStall, sanitizeStallStocks, npcShoppingPick, type ShopItemKey, type StallStockState } from '@/game/shops';
+import { stallShopDef, stallBuyList, createStallStock, restockStall, buyFromStall, sellToStall, sanitizeStallStocks, sanitizeNamedStocks, merchantShopDef, npcShoppingPick, type ShopItemKey, type StallStockState } from '@/game/shops';
 import { initialCellarRats, CELLAR_RAT_COUNT, type CellarRat } from './game/cellarRats';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds, type TouchHoldState, type TouchEventKind } from './game/touchInput';
 // BUILD 704: stamina/energy for sprinting.
@@ -52,7 +52,7 @@ import { createStamina, tickStamina, canRun, staminaFrac, type StaminaState } fr
 import { radarDots, RADAR_COLORS, RADAR_RANGE, type RadarEntity } from './game/minimapRadar';
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, describeLoot, withProvenance, provenanceLabel, applyStackableGain, type GeneratedItem, type EncumbranceTier } from './game/items';
-import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, applyPersonalityTone, type DialogueTopicId } from './game/dialogue';
+import { responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, applyPersonalityTone, newDialogueSession, visitTopic, sessionTopics, HAGGLE_MOVES, haggleMoveDelta, canHaggle, useHaggleMove, haggleReaction, priceMultiplierForDisposition, adjustedPrice, type DialogueTopicId, type DialogueSession, type HaggleMove } from './game/dialogue';
 import { canPropose, isPartner, isPartnerState, PROPOSAL_MIN_DISPOSITION, type PartnerState } from './game/partner';
 import { recognizeIntent, fallbackResponse } from './game/dialogueIntent';
 import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasConversationMemories } from './game/conversationMemory';
@@ -166,7 +166,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '954';
+const BUILD_NUMBER = '955';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -200,6 +200,7 @@ const BUILD_NOTES: Record<string, string> = {
   '952': 'Wild animals now look like animals: the deer, bears, wolves, foxes, boars, and rabbits roaming the wilds are rendered from real 3D models instead of colored blobs and glitched sheets — deer come as stags and does, and rabbits and deer are back in the meadows and forests after their broken sprites kept them out. Owls, squirrels, and hedgehogs join them as new ambient wildlife. The animals also show up in the isometric view for the first time (they were invisible there before); stats, speeds, loot, and spawn rates are unchanged, and the fighting wolf monsters keep their animated sheets.',
   '953': 'The camera now spins: hold a camera button (or hold an arrow key) and the view slowly turns at 45 degrees per second, RuneScape-style, until you let go — the world turns around you while you stay centered. A quick tap still jumps exactly 90 degrees like before, and holding left and right together cancels out instead of fighting. Movement stays world-relative at every angle, and your exact camera angle is saved and restored (old saves keep their 90-degree step as 0/90/180/270).',
   '954': 'The camera now turns in finer, smoother steps: a quick tap turns it 45 degrees with a short smooth glide through the angles in between instead of jumping, so eight taps make a full turn and every stop lines up with a character facing direction. Holding a button still spins the view slowly and continuously at 45 degrees per second until you let go, and tapping one side while the other side is still held no longer fights the spin. Movement stays world-relative at every angle, and your exact camera angle is saved and restored as before.',
+  '955': 'Conversations now go deeper: asking about someone, their work, rumors, or the town unlocks a follow-up question in the same conversation, so you can press further instead of hitting the same four topics — and closing the conversation resets the topics (everything is re-explorable next time) without ever resetting how much they like you. You can also haggle in conversation: compliments warm people up (+6), jokes land (+3) unless they already dislike you (−2), boasting annoys (−3), and insults sting (−10), each once per conversation — and how much they like you now shows in their prices and in what they will tell you (cold acquaintances withhold, warm friends share hints and charge less, admired friends charge 20% less). Merchant townsfolk finally sell from inside conversation: a Browse wares button opens their own goods, bought through the same shop system with the same weight limit — and anyone who is not a merchant has no shop at all. Faction standing is untouched and separate.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
@@ -1813,6 +1814,9 @@ type SaveGameData = {
   // BUILD 697: market stall stock — keyed by stall index (stallShopDef index).
   // Session-persistent; saved/restored with the game.
   shopStocks?: Record<string, StallStockState>;
+  // BUILD 955: merchant-NPC shop stocks — keyed by NPC id. Saved/restored
+  // with the game; old saves simply lack the field.
+  npcShopStocks?: Record<string, StallStockState>;
   // BUILD 700: NPC stall purchase decisions — keyed "npcId:day:visitIndex".
   // Persisted so a reload never re-runs (or double-runs) a visit's purchase.
   npcPurchases?: Record<string, true>;
@@ -5758,6 +5762,26 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 654: Free-text dialogue input.
   const [dialogueInput, setDialogueInput] = useState('');
   const [dialogueHistory, setDialogueHistory] = useState<{ speaker: 'player' | 'npc'; text: string }[]>([]);
+  // BUILD 955: topic deepening + haggle + shop-from-dialogue. The session is
+  // TRANSIENT (React state only, never saved): closing the conversation
+  // resets it, while disposition and quest state persist untouched. The shop
+  // mode shows a merchant NPC's personal wares inside the dialogue panel.
+  const [dialogueSession, setDialogueSession] = useState<DialogueSession>(() => newDialogueSession());
+  const [dialogueSay, setDialogueSay] = useState<string | null>(null);
+  const [dialogueMode, setDialogueMode] = useState<'talk' | 'shop'>('talk');
+  const dialogueNpcIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    // Reset the session whenever the conversation opens, switches NPC, or
+    // closes — every close path funnels through townsfolkDialogue, so this
+    // covers Goodbye, ✕, NPC death, and arrest alike.
+    const id = townsfolkDialogue?.id ?? null;
+    if (id !== dialogueNpcIdRef.current) {
+      dialogueNpcIdRef.current = id;
+      setDialogueSession(newDialogueSession());
+      setDialogueSay(null);
+      setDialogueMode('talk');
+    }
+  }, [townsfolkDialogue]);
   const [disposition, setDisposition] = useState<Record<string, number>>({});
   // BUILD 894: marriage/partner slot — one partner, persists in the dialogue save section.
   const [partner, setPartner] = useState<PartnerState | null>(null);
@@ -6797,6 +6821,25 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             })),
           };
         },
+        // BUILD 955: dialogue test hooks (testmode only, like all __gameTest).
+        listTownsfolk: () => townsfolkRef.current.map((n) => ({ id: n.id, name: n.name, archetype: n.archetype })),
+        openDialogue: (npcId: string) => {
+          const npc = townsfolkRef.current.find((n) => n.id === npcId);
+          if (!npc) return null;
+          talkToTownsfolk(npc);
+          return npc.name;
+        },
+        getDisposition: (npcId: string) => dispositionRef.current[npcId] ?? defaultDisposition(),
+        getInventory: () => ({ ...inventoryRef.current }),
+        // BUILD 955: grant test coins (testmode only, like giveTestItem).
+        // Coins weigh nothing, so no carry-limit bypass is involved.
+        giveCoins: (n: number) => {
+          if (typeof window === 'undefined') return false;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return false;
+          onLoot({ coins: Math.max(0, Math.floor(n) || 0) } as GoatLoot);
+          return true;
+        },
         // BUILD 697: grant test items. LOCALHOST ONLY.
         giveTestItem: (key: string, n: number) => {
           if (typeof window === 'undefined') return false;
@@ -6957,6 +7000,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     pickedUpGroundItems,
     // BUILD 697: persist market stall stock.
     shopStocks: shopStocksRef.current,
+    // BUILD 955: persist merchant-NPC shop stocks (keyed by NPC id).
+    npcShopStocks: npcShopStocksRef.current,
     // BUILD 700: persist NPC purchase decisions.
     npcPurchases: npcPurchasesRef.current,
     // BUILD 685: persist tutorial banner dismissal.
@@ -7103,6 +7148,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const restoredStocks = sanitizeStallStocks(loadState.shopStocks);
       shopStocksRef.current = restoredStocks;
       setShopStocks(restoredStocks);
+    }
+    // BUILD 955: restore merchant-NPC shop stocks (sanitized; old saves
+    // have no such field → empty → fresh stocks on first trade).
+    {
+      const restoredNpcStocks = sanitizeNamedStocks(loadState.npcShopStocks);
+      npcShopStocksRef.current = restoredNpcStocks;
+      setNpcShopStocks(restoredNpcStocks);
     }
     // BUILD 700: restore NPC purchase decisions (sanitized to a flat key set;
     // garbage never blocks a legitimate future purchase).
@@ -10773,6 +10825,11 @@ if (active) {
     );
     if (resp.rumor) onAddRumor(resp.rumor, npc.name);
     setDialogueTopic(topic);
+    setDialogueSay(null);
+    // BUILD 955: record the visit in THIS conversation's session — this is
+    // what unlocks follow-up topics. Session only; disposition below and
+    // quest state are untouched by session bookkeeping.
+    setDialogueSession((s) => visitTopic(s, topic));
     setDisposition((d) => ({ ...d, [npc.id]: adjustDisposition(d[npc.id] ?? defaultDisposition(), 1) }));
     // BUILD 656: Record topic discussed for future recall (both button and free-text paths).
     const day = brainRef.current?.worldCore.getClock().day ?? 1;
@@ -11128,6 +11185,49 @@ if (active) {
     const good = def.goods.find((g) => g.key === itemKey);
     setLogs((c) => [{ text: `Bought ${good?.label ?? itemKey} for ${result.coinsSpent} gold from ${def.merchantName}.`, color: 'blue' }, ...c].slice(0, 5));
   };
+  // BUILD 955: haggle — one move per conversation (session-scoped). The
+  // disposition change persists; the "used" mark resets on close.
+  const haggleDialogue = (npc: Townsperson, move: HaggleMove) => {
+    if (!canHaggle(dialogueSession, move)) return;
+    const before = disposition[npc.id] ?? defaultDisposition();
+    const delta = haggleMoveDelta(move, before);
+    const after = adjustDisposition(before, delta);
+    setDialogueSession((s) => useHaggleMove(s, move));
+    setDialogueTopic(null);
+    setDialogueSay(haggleReaction(move, before, after));
+    setDisposition((d) => ({ ...d, [npc.id]: after }));
+    setLogs((cur) => [{ text: `${npc.name}'s disposition ${delta >= 0 ? '+' : ''}${delta} (${after}).`, color: delta >= 0 ? 'green' : 'orange' }, ...cur].slice(0, 3));
+  };
+  // BUILD 955: buy from a merchant NPC inside dialogue. Same ledger as
+  // stalls (buyFromStall), same carry-limit pre-gate as stall buys (a refused
+  // buy charges nothing and the item stays with the merchant), same gold
+  // conservation — the only difference is the price multiplier, which comes
+  // from THIS npc's disposition tier. Buy-only: selling stays at stalls.
+  const buyDialogueGood = (npc: Townsperson, itemKey: ShopItemKey) => {
+    const def = merchantShopDef(npc.id, npc.name);
+    const state = restockStall(def, npcShopStocksRef.current[npc.id], gameDayNow());
+    const disp = disposition[npc.id] ?? defaultDisposition();
+    const multiplier = priceMultiplierForDisposition(disp);
+    const effectiveCoins = inventory.coins - shopReserveRef.current.coins;
+    if (carryNow().over) {
+      setLogs((c) => [{ text: `${npc.name}: you're carrying too much to take that — ${CARRY_OVER_MSG}`, color: 'red' }, ...c].slice(0, 5));
+      return;
+    }
+    const result = buyFromStall(def, state, itemKey, effectiveCoins, multiplier);
+    if (!result.ok) {
+      const good = def.goods.find((g) => g.key === itemKey);
+      const why = result.reason === 'sold-out' ? 'is sold out'
+        : result.reason === 'no-gold' ? `costs ${adjustedPrice(good?.buyPrice ?? 0, disp)} gold — you don't have enough`
+        : 'is not sold here';
+      setLogs((c) => [{ text: `${npc.name}: sorry, that ${why}.`, color: 'red' }, ...c].slice(0, 5));
+      return;
+    }
+    shopReserveRef.current.coins += result.coinsSpent;
+    syncNpcShopStocks({ ...npcShopStocksRef.current, [npc.id]: result.state });
+    onLoot({ coins: -result.coinsSpent, [itemKey]: 1 } as GoatLoot);
+    const good = def.goods.find((g) => g.key === itemKey);
+    setLogs((c) => [{ text: `Bought ${good?.label ?? itemKey} for ${result.coinsSpent} gold from ${npc.name}.`, color: 'blue' }, ...c].slice(0, 5));
+  };
   const sellStallGood = (itemKey: ShopItemKey) => {
     const index = shopStallIndexRef.current;
     if (index === null) return;
@@ -11158,6 +11258,15 @@ if (active) {
   const shopStallIndexRef = useRef<number | null>(null);
   const [shopStocks, setShopStocks] = useState<Record<number, StallStockState>>({});
   const shopStocksRef = useRef<Record<number, StallStockState>>({});
+  // BUILD 955: merchant-NPC personal shop stocks, keyed by NPC id. Same
+  // StallStockState shape as stalls, same restock-on-new-day rule, saved and
+  // restored alongside shopStocks (old saves → empty → fresh stocks).
+  const [npcShopStocks, setNpcShopStocks] = useState<Record<string, StallStockState>>({});
+  const npcShopStocksRef = useRef<Record<string, StallStockState>>({});
+  const syncNpcShopStocks = (next: Record<string, StallStockState>) => {
+    npcShopStocksRef.current = next;
+    setNpcShopStocks(next);
+  };
   const syncShopStocks = (next: Record<number, StallStockState>) => {
     shopStocksRef.current = next;
     setShopStocks(next);
@@ -15022,6 +15131,11 @@ if (active) {
           const disp = disposition[npc.id] ?? defaultDisposition();
           const ctx = { name: npc.name, archetype: npc.archetype, activity: npc.activity, disposition: disp, townReputation: reputation.mosslight, seed: npc.seed, personality: npcPersonality(npc) };
           const resp = dialogueTopic ? responseFor(ctx, dialogueTopic) : null;
+          // BUILD 955: this NPC's personal wares (merchants only) + the
+          // disposition price multiplier for dialogue purchases.
+          const shopDef = npc.archetype === 'merchant' ? merchantShopDef(npc.id, npc.name) : null;
+          const shopState = shopDef ? restockStall(shopDef, npcShopStocks[npc.id], gameDayNow()) : null;
+          const shopMult = priceMultiplierForDisposition(disp);
           return (
             <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="townsfolk-dialogue-title" data-testid="townsfolk-dialogue">
               <div className="npc-dialogue-card townsfolk-dialogue">
@@ -15044,7 +15158,7 @@ if (active) {
                   <div className="dialogue-standing" data-testid="faction-standing">
                     <span>Faction: <strong>{factionDialogueLine(factionForNpc(npc), standingFor(factionStandings, factionForNpc(npc)), npc.archetype)}</strong></span>
                   </div>
-                  {resp && <p className="dialogue-response">“{resp.text}”</p>}
+                  {dialogueSay ? <p className="dialogue-response">“{dialogueSay}”</p> : resp && <p className="dialogue-response">“{resp.text}”</p>}
                   {/* BUILD 654: Conversation history for free-text exchanges. */}
                   {dialogueHistory.length > 0 && (
                     <div className="dialogue-history" style={{ maxHeight: '120px', overflowY: 'auto', marginBottom: '8px', fontSize: '13px' }}>
@@ -15055,8 +15169,35 @@ if (active) {
                       ))}
                     </div>
                   )}
+                  {dialogueMode === 'shop' && shopDef && shopState ? (
+                    <div data-testid="dialogue-shop">
+                      <p className="dialogue-kicker">{shopDef.shopName}</p>
+                      <p>“{shopDef.flavor}” — prices at {shopMult}× ({dispositionLabel(dispositionTier(disp))} disposition)</p>
+                      <p data-testid="dialogue-shop-gold">Your gold: <strong>{inventory.coins}</strong></p>
+                      <div className="buy-options" data-testid="dialogue-shop-buy-options">
+                        {shopDef.goods.map((g) => {
+                          const stock = Math.max(0, Math.floor(shopState.stock[g.key] ?? 0));
+                          const price = adjustedPrice(g.buyPrice, disp);
+                          const afford = (inventory.coins - shopReserveRef.current.coins) >= price;
+                          return (
+                            <button className="craft-button buy-button" key={g.key}
+                              onClick={() => buyDialogueGood(npc, g.key)}
+                              disabled={stock < 1 || !afford}
+                              data-testid={'button-dialogue-buy-' + g.key}
+                              title={stock < 1 ? 'Sold out' : !afford ? "You don't have enough gold" : `Buy ${g.label} for ${price} gold`}>
+                              <span><b>{foodIconUrl(g.key) ? <img src={foodIconUrl(g.key)!} alt="" className="inventory-item-img" /> : g.mark} {g.label}</b><small>{g.description} · Stock {stock}</small></span>
+                              <em>{price} gold</em>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="shop-empty">Selling stays at the market stalls — this is buy-only.</p>
+                      <button type="button" className="dialogue-topic" onClick={() => setDialogueMode('talk')} data-testid="button-dialogue-back">← Back to conversation</button>
+                    </div>
+                  ) : (
+                  <>
                   <div className="dialogue-topics">
-                    {topicsFor(npc.archetype).map((t) => (
+                    {sessionTopics(npc.archetype, dialogueSession).map((t) => (
                       <button key={t.id} type="button" className={'dialogue-topic' + (dialogueTopic === t.id ? ' is-active' : '')} onClick={() => chooseDialogueTopic(npc, t.id)}>{t.label}</button>
                     ))}
                     {/* BUILD 881: skill-master apprenticeship button. */}
@@ -15098,6 +15239,22 @@ if (active) {
                       return null;
                     })()}
                   </div>
+                  {/* BUILD 955: haggle moves (once per conversation each) +
+                      the merchant trade button. Non-merchants never see a
+                      trade button — they have no wares. */}
+                  <div className="dialogue-topics">
+                    {HAGGLE_MOVES.map((m) => (
+                      <button key={m.id} type="button" className="dialogue-topic" disabled={!canHaggle(dialogueSession, m.id)}
+                        onClick={() => haggleDialogue(npc, m.id)} data-testid={'button-haggle-' + m.id}
+                        title={canHaggle(dialogueSession, m.id) ? 'Once per conversation' : 'Already used this conversation'}>
+                        {m.label}
+                      </button>
+                    ))}
+                    {npc.archetype === 'merchant' && (
+                      <button key="trade" type="button" className="dialogue-topic" onClick={() => setDialogueMode('shop')} data-testid="button-dialogue-trade">🛒 Browse wares</button>
+                    )}
+                  </div>
+                  </>)}
                   {/* BUILD 654: Free-text input. */}
                   <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
                     <input
@@ -15118,7 +15275,7 @@ if (active) {
                     </button>
                   </div>
                 </div>
-                <button type="button" className="dialogue-close" onClick={() => { setTownsfolkDialogue(null); setDialogueTopic(null); setDialogueHistory([]); setDialogueInput(''); }} aria-label="Close dialogue" data-testid="button-close-townsfolk-dialogue">✕</button>
+                <button type="button" className="dialogue-close" onClick={() => { setTownsfolkDialogue(null); setDialogueTopic(null); setDialogueHistory([]); setDialogueInput(''); setDialogueSession(newDialogueSession()); setDialogueSay(null); setDialogueMode('talk'); }} aria-label="Close dialogue" data-testid="button-close-townsfolk-dialogue">✕</button>
               </div>
             </div>
           );
