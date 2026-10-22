@@ -588,6 +588,20 @@ const ROSTER: TownsfolkDef[] = [
   ['Sable', 'female', 'teacher', 'mage', 'guild'],
   ['Puck', 'male', 'teacher', 'rogue', 'guild'],
   ['Wynn', 'female', 'teacher', 'guide', 'guild'],
+  // BUILD 979: 5 children, appended LAST so teachers keep ids 38-41
+  // (children are townsfolk-42..46). One per cottage with a free bed —
+  // cottage-1..5 each hold 3 adults + 1 free bed, so no bed-table change
+  // and no housing warning. They are household members, not invented
+  // orphans: the seeded relationship graph already treats housemates as
+  // family, so each child is family to its housemates by the existing
+  // rule. Schedules, 70% iso scale, and dialogue all come from the
+  // existing 'child' machinery — this roster was the only missing piece.
+  // Total roster: 38 originals + 4 teachers + 5 children = 47.
+  ['Tansy', 'female', 'child', 'guide', 'cottage-1'],
+  ['Milo', 'male', 'child', 'guide', 'cottage-2'],
+  ['Nia', 'female', 'child', 'guide', 'cottage-3'],
+  ['Joss', 'male', 'child', 'guide', 'cottage-4'],
+  ['Tove', 'female', 'child', 'guide', 'cottage-5'],
 ];
 
 /** Build DoorwayLinks for the 6 Mosslight cottages (pure, no App dependency). */
@@ -844,6 +858,9 @@ export function createTownsfolk(anchors: TownsfolkAnchors, worldSeed: number): T
       gender,
       archetype,
       role,
+      // BUILD 979: children carry age 'child' so examine shows the child
+      // line; every other field derives from archetype already.
+      ...(archetype === 'child' ? { age: 'child' as const } : {}),
       seed,
       homeKey,
       home,
@@ -1077,6 +1094,11 @@ export const NPC_RESPAWN_TICKS = 7200;
  * still usually flee. A surviving fighter chases the attacker instead of fleeing.
  */
 export function damageNpc(npc: Townsperson, damage: number, from: TownsfolkPoint, tick: number): Townsperson {
+  // BUILD 979: children are never valid combat targets — player swings,
+  // creature bites, and any future damageNpcByNpc path all funnel here,
+  // so the guard lives here as the backstop (call sites also skip
+  // children before any side effects). No damage, no flee/fight, no death.
+  if (npc.archetype === 'child') return npc;
   const newHp = npcHp(npc) - damage;
   if (newHp <= 0) {
     return {

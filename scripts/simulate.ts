@@ -1018,9 +1018,11 @@ console.log('Testing townsfolk living-town simulation...');
   // old 40-count assert and the first 958 draft (44) were both wrong;
   // 38 + 4 = 42. (Sim asserts only summarize at the end, which the 694
   // crash blocks, so the wrong counts failed silently until now.)
-  assert(folk.length === 42, `Expected 42 townsfolk, got ${folk.length}`);
-  assert(new Set(folk.map((n) => n.id)).size === 42, 'Townsfolk ids not unique');
-  assert(new Set(folk.map((n) => n.name)).size === 42, 'Townsfolk names not unique');
+  // BUILD 979: Roster is 47 — five children appended LAST (townsfolk
+  // 42..46), so teachers keep ids 38-41. 38 + 4 + 5 = 47.
+  assert(folk.length === 47, `Expected 47 townsfolk, got ${folk.length}`);
+  assert(new Set(folk.map((n) => n.id)).size === 47, 'Townsfolk ids not unique');
+  assert(new Set(folk.map((n) => n.name)).size === 47, 'Townsfolk names not unique');
   // BUILD 958: class teachers — guild hall by day, Tankard in the evening,
   // guild point overnight (indoors flag, same pattern as home-indoors).
   {
@@ -1057,11 +1059,13 @@ console.log('Testing townsfolk living-town simulation...');
   // BUILD 699: housing — all 40 NPCs get beds, household members share homes.
   // BUILD 958: all 42 NPCs get beds (teachers take free-bed fallback — the
   // guild is not a household door — 12 free beds cover 4 teachers).
+  // BUILD 979: all 47 NPCs get beds — the 5 children take the free bed in
+  // cottage-1..5 (3 adults + 1 free bed each), so no bed-table change.
   {
     const housing = buildMosslightHousing(folk.map((n) => ({ id: n.id, homeKey: n.homeKey })));
     assert(housing.warnings.length === 0, `Housing warnings: ${housing.warnings.join('; ')}`);
     const assigned = Object.keys(housing.assignments);
-    assert(assigned.length === 42, `Expected 42 bed assignments, got ${assigned.length}`);
+    assert(assigned.length === 47, `Expected 47 bed assignments, got ${assigned.length}`);
     // Household coherence: NPCs sharing a homeKey are in the same home.
     for (const n of folk) {
       const a = housing.assignments[n.id];
@@ -1092,6 +1096,77 @@ console.log('Testing townsfolk living-town simulation...');
   const guards = folk.filter((n) => n.archetype === 'guard');
   assert(guards.some((g) => townsfolkTarget(g, anchors, clockAt(10, 0)).activity === 'Patrolling'), 'No guard patrolling at 10 AM');
   assert(guards.every((g) => townsfolkTarget(g, anchors, clockAt(3, 0)).indoors), 'Guard outdoors at 3 AM');
+  // BUILD 979: child NPCs — the roster that fixes the BUILD 694 crash
+  // (the 694 section's folk.find(archetype==='child') was undefined).
+  {
+    const children = folk.filter((n) => n.archetype === 'child');
+    assert(children.length === 5, `Expected 5 children, got ${children.length}`);
+    const byName = new Map(children.map((c) => [c.name, c]));
+    for (const [name, id, homeKey] of [
+      ['Tansy', 'townsfolk-42', 'cottage-1'],
+      ['Milo', 'townsfolk-43', 'cottage-2'],
+      ['Nia', 'townsfolk-44', 'cottage-3'],
+      ['Joss', 'townsfolk-45', 'cottage-4'],
+      ['Tove', 'townsfolk-46', 'cottage-5'],
+    ] as const) {
+      const c = byName.get(name);
+      assert(c !== undefined, `Child ${name} missing`);
+      assert(c!.id === id, `Child ${name} should be ${id}, got ${c!.id}`);
+      assert(c!.homeKey === homeKey, `Child ${name} homeKey should be ${homeKey}, got ${c!.homeKey}`);
+      assert(c!.age === 'child', `Child ${name} should carry age 'child' for examine`);
+    }
+    // Teachers keep their ids (children appended last, not inserted).
+    assert(byName.get('Tansy')!.id === 'townsfolk-42', 'Children must follow teachers, not displace them');
+    assert(folk.find((n) => n.name === 'Dain')!.id === 'townsfolk-38', 'Teacher Dain id moved');
+    // Homes + beds: one free bed per cottage-1..5, zero warnings, and
+    // every child shares its home with adults (household >= 2 holds).
+    const housing979 = buildMosslightHousing(folk.map((n) => ({ id: n.id, homeKey: n.homeKey })));
+    assert(housing979.warnings.length === 0, `Child housing warnings: ${housing979.warnings.join('; ')}`);
+    for (const c of children) {
+      const a = housing979.assignments[c.id];
+      assert(a && a.homeId === c.homeKey, `Child ${c.name}: bed home ${a?.homeId} != homeKey ${c.homeKey}`);
+    }
+    // Schedules use the existing 'child' case: sleep nights, play
+    // mornings, home after 18:00, market afternoons (the 694 design).
+    const tansy = byName.get('Tansy')!;
+    assert(townsfolkTarget(tansy, anchors, clockAt(2, 0)).activity === 'Sleeping', 'Child should sleep at 2 AM');
+    assert(townsfolkTarget(tansy, anchors, clockAt(10, 0)).activity === 'Playing', 'Child mornings should stay playful');
+    assert(townsfolkTarget(tansy, anchors, clockAt(19, 0)).activity === 'At home', 'Child should be home at 19:00');
+    // Interaction gates (pure paths): damage is a no-op, creature damage
+    // is a no-op, no gear to steal, no crime urge, no wage.
+    const threat = { x: 0, y: 0 };
+    const unhurt = damageNpc(tansy, 50, threat, 2000);
+    assert(unhurt === tansy, 'damageNpc must return a child unchanged');
+    assert(npcHp(unhurt) === npcHp(tansy), 'Child HP must not move under damageNpc');
+    const unhurtCreature = damageNpcByCreature(tansy, 50, threat, 'monster', 7, 2000);
+    // NOTE: damageNpcByCreature spreads its result, so ref equality
+    // cannot hold — the guarantee is values: no damage, no death, no fight.
+    assert(npcHp(unhurtCreature) === npcHp(tansy), 'Creature damage must not move child HP');
+    assert(unhurtCreature.deadUntilTick === undefined && unhurtCreature.fightBackUntilTick === undefined, 'Child must gain no death/fight state');
+    assert(stealableStashGear('child', [], ['dagger']).length === 0, 'Children never stealable');
+    assert(npcCrimeUrge(tansy, clockAt(10, 0, 5)) === null, 'Child must have no crime urge');
+    assert(npcWage('child') === 0, 'Child wage must be 0');
+    // Kin: housemates are family by the seeded graph — no invented
+    // parentage, just the existing household rule.
+    const rels = npcRelationships(tansy, folk, clockAt(10, 0, 5));
+    const housemates = folk.filter((n) => n.homeKey === 'cottage-1' && n.id !== tansy.id);
+    for (const h of housemates) {
+      const r = rels.find((x) => x.targetId === h.id);
+      assert(r !== undefined && r.kind === 'family', `Child ${tansy.name} should be family to housemate ${h.name}`);
+    }
+    // Old saves gain children: serialize a 42-member (pre-979) roster and
+    // restore onto the 47 roster — the 5 children arrive fresh, and the
+    // 42 saved members keep their saved positions.
+    const oldFolk = folk.slice(0, 42);
+    const oldSaved = serializeTownsfolk(oldFolk.map((n, i) => ({ ...n, position: { x: 100 + i, y: 100 + i } })));
+    const restored979 = restoreTownsfolk(folk, oldSaved);
+    assert(restored979.length === 47, 'Old-save restore must gain the 5 children');
+    for (const c of children) {
+      const r = restored979.find((n) => n.id === c.id)!;
+      assert(r.position.x === c.position.x && r.position.y === c.position.y, `Restored child ${c.name} must start fresh at home`);
+    }
+    assert(restored979[0].position.x === 100 && restored979[0].position.y === 100, 'Saved member position must survive restore');
+  }
   // Hash sanity.
   assert(townsfolkHash(1, 2) === townsfolkHash(1, 2), 'townsfolkHash not deterministic');
   assert(townsfolkHash(5, 9) >= 0 && townsfolkHash(5, 9) < 1, 'townsfolkHash out of range');
@@ -5810,11 +5885,13 @@ console.log('Testing interior waypoints...');
   // 1. Round-trip: serialize -> restore preserves identity/state, drops paths.
   const live = advanceTownsfolk(snapTownsfolk(folk, anchors, clockAt(10, 0), navCtx), anchors, clockAt(10, 0), navCtx);
   const saved = serializeTownsfolk(live);
-  assert(saved.length === 40, 'should serialize all 40 townsfolk');
+  // BUILD 979: corrected stale 40-count (crash-masked since 694; the
+  // roster held 42 at 978, 47 now) — one of 5 such stale counts.
+  assert(saved.length === 47, 'should serialize all 47 townsfolk');
   assert(saved.every((s) => !('path' in s)), 'save must not contain nav paths');
   const fresh = createTownsfolk(anchors, 847291583);
   const restored = restoreTownsfolk(fresh, saved);
-  assert(restored.length === 40, 'restore keeps roster size (40)');
+  assert(restored.length === 47, 'restore keeps roster size (47)');
   for (let i = 0; i < 12; i++) {
     assert(restored[i].id === live[i].id, 'ids preserved');
     assert(restored[i].position.x === live[i].position.x && restored[i].position.y === live[i].position.y, 'positions preserved');
@@ -5831,7 +5908,7 @@ console.log('Testing interior waypoints...');
     { id: folk[1].id, position: { x: 1, y: 1 }, location: 'MARS', activity: 'x' },
   ];
   const r2 = restoreTownsfolk(fresh, junk);
-  assert(r2.length === 40, 'ghost ids do not grow the roster (40)');
+  assert(r2.length === 47, 'ghost ids do not grow the roster (47)');
   assert(r2[0].position.x === fresh[0].position.x, 'invalid position entry falls back to fresh');
   assert(r2[1].location === fresh[1].location, 'invalid location entry falls back to fresh');
   // 3. Empty/missing save is a no-op.
@@ -9768,7 +9845,7 @@ console.log('Testing examine system...');
   for (const id of ids) {
     if (bedFor(housing, id)) withBeds++;
   }
-  assert(withBeds === 40, 'Housing: all 40 NPCs have beds (BUILD 699)');
+  assert(withBeds === 47, 'Housing: all 47 NPCs have beds (BUILD 699 + 979)');
 
   // 2. placeTownsfolkAtHome puts NPCs indoors at beds.
   // (Mock minimal nav context — real test needs full anchors.)
@@ -9956,8 +10033,8 @@ console.log('Testing examine system...');
   const npcEntries = rosterEntries();
   const registry = buildMosslightHousing(npcEntries);
 
-  // 1. All 40 NPCs have beds.
-  assert(Object.keys(registry.assignments).length === 40, 'Bed699: 40 NPCs assigned');
+  // 1. All 47 NPCs have beds.
+  assert(Object.keys(registry.assignments).length === 47, 'Bed699: 47 NPCs assigned');
 
   // 2. First bed in each cottage aligns with layout.
   const chunk = { x: 4, y: 7 };

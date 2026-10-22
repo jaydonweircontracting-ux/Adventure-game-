@@ -196,7 +196,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '978';
+const BUILD_NUMBER = '979';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -245,6 +245,7 @@ const BUILD_NOTES: Record<string, string> = {
   '969': 'Monster loot now runs on one authored loot system: every creature kind has its own loot table with per-item chances and stack limits, so kills drop the same coins, pelts, fangs, and gear materials they always did — now from tables instead of scattered rolls. Nothing about what drops changed, only how the game decides it, which sets up richer loot tables later.',
   '970': 'Conversations now run as small topic machines: talk to Brand, the merchant who heads the town-s1 merchant household in Mosslight, and you can open a bank — deposit or withdraw gold, or store whole pieces of gear in the bank vault and take them back later (stored gear comes back unequipped, and taking anything back while you are over your carry limit is refused with the item safely left in the vault, never lost). You can also ask any townsperson about a relative and hear what the world actually knows about them. Your bank balance and stored gear are saved with your game and load back cleanly on old saves, and the town bank ledger that tracks NPC delve hauls is untouched — the two never share a coin.',
   '972': 'Your starting house now has a deed: the house you begin in is formally yours — open its chest and the panel says so — and that deed is what makes taking from your own chest free while every other home stays someone else\u2019s, exactly as before. The deed is saved with your game, so old saves gain it automatically. Rent, eviction, and selling houses are not in: there is no landlord to pay, no one to buy a house from, and no one to sell one to in a single-player world, so those parts were left out rather than invented.',
+  '979': 'Mosslight has children now: five of them — Tansy, Milo, Nia, Joss, and Tove — one in each of the five cottages with a spare bed, living as members of those households. They sleep at home, play around the plaza in the mornings, join the market bustle in the afternoons, and come home by evening, and you can talk to them like anyone else. They are never targets: you cannot attack, kill, or pickpocket a child, beasts never chase them, and no one steals from them or hauls them off to jail — they will run from danger like anyone else, and they can tell a guard what they saw. Old saves gain the five children automatically, and nothing about your quests, chests, bank, or bounties changes.',
   '978': 'Three small annoyances fixed. After a dungeon run ends — victory or defeat — the result screen now has a way out as well as a new descent, so you are never stuck staring at the ending. Monsters no longer rebuild their pictures every frame, which keeps the field smooth when beasts are about. And if you move a house with the debug house-mover, the isometric view now moves with it instead of leaving the house painted where it used to stand — the door, the walls, and the tap target all follow the move, while the house keeps the same look. Two unused soldier picture settings were also tidied away; nothing you see changes because of that.',
   '977': 'You can walk into buildings again: walk up to any house door in Mosslight — or any farmhouse out in the wilds — and tap Enter to step inside its real interior, with its furniture, its people, and (in the Rusty Tankard) Mira behind the bar and the cellar hatch behind her. Step back out through the exit and you land right outside the same door you entered, even if the house was moved. The tavern finally sounds like a tavern: stepping into the Rusty Tankard switches the music to the tavern tune, and stepping out hands back to the town theme. Nothing else changes: doors, paths, chests, and NPC homes all work exactly as before.',
   '976': 'The world now has a real day and night: as the in-game clock turns, daylight fades into dusk, night settles over Mosslight, and dawn brings the light back — the same clock that already ran your days and NPC schedules, now visible in the sky itself. Nights never go pitch black: the dark stops well short of hiding anything, so you, the villagers, doors, and markers all stay readable after dark, and the little sun or moon by the clock tells you which part of the day you are in. Interiors keep their own lamplight and the atlas map is untouched, and nothing about shops, monsters, quests, or sneaking changes at night — this is light and shadow only, driven by the clock you already had.',
@@ -5377,6 +5378,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     return { chance, loot, lootLabel, purse, day };
   };
   const executePickpocket = (npc: Townsperson, precomputed?: PickpocketInputs) => {
+    // BUILD 979: children are never pickpocket targets — gated here so
+    // both the context menu and the sneak prompt refuse, not just the HUD.
+    if (npc.archetype === 'child') {
+      setLogs((cur) => [{ text: `You won't pickpocket a child.`, color: 'orange' }, ...cur].slice(0, 3));
+      return;
+    }
     const playerPos = positionRef.current;
     const dist = Math.hypot(playerPos.x - npc.position.x, playerPos.y - npc.position.y);
     if (dist > SNEAK_PICKPOCKET_RANGE) {
@@ -8135,7 +8142,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         let victim: Townsperson | null = null;
         let best = 30;
         for (const other of folk) {
-          if (other.id === npc.id || other.indoors || isNpcDead(other, tick) || isNpcJailed(other, tick)) continue;
+          // BUILD 979: children are never NPC-theft victims.
+          if (other.id === npc.id || other.archetype === 'child' || other.indoors || isNpcDead(other, tick) || isNpcJailed(other, tick)) continue;
           const d = Math.hypot(other.position.x - npc.position.x, other.position.y - npc.position.y);
           if (d < best) { best = d; victim = other; }
         }
@@ -9100,8 +9108,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       // lock is never dropped by sneak-blindness (mirrors 933).
       const behavior = behaviorForCreature(creature.kind);
       const abilities = behavior.abilities;
+      // BUILD 979: children are never creature victims — filtered here
+      // so a beast never even acquires a child (the damageNpc guard is
+      // the backstop, but a chasing wolf dealing 0 damage would look broken).
       const candidates = abilities.ignoreNpcVictims ? [] : townsfolkRef.current
-        .filter((n) => !n.indoors && !isNpcDead(n, tick) && !isNpcJailed(n, tick))
+        .filter((n) => n.archetype !== 'child' && !n.indoors && !isNpcDead(n, tick) && !isNpcJailed(n, tick))
         .map((n) => ({ npcId: n.id, position: n.position }));
       // BUILD 933: sneaking gates fresh player acquisition to 12u; a held
       // player lock is never dropped by this flag (see creatureCombat.ts).
@@ -9870,6 +9881,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
               let nearestNpc: Townsperson | null = null;
               let nearestDist = PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS;
+              // BUILD 979: children are never valid combat targets.
+              let childInArc = false;
               const losBlocked = (pos: Point) => isFieldPositionBlocked(pos, chunkRef.current);
               // Target lock: a swing may damage only the selected NPC. If the
               // player selected a creature instead, never let the NPC-first
@@ -9881,12 +9894,19 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 if (lockedNpcId == null && hasLockedCreature) continue;
                 if (n.indoors) continue;
                 if (isNpcDead(n, tick)) continue;
+                // BUILD 979: children are never valid combat targets.
+                if (n.archetype === 'child') { childInArc = true; continue; }
                 if (!isInMeleeArc(attackerPos, n.position, playerAttack.direction, PLAYER_MELEE_REACH)) continue;
                 // BUILD 531: solid geometry blocks the swing — cannot hit
                 // through walls/buildings.
                 if (traceLineBlocked(attackerPos, n.position, losBlocked)) continue;
                 const d = Math.hypot(n.position.x - attackerPos.x, n.position.y - attackerPos.y);
                 if (d < nearestDist) { nearestDist = d; nearestNpc = n; }
+              }
+              // BUILD 979: a swing whose only in-arc target was a child is
+              // refused outright, not whiffed silently.
+              if (!nearestNpc && childInArc) {
+                setLogs((cur) => [{ text: `You won't attack a child.`, color: 'orange' }, ...cur].slice(0, 3));
               }
               if (nearestNpc) {
                 const npc = nearestNpc;
@@ -10011,7 +10031,16 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           if (!inCellar && targetedId && !swingDamageDealt) {
             const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
             const targetNpc = townsfolkRef.current.find((n) => n.id === targetedId);
-            if (targetNpc && !targetNpc.indoors && !isNpcDead(targetNpc, tick)) {
+            // BUILD 979: children are never valid combat targets — a
+            // targeted swing at a child is refused outright (the swing
+            // is consumed, but no damage, disposition, faction, or
+            // crime side effect ever runs).
+            if (targetNpc && targetNpc.archetype === 'child' && !targetNpc.indoors && !isNpcDead(targetNpc, tick)
+              && Math.hypot(targetNpc.position.x - attackerPos.x, targetNpc.position.y - attackerPos.y) <= PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS) {
+              swingDamageDealt = true;
+              setLogs((cur) => [{ text: `You won't attack a child.`, color: 'orange' }, ...cur].slice(0, 3));
+            }
+            if (targetNpc && targetNpc.archetype !== 'child' && !targetNpc.indoors && !isNpcDead(targetNpc, tick)) {
               const dist = Math.hypot(targetNpc.position.x - attackerPos.x, targetNpc.position.y - attackerPos.y);
               if (dist <= PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS) {
                 swingDamageDealt = true;
@@ -10168,7 +10197,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               // BUILD 441: attacking an NPC deals damage. Survivors scream and
               // flee; at 0 HP the NPC dies and respawns later.
               const npc = townsfolkRef.current.find((n) => n.id === attackTarget.id);
-              if (npc && !npc.indoors) {
+              // BUILD 979: children are never valid combat targets.
+              if (npc && npc.archetype === 'child' && !npc.indoors) {
+                setLogs((currentLogs) => [{ text: `You won't attack a child.`, color: 'orange' }, ...currentLogs].slice(0, 3));
+              } else if (npc && !npc.indoors) {
                 const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
                 const stats = playerStatsRef.current;
                 const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit + classCritBonus(playerClassRef.current));
@@ -10295,7 +10327,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const allNpcs: Array<{ id: string; name: string; position: { x: number; y: number }; kind: string }> = [];
               const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
               for (const n of townsfolkRef.current) {
-                if (!n.indoors && !isNpcDead(n, tick)) allNpcs.push({ id: n.id, name: n.name, position: n.position, kind: 'townsfolk' });
+                // BUILD 979: children are never valid combat targets.
+                if (n.archetype !== 'child' && !n.indoors && !isNpcDead(n, tick)) allNpcs.push({ id: n.id, name: n.name, position: n.position, kind: 'townsfolk' });
               }
               for (const a of simulatedAdventurersRef.current) {
                 if ((a.location || 'field') === 'field') allNpcs.push({ id: a.id, name: a.name, position: a.position, kind: 'adventurer' });
@@ -11510,7 +11543,8 @@ if (active) {
     if (!targetNpcId) return null;
     const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
     const npc = townsfolk.find((n) => n.id === targetNpcId) ?? null;
-    return npc && canOfferPickpocket(sneaking, targetNpcId, npc, position, isNpcDead(npc, tick)) ? npc : null;
+    // BUILD 979: the pickpocket button never offers a child target.
+    return npc && npc.archetype !== 'child' && canOfferPickpocket(sneaking, targetNpcId, npc, position, isNpcDead(npc, tick)) ? npc : null;
   })();
   const openSneakPrompt = (npc: Townsperson) => {
     const inputs = pickpocketInputsFor(npc);
