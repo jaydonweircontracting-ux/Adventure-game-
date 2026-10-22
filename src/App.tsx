@@ -73,6 +73,8 @@ import { CLASS_DESCRIPTIONS, MANA_REGEN_SECONDS, OVERWORLD_SPELLS, classArrowMul
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
 import { mosslightEngineChunkLayout, mosslightEngineLanes, mosslightEngineProps, mosslightFillerRects } from '@/game/mosslightLayout';
 import { mosslightTownTrees } from '@/game/townTrees';
+// BUILD 975: Procgen Arcana port — settlement layout interchange (pure module).
+import { townToArcanaCollection, mapSettlementLayout, checkDoorAgreement, SEVEN_SYSTEM_HANDLING } from '@/game/settlementLayout';
 import { wallToTownWall } from '@/game/townLayout';
 import { buildingArtFor } from '@/game/buildingArt';
 import { buildRoadLinks, travelersForChunk, type RoadArms, type RoadLink, type Traveler } from '@/game/travelers';
@@ -193,7 +195,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '974';
+const BUILD_NUMBER = '975';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -242,6 +244,7 @@ const BUILD_NOTES: Record<string, string> = {
   '969': 'Monster loot now runs on one authored loot system: every creature kind has its own loot table with per-item chances and stack limits, so kills drop the same coins, pelts, fangs, and gear materials they always did — now from tables instead of scattered rolls. Nothing about what drops changed, only how the game decides it, which sets up richer loot tables later.',
   '970': 'Conversations now run as small topic machines: talk to Brand, the merchant who heads the town-s1 merchant household in Mosslight, and you can open a bank — deposit or withdraw gold, or store whole pieces of gear in the bank vault and take them back later (stored gear comes back unequipped, and taking anything back while you are over your carry limit is refused with the item safely left in the vault, never lost). You can also ask any townsperson about a relative and hear what the world actually knows about them. Your bank balance and stored gear are saved with your game and load back cleanly on old saves, and the town bank ledger that tracks NPC delve hauls is untouched — the two never share a coin.',
   '972': 'Your starting house now has a deed: the house you begin in is formally yours — open its chest and the panel says so — and that deed is what makes taking from your own chest free while every other home stays someone else\u2019s, exactly as before. The deed is saved with your game, so old saves gain it automatically. Rent, eviction, and selling houses are not in: there is no landlord to pay, no one to buy a house from, and no one to sell one to in a single-player world, so those parts were left out rather than invented.',
+  '975': 'Mosslight now carries a second, portable description of itself: the town layout can be written out as a standard village-layout document and read back into placed houses, trees, roads, and fields — the same idea as the Procgen Arcana village importer, rebuilt here in the game\u2019s own code with the town\u2019s real Kenney-kit houses instead of placeholder shapes. Nothing you see changes: every house still stands where it stood, its door still opens where its trigger is, and its path still ends at that door — the new layout is checked against those doors before it counts. What it does not do is just as plain: it cannot describe the wider realm, caves, or dungeons, which keep their own systems, and a forest clearing is only trees with a gap in them until the game says more. Realm, cave, and dungeon layouts are untouched.',
   '974': 'Quests now leave a trail other systems can follow: accepting, advancing, and finishing a quest emits a proper quest event instead of just a log line, and finishing one earns you a title from that quest itself \u2014 Rat-Catcher for the cellar rats, Troll-Slayer for the bridge troll, Hero of Aldoria for the story quest, and more, shown on the Completed tab of the quest log. These are earned by finishing quests, not by spending AA points, so they sit beside the spend titles in the Skills panel rather than replacing them. The game also keeps a small book of world marks now: accepting or finishing a quest, finishing a task, or sleeping at the Mosslight tavern is remembered across saves, so dialogue and quests can build on what you have actually done. Corpse decay and resurrection are not in: dying ends your run at the title screen with no XP loss and no way back, so there is no death penalty for a resurrection to restore \u2014 inventing one would have been a new punishment, not a missing half.',
   '973': 'Combat got smarter in three places. First, fights now remember who did the damage: when you and a villager team up on a beast, the kill pays XP to whoever dealt the most damage — even if the villager lands the final blow — while a beast you barely touched still pays nothing, and a beast that loses its victim now goes after whoever hurt it most instead of the nearest bystander. Second, fleeing no longer ghosts through walls: villagers run along real paths around houses when they panic, and wounded beasts arc around obstacles instead of sliding along them — a fleeing beast can still be chased down and killed. Third, the wilds hide snares: marked rings on the ground outside town that sting you if you walk onto one (your armor blunts them, and they shatter a Frost Ward like any wound) — step over one and it is spent for good, and blinking or teleporting never sets one off. Auras are not in: there is no field buff system for one to hang on and no banner or aura source in the world, so inventing one would have been decoration, not a feature.',
   '971': 'Skills now track your effort and your spellcraft: every tree you fell and every ore you mine counts as a try, and once you pick a class at level 10 your class changes how fast those skills grow — a Warrior works wood and stone at full speed while a Mage is slower at manual labor, and Beginners learn everything at full speed. Separately, every point of mana you actually spend casting overworld spells feeds a magic level, and each magic level adds to your maximum mana. Dungeon casting does not feed it, and nothing about your XP, your kill progress, or your spell numbers changes.',
@@ -7099,6 +7102,41 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // earn their title through the task, not the linear quest).
         getQuestLifecycleEvents: () => [...questEventsRef.current],
         getWorldFlags: () => ({ ...worldFlagsRef.current.flags }),
+        // BUILD 975: Procgen Arcana port — live Mosslight round-trip
+        // (testmode only). Builds the FeatureCollection IN MEMORY from
+        // the game's own starting-town doorways + trees (no files, no
+        // web tool), maps it back to placed instances, and proves the
+        // door trigger survives the mapping: every placed house's
+        // implied door must agree with its live doorway position.
+        // Doors/paths/NPCs are untouched — this derives a layout view
+        // from the same rects the renderer already uses.
+        getArcanaLayout: () => {
+          const startChunk = { x: 4, y: 7 };
+          const doorways = buildingDoorwaysFor(startChunk);
+          const trees = fieldTreesFor(startChunk);
+          const collection = townToArcanaCollection({
+            earthSize: FIELD_SIZE,
+            houses: doorways.map((d, i) => ({ rect: d.rect, facing: d.facing, newStyleDoor: isStartingArea(startChunk) && i < 4 })),
+            trees: trees.map((t) => ({ x: t.x, y: t.y })),
+          });
+          const mapped = mapSettlementLayout(collection);
+          const doorAgreement = doorways.map((d, i) => {
+            const check = checkDoorAgreement(d.rect, d.position, isStartingArea(startChunk) && i < 4);
+            return { id: d.id, agrees: check.agrees, distance: check.distance };
+          });
+          return {
+            featureCount: collection.features.length,
+            buildingCount: mapped.buildings.length,
+            treeCount: mapped.trees.length,
+            slabCount: mapped.slabs.length,
+            warnings: mapped.warnings,
+            artKeys: mapped.buildings.length > 0 ? [...new Set(mapped.buildings.map((b) => b.artKey))] : [],
+            doorAgreement,
+            allDoorsAgree: doorAgreement.every((d) => d.agrees),
+            npcCount: townsfolkRef.current.length,
+            systems: SEVEN_SYSTEM_HANDLING.map((s) => ({ system: s.system, coverage: s.coverage })),
+          };
+        },
         setWorldFlagForTest: (key: string, value: boolean | number | string) => {
           const res = setWorldFlagInStore(worldFlagsRef.current, key, value);
           if (res.changed) worldFlagsRef.current = res.state;
