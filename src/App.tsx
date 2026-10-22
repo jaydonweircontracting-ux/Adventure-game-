@@ -159,6 +159,9 @@ import { chestsForChunk, attemptLockpick, serializeOpenedChests, parseOpenedChes
 // BUILD 963: visible, lootable house chests — one chest per house.
 import { houseChestForDoorway, remainingChestContents, chestFullyLooted, recordHouseChestTake, markChestTheftReported, serializeHouseChestTakes, parseHouseChestTakes, type HouseChest, type HouseChestTakes } from '@/game/houseChests';
 import { createStartingDeeds, playerOwnsHouse, sanitizeHouseDeeds, serializeHouseDeeds, type HouseDeedsState } from '@/game/houseDeeds';
+import { deriveQuestProgressEvents, questAcceptedEvent, questCompletedEvent, type QuestLifecycleEvent } from '@/game/questEvents';
+import { questTitleForQuest, questTitlesForCompleted } from '@/game/questTitles';
+import { createEmptyWorldFlags, hasWorldFlag, questFlagKey, sanitizeWorldFlags, setWorldFlag as setWorldFlagInStore, taskFlagKey, townFlagKey, type WorldFlagsState } from '@/game/worldFlags';
 import { sitesForActiveStages, resolveSiteChunk, chunkSatisfiesStage, type ActiveQuestStage } from '@/game/questSites';
 import { playCombatSound } from '@/game/effects';
 import { audioEngine, loadAudioSettings, resolveMusicZone, saveAudioSettings, type AudioSettings, type MusicTrackId } from '@/game/audio';
@@ -190,7 +193,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '973';
+const BUILD_NUMBER = '974';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -239,6 +242,7 @@ const BUILD_NOTES: Record<string, string> = {
   '969': 'Monster loot now runs on one authored loot system: every creature kind has its own loot table with per-item chances and stack limits, so kills drop the same coins, pelts, fangs, and gear materials they always did — now from tables instead of scattered rolls. Nothing about what drops changed, only how the game decides it, which sets up richer loot tables later.',
   '970': 'Conversations now run as small topic machines: talk to Brand, the merchant who heads the town-s1 merchant household in Mosslight, and you can open a bank — deposit or withdraw gold, or store whole pieces of gear in the bank vault and take them back later (stored gear comes back unequipped, and taking anything back while you are over your carry limit is refused with the item safely left in the vault, never lost). You can also ask any townsperson about a relative and hear what the world actually knows about them. Your bank balance and stored gear are saved with your game and load back cleanly on old saves, and the town bank ledger that tracks NPC delve hauls is untouched — the two never share a coin.',
   '972': 'Your starting house now has a deed: the house you begin in is formally yours — open its chest and the panel says so — and that deed is what makes taking from your own chest free while every other home stays someone else\u2019s, exactly as before. The deed is saved with your game, so old saves gain it automatically. Rent, eviction, and selling houses are not in: there is no landlord to pay, no one to buy a house from, and no one to sell one to in a single-player world, so those parts were left out rather than invented.',
+  '974': 'Quests now leave a trail other systems can follow: accepting, advancing, and finishing a quest emits a proper quest event instead of just a log line, and finishing one earns you a title from that quest itself \u2014 Rat-Catcher for the cellar rats, Troll-Slayer for the bridge troll, Hero of Aldoria for the story quest, and more, shown on the Completed tab of the quest log. These are earned by finishing quests, not by spending AA points, so they sit beside the spend titles in the Skills panel rather than replacing them. The game also keeps a small book of world marks now: accepting or finishing a quest, finishing a task, or sleeping at the Mosslight tavern is remembered across saves, so dialogue and quests can build on what you have actually done. Corpse decay and resurrection are not in: dying ends your run at the title screen with no XP loss and no way back, so there is no death penalty for a resurrection to restore \u2014 inventing one would have been a new punishment, not a missing half.',
   '973': 'Combat got smarter in three places. First, fights now remember who did the damage: when you and a villager team up on a beast, the kill pays XP to whoever dealt the most damage — even if the villager lands the final blow — while a beast you barely touched still pays nothing, and a beast that loses its victim now goes after whoever hurt it most instead of the nearest bystander. Second, fleeing no longer ghosts through walls: villagers run along real paths around houses when they panic, and wounded beasts arc around obstacles instead of sliding along them — a fleeing beast can still be chased down and killed. Third, the wilds hide snares: marked rings on the ground outside town that sting you if you walk onto one (your armor blunts them, and they shatter a Frost Ward like any wound) — step over one and it is spent for good, and blinking or teleporting never sets one off. Auras are not in: there is no field buff system for one to hang on and no banner or aura source in the world, so inventing one would have been decoration, not a feature.',
   '971': 'Skills now track your effort and your spellcraft: every tree you fell and every ore you mine counts as a try, and once you pick a class at level 10 your class changes how fast those skills grow — a Warrior works wood and stone at full speed while a Mage is slower at manual labor, and Beginners learn everything at full speed. Separately, every point of mana you actually spend casting overworld spells feeds a magic level, and each magic level adds to your maximum mana. Dungeon casting does not feed it, and nothing about your XP, your kill progress, or your spell numbers changes.',
   '960': 'Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.',
@@ -1970,6 +1974,8 @@ type SaveGameData = {
   // BUILD 973: extras 5/6 — ids of fired overworld traps. Old saves
   // carry no field and restore to none fired.
   firedOverworldTraps?: string[];
+  // BUILD 974: world flags (versioned KV store; sanitized on load).
+  worldFlags?: WorldFlagsState;
   lootedPois?: string;
   civ?: string;
   horses?: unknown;
@@ -3966,6 +3972,7 @@ function QuestLogPanel({ questStates, taskStates, playerLevel, silkCount, onAcce
             <div className="quest-card-rewards" aria-label="Quest rewards"><span>🪙 {def.rewards.coins}</span><span>✦ {def.rewards.xp} XP</span>{def.rewards.items.slice(0, 3).map((item) => <span key={item}>🎁 {item}</span>)}</div>
             {questTab === 'available' && <button className="quest-accept-button" onClick={() => onAcceptQuest(def.id)} data-testid={'button-quest-accept-' + def.id}>Accept quest</button>}
             {questTab === 'completed' && <div className="quest-card-done">✓ Complete</div>}
+            {questTab === 'completed' && questTitleForQuest(def.id) && <div className="quest-card-done" data-testid={'quest-title-' + def.id}>🏅 Title earned: {questTitleForQuest(def.id)}</div>}
             {needsWeave && <button className="quest-weave-button" onClick={onWeaveBowstring} disabled={silkCount < 6} data-testid="button-quest-weave">Weave bowstring ({silkCount}/6 silk)</button>}
           </article>
         );
@@ -3998,6 +4005,7 @@ function QuestLogPanel({ questStates, taskStates, playerLevel, silkCount, onAcce
             {questTab === 'available' && !state && <button className="quest-accept-button" onClick={() => onAcceptTask(def.id)} data-testid={'button-task-accept-' + taskDef.id}>Accept task</button>}
             {questTab === 'available' && state?.status === 'cooldown' && <div className="quest-card-done">Returns day {state.availableDay} <button className="quest-accept-button" onClick={() => onAcceptTask(def.id)} data-testid={'button-task-accept-' + taskDef.id}>Accept task</button></div>}
             {questTab === 'completed' && <div className="quest-card-done">✓ Complete</div>}
+            {questTab === 'completed' && questTitleForQuest(def.id) && <div className="quest-card-done" data-testid={'task-title-' + taskDef.id}>🏅 Title earned: {questTitleForQuest(def.id)}</div>}
             {needsTaskWeave && <button className="quest-weave-button" onClick={onWeaveBowstring} disabled={silkCount < 6} data-testid="button-quest-weave">Weave bowstring ({silkCount}/6 silk)</button>}
           </article>
         );
@@ -5813,6 +5821,20 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // questStatesRef and follows the same lifecycle: fresh on a new game
   // (GameField remount), restored from the save's questLog on load.
   const questStorageRef = useRef<QuestStorage>({});
+  // BUILD 974: quest lifecycle event log (transient, like the 973 hate
+  // ledger — observed via test hook, never saved) and world flags
+  // (saved; see worldFlags.ts for the key grammar and why this is not
+  // the 936 QuestStorage). New Game resets via the title remount.
+  const questEventsRef = useRef<QuestLifecycleEvent[]>([]);
+  const worldFlagsRef = useRef<WorldFlagsState>(createEmptyWorldFlags());
+  const pushQuestEvents = (events: QuestLifecycleEvent[]) => {
+    if (!events.length) return;
+    questEventsRef.current = [...questEventsRef.current, ...events].slice(-50);
+  };
+  const setWorldFlag = (key: string, value: boolean | number | string) => {
+    const res = setWorldFlagInStore(worldFlagsRef.current, key, value);
+    if (res.changed) worldFlagsRef.current = res.state;
+  };
   // Lockpicking: opened locked-chest ids (pure logic in src/game/lockpicking.ts).
   const [openedChests, setOpenedChests] = useState<string[]>([]);
   const openedChestsRef = useRef<string[]>([]);
@@ -7071,11 +7093,30 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // their fired state; the ledger is the raw per-creature record.
         getOverworldTrapsForTest: () => ({ chunk: { ...chunkRef.current }, traps: trapsForChunk(chunkRef.current).map((t) => ({ ...t, fired: firedTrapsRef.current.has(t.id) })) }),
         getHateLedgerForTest: () => Object.fromEntries([...hateLedgerRef.current.entries()].map(([k, v]) => [k, { ...v }])),
+        // BUILD 974: quest lifecycle log, world flags, and quest titles
+        // (testmode only). Titles derive from completed quest states
+        // plus completed tasks' wrapped quest ids (task-driven quests
+        // earn their title through the task, not the linear quest).
+        getQuestLifecycleEvents: () => [...questEventsRef.current],
+        getWorldFlags: () => ({ ...worldFlagsRef.current.flags }),
+        setWorldFlagForTest: (key: string, value: boolean | number | string) => {
+          const res = setWorldFlagInStore(worldFlagsRef.current, key, value);
+          if (res.changed) worldFlagsRef.current = res.state;
+          return res.changed;
+        },
+        getQuestTitles: () => questTitlesForCompleted([
+          ...questStatesRef.current.filter((s) => s.status === 'completed').map((s) => s.questId),
+          ...taskStatesRef.current.filter((s) => s.status === 'completed').map((s) => taskDefById(s.taskId)?.questId ?? '').filter(Boolean),
+        ]),
         // BUILD 968: quest/task payout hooks (testmode only, like all
         // __gameTest). Drive the REAL payout paths — completeQuest and
         // payTaskBundle — skipping only stage gameplay, so the harness
         // can prove reward gear lands in equipment and equips.
         completeQuestForTest: (questId: string) => { const def = QUESTS.find((q) => q.id === questId); if (!def) return false; completeQuest(def); return true; },
+        // BUILD 974: drive the REAL emitQuestEvent path (same function
+        // the pickup/talk buttons use) so stage/objective lifecycle
+        // events are provable without staging full gameplay.
+        emitQuestEventForTest: (event: QuestEvent) => { emitQuestEvent(event); return true; },
         payTaskBundleForTest: (questId: string) => { const def = QUESTS.find((q) => q.id === questId); if (!def) return false; payTaskBundle(taskBundleFor(def), def, false); return true; },
         getEquipmentForTest: () => equipmentRef.current.map((it) => ({ name: it.name, baseId: it.baseId, slot: it.slot, equipped: it.equipped, stats: { ...it.stats }, instanceId: it.instanceId })),
         // BUILD 921: corpse gear state for verification — what the NPC wore,
@@ -7505,6 +7546,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // deterministic, so only fired ids need saving; old saves restore
     // to none fired — every trap armed, never faked history).
     firedOverworldTraps: [...firedTrapsRef.current],
+    // BUILD 974: persist world flags (versioned, namespaced KV store;
+    // old saves restore to empty — no flags invented for past deeds).
+    worldFlags: worldFlagsRef.current,
     lootedPois: serializeOpenedChests(lootedPoisRef.current),
     civ: civRef.current ? serializeCivilization(civRef.current) : undefined,
     horses: horsesRef.current ? serializeHorses(horsesRef.current.horses, horsesRef.current.stables) : undefined,
@@ -7767,6 +7811,30 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     { const restoredDeeds = sanitizeHouseDeeds(loadState.houseDeeds); houseDeedsRef.current = restoredDeeds; setHouseDeeds(restoredDeeds); }
     // BUILD 973: restore fired overworld traps (old saves: none fired).
     { const restoredFired = sanitizeFiredTraps(loadState.firedOverworldTraps); firedTrapsRef.current = new Set(restoredFired); setFiredTraps(restoredFired); }
+    // BUILD 974: restore world flags, then backfill the two durable
+    // lifecycle facts from restored states (a quest/task already
+    // finished before this build still counts as done — the flag is
+    // derived from real state, never invented for quests never held).
+    {
+      let restoredFlags = sanitizeWorldFlags(loadState.worldFlags);
+      for (const st of migrated.questStates) {
+        const accepted = setWorldFlagInStore(restoredFlags, questFlagKey(st.questId, 'accepted'), true);
+        restoredFlags = accepted.state;
+        if (st.status === 'completed') {
+          const completed = setWorldFlagInStore(restoredFlags, questFlagKey(st.questId, 'completed'), true);
+          restoredFlags = completed.state;
+        }
+      }
+      for (const st of migrated.taskStates) {
+        const accepted = setWorldFlagInStore(restoredFlags, taskFlagKey(st.taskId, 'accepted'), true);
+        restoredFlags = accepted.state;
+        if (st.status === 'completed') {
+          const completed = setWorldFlagInStore(restoredFlags, taskFlagKey(st.taskId, 'completed'), true);
+          restoredFlags = completed.state;
+        }
+      }
+      worldFlagsRef.current = restoredFlags;
+    }
     const restoredLooted = parseOpenedChests(loadState.lootedPois);
     lootedPoisRef.current = restoredLooted; setLootedPois(restoredLooted);
     // Civilization: restore the simulated hierarchy, or rebuild it lazily.
@@ -11045,6 +11113,24 @@ if (active) {
     setLogs((currentLogs) => [{ text: rewardText, color: 'green' }, ...currentLogs].slice(0, 5));
     spawnCombatText('QUEST COMPLETE', positionRef.current, 'reward');
     announceQuestRumors();
+    // BUILD 974: the completion lifecycle event + durable flag — the
+    // first observers of the questEvents vocabulary (titles derive
+    // from state, but the flag is the cross-system durable fact).
+    // The flag guards the event: in the production flow advanceQuestStage
+    // already completed the state, and in the test-hook flow the block
+    // below completes it — either way this emits exactly once, since
+    // a second completion finds the flag already set.
+    const completedKey = questFlagKey(def.id, 'completed');
+    if (!hasWorldFlag(worldFlagsRef.current, completedKey)) {
+      const existing = questStatesRef.current.find((s) => s.questId === def.id);
+      if (existing && existing.status === 'active') {
+        const done: QuestState = { ...existing, status: 'completed', stageIndex: def.stages.length, completedDay: currentWorldDay() };
+        questStatesRef.current = questStatesRef.current.map((s) => (s.questId === def.id ? done : s));
+        setQuestStates(questStatesRef.current);
+      }
+      pushQuestEvents([questCompletedEvent(def, currentWorldDay())]);
+      setWorldFlag(completedKey, true);
+    }
   };
 
   const emitQuestEvent = (event: QuestEvent) => {
@@ -11068,6 +11154,10 @@ if (active) {
       if (!def) return st;
       const res = advanceQuestStage(st, def, storage, withDay);
       if (res.state !== st) changed = true;
+      // BUILD 974: progress-side lifecycle events for observers (stage
+      // advances + objective updates). Completion is NOT derived here:
+      // completeQuest emits it once at the payout site below.
+      pushQuestEvents(deriveQuestProgressEvents(st, res.state, def, withDay.day));
       if (!res.advanced) return res.state;
       changed = true;
       if (res.completed) completedDefs.push(def);
@@ -11125,7 +11215,10 @@ if (active) {
   };
 
   const completeTask = (questDef: QuestDef, taskDef: TaskDef) => {
-    void taskDef;
+    // BUILD 974: task completion writes the durable flag (tasks have
+    // no lifecycle event stream — flags are their cross-system fact).
+    // Repeatable tasks re-complete after cooldown; the flag stays true.
+    setWorldFlag(taskFlagKey(taskDef.id, 'completed'), true);
     payTaskBundle(taskBundleFor(questDef), questDef, false);
   };
 
@@ -11154,6 +11247,9 @@ if (active) {
     taskStatesRef.current = next;
     setTaskStates(next);
     setQuestDialog(null);
+    // BUILD 974: task acceptance writes the durable flag (re-accepts
+    // after a replay timer re-assert the same flag — no new fact).
+    setWorldFlag(taskFlagKey(taskDef.id, 'accepted'), true);
     setLogs((currentLogs) => [{ text: `Task started: ${questDef.title}.`, color: 'green' }, ...currentLogs].slice(0, 5));
   };
 
@@ -11173,6 +11269,11 @@ if (active) {
     questStatesRef.current = next;
     setQuestStates(next);
     setQuestDialog(null);
+    // BUILD 974: acceptance lifecycle event + durable flag. The stage
+    // movement at accept is part of acceptance itself (see above), so
+    // no stage-advanced event is derived here — only the acceptance.
+    pushQuestEvents([questAcceptedEvent(def, day)]);
+    setWorldFlag(questFlagKey(def.id, 'accepted'), true);
     setLogs((currentLogs) => [{ text: `Quest started: ${def.title}.`, color: 'green' }, ...currentLogs].slice(0, 5));
   };
 
@@ -12169,6 +12270,10 @@ if (active) {
     const heal = () => {
       const maxHp = playerMaxHpForStats(playerStatsRef.current, aaBonusesRef.current.maxHp);
       playerHpRef.current = maxHp; setPlayerHp(maxHp);
+      // BUILD 974: the non-quest flag writer — sleeping at the Rusty
+      // Tankard in Mosslight Crossing is a durable "did X in town Y"
+      // fact other systems (dialogue, quests) can read from the store.
+      setWorldFlag(townFlagKey('mosslight', 'rested'), true);
       setLogs((c) => [{ text: 'You wake at dawn fully rested. HP restored.', color: 'green' }, ...c].slice(0, 5));
     };
     const clock = brainRef.current?.worldCore.getClock();
