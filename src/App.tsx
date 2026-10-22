@@ -145,6 +145,8 @@ import { mitigateDamage, mitigationForCreature, creatureDefenseForLevel, creatur
 import { BESTIARY_ENTRIES, BESTIARY_TIERS, BESTIARY_CHARM_POINTS, bestiaryLabelForKind, bestiaryTierForKills, bestiaryCharmTotal, recordBestiaryKill, sanitizeBestiaryCounts, isBestiaryKind } from '@/game/bestiary';
 // BUILD 949: NPC loot storage — family chests + Mosslight bank ledger.
 import { drainUnbankedHaul, sanitizeNpcStorage, serializeNpcStorage, chestItemsFor, bankBalanceFor, adventurerHouseholdKey, BANK_NAME, type NpcStorageState } from '@/game/npcStorage';
+import { EMPTY_PLAYER_BANK, isBankClerk, bankCoinsFor, bankItemsFor, depositBankCoins, withdrawBankCoins, storeBankItem, takeBankItem, serializePlayerBank, sanitizePlayerBank, type PlayerBankState } from '@/game/playerBank';
+import { startMachine, machineView, advanceMachine, bankKeywordIntent, familyRelations, type MachineSession, type MachineCtx } from '@/game/topicMachines';
 import { tierForStanding, standingFor, factionForNpc, factionForQuestLocation, applyFactionHarm, applyFactionQuestGain, factionExamineLine, factionDialogueLine, sanitizeFactionStandings } from './game/faction';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, LOCKPICK_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
@@ -184,7 +186,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '969';
+const BUILD_NUMBER = '970';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -231,6 +233,7 @@ const BUILD_NOTES: Record<string, string> = {
   '967': 'Sneaking now slows you down, exactly as asked: while the eye is on, you move at half speed — on foot, on horseback, by keyboard, D-pad, or tap-to-move — and the moment you step out of the shadows you are back to full speed. Nothing else about sneaking changes: the same witnesses notice you at the same distances, and your first strike from the shadows still hits just as hard.',
   '968': 'Fixed the vanishing quest rewards: finishing a quest used to tell you that you had received a sword, a suit of armor, gloves, and more — but none of those items ever arrived, so there was nothing to equip. Quest and task rewards that are weapons, armor, or jewelry now land in your equipment as real items with real stats, ready to equip from the Equipment tab. Coins, XP, and the hunting bow already worked and are unchanged, and a few story keepsakes (bread, maps, favors) stay as words in the log because they have no item form.',
   '969': 'Monster loot now runs on one authored loot system: every creature kind has its own loot table with per-item chances and stack limits, so kills drop the same coins, pelts, fangs, and gear materials they always did — now from tables instead of scattered rolls. Nothing about what drops changed, only how the game decides it, which sets up richer loot tables later.',
+  '970': 'Conversations now run as small topic machines: talk to Brand, the merchant who heads the town-s1 merchant household in Mosslight, and you can open a bank — deposit or withdraw gold, or store whole pieces of gear in the bank vault and take them back later (stored gear comes back unequipped, and taking anything back while you are over your carry limit is refused with the item safely left in the vault, never lost). You can also ask any townsperson about a relative and hear what the world actually knows about them. Your bank balance and stored gear are saved with your game and load back cleanly on old saves, and the town bank ledger that tracks NPC delve hauls is untouched — the two never share a coin.',
   '960': 'Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.',
   '958': 'At level 10 you now choose a class that actually changes how you fight. Four teachers have moved into Mosslight: Dain teaches warriors at the Wayfarer Guild, Sable teaches mages, Puck teaches rogues, and Wynn teaches archers. They teach at the guild by day and wander to the Rusty Tankard in the evening, so talk to one when you reach level 10 — changing class later is free. Warriors hit 2 damage harder, rogues crit more often and strike from stealth three times as hard, archers shoot 25 percent harder, and mages open a Spells tab in the Skills panel with real magic: Ember Bolt throws fire at the nearest foe within range, Veil Step blinks you two paces in the direction you face, and Frost Ward hardens your skin with 3 extra armor until your next wound. Spells cost mana drawn from your intelligence, refill slowly on their own, and every cast plays a fire, frost, or veil animation on the field. Effect frames come from a user-supplied effects pack that ships no license file, so no license terms are claimed for them.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
@@ -1916,6 +1919,11 @@ type SaveGameData = {
   // restore to empty — never faked history; leftover 948 haul on an NPC
   // drains into storage on the first tick after load.
   npcStorage?: NpcStorageState;
+  // BUILD 970: extras 2/6 — PLAYER bank depot (coins + whole equipment
+  // items in the Mosslight bank vault, via Brand the clerk). Separate
+  // from npcStorage (NPC delve hauls) — never shared, never double-
+  // counted. Old saves carry no field and restore to empty.
+  playerBank?: PlayerBankState;
   goats: GoatState[];
   interiorId: string | null;
   interiorPosition: Point;
@@ -5977,6 +5985,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [dialogueSession, setDialogueSession] = useState<DialogueSession>(() => newDialogueSession());
   const [dialogueSay, setDialogueSay] = useState<string | null>(null);
   const [dialogueMode, setDialogueMode] = useState<'talk' | 'shop'>('talk');
+  // BUILD 970: extras 2/6 — topic-machine focus. TRANSIENT like
+  // DialogueSession (never saved): closing the conversation releases
+  // focus and drops any pending transaction. The bank itself persists
+  // (playerBank save field); the machine does not. machineSayOverride
+  // carries one-shot lines (e.g. a carry-gate refusal) that replace the
+  // machine's derived line until the next choice.
+  const [machineSession, setMachineSession] = useState<MachineSession | null>(null);
+  const [machineSayOverride, setMachineSayOverride] = useState<string | null>(null);
   // BUILD 956: mood-face state. dialogueMoodMove is the last haggle move in
   // THIS conversation (cleared on the next topic, so the reaction face does
   // not stick); dialogueTalkBeat is the 900ms speaking beat after each new
@@ -6003,6 +6019,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       setDialogueSay(null);
       setDialogueMode('talk');
       setDialogueMoodMove(null);
+      // BUILD 970: focus release drops the machine + any pending
+      // transaction (Tibia rule: no dangling transaction on close).
+      setMachineSession(null);
+      setMachineSayOverride(null);
     }
   }, [townsfolkDialogue]);
   const [disposition, setDisposition] = useState<Record<string, number>>({});
@@ -6074,6 +6094,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // New Game needs no extra reset: it runs through the title, which
   // unmounts GameField and drops this ref with it (the 926 pattern).
   const npcStorageRef = useRef<NpcStorageState>({ chests: {}, bank: {} });
+  // BUILD 970: extras 2/6 — player bank depot. Ref is the source of truth
+  // (save reads it); state mirrors it for the dialogue panel.
+  const [playerBank, setPlayerBank] = useState<PlayerBankState>(EMPTY_PLAYER_BANK);
+  const playerBankRef = useRef<PlayerBankState>(EMPTY_PLAYER_BANK);
+  const syncPlayerBank = (next: PlayerBankState) => { playerBankRef.current = next; setPlayerBank(next); };
   // BUILD 939: EQEmu faction standings — per-player, per-faction numbers
   // (EQEmu ladder: Ally..Scowls). Ref is the source of truth (save reads
   // it); state mirrors it for the dialogue panel. SEPARATE from bounty
@@ -6796,6 +6821,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         getAdventurers: () => simulatedAdventurersRef.current.map((a) => ({ id: a.id, name: a.name, level: a.level, className: a.className, outing: a.outing ?? null, dungeonPhase: a.dungeonPhase ?? null, dungeonEntrance: a.dungeonEntrance ?? null, x: a.position.x, y: a.position.y, location: a.location ?? 'field', activity: a.activity, status: a.status ?? 'healthy', coins: a.coins ?? 0, lootItems: [...(a.lootItems ?? [])], delvesCompleted: a.delvesCompleted ?? 0, chestItems: chestItemsFor(npcStorageRef.current, adventurerHouseholdKey(a.id)), bankBalance: bankBalanceFor(npcStorageRef.current, adventurerHouseholdKey(a.id)), lastDelveHaul: a.lastDelveHaul ?? null })),
         // BUILD 949: full NPC storage record for verification (read-only).
         getNpcStorage: () => serializeNpcStorage(npcStorageRef.current),
+        // BUILD 970: player bank depot inspection (testmode only).
+        getPlayerBank: () => serializePlayerBank(playerBankRef.current),
         // Forces a delve through the REAL start transition (eligibility
         // still enforced); only the 12% trigger roll is bypassed, stated.
         forceAdventurerDelve: (id: string) => {
@@ -7403,6 +7430,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     cameraAngleDeg: normalizeAngleDeg(cameraAngleRef.current),
     // BUILD 949: persist NPC loot storage (family chests + bank ledger).
     npcStorage: serializeNpcStorage(npcStorageRef.current),
+    // BUILD 970: persist the PLAYER bank depot (separate from npcStorage).
+    playerBank: serializePlayerBank(playerBankRef.current),
     // BUILD 881: Persist skill-master apprenticeships.
     apprenticeships: { ...apprenticeshipsRef.current },
     // BUILD 704: Persist player stamina.
@@ -7589,6 +7618,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // BUILD 949: restore NPC loot storage (old saves have none -> empty;
     // leftover 948 haul drains on the first tick after load, never lost).
     npcStorageRef.current = sanitizeNpcStorage(loadState.npcStorage);
+    // BUILD 970: restore the PLAYER bank depot (old saves have none ->
+    // empty, never faked history; never touches npcStorage).
+    { const restoredBank = sanitizePlayerBank(loadState.playerBank); playerBankRef.current = restoredBank; setPlayerBank(restoredBank); }
     interiorDoorwayIdRef.current = null;
     interiorEntryChunkRef.current = { x: loadState.chunk.x, y: loadState.chunk.y };
     interiorRef.current = null; setInterior(null);
@@ -11329,6 +11361,74 @@ if (active) {
     setDisposition((prev) => ({ ...prev, [npc.id]: Math.min(prev[npc.id] ?? defaultDisposition(), 40) }));
     setLogs((cur) => [{ text: `💔 You part ways with ${npc.name}.`, color: 'orange' }, ...cur].slice(0, 3));
   };
+  // BUILD 970: extras 2/6 — topic-machine context from LIVE state only
+  // (spendable purse, vault balance, carried/stored gear, real relations).
+  // The machine never speaks about anything but real numbers and records.
+  const machineCtxFor = (npc: Townsperson): MachineCtx => {
+    const clock = brainRef.current?.worldCore.getClock();
+    const rels = clock ? npcRelationships(npc, townsfolkRef.current, clock).map((r) => ({ targetName: r.targetName, kind: r.kind, affinity: r.affinity })) : [];
+    return {
+      purse: Math.max(0, (inventoryRef.current.coins ?? 0) - shopReserveRef.current.coins),
+      bankCoins: bankCoinsFor(playerBankRef.current),
+      equipment: equipmentRef.current.map((item) => ({ instanceId: item.instanceId, name: item.name, slot: item.slot })),
+      stored: bankItemsFor(playerBankRef.current).map((item) => ({ instanceId: item.instanceId, name: item.name, slot: item.slot })),
+      relations: rels,
+    };
+  };
+  const startMachineFor = (npc: Townsperson, machine: 'bank' | 'kin') => {
+    const { session } = startMachine(machine, machineCtxFor(npc));
+    setMachineSession(session);
+    setMachineSayOverride(null);
+    setDialogueTopic(null);
+  };
+  // BUILD 970: apply a machine's consented effect. Effects arrive ONLY
+  // from consent-step 'yes' choices (the engine guarantees it); this
+  // handler only moves the gold/items. The take-item gate runs BEFORE
+  // anything moves: refused while over capacity, the item stays stored
+  // and the machine returns to its menu with the refusal showing.
+  const chooseMachineChoice = (npc: Townsperson, choiceId: string) => {
+    if (!machineSession) return;
+    const ctx = machineCtxFor(npc);
+    const { session, effect } = advanceMachine(machineSession, choiceId, ctx);
+    setMachineSayOverride(null);
+    if (session === null) { setMachineSession(null); return; }
+    setMachineSession(session);
+    if (!effect) return;
+    if (effect.kind === 'depositCoins') {
+      const res = depositBankCoins(playerBankRef.current, effect.amount, ctx.purse);
+      if (!res.ok) return;
+      syncPlayerBank(res.bank);
+      onLoot({ coins: -res.moved } as GoatLoot);
+      setLogs((c) => [{ text: `Deposited ${res.moved} gold in the Mosslight bank vault.`, color: 'blue' }, ...c].slice(0, 5));
+    } else if (effect.kind === 'withdrawCoins') {
+      const res = withdrawBankCoins(playerBankRef.current, effect.amount);
+      if (!res.ok) return;
+      syncPlayerBank(res.bank);
+      onLoot({ coins: res.moved } as GoatLoot);
+      setLogs((c) => [{ text: `Withdrew ${res.moved} gold from the Mosslight bank vault.`, color: 'blue' }, ...c].slice(0, 5));
+    } else if (effect.kind === 'storeItem') {
+      const item = equipmentRef.current.find((e) => e.instanceId === effect.instanceId);
+      if (!item) return;
+      const res = storeBankItem(playerBankRef.current, item);
+      if (!res.ok) return;
+      syncPlayerBank(res.bank);
+      onEquipmentChange((prev) => prev.filter((e) => e.instanceId !== effect.instanceId));
+      setLogs((c) => [{ text: `Stored ${item.name} in the Mosslight bank vault.`, color: 'blue' }, ...c].slice(0, 5));
+    } else if (effect.kind === 'takeItem') {
+      if (carryNow().over) {
+        setMachineSession({ machine: 'bank', step: 'menu', pending: null, detail: null });
+        setMachineSayOverride(`You're carrying too much to take that back — ${CARRY_OVER_MSG}`);
+        setLogs((c) => [{ text: `Bank: you're carrying too much to take that back — ${CARRY_OVER_MSG}`, color: 'red' }, ...c].slice(0, 5));
+        return;
+      }
+      const res = takeBankItem(playerBankRef.current, effect.instanceId, true);
+      if (!res.ok || !res.item) return;
+      syncPlayerBank(res.bank);
+      const back = res.item;
+      onEquipmentChange((prev) => [...prev, { ...back, equipped: false }]);
+      setLogs((c) => [{ text: `Took ${back.name} back from the Mosslight bank vault.`, color: 'blue' }, ...c].slice(0, 5));
+    }
+  };
   const chooseDialogueTopic = (npc: Townsperson, topic: DialogueTopicId) => {    const liveNpc = townsfolkRef.current.find((candidate) => candidate.id === npc.id); const tickNow = brainRef.current?.worldCore.getClock().tick ?? 0;
     if (!liveNpc || isNpcDead(liveNpc, tickNow)) { setTownsfolkDialogue(null); setDialogueTopic(null); return; }
     if (topic === 'bye') {
@@ -11394,6 +11494,13 @@ if (active) {
     if (!text) return;
     setDialogueHistory((h) => [...h, { speaker: 'player', text }]);
     setDialogueInput('');
+    // BUILD 970: bank keywords open the bank machine on the clerk
+    // (word-boundary match, not substring) — the keyword only OPENS the
+    // machine; the flow itself is tap-driven, consent-gated choices.
+    if (isBankClerk(npc) && bankKeywordIntent(text)) {
+      startMachineFor(npc, 'bank');
+      return;
+    }
     const intent = recognizeIntent(text);
     if (intent) {
       if (intent.topic === 'memory') {
@@ -15759,6 +15866,20 @@ if (active) {
           const shopDef = npc.archetype === 'merchant' ? merchantShopDef(npc.id, npc.name) : null;
           const shopState = shopDef ? restockStall(shopDef, npcShopStocks[npc.id], gameDayNow()) : null;
           const shopMult = priceMultiplierForDisposition(disp);
+          // BUILD 970: topic-machine context for the panel — live relations
+          // (kin button visibility) + the derived machine view. Derived
+          // every render from live state, never stored.
+          const panelClock = brainRef.current?.worldCore.getClock();
+          const panelRels = panelClock ? npcRelationships(npc, townsfolk, panelClock).map((r) => ({ targetName: r.targetName, kind: r.kind, affinity: r.affinity })) : [];
+          const panelHasFamily = panelRels.some((r) => r.kind === 'family');
+          const panelMachineCtx: MachineCtx | null = machineSession ? {
+            purse: Math.max(0, (inventory.coins ?? 0) - shopReserveRef.current.coins),
+            bankCoins: bankCoinsFor(playerBank),
+            equipment: equipment.map((item) => ({ instanceId: item.instanceId, name: item.name, slot: item.slot })),
+            stored: bankItemsFor(playerBank).map((item) => ({ instanceId: item.instanceId, name: item.name, slot: item.slot })),
+            relations: panelRels,
+          } : null;
+          const mView = machineSession && panelMachineCtx ? machineView(machineSession, panelMachineCtx) : null;
           // BUILD 956: photo portrait + mood face. Character is seeded by
           // NPC id (stable); the face follows disposition, the last haggle
           // move, refusals, loss news, the speaking beat, and shop mode —
@@ -15806,7 +15927,7 @@ if (active) {
                       carries the spoken line; the game stays visible behind
                       the translucent overlay (rgba .36, unchanged). */}
                   <div className="dlg-textbox" data-testid="dialogue-textbox">
-                    {dialogueSay ? <p className="dialogue-response">“{dialogueSay}”</p> : resp ? <p className="dialogue-response">“{resp.text}”</p> : <p className="dlg-textbox-empty">…</p>}
+                    {machineSession && mView ? <p className="dialogue-response">“{machineSayOverride ?? mView.say}”</p> : dialogueSay ? <p className="dialogue-response">“{dialogueSay}”</p> : resp ? <p className="dialogue-response">“{resp.text}”</p> : <p className="dlg-textbox-empty">…</p>}
                   </div>
                   {/* BUILD 654: Conversation history for free-text exchanges. */}
                   {dialogueHistory.length > 0 && (
@@ -15843,12 +15964,29 @@ if (active) {
                       <p className="shop-empty">Selling stays at the market stalls — this is buy-only.</p>
                       <button type="button" className="dialogue-topic" onClick={() => setDialogueMode('talk')} data-testid="button-dialogue-back">← Back to conversation</button>
                     </div>
+                  ) : machineSession && mView ? (
+                  <div className="dialogue-topics">
+                    {mView.choices.map((ch) => (
+                      <button key={ch.id} type="button" className="dialogue-topic" disabled={ch.disabled} onClick={() => chooseMachineChoice(npc, ch.id)} data-testid={'button-machine-choice-' + ch.id}>{ch.label}</button>
+                    ))}
+                    <button type="button" className="dialogue-topic" onClick={() => { setMachineSession(null); setMachineSayOverride(null); }} data-testid="button-machine-back">← Back to topics</button>
+                  </div>
                   ) : (
                   <>
                   <div className="dialogue-topics">
                     {sessionTopics(npc.archetype, dialogueSession).map((t) => (
                       <button key={t.id} type="button" className={'dialogue-topic' + (dialogueTopic === t.id ? ' is-active' : '')} onClick={() => chooseDialogueTopic(npc, t.id)}>{t.label}</button>
                     ))}
+                    {/* BUILD 970: topic machines — Banking (Brand the clerk
+                        only) + kin (NPCs with family relations only). The
+                        machine owns the conversation while active: topic
+                        buttons hide until it closes (focus). */}
+                    {isBankClerk(npc) && (
+                      <button key="machine-bank" type="button" className="dialogue-topic" onClick={() => startMachineFor(npc, 'bank')} data-testid="button-machine-bank">🏦 Banking</button>
+                    )}
+                    {panelHasFamily && (
+                      <button key="machine-kin" type="button" className="dialogue-topic" onClick={() => startMachineFor(npc, 'kin')} data-testid="button-machine-kin">👨‍👩‍👧 Ask about a relative</button>
+                    )}
                     {/* BUILD 881: skill-master apprenticeship button. */}
                     {(() => {
                       const master = masterForNpc(npc.name);
@@ -15946,7 +16084,7 @@ if (active) {
                     </button>
                   </div>
                 </div>
-                <button type="button" className="dialogue-close" onClick={() => { setTownsfolkDialogue(null); setDialogueTopic(null); setDialogueHistory([]); setDialogueInput(''); setDialogueSession(newDialogueSession()); setDialogueSay(null); setDialogueMode('talk'); }} aria-label="Close dialogue" data-testid="button-close-townsfolk-dialogue">✕</button>
+                <button type="button" className="dialogue-close" onClick={() => { setTownsfolkDialogue(null); setDialogueTopic(null); setDialogueHistory([]); setDialogueInput(''); setDialogueSession(newDialogueSession()); setDialogueSay(null); setDialogueMode('talk'); setMachineSession(null); setMachineSayOverride(null); }} aria-label="Close dialogue" data-testid="button-close-townsfolk-dialogue">✕</button>
               </div>
             </div>
           );

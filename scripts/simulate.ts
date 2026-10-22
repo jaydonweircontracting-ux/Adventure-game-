@@ -113,6 +113,8 @@ import { QUEST_REWARD_BASES, questRewardBaseId, questRewardGearNames, questRewar
 import { TASKS, taskDefForQuest, isTaskDriven, taskActivities, taskStorageKey, snapshotTaskProgress, activityMatchesEvent, settlementForChunk, eventZoneForChunk, zoneMatchesActivity, writeTaskEventToStorage, resetTaskKeys, startTask, taskComplete, evaluateTaskState, taskAvailability, availableTasks, markerForTaskGiver, taskBundleFor, taskActivityText, serializeTaskSave, parseTaskSave, migrateTaskStates, type TaskDef, type TaskState } from '../src/game/tasks';
 import { initialCellarRats, CELLAR_RAT_ID_BASE, CELLAR_RAT_HP, CELLAR_RAT_COUNT } from '../src/game/cellarRats';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, adjustWanted } from '../src/game/dialogue';
+import { startMachine, machineView, advanceMachine, bankKeywordIntent, familyRelations } from '../src/game/topicMachines';
+import { EMPTY_PLAYER_BANK, isBankClerk, depositBankCoins, withdrawBankCoins, storeBankItem, takeBankItem, serializePlayerBank, sanitizePlayerBank } from '../src/game/playerBank';
 import { shouldBark, barkFor, seedForName } from '../src/game/npcBarks';
 import { appearanceForNpc, npcAppearanceStyle } from '../src/game/npcAppearance';
 import {
@@ -2272,6 +2274,37 @@ console.log('Testing special-ability vocabulary (BUILD 943)...');
   assert(JSON.stringify(rollMonsterLoot('ogre', rngZero).counts) === JSON.stringify({}), 'Loot969: ogre has no table (legacy default empty)');
   assert(rollMonsterLoot('knight', rngZero).gearBaseIds.length === 0, 'Loot969: grammar rolls no gear (classLoot channel untouched)');
   assert(classGearBaseIds('knight', false).join(',') === 'iron_sword,plate_armor', 'Loot969: class gear unchanged');
+  // BUILD 970: topic machines + player bank depot (extras 2/6) — Tibia
+  // topic-state + consent-as-state pattern, tap-choice form. Machine
+  // state is session-only; the bank persists separately from 949.
+  const bankCtx970 = { purse: 100, bankCoins: 40, equipment: [{ instanceId: 'i1', name: 'Iron Sword', slot: 'weapon' }], stored: [{ instanceId: 'i2', name: 'Copper Ring', slot: 'ring' }], relations: [{ targetName: 'Brenna', kind: 'family', affinity: 85 }, { targetName: 'Rowan', kind: 'coworker', affinity: 40 }] };
+  const bankOpen970 = startMachine('bank', bankCtx970);
+  assert(bankOpen970.session.step === 'menu' && bankOpen970.view.choices.length === 5, 'Mach970: bank opens at menu with 5 choices');
+  assert(bankOpen970.view.say.includes('40 gold'), 'Mach970: menu line carries the real balance');
+  const dep970 = advanceMachine(advanceMachine(bankOpen970.session, 'deposit-coins', bankCtx970).session!, 'dep-50', bankCtx970);
+  assert(dep970.session!.step === 'depositConsent' && dep970.effect === null, 'Mach970: amount step records pending, emits nothing');
+  assert(advanceMachine(dep970.session!, 'no', bankCtx970).session!.step === 'menu', 'Mach970: consent no returns to menu');
+  assert(advanceMachine(dep970.session!, 'no', bankCtx970).effect === null, 'Mach970: consent no emits nothing');
+  const depYes970 = advanceMachine(dep970.session!, 'yes', bankCtx970);
+  assert(depYes970.session!.step === 'done' && depYes970.effect?.kind === 'depositCoins' && depYes970.effect.amount === 50, 'Mach970: consent yes emits the deposit effect');
+  assert(advanceMachine(bankOpen970.session, 'leave', bankCtx970).session === null, 'Mach970: leave closes the machine');
+  assert(familyRelations(bankCtx970).map((r) => r.targetName).join(',') === 'Brenna', 'Mach970: kin sees family only');
+  const kin970 = startMachine('kin', bankCtx970);
+  assert(kin970.view.choices.some((c) => c.id === 'kin:Brenna'), 'Mach970: kin menu offers the real relative');
+  assert(machineView(advanceMachine(kin970.session, 'kin:Brenna', bankCtx970).session!, bankCtx970).say.includes('Brenna'), 'Mach970: kin detail names the relative');
+  assert(bankKeywordIntent('visit the bank') && !bankKeywordIntent('the banker smiled'), 'Mach970: bank keyword honors the word boundary');
+  assert(isBankClerk({ name: 'Brand', archetype: 'merchant' }) && !isBankClerk({ name: 'Cedric', archetype: 'merchant' }), 'Mach970: Brand is the sole clerk');
+  const depBank970 = depositBankCoins(EMPTY_PLAYER_BANK, 50, 100);
+  assert(depBank970.ok && depBank970.bank.coins === 50, 'Mach970: bank deposit lands');
+  assert(!depositBankCoins(depBank970.bank, 101, 100).ok, 'Mach970: over-purse deposit refused');
+  const wdBank970 = withdrawBankCoins(depBank970.bank, 20);
+  assert(wdBank970.ok && wdBank970.bank.coins === 30, 'Mach970: bank withdraw leaves 30');
+  const stored970 = storeBankItem(EMPTY_PLAYER_BANK, { instanceId: 'i9', baseId: 'iron_sword', name: 'Sword', slot: 'weapon', quality: 'normal', stats: {}, affixIds: [], level: 1, value: 1, equipped: true });
+  assert(stored970.ok && stored970.bank.items[0].equipped === false, 'Mach970: stored item returns unequipped');
+  assert(!takeBankItem(stored970.bank, 'i9', false).ok && takeBankItem(stored970.bank, 'i9', false).bank.items.length === 1, 'Mach970: over-capacity take refused, item stays');
+  assert(takeBankItem(stored970.bank, 'i9', true).ok && takeBankItem(stored970.bank, 'i9', true).item?.baseId === 'iron_sword', 'Mach970: take returns the stored item');
+  assert(serializePlayerBank(depBank970.bank).coins === 50 && sanitizePlayerBank(undefined).coins === 0, 'Mach970: bank serializes; old saves restore empty');
+  assert(depositDelveHaul(EMPTY_NPC_STORAGE, 'adv:kael', 14, ['goat horn']).state.bank['adv:kael'] === 14, 'Mach970: 949 NPC storage unchanged');
   // Acquisition with per-kind ranges: a dragon holds its lock to 60u
   // and acquires at 32u; the globals still hold for unassigned kinds.
   const dragonAb = behaviorForCreature('dragon').abilities;
