@@ -296,6 +296,10 @@ interface IsoFieldViewProps {
   onLootBody?: (body: { id: string; position: Point }) => void;
   // BUILD 963: visible house chests (home chunk only, like bodies/drops).
   houseChests?: Array<{ id: string; houseName: string; position: Point; fullyLooted: boolean }>;
+  // BUILD 973: overworld traps — unfired traps of the current chunk,
+  // drawn as a dark snare ring so they are avoidable on sight. Home
+  // chunk only, like bodies and drops. App pre-filters fired traps.
+  traps?: Array<{ id: string; position: Point }>;
   onLootHouseChest?: (chest: { id: string; position: Point }) => void;
   // BUILD 921: gear already looted off each corpse, by NPC id (base ids from
   // App's corpseLootedBases memo). Dead NPCs render with exactly these
@@ -630,11 +634,11 @@ function roadBlendFor(road: string, lx: number, ly: number): number {
   return 0.3 + 0.7 * Math.min(1, Math.max(0, d) / 2.5);
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, adventurers, goats, wildlife, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, houseChests, onLootHouseChest, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, spellFx, zoom, rotationAngleRef, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, adventurers, goats, wildlife, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, houseChests, onLootHouseChest, traps, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, spellFx, zoom, rotationAngleRef, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, houseChests, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
-  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, houseChests, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, houseChests, traps, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, houseChests, traps, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -2193,6 +2197,27 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
                 g2.lineTo(dc.x, dc.y - 6 + s); g2.lineTo(dc.x - s * 0.7, dc.y - 6);
                 g2.closePath(); g2.fill();
                 g2.strokeStyle = '#8a6a20'; g2.lineWidth = 1.5; g2.stroke();
+              },
+            });
+          }
+        }
+
+        // BUILD 973: overworld traps — dark snare ring + crossed lines,
+        // home chunk only, like bodies and drops. Unfired traps only
+        // (App pre-filters); a fired trap vanishes with its trigger.
+        if (sc.ox === 0 && sc.oy === 0) {
+          for (const t of liveRef.current.traps || []) {
+            const tx2 = t.position.x + bx, ty2 = t.position.y + by;
+            const tc = isoToScreen(tx2, ty2);
+            drawables.push({
+              depth: dep(tx2, ty2) + 0.001, draw: (g2) => {
+                g2.strokeStyle = 'rgba(60, 40, 26, 0.9)'; g2.lineWidth = 2;
+                g2.beginPath(); g2.ellipse(tc.x, tc.y - 2, 10, 5, 0, 0, Math.PI * 2); g2.stroke();
+                g2.strokeStyle = 'rgba(120, 60, 30, 0.9)'; g2.lineWidth = 1.5;
+                g2.beginPath();
+                g2.moveTo(tc.x - 6, tc.y - 6); g2.lineTo(tc.x + 6, tc.y + 2);
+                g2.moveTo(tc.x + 6, tc.y - 6); g2.lineTo(tc.x - 6, tc.y + 2);
+                g2.stroke();
               },
             });
           }

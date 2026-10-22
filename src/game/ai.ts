@@ -1,7 +1,8 @@
 import { getDirection, isAdjacentAndFacing, type CombatDirection, type CombatPoint } from './combat';
+import { planFleeWaypoints } from './fearPath';
 
 export type GoatAIState = 'idle' | 'chase' | 'attack' | 'hurt' | 'die';
-export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean; spawnPosition?: CombatPoint; roamRadius?: number; level?: number; provoked?: boolean; threatLevel?: number; fleeing?: boolean };
+export type GoatAIEntity = { position: CombatPoint; facing: CombatDirection; state: GoatAIState; disposition: 'calm' | 'aggressive' | 'defeated'; hp: number; maxHp: number; attackCooldown: number; attackTimer: number; attackHitApplied: boolean; hurtTimer: number; moving: boolean; attacking: boolean; spawnPosition?: CombatPoint; roamRadius?: number; level?: number; provoked?: boolean; threatLevel?: number; fleeing?: boolean; /** BUILD 973: computed fear-path waypoints (fearPath.ts) while fleeing; undefined = no plan (radial fallback). */ fleePath?: CombatPoint[]; /** Index of the next flee waypoint to walk toward. */ fleePathIndex?: number };
 export const GOAT_CHASE_RANGE = 24;
 // Keep hostile goats close enough that sprites nearly touch the player:
 // melee happens up close, and the player's 5-unit swing reach connects.
@@ -175,7 +176,7 @@ function keepMeleeDistance(position: CombatPoint, player: CombatPoint, playerFac
 export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint, playerFacing: CombatDirection, goats: GoatAIEntity[], deltaMs: number, opts?: UpdateGoatOpts): { goat: T; attackHit: boolean } {
   const cooldown = Math.max(0, goat.attackCooldown - deltaMs);
   const hurtTimer = Math.max(0, goat.hurtTimer - deltaMs);
-  if (goat.hp <= 0 || goat.disposition === 'defeated') return { goat: { ...goat, disposition: 'defeated', state: 'die', moving: false, attacking: false, attackCooldown: cooldown, hurtTimer, attackTimer: 0, attackHitApplied: false, fleeing: false }, attackHit: false };
+  if (goat.hp <= 0 || goat.disposition === 'defeated') return { goat: { ...goat, disposition: 'defeated', state: 'die', moving: false, attacking: false, attackCooldown: cooldown, hurtTimer, attackTimer: 0, attackHitApplied: false, fleeing: false, fleePath: undefined, fleePathIndex: undefined }, attackHit: false };
   if (goat.state === 'hurt' && hurtTimer > 0) return { goat: { ...goat, hurtTimer, attackCooldown: cooldown, moving: false, attacking: false, fleeing: goat.fleeing ?? false }, attackHit: false };
 
   const distance = Math.hypot(player.x - goat.position.x, player.y - goat.position.y);
@@ -201,10 +202,48 @@ export function updateGoat<T extends GoatAIEntity>(goat: T, player: CombatPoint,
   const canFlee = opts?.behavior?.canFlee ?? true;
   const lowHealth = canFlee && goat.hp / Math.max(1, goat.maxHp) <= fleeRatio;
   if (lowHealth) {
-    const fled = moveAwayFrom(goat.position, player, opts?.fleeSpeed ?? GOAT_FLEE_SPEED, deltaMs);
+    // BUILD 973: fear-path movement. A fleeing creature walks a COMPUTED
+    // route away from the threat (fearPath.ts) instead of sliding
+    // radially: the plan is made on entering flight (or when the last
+    // plan is consumed) and each tick walks toward the next waypoint
+    // through the same collision resolver as every other move. When
+    // no route clears (or the caller supplies no blocker probe), the
+    // old radial slide is the fallback — a failed plan never strands
+    // the creature worse than before. The home-range clamp still caps
+    // flight at the roam edge, so flight can never strand a quest.
+    const fleeSpeed = opts?.fleeSpeed ?? GOAT_FLEE_SPEED;
+    const step = fleeSpeed * deltaMs / 1000;
+    let fleePath = goat.fleePath;
+    let fleePathIndex = goat.fleePathIndex ?? 0;
+    if (!goat.fleeing || !fleePath || fleePathIndex >= fleePath.length) {
+      fleePath = opts?.isBlocked
+        ? planFleeWaypoints(goat.position, player, opts.isBlocked, goat.spawnPosition && goat.roamRadius ? { spawn: goat.spawnPosition, radius: goat.roamRadius } : undefined) ?? undefined
+        : undefined;
+      fleePathIndex = 0;
+    }
+    if (fleePath && fleePath.length > 0) {
+      const wp = fleePath[fleePathIndex];
+      const dx = wp.x - goat.position.x;
+      const dy = wp.y - goat.position.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 0.6) {
+        const nextIndex = fleePathIndex + 1;
+        if (nextIndex >= fleePath.length) {
+          // Route consumed: clear the plan so the next tick plans a
+          // fresh route onward (flight continues, never stalls).
+          return { goat: { ...goat, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(player, goat.position), moving: false, attacking: false, fleeing: true, fleePath: undefined, fleePathIndex: undefined }, attackHit: false };
+        }
+        return { goat: { ...goat, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(player, goat.position), moving: false, attacking: false, fleeing: true, fleePath, fleePathIndex: nextIndex }, attackHit: false };
+      }
+      const desired = { x: goat.position.x + (dx / d) * Math.min(step, d), y: goat.position.y + (dy / d) * Math.min(step, d) };
+      const clamped = clampToHomeRange(desired, goat.spawnPosition, goat.roamRadius);
+      const { position, moved } = resolveCollisionMove(goat.position, clamped, opts?.isBlocked);
+      return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(player, position), moving: moved, attacking: false, fleeing: true, fleePath, fleePathIndex }, attackHit: false };
+    }
+    const fled = moveAwayFrom(goat.position, player, fleeSpeed, deltaMs);
     const clamped = clampToHomeRange(fled, goat.spawnPosition, goat.roamRadius);
     const { position, moved } = resolveCollisionMove(goat.position, clamped, opts?.isBlocked);
-    return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(player, position), moving: moved, attacking: false, fleeing: true }, attackHit: false };
+    return { goat: { ...goat, position, state: 'chase', attackCooldown: cooldown, hurtTimer: 0, facing: getDirection(player, position), moving: moved, attacking: false, fleeing: true, fleePath: undefined, fleePathIndex: undefined }, attackHit: false };
   }
   // BUILD 943: aggro immunity — an unengaged creature that must not
   // engage (a sneak-blind kind facing a sneaking player) holds idle.

@@ -103,7 +103,9 @@ import { createSettlementEconomyState, advanceSettlementEconomy, type Settlement
 import { createWheatField, advanceWheatGrowth, harvestWheatCrop, harvestableCrops, type WheatField } from '@/game/wheatFields';
 import { createMill, addWheatToMill, advanceMill, takeFlourFromMill, type Mill } from '@/game/mills';
 import { isTextInputActive } from '@/game/textInputGuard';
-import { findPath } from '@/game/npcNavigation';
+import { findPath, isOnFieldRoad } from '@/game/npcNavigation';
+import { recordHateDamage, hateRankFor, playerTopDamage, PLAYER_HATE_ATTACKER, type HateLedger } from '@/game/hateList';
+import { overworldTrapsForChunk, checkOverworldTrapStep, sanitizeFiredTraps, TRAP_RAW_DAMAGE, type OverworldTrap } from '@/game/overworldTraps';
 import { eightDirectionFromVector, type EightDirection } from '@/game/eightDirection';
 import { generateInteriorLayout } from '@/game/interiors';
 import { houseTypeForBuilding } from '@/game/houseTypes';
@@ -188,7 +190,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '972';
+const BUILD_NUMBER = '973';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -237,6 +239,7 @@ const BUILD_NOTES: Record<string, string> = {
   '969': 'Monster loot now runs on one authored loot system: every creature kind has its own loot table with per-item chances and stack limits, so kills drop the same coins, pelts, fangs, and gear materials they always did — now from tables instead of scattered rolls. Nothing about what drops changed, only how the game decides it, which sets up richer loot tables later.',
   '970': 'Conversations now run as small topic machines: talk to Brand, the merchant who heads the town-s1 merchant household in Mosslight, and you can open a bank — deposit or withdraw gold, or store whole pieces of gear in the bank vault and take them back later (stored gear comes back unequipped, and taking anything back while you are over your carry limit is refused with the item safely left in the vault, never lost). You can also ask any townsperson about a relative and hear what the world actually knows about them. Your bank balance and stored gear are saved with your game and load back cleanly on old saves, and the town bank ledger that tracks NPC delve hauls is untouched — the two never share a coin.',
   '972': 'Your starting house now has a deed: the house you begin in is formally yours — open its chest and the panel says so — and that deed is what makes taking from your own chest free while every other home stays someone else\u2019s, exactly as before. The deed is saved with your game, so old saves gain it automatically. Rent, eviction, and selling houses are not in: there is no landlord to pay, no one to buy a house from, and no one to sell one to in a single-player world, so those parts were left out rather than invented.',
+  '973': 'Combat got smarter in three places. First, fights now remember who did the damage: when you and a villager team up on a beast, the kill pays XP to whoever dealt the most damage — even if the villager lands the final blow — while a beast you barely touched still pays nothing, and a beast that loses its victim now goes after whoever hurt it most instead of the nearest bystander. Second, fleeing no longer ghosts through walls: villagers run along real paths around houses when they panic, and wounded beasts arc around obstacles instead of sliding along them — a fleeing beast can still be chased down and killed. Third, the wilds hide snares: marked rings on the ground outside town that sting you if you walk onto one (your armor blunts them, and they shatter a Frost Ward like any wound) — step over one and it is spent for good, and blinking or teleporting never sets one off. Auras are not in: there is no field buff system for one to hang on and no banner or aura source in the world, so inventing one would have been decoration, not a feature.',
   '971': 'Skills now track your effort and your spellcraft: every tree you fell and every ore you mine counts as a try, and once you pick a class at level 10 your class changes how fast those skills grow — a Warrior works wood and stone at full speed while a Mage is slower at manual labor, and Beginners learn everything at full speed. Separately, every point of mana you actually spend casting overworld spells feeds a magic level, and each magic level adds to your maximum mana. Dungeon casting does not feed it, and nothing about your XP, your kill progress, or your spell numbers changes.',
   '960': 'Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.',
   '958': 'At level 10 you now choose a class that actually changes how you fight. Four teachers have moved into Mosslight: Dain teaches warriors at the Wayfarer Guild, Sable teaches mages, Puck teaches rogues, and Wynn teaches archers. They teach at the guild by day and wander to the Rusty Tankard in the evening, so talk to one when you reach level 10 — changing class later is free. Warriors hit 2 damage harder, rogues crit more often and strike from stealth three times as hard, archers shoot 25 percent harder, and mages open a Spells tab in the Skills panel with real magic: Ember Bolt throws fire at the nearest foe within range, Veil Step blinks you two paces in the direction you face, and Frost Ward hardens your skin with 3 extra armor until your next wound. Spells cost mana drawn from your intelligence, refill slowly on their own, and every cast plays a fire, frost, or veil animation on the field. Effect frames come from a user-supplied effects pack that ships no license file, so no license terms are claimed for them.',
@@ -1692,6 +1695,8 @@ type GoatState = {
   hitFlash: boolean;
   nextWanderTick?: number;
   fleeing?: boolean; // BUILD 934: set by updateGoat while the creature flees (low HP)
+  fleePath?: { x: number; y: number }[]; // BUILD 973: computed fear-path waypoints (ai.ts), carried through the loops
+  fleePathIndex?: number; // BUILD 973: next fear-path waypoint index
   isElite?: boolean; // BUILD 475: elite/champion (more HP, better loot)
   isBoss?: boolean; // BUILD 477: boss (named, 10x HP, epic+ loot)
 };
@@ -1962,6 +1967,9 @@ type SaveGameData = {
   // doorway id). Old saves carry no field and restore to the starting
   // deed (the tutorial house was already the player's under 963).
   houseDeeds?: HouseDeedsState;
+  // BUILD 973: extras 5/6 — ids of fired overworld traps. Old saves
+  // carry no field and restore to none fired.
+  firedOverworldTraps?: string[];
   lootedPois?: string;
   civ?: string;
   horses?: unknown;
@@ -5821,6 +5829,32 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [houseDeeds, setHouseDeeds] = useState<HouseDeedsState>(() => createStartingDeeds());
   const houseDeedsRef = useRef<HouseDeedsState>(houseDeeds);
   useEffect(() => { houseDeedsRef.current = houseDeeds; }, [houseDeeds]);
+  // BUILD 973: hate ledgers (hateList.ts) — transient combat state, never
+  // saved: creature key -> damage/hate per attacker. Fired overworld
+  // trap ids — the ONLY new save field this build adds (old saves
+  // restore to none fired; trap placement itself is deterministic).
+  const hateLedgerRef = useRef<Map<string, HateLedger>>(new Map());
+  const [firedTraps, setFiredTraps] = useState<string[]>([]);
+  const firedTrapsRef = useRef<Set<string>>(new Set());
+  // BUILD 973: per-chunk trap cache (placement is deterministic, so it
+  // is recomputed only when the chunk changes, never per frame).
+  const trapCacheRef = useRef<{ key: string; traps: OverworldTrap[] } | null>(null);
+  const trapsForChunk = (chunk: Point): OverworldTrap[] => {
+    const key = chunk.x + ',' + chunk.y;
+    if (trapCacheRef.current?.key !== key) {
+      const roadPiece = mapTileFor(chunk).road;
+      trapCacheRef.current = {
+        key,
+        traps: overworldTrapsForChunk(chunk, (pos) => isFieldPositionBlocked(pos, chunk), (x, y) => isOnFieldRoad(x, y, roadPiece), !isStartingSettlementSafetyZone(chunk)),
+      };
+    }
+    return trapCacheRef.current.traps;
+  };
+  const recordHateHit = (entityKind: 'goat' | 'monster', creatureId: number, attacker: string, damage: number) => {
+    const key = creatureTargetKey(entityKind, creatureId);
+    const next = recordHateDamage(hateLedgerRef.current.get(key) ?? {}, attacker, damage, Date.now());
+    hateLedgerRef.current.set(key, next);
+  };
   // Civ phase 14: POI treasure looted once per POI id, persisted in the save.
   const [lootedPois, setLootedPois] = useState<string[]>([]);
   const lootedPoisRef = useRef<string[]>([]);
@@ -7032,6 +7066,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         takeHouseChestForTest: (chestId: string, kind: 'coins' | 'item', baseId?: string) => { takeHouseChestItem(chestId, kind, baseId); return true; },
         // BUILD 972: house-deed hooks (testmode only, like all __gameTest).
         getHouseDeeds: () => Object.values(serializeHouseDeeds(houseDeedsRef.current)),
+        // BUILD 973: overworld trap + hate ledger inspection (testmode
+        // only). Traps are the current chunk's deterministic set with
+        // their fired state; the ledger is the raw per-creature record.
+        getOverworldTrapsForTest: () => ({ chunk: { ...chunkRef.current }, traps: trapsForChunk(chunkRef.current).map((t) => ({ ...t, fired: firedTrapsRef.current.has(t.id) })) }),
+        getHateLedgerForTest: () => Object.fromEntries([...hateLedgerRef.current.entries()].map(([k, v]) => [k, { ...v }])),
         // BUILD 968: quest/task payout hooks (testmode only, like all
         // __gameTest). Drive the REAL payout paths — completeQuest and
         // payTaskBundle — skipping only stage gameplay, so the harness
@@ -7462,6 +7501,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // BUILD 972: persist house deeds (starting deed only — no other
     // deed can exist, so this record is one entry in practice).
     houseDeeds: serializeHouseDeeds(houseDeedsRef.current),
+    // BUILD 973: persist fired overworld trap ids (placement is
+    // deterministic, so only fired ids need saving; old saves restore
+    // to none fired — every trap armed, never faked history).
+    firedOverworldTraps: [...firedTrapsRef.current],
     lootedPois: serializeOpenedChests(lootedPoisRef.current),
     civ: civRef.current ? serializeCivilization(civRef.current) : undefined,
     horses: horsesRef.current ? serializeHorses(horsesRef.current.horses, horsesRef.current.stables) : undefined,
@@ -7722,6 +7765,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // BUILD 972: restore house deeds (old saves have none -> starting
     // deed, the ownership 963 already enforced — never a new grant).
     { const restoredDeeds = sanitizeHouseDeeds(loadState.houseDeeds); houseDeedsRef.current = restoredDeeds; setHouseDeeds(restoredDeeds); }
+    // BUILD 973: restore fired overworld traps (old saves: none fired).
+    { const restoredFired = sanitizeFiredTraps(loadState.firedOverworldTraps); firedTrapsRef.current = new Set(restoredFired); setFiredTraps(restoredFired); }
     const restoredLooted = parseOpenedChests(loadState.lootedPois);
     lootedPoisRef.current = restoredLooted; setLootedPois(restoredLooted);
     // Civilization: restore the simulated hierarchy, or rebuild it lazily.
@@ -8007,7 +8052,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       let changed = false;
       let damageTaken = 0;
       let attackerName = '';
-      const pendingNpcCreatureHits: { entityKind: 'goat' | 'monster'; creatureId: number; damage: number; attackerName: string }[] = [];
+      const pendingNpcCreatureHits: { entityKind: 'goat' | 'monster'; creatureId: number; damage: number; attackerName: string; attackerId: string }[] = [];
       // BUILD 914: guard intervention. A guard with no fight of his own
       // moves on the nearest menacing creature in sight (sight range =
       // WITNESS_RADIUS): one already attacking a townsfolk, or an idle
@@ -8037,7 +8082,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         const engagement = engagements.get(npc.id);
         if (engagement && npc.fightBackUntilTick === undefined) {
           changed = true;
-          return { ...npc, fightBackUntilTick: tick + 900, fightBackTarget: { ...engagement.position }, fightBackCreatureId: engagement.id, fightBackCreatureKind: engagement.entityKind, fightBackNextAttackAtMs: Math.min(npc.fightBackNextAttackAtMs ?? Infinity, nowMs + 200), moving: true, running: true, activity: 'Fighting back!' };
+          return { ...npc, fightBackUntilTick: tick + 900, fightBackTarget: { ...engagement.position }, fightBackCreatureId: engagement.id, fightBackCreatureKind: engagement.entityKind, fightBackNextAttackAtMs: Math.min(npc.fightBackNextAttackAtMs ?? Infinity, nowMs + 200), fleeUntilTick: undefined, fleeFrom: undefined, fleePath: undefined, fleeDestination: undefined, fleePathFailed: undefined, moving: true, running: true, activity: 'Fighting back!' };
         }
         if (npc.fightBackUntilTick === undefined || tick >= npc.fightBackUntilTick) return npc;
         // BUILD 914: retaliation against a creature — chase the creature's
@@ -8056,7 +8101,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             if (refreshed.fightBackTarget?.x !== npc.fightBackTarget?.x || refreshed.fightBackTarget?.y !== npc.fightBackTarget?.y) changed = true;
             return refreshed;
           }
-          pendingNpcCreatureHits.push({ entityKind: npc.fightBackCreatureKind, creatureId: npc.fightBackCreatureId, damage: npc.archetype === 'guard' || npc.archetype === 'smith' ? 7 : 4, attackerName: npc.name });
+          pendingNpcCreatureHits.push({ entityKind: npc.fightBackCreatureKind, creatureId: npc.fightBackCreatureId, damage: npc.archetype === 'guard' || npc.archetype === 'smith' ? 7 : 4, attackerName: npc.name, attackerId: npc.id });
           // BUILD 957: NPC melee grunt, gendered pool from the NPC record.
           audioEngine.playAttackGrunt(npc.gender);
           changed = true;
@@ -8082,7 +8127,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         townsfolkRef.current = next;
         setTownsfolk(next);
       }
-      for (const hit of pendingNpcCreatureHits) applyNpcHitToCreature(hit.entityKind, hit.creatureId, hit.damage, hit.attackerName);
+      for (const hit of pendingNpcCreatureHits) applyNpcHitToCreature(hit.entityKind, hit.creatureId, hit.damage, hit.attackerName, hit.attackerId);
       if (damageTaken > 0) {
         const nextHp = Math.max(0, playerHpRef.current - damageTaken);
         playerHpRef.current = nextHp;
@@ -8927,7 +8972,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // per-kind acquire/leash ranges replace the globals.
         const heldPlayerLock = choice?.kind === 'player';
         const sneakBlindActive = abilities.sneakBlind && sneakingRef.current && !heldPlayerLock;
-        choice = chooseCreatureTarget({ creaturePos: creature.position, current: choice, playerPos: sneakBlindActive ? null : playerPos, npcs: candidates, playerSneaking: sneakingRef.current, acquireRange: abilities.acquireRange, leashRange: abilities.leashRange });
+        // BUILD 973: hate-ordered fresh acquisition — a targetless
+        // creature with a ledger goes for its most-hated victim in
+        // range, not the nearest bystander. No ledger (or a held lock)
+        // means exactly the old behavior.
+        const ledger = hateLedgerRef.current.get(key);
+        choice = chooseCreatureTarget({ creaturePos: creature.position, current: choice, playerPos: sneakBlindActive ? null : playerPos, npcs: candidates, playerSneaking: sneakingRef.current, acquireRange: abilities.acquireRange, leashRange: abilities.leashRange, hateRank: ledger && Object.keys(ledger).length > 0 ? hateRankFor(ledger) : undefined });
         if (choice) creatureTargetsRef.current.set(key, choice);
         else creatureTargetsRef.current.delete(key);
         creatureRetargetAtRef.current.set(key, now);
@@ -8998,13 +9048,16 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // loot on defeat) but grants the PLAYER nothing: no XP, no quest kill
   // credit, no generated item into the player's pack. The creature's loot
   // drops on the ground, exactly as with a player kill.
-  const applyNpcHitToCreature = (entityKind: 'goat' | 'monster', creatureId: number, damage: number, attackerName: string) => {
+  const applyNpcHitToCreature = (entityKind: 'goat' | 'monster', creatureId: number, damage: number, attackerName: string, attackerId?: string) => {
     if (entityKind === 'monster') {
       const target = monstersRef.current.find((m) => m.id === creatureId);
       if (!target || target.disposition === 'defeated') return;
       // BUILD 935: NPC attacks are physical ('none'); same pipeline, defender's data.
       const npcMonsterMitigation = mitigationForCreature(target.kind);
       const finalNpcDamage = mitigateDamage({ raw: damage, attackerElement: 'none', percents: npcMonsterMitigation.elementPercents, immunities: npcMonsterMitigation.immunities, defense: creatureDefenseForLevel(target.level ?? 1), armor: creatureArmorForLevel(target.level ?? 1) }).damage;
+      // BUILD 973: NPC hits join the hate ledger (damage + hate), so a
+      // joint fight's damage totals are real on both sides.
+      if (attackerId) recordHateHit(entityKind, creatureId, attackerId, finalNpcDamage);
       const nextHp = Math.max(0, target.hp - finalNpcDamage);
       const defeated = nextHp <= 0;
       const updatedMonsters = monstersRef.current.map((m) => m.id === creatureId ? { ...m, hp: nextHp, disposition: defeated ? 'defeated' as GoatDisposition : 'aggressive' as GoatDisposition, state: defeated ? 'die' as GoatStateName : 'hurt' as GoatStateName, hurtTimer: defeated ? 0 : 300, attackCooldown: 0, attacking: false, hitFlash: true, provoked: true } : m);
@@ -9019,6 +9072,16 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         const classGear = classGearBaseIds(target.kind, target.ranged ?? false);
         const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: { ...target.position }, loot, sourceKind: target.kind, ...(classGear.length ? { gearBaseIds: classGear } : {}) };
         droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
+        // BUILD 973: XP follows DAMAGE, not the killing blow. An NPC
+        // landing the final blow on a creature the player mostly damaged
+        // now pays the player the normal kill XP (same amount, same
+        // helper as a player kill). Quest credit and codex kills stay
+        // player-kill-only; loot already dropped above, unchanged.
+        const ledgerKey = creatureTargetKey(entityKind, creatureId);
+        if (playerTopDamage(hateLedgerRef.current.get(ledgerKey) ?? {})) {
+          grantCombatXp(goatExperienceReward(target, playerLevelRef.current, playerStatsRef.current), { ...target.position }, target.level ?? 1);
+        }
+        hateLedgerRef.current.delete(ledgerKey);
       }
       return;
     }
@@ -9026,6 +9089,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (!target || target.disposition === 'defeated') return;
     // BUILD 935: NPC attacks on goats route through the same pipeline.
     const finalNpcGoatDamage = mitigateDamage({ raw: damage, attackerElement: 'none', defense: creatureDefenseForLevel(target.level ?? 1), armor: creatureArmorForLevel(target.level ?? 1) }).damage;
+    if (attackerId) recordHateHit(entityKind, creatureId, attackerId, finalNpcGoatDamage);
     const nextHp = Math.max(0, target.hp - finalNpcGoatDamage);
     const defeated = nextHp <= 0;
     const label = target.kind ?? 'goat';
@@ -9041,6 +9105,20 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: { ...target.position }, loot };
       droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
       if (targetGoatIdRef.current === creatureId) { targetGoatIdRef.current = null; setTargetGoatId(null); }
+      // BUILD 973: XP follows damage (goat half of the NPC-kill rule).
+      // Same helper as monster kills; on a level-up the goat population
+      // rescales exactly as a player goat kill rescales it (the inline
+      // goat path does that rescale; grantCombatXp alone does not).
+      const ledgerKey = creatureTargetKey(entityKind, creatureId);
+      if (playerTopDamage(hateLedgerRef.current.get(ledgerKey) ?? {})) {
+        const levelBefore = playerLevelRef.current;
+        grantCombatXp(goatExperienceReward(target, playerLevelRef.current, playerStatsRef.current), { ...target.position }, target.level ?? 1);
+        if (playerLevelRef.current !== levelBefore) {
+          const rescaled = scaleGoatsToPlayerLevel(goatsRef.current, playerLevelRef.current);
+          goatsRef.current = rescaled; setGoats(rescaled);
+        }
+      }
+      hateLedgerRef.current.delete(ledgerKey);
     }
   };
 
@@ -9058,6 +9136,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const nextHp = Math.max(0, attackTarget.hp - finalDamage);
     const defeated = nextHp <= 0;
     const hitPosition = { ...attackTarget.position };
+    // BUILD 973: player hits join the hate ledger (damage + hate).
+    // Blocked swings deal 0 and record nothing by construction.
+    recordHateHit(attackTarget.entityKind, attackTarget.id, PLAYER_HATE_ATTACKER, finalDamage);
     const targetLabel = attackTarget.entityKind === 'monster' ? ((attackTarget as MonsterState).kind || 'creature') : 'goat';
     if (attackTarget.entityKind === 'monster') {
       const monsterTarget = attackTarget as MonsterState;
@@ -9083,6 +9164,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         emitQuestEvent({ type: 'kill', target: monsterTarget.kind });
         const xpReward = goatExperienceReward(monsterTarget, playerLevelRef.current, playerStatsRef.current);
         grantCombatXp(xpReward, hitPosition, monsterTarget.level ?? 1);
+        // BUILD 973: a dead creature holds no hate — clear its ledger.
+        hateLedgerRef.current.delete(creatureTargetKey(attackTarget.entityKind, attackTarget.id));
         // BUILD 938: codex — player kill only; NPC-vs-creature kills
         // never reach this branch, so they cannot count.
         recordPlayerKillForCodex(monsterTarget.kind);
@@ -9147,6 +9230,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           setLogs((currentLogs) => [{ text: 'Level up! You reached level ' + nextLevel + ' (+' + awardedStatPoints + ' stat points).', color: 'blue' }, ...currentLogs].slice(0, 3));
         }
         targetGoatIdRef.current = null; setTargetGoatId(null);
+        // BUILD 973: a dead creature holds no hate — clear its ledger.
+        hateLedgerRef.current.delete(creatureTargetKey(attackTarget.entityKind, attackTarget.id));
       }
     }
   };
@@ -10433,7 +10518,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const monsterChaseRange = sneakEngagementRange(sneakingRef.current, monsterEngagedOnPlayer, monsterAbilities.chaseRange);
           const monsterKey = creatureTargetKey('monster', monster.id);
           const result = updateGoat({ ...monster, state: monster.state ?? 'idle', hurtTimer: monster.hurtTimer ?? 0, attackTimer: monster.attackTimer ?? 0, attackHitApplied: monster.attackHitApplied ?? false, threatLevel: targetInfo.choice.kind === 'player' ? playerLevelRef.current : undefined }, targetInfo.position, targetInfo.facing, currentMonsters, elapsed * 1000, { isBlocked: (pos) => isFieldPositionBlocked(pos, currentChunk), meleeStandOff: targetInfo.choice.kind === 'npc' ? 1.6 : undefined, chaseRange: monsterChaseRange, chaseSpeed: enragedChaseSpeed(monsterAbilities, monster.hp, monster.maxHp), fleeSpeed: monsterAbilities.fleeSpeed, suppressEngagement: suppressForSneakBlind(monsterAbilities, { sneaking: sneakingRef.current, engagedOnPlayer: monsterEngagedOnPlayer, targetIsPlayer: monsterTargetIsPlayer }), behavior: { preferredRange: targetInfo.choice.kind === 'player' ? preferredRangeFor(monsterBehavior, monster.ranged === true) : undefined, stand: shouldStand(monsterBehavior, monsterKey, now), fleeHpRatio: monsterBehavior.fleeHpRatio, canFlee: monsterBehavior.canFlee } });
-          let next = { ...result.goat, kind: monster.kind, id: monster.id, variant: monster.variant, ranged: monster.ranged, spawnPosition: monster.spawnPosition, roamRadius: monster.roamRadius, level: monster.level, maxHp: monster.maxHp, wanderSeed: monster.wanderSeed, hitFlash: monster.hitFlash, respawnTicks: monster.respawnTicks, fleeing: result.goat.fleeing } as MonsterState;
+          let next = { ...result.goat, kind: monster.kind, id: monster.id, variant: monster.variant, ranged: monster.ranged, spawnPosition: monster.spawnPosition, roamRadius: monster.roamRadius, level: monster.level, maxHp: monster.maxHp, wanderSeed: monster.wanderSeed, hitFlash: monster.hitFlash, respawnTicks: monster.respawnTicks, fleeing: result.goat.fleeing, fleePath: result.goat.fleePath, fleePathIndex: result.goat.fleePathIndex } as MonsterState;
           // BUILD 934: acquire = idle -> chase/attack; flee = fleeing flag
           // flips on. Transitions only — no per-frame bark spam.
           if ((monster.state ?? 'idle') === 'idle' && (next.state === 'chase' || next.state === 'attack')) {
@@ -10668,6 +10753,34 @@ if (active) {
         if (resolved) {
           // The current continent is the tutorial world. Its ocean edge is reserved for the future boat route.
           positionRef.current = resolved.position;
+          // BUILD 973: overworld trap step — ONLY this frame-loop walk
+          // step fires a trap (the 931 rule). Veil Step, teleports,
+          // load restores, and interior movement never reach this line:
+          // they set position directly elsewhere. Tap-to-move and
+          // minimap travel DO reach it, because the avatar visibly
+          // walks those routes step by step. A fired trap marks itself
+          // in the save field and never re-arms.
+          if (!interiorRef.current && active) {
+            const steppedTrap = checkOverworldTrapStep(resolved.position, trapsForChunk(resolved.chunk), firedTrapsRef.current);
+            if (steppedTrap) {
+              const nextFired = new Set(firedTrapsRef.current);
+              nextFired.add(steppedTrap.id);
+              firedTrapsRef.current = nextFired;
+              setFiredTraps([...nextFired]);
+              const trapMitStats = totalEquipmentStats(equipmentRef.current);
+              const trapDamage = mitigateDamage({ raw: TRAP_RAW_DAMAGE, attackerElement: 'none', percents: playerResistPercents(trapMitStats), immunities: [], defense: 0, armor: playerArmorForRoll((trapMitStats.armor ?? 0) + (frostWardRef.current ? frostWardArmor() : 0)) }).damage;
+              if (trapDamage > 0) {
+                shatterFrostWard();
+                const nextHp = Math.max(0, playerHpRef.current - trapDamage);
+                playerHpRef.current = nextHp; setPlayerHp(nextHp);
+                spawnCombatText('-' + trapDamage, resolved.position, 'damage');
+                setLogs((currentLogs) => [{ text: 'You trigger a hidden snare! It strikes you for ' + trapDamage + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
+                if (nextHp <= 0 && !gameOverRef.current) { gameOverRef.current = true; setGameOver(true); }
+              } else {
+                setLogs((currentLogs) => [{ text: 'You trigger a hidden snare, but your armor turns it aside.', color: 'blue' }, ...currentLogs].slice(0, 3));
+              }
+            }
+          }
           // Keep the 2D player visually smooth at display refresh without
           // forcing the entire React game tree to render on every animation frame.
           if (!isoFieldBetaRef.current && !mountedRef.current) {
@@ -14003,6 +14116,7 @@ if (active) {
               onLootBody={(body) => lootTownspersonBody(body.id)}
               houseChests={houseChestsForChunk.map((c) => ({ id: c.id, houseName: c.houseName, position: c.position, fullyLooted: chestFullyLooted(c, houseChestTakes) }))}
               onLootHouseChest={(c) => openHouseChest(c.id)}
+              traps={trapsForChunk(chunk).filter((t) => !firedTrapsRef.current.has(t.id)).map((t) => ({ id: t.id, position: t.position }))}
               playerMounted={mounted}
               playerHorse={mounted ? null : (horseHere ? { position: horse.position, facing: horseFacing } : null)}
               worldHorses={visibleHorses}

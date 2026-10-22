@@ -99,6 +99,15 @@ export type ChooseCreatureTargetArgs = {
    */
   acquireRange?: number;
   leashRange?: number;
+  /**
+   * BUILD 973: hate rank from the creature's hate ledger (hateList.ts):
+   * lower rank = more hate. Consulted ONLY in the no-lock branch below,
+   * so lock-hold and lock-steal rules are untouched — hate decides who
+   * a targetless creature goes for next, never who it drops. Omitted
+   * callers get exactly the old nearest-victim behavior.
+   * Attacker keys: 'player' for the player, townsfolk id for NPCs.
+   */
+  hateRank?: (attacker: string) => number;
 };
 
 /**
@@ -109,6 +118,7 @@ export function chooseCreatureTarget(args: ChooseCreatureTargetArgs): CreatureTa
   const {
     creaturePos, current, playerPos, npcs, playerSneaking = false,
     acquireRange = CREATURE_ACQUIRE_RANGE, leashRange = CREATURE_LEASH_RANGE,
+    hateRank,
   } = args;
 
   // Distance to the current lock, or null when the lock is broken
@@ -168,6 +178,31 @@ export function chooseCreatureTarget(args: ChooseCreatureTargetArgs): CreatureTa
     if (!npcBest || d < npcBest.d) npcBest = { npcId: c.npcId, d };
   }
   const npcInRange = npcBest !== null && npcBest.d <= acquireRange;
+  // BUILD 973: hate-ordered fresh acquisition. When a hate rank is
+  // supplied and the creature holds no lock, the most-hated in-range
+  // victim wins over the nearest one (rank, then distance, then the
+  // player on a full tie — mirroring the tie rule below). Sneak ranges
+  // still gate the player candidate exactly as before.
+  if (hateRank) {
+    let bestChoice: CreatureTargetChoice | null = null;
+    let bestRank = Infinity;
+    let bestD = Infinity;
+    const consider = (choice: CreatureTargetChoice, r: number, d: number) => {
+      if (bestChoice === null || r < bestRank || (r === bestRank && d < bestD)) {
+        bestChoice = choice;
+        bestRank = r;
+        bestD = d;
+      }
+    };
+    if (playerInRange) consider({ kind: 'player' }, hateRank('player'), playerD!);
+    for (const c of npcs) {
+      if (current?.kind === 'npc' && current.npcId === c.npcId) continue;
+      const d = dist(creaturePos, c.position);
+      if (d <= acquireRange) consider({ kind: 'npc', npcId: c.npcId }, hateRank(c.npcId), d);
+    }
+    if (bestChoice) return bestChoice;
+    return null;
+  }
   if (playerInRange && npcInRange) {
     const playerWins = current?.kind === 'player' ? playerD! < npcBest!.d : playerD! <= npcBest!.d;
     return playerWins ? { kind: 'player' } : { kind: 'npc', npcId: npcBest!.npcId };

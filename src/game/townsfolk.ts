@@ -17,6 +17,7 @@
 import type { WorldClockState } from './worldCore';
 import type { NPCWorldLocation, NavPath, NavPoint, DoorwayLink, ObstacleRect } from './npcNavigation';
 import { pathTo, pathToDoor, stepAlongPath, findPath, trackStep, straightFallbackPath, validateDestination, REPLAN_HYSTERESIS, REPLAN_COOLDOWN_TICKS } from './npcNavigation';
+import { fleeDestination, NPC_FLEE_PATH_DISTANCE } from './fearPath';
 import { SpatialHash } from './spatialHash';
 import type { HousingRegistry } from './housing';
 import { bedFor, buildHousingRegistry, assignBeds } from './housing';
@@ -97,6 +98,18 @@ export type Townsperson = {
   fleeUntilTick?: number;
   /** Position of the threat to run away from. */
   fleeFrom?: TownsfolkPoint;
+  /**
+   * BUILD 973: fear-path route — the A* waypoints toward the current
+   * flee destination, planned with the same pathTo the combat pursuit
+   * uses. Transient (never serialized). When planning fails, the NPC
+   * falls back to the old radial run for the rest of this flee
+   * (fleePathFailed), so a failed plan never strands them.
+   */
+  fleePath?: NavPath;
+  /** Stable flee destination for the current flee (away from fleeFrom). */
+  fleeDestination?: TownsfolkPoint;
+  /** True when A* planning failed for the current flee (radial fallback). */
+  fleePathFailed?: boolean;
   /** BUILD 879: hostile response to an attacker; target position is refreshed by the world combat loop. */
   fightBackUntilTick?: number;
   fightBackTarget?: TownsfolkPoint;
@@ -926,6 +939,11 @@ export function startNpcFlee(npc: Townsperson, from: TownsfolkPoint, tick: numbe
     ...npc,
     fleeUntilTick: tick + NPC_FLEE_DURATION_TICKS,
     fleeFrom: { ...from },
+    // BUILD 973: a fresh flee plans a fresh route — never resume a
+    // stale fear-path from an earlier flee.
+    fleePath: undefined,
+    fleeDestination: undefined,
+    fleePathFailed: undefined,
   };
 }
 
@@ -1064,6 +1082,7 @@ export function damageNpc(npc: Townsperson, damage: number, from: TownsfolkPoint
     return {
       ...npc, hp: 0, deadUntilTick: tick + NPC_RESPAWN_TICKS,
       fleeUntilTick: undefined, fleeFrom: undefined,
+      fleePath: undefined, fleeDestination: undefined, fleePathFailed: undefined,
       fightBackUntilTick: undefined, fightBackTarget: undefined, fightBackNextAttackAtMs: undefined, running: false,
     };
   }
@@ -1075,6 +1094,7 @@ export function damageNpc(npc: Townsperson, damage: number, from: TownsfolkPoint
     return {
       ...npc, hp: newHp,
       fleeUntilTick: undefined, fleeFrom: undefined,
+      fleePath: undefined, fleeDestination: undefined, fleePathFailed: undefined,
       fightBackUntilTick: tick + 900, fightBackTarget: { ...from },
       moving: true, running: true, activity: 'Fighting back!',
     };
@@ -1391,10 +1411,62 @@ function advanceOne(
   // the NPC drops back to a walk.
   if (!npc.indoors && npc.fleeUntilTick !== undefined && npc.fleeFrom) {
     if (clock.tick < npc.fleeUntilTick) {
-      const dx = npc.position.x - npc.fleeFrom.x;
-      const dy = npc.position.y - npc.fleeFrom.y;
-      const dist = Math.hypot(dx, dy) || 1;
       const fleeStep = step * 1.5;
+      // BUILD 973: fear-path movement. A fleeing NPC walks a COMPUTED
+      // A* route away from the threat (the same pathTo + stepAlongPath
+      // the combat pursuit uses) instead of running radially — the old
+      // radial run ignored collision entirely, so a fleeing NPC could
+      // ghost straight through a house. The destination is fixed for
+      // the flee (24 units away from the threat); when the route is
+      // consumed, a fresh route is planned onward from the new position.
+      // A failed plan falls back to the old radial run for the rest of
+      // this flee — never a stall, never a teleport.
+      const threat = npc.fleeFrom;
+      let path = npc.fleePath;
+      let dest = npc.fleeDestination;
+      if (!dest) {
+        const away = fleeDestination(npc.position, threat, NPC_FLEE_PATH_DISTANCE);
+        dest = away;
+        path = undefined;
+      }
+      if (!path && !npc.fleePathFailed) {
+        const planned = pathTo(npc.position, dest, nav.obstacles, nav.roadPiece, nav.chunk);
+        if (planned) {
+          path = planned;
+        } else {
+          npc = { ...npc, fleePathFailed: true };
+        }
+      }
+      if (path) {
+        const res = stepAlongPath(path, npc.position, fleeStep);
+        if (res.arrived) {
+          // Route consumed but flight remains: clear the route (and the
+          // destination) so the next tick plans onward from here.
+          return {
+            ...npc,
+            position: res.position,
+            fleePath: undefined,
+            fleeDestination: undefined,
+            facing: res.facing,
+            moving: false,
+            running: true,
+            activity: 'Fleeing!',
+          };
+        }
+        return {
+          ...npc,
+          position: res.position,
+          fleePath: res.path,
+          fleeDestination: dest,
+          facing: res.facing,
+          moving: true,
+          running: true,
+          activity: 'Fleeing!',
+        };
+      }
+      const dx = npc.position.x - threat.x;
+      const dy = npc.position.y - threat.y;
+      const dist = Math.hypot(dx, dy) || 1;
       const nx = dx / dist, ny = dy / dist;
       const facing: TownsfolkFacing = Math.abs(nx) >= Math.abs(ny)
         ? (nx >= 0 ? 'right' : 'left')
@@ -1409,7 +1481,7 @@ function advanceOne(
       };
     }
     // Flee expired: clear the state and resume schedule (back to a walk).
-    npc = { ...npc, fleeUntilTick: undefined, fleeFrom: undefined, running: false };
+    npc = { ...npc, fleeUntilTick: undefined, fleeFrom: undefined, fleePath: undefined, fleeDestination: undefined, fleePathFailed: undefined, running: false };
   }
 
   const want = resolveTarget(npc, anchors, clock);
