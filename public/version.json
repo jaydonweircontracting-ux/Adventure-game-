@@ -1,6 +1,6 @@
 {
-  "build": "957",
-  "note": "The game now has real music and sound: a title theme, a tavern tune, a full town theme, a dungeon drone, and a looping fields theme that follow you as you move — tavern music takes over inside the tavern and hands back to the town theme when you step out, dungeons get their own track, and every other town plays the town theme while the wilds play the fields loop. Coins now clink when gold changes hands, attacks grunt (women fighters and men soldiers each sound like themselves), opening the map has its own sound, and Ember Bolt crackles with fire. The title screen is black with green buttons, and Options on the title screen opens the same music list and sound controls as in-game: every track listed with what is playing now, music and effects on their own on/off switches and volume sliders, all saved on this device. Music starts on your first tap, because browsers block sound before that.",
-  "timestamp": "2026-10-22T03:58:22.169Z",
-  "cacheBuster": "mvj0grmh"
+  "build": "958",
+  "note": "At level 10 you now choose a class that actually changes how you fight. Four teachers have moved into Mosslight: Dain teaches warriors at the Wayfarer Guild, Sable teaches mages, Puck teaches rogues, and Wynn teaches archers. They teach at the guild by day and wander to the Rusty Tankard in the evening, so talk to one when you reach level 10 — changing class later is free. Warriors hit 2 damage harder, rogues crit more often and strike from stealth three times as hard, archers shoot 25 percent harder, and mages open a Spells tab in the Skills panel with real magic: Ember Bolt throws fire at the nearest foe within range, Veil Step blinks you two paces in the direction you face, and Frost Ward hardens your skin with 3 extra armor until your next wound. Spells cost mana drawn from your intelligence, refill slowly on their own, and every cast plays a fire, frost, or veil animation on the field. Effect frames come from a user-supplied effects pack that ships no license file, so no license terms are claimed for them.",
+  "timestamp": "2026-10-22T05:15:41.393Z",
+  "cacheBuster": "mvj3879t"
 }

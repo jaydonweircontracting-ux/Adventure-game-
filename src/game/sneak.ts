@@ -119,9 +119,13 @@ export function stealthDamage(
   sneaking: boolean,
   alertedIds: ReadonlySet<string>,
   npcId: string,
+  // BUILD 958: rogues strike at x3 — the multiplier is a parameter so the
+  // class bonus flows through this single function instead of a second
+  // stealth path. Default stays x2 for every other class.
+  multiplier: number = SNEAK_STEALTH_DAMAGE_MULT,
 ): number {
   return isStealthUndetected(sneaking, alertedIds, npcId)
-    ? baseDamage * SNEAK_STEALTH_DAMAGE_MULT
+    ? baseDamage * multiplier
     : baseDamage;
 }
 

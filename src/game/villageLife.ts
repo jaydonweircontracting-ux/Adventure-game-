@@ -380,6 +380,8 @@ export function npcWage(archetype: TownsfolkArchetype): number {
     case 'priest': return 6;
     case 'commoner': return 5;
     case 'child': return 0;
+    // BUILD 958: guild stipend — skilled-trade rate, same as a guard.
+    case 'teacher': return 12;
   }
 }
 

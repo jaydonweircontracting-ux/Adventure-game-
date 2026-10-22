@@ -971,9 +971,36 @@ console.log('Testing townsfolk living-town simulation...');
   });
   const folk = createTownsfolk(anchors, 847291583);
   // BUILD 699: Roster is 40 in households (was 13).
-  assert(folk.length === 40, `Expected 40 townsfolk, got ${folk.length}`);
-  assert(new Set(folk.map((n) => n.id)).size === 40, 'Townsfolk ids not unique');
-  assert(new Set(folk.map((n) => n.name)).size === 40, 'Townsfolk names not unique');
+  // BUILD 958: Roster is 42 — four class teachers appended (order
+  // preserved for save compatibility, so they are townsfolk-38..41).
+  // CORRECTION: the roster never held 40 originals — it held 38, so the
+  // old 40-count assert and the first 958 draft (44) were both wrong;
+  // 38 + 4 = 42. (Sim asserts only summarize at the end, which the 694
+  // crash blocks, so the wrong counts failed silently until now.)
+  assert(folk.length === 42, `Expected 42 townsfolk, got ${folk.length}`);
+  assert(new Set(folk.map((n) => n.id)).size === 42, 'Townsfolk ids not unique');
+  assert(new Set(folk.map((n) => n.name)).size === 42, 'Townsfolk names not unique');
+  // BUILD 958: class teachers — guild hall by day, Tankard in the evening,
+  // guild point overnight (indoors flag, same pattern as home-indoors).
+  {
+    const teachers = folk.filter((n) => n.archetype === 'teacher');
+    assert(teachers.length === 4, `Expected 4 teachers, got ${teachers.length}`);
+    const byName = new Map(teachers.map((t) => [t.name, t]));
+    for (const [name, id] of [['Dain', 'townsfolk-38'], ['Sable', 'townsfolk-39'], ['Puck', 'townsfolk-40'], ['Wynn', 'townsfolk-41']] as const) {
+      const t = byName.get(name);
+      assert(t !== undefined, `Teacher ${name} missing`);
+      assert(t!.id === id, `Teacher ${name} should be ${id}, got ${t!.id}`);
+      assert(t!.homeKey === 'guild', `Teacher ${name} homeKey should be guild, got ${t!.homeKey}`);
+      assert(t!.home.x === 90 && t!.home.y === 60, `Teacher ${name} home should be the guild point (90,60), got (${t!.home.x},${t!.home.y})`);
+    }
+    const day = townsfolkTarget(byName.get('Dain')!, anchors, clockAt(10, 0));
+    assert(day.activity === 'Teaching at the guild', `Dain at 10:00 should teach, got ${day.activity}`);
+    assert(day.indoors === false, 'Teachers are outdoors at the guild by day');
+    const evening = townsfolkTarget(byName.get('Sable')!, anchors, clockAt(18, 15));
+    assert(evening.activity === 'Evening at the Tankard', `Sable at 18:15 should be at the Tankard, got ${evening.activity}`);
+    const night = townsfolkTarget(byName.get('Puck')!, anchors, clockAt(2, 0));
+    assert(night.indoors === true, 'Teachers are indoors overnight (guild point)');
+  }
   // BUILD 699: households — every NPC shares a homeKey with at least one
   // other NPC (couples/families), except Father Aldous (chapel).
   const byHome = new Map<string, string[]>();
@@ -987,11 +1014,13 @@ console.log('Testing townsfolk living-town simulation...');
   }
   assert(byHome.get('chapel')!.length === 1, 'Chapel should house only Father Aldous');
   // BUILD 699: housing — all 40 NPCs get beds, household members share homes.
+  // BUILD 958: all 42 NPCs get beds (teachers take free-bed fallback — the
+  // guild is not a household door — 12 free beds cover 4 teachers).
   {
     const housing = buildMosslightHousing(folk.map((n) => ({ id: n.id, homeKey: n.homeKey })));
     assert(housing.warnings.length === 0, `Housing warnings: ${housing.warnings.join('; ')}`);
     const assigned = Object.keys(housing.assignments);
-    assert(assigned.length === 40, `Expected 40 bed assignments, got ${assigned.length}`);
+    assert(assigned.length === 42, `Expected 42 bed assignments, got ${assigned.length}`);
     // Household coherence: NPCs sharing a homeKey are in the same home.
     for (const n of folk) {
       const a = housing.assignments[n.id];

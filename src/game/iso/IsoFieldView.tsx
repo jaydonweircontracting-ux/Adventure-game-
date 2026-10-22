@@ -25,6 +25,7 @@ import { CharacterAnimator, drawIsoCharacter, preloadCharacterSprites, variantLo
 import { SNEAK_PLAYER_OPACITY } from '../sneak';
 import { lookWithoutLootedGear } from '../npcGear';
 import { artUrl } from '../artCache';
+import { spellFramesFor } from '../classes';
 import { animalSpriteFor, ANIMAL_DISPLAY_SIZE } from '../animalSprites';
 import { computeDirtPathGeometry, buildDirtPath2D, DIRT_LAYER_STYLE } from './dirtPaths';
 // BUILD 389: user-supplied landscape tileset + ambient critters.
@@ -307,6 +308,10 @@ interface IsoFieldViewProps {
   worldHorses?: Array<{ id: string; name: string; color: string; activity: string; owner: string; position: Point }>;
   // BUILD 684: floating combat text — rendered in iso (were 2D-DOM only).
   damageTexts?: Array<{ id: number; text: string; position: Point; kind: string }>;
+  // BUILD 958: spell-effect overlays — App-owned frame lists, drawn in iso
+  // (2D-DOM overlays sit under the iso canvas and would be invisible).
+  // frame advances on App's timeout chain; this view only draws.
+  spellFx?: Array<{ id: number; frames: string[]; frame: number; position: Point }>;
   zoom: number; // BUILD 372: zoom is owned by App so the main zoom buttons drive it
   // BUILD 953: camera angle in degrees (continuous; App owns the live ref).
   // Tap = exactly ±90°; hold = slow spin. Iso field view only.
@@ -620,11 +625,11 @@ function roadBlendFor(road: string, lx: number, ly: number): number {
   return 0.3 + 0.7 * Math.min(1, Math.max(0, d) / 2.5);
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, adventurers, goats, wildlife, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, zoom, rotationAngleRef, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, adventurers, goats, wildlife, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, spellFx, zoom, rotationAngleRef, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
-  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -748,6 +753,19 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
     preloadCharacterSprites(); // BUILD 702: RPG character sprite pack
     preloadIsoTiles(); // BUILD 389: landscape tileset
     preloadCritters(); // BUILD 389: ambient critters
+    // BUILD 958: spell-effect frames — preloaded at view mount into the
+    // same window cache the draw pass reads, so the first cast animates
+    // in full instead of fading in frame by frame.
+    {
+      const fxImgs = (window as unknown as { __spellFxImgs?: Record<string, HTMLImageElement> }).__spellFxImgs || {};
+      for (const spellId of ['ember-bolt', 'veil-step', 'frost-ward'] as const) {
+        for (const p of spellFramesFor(spellId)) {
+          const url = artUrl(p);
+          if (!fxImgs[url]) { const img = new Image(); img.src = url; fxImgs[url] = img; }
+        }
+      }
+      (window as unknown as { __spellFxImgs?: Record<string, HTMLImageElement> }).__spellFxImgs = fxImgs;
+    }
     const canvas = canvasRef.current!;
     const wrap = wrapRef.current!;
     // BUILD 710: favor low-latency opaque canvas composition on mobile GPUs.
@@ -2753,6 +2771,26 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             g.restore();
           }
         }
+      }
+
+      // BUILD 958: spell-effect overlays, drawn just under combat text.
+      // Centered on the target point; window-cached images (same pattern
+      // as wildlife) so a frame that has not decoded yet is skipped rather
+      // than drawn blank.
+      {
+        const fxList = (liveRef.current as { spellFx?: Array<{ id: number; frames: string[]; frame: number; position: Point }> }).spellFx || [];
+        const fxImgs = (window as unknown as { __spellFxImgs?: Record<string, HTMLImageElement> }).__spellFxImgs || {};
+        for (const fx of fxList) {
+          const src = fx.frames[Math.min(fx.frame, fx.frames.length - 1)];
+          if (!src) continue;
+          if (!fxImgs[src]) { const img = new Image(); img.src = src; fxImgs[src] = img; }
+          const img = fxImgs[src];
+          if (!img.complete || img.naturalWidth === 0) continue;
+          const w = isoToScreen(fx.position.x, fx.position.y);
+          const size = 56;
+          g.drawImage(img, w.x - size / 2, w.y - size / 2 - 20, size, size);
+        }
+        (window as unknown as { __spellFxImgs?: Record<string, HTMLImageElement> }).__spellFxImgs = fxImgs;
       }
 
       // BUILD 684: floating combat text in iso (damage numbers were 2D-DOM

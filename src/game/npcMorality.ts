@@ -41,6 +41,8 @@ export const MORALITY_BASE: Record<Townsperson['archetype'], number> = {
   smith: 70,
   commoner: 70,
   child: 95,
+  // BUILD 958: teachers are civilians — same base as commoner/smith.
+  teacher: 70,
 };
 
 /** Fraction of eligible adults who roll into the low-morality tail. */

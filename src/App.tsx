@@ -62,6 +62,7 @@ import { EXPANDED_WORLD_BOUNDS, generateWorldMap, worldMapBiomeLabel, type Gener
 import StoneSoupDungeon from '@/game/StoneSoupDungeon';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, placeTownsfolkAtHome, restoreTownsfolk, serializeTownsfolk, isTownsfolkSave, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, townsfolkRosterEntries, mosslightObstacles, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, npcKillExperienceReward, npcEffectiveLevel, killExperienceForLevel, NPC_FIGHT_ATTACK_COOLDOWN_MS, marketStallsFromDecor, arterialWaypointsFromDecor, marketBrowseVisit, type Townsperson, type TownsfolkAnchors, type TownsfolkPoint, type TownsfolkNavContext, type TownsfolkSave } from '@/game/townsfolk';
 import { AA_ABILITIES, AA_CREDITS_PER_POINT, AA_EVEN_KILLS_PER_POINT, aaBonusesForRanks, aaBuyRank, aaCostForRank, aaTitleForSpent, accrueAaKill, createEmptyAa, sanitizeAa, type AaState } from '@/game/aa';
+import { CLASS_DESCRIPTIONS, MANA_REGEN_SECONDS, OVERWORLD_SPELLS, classArrowMultiplier, classCritBonus, classDamageBonus, classStealthMultiplier, emberBoltDamage, frostWardArmor, maxManaForInt, nearestSpellTarget, sanitizePlayerMana, spellFramesFor, spellsForClass, teacherClassForNpc, veilStepDestination, type OverworldSpellId } from '@/game/classes';
 // BUILD 683: unified Mosslight rects (single source in settlements.ts).
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
 import { mosslightEngineChunkLayout, mosslightEngineLanes, mosslightEngineProps, mosslightFillerRects } from '@/game/mosslightLayout';
@@ -169,7 +170,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '957';
+const BUILD_NUMBER = '958';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -206,6 +207,7 @@ const BUILD_NOTES: Record<string, string> = {
   '955': 'Conversations now go deeper: asking about someone, their work, rumors, or the town unlocks a follow-up question in the same conversation, so you can press further instead of hitting the same four topics — and closing the conversation resets the topics (everything is re-explorable next time) without ever resetting how much they like you. You can also haggle in conversation: compliments warm people up (+6), jokes land (+3) unless they already dislike you (−2), boasting annoys (−3), and insults sting (−10), each once per conversation — and how much they like you now shows in their prices and in what they will tell you (cold acquaintances withhold, warm friends share hints and charge less, admired friends charge 20% less). Merchant townsfolk finally sell from inside conversation: a Browse wares button opens their own goods, bought through the same shop system with the same weight limit — and anyone who is not a merchant has no shop at all. Faction standing is untouched and separate.',
   '956': 'Conversations now look like the photo: a large portrait of the person you are talking to stands on the left with their name plate beneath it, and a wide text box below carries what they say, with the game still visible behind the panel. Every villager has a face — ten characters with six expressions each — and the face changes with the conversation: they smile at compliments and warm friendships, glare when insulted or cold toward you, look sad at bad news or a joke that falls flat, talk while they speak, and turn to profile when showing their wares. And what they say is now real: rumors come only from gossip they actually heard or things that actually happened to them — no more invented secrets — and a villager with a quest for you will mention it by name. Everything from before still works: topics that deepen, haggling, disposition prices, and merchant shops in conversation.',
   '957': 'The game now has real music and sound: a title theme, a tavern tune, a full town theme, a dungeon drone, and a looping fields theme that follow you as you move — tavern music takes over inside the tavern and hands back to the town theme when you step out, dungeons get their own track, and every other town plays the town theme while the wilds play the fields loop. Coins now clink when gold changes hands, attacks grunt (women fighters and men soldiers each sound like themselves), opening the map has its own sound, and Ember Bolt crackles with fire. The title screen is black with green buttons, and Options on the title screen opens the same music list and sound controls as in-game: every track listed with what is playing now, music and effects on their own on/off switches and volume sliders, all saved on this device. Music starts on your first tap, because browsers block sound before that.',
+  '958': 'At level 10 you now choose a class that actually changes how you fight. Four teachers have moved into Mosslight: Dain teaches warriors at the Wayfarer Guild, Sable teaches mages, Puck teaches rogues, and Wynn teaches archers. They teach at the guild by day and wander to the Rusty Tankard in the evening, so talk to one when you reach level 10 — changing class later is free. Warriors hit 2 damage harder, rogues crit more often and strike from stealth three times as hard, archers shoot 25 percent harder, and mages open a Spells tab in the Skills panel with real magic: Ember Bolt throws fire at the nearest foe within range, Veil Step blinks you two paces in the direction you face, and Frost Ward hardens your skin with 3 extra armor until your next wound. Spells cost mana drawn from your intelligence, refill slowly on their own, and every cast plays a fire, frost, or veil animation on the field. Effect frames come from a user-supplied effects pack that ships no license file, so no license terms are claimed for them.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
@@ -1589,7 +1591,7 @@ const TANKARD_CELLAR_AREA: InteriorArea = {
 
 type GoatDisposition = 'calm' | 'aggressive' | 'defeated';
 type GoatStateName = GoatAIState;
-type PlayerClass = 'Beginner' | 'Warrior' | 'Mage' | 'Rogue';
+type PlayerClass = 'Beginner' | 'Warrior' | 'Mage' | 'Rogue' | 'Archer';
 type StatKey = 'str' | 'dex' | 'int' | 'luk';
 type PlayerStats = Record<StatKey, number>;
 const STAT_KEYS: StatKey[] = ['str', 'dex', 'int', 'luk'];
@@ -1840,6 +1842,11 @@ type SaveGameData = {
   playerXp: number;
   playerLevel: number;
   playerClass: PlayerClass;
+  // BUILD 958: overworld mana for mage spells. Optional — old saves carry
+  // no field and load with FULL mana (sanitized against the int-derived
+  // max), never 0. Frost Ward never persists (until-wound buff, like the
+  // dungeon rule that buffs never persist in saves).
+  playerMana?: number;
   playerStats?: PlayerStats;
   statPoints?: number;
   characterChoices?: CharacterChoices | null;
@@ -1917,7 +1924,7 @@ const SAVE_FILE_VERSION = CURRENT_SAVE_VERSION;
 const SAVE_STORAGE_KEY = 'adventure-game-save-v2';
 const SAVE_LEGACY_STORAGE_KEY = 'adventure-game-save-v1';
 const saveDirections = ['up', 'down', 'left', 'right'];
-const savePlayerClasses = ['Beginner', 'Warrior', 'Mage', 'Rogue'];
+const savePlayerClasses = ['Beginner', 'Warrior', 'Mage', 'Rogue', 'Archer'];
 const saveNpcRoles = ['mage', 'warrior', 'guide', 'rogue'];
 const saveGoatDispositions = ['calm', 'aggressive', 'defeated'];
 const saveAdventurerClasses = ['Beginner', 'Ranger', 'Mage', 'Rogue', 'Warrior'];
@@ -2096,11 +2103,10 @@ function scaleGoatsToPlayerLevel(goats: GoatState[], playerLevel: number) {
     return { ...goat, level, maxHp, hp: maxHp };
   });
 }
-const classDescriptions: Record<Exclude<PlayerClass, 'Beginner'>, string> = {
-  Warrior: 'More health and a heavy starting style.',
-  Mage: 'A spell-focused path for curious explorers.',
-  Rogue: 'A fast, precise path for clever adventurers.',
-};
+// BUILD 958: class descriptions are the single source in classes.ts — the
+// old text promised a boat-route unlock that does not exist and "more
+// health" the Warrior never had. These words now match the shipped effects.
+const classDescriptions: Record<Exclude<PlayerClass, 'Beginner'>, string> = CLASS_DESCRIPTIONS;
 type CraftItem = 'dagger' | 'cloths' | 'bow' | 'shirt' | 'sword';
 const craftRecipes: Record<CraftItem, { name: string; description: string; cost: GoatLoot; reward: GoatLoot }> = {
   dagger: { name: 'Goat-horn dagger', description: 'A sharp beginner weapon.', cost: { goatHorns: 2 }, reward: { daggers: 1 } },
@@ -5576,6 +5582,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   });
   // BUILD 595: Skill panel visibility.
   const [skillsOpen, setSkillsOpen] = useState(false);
+  // BUILD 958: Skills | Spells tabs in the SAME drawer (941 pattern — no
+  // second sheet). The Spells tab is the mage casting surface.
+  const [skillsTab, setSkillsTab] = useState<'skills' | 'spells'>('skills');
   const [hpBoxHidden, setHpBoxHidden] = useState(false);
   // Quest system: active/completed quest states (pure logic in src/game/quests.ts).
   const [questStates, setQuestStates] = useState<QuestState[]>([]);
@@ -5724,6 +5733,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [playerXp, setPlayerXp] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
   const [playerClass, setPlayerClass] = useState<PlayerClass>('Beginner');
+  // BUILD 958: overworld mana for mage spells. Derived from int
+  // (maxMana = 10 + int x 2); starts full. Old saves load full.
+  const [playerMana, setPlayerMana] = useState<number>(maxManaForInt(initialPlayerStats.int));
+  const [frostWardActive, setFrostWardActive] = useState(false);
   const [npcDialogue, setNpcDialogue] = useState<TownNpc | null>(null);
   // BUILD 330: Oblivion-style dialogue — open townsfolk, selected topic,
   // per-NPC disposition (0-100) and the Mosslight wanted level. Both persist
@@ -6410,6 +6423,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     return { weight, capacity, over: weight > capacity };
   };
   const playerClassRef = useRef<PlayerClass>(playerClass);
+  const playerManaRef = useRef<number>(playerMana);
+  const frostWardRef = useRef(false);
   const interiorRef = useRef(interior);
   const interiorPositionRef = useRef(interiorPosition);
   // BUILD 571: iso tile position for cellar melee range (tile adjacency)
@@ -6451,6 +6466,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         getPlayerPos: () => ({ ...positionRef.current }),
         getChunk: () => ({ ...chunkRef.current }),
         getPlayerHp: () => playerHpRef.current,
+        // BUILD 958: read the level/class refs (test hook, same family as getPlayerHp).
+        getPlayerRefs: () => ({ level: playerLevelRef.current, playerClass: playerClassRef.current }),
         isBlocked: (x: number, y: number) => isFieldPositionBlocked({ x, y }, chunkRef.current),
         getGoats: () => goatsRef.current.map((g) => ({
           id: String((g as unknown as { id?: number | string }).id ?? 'goat'),
@@ -7041,6 +7058,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     playerXp,
     playerLevel,
     playerClass,
+    playerMana: playerManaRef.current,
     playerStats,
     statPoints,
     characterChoices,
@@ -7100,8 +7118,18 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     onChunkChange(chunkRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // BUILD 958: the restore below must run ONCE per loaded save object.
+  // Its dep list includes the parent's plain-function callbacks (not
+  // memoized), whose identity changes on every parent re-render — without
+  // this guard every such re-render re-ran the full restore and rewound
+  // live state (class, position, HP, XP) to the saved values. The guard
+  // skips only redundant restores of the identical save; a fresh load
+  // always remounts this component (menu toggle), so the ref is fresh.
+  const restoredLoadStateRef = useRef<SaveGameData | null>(null);
   useEffect(() => {
     if (!loadState) return;
+    if (restoredLoadStateRef.current === loadState) return;
+    restoredLoadStateRef.current = loadState;
     // BUILD 796: old saves that were inside a house now resume outdoors.
     // Keep the saved world position/chunk, but do not restore a separate house room.
     keysRef.current = {};
@@ -7206,6 +7234,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     playerClassRef.current = loadState.playerClass; setPlayerClass(loadState.playerClass);
     const restoredStats = loadState.playerStats || initialPlayerStats;
     playerStatsRef.current = restoredStats; onPlayerStatsChange(restoredStats);
+    // BUILD 958: mana restores clamped to the int-derived max; old saves
+    // without the field load full. Frost Ward never restores (until-wound).
+    const restoredMana = sanitizePlayerMana(loadState.playerMana, maxManaForInt(restoredStats.int));
+    playerManaRef.current = restoredMana; setPlayerMana(restoredMana);
+    frostWardRef.current = false; setFrostWardActive(false);
     onStatPointsChange(Math.max(0, Math.floor(loadState.statPoints || 0)));
     // BUILD 748: the legacy static field-NPC roster was retired (startingTownNpcs is empty).
     // Do not resurrect obsolete/reskinned NPCs from older saves; the living-town
@@ -7679,6 +7712,21 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   useEffect(() => { playerLevelRef.current = playerLevel; }, [playerLevel]);
   useEffect(() => { playerStatsRef.current = playerStats; }, [playerStats]);
   useEffect(() => { playerClassRef.current = playerClass; }, [playerClass]);
+  useEffect(() => { playerManaRef.current = playerMana; }, [playerMana]);
+  useEffect(() => { frostWardRef.current = frostWardActive; }, [frostWardActive]);
+  // BUILD 958: mana regeneration — 1 per 10 real seconds, up to the
+  // int-derived max. Independent of the game tick so it also ticks
+  // while standing still; throttled by the browser when backgrounded.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const max = maxManaForInt(playerStatsRef.current.int);
+      if (playerManaRef.current < max) {
+        const next = Math.min(max, playerManaRef.current + 1);
+        playerManaRef.current = next; setPlayerMana(next);
+      }
+    }, MANA_REGEN_SECONDS * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => { facingRef.current = facing; }, [facing]);
   useEffect(() => { interiorRef.current = interior; }, [interior]);
   // BUILD 957: report tavern-interior presence to App for music zoning
@@ -8587,12 +8635,15 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     }
   };
 
-  const applyPlayerHitToCreature = (attackTarget: { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, damage: number, critical: boolean) => {
+  const applyPlayerHitToCreature = (attackTarget: { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, damage: number, critical: boolean, attackerElement: 'none' | 'fire' = 'none') => {
     // BUILD 935: player attacks are physical ('none'); the defender's
     // level-derived defense/armor rolls mitigate them. A fully
     // blocked hit shows BLOCKED instead of -0.
+    // BUILD 958: spells pass their element (Ember Bolt: 'fire') through
+    // this SAME single mitigation point — no second damage path. The
+    // defender's fire percent/immunity then bites exactly as 935 designed.
     const targetMitigation = mitigationForCreature(attackTarget.entityKind === 'monster' ? ((attackTarget as MonsterState).kind || 'creature') : 'goat');
-    const mitigated = mitigateDamage({ raw: damage, attackerElement: 'none', percents: targetMitigation.elementPercents, immunities: targetMitigation.immunities, defense: creatureDefenseForLevel(attackTarget.level ?? 1), armor: creatureArmorForLevel(attackTarget.level ?? 1) });
+    const mitigated = mitigateDamage({ raw: damage, attackerElement, percents: targetMitigation.elementPercents, immunities: targetMitigation.immunities, defense: creatureDefenseForLevel(attackTarget.level ?? 1), armor: creatureArmorForLevel(attackTarget.level ?? 1) });
     const finalDamage = mitigated.damage;
     const blocked = mitigated.blocked && finalDamage === 0;
     const nextHp = Math.max(0, attackTarget.hp - finalDamage);
@@ -8689,6 +8740,89 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     }
   };
 
+  // BUILD 958: overworld spellcasting (Mage only) + spell-effect overlays.
+  // Spells route through the EXISTING combat path — Ember Bolt damage is
+  // the 942 formula value passed into applyPlayerHitToCreature with
+  // element 'fire', so a spell kill grants XP/loot/codex/quest credit
+  // exactly like a melee kill. No target, no safe tile, or no mana
+  // fizzles WITHOUT spending mana (mirror of the dungeon rule). Spells
+  // are field magic: the cellar refuses them, because field coordinates
+  // break down there (same reason bows are melee-only in the cellar).
+  // FX frames are drawn by IsoFieldView from liveRef; the timeout chain
+  // below advances them (8 frames x 70ms) and then removes the overlay.
+  const [spellFx, setSpellFx] = useState<{ id: number; frames: string[]; frame: number; position: Point }[]>([]);
+  const spellFxIdRef = useRef(0);
+  const spawnSpellFx = (spellId: OverworldSpellId, position: Point) => {
+    const id = spellFxIdRef.current++;
+    const frames = spellFramesFor(spellId).map((p) => assetUrl(p));
+    setSpellFx((cur) => [...cur, { id, frames, frame: 0, position }]);
+    for (let f = 1; f <= 8; f++) {
+      window.setTimeout(() => {
+        setSpellFx((cur) => (f >= 8 ? cur.filter((e) => e.id !== id) : cur.map((e) => (e.id === id ? { ...e, frame: f } : e))));
+      }, f * 70);
+    }
+  };
+  const castOverworldSpell = (spellId: OverworldSpellId) => {
+    const def = OVERWORLD_SPELLS[spellId];
+    if (playerClassRef.current !== 'Mage') {
+      setAttackFlash('Only Mages cast spells — visit Sable at the guild.');
+      window.setTimeout(() => setAttackFlash(null), 1500);
+      return;
+    }
+    if (interiorRef.current) {
+      setAttackFlash('Spells are field magic — they fail indoors.');
+      window.setTimeout(() => setAttackFlash(null), 1500);
+      return;
+    }
+    if (playerManaRef.current < def.cost) {
+      setAttackFlash(`Not enough mana for ${def.name} (${def.cost} needed).`);
+      window.setTimeout(() => setAttackFlash(null), 1500);
+      return;
+    }
+    const spendMana = () => {
+      const next = playerManaRef.current - def.cost;
+      playerManaRef.current = next; setPlayerMana(next);
+    };
+    if (spellId === 'ember-bolt') {
+      const candidates = [
+        ...goatsRef.current.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, position: g.position, entityKind: 'goat' as const, state: g })),
+        ...monstersRef.current.filter((m) => m.disposition !== 'defeated').map((m) => ({ id: m.id, position: m.position, entityKind: 'monster' as const, state: m })),
+      ];
+      const target = nearestSpellTarget(positionRef.current, candidates, def.range);
+      if (!target) {
+        setLogs((currentLogs) => [{ text: 'Ember Bolt fizzles — no foe within range.', color: 'orange' }, ...currentLogs].slice(0, 3));
+        return;
+      }
+      spendMana();
+      audioEngine.playSfx('fireball');
+      spawnSpellFx('ember-bolt', target.position);
+      const raw = emberBoltDamage(playerStatsRef.current.int);
+      const critical = Math.random() < playerCriticalChanceForStats(playerStatsRef.current, aaBonusesRef.current.crit + classCritBonus(playerClassRef.current));
+      applyPlayerHitToCreature({ ...target.state, entityKind: target.entityKind } as { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, raw, critical, 'fire');
+      return;
+    }
+    if (spellId === 'veil-step') {
+      const dest = veilStepDestination(positionRef.current, facingRef.current, def.range);
+      if (dest.x < 4 || dest.x > 136 || dest.y < 4 || dest.y > 136 || isFieldPositionBlocked(dest, chunkRef.current)) {
+        setLogs((currentLogs) => [{ text: 'Veil Step fizzles — no safe tile that way.', color: 'orange' }, ...currentLogs].slice(0, 3));
+        return;
+      }
+      spendMana();
+      cancelTapMove();
+      spawnSpellFx('veil-step', dest);
+      positionRef.current = dest; setPosition(dest);
+      setLogs((currentLogs) => [{ text: 'You slip through the veil.', color: 'blue' }, ...currentLogs].slice(0, 3));
+      return;
+    }
+    // frost-ward: recast refreshes (dungeon overwrite rule) and still costs
+    // mana; the ward itself never persists in saves.
+    const wasWardActive = frostWardRef.current;
+    spendMana();
+    frostWardRef.current = true; setFrostWardActive(true);
+    spawnSpellFx('frost-ward', positionRef.current);
+    setLogs((currentLogs) => [{ text: `Frost Ward ${wasWardActive ? 'renews' : 'hardens'} your skin (+${frostWardArmor()} armor until your next wound).`, color: 'blue' }, ...currentLogs].slice(0, 3));
+  };
+
   // BUILD 326: damage resolution for Tankard Cellar rats. Same cadence as the
   // field path (hit flash, crit text, loot, XP, quest event) but loot goes
   // straight into the inventory — a field-coordinate drop would land outside
@@ -8724,8 +8858,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const firePlayerArrow = (direction: Direction, targetId: number | null) => {
     const origin = { ...positionRef.current };
     const stats = playerStatsRef.current;
-    const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
-    const damage = Math.round(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * BOW_ARROW_DAMAGE_MULT * beerDamageMultiplier(beerBuffUntil));
+    const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit + classCritBonus(playerClassRef.current));
+    const damage = Math.round(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage + classDamageBonus(playerClassRef.current)) * (critical ? 2 : 1) * BOW_ARROW_DAMAGE_MULT * beerDamageMultiplier(beerBuffUntil) * classArrowMultiplier(playerClassRef.current));
     let dx = 0; let dy = 0;
     const target = targetId == null ? null : [...goatsRef.current, ...monstersRef.current].find((c) => c.id === targetId && c.disposition !== 'defeated');
     if (target && Math.hypot(target.position.x - origin.x, target.position.y - origin.y) <= ARROW_RANGE) {
@@ -9107,7 +9241,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 // BUILD 932: stealth strike — double damage when the target
                 // has not detected the sneaking player (melee only).
                 const stealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, npc.id);
-                const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1), sneakingRef.current, alertedNpcIdsRef.current, npc.id));
+                const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage + classDamageBonus(playerClassRef.current)) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1), sneakingRef.current, alertedNpcIdsRef.current, npc.id, classStealthMultiplier(playerClassRef.current)));
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
                 setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
                 // BUILD 939: player harm moves the victim's faction standing.
@@ -9229,11 +9363,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               if (dist <= PLAYER_MELEE_REACH + PLAYER_MELEE_TARGET_RADIUS) {
                 swingDamageDealt = true;
                 const stats = playerStatsRef.current;
-                const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
+                const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit + classCritBonus(playerClassRef.current));
                 const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
                 // BUILD 932: stealth strike — double damage when undetected.
                 const stealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, targetNpc.id);
-                const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, targetNpc.id));
+                const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage + classDamageBonus(playerClassRef.current)) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, targetNpc.id, classStealthMultiplier(playerClassRef.current)));
                 const hurt = damageNpc(targetNpc, damage, attackerPos, tick);
                 setDisposition((prev) => ({ ...prev, [targetNpc.id]: adjustDisposition(prev[targetNpc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
                 // BUILD 939: player harm moves the victim's faction standing.
@@ -9372,9 +9506,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               setLogs((currentLogs) => [{ text: 'Harvested ' + cornCount + ' corn.', color: 'blue' }, ...currentLogs].slice(0, 3));
             } else if (attackTarget.entityKind === 'cellar-rat') {
               const stats = playerStatsRef.current;
-              const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
+              const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit + classCritBonus(playerClassRef.current));
               const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
-              const damage = playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
+              const damage = playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage + classDamageBonus(playerClassRef.current)) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
               const rat = cellarRatsRef.current.find((r) => r.id === attackTarget.id && r.hp > 0);
               if (rat) applyHitToCellarRat(rat, damage, critical);
             } else if (attackTarget.entityKind === 'townsfolk') {
@@ -9384,11 +9518,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               if (npc && !npc.indoors) {
                 const tick = brainRef.current?.worldCore.getClock().tick ?? 0;
                 const stats = playerStatsRef.current;
-                const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
+                const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit + classCritBonus(playerClassRef.current));
                 const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
                 // BUILD 932: stealth strike — double damage when undetected.
                 const stealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, npc.id);
-                const damage = stealthDamage(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, npc.id);
+                const damage = stealthDamage(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage + classDamageBonus(playerClassRef.current)) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, npc.id, classStealthMultiplier(playerClassRef.current));
                 const hurt = damageNpc(npc, damage, attackerPos, tick);
                 setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(damage / 2))) }));
                 // BUILD 939: player harm moves the victim's faction standing.
@@ -9422,12 +9556,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const maxHp = 30;
               const curHp = fieldNpcHpRef.current.get(id) ?? maxHp;
               const stats = playerStatsRef.current;
-              const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
+              const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit + classCritBonus(playerClassRef.current));
               const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
               // BUILD 933: stealth ×2 for adventurers/travelers too (same
               // undetected rule as townsfolk; no crime path is added).
               const fieldStealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, id);
-              const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, id));
+              const damage = Math.max(1, stealthDamage(playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage + classDamageBonus(playerClassRef.current)) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult, sneakingRef.current, alertedNpcIdsRef.current, id, classStealthMultiplier(playerClassRef.current)));
               const newHp = curHp - damage;
               const pos = (attackTarget as { position: { x: number; y: number } }).position;
               const name = (attackTarget as { name: string }).name || 'NPC';
@@ -9458,13 +9592,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const maxHp = WILDLIFE_MAX_HP[species] ?? 15;
               const curHp = wildlifeHpRef.current.get(id) ?? maxHp;
               const stats = playerStatsRef.current;
-              const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
+              const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit + classCritBonus(playerClassRef.current));
               const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
               // BUILD 935: wildlife routes through the pipeline (level-1
               // equivalent: defense 1, armor 1). The branch's min-1 floor
               // is preserved — mitigation reduces toward it, not below it.
               const wildMitigation = mitigationForCreature(species);
-              const damage = Math.max(1, mitigateDamage({ raw: Math.max(1, playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult), attackerElement: 'none', percents: wildMitigation.elementPercents, immunities: wildMitigation.immunities, defense: 1, armor: 1 }).damage);
+              const damage = Math.max(1, mitigateDamage({ raw: Math.max(1, playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage + classDamageBonus(playerClassRef.current)) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult), attackerElement: 'none', percents: wildMitigation.elementPercents, immunities: wildMitigation.immunities, defense: 1, armor: 1 }).damage);
               const newHp = curHp - damage;
               const pos = (attackTarget as { position: { x: number; y: number } }).position;
               if (newHp <= 0) {
@@ -9494,9 +9628,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               }
             } else {
             const stats = playerStatsRef.current;
-            const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit);
+            const critical = Math.random() < playerCriticalChanceForStats(stats, aaBonusesRef.current.crit + classCritBonus(playerClassRef.current));
             const swordMult = equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1;
-            const damage = playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
+            const damage = playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage + classDamageBonus(playerClassRef.current)) * (critical ? 2 : 1) * beerDamageMultiplier(beerBuffUntil) * swordMult;
             applyPlayerHitToCreature(attackTarget as { entityKind: 'goat' | 'monster' } & GoatState & Partial<MonsterState>, damage, critical);
             } // end harvest else
           } else if (!swingDamageDealt) {
@@ -9524,12 +9658,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               }
               if (nearest) {
                 const stats = playerStatsRef.current;
-                const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage) * beerDamageMultiplier(beerBuffUntil) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
+                const damage = Math.max(1, playerDamageForStats(stats, equipmentDamageBonus + aaBonusesRef.current.damage + classDamageBonus(playerClassRef.current)) * beerDamageMultiplier(beerBuffUntil) * (equippedSwordRef.current ? SWORD_DAMAGE_MULT : 1));
                 if (nearest.kind === 'townsfolk') {
                   const npc = townsfolkRef.current.find((n) => n.id === nearest!.id)!;
                   // BUILD 932: stealth strike — double damage when undetected.
                   const stealthStrike = isStealthUndetected(sneakingRef.current, alertedNpcIdsRef.current, npc.id);
-                  const stealthDamageValue = stealthDamage(damage, sneakingRef.current, alertedNpcIdsRef.current, npc.id);
+                  const stealthDamageValue = stealthDamage(damage, sneakingRef.current, alertedNpcIdsRef.current, npc.id, classStealthMultiplier(playerClassRef.current));
                   const hurt = damageNpc(npc, stealthDamageValue, attackerPos, tick);
                   setDisposition((prev) => ({ ...prev, [npc.id]: adjustDisposition(prev[npc.id] ?? defaultDisposition(), hurt.deadUntilTick !== undefined ? -30 : -Math.max(8, Math.round(stealthDamageValue / 2))) }));
                   // BUILD 939: player harm moves the victim's faction standing.
@@ -9747,7 +9881,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const playerMitStats = totalEquipmentStats(equipmentRef.current);
               let totalDamage = 0;
               for (let s = 0; s < strikes; s++) {
-                totalDamage += mitigateDamage({ raw: damage, attackerElement: goatMitigation.attackElement, percents: playerResistPercents(playerMitStats), immunities: [], defense: 0, armor: playerArmorForRoll(playerMitStats.armor ?? 0) }).damage;
+                totalDamage += mitigateDamage({ raw: damage, attackerElement: goatMitigation.attackElement, percents: playerResistPercents(playerMitStats), immunities: [], defense: 0, armor: playerArmorForRoll((playerMitStats.armor ?? 0) + (frostWardRef.current ? frostWardArmor() : 0)) }).damage;
               }
               damageTaken += totalDamage;
               spawnCombatText('-' + totalDamage + (strikes > 1 ? ' ×' + strikes : '') + (goatEnraged ? ' RAGE' : ''), currentPlayer, 'damage'); playCombatSound('shing', muted);
@@ -9761,6 +9895,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           return next;
         });
         if (damageTaken > 0) {
+          shatterFrostWard();
           const nextHp = Math.max(0, playerHpRef.current - damageTaken); playerHpRef.current = nextHp; setPlayerHp(nextHp);
           setLogs((currentLogs) => [{ text: 'A hostile goat rams you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
           if (nextHp <= 0 && !gameOverRef.current) { gameOverRef.current = true; setGameOver(true); }
@@ -9908,7 +10043,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               const playerMitStats = totalEquipmentStats(equipmentRef.current);
               let totalDamage = 0;
               for (let s = 0; s < strikes; s++) {
-                totalDamage += mitigateDamage({ raw: damage, attackerElement: monsterMitigation.attackElement, percents: playerResistPercents(playerMitStats), immunities: [], defense: 0, armor: playerArmorForRoll(playerMitStats.armor ?? 0) }).damage;
+                totalDamage += mitigateDamage({ raw: damage, attackerElement: monsterMitigation.attackElement, percents: playerResistPercents(playerMitStats), immunities: [], defense: 0, armor: playerArmorForRoll((playerMitStats.armor ?? 0) + (frostWardRef.current ? frostWardArmor() : 0)) }).damage;
               }
               damageTaken += totalDamage;
               spawnCombatText('-' + totalDamage + (strikes > 1 ? ' ×' + strikes : '') + (monsterEnraged ? ' RAGE' : ''), currentPlayer, 'damage'); playCombatSound('shing', muted);
@@ -9937,6 +10072,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           return next;
         });
         if (damageTaken > 0) {
+          shatterFrostWard();
           const nextHp = Math.max(0, playerHpRef.current - damageTaken); playerHpRef.current = nextHp; setPlayerHp(nextHp);
           setLogs((currentLogs) => [{ text: 'A hostile creature strikes you for ' + damageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
           if (nextHp <= 0 && !gameOverRef.current) { gameOverRef.current = true; setGameOver(true); }
@@ -9968,7 +10104,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
               if (!falloff.hit) continue;
               const arrowMitigation = mitigationForCreature(arrow.kind);
               const arrowMitStats = totalEquipmentStats(equipmentRef.current);
-              const mitigatedArrowDamage = mitigateDamage({ raw: arrow.damage, attackerElement: arrowMitigation.attackElement, percents: playerResistPercents(arrowMitStats), immunities: [], defense: 0, armor: playerArmorForRoll(arrowMitStats.armor ?? 0) }).damage;
+              const mitigatedArrowDamage = mitigateDamage({ raw: arrow.damage, attackerElement: arrowMitigation.attackElement, percents: playerResistPercents(arrowMitStats), immunities: [], defense: 0, armor: playerArmorForRoll((arrowMitStats.armor ?? 0) + (frostWardRef.current ? frostWardArmor() : 0)) }).damage;
               playerDamageTaken += mitigatedArrowDamage;
               spawnCombatText('-' + mitigatedArrowDamage, currentPlayer, 'damage');
               continue;
@@ -9992,6 +10128,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           nextArrows.push({ ...arrow, position, traveled });
         }
         if (playerDamageTaken > 0) {
+          shatterFrostWard();
           const nextHp = Math.max(0, playerHpRef.current - playerDamageTaken); playerHpRef.current = nextHp; setPlayerHp(nextHp);
           setLogs((currentLogs) => [{ text: 'A bandit arrow strikes you for ' + playerDamageTaken + ' damage.', color: 'red' }, ...currentLogs].slice(0, 3));
           playCombatSound('shing', muted);
@@ -11111,13 +11248,38 @@ if (active) {
     window.setTimeout(() => setAttackFlash(null), 1600);
   };
   const chooseClass = (nextClass: Exclude<PlayerClass, 'Beginner'>) => {
+    // BUILD 958: class choice now grants REAL effects (see classes.ts) and
+    // is offered only by the teacher NPCs. The old version closed the
+    // legacy dialogue and claimed a boat-route unlock that does not exist;
+    // both are gone. The teacher panel stays open so the player sees the
+    // change (and, for Mages, the new Spells tab). Changing class later
+    // is free — this same function serves first choice and changes.
     if (playerLevelRef.current < 10) return;
     playerClassRef.current = nextClass;
     setPlayerClass(nextClass);
-    setNpcDialogue(null);
-    setAttackFlash(`Class chosen: ${nextClass}. The boat route to the wider world is unlocked.`);
-    setLogs((currentLogs) => [{ text: `You become a ${nextClass}. The wider world will open by boat.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+    setAttackFlash(`Class chosen: ${nextClass}.`);
+    setLogs((currentLogs) => [{ text: `You become a ${nextClass}. ${classDescriptions[nextClass]}`, color: 'blue' }, ...currentLogs].slice(0, 3));
     window.setTimeout(() => setAttackFlash(null), 1500);
+  };
+  // BUILD 958: one-time-per-session level-10 hint, fired by a level effect
+  // (not by grantCombatXp alone) so quest/task XP paths count too. Old
+  // saves already above 10 with no class get the hint on load — the class
+  // itself is never auto-assigned.
+  const level10HintShownRef = useRef(false);
+  useEffect(() => {
+    if (playerLevel >= 10 && playerClass === 'Beginner' && !level10HintShownRef.current) {
+      level10HintShownRef.current = true;
+      setLogs((currentLogs) => [{ text: 'You reached level 10! Visit the class teachers at the Wayfarer Guild — Dain, Sable, Puck, and Wynn teach by day and wander to the Rusty Tankard in the evening.', color: 'blue' }, ...currentLogs].slice(0, 3));
+    }
+  }, [playerLevel, playerClass]);
+  // BUILD 958: Frost Ward consumption — the ward's +3 armor applies at
+  // the three mitigated player-damage sites above; the FIRST wound
+  // (damage > 0 after mitigation) shatters it. A fully blocked hit (0
+  // damage) does not consume it, mirroring the dungeon until-wound rule.
+  const shatterFrostWard = () => {
+    if (!frostWardRef.current) return;
+    frostWardRef.current = false; setFrostWardActive(false);
+    setLogs((currentLogs) => [{ text: 'Your Frost Ward shatters, absorbing the blow.', color: 'blue' }, ...currentLogs].slice(0, 3));
   };
   const craftItem = (item: CraftItem) => {
     const recipe = craftRecipes[item];
@@ -13301,7 +13463,7 @@ if (active) {
               playerMounted={mounted}
               playerHorse={mounted ? null : (horseHere ? { position: horse.position, facing: horseFacing } : null)}
               worldHorses={visibleHorses}
-              damageTexts={damageTexts}
+              damageTexts={damageTexts} spellFx={spellFx}
               barbOutfit={equippedShirt ? 'blue' : 'bare'}
               barbWeapon={equippedSword ? 'sword' : equippedBow ? 'bow' : 'none'}
               barbHair={barbHair}
@@ -14929,25 +15091,18 @@ if (active) {
                   </>
                 ) : (
                   <>
-                <p>
-                  {playerLevel < 10
-                    ? `Welcome, Beginner. Earn ${10 - playerLevel} more levels by exploring and defeating goats, then return here for your class choice.`
-                    : playerClass === 'Beginner'
-                      ? `You have reached level 10. Choose the path that feels right: ${classDescriptions[npcDialogue.role === 'guide' ? 'Warrior' : npcDialogue.role === 'warrior' ? 'Warrior' : npcDialogue.role === 'mage' ? 'Mage' : 'Rogue']}`
-                      : `You are already a ${playerClass}. Keep exploring the world and put your new strengths to work.`
-                  }
-                </p>
-                {playerLevel >= 10 && playerClass === 'Beginner' && (
-                  <div className="class-choice-grid" aria-label="Choose your class">
-                    {(Object.keys(classDescriptions) as Exclude<PlayerClass, 'Beginner'>[]).map((nextClass) => (
-                      <button key={nextClass} className="class-choice" onClick={() => chooseClass(nextClass)} data-testid={'button-choose-' + nextClass.toLowerCase()}>
-                        <strong>{nextClass}</strong><small>{classDescriptions[nextClass]}</small>
-                      </button>
-                    ))}
-                  </div>
+                {/* BUILD 958: class choice moved to the teacher NPCs.
+                    The old grid let ANY legacy town NPC grant a class and
+                    promised a boat-route unlock that does not exist. */}
+                {playerClass === 'Beginner' && (
+                  <p>
+                    {playerLevel < 10
+                      ? `Welcome, Beginner. Earn ${10 - playerLevel} more levels by exploring and defeating goats, then visit the class teachers at the Wayfarer Guild for your class choice.`
+                      : 'You have reached level 10. Visit the class teachers at the Wayfarer Guild — they teach by day and wander to the Rusty Tankard in the evening.'}
+                  </p>
                 )}
                 <button className="dialogue-close" onClick={() => setNpcDialogue(null)} data-testid="button-close-dialogue">
-                  {playerLevel >= 10 && playerClass === 'Beginner' ? 'Not yet' : 'Continue'}
+                  Continue
                 </button>
                   </>
                 )}
@@ -15302,6 +15457,28 @@ if (active) {
                         </button>
                       );
                     })()}
+                    {/* BUILD 958: class teachers — the ONLY class source.
+                        Mirrors the apprentice button pattern. Level-gated
+                        text below 10; first choice or free change at 10+. */}
+                    {(() => {
+                      const teacherClass = teacherClassForNpc(npc);
+                      if (!teacherClass) return null;
+                      if (playerLevel < 10) {
+                        return (
+                          <span key="teacher-locked" className="dialogue-topic" style={{ borderStyle: 'dashed' }} data-testid="teacher-locked">
+                            🎓 Classes unlock at level 10 — return then to train as a {teacherClass}
+                          </span>
+                        );
+                      }
+                      const already = playerClass === teacherClass;
+                      return (
+                        <button key="teacher-class" type="button" className="dialogue-topic" disabled={already}
+                          onClick={() => chooseClass(teacherClass)} data-testid="button-teacher-class"
+                          title={already ? 'Already a ' + teacherClass : classDescriptions[teacherClass]}>
+                          {already ? `✓ ${teacherClass}` : `🎓 Become a ${teacherClass} — ${classDescriptions[teacherClass]}`}
+                        </button>
+                      );
+                    })()}
                     {/* BUILD 894: marriage/partner slot. */}
                     {(() => {
                       if (partner && isPartner(partner, npc.id)) {
@@ -15573,9 +15750,13 @@ if (active) {
            <section id="skills-panel" className="field-log-drawer" aria-label="Skills" data-testid="panel-skills">
              <div className="field-log-heading">
                <h2>Skills</h2>
+               <div style={{ display: 'flex', gap: 6 }}>
+                 <button type="button" onClick={() => setSkillsTab('skills')} data-testid="tab-skills" style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #4caf50', background: skillsTab === 'skills' ? '#2e7d32' : '#333', color: '#fff', fontSize: 12, cursor: 'pointer' }}>Skills</button>
+                 <button type="button" onClick={() => setSkillsTab('spells')} data-testid="tab-spells" style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #4caf50', background: skillsTab === 'spells' ? '#2e7d32' : '#333', color: '#fff', fontSize: 12, cursor: 'pointer' }}>Spells</button>
+               </div>
                <button className="field-log-close" onClick={() => setSkillsOpen(false)} aria-label="Close skills" data-testid="button-close-skills"><X size={16} /></button>
              </div>
-             <div className="log-list">
+             {skillsTab === 'skills' && (<div className="log-list">
                {/* BUILD 941: Alternate Advancement. Same drawer as skills —
                    no second sheet. Title follows total spend; progress,
                    points, ranks, and Buy buttons live here. */}
@@ -15609,7 +15790,38 @@ if (active) {
                    </div>
                  );
                })}
-             </div>
+             </div>)}
+             {/* BUILD 958: Spells tab — class, mana, ward status, and the
+                 cast buttons (tab click is the casting UX; no hotkeys).
+                 Non-mages see their spells locked with the teacher hint. */}
+             {skillsTab === 'spells' && (<div className="log-list">
+               <div className="log-row" data-testid="spell-class-row">
+                 <span aria-hidden="true">🎓</span>
+                 <span><strong>{playerClass === 'Beginner' ? 'No class yet' : playerClass}</strong> <small>Mana {playerMana}/{maxManaForInt(playerStats.int)} • Regen 1 per {MANA_REGEN_SECONDS}s{frostWardActive ? ' • 🛡️ Frost Ward active (+3 armor until your next wound)' : ''}</small></span>
+               </div>
+               {playerClass === 'Beginner' && (
+                 <div className="log-row"><span><small>Classes unlock at level 10. Visit Dain, Sable, Puck, or Wynn at the Wayfarer Guild — they teach by day and wander to the Rusty Tankard in the evening.</small></span></div>
+               )}
+               {playerClass !== 'Beginner' && playerClass !== 'Mage' && (
+                 <div className="log-row"><span><small>Only Mages cast spells. Visit any teacher to change class — changing is free.</small></span></div>
+               )}
+               {spellsForClass(playerClass).map((spellId) => {
+                 const def = OVERWORLD_SPELLS[spellId];
+                 const affordable = playerMana >= def.cost;
+                 const detail = spellId === 'ember-bolt'
+                   ? `Damage ${emberBoltDamage(playerStats.int)} (7 + int) • Range ${def.range} • Fire element`
+                   : spellId === 'veil-step'
+                     ? `Blink ${def.range} tiles in your facing direction`
+                     : `+${frostWardArmor()} armor until your next wound`;
+                 return (
+                   <div className="log-row" key={spellId} data-testid={`spell-row-${spellId}`}>
+                     <span aria-hidden="true">{def.glyph}</span>
+                     <span><strong>{def.name}</strong> <small>{detail} • Cost {def.cost} mana</small></span>
+                     <button type="button" onClick={() => castOverworldSpell(spellId)} disabled={!affordable} data-testid={`spell-cast-${spellId}`} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #4caf50', background: affordable ? '#2e7d32' : '#333', color: '#fff', fontSize: 12, cursor: affordable ? 'pointer' : 'default' }}>Cast</button>
+                   </div>
+                 );
+               })}
+             </div>)}
            </section>
          )}
          {/* BUILD 938: creature codex panel (Tibia item 5). Same drawer

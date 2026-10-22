@@ -29,7 +29,7 @@ import { mosslightCottageRects280, MOSSLIGHT_MAIN_RECTS_280, mosslightHamletLayo
 import { mosslightPinnedRects, mosslightFillerRects } from './mosslightLayout';
 
 export type TownsfolkFacing = 'up' | 'down' | 'left' | 'right';
-export type TownsfolkArchetype = 'farmer' | 'merchant' | 'guard' | 'priest' | 'smith' | 'commoner' | 'child';
+export type TownsfolkArchetype = 'farmer' | 'merchant' | 'guard' | 'priest' | 'smith' | 'commoner' | 'child' | 'teacher';
 /** Reuses the existing .town-npc.npc-<role> sprite classes. */
 export type TownsfolkRole = 'mage' | 'warrior' | 'guide' | 'rogue';
 export type TownsfolkPoint = { x: number; y: number };
@@ -289,6 +289,17 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
         if (market) return market;
       }
       return { activity: 'Playing', target: plazaSpot, indoors: false };
+    }
+    case 'teacher': {
+      // BUILD 958: class teachers. Guild hall by day, Tankard in the
+      // evening, guild point overnight (indoors flag, same pattern as
+      // other NPCs' home-indoors nights — there are no interiors to enter).
+      // home IS the guild point (homeKey 'guild'), so the night target is
+      // the guild doorstep, not a cottage bed.
+      if (atNight) return { activity: 'Sleeping', target: home, indoors: true };
+      if (mins < workEnd) return { activity: 'Teaching at the guild', target: forgeSpot, indoors: false };
+      if (mins < workEnd + 90) return { activity: 'Evening at the Tankard', target: tavernSpot, indoors: false };
+      return { activity: 'At the guild', target: homeSpot, indoors: false };
     }
     case 'commoner':
     default: {
@@ -553,6 +564,17 @@ const ROSTER: TownsfolkDef[] = [
   // filler-1: Sten & Aya
   ['Sten', 'male', 'commoner', 'guide', 'filler-1'],
   ['Aya', 'female', 'commoner', 'mage', 'filler-1'],
+  // BUILD 958: class teachers (appended — roster order preserved for save
+  // compatibility, so these are townsfolk-38..41: the roster holds 38
+  // originals, not 40). homeKey 'guild' resolves
+  // to the Wayfarer Guild doorstep point; they teach there by day, wander
+  // to the Rusty Tankard in the evening, and sleep at the guild point
+  // overnight. They are FIELD NPCs at exteriors — interior entry is dead
+  // in current builds (the 957 gap), so no teacher waits inside.
+  ['Dain', 'male', 'teacher', 'warrior', 'guild'],
+  ['Sable', 'female', 'teacher', 'mage', 'guild'],
+  ['Puck', 'male', 'teacher', 'rogue', 'guild'],
+  ['Wynn', 'female', 'teacher', 'guide', 'guild'],
 ];
 
 /** Build DoorwayLinks for the 6 Mosslight cottages (pure, no App dependency). */
