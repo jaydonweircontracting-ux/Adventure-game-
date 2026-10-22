@@ -5,7 +5,7 @@ import DevConsole from './game/dev/DevConsole';
 import IsoRoomDemo from './game/iso/IsoRoom';
 import RpgPreview from './game/iso/RpgPreview';
 import IsoFieldView from './game/iso/IsoFieldView';
-import { type IsoRotation, sanitizeIsoRotation } from './game/iso/rotation';
+import { normalizeAngleDeg, sanitizeIsoRotation } from './game/iso/rotation';
 import { animalSpriteFor, ANIMAL_2D_SPECIES } from './game/animalSprites';
 import { RODWAN_SLICES, rodwanTreeIndexFor, RODWAN_LEAFY_SPRITES } from './game/rodwanTrees';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
@@ -166,7 +166,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '952';
+const BUILD_NUMBER = '953';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -198,6 +198,7 @@ const BUILD_NOTES: Record<string, string> = {
   '950': 'Carrying now has a real limit: every item has a true weight (plate armor finally weighs more than a rusty sword — the old numbers were rarity odds, not heft), and once you are over capacity you cannot pick up, loot, or buy more until you sell or use something. You still slow down past 80% and drain stamina past 100%, and quest rewards always land even if they push you over — nothing you earned ever vanishes. Your current load shows in the HUD and in the inventory.',
   '951': 'Food now looks like food: beer shows a proper mug and corn shows an ear of corn in your inventory, at market stalls, and in dungeon shops, and the market-stall counters display Kenney food — bread, burgers, pie, cooked meat, sushi, and tacos — instead of the old pixel sprites. Health potions keep their flask mark (the kit has no potion art), and prices, healing, and effects are unchanged. The other 192 food pictures from the kit sit in the game files ready for future dishes.',
   '952': 'Wild animals now look like animals: the deer, bears, wolves, foxes, boars, and rabbits roaming the wilds are rendered from real 3D models instead of colored blobs and glitched sheets — deer come as stags and does, and rabbits and deer are back in the meadows and forests after their broken sprites kept them out. Owls, squirrels, and hedgehogs join them as new ambient wildlife. The animals also show up in the isometric view for the first time (they were invisible there before); stats, speeds, loot, and spawn rates are unchanged, and the fighting wolf monsters keep their animated sheets.',
+  '953': 'The camera now spins: hold a camera button (or hold an arrow key) and the view slowly turns at 45 degrees per second, RuneScape-style, until you let go — the world turns around you while you stay centered. A quick tap still jumps exactly 90 degrees like before, and holding left and right together cancels out instead of fighting. Movement stays world-relative at every angle, and your exact camera angle is saved and restored (old saves keep their 90-degree step as 0/90/180/270).',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
@@ -1852,6 +1853,9 @@ type SaveGameData = {
   // BUILD 944: iso camera rotation (0..3). View-only; old saves carry no
   // field and restore to 0 (default view), never faked history.
   cameraRotation?: number;
+  // BUILD 953: continuous camera angle in degrees. New saves write this;
+  // loads prefer it and fall back to the legacy 0..3 step (k*90).
+  cameraAngleDeg?: number;
   // BUILD 949: NPC loot storage — family-chest item names + Mosslight bank
   // ledger balances, keyed by household. Old saves carry no field and
   // restore to empty — never faked history; leftover 948 haul on an NPC
@@ -5368,16 +5372,68 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // effect mounts once, so it can't close over the state value).
   const isoZoomRef = useRef(isoZoom);
   useEffect(() => { isoZoomRef.current = isoZoom; }, [isoZoom]);
-  // BUILD 944: camera rotation (0..3, 90° steps) for the iso field view.
+  // BUILD 953: camera hold-to-spin — continuous angle in degrees, owned
+  // by a ref (the spin loop updates it without React re-renders; the iso
+  // rAF loop reads it live every frame). Tap = exactly ±90° (944
+  // behavior); hold past 250ms = slow spin at 45°/s until release.
   // View-only: the world never changes, only the rendering transform.
-  // Ref mirror so the keyboard handler and test hooks read it synchronously.
-  const [cameraRotation, setCameraRotation] = useState<IsoRotation>(0);
-  const cameraRotationRef = useRef<IsoRotation>(0);
+  const cameraAngleRef = useRef(0);
   const rotateCamera = (dir: -1 | 1) => {
-    const next = ((cameraRotationRef.current + (dir === 1 ? 1 : 3)) % 4) as IsoRotation;
-    cameraRotationRef.current = next;
-    setCameraRotation(next);
+    cameraAngleRef.current += dir * 90;
   };
+  // Spin sources: on-screen buttons + arrow keys, each tracked separately
+  // so left+right held together cancel (net 0) instead of fighting.
+  const spinSourcesRef = useRef(new Map<string, { dir: -1 | 1; downAt: number }>());
+  const spinRafRef = useRef(0);
+  const spinLastTRef = useRef(0);
+  const stopSpinLoop = () => {
+    if (spinRafRef.current) { cancelAnimationFrame(spinRafRef.current); spinRafRef.current = 0; }
+  };
+  const spinStep = (t: number) => {
+    const dt = Math.min(0.1, Math.max(0, (t - spinLastTRef.current) / 1000));
+    spinLastTRef.current = t;
+    let net = 0;
+    for (const s of spinSourcesRef.current.values()) {
+      if (t - s.downAt >= 250) net += s.dir;
+    }
+    if (net !== 0) cameraAngleRef.current += net * 45 * dt;
+    if (spinSourcesRef.current.size > 0) {
+      spinRafRef.current = requestAnimationFrame(spinStep);
+    } else {
+      spinRafRef.current = 0;
+    }
+  };
+  const startSpinLoop = () => {
+    if (spinRafRef.current) return;
+    spinLastTRef.current = performance.now();
+    spinRafRef.current = requestAnimationFrame(spinStep);
+  };
+  const pressSpinSource = (id: string, dir: -1 | 1) => {
+    if (spinSourcesRef.current.has(id)) return;
+    spinSourcesRef.current.set(id, { dir, downAt: performance.now() });
+    startSpinLoop();
+  };
+  // Release: quick press (< 250ms) = one 90° tap step; longer = the spin
+  // already moved the camera, so no step on release.
+  const releaseSpinSource = (id: string, dir: -1 | 1) => {
+    const s = spinSourcesRef.current.get(id);
+    spinSourcesRef.current.delete(id);
+    if (spinSourcesRef.current.size === 0) stopSpinLoop();
+    if (s && performance.now() - s.downAt < 250) rotateCamera(dir);
+  };
+  const cancelSpinSource = (id: string) => {
+    spinSourcesRef.current.delete(id);
+    if (spinSourcesRef.current.size === 0) stopSpinLoop();
+  };
+  // Guard for the emulated click that follows a pointer tap: keyboard
+  // focus activation (Enter/Space) fires click with no pointer events, so
+  // it still steps; a click within 1s of a pointer release is the tap's
+  // own echo and must not step twice.
+  const btnClickGuardRef = useRef(0);
+  useEffect(() => () => {
+    spinSourcesRef.current.clear();
+    stopSpinLoop();
+  }, []);
   const toggleMarkerMode = () => {
     const next = !markerMode;
     debugDoors = next;
@@ -6419,8 +6475,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // BUILD 938: codex counts for verification (read-only; mirrors
         // the panel's counts so a browser kill can prove the wiring).
         getCodex: () => ({ ...bestiaryRef.current }),
-        // BUILD 944: camera rotation for verification (read-only).
-        getCameraRotation: () => cameraRotationRef.current,
+        // BUILD 953: camera angle for verification (read-only). Legacy
+        // quarter-step hook kept for 944-era harnesses.
+        getCameraRotation: () => Math.round(normalizeAngleDeg(cameraAngleRef.current) / 90) % 4,
+        getCameraAngleDeg: () => normalizeAngleDeg(cameraAngleRef.current),
         // BUILD 538: remove a test goat by id (cleanup). Localhost only.
         removeTestGoat: (id: number) => {
           if (typeof window === 'undefined') return false;
@@ -6915,8 +6973,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     ),
     // BUILD 941: persist AA state (credits, points, spent, ranks).
     aa: { ...aaStateRef.current, ranks: { ...aaStateRef.current.ranks } },
-    // BUILD 944: persist camera rotation (view-only; old saves have none).
-    cameraRotation: cameraRotationRef.current,
+    // BUILD 953: persist the continuous camera angle (degrees). The
+    // legacy cameraRotation field is no longer written; loads read it
+    // as a fallback (k*90) for pre-953 saves.
+    cameraAngleDeg: normalizeAngleDeg(cameraAngleRef.current),
     // BUILD 949: persist NPC loot storage (family chests + bank ledger).
     npcStorage: serializeNpcStorage(npcStorageRef.current),
     // BUILD 881: Persist skill-master apprenticeships.
@@ -7074,9 +7134,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const restoredFactions = sanitizeFactionStandings(loadState.factionStandings);
     factionStandingsRef.current = restoredFactions;
     setFactionStandings(restoredFactions);
-    // BUILD 944: restore camera rotation (old saves have none -> 0).
-    const restoredRotation = sanitizeIsoRotation(loadState.cameraRotation);
-    cameraRotationRef.current = restoredRotation; setCameraRotation(restoredRotation);
+    // BUILD 953: restore the continuous angle; pre-953 saves carry only
+    // the legacy 0..3 step, which maps to k*90°.
+    const restoredAngle = (typeof loadState.cameraAngleDeg === 'number' && Number.isFinite(loadState.cameraAngleDeg))
+      ? normalizeAngleDeg(loadState.cameraAngleDeg)
+      : sanitizeIsoRotation(loadState.cameraRotation) * 90;
+    cameraAngleRef.current = restoredAngle;
     // BUILD 949: restore NPC loot storage (old saves have none -> empty;
     // leftover 948 haul drains on the first tick after load, never lost).
     npcStorageRef.current = sanitizeNpcStorage(loadState.npcStorage);
@@ -8574,6 +8637,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       clearTouchHolds(touchHoldsRef.current);
       shiftHeldRef.current = false;
       setMoving(false);
+      // BUILD 953: a missed keyup/pointerup (blur, hidden tab) must never
+      // leave the camera spinning forever.
+      spinSourcesRef.current.clear();
+      stopSpinLoop();
     };
     const onKeyDown = (event: KeyboardEvent) => {
       // BUILD 667: Don't steal keys while typing in a text field.
@@ -8582,12 +8649,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (event.code === 'Space' || event.code === 'KeyF') { event.preventDefault(); attackGoat(); return; }
       // BUILD 704: Shift hold-to-run (works alongside the touch toggle).
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') { shiftHeldRef.current = true; return; }
-      // BUILD 944: left/right arrows rotate the camera (mouse/tap-to-move
+      // BUILD 953: left/right arrows rotate the camera (mouse/tap-to-move
       // and the D-pad cover movement, so the arrows are free for the camera).
-      // Repeat presses are ignored: one press = one 90° step, holding the
-      // key never spins the camera. Left = counterclockwise, right = clockwise.
+      // Tap = one 90° step (944); hold past 250ms = slow 45°/s spin until
+      // release. Repeat keydowns are ignored — the rAF spin loop drives
+      // the motion. Left = counterclockwise, right = clockwise.
       if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
-        if (!event.repeat) rotateCamera(event.code === 'ArrowRight' ? 1 : -1);
+        if (!event.repeat) pressSpinSource(event.code === 'ArrowRight' ? 'key-right' : 'key-left', event.code === 'ArrowRight' ? 1 : -1);
         event.preventDefault();
         return;
       }
@@ -8599,10 +8667,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     const onKeyUp = (event: KeyboardEvent) => {
       // BUILD 704: release Shift hold-to-run.
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') { shiftHeldRef.current = false; return; }
-      // BUILD 944: arrow keyup never touches keysRef — a user holding KeyA
+      // BUILD 953: arrow keyup never touches keysRef — a user holding KeyA
       // (moving left) who taps ArrowLeft to rotate must keep moving when
       // ArrowLeft is released; only KeyA's own keyup stops that movement.
-      if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') { event.preventDefault(); return; }
+      // It releases the spin source instead (quick tap = one 90° step).
+      if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
+        releaseSpinSource(event.code === 'ArrowRight' ? 'key-right' : 'key-left', event.code === 'ArrowRight' ? 1 : -1);
+        event.preventDefault(); return;
+      }
       const direction = directionKeys[event.code];
       if (!direction) return;
       event.preventDefault();
@@ -12988,7 +13060,7 @@ if (active) {
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
             <IsoFieldView placedAssets={customPlacedAssets} editorPlacedObjects={placedObjects} playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} dispositions={disposition} chunk={chunk} position={position} townsfolk={townsfolk} adventurers={(chunk.x === TOWNSFOLK_CHUNK.x && chunk.y === TOWNSFOLK_CHUNK.y ? simulatedAdventurers.filter((a) => (a.location || 'field') === 'field').map((a) => ({ id: a.id, name: a.name, position: a.position, facing: a.facing, moving: a.moving })) : [])} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} wildlife={wildlife.map((a) => ({ id: a.id, species: a.species, position: a.position, facing: a.facing, moving: a.moving }))} monsters={(isStartingSettlementSafetyZone(chunk) ? monsters.filter((m) => m.stray || m.raid) : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash, stray: m.stray }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
-              rotation={cameraRotation} zoom={isoZoom} onZoomChange={setIsoZoom} playerSneaking={sneaking}
+              rotationAngleRef={cameraAngleRef} zoom={isoZoom} onZoomChange={setIsoZoom} playerSneaking={sneaking}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {
                 targetGoatIdRef.current = null;
@@ -15144,7 +15216,11 @@ if (active) {
           <div style={{ display: 'flex', gap: 4, marginTop: 8, alignItems: 'center', pointerEvents: 'auto' }}>
             <button
               type="button"
-              onClick={() => rotateCamera(-1)}
+              onPointerDown={(e) => { if (inputLocked) return; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } pressSpinSource('btn-left', -1); }}
+              onPointerUp={() => { releaseSpinSource('btn-left', -1); btnClickGuardRef.current = performance.now(); }}
+              onPointerCancel={() => cancelSpinSource('btn-left')}
+              onPointerLeave={() => cancelSpinSource('btn-left')}
+              onClick={() => { if (performance.now() - btnClickGuardRef.current > 1000) rotateCamera(-1); }}
               disabled={inputLocked}
               style={{ width: '40px', height: '40px', fontSize: '20px', fontWeight: 'bold', background: 'rgba(0,0,0,0.85)', color: '#fff', border: '2px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
               aria-label="Rotate camera left"
@@ -15154,7 +15230,11 @@ if (active) {
             </button>
             <button
               type="button"
-              onClick={() => rotateCamera(1)}
+              onPointerDown={(e) => { if (inputLocked) return; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ } pressSpinSource('btn-right', 1); }}
+              onPointerUp={() => { releaseSpinSource('btn-right', 1); btnClickGuardRef.current = performance.now(); }}
+              onPointerCancel={() => cancelSpinSource('btn-right')}
+              onPointerLeave={() => cancelSpinSource('btn-right')}
+              onClick={() => { if (performance.now() - btnClickGuardRef.current > 1000) rotateCamera(1); }}
               disabled={inputLocked}
               style={{ width: '40px', height: '40px', fontSize: '20px', fontWeight: 'bold', background: 'rgba(0,0,0,0.85)', color: '#fff', border: '2px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
               aria-label="Rotate camera right"

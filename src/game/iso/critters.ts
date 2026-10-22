@@ -5,7 +5,7 @@
 // state). Facing snaps to the nearest of the pack's NE/NW/SE/SW directions.
 // Nothing here touches game logic, saves, or NPC simulation.
 
-import { rotateCritterDir } from './rotation';
+import { rotateCritterDirAngle } from './rotation';
 
 export type CritterSpecies = 'badger' | 'stag' | 'boar';
 export type CritterDir = 'NE' | 'NW' | 'SE' | 'SW';
@@ -180,13 +180,14 @@ export function drawCritter(
   c: AmbientCritter,
   nowMs: number,
   toScreen: (tx: number, ty: number) => { x: number; y: number },
-  // BUILD 944: camera rotation steps (0..3); remaps the pack direction so
-  // critters keep their appearance relative to the world. Default 0 = old behavior.
+  // BUILD 953: camera angle in degrees (was 944 steps 0..3); remaps the
+  // pack direction so critters keep their appearance relative to the
+  // world. Default 0 = old behavior.
   faceRotate?: number,
 ): void {
   const pose = critterPose(c, nowMs);
   const anim: CritterAnim = pose.moving ? 'walk' : 'idle';
-  const dir = rotateCritterDir(pose.dir, ((faceRotate ?? 0) % 4 + 4) % 4 as 0 | 1 | 2 | 3);
+  const dir = rotateCritterDirAngle(pose.dir, faceRotate ?? 0);
   const key = critterFile(c.species, dir, anim);
   const im = imgs.get(key);
   const meta = CRITTER_CELLS[key];

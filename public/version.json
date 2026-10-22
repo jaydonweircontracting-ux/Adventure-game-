@@ -1,6 +1,6 @@
 {
-  "build": "952",
-  "note": "Wild animals now look like animals: the deer, bears, wolves, foxes, boars, and rabbits roaming the wilds are rendered from real 3D models instead of colored blobs and glitched sheets — deer come as stags and does, and rabbits and deer are back in the meadows and forests after their broken sprites kept them out. Owls, squirrels, and hedgehogs join them as new ambient wildlife. The animals also show up in the isometric view for the first time (they were invisible there before); stats, speeds, loot, and spawn rates are unchanged, and the fighting wolf monsters keep their animated sheets.",
-  "timestamp": "2026-10-22T02:05:56.974Z",
-  "cacheBuster": "mviwg6zy"
+  "build": "953",
+  "note": "The camera now spins: hold a camera button (or hold an arrow key) and the view slowly turns at 45 degrees per second, RuneScape-style, until you let go — the world turns around you while you stay centered. A quick tap still jumps exactly 90 degrees like before, and holding left and right together cancels out instead of fighting. Movement stays world-relative at every angle, and your exact camera angle is saved and restored (old saves keep their 90-degree step as 0/90/180/270).",
+  "timestamp": "2026-10-22T02:24:54.616Z",
+  "cacheBuster": "mvix4kt4"
 }

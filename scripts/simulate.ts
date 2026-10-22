@@ -126,7 +126,7 @@ import { PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP, collisionBoxes
 import { oreNodesForChunk, mineralRichness, geoHash, oreKindFor, GEOLOGY_CELL } from '../src/game/geology';
 import { createEmptySkills, awardXp, levelForXp, xpForLevel, xpToNextLevel, SKILLS, WOODCUTTING_XP_PER_TREE, SKILL_MASTERS, masterForNpc, apprenticeshipCheck, apprenticeXpBonus } from '../src/game/skills';
 import { ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset, isoViewportCovered, isoVisibleTileRange } from '../src/game/iso/isoChunks';
-import { rotateIsoScreen, unrotateIsoScreen, rotatedDepth, rotateFace8, rotateCritterDir, rotatedGridBounds, rotatedVisibleTileRange, sanitizeIsoRotation } from '../src/game/iso/rotation';
+import { rotateIsoScreen, unrotateIsoScreen, rotatedDepth, rotateFace8, rotateCritterDir, rotatedGridBounds, rotatedVisibleTileRange, sanitizeIsoRotation, angleDeltaDeg, cacheCoversViewport, normalizeAngleDeg, rotateFace8Angle, rotatedDepthAngle, rotatedGridBoundsAngle, rotatedVisibleTileRangeAngle, rotateIsoScreenAngle, unrotateIsoScreenAngle } from '../src/game/iso/rotation';
 // BUILD 702: barbarian.ts replaced by rpgSprites.ts (import removed)
 
 let passed = 0;
@@ -2205,6 +2205,29 @@ console.log('Testing camera rotation (BUILD 944)...');
   assert(JSON.stringify(rotatedGridBounds(1, 280, 64, 0)) === JSON.stringify(isoChunkGridBounds(1, 280, 64)), 'Rot944: k=0 bounds equal isoChunkGridBounds');
   assert(JSON.stringify(rotatedVisibleTileRange(0, 4480, 1200, 800, 1, 0)) === JSON.stringify(isoVisibleTileRange(0, 4480, 1200, 800, 1)), 'Rot944: k=0 range equal isoVisibleTileRange');
   assert(sanitizeIsoRotation(2) === 2 && sanitizeIsoRotation(4) === 0 && sanitizeIsoRotation('x') === 0, 'Rot944: sanitize');
+}
+
+// ---- 13a1e. Camera hold-to-spin (BUILD 953) ----
+// Continuous-angle rotation: the sim has no rendering, so this section
+// proves the angle module loads and its 944-equivalences hold. The
+// throwing standalone script (~/workspace/verify953/standalone953.ts) is
+// the real proof — sim asserts are collected, not thrown, and the
+// pre-existing BUILD 694 crash below blocks the Results print.
+console.log('Testing camera hold-to-spin (BUILD 953)...');
+{
+  const p = { x: 32, y: 16 };
+  assert(Math.abs(rotateIsoScreenAngle(p.x, p.y, 90).x - (-32)) < 1e-9 && Math.abs(rotateIsoScreenAngle(p.x, p.y, 90).y - 16) < 1e-9, 'Rot953: angle 90 == 944 M_1');
+  assert(Math.abs(rotateIsoScreenAngle(p.x, p.y, 0).x - 32) < 1e-9 && Math.abs(rotateIsoScreenAngle(p.x, p.y, 0).y - 16) < 1e-9, 'Rot953: angle 0 identity');
+  const rt = unrotateIsoScreenAngle(rotateIsoScreenAngle(p.x, p.y, 37).x, rotateIsoScreenAngle(p.x, p.y, 37).y, 37);
+  assert(Math.abs(rt.x - p.x) < 1e-9 && Math.abs(rt.y - p.y) < 1e-9, 'Rot953: round-trip at 37deg');
+  assert(rotateFace8Angle('down', 90) === 'left' && rotateFace8Angle('up', 45) === 'upright', 'Rot953: facing angle');
+  assert(rotatedDepthAngle(5, 3, 0) === 8 && rotatedDepthAngle(5, 3, 90) === 2, 'Rot953: depth at 0/90');
+  assert(JSON.stringify(rotatedGridBoundsAngle(1, 280, 64, 0)) === JSON.stringify(rotatedGridBounds(1, 280, 64, 0)), 'Rot953: bounds angle 0 == 944');
+  assert(JSON.stringify(rotatedVisibleTileRangeAngle(0, 4480, 1200, 800, 1, 0)) === JSON.stringify(rotatedVisibleTileRange(0, 4480, 1200, 800, 1, 0)), 'Rot953: range angle 0 == 944');
+  assert(normalizeAngleDeg(370) === 10 && normalizeAngleDeg(-90) === 270, 'Rot953: normalize');
+  assert(angleDeltaDeg(10, 350) === 20 && angleDeltaDeg(350, 10) === -20, 'Rot953: delta');
+  assert(cacheCoversViewport(0, 0, 193, 420, -289.5, -630, 579, 1260, 0) === true, 'Rot953: cache covers at delta 0');
+  assert(cacheCoversViewport(0, 0, 193, 420, -289.5, -630, 579, 1260, 90) === false, 'Rot953: cache open at delta 90');
 }
 
 // ---- 13a1c. NPC morality levels (BUILD 923) ----
