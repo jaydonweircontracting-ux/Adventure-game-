@@ -309,3 +309,44 @@ export function cacheCoversViewport(
     p.x >= originX - eps && p.x <= originX + worldW + eps &&
     p.y >= originY - eps && p.y <= originY + worldH + eps);
 }
+
+// ---- BUILD 954: camera refinement — finer tap steps + smooth tap tween ----
+// The 953 hold-spin already orbits through EVERY angle (true continuous
+// projection), but a tap still jumped a full 90° in one frame — the 4
+// quarter-turns alone did not feel 3D. The refinement closes that gap:
+//   * Tap step = 45° (8 named angles; every tap lands on a Face8 row
+//     boundary, so the sprite rows stay meaningful at every tap stop).
+//   * Tap tween = 200 ms ease-out cubic from the LIVE angle to the target.
+//     Every intermediate frame goes through the same continuous projection
+//     (rotateIsoScreenAngle), so a tap genuinely turns through the
+//     in-between angles instead of jumping — the connections between
+//     angles are smooth, not just the hold-spin.
+//   * Release rule: a quick press (< 250 ms) steps ONLY when no other spin
+//     source is still held. Tapping one side while the other side is still
+//     spinning must not fight the spin (953 stepped regardless).
+// Hold behavior is unchanged: past 250 ms the view spins at 45°/s until
+// release, with no step on release.
+/** Tap step in degrees: 8 angles per full turn. */
+export const CAMERA_TAP_STEP_DEG = 45;
+/** Tap tween duration in milliseconds. */
+export const CAMERA_TAP_TWEEN_MS = 200;
+/** Hold threshold in milliseconds (953 rule, named here for the release test). */
+export const CAMERA_HOLD_THRESHOLD_MS = 250;
+/** Hold-spin rate in degrees per second (953 rule, named here). */
+export const CAMERA_SPIN_DEG_PER_SEC = 45;
+
+/**
+ * Tap-tween angle at normalized time t01: ease-out cubic, clamped, with
+ * exact endpoints (t=0 -> from, t=1 -> to) and strict monotonicity between
+ * them. Pure — the App rAF loop just feeds it the clock.
+ */
+export function tapTweenAngle(from: number, to: number, t01: number): number {
+  const t = Math.min(1, Math.max(0, t01));
+  const eased = 1 - Math.pow(1 - t, 3);
+  return from + (to - from) * eased;
+}
+
+/** True exactly when a source release should produce a tap step. */
+export function tapStepOnRelease(elapsedMs: number, remainingSources: number): boolean {
+  return elapsedMs < CAMERA_HOLD_THRESHOLD_MS && remainingSources === 0;
+}

@@ -5,7 +5,7 @@ import DevConsole from './game/dev/DevConsole';
 import IsoRoomDemo from './game/iso/IsoRoom';
 import RpgPreview from './game/iso/RpgPreview';
 import IsoFieldView from './game/iso/IsoFieldView';
-import { normalizeAngleDeg, sanitizeIsoRotation } from './game/iso/rotation';
+import { normalizeAngleDeg, sanitizeIsoRotation, CAMERA_TAP_STEP_DEG, CAMERA_TAP_TWEEN_MS, CAMERA_HOLD_THRESHOLD_MS, CAMERA_SPIN_DEG_PER_SEC, tapTweenAngle, tapStepOnRelease } from './game/iso/rotation';
 import { animalSpriteFor, ANIMAL_2D_SPECIES } from './game/animalSprites';
 import { RODWAN_SLICES, rodwanTreeIndexFor, RODWAN_LEAFY_SPRITES } from './game/rodwanTrees';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
@@ -166,7 +166,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '953';
+const BUILD_NUMBER = '954';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -199,6 +199,7 @@ const BUILD_NOTES: Record<string, string> = {
   '951': 'Food now looks like food: beer shows a proper mug and corn shows an ear of corn in your inventory, at market stalls, and in dungeon shops, and the market-stall counters display Kenney food — bread, burgers, pie, cooked meat, sushi, and tacos — instead of the old pixel sprites. Health potions keep their flask mark (the kit has no potion art), and prices, healing, and effects are unchanged. The other 192 food pictures from the kit sit in the game files ready for future dishes.',
   '952': 'Wild animals now look like animals: the deer, bears, wolves, foxes, boars, and rabbits roaming the wilds are rendered from real 3D models instead of colored blobs and glitched sheets — deer come as stags and does, and rabbits and deer are back in the meadows and forests after their broken sprites kept them out. Owls, squirrels, and hedgehogs join them as new ambient wildlife. The animals also show up in the isometric view for the first time (they were invisible there before); stats, speeds, loot, and spawn rates are unchanged, and the fighting wolf monsters keep their animated sheets.',
   '953': 'The camera now spins: hold a camera button (or hold an arrow key) and the view slowly turns at 45 degrees per second, RuneScape-style, until you let go — the world turns around you while you stay centered. A quick tap still jumps exactly 90 degrees like before, and holding left and right together cancels out instead of fighting. Movement stays world-relative at every angle, and your exact camera angle is saved and restored (old saves keep their 90-degree step as 0/90/180/270).',
+  '954': 'The camera now turns in finer, smoother steps: a quick tap turns it 45 degrees with a short smooth glide through the angles in between instead of jumping, so eight taps make a full turn and every stop lines up with a character facing direction. Holding a button still spins the view slowly and continuously at 45 degrees per second until you let go, and tapping one side while the other side is still held no longer fights the spin. Movement stays world-relative at every angle, and your exact camera angle is saved and restored as before.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
@@ -5374,12 +5375,37 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   useEffect(() => { isoZoomRef.current = isoZoom; }, [isoZoom]);
   // BUILD 953: camera hold-to-spin — continuous angle in degrees, owned
   // by a ref (the spin loop updates it without React re-renders; the iso
-  // rAF loop reads it live every frame). Tap = exactly ±90° (944
-  // behavior); hold past 250ms = slow spin at 45°/s until release.
-  // View-only: the world never changes, only the rendering transform.
+  // rAF loop reads it live every frame). BUILD 954 refinement: tap = one
+  // 45° step, animated smoothly over 200ms through the in-between angles
+  // (same continuous projection every frame — no jump); hold past 250ms =
+  // slow spin at 45°/s until release. View-only: the world never changes,
+  // only the rendering transform.
   const cameraAngleRef = useRef(0);
+  // BUILD 954: tap tween — retargets from the LIVE angle, so a tap during
+  // a tween (or right after a spin stops) turns a further 45° from wherever
+  // the view actually is, never jumping back to a stale target. The tween
+  // never runs concurrently with a spin: pressing a spin source cancels
+  // it, and a tap step only fires when no other source is still held.
+  const tapTweenRef = useRef<{ from: number; to: number; startAt: number } | null>(null);
+  const tapRafRef = useRef(0);
+  const cancelTapTween = () => {
+    if (tapRafRef.current) { cancelAnimationFrame(tapRafRef.current); tapRafRef.current = 0; }
+    tapTweenRef.current = null;
+  };
+  const tapTweenStep = (t: number) => {
+    const tw = tapTweenRef.current;
+    if (!tw) { tapRafRef.current = 0; return; }
+    const t01 = (t - tw.startAt) / CAMERA_TAP_TWEEN_MS;
+    if (t01 >= 1) {
+      cameraAngleRef.current = tw.to;
+      tapTweenRef.current = null; tapRafRef.current = 0; return;
+    }
+    cameraAngleRef.current = tapTweenAngle(tw.from, tw.to, t01);
+    tapRafRef.current = requestAnimationFrame(tapTweenStep);
+  };
   const rotateCamera = (dir: -1 | 1) => {
-    cameraAngleRef.current += dir * 90;
+    tapTweenRef.current = { from: cameraAngleRef.current, to: cameraAngleRef.current + dir * CAMERA_TAP_STEP_DEG, startAt: performance.now() };
+    if (!tapRafRef.current) tapRafRef.current = requestAnimationFrame(tapTweenStep);
   };
   // Spin sources: on-screen buttons + arrow keys, each tracked separately
   // so left+right held together cancel (net 0) instead of fighting.
@@ -5394,9 +5420,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     spinLastTRef.current = t;
     let net = 0;
     for (const s of spinSourcesRef.current.values()) {
-      if (t - s.downAt >= 250) net += s.dir;
+      if (t - s.downAt >= CAMERA_HOLD_THRESHOLD_MS) net += s.dir;
     }
-    if (net !== 0) cameraAngleRef.current += net * 45 * dt;
+    if (net !== 0) cameraAngleRef.current += net * CAMERA_SPIN_DEG_PER_SEC * dt;
     if (spinSourcesRef.current.size > 0) {
       spinRafRef.current = requestAnimationFrame(spinStep);
     } else {
@@ -5409,17 +5435,23 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     spinRafRef.current = requestAnimationFrame(spinStep);
   };
   const pressSpinSource = (id: string, dir: -1 | 1) => {
+    // A new press owns the angle from now on: a tap tween in flight stops
+    // at the live angle instead of fighting the spin.
+    cancelTapTween();
     if (spinSourcesRef.current.has(id)) return;
     spinSourcesRef.current.set(id, { dir, downAt: performance.now() });
     startSpinLoop();
   };
-  // Release: quick press (< 250ms) = one 90° tap step; longer = the spin
-  // already moved the camera, so no step on release.
+  // Release: quick press (< 250ms) with no other source still held = one
+  // smooth 45° tap step; longer = the spin already moved the camera, so
+  // no step on release; another source still held = the spin owns the
+  // camera, so no step either (954: 953 stepped regardless).
   const releaseSpinSource = (id: string, dir: -1 | 1) => {
     const s = spinSourcesRef.current.get(id);
     spinSourcesRef.current.delete(id);
-    if (spinSourcesRef.current.size === 0) stopSpinLoop();
-    if (s && performance.now() - s.downAt < 250) rotateCamera(dir);
+    const remaining = spinSourcesRef.current.size;
+    if (remaining === 0) stopSpinLoop();
+    if (s && tapStepOnRelease(performance.now() - s.downAt, remaining)) rotateCamera(dir);
   };
   const cancelSpinSource = (id: string) => {
     spinSourcesRef.current.delete(id);
@@ -5433,6 +5465,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   useEffect(() => () => {
     spinSourcesRef.current.clear();
     stopSpinLoop();
+    cancelTapTween();
   }, []);
   const toggleMarkerMode = () => {
     const next = !markerMode;
@@ -8641,6 +8674,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       // leave the camera spinning forever.
       spinSourcesRef.current.clear();
       stopSpinLoop();
+      cancelTapTween();
     };
     const onKeyDown = (event: KeyboardEvent) => {
       // BUILD 667: Don't steal keys while typing in a text field.
@@ -8651,7 +8685,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') { shiftHeldRef.current = true; return; }
       // BUILD 953: left/right arrows rotate the camera (mouse/tap-to-move
       // and the D-pad cover movement, so the arrows are free for the camera).
-      // Tap = one 90° step (944); hold past 250ms = slow 45°/s spin until
+      // BUILD 954: tap = one smooth 45° step (200ms tween through the
+      // in-between angles); hold past 250ms = slow 45°/s spin until
       // release. Repeat keydowns are ignored — the rAF spin loop drives
       // the motion. Left = counterclockwise, right = clockwise.
       if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
@@ -8670,7 +8705,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       // BUILD 953: arrow keyup never touches keysRef — a user holding KeyA
       // (moving left) who taps ArrowLeft to rotate must keep moving when
       // ArrowLeft is released; only KeyA's own keyup stops that movement.
-      // It releases the spin source instead (quick tap = one 90° step).
+      // It releases the spin source instead (quick tap = one smooth 45° step, 954).
       if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
         releaseSpinSource(event.code === 'ArrowRight' ? 'key-right' : 'key-left', event.code === 'ArrowRight' ? 1 : -1);
         event.preventDefault(); return;

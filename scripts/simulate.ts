@@ -126,7 +126,7 @@ import { PLAYER_COLLISION_BOX, GOAT_COLLISION_BOX, COLLISION_GAP, collisionBoxes
 import { oreNodesForChunk, mineralRichness, geoHash, oreKindFor, GEOLOGY_CELL } from '../src/game/geology';
 import { createEmptySkills, awardXp, levelForXp, xpForLevel, xpToNextLevel, SKILLS, WOODCUTTING_XP_PER_TREE, SKILL_MASTERS, masterForNpc, apprenticeshipCheck, apprenticeXpBonus } from '../src/game/skills';
 import { ISO_CHUNK_RENDER_RADIUS, isoTileChunkOffset, isoChunkGridBounds, clampChunkOffset, isoViewportCovered, isoVisibleTileRange } from '../src/game/iso/isoChunks';
-import { rotateIsoScreen, unrotateIsoScreen, rotatedDepth, rotateFace8, rotateCritterDir, rotatedGridBounds, rotatedVisibleTileRange, sanitizeIsoRotation, angleDeltaDeg, cacheCoversViewport, normalizeAngleDeg, rotateFace8Angle, rotatedDepthAngle, rotatedGridBoundsAngle, rotatedVisibleTileRangeAngle, rotateIsoScreenAngle, unrotateIsoScreenAngle } from '../src/game/iso/rotation';
+import { rotateIsoScreen, unrotateIsoScreen, rotatedDepth, rotateFace8, rotateCritterDir, rotatedGridBounds, rotatedVisibleTileRange, sanitizeIsoRotation, angleDeltaDeg, cacheCoversViewport, normalizeAngleDeg, rotateFace8Angle, rotatedDepthAngle, rotatedGridBoundsAngle, rotatedVisibleTileRangeAngle, rotateIsoScreenAngle, unrotateIsoScreenAngle, CAMERA_TAP_STEP_DEG, CAMERA_TAP_TWEEN_MS, CAMERA_HOLD_THRESHOLD_MS, CAMERA_SPIN_DEG_PER_SEC, tapTweenAngle, tapStepOnRelease } from '../src/game/iso/rotation';
 // BUILD 702: barbarian.ts replaced by rpgSprites.ts (import removed)
 
 let passed = 0;
@@ -2228,6 +2228,22 @@ console.log('Testing camera hold-to-spin (BUILD 953)...');
   assert(angleDeltaDeg(10, 350) === 20 && angleDeltaDeg(350, 10) === -20, 'Rot953: delta');
   assert(cacheCoversViewport(0, 0, 193, 420, -289.5, -630, 579, 1260, 0) === true, 'Rot953: cache covers at delta 0');
   assert(cacheCoversViewport(0, 0, 193, 420, -289.5, -630, 579, 1260, 90) === false, 'Rot953: cache open at delta 90');
+}
+
+// ---- 13a1f. Camera refinement: 45° tap steps + smooth tap tween (BUILD 954) ----
+// Same standing as 953: module-load proof here; the throwing standalone
+// script (~/workspace/verify954/standalone954.ts) is the real proof.
+console.log('Testing camera refinement (BUILD 954)...');
+{
+  assert(CAMERA_TAP_STEP_DEG === 45 && CAMERA_TAP_TWEEN_MS === 200 && CAMERA_HOLD_THRESHOLD_MS === 250 && CAMERA_SPIN_DEG_PER_SEC === 45, 'Rot954: tap/spin constants');
+  let a = 0;
+  for (let i = 0; i < 8; i++) a = normalizeAngleDeg(a + CAMERA_TAP_STEP_DEG);
+  assert(a === 0, 'Rot954: 8 tap steps = full turn');
+  assert(tapTweenAngle(30, 75, 0) === 30 && tapTweenAngle(30, 75, 1) === 75, 'Rot954: tween endpoints exact');
+  assert(Math.abs(tapTweenAngle(30, 75, 0.5) - 69.375) < 1e-9, 'Rot954: tween ease-out at half = 0.875');
+  assert(tapTweenAngle(30, 75, 0.25) > 30 && tapTweenAngle(30, 75, 0.25) < tapTweenAngle(30, 75, 0.5) && tapTweenAngle(30, 75, 0.5) < tapTweenAngle(30, 75, 0.75) && tapTweenAngle(30, 75, 0.75) < 75, 'Rot954: tween strictly increasing through intermediates');
+  assert(tapStepOnRelease(100, 0) === true && tapStepOnRelease(100, 1) === false && tapStepOnRelease(250, 0) === false && tapStepOnRelease(1000, 0) === false, 'Rot954: release rule matrix');
+  assert(rotateFace8Angle('down', 45) === 'downleft', 'Rot954: one tap step moves one Face8 row');
 }
 
 // ---- 13a1c. NPC morality levels (BUILD 923) ----

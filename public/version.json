@@ -1,6 +1,6 @@
 {
-  "build": "953",
-  "note": "The camera now spins: hold a camera button (or hold an arrow key) and the view slowly turns at 45 degrees per second, RuneScape-style, until you let go — the world turns around you while you stay centered. A quick tap still jumps exactly 90 degrees like before, and holding left and right together cancels out instead of fighting. Movement stays world-relative at every angle, and your exact camera angle is saved and restored (old saves keep their 90-degree step as 0/90/180/270).",
-  "timestamp": "2026-10-22T02:24:54.616Z",
-  "cacheBuster": "mvix4kt4"
+  "build": "954",
+  "note": "The camera now turns in finer, smoother steps: a quick tap turns it 45 degrees with a short smooth glide through the angles in between instead of jumping, so eight taps make a full turn and every stop lines up with a character facing direction. Holding a button still spins the view slowly and continuously at 45 degrees per second until you let go, and tapping one side while the other side is still held no longer fights the spin. Movement stays world-relative at every angle, and your exact camera angle is saved and restored as before.",
+  "timestamp": "2026-10-22T02:49:42.078Z",
+  "cacheBuster": "mviy0gjj"
 }
