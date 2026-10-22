@@ -28,8 +28,9 @@
 //
 // This module is PURE (no DOM, no React): composition tables + canvas
 // draw helper + geometry constants. The iso renderer (IsoFieldView)
-// owns image loading/caching and calls drawKenneyHouse in the same
-// under-roof gate the old overlay used.
+// owns image loading/caching and calls drawKenneyHouse whenever the
+// field view is active (BUILD 980: exteriors show whenever the player is
+// not in an interior — the old under-roof gate is gone).
 //
 // License: Fantasy Town Kit 2.0 by Kenney (www.kenney.nl), CC0 1.0.
 // License.txt ships alongside the pieces in public/sprites/town-sprites/.
@@ -79,23 +80,77 @@ export interface KenneyHouseComposition {
 }
 
 /**
- * BUILD 959: slab crop for wall-family pieces. Every Kenney wall render
- * is a 64x64 frame whose actual wall slab occupies only the middle
- * (measured alpha bboxes, 2026-10-22): walls/doors/windows/balconies all
- * sit at x14..50, y13..51, except wall-window-shutters at x14..51,
- * y11..52. Tiling full frames leaves 28px transparent gaps between
- * slabs (the floating-slabs look seen in the first browser pass), so
- * wall rows draw source-cropped to the slab: cells become fully opaque
- * and adjacent cells touch. Roofs, chimneys, banners, and awnings are
- * NOT cropped (single positioned pieces, never tiled).
+ * BUILD 980: kit-native face geometry (measured 2026-10-22 from the PNG
+ * alpha masks — the 959 slab-crop is retired). Every wall-family piece
+ * is the SAME face parallelogram in its 64x64 frame: TL (15,13),
+ * TR (48,20), BR (48,50), BL (15,43) — along-vector (33,7), height (0,30).
+ * (Shutters differ by 1-2px; the standard grid absorbs it.) Tiling places
+ * each tile's BL on the band line advancing (33,7) per tile, so tiles
+ * share edges exactly (BR_k == BL_{k+1}, TR_k == TL_{k+1}): a genuinely
+ * receding oblique wall. The 959 crop (bbox stretched to a square cell,
+ * tiled at constant y) flattened that slant into a flat row, and the
+ * frame-positioned roof then floated 0.09-0.23 cells above the wall top:
+ * the roof slabs' bottoms sit at frame y 36-52, not at the frame bottom,
+ * and their bottom edges are slanted — so positioning by the frame
+ * cannot seat any roof on any wall. Roofs now tile one per wall cell at
+ * the SAME scale, each tile's bottom edge anchored exactly on its wall
+ * cell's top edge. Per-piece bottom edges (image space, slab masks):
+ * roof (12,49)-(51,42), roof-gable (14,36)-(52,46),
+ * roof-high / roof-high-window (17,51)-(46,41),
+ * roof-high-point (16,47)-(47,48). Bottoms that rise to the right are
+ * drawn mirrored so every roof bottom falls to the right like the wall
+ * top; each roof stretches in x so its bottom spans exactly one 33px
+ * wall cell (roof 33/39, gable 33/38, high 33/29, high-point 33/31).
+ * High-point's nearly flat bottom (slope 0.03 vs the wall top's 0.21)
+ * is planted with a 6*s downward offset so its shallow end lands on the
+ * wall top instead of leaving a notch.
  */
-const KENNEY_WALL_CROP: Record<string, [number, number, number, number]> = {
-  'wall-window-shutters': [14, 11, 37, 41],
+export const KENNEY_WALL_FACE = {
+  tl: [15, 13] as [number, number],
+  tr: [48, 20] as [number, number],
+  br: [48, 50] as [number, number],
+  bl: [15, 43] as [number, number],
 };
-const KENNEY_WALL_CROP_DEFAULT: [number, number, number, number] = [14, 13, 36, 38];
-function kenneyWallCrop(piece: string): [number, number, number, number] {
-  return KENNEY_WALL_CROP[piece] ?? KENNEY_WALL_CROP_DEFAULT;
+/** Wall-face along-vector (image px per tile) and face height. */
+export const KENNEY_WALL_ALONG = 33;
+export const KENNEY_WALL_DROP = 7;
+export const KENNEY_WALL_HEIGHT = 30;
+/** Roof bottom edge (image space) + mirror flag + x-stretch for one cell.
+ *  The wall top falls right (screen y grows 7px per 33px cell), so every
+ *  roof bottom must fall right too: pieces whose bottom rises right are
+ *  mirrored, pieces whose bottom already falls right are drawn as-is.
+ *  stretchX scales the bottom edge to exactly one 33px wall cell, so
+ *  each roof tile's bottom edge lands on its wall cell's top edge — or
+ *  dips into the wall where the slab is steeper than the wall top (never
+ *  above it, so no gap can open). yOffS is an extra downward anchor
+ *  offset in units of s, needed only where the slab is flatter than the
+ *  wall top (roof-high-point: its 1px drop over the cell would leave a
+ *  6*s notch at the cell's right end; the offset plants the shallow end
+ *  on the wall top and dips the deep end into the wall instead). */
+export interface KenneyRoofGeometry {
+  bl: [number, number];
+  br: [number, number];
+  flip: boolean;
+  stretchX: number;
+  yOffS: number;
 }
+export const KENNEY_ROOF_GEOMETRY: Record<string, KenneyRoofGeometry> = {
+  // Bottom (12,49)-(51,42): rises right, so mirrored; 39px -> 33px cell.
+  // Drop 7px matches the wall top exactly: an exact join.
+  'roof': { bl: [12, 49], br: [51, 42], flip: true, stretchX: 33 / 39, yOffS: 0 },
+  // Bottom (14,36)-(52,46): falls right as-is; 38px -> 33px cell.
+  // Drop 10px is steeper than the wall top: the right end dips 3*s into
+  // the wall — no gap, just overlap.
+  'roof-gable': { bl: [14, 36], br: [52, 46], flip: false, stretchX: 33 / 38, yOffS: 0 },
+  // Bottom (17,51)-(46,41): rises right, so mirrored; 29px -> 33px cell.
+  // Drop 10px: right end dips 3*s into the wall.
+  'roof-high': { bl: [17, 51], br: [46, 41], flip: true, stretchX: 33 / 29, yOffS: 0 },
+  // Same slab as roof-high, with a window.
+  'roof-high-window': { bl: [17, 51], br: [46, 41], flip: true, stretchX: 33 / 29, yOffS: 0 },
+  // Bottom (16,47)-(47,48): falls right as-is, nearly flat (1px drop);
+  // 31px -> 33px cell, plus the 6*s offset (see yOffS) for a gap-free join.
+  'roof-high-point': { bl: [16, 47], br: [47, 48], flip: false, stretchX: 33 / 31, yOffS: 6 },
+};
 export function kenneyDoorCellIndex(comp: KenneyHouseComposition): number {
   return comp.walls.findIndex((p) => p.includes('door'));
 }
@@ -217,13 +272,14 @@ export const KENNEY_PIECE_PATHS: string[] = (() => {
 
 /**
  * Composition height in units of cell width (cell = composition width /
- * cell count): wall rows + roof rise above the wall top + chimney poke
- * above the roof. Documentation for the renderer; the draw is explicit.
+ * cell count): wall rows (30 image px each) + roof rise (~30 image px)
+ * + chimney poke (~7.5 image px) above the ridge, all at the wall scale
+ * s = cellW / 33. Documentation for the renderer; the draw is explicit.
  */
 export function kenneyCompositionHeightCells(comp: KenneyHouseComposition): number {
   const rows = comp.upperWalls ? 2 : 1;
-  const roofTop = rows + 0.9 - 0.16; // rows + roofH - overlap
-  const chimneyTop = (comp.chimneySides ?? ['right']).length > 0 ? roofTop + 0.61 : roofTop;
+  const roofTop = (rows * 30 + 30) / 33;
+  const chimneyTop = (comp.chimneySides ?? ['right']).length > 0 ? (rows * 30 + 37.5) / 33 : roofTop;
   return Math.max(rows, chimneyTop);
 }
 
@@ -236,14 +292,22 @@ type DrawableImage = {
 /**
  * Draw one assembled house exterior on a canvas context.
  * (x, yBottom, w): composition box — left, ground line, full width.
- * The ground wall row sits on the ground line with the entrance at its
- * center cell; an upper row (walls/balcony) sits above it; the roof
- * spans the full width above (slightly overlapping the wall top, as a
- * real roof overhangs); chimneys rise from the roof slope; banners hang
- * inside the door cell's margins; the awning sits above the door.
+ * The wall band's LAST tile bottom-right lands exactly at (x + w,
+ * yBottom); the band recedes up-left from there along (33,7) per tile,
+ * so the ground row sits on a slanted ground line (the kit's oblique
+ * view) with the entrance at its center cell; an upper row sits exactly
+ * on the ground row's top edge; the roof tiles one per wall cell with
+ * each tile's bottom edge anchored exactly on its wall cell's top edge,
+ * so wall and roof share an edge (no frame gap, no stretch-across slab);
+ * chimneys plant on the roof slope; banners hang inside the door cell's
+ * margins; the awning sits above the door. The door center stays at
+ * x + w/2 exactly (same invariant as 959: the composition is centered
+ * on the footprint, so painted door == trigger == exit == path end).
  * Missing images are skipped (graceful fallback, same pattern as
- * BUILD 806's sprite wait). Pixel-art pieces draw unsmoothed so 64px
- * art stays crisp at scale.
+ * BUILD 806's sprite wait). Returns true if at least one piece drew;
+ * false means every piece is missing and the caller should fall back
+ * to the dollhouse base rather than leave an invisible house.
+ * Pixel-art pieces draw unsmoothed so 64px art stays crisp at scale.
  */
 export function drawKenneyHouse(
   g: CanvasRenderingContext2D,
@@ -252,68 +316,127 @@ export function drawKenneyHouse(
   x: number,
   yBottom: number,
   w: number,
-): void {
+): boolean {
   const cells = comp.walls.length;
-  const cellW = w / cells;
+  // Wall scale: the band spans w over `cells` tiles of 33 image px each.
+  const s = w / (cells * KENNEY_WALL_ALONG);
   const rows = comp.upperWalls ? 2 : 1;
-  const wallTop = yBottom - rows * cellW;
-  const draw = (piece: string, dx: number, dy: number, dw: number, dh: number, crop?: [number, number, number, number]): void => {
+  let drew = false;
+  // Draw one 64px piece so image point (ix, iy) lands on screen (sx, sy),
+  // at the wall scale (optionally stretched in x for roof cells). When
+  // flip is set the image is mirrored: ix is then the ORIGINAL image x
+  // that must land on sx (for roofs, the original bottom-right, whose
+  // mirror is the tiled bottom-left).
+  const drawAnchored = (
+    piece: string, ix: number, iy: number, sx: number, sy: number,
+    flip: boolean, stretchX = 1,
+  ): void => {
     const img = imgs[townSpritePath(piece)] as (DrawableImage & { naturalWidth: number }) | null | undefined;
     if (!img || !img.complete || img.naturalWidth <= 0) return;
-    if (crop) {
-      g.drawImage(img as unknown as CanvasImageSource, crop[0], crop[1], crop[2], crop[3], dx, dy, dw, dh);
+    const dw = 64 * s * stretchX;
+    const dh = 64 * s;
+    if (flip) {
+      g.drawImage(img as unknown as CanvasImageSource, sx + ix * s * stretchX, sy - iy * s, -dw, dh);
     } else {
-      g.drawImage(img as unknown as CanvasImageSource, dx, dy, dw, dh);
+      g.drawImage(img as unknown as CanvasImageSource, sx - ix * s * stretchX, sy - iy * s, dw, dh);
     }
+    drew = true;
   };
   g.save();
   g.imageSmoothingEnabled = false;
-  // Ground row: entrance at the center cell, windows elsewhere.
-  // Wall rows draw slab-cropped so adjacent cells touch (BUILD 959 fix:
-  // full frames leave transparent gaps between slabs).
+  // Ground row: tile k's BL sits on the band line; the last tile's BR
+  // lands exactly at (x + w, yBottom). Entrance at the center cell.
+  const groundBL = (c: number): [number, number] => [
+    x + c * KENNEY_WALL_ALONG * s,
+    yBottom - (cells - c) * KENNEY_WALL_DROP * s,
+  ];
   for (let c = 0; c < cells; c++) {
-    draw(comp.walls[c], x + c * cellW, yBottom - cellW, cellW, cellW, kenneyWallCrop(comp.walls[c]));
+    const [bx, by] = groundBL(c);
+    drawAnchored(comp.walls[c], KENNEY_WALL_FACE.bl[0], KENNEY_WALL_FACE.bl[1], bx, by, false);
   }
-  // Upper row (walls/balcony): windows only, never a door.
+  // Upper row: each tile's BL sits exactly on the ground tile's TL
+  // (shared edge, no gap, no overlap).
+  const topY = (c: number, row: number): [number, number] => {
+    const [bx, by] = groundBL(c);
+    return [bx, by - row * KENNEY_WALL_HEIGHT * s];
+  };
   if (comp.upperWalls) {
     for (let c = 0; c < cells; c++) {
-      draw(comp.upperWalls[c], x + c * cellW, yBottom - 2 * cellW, cellW, cellW, kenneyWallCrop(comp.upperWalls[c]));
+      const [bx, by] = topY(c, 1);
+      drawAnchored(comp.upperWalls[c], KENNEY_WALL_FACE.bl[0], KENNEY_WALL_FACE.bl[1], bx, by, false);
     }
   }
-  // Roof: one piece stretched across the full width, overlapping the
-  // wall top by 0.16 cell so no gap shows between wall and roof.
-  const roofH = cellW * 0.9;
-  const roofY = wallTop - roofH + cellW * 0.16;
-  draw(comp.roof, x, roofY, w, roofH);
-  // Chimneys: foot planted mid-roof-slope, top above the ridge.
+  // Roof: one tile per wall cell, bottom edge anchored exactly on that
+  // cell's top edge (top row's top for two-story houses). The wall top
+  // at cell c is the top row's TL: ground BL shifted up rows*30*s.
+  const roofGeo = KENNEY_ROOF_GEOMETRY[comp.roof] ?? KENNEY_ROOF_GEOMETRY['roof'];
+  for (let c = 0; c < cells; c++) {
+    const [tx, ty] = topY(c, rows);
+    const ay = ty + roofGeo.yOffS * s;
+    if (roofGeo.flip) {
+      drawAnchored(comp.roof, roofGeo.br[0], roofGeo.br[1], tx, ay, true, roofGeo.stretchX);
+    } else {
+      drawAnchored(comp.roof, roofGeo.bl[0], roofGeo.bl[1], tx, ay, false, roofGeo.stretchX);
+    }
+  }
+  // Chimneys: foot planted on the roof slope (~15*s above the wall top,
+  // i.e. just below the ridge), stack rising ~7.5*s above the ridge.
+  // The chimney graphic spans image y 12..50, so the draw rect's bottom
+  // sits (64-50)/64 of its height below the graphic foot.
   const chimPiece = comp.chimneyPiece ?? 'chimney';
   const sides = comp.chimneySides ?? ['right'];
+  const wallTopYAt = (screenX: number): number => {
+    const [, ty0] = topY(0, rows);
+    return ty0 + (screenX - x) * (KENNEY_WALL_DROP / KENNEY_WALL_ALONG);
+  };
   for (const side of sides) {
-    const chimW = cellW * 0.55;
-    const chimH = cellW * 1.15;
-    const chimBottom = roofY + roofH * 0.6;
+    const chimW = 0.55 * KENNEY_WALL_ALONG * s;
+    const chimH = 1.15 * KENNEY_WALL_ALONG * s;
     const chimX = side === 'left' ? x + w * 0.08 : x + w * 0.74;
-    draw(chimPiece, chimX, chimBottom - chimH, chimW, chimH);
+    const footY = wallTopYAt(chimX) - 15 * s;
+    const rectBottom = footY + (14 / 64) * chimH;
+    const img = imgs[townSpritePath(chimPiece)] as (DrawableImage & { naturalWidth: number }) | null | undefined;
+    if (!img || !img.complete || img.naturalWidth <= 0) continue;
+    g.drawImage(img as unknown as CanvasImageSource, chimX - chimW / 2, rectBottom - chimH, chimW, chimH);
+    drew = true;
   }
   // Banners: narrow vertical signs hanging inside the door cell's
   // left/right margins (the door arch itself is centered, so the
-  // margins are free — the door never moves).
+  // margins are free — the door never moves). Plain top-left draws at
+  // the banner size (the pieces fill their frames vertically).
   if (comp.banners) {
     const doorIdx = kenneyDoorCellIndex(comp);
-    const doorLeft = x + doorIdx * cellW;
-    const banW = cellW * 0.32;
-    const banH = cellW * 0.95;
-    const banY = yBottom - cellW + cellW * 0.02;
-    draw(comp.banners[0], doorLeft + cellW * 0.03, banY, banW, banH);
-    draw(comp.banners[1], doorLeft + cellW - cellW * 0.03 - banW, banY, banW, banH);
+    const [doorBLx, doorBLy] = groundBL(doorIdx);
+    const doorTLy = doorBLy - KENNEY_WALL_HEIGHT * s;
+    const doorLeft = doorBLx;
+    const doorRight = doorBLx + KENNEY_WALL_ALONG * s;
+    const banW = 0.32 * KENNEY_WALL_ALONG * s;
+    const banH = 0.95 * KENNEY_WALL_ALONG * s;
+    const banY = doorTLy + 0.02 * KENNEY_WALL_ALONG * s;
+    for (const [piece, bx] of [
+      [comp.banners[0], doorLeft + 0.03 * KENNEY_WALL_ALONG * s],
+      [comp.banners[1], doorRight - 0.03 * KENNEY_WALL_ALONG * s - banW],
+    ] as const) {
+      const img = imgs[townSpritePath(piece)] as (DrawableImage & { naturalWidth: number }) | null | undefined;
+      if (!img || !img.complete || img.naturalWidth <= 0) continue;
+      g.drawImage(img as unknown as CanvasImageSource, bx, banY, banW, banH);
+      drew = true;
+    }
   }
   // Awning: overhang slab above the door, slightly wider than the cell.
   if (comp.awning) {
     const doorIdx = kenneyDoorCellIndex(comp);
-    const doorCx = x + (doorIdx + 0.5) * cellW;
-    const awnW = cellW * 1.6;
-    const awnH = cellW * 0.35;
-    draw(comp.awning, doorCx - awnW / 2, wallTop - awnH + cellW * 0.12, awnW, awnH);
+    const [doorBLx, doorBLy] = groundBL(doorIdx);
+    const doorTLy = doorBLy - KENNEY_WALL_HEIGHT * s;
+    const doorCx = doorBLx + (KENNEY_WALL_ALONG * s) / 2;
+    const awnW = 1.6 * KENNEY_WALL_ALONG * s;
+    const awnH = 0.35 * KENNEY_WALL_ALONG * s;
+    const img = imgs[townSpritePath(comp.awning)] as (DrawableImage & { naturalWidth: number }) | null | undefined;
+    if (img && img.complete && img.naturalWidth > 0) {
+      g.drawImage(img as unknown as CanvasImageSource, doorCx - awnW / 2, doorTLy - awnH + 0.12 * KENNEY_WALL_ALONG * s, awnW, awnH);
+      drew = true;
+    }
   }
   g.restore();
+  return drew;
 }

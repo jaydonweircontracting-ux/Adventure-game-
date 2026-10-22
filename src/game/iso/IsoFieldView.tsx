@@ -1239,8 +1239,29 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       const hy960 = (stepTx960.y - stepTy960.y) / 2;
       const vx960 = (stepTx960.x + stepTy960.x) / 2;
       const vy960 = (stepTx960.y + stepTy960.y) / 2;
-      for (let ty = groundY0; ty <= groundY1; ty++) {
-        for (let tx = groundX0; tx <= groundX1; tx++) {
+      // BUILD 980: far-zoom repaint stride. The cache canvas is capped
+      // (585x1266 px) while its world area grows as 1/zm^2, so at min
+      // zoom the per-tile loop painted ~29M tiles into 0.74M pixels
+      // (~39 tiles per pixel) — a measured 2.25s main-thread freeze on
+      // every zoom change and chunk crossing (the min-zoom stutter).
+      // When the cache scale is below 0.5, sample one tile per cache
+      // pixel (stride = round(1/scale)) and draw its quad stride-sized:
+      // the painted result is identical at that resolution (each cache
+      // pixel still gets one tile's color) at 1/stride^2 the cost.
+      // At zoom 1 (scale 1) stride is 1: no change. The stride grid is
+      // aligned to world multiples of stride so panning never shimmers
+      // the sampled pattern. Roads and farmstead sites are
+      // center-sampled, so thin roads may dash slightly at far zoom
+      // (sub-pixel there anyway); they return exact on zoom-in.
+      const cacheStride = groundCacheScale < 0.5 ? Math.max(1, Math.round(1 / groundCacheScale)) : 1;
+      const hxS = hx960 * cacheStride;
+      const hyS = hy960 * cacheStride;
+      const vxS = vx960 * cacheStride;
+      const vyS = vy960 * cacheStride;
+      const strideX0 = Math.floor(groundX0 / cacheStride) * cacheStride;
+      const strideY0 = Math.floor(groundY0 / cacheStride) * cacheStride;
+      for (let ty = strideY0; ty <= groundY1; ty += cacheStride) {
+        for (let tx = strideX0; tx <= groundX1; tx += cacheStride) {
           const { ox, oy, lx, ly } = isoTileChunkOffset(tx, ty, N);
           const sc = sceneFor(ox, oy);
           // BUILD 695: storybook sandy ground inside Mosslight — radial mask
@@ -1280,10 +1301,10 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           // ex=1 expansion for AA seams (BUILD 698/916 intent preserved).
           const QS = 1.10;
           groundCacheG.beginPath();
-          groundCacheG.moveTo(p.x - vx960 * QS, p.y - vy960 * QS);
-          groundCacheG.lineTo(p.x + hx960 * QS, p.y + hy960 * QS);
-          groundCacheG.lineTo(p.x + vx960 * QS, p.y + vy960 * QS);
-          groundCacheG.lineTo(p.x - hx960 * QS, p.y - hy960 * QS);
+          groundCacheG.moveTo(p.x - vxS * QS, p.y - vyS * QS);
+          groundCacheG.lineTo(p.x + hxS * QS, p.y + hyS * QS);
+          groundCacheG.lineTo(p.x + vxS * QS, p.y + vyS * QS);
+          groundCacheG.lineTo(p.x - hxS * QS, p.y - hyS * QS);
           groundCacheG.closePath();
           // BUILD 369 (Phase 2b): authoritative rivers/lakes; road crossings draw as bridges.
           let wet = false;
@@ -1410,10 +1431,10 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
                 const hedge = (window as unknown as { __propImgs?: Record<string, HTMLImageElement> })
                   .__propImgs?.['props/hedge-straight.png'];
                 if (hedge && hedge.complete && hedge.naturalWidth > 0) {
-                  groundCacheG.drawImage(hedge, p.x - hw, p.y - hh, TILE_W, TILE_H);
+                  groundCacheG.drawImage(hedge, p.x - hw * cacheStride, p.y - hh * cacheStride, TILE_W * cacheStride, TILE_H * cacheStride);
                 }
               } else if (det === FARM_DET_FENCE) {
-                groundCacheG.drawImage(farmFenceSprite(), p.x - hw, p.y - hh, TILE_W, TILE_H);
+                groundCacheG.drawImage(farmFenceSprite(), p.x - hw * cacheStride, p.y - hh * cacheStride, TILE_W * cacheStride, TILE_H * cacheStride);
               } else if (det === FARM_DET_HOUSE) {
                 farmsteadQueue.push({ x: wxW, y: wyW, barn: false });
               } else if (det === FARM_DET_BARN) {
@@ -1738,13 +1759,23 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               const scale = targetW / sprite.naturalWidth;
               const sw = sprite.naturalWidth * scale;
               const sh = sprite.naturalHeight * scale;
-              // BUILD 808: no black ground ellipse beneath the uploaded house sprite.
-              g2.save();
-              g2.globalAlpha = 1;
-              g2.globalCompositeOperation = 'source-over';
-              g2.filter = 'none';
-              g2.drawImage(sprite, cx - sw / 2, baseY - sh, sw, sh);
-              g2.restore();
+              // BUILD 980: the dollhouse base is NO LONGER drawn
+              // unconditionally under every house. It was the "open
+              // dollhouse while outside" report: the base is a roofless
+              // interior, and any gap in the overlay above it (the
+              // under-roof gate, the slanted Kenney band's lower edge)
+              // exposed furniture/floor in the field. The base now draws
+              // only as a fallback (overlay art missing, or interior
+              // active) — see the branch below. Ground dressing stays:
+              // it is entry-aligned path dressing, not house art.
+              const drawBase = (): void => {
+                g2.save();
+                g2.globalAlpha = 1;
+                g2.globalCompositeOperation = 'source-over';
+                g2.filter = 'none';
+                g2.drawImage(sprite, cx - sw / 2, baseY - sh, sw, sh);
+                g2.restore();
+              };
               // Keep authored sprite architecture intact; only add entry-aligned ground dressing.
               drawBuildingGroundDress(g2, cx, baseY, sw, r.left + r.right, r.top + r.bottom);
               // BUILD 826: draw the authored exterior overlay only while no interior is active.
@@ -1752,9 +1783,10 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               // live interior state instead of relying on unmounting the whole view.
               // BUILD 895: "inside the house" was tested against the overlay's
               // drawn screen bounds for the (then sole) tutorial house.
-              // BUILD 910 supersedes that test with a per-building world-space
-              // test — see the playerUnderRoof computation below for why the
-              // screen AABB cannot generalize to a whole town of oversized art.
+              // BUILD 910 superseded that test with a per-building world-space
+              // test (footprint inflated by 3 units). BUILD 980 removed that
+              // test: it hid the roof at every doorstep, so approached
+              // houses rendered as roofless dollhouses in the field.
               // BUILD 899: enlarge the overlay (1.5 -> 1.6) and sink it so
               // its wall bases fully cover the base interior sprite's floor
               // front edge. Scale-about-the-bottom-anchor alone cannot close
@@ -1772,8 +1804,10 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               // fully covered (~0 px) and the painted door still sits on its
               // foundation. The same two-layer treatment now applies to
               // EVERY building, not just the tutorial house (BUILD 805's
-              // exterior skip is gone): base interior sprite + this overlay,
-              // hidden while the player stands under the drawn roof.
+              // exterior skip is gone). BUILD 980: the overlay is no longer
+              // hidden while the player stands under the drawn roof — the
+              // field view shows exteriors whenever no interior is active,
+              // and the dollhouse base draws only as an art-missing fallback.
               const overlayW = sw * 1.6;
               const overlayH = sh * 1.6;
               const overlaySink = sh * 0.34;
@@ -1791,11 +1825,17 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               // test keeps the 896 property that matters — the test follows
               // THIS building's drawn placement, footprint + art margin —
               // without borrowing a neighbour's rectangle.
-              const scenePx = liveRef.current.px - bx;
-              const scenePy = liveRef.current.py - by;
-              const playerUnderRoof = scenePx >= b.rect.left - 3 && scenePx <= b.rect.right + 3
-                && scenePy >= b.rect.top - 3 && scenePy <= b.rect.bottom + 3;
-              if (!liveRef.current.inInterior && !playerUnderRoof) {
+              // BUILD 980: the field view ALWAYS shows exteriors. The
+              // 910 under-roof test (footprint inflated by 3 units) hid
+              // the roof whenever the player stood at a doorstep, so
+              // every approached house rendered as its roofless
+              // dollhouse interior in the field. Interiors are revealed
+              // by 977 entry (a separate interior view), not by
+              // roof-lift, and the player draws at +Infinity depth
+              // (BUILD 812), so no field state needs the roof hidden.
+              // The gate is now interior-state only (BUILD 826's
+              // transition behavior is preserved in the else branch).
+              if (!liveRef.current.inInterior) {
                 // BUILD 959: non-tutorial buildings wear a Kenney town-kit
                 // exterior now — walls + door + windows + roof + chimney
                 // assembled from kit pieces (townSprites), drawn in the
@@ -1816,10 +1856,22 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
                     g2.filter = 'none';
                     g2.drawImage(overlay, cx - overlayW / 2, baseY - overlayH + overlaySink, overlayW, overlayH);
                     g2.restore();
+                  } else {
+                    drawBase();
                   }
                 } else {
-                  drawKenneyHouse(g2, kenneyImgs, kenneyCompositionFor(kind), cx - overlayW / 2, baseY, overlayW);
+                  // BUILD 980: Kenney exteriors draw at the FOOTPRINT
+                  // width sw (not the 1.6x overlay box): the 1.6x
+                  // oversize blanketed neighbours in one unreadable
+                  // roof pile. The Kenney wall band spans sw, so the
+                  // house sits on its lot and the painted door (center
+                  // cell, x + sw/2 = cx) still matches the trigger.
+                  const kenneyOk = drawKenneyHouse(g2, kenneyImgs, kenneyCompositionFor(kind), cx - sw / 2, baseY, sw);
+                  if (!kenneyOk) drawBase();
                 }
+              } else {
+                // Interior active: keep the old base backdrop (BUILD 826).
+                drawBase();
               }
               return;
             }
