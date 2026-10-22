@@ -156,6 +156,7 @@ import { applyFactionGain } from '@/game/faction';
 import { chestsForChunk, attemptLockpick, serializeOpenedChests, parseOpenedChests, type LockedChest } from '@/game/lockpicking';
 // BUILD 963: visible, lootable house chests — one chest per house.
 import { houseChestForDoorway, remainingChestContents, chestFullyLooted, recordHouseChestTake, markChestTheftReported, serializeHouseChestTakes, parseHouseChestTakes, type HouseChest, type HouseChestTakes } from '@/game/houseChests';
+import { createStartingDeeds, playerOwnsHouse, sanitizeHouseDeeds, serializeHouseDeeds, type HouseDeedsState } from '@/game/houseDeeds';
 import { sitesForActiveStages, resolveSiteChunk, chunkSatisfiesStage, type ActiveQuestStage } from '@/game/questSites';
 import { playCombatSound } from '@/game/effects';
 import { audioEngine, loadAudioSettings, resolveMusicZone, saveAudioSettings, type AudioSettings, type MusicTrackId } from '@/game/audio';
@@ -187,7 +188,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '971';
+const BUILD_NUMBER = '972';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -235,6 +236,7 @@ const BUILD_NOTES: Record<string, string> = {
   '968': 'Fixed the vanishing quest rewards: finishing a quest used to tell you that you had received a sword, a suit of armor, gloves, and more — but none of those items ever arrived, so there was nothing to equip. Quest and task rewards that are weapons, armor, or jewelry now land in your equipment as real items with real stats, ready to equip from the Equipment tab. Coins, XP, and the hunting bow already worked and are unchanged, and a few story keepsakes (bread, maps, favors) stay as words in the log because they have no item form.',
   '969': 'Monster loot now runs on one authored loot system: every creature kind has its own loot table with per-item chances and stack limits, so kills drop the same coins, pelts, fangs, and gear materials they always did — now from tables instead of scattered rolls. Nothing about what drops changed, only how the game decides it, which sets up richer loot tables later.',
   '970': 'Conversations now run as small topic machines: talk to Brand, the merchant who heads the town-s1 merchant household in Mosslight, and you can open a bank — deposit or withdraw gold, or store whole pieces of gear in the bank vault and take them back later (stored gear comes back unequipped, and taking anything back while you are over your carry limit is refused with the item safely left in the vault, never lost). You can also ask any townsperson about a relative and hear what the world actually knows about them. Your bank balance and stored gear are saved with your game and load back cleanly on old saves, and the town bank ledger that tracks NPC delve hauls is untouched — the two never share a coin.',
+  '972': 'Your starting house now has a deed: the house you begin in is formally yours — open its chest and the panel says so — and that deed is what makes taking from your own chest free while every other home stays someone else\u2019s, exactly as before. The deed is saved with your game, so old saves gain it automatically. Rent, eviction, and selling houses are not in: there is no landlord to pay, no one to buy a house from, and no one to sell one to in a single-player world, so those parts were left out rather than invented.',
   '971': 'Skills now track your effort and your spellcraft: every tree you fell and every ore you mine counts as a try, and once you pick a class at level 10 your class changes how fast those skills grow — a Warrior works wood and stone at full speed while a Mage is slower at manual labor, and Beginners learn everything at full speed. Separately, every point of mana you actually spend casting overworld spells feeds a magic level, and each magic level adds to your maximum mana. Dungeon casting does not feed it, and nothing about your XP, your kill progress, or your spell numbers changes.',
   '960': 'Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.',
   '958': 'At level 10 you now choose a class that actually changes how you fight. Four teachers have moved into Mosslight: Dain teaches warriors at the Wayfarer Guild, Sable teaches mages, Puck teaches rogues, and Wynn teaches archers. They teach at the guild by day and wander to the Rusty Tankard in the evening, so talk to one when you reach level 10 — changing class later is free. Warriors hit 2 damage harder, rogues crit more often and strike from stealth three times as hard, archers shoot 25 percent harder, and mages open a Spells tab in the Skills panel with real magic: Ember Bolt throws fire at the nearest foe within range, Veil Step blinks you two paces in the direction you face, and Frost Ward hardens your skin with 3 extra armor until your next wound. Spells cost mana drawn from your intelligence, refill slowly on their own, and every cast plays a fire, frost, or veil animation on the field. Effect frames come from a user-supplied effects pack that ships no license file, so no license terms are claimed for them.',
@@ -1956,6 +1958,10 @@ type SaveGameData = {
   openedChests?: string;
   // BUILD 963: what the player took from each visible house chest.
   houseChestTakes?: string;
+  // BUILD 972: extras 4/6 — house deeds (player-owned houses, keyed by
+  // doorway id). Old saves carry no field and restore to the starting
+  // deed (the tutorial house was already the player's under 963).
+  houseDeeds?: HouseDeedsState;
   lootedPois?: string;
   civ?: string;
   horses?: unknown;
@@ -5808,6 +5814,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [houseChestTakes, setHouseChestTakes] = useState<HouseChestTakes>({});
   const houseChestTakesRef = useRef<HouseChestTakes>({});
   useEffect(() => { houseChestTakesRef.current = houseChestTakes; }, [houseChestTakes]);
+  // BUILD 972: extras 4/6 — house deeds. Ref is the source of truth
+  // (save reads it); state mirrors it so the chest memo re-derives
+  // ownHouse when deeds restore on load. New Game resets via the
+  // title remount (the 926 pattern), re-running the initializer.
+  const [houseDeeds, setHouseDeeds] = useState<HouseDeedsState>(() => createStartingDeeds());
+  const houseDeedsRef = useRef<HouseDeedsState>(houseDeeds);
+  useEffect(() => { houseDeedsRef.current = houseDeeds; }, [houseDeeds]);
   // Civ phase 14: POI treasure looted once per POI id, persisted in the save.
   const [lootedPois, setLootedPois] = useState<string[]>([]);
   const lootedPoisRef = useRef<string[]>([]);
@@ -6261,17 +6274,22 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     });
     return doorways.map((d) => {
       const off = offsets[d.id] || { x: 0, y: 0 };
-      return houseChestForDoorway(chunkVal, {
+      const chest = houseChestForDoorway(chunkVal, {
         id: d.id,
         rect: { left: d.rect.left + off.x, top: d.rect.top + off.y, right: d.rect.right + off.x, bottom: d.rect.bottom + off.y },
         position: { x: d.position.x + off.x, y: d.position.y + off.y },
         areaName: d.area.name,
       }, rects);
+      // BUILD 972: the deed record is the source of truth for ownHouse
+      // (the 963 hardcoded doorway check inside houseChestForDoorway is
+      // superseded here) — so the theft exemption follows the deed,
+      // and a house without a deed is never the player's by accident.
+      return { ...chest, ownHouse: playerOwnsHouse(houseDeedsRef.current, d.id) };
     });
   };
   const houseChestsForChunk = useMemo(
     () => computeHouseChests(chunk, houseOffsets, deletedHouseIds),
-    [chunk.x, chunk.y, houseOffsets, deletedHouseIds],
+    [chunk.x, chunk.y, houseOffsets, deletedHouseIds, houseDeeds],
   );
   const [activeHouseChestId, setActiveHouseChestId] = useState<string | null>(null);
   const activeHouseChest = houseChestsForChunk.find((c) => c.id === activeHouseChestId) ?? null;
@@ -7012,6 +7030,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         }),
         openHouseChestForTest: (chestId: string) => { openHouseChest(chestId); return true; },
         takeHouseChestForTest: (chestId: string, kind: 'coins' | 'item', baseId?: string) => { takeHouseChestItem(chestId, kind, baseId); return true; },
+        // BUILD 972: house-deed hooks (testmode only, like all __gameTest).
+        getHouseDeeds: () => Object.values(serializeHouseDeeds(houseDeedsRef.current)),
         // BUILD 968: quest/task payout hooks (testmode only, like all
         // __gameTest). Drive the REAL payout paths — completeQuest and
         // payTaskBundle — skipping only stage gameplay, so the harness
@@ -7439,6 +7459,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     taskLog: serializeTaskSave(taskStatesRef.current),
     openedChests: serializeOpenedChests(openedChestsRef.current),
     houseChestTakes: serializeHouseChestTakes(houseChestTakesRef.current),
+    // BUILD 972: persist house deeds (starting deed only — no other
+    // deed can exist, so this record is one entry in practice).
+    houseDeeds: serializeHouseDeeds(houseDeedsRef.current),
     lootedPois: serializeOpenedChests(lootedPoisRef.current),
     civ: civRef.current ? serializeCivilization(civRef.current) : undefined,
     horses: horsesRef.current ? serializeHorses(horsesRef.current.horses, horsesRef.current.stables) : undefined,
@@ -7696,6 +7719,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // every chest is full on first load, never faked history.
     const restoredTakes = parseHouseChestTakes(loadState.houseChestTakes);
     houseChestTakesRef.current = restoredTakes; setHouseChestTakes(restoredTakes);
+    // BUILD 972: restore house deeds (old saves have none -> starting
+    // deed, the ownership 963 already enforced — never a new grant).
+    { const restoredDeeds = sanitizeHouseDeeds(loadState.houseDeeds); houseDeedsRef.current = restoredDeeds; setHouseDeeds(restoredDeeds); }
     const restoredLooted = parseOpenedChests(loadState.lootedPois);
     lootedPoisRef.current = restoredLooted; setLootedPois(restoredLooted);
     // Civilization: restore the simulated hierarchy, or rebuild it lazily.
@@ -14086,7 +14112,7 @@ if (active) {
                             <div><span className="body-loot-kicker">HOUSE CHEST</span><h3>{activeHouseChest.houseName}</h3></div>
                             <button type="button" className="body-loot-close" aria-label="Close chest window" onClick={() => setActiveHouseChestId(null)}>×</button>
                           </header>
-                          <p className="body-loot-hint">{activeHouseChest.ownHouse ? 'Your own chest — take freely.' : 'This chest belongs to this house. Taking from it is theft if anyone sees you.'}</p>
+                          <p className="body-loot-hint">{activeHouseChest.ownHouse ? 'Deed held — this house is yours. Take freely.' : 'This chest belongs to this house. Taking from it is theft if anyone sees you.'}</p>
                           <div className="body-loot-items">
                             {remaining.coins > 0 && (
                               <div className="body-loot-item"><span><strong>🪙 Coins</strong><small>{remaining.coins} coins</small></span><button type="button" onClick={() => takeHouseChestItem(activeHouseChest.id, 'coins')} data-testid={'button-house-chest-coins-' + activeHouseChest.id}>Take</button></div>
