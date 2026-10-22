@@ -133,6 +133,9 @@ import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type Ele
 import { ensureKitTileset, onKitTilesetLoaded } from '@/game/kitAssets';
 import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS, GOAT_CHASE_RANGE, gearForMonster, bonesForMonster } from '@/game/ai';
 import { classGearBaseIds } from '@/game/classLoot';
+// BUILD 969: unified loot grammar (extras 1/6) — monster counts loot is
+// authored table data now, not a hardcoded switch with inline rolls.
+import { rollMonsterLoot } from '@/game/lootGrammar';
 import { questRewardBaseId } from '@/game/questRewards';
 import { behaviorForCreature, preferredRangeFor, shouldStand, shouldRetarget, voiceLine } from '@/game/creatureBehavior';
 import { multiStrikeCount, isEnraged, enragedDamageMult, enragedChaseSpeed, clampToTether, suppressForSneakBlind } from '@/game/creatureAbilities';
@@ -181,7 +184,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '968';
+const BUILD_NUMBER = '969';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -227,6 +230,7 @@ const BUILD_NOTES: Record<string, string> = {
   '966': 'Soldiers, bandits, and spiders now look like themselves: soldiers march in heavy plate with a longsword and bandits skulk in light leathers with a blade, instead of both showing as plain colored blobs, and spiders are drawn from a detailed new spider model with a full walk, attack, and death animation. One correction from the art itself: the pack labeled as a heavy armored character turned out to be that spider, so it reskins spiders rather than soldiers — no human was faked from it. Strength, behavior, and loot are exactly the same — only how they look has changed. Player and villager characters keep their current look: these new sheets do not cover their animations.',
   '967': 'Sneaking now slows you down, exactly as asked: while the eye is on, you move at half speed — on foot, on horseback, by keyboard, D-pad, or tap-to-move — and the moment you step out of the shadows you are back to full speed. Nothing else about sneaking changes: the same witnesses notice you at the same distances, and your first strike from the shadows still hits just as hard.',
   '968': 'Fixed the vanishing quest rewards: finishing a quest used to tell you that you had received a sword, a suit of armor, gloves, and more — but none of those items ever arrived, so there was nothing to equip. Quest and task rewards that are weapons, armor, or jewelry now land in your equipment as real items with real stats, ready to equip from the Equipment tab. Coins, XP, and the hunting bow already worked and are unchanged, and a few story keepsakes (bread, maps, favors) stay as words in the log because they have no item form.',
+  '969': 'Monster loot now runs on one authored loot system: every creature kind has its own loot table with per-item chances and stack limits, so kills drop the same coins, pelts, fangs, and gear materials they always did — now from tables instead of scattered rolls. Nothing about what drops changed, only how the game decides it, which sets up richer loot tables later.',
   '960': 'Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.',
   '958': 'At level 10 you now choose a class that actually changes how you fight. Four teachers have moved into Mosslight: Dain teaches warriors at the Wayfarer Guild, Sable teaches mages, Puck teaches rogues, and Wynn teaches archers. They teach at the guild by day and wander to the Rusty Tankard in the evening, so talk to one when you reach level 10 — changing class later is free. Warriors hit 2 damage harder, rogues crit more often and strike from stealth three times as hard, archers shoot 25 percent harder, and mages open a Spells tab in the Skills panel with real magic: Ember Bolt throws fire at the nearest foe within range, Veil Step blinks you two paces in the direction you face, and Frost Ward hardens your skin with 3 extra armor until your next wound. Spells cost mana drawn from your intelligence, refill slowly on their own, and every cast plays a fire, frost, or veil animation on the field. Effect frames come from a user-supplied effects pack that ships no license file, so no license terms are claimed for them.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
@@ -2287,24 +2291,13 @@ function goatsForChunk(chunk: Point, playerLevel = 1): GoatState[] {
   });
 }
 // Per-creature loot identity: each monster drops recognizable physical loot.
+// BUILD 969: rolled from the authored grammar tables in lootGrammar.ts —
+// every rate is an exact translation of the switch this replaced (same
+// chance, same range, same distribution; zero-count keys omitted, which
+// describeLoot/onLoot already treat exactly like 0). The gear channel
+// is untouched: class gear still rides the drop via classGearBaseIds.
 function monsterLootForKind(kind: MonsterKind): GoatLoot {
-  switch (kind) {
-    case 'goblin': return { coins: 1 + Math.floor(Math.random() * 3), fabric: Math.random() < 0.3 ? 1 : 0 };
-    case 'bandit': return { coins: 3 + Math.floor(Math.random() * 5), fabric: Math.random() < 0.5 ? 1 : 0, bone: 1, lockpicks: Math.random() < 0.35 ? 1 : 0 };
-    case 'skeleton': return { bone: 1 + Math.floor(Math.random() * 2), coins: Math.random() < 0.5 ? 1 : 0 };
-    case 'troll': return { pelt: 1, coins: 2 + Math.floor(Math.random() * 4) };
-    case 'snake': return { fang: 1, coins: Math.random() < 0.3 ? 1 : 0 };
-    case 'spider': return { silk: 2 + Math.floor(Math.random() * 2), fang: Math.random() < 0.5 ? 1 : 0 };
-    case 'dragon': return { pelt: 2, fang: 2, coins: 10 + Math.floor(Math.random() * 10) };
-    case 'orc': return { pelt: 1, coins: 2 + Math.floor(Math.random() * 4) };
-    case 'soldier': return { coins: 3 + Math.floor(Math.random() * 4), fabric: Math.random() < 0.5 ? 1 : 0 };
-    case 'knight': return { coins: 4 + Math.floor(Math.random() * 6), fabric: Math.random() < 0.5 ? 1 : 0 };
-    case 'wolf': return { pelt: 1, fang: Math.random() < 0.5 ? 1 : 0 };
-    case 'slime': return { coins: Math.random() < 0.4 ? 1 : 0 };
-    case 'bat': return { fang: 1, coins: Math.random() < 0.2 ? 1 : 0 };
-    case 'rat': return { coins: Math.random() < 0.3 ? 1 : 0 };
-    default: return {};
-  }
+  return rollMonsterLoot(kind, Math.random).counts as GoatLoot;
 }
 function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {
   const terrain = mapTileFor(chunk).terrain;

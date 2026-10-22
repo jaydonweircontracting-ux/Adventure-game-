@@ -16,6 +16,7 @@ import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET
 import { chooseCreatureTarget, pickGuardCreatureTarget, sneakEngagementRange, CREATURE_ACQUIRE_RANGE, CREATURE_LEASH_RANGE, SNEAK_CREATURE_ACQUIRE_RANGE, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
 import { behaviorForCreature, behaviorKindKeys, preferredRangeFor, hashRoll, shouldStand, shouldRetarget, isBehaviorFleeing, voiceLine } from '../src/game/creatureBehavior';
 import { CLASS_LOOT, classForMonster, classGearBaseIds, classLootBasesAreKnown } from '../src/game/classLoot';
+import { rollLootEntry, rollLootDrop, rollLootTable, isValidLootTable, MONSTER_LOOT_TABLES, rollMonsterLoot } from '../src/game/lootGrammar';
 import { KNIGHT_CELL, KNIGHT_FRAMES, KNIGHT_STRIP_ROWS, KNIGHT_STRIP_PATHS, KNIGHT_FRAME_MS, KNIGHT_DISPLAY_SIZE, KNIGHT_ANCHOR, knightStripRowForFacing, knightFrameFor } from '../src/game/knightSprites';
 import { DEFAULT_ABILITIES, multiStrikeCount, isEnraged, enragedDamageMult, enragedChaseSpeed, clampToTether, suppressForSneakBlind } from '../src/game/creatureAbilities';
 import { mitigateDamage, mitigationForCreature, mitigationKindKeys, creatureDefenseForLevel, creatureArmorForLevel, playerArmorForRoll, playerResistPercents, rangedBandFor, rangedHitChance, creatureArcherSkill, normalizeRangedSkill, RANGED_HIT_CHANCE_CAP } from '../src/game/mitigation';
@@ -2248,6 +2249,29 @@ console.log('Testing special-ability vocabulary (BUILD 943)...');
   }
   assert(questRewardGearNames(['Rat-skin gloves', 'Bread']).join(',') === 'Rat-skin gloves', 'Quest968: gear/keepsake partition (gloves grant, bread stays a keepsake)');
   assert(questRewardGearNames(['Blade of Aldoria', 'Aldorian plate armor']).length === 2, 'Quest968: a quest can pay both a weapon and an armor piece');
+  // BUILD 969: unified loot grammar (extras 1/6) — Tibia chance/100000 +
+  // countmax independent rolls, EQEmu loottable → lootdrop → item tiers,
+  // min/avg/max cash model. Monster counts loot is authored table data
+  // now, an exact translation of the legacy switch (same chance, same
+  // range); class gear and quest payouts stay on their own tables.
+  const rngZero = () => 0;
+  assert(rollLootEntry({ kind: 'count', key: 'fabric', chance: 1, countMin: 1, countMax: 1 }, () => 0)?.counts.fabric === 1, 'Loot969: chance 1 grants at rng 0');
+  assert(rollLootEntry({ kind: 'count', key: 'fabric', chance: 1, countMin: 1, countMax: 1 }, () => 0.00002) === null, 'Loot969: chance 1 refuses above the boundary');
+  assert(rollLootEntry({ kind: 'count', key: 'fabric', chance: 0, countMin: 1, countMax: 1 }, () => 0) === null, 'Loot969: chance 0 never grants');
+  assert(rollLootDrop({ probability: 50, entries: [{ kind: 'count', key: 'fabric', chance: 100000, countMin: 1, countMax: 1 }] }, () => 0.5)?.counts.fabric === 1, 'Loot969: drop gate passes at exactly probability');
+  assert(rollLootDrop({ probability: 50, entries: [{ kind: 'count', key: 'fabric', chance: 100000, countMin: 1, countMax: 1 }] }, () => 0.50001) === null, 'Loot969: drop gate refuses above probability');
+  assert(rollLootTable({ drops: [{ probability: 100, entries: [{ kind: 'count', key: 'a', chance: 100000, countMin: 1, countMax: 1 }] }, { probability: 100, entries: [{ kind: 'count', key: 'b', chance: 100000, countMin: 1, countMax: 1 }] }], maxDrops: 1 }, rngZero).counts.a === 1, 'Loot969: maxDrops keeps the first drop');
+  assert(rollLootTable({ drops: [{ probability: 0, entries: [{ kind: 'count', key: 'a', chance: 100000, countMin: 1, countMax: 1 }] }], minDrops: 1 }, () => 0.99).counts.a === 1, 'Loot969: minDrops fills in table order');
+  assert(Object.keys(MONSTER_LOOT_TABLES).sort().join(',') === 'bandit,bat,dragon,goblin,knight,orc,rat,skeleton,slime,snake,soldier,spider,troll,wolf', 'Loot969: monster table kinds = legacy switch kinds');
+  for (const kind of Object.keys(MONSTER_LOOT_TABLES)) {
+    assert(isValidLootTable(MONSTER_LOOT_TABLES[kind]), `Loot969: monster table '${kind}' validates clean`);
+  }
+  assert(JSON.stringify(rollMonsterLoot('goblin', rngZero).counts) === JSON.stringify({ coins: 1, fabric: 1 }), 'Loot969: goblin all-zero roll is the legacy roll');
+  assert(JSON.stringify(rollMonsterLoot('bandit', rngZero).counts) === JSON.stringify({ coins: 3, fabric: 1, bone: 1, lockpicks: 1 }), 'Loot969: bandit all-zero roll is the legacy roll');
+  assert(JSON.stringify(rollMonsterLoot('dragon', rngZero).counts) === JSON.stringify({ pelt: 2, fang: 2, coins: 10 }), 'Loot969: dragon all-zero roll is the legacy roll');
+  assert(JSON.stringify(rollMonsterLoot('ogre', rngZero).counts) === JSON.stringify({}), 'Loot969: ogre has no table (legacy default empty)');
+  assert(rollMonsterLoot('knight', rngZero).gearBaseIds.length === 0, 'Loot969: grammar rolls no gear (classLoot channel untouched)');
+  assert(classGearBaseIds('knight', false).join(',') === 'iron_sword,plate_armor', 'Loot969: class gear unchanged');
   // Acquisition with per-kind ranges: a dragon holds its lock to 60u
   // and acquires at 32u; the globals still hold for unassigned kinds.
   const dragonAb = behaviorForCreature('dragon').abilities;
