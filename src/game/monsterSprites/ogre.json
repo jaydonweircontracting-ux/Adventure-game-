@@ -1,6 +1,6 @@
 {
   "id": "ogre",
-  "spriteSheet": "/mobs/troll_sheet.png",
+  "spriteSheet": "/mobs/ogre_sheet.png",
   "cell": 64,
   "cols": 8,
   "rows": 5,

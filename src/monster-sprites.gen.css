@@ -31,6 +31,62 @@
 @keyframes bat-hurt { from { background-position-x: 0px; } to { background-position-x: -60px; } }
 @keyframes bat-die { from { background-position-x: -60px; } to { background-position-x: -180px; } }
 
+/* ===== dwarf ===== */
+.monster-dwarf { width: 34px; height: 34px; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, 0.25)); }
+.monster-dwarf .monster-sprite {
+  width: 34px; height: 34px;
+  background-image: url('/mobs/dwarf_sheet.png');
+  background-size: 272px 170px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  background-position: 0 calc(var(--mrow, 0) * -34px);
+  animation: dwarf-idle 900ms steps(2, end) infinite;
+}
+.monster-dwarf .monster-sprite::before, .monster-dwarf .monster-sprite::after { content: none; }
+.monster-dwarf[data-facing='down'] .monster-sprite { --mrow: 0; }
+.monster-dwarf[data-facing='left'] .monster-sprite { --mrow: 1; }
+.monster-dwarf[data-facing='right'] .monster-sprite { --mrow: 2; }
+.monster-dwarf[data-facing='up'] .monster-sprite { --mrow: 3; }
+.monster-dwarf.is-moving .monster-sprite { animation: dwarf-walk 560ms steps(4, end) infinite; }
+.monster-dwarf.is-attacking .monster-sprite { animation: dwarf-attack 220ms steps(2, end) infinite; }
+.monster-dwarf.is-hit .monster-sprite { --mrow: 4; animation: dwarf-hurt 240ms steps(2, end) infinite; filter: brightness(1.8) saturate(0.5); }
+.monster-dwarf.is-dead { cursor: default; }
+.monster-dwarf.is-dead .monster-sprite { --mrow: 4; animation: dwarf-die 520ms steps(4, end) 1 forwards; }
+@keyframes dwarf-idle { from { background-position-x: 0px; } to { background-position-x: -68px; } }
+@keyframes dwarf-walk { from { background-position-x: -68px; } to { background-position-x: -204px; } }
+@keyframes dwarf-attack { from { background-position-x: -204px; } to { background-position-x: -272px; } }
+@keyframes dwarf-hurt { from { background-position-x: 0px; } to { background-position-x: -68px; } }
+@keyframes dwarf-die { from { background-position-x: -68px; } to { background-position-x: -204px; } }
+.monster-dwarf[data-variant='veteran'] .monster-sprite { filter: sepia(.38) saturate(1.08) brightness(.9); transform: scale(0.98); }
+
+/* ===== elf ===== */
+.monster-elf { width: 38px; height: 38px; filter: drop-shadow(2px 4px 0 rgba(43, 61, 41, 0.28)); }
+.monster-elf .monster-sprite {
+  width: 38px; height: 38px;
+  background-image: url('/mobs/elf_sheet.png');
+  background-size: 304px 190px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  background-position: 0 calc(var(--mrow, 0) * -38px);
+  animation: elf-idle 900ms steps(2, end) infinite;
+}
+.monster-elf .monster-sprite::before, .monster-elf .monster-sprite::after { content: none; }
+.monster-elf[data-facing='down'] .monster-sprite { --mrow: 0; }
+.monster-elf[data-facing='left'] .monster-sprite { --mrow: 1; }
+.monster-elf[data-facing='right'] .monster-sprite { --mrow: 2; }
+.monster-elf[data-facing='up'] .monster-sprite { --mrow: 3; }
+.monster-elf.is-moving .monster-sprite { animation: elf-walk 560ms steps(4, end) infinite; }
+.monster-elf.is-attacking .monster-sprite { animation: elf-attack 220ms steps(2, end) infinite; }
+.monster-elf.is-hit .monster-sprite { --mrow: 4; animation: elf-hurt 240ms steps(2, end) infinite; filter: brightness(1.8) saturate(0.5); }
+.monster-elf.is-dead { cursor: default; }
+.monster-elf.is-dead .monster-sprite { --mrow: 4; animation: elf-die 520ms steps(4, end) 1 forwards; }
+@keyframes elf-idle { from { background-position-x: 0px; } to { background-position-x: -76px; } }
+@keyframes elf-walk { from { background-position-x: -76px; } to { background-position-x: -228px; } }
+@keyframes elf-attack { from { background-position-x: -228px; } to { background-position-x: -304px; } }
+@keyframes elf-hurt { from { background-position-x: 0px; } to { background-position-x: -76px; } }
+@keyframes elf-die { from { background-position-x: -76px; } to { background-position-x: -228px; } }
+.monster-elf[data-variant='scout'] .monster-sprite { filter: hue-rotate(35deg) saturate(1.2) brightness(1.08); transform: scale(0.96); }
+
 /* ===== goblin ===== */
 .monster-goblin { width: 36px; height: 36px; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, 0.25)); }
 .monster-goblin .monster-sprite {
@@ -59,6 +115,33 @@
 @keyframes goblin-die { from { background-position-x: -72px; } to { background-position-x: -216px; } }
 .monster-goblin[data-variant='warrior'] .monster-sprite { filter: saturate(1.35) brightness(0.9); }
 .monster-goblin[data-variant='shaman'] .monster-sprite { filter: hue-rotate(50deg) saturate(1.25); }
+
+/* ===== ogre ===== */
+.monster-ogre { width: 56px; height: 56px; filter: drop-shadow(4px 6px 0 rgba(43, 61, 41, 0.3)); }
+.monster-ogre .monster-sprite {
+  width: 56px; height: 56px;
+  background-image: url('/mobs/ogre_sheet.png');
+  background-size: 448px 280px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  background-position: 0 calc(var(--mrow, 0) * -56px);
+  animation: ogre-idle 900ms steps(2, end) infinite;
+}
+.monster-ogre .monster-sprite::before, .monster-ogre .monster-sprite::after { content: none; }
+.monster-ogre[data-facing='down'] .monster-sprite { --mrow: 0; }
+.monster-ogre[data-facing='left'] .monster-sprite { --mrow: 1; }
+.monster-ogre[data-facing='right'] .monster-sprite { --mrow: 2; }
+.monster-ogre[data-facing='up'] .monster-sprite { --mrow: 3; }
+.monster-ogre.is-moving .monster-sprite { animation: ogre-walk 560ms steps(4, end) infinite; }
+.monster-ogre.is-attacking .monster-sprite { animation: ogre-attack 220ms steps(2, end) infinite; }
+.monster-ogre.is-hit .monster-sprite { --mrow: 4; animation: ogre-hurt 240ms steps(2, end) infinite; filter: brightness(1.8) saturate(0.5); }
+.monster-ogre.is-dead { cursor: default; }
+.monster-ogre.is-dead .monster-sprite { --mrow: 4; animation: ogre-die 520ms steps(4, end) 1 forwards; }
+@keyframes ogre-idle { from { background-position-x: 0px; } to { background-position-x: -112px; } }
+@keyframes ogre-walk { from { background-position-x: -112px; } to { background-position-x: -336px; } }
+@keyframes ogre-attack { from { background-position-x: -336px; } to { background-position-x: -448px; } }
+@keyframes ogre-hurt { from { background-position-x: 0px; } to { background-position-x: -112px; } }
+@keyframes ogre-die { from { background-position-x: -112px; } to { background-position-x: -336px; } }
 
 /* ===== orc ===== */
 .monster-orc { width: 48px; height: 48px; filter: drop-shadow(2px 4px 0 rgba(43, 61, 41, 0.28)); }
