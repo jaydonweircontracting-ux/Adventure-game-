@@ -56,7 +56,7 @@ import { mosslightEngineProps } from '../src/game/mosslightLayout';
 import { WfcSolver, WfcSeededRng, wfcSeedFor } from '../src/game/wfc';
 import { worldBiomeTileSet, generateChunkBiomes, validateBiomeGrid } from '../src/game/wfcWorld';
 import { SpatialHash, updateSeparation, createSeparationState } from '../src/game/spatialHash';
-import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, generatedItemWeight, describeLoot, withProvenance, provenanceLabel } from '../src/game/items';
+import { generateItem, ItemRng, ITEM_QUALITIES, ITEM_BASES, AFFIXES, mergeStats, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, generatedItemWeight, describeLoot, withProvenance, provenanceLabel, applyStackableGain, isOverCarryLimit, canTakeEquipment, UNKNOWN_BASE_CARRY_WEIGHT } from '../src/game/items';
 import { BURROWING_BEAST, TWO_HEADED_SERPENT, phaseForHealth, allBosses } from '../src/game/bosses';
 import { EntityPool, type PoolableEntity } from '../src/game/entityPool';
 import { FlowField, FlowFieldCache, sampleFlowSmoothed } from '../src/game/flowField';
@@ -8166,7 +8166,8 @@ console.log('Testing examine system...');
 
   // BUILD 884: encumbrance — weights, capacity, tiers.
   assert(generatedItemWeight(item1) > 0, 'Equip: generated item has base weight');
-  assert(generatedItemWeight({ ...item1, baseId: 'no-such-base' }) === 0, 'Equip: unknown base weighs 0');
+  // BUILD 950: unknown base defaults to 5 now, not 0 (no more weightless-by-accident items).
+  assert(generatedItemWeight({ ...item1, baseId: 'no-such-base' }) === UNKNOWN_BASE_CARRY_WEIGHT, 'Equip: unknown base weighs the default');
   const invW = carriedWeight({ wood: 10, stone: 5, coins: 100 }, []);
   assert(invW === 10 * 3 + 5 * 4, `Equip: inventory weight wrong: ${invW}`);
   const withGear = carriedWeight({ wood: 1 }, [item1]);
@@ -10965,6 +10966,45 @@ console.log('Testing examine system...');
     const lm = landmarkAt({ x, y });
     assert(lm?.name === name && lm?.kind === 'dungeon', 'Entrances947: landmarkAt resolves ' + name);
   }
+}
+
+
+console.log('Testing item weights + player weight limit (BUILD 950)...');
+{
+  // 884's rarity-weight bug: carry weights are separate from drop weights.
+  const plate = ITEM_BASES.find((b) => b.id === 'plate_armor')!;
+  const rusty = ITEM_BASES.find((b) => b.id === 'rusty_sword')!;
+  assert(plate.carryWeight > rusty.carryWeight, 'W950: plate armor heavier to carry than a rusty sword');
+  assert(plate.weight < rusty.weight, 'W950: rarity weights untouched (plate rarer than rusty)');
+  // Table completeness: every catalog base has a positive carry weight.
+  for (const base of ITEM_BASES) {
+    assert(base.carryWeight > 0, `W950: base ${base.id} has a positive carry weight`);
+  }
+  assert(ITEM_BASES.length === 57, `W950: 57 catalog bases (got ${ITEM_BASES.length})`);
+  // Capacity + tier edges (884 formula, unchanged).
+  assert(carryCapacity(10) === 120, 'W950: STR 10 capacity 120');
+  assert(!isOverCarryLimit(120, 120), 'W950: exactly at capacity is not over');
+  assert(isOverCarryLimit(120.1, 120), 'W950: past capacity is over');
+  assert(canTakeEquipment(120, 120), 'W950: take allowed at exactly capacity');
+  assert(!canTakeEquipment(121, 120), 'W950: take blocked while over');
+  // Gate semantics: refuse positive non-coin gains while over; spends + coins pass.
+  const load = { coins: 0, stone: 10 };
+  const over = applyStackableGain(load, { stone: 5, coins: 10 }, 130, 120);
+  assert(over.next.stone === 10 && over.next.coins === 10, 'W950: over-capacity gain refused except coins');
+  assert(over.refused.stone === 5 && !('coins' in over.refused), 'W950: refused part reported, coins never refused');
+  const spend = applyStackableGain(load, { stone: -4, coins: -5 }, 130, 120);
+  assert(spend.next.stone === 6 && Object.keys(spend.refused).length === 0, 'W950: spends always apply while over');
+  // Crossing capacity is accepted in full; the block bites on the NEXT gain.
+  const cross = applyStackableGain(load, { stone: 5 }, 110, 120);
+  assert(cross.next.stone === 15 && Object.keys(cross.refused).length === 0, 'W950: crossing gain accepted');
+  // Quest bypass: completion payouts land even while over.
+  const bypass = applyStackableGain(load, { bow: 1 }, 130, 120, true);
+  assert(bypass.next.bow === 1 && Object.keys(bypass.refused).length === 0, 'W950: bypass grants while over');
+  // Save round-trip: derivation never mutates items (old saves keep every item).
+  const kept = generateItem(new ItemRng(42), 5, undefined, 'plate_armor');
+  assert(generatedItemWeight(kept) === plate.carryWeight, 'W950: derived weight follows the base');
+  // Stored-vs-carried separation: carriedWeight only reads inventory + equipment.
+  assert(carriedWeight({ coins: 999 }, []) === 0, 'W950: coins weigh nothing; bank/chest contents are never inputs');
 }
 
 // ---- Results ----

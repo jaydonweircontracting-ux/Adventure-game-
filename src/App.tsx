@@ -50,7 +50,7 @@ import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, cl
 import { createStamina, tickStamina, canRun, staminaFrac, type StaminaState } from './game/stamina';
 import { radarDots, RADAR_COLORS, RADAR_RANGE, type RadarEntity } from './game/minimapRadar';
 import { npcAppearanceStyle } from './game/npcAppearance';
-import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, describeLoot, withProvenance, provenanceLabel, type GeneratedItem, type EncumbranceTier } from './game/items';
+import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, describeLoot, withProvenance, provenanceLabel, applyStackableGain, type GeneratedItem, type EncumbranceTier } from './game/items';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, applyPersonalityTone, type DialogueTopicId } from './game/dialogue';
 import { canPropose, isPartner, isPartnerState, PROPOSAL_MIN_DISPOSITION, type PartnerState } from './game/partner';
 import { recognizeIntent, fallbackResponse } from './game/dialogueIntent';
@@ -164,7 +164,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '949';
+const BUILD_NUMBER = '950';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -193,6 +193,7 @@ const BUILD_NOTES: Record<string, string> = {
   '946': 'The Ember Vault dungeon now wears Dungeon Pry stone: floors, walls, and doors are hand-painted tiles instead of flat colors, barrels, bookshelves, carpets, flasks, and tables dress the galleries, and loot lying on the ground shows as a closed chest. The look is new but the dungeon plays exactly as before — same layout, monsters, and loot, and stairs, altars, and shopkeepers keep their old art. The matching open-chest frame ships with the art and will appear once a loot interaction opens chests.',
   '947': 'Six new dungeon entrances now dot the world, from Thornwood Hollow in the far west to Greenbarrow in the far south, and every one of them opens on the world map as a stone-arch marker. Walk up to an entrance and tap Descend to enter a dungeon, exactly like the Sunken Crypt — the button now appears in the iso view too, where entrances also show a marked stone arch on the ground, so no entrance is hidden anymore. Each descent is still a fresh dungeon like before, and the old Sunken Crypt entry works exactly as it always did.',
   '948': 'Adventurers now occasionally set out to delve dungeons on their own. Watch one walk out of Mosslight toward the wilds and check back later: they may return with gold and loot, come back empty-handed, or limp home injured. Their hauls stay on them for now, with chest and bank storage coming next, and you can follow each run in the game log and the adventurer list. Player dungeons, loot, and entrances work exactly as before.',
+  '950': 'Carrying now has a real limit: every item has a true weight (plate armor finally weighs more than a rusty sword — the old numbers were rarity odds, not heft), and once you are over capacity you cannot pick up, loot, or buy more until you sell or use something. You still slow down past 80% and drain stamina past 100%, and quest rewards always land even if they push you over — nothing you earned ever vanishes. Your current load shows in the HUD and in the inventory.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
@@ -1589,6 +1590,8 @@ const statDetails: Record<StatKey, { label: string; description: string }> = {
 const initialPlayerStats: PlayerStats = { str: 4, dex: 4, int: 4, luk: 4 };
 type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers: number; cloths: number; bone: number; pelt: number; fang: number; corn: number; wood: number; stone: number; silk: number; bow: number; beer: number; lockpicks: number; shirts: number; swords: number; healthPotion: number };
 type GoatLoot = Partial<GameInventory>;
+// BUILD 950: refusal message shared by every carry-limit gate.
+const CARRY_OVER_MSG = 'Too heavy to carry more — sell or use something first.';
 type DroppedLoot = { id: number; chunk: Point; position: Point; loot: GoatLoot };
 // Ranged combat: arrows fired by the player's bow and by bandit archers.
 type ArrowState = { id: number; chunk: Point; position: Point; dx: number; dy: number; traveled: number; damage: number; critical: boolean; hostile: boolean; kind?: string; level?: number };
@@ -3657,9 +3660,14 @@ function WorldMap({ chunk, onClose, kingdomLabels, tradeRoutes, visitedChunks }:
     </div>
   );
 }
-function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion, equippedDagger, onToggleDagger, equippedBow, onToggleBow, equippedShirt, onToggleShirt, equippedSword, onToggleSword, barbHair, onCycleHair, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, taskStates, questPlayerLevel, onAcceptQuest, onAcceptTask, onWeaveBowstring, onOpenSkills }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; onDrinkPotion: () => void; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; equippedShirt: boolean; onToggleShirt: () => void; equippedSword: boolean; onToggleSword: () => void; barbHair: string; onCycleHair: (dir: 1 | -1) => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; taskStates: TaskState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onAcceptTask: (questId: string) => void; onWeaveBowstring: () => void; onOpenSkills?: () => void }) {
+function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion, equippedDagger, onToggleDagger, equippedBow, onToggleBow, equippedShirt, onToggleShirt, equippedSword, onToggleSword, barbHair, onCycleHair, playerStats, statPoints, onAssignStat, time, onOpenOptions, onClose, onDrinkBeer, beerBuffActive, questStates, taskStates, questPlayerLevel, onAcceptQuest, onAcceptTask, onWeaveBowstring, onOpenSkills, aaCarry }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; onDrinkPotion: () => void; equippedDagger: boolean; onToggleDagger: () => void; equippedBow: boolean; onToggleBow: () => void; equippedShirt: boolean; onToggleShirt: () => void; equippedSword: boolean; onToggleSword: () => void; barbHair: string; onCycleHair: (dir: 1 | -1) => void; playerStats: PlayerStats; statPoints: number; onAssignStat: (stat: StatKey) => void; time: string; onOpenOptions: () => void; onClose: () => void; onDrinkBeer: () => void; beerBuffActive: boolean; questStates: QuestState[]; taskStates: TaskState[]; questPlayerLevel: number; onAcceptQuest: (questId: string) => void; onAcceptTask: (questId: string) => void; onWeaveBowstring: () => void; onOpenSkills?: () => void; aaCarry?: number }) {
   const [activeTab, setActiveTab] = useState<'inventory' | 'equipment' | 'stats' | 'quests'>('inventory');
   const itemCount = inventory.goatHorns + inventory.fabric + inventory.daggers + inventory.cloths + inventory.bone + inventory.pelt + inventory.fang + inventory.corn + inventory.wood + (inventory.stone || 0) + inventory.silk + inventory.bow + inventory.beer + inventory.healthPotion + inventory.lockpicks + inventory.shirts + inventory.swords;
+  // BUILD 950: same load the HUD widget shows (capacity includes AA Strong Back).
+  const sheetWeight = carriedWeight(inventory as unknown as Record<string, number>, equipment);
+  const sheetCapacity = carryCapacity(playerStats.str) + (aaCarry ?? 0);
+  const sheetTier = encumbranceTier(sheetWeight, sheetCapacity);
+  const sheetWeightText = `⚖️ ${sheetWeight}/${sheetCapacity}` + (sheetTier === 'over' ? ' — OVER' : sheetTier === 'heavy' ? ' — heavy' : '');
   const visibleItems = [
     { key: 'goatHorns', label: 'Goat horns', detail: 'Crafting material', mark: '✦', className: 'horn-mark' },
     { key: 'fabric', label: 'Fabric', detail: 'Useful cloth', mark: '▤', className: 'fabric-mark' },
@@ -3706,7 +3714,7 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
         <div className="inventory-body">
           {activeTab === 'inventory' ? (
             <>
-              <div className="inventory-count">{itemCount > 0 ? itemCount + ' items carried' : 'Menu is empty'} · {inventory.coins} gold</div>
+              <div className="inventory-count">{itemCount > 0 ? itemCount + ' items carried' : 'Menu is empty'} · {inventory.coins} gold · <span data-testid="inventory-weight">{sheetWeightText}</span></div>
               <div className="inventory-grid">
                 <div className="inventory-item" data-testid="inventory-coins"><span className="inventory-item-mark coin-mark" aria-hidden="true" /><span><strong>Coins</strong><small>Spendable gold</small></span><b>{inventory.coins}</b></div>
                 {visibleItems.map((item) => {
@@ -3717,7 +3725,7 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
               {itemCount === 0 && <div className="inventory-empty"><Backpack size={30} strokeWidth={1.5} /><strong>Menu is empty</strong></div>}
             </>
           ) : activeTab === 'equipment' ? (
-            <div className="equipment-panel" role="tabpanel" aria-label="Equipment"><div className="inventory-count">Equipped gear changes your character</div><div className="paper-doll-wrap"><div className="paper-doll" role="img" aria-label={'Paper doll: ' + (equippedDagger ? 'dagger in hand' : 'no weapon') + ', ' + (equippedBow ? 'bow on back' : 'no bow')} data-testid="paper-doll"><span className="paper-doll-head" aria-hidden="true" /><span className="paper-doll-torso" aria-hidden="true" /><span className="paper-doll-arm arm-left" aria-hidden="true" /><span className="paper-doll-arm arm-right" aria-hidden="true" /><span className="paper-doll-leg leg-left" aria-hidden="true" /><span className="paper-doll-leg leg-right" aria-hidden="true" />{equippedBow && <span className="paper-doll-bow" aria-hidden="true">🏹</span>}{equippedDagger && <span className="paper-doll-dagger" aria-hidden="true">†</span>}</div><div className="paper-doll-slots"><div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot"><span className="equipment-slot-mark dagger-mark">†</span><span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>{(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedBow ? 'is-equipped' : '')} data-testid="equipment-ranged-slot"><span className="equipment-slot-mark bow-mark">🏹</span><span><small>Ranged slot</small><strong>{equippedBow ? 'Hunting bow' : 'Empty'}</strong></span>{(inventory.bow > 0 || equippedBow) && <button className="item-action" onClick={onToggleBow} data-testid="button-equipment-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedShirt ? 'is-equipped' : '')} data-testid="equipment-shirt-slot"><span className="equipment-slot-mark shirt-mark">👕</span><span><small>Shirt slot</small><strong>{equippedShirt ? 'Blue shirt' : 'Empty'}</strong></span>{(inventory.shirts > 0 || equippedShirt) && <button className="item-action" onClick={onToggleShirt} data-testid="button-equipment-shirt">{equippedShirt ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedSword ? 'is-equipped' : '')} data-testid="equipment-sword-slot"><span className="equipment-slot-mark sword-mark">🗡</span><span><small>Blade slot</small><strong>{equippedSword ? 'Barbarian sword' : 'Empty'}</strong></span>{(inventory.swords > 0 || equippedSword) && <button className="item-action" onClick={onToggleSword} data-testid="button-equipment-sword">{equippedSword ? 'Unequip' : 'Equip'}</button>}</div>
+            <div className="equipment-panel" role="tabpanel" aria-label="Equipment"><div className="inventory-count">Equipped gear changes your character · <span data-testid="inventory-weight">{sheetWeightText}</span></div><div className="paper-doll-wrap"><div className="paper-doll" role="img" aria-label={'Paper doll: ' + (equippedDagger ? 'dagger in hand' : 'no weapon') + ', ' + (equippedBow ? 'bow on back' : 'no bow')} data-testid="paper-doll"><span className="paper-doll-head" aria-hidden="true" /><span className="paper-doll-torso" aria-hidden="true" /><span className="paper-doll-arm arm-left" aria-hidden="true" /><span className="paper-doll-arm arm-right" aria-hidden="true" /><span className="paper-doll-leg leg-left" aria-hidden="true" /><span className="paper-doll-leg leg-right" aria-hidden="true" />{equippedBow && <span className="paper-doll-bow" aria-hidden="true">🏹</span>}{equippedDagger && <span className="paper-doll-dagger" aria-hidden="true">†</span>}</div><div className="paper-doll-slots"><div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot"><span className="equipment-slot-mark dagger-mark">†</span><span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>{(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedBow ? 'is-equipped' : '')} data-testid="equipment-ranged-slot"><span className="equipment-slot-mark bow-mark">🏹</span><span><small>Ranged slot</small><strong>{equippedBow ? 'Hunting bow' : 'Empty'}</strong></span>{(inventory.bow > 0 || equippedBow) && <button className="item-action" onClick={onToggleBow} data-testid="button-equipment-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedShirt ? 'is-equipped' : '')} data-testid="equipment-shirt-slot"><span className="equipment-slot-mark shirt-mark">👕</span><span><small>Shirt slot</small><strong>{equippedShirt ? 'Blue shirt' : 'Empty'}</strong></span>{(inventory.shirts > 0 || equippedShirt) && <button className="item-action" onClick={onToggleShirt} data-testid="button-equipment-shirt">{equippedShirt ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedSword ? 'is-equipped' : '')} data-testid="equipment-sword-slot"><span className="equipment-slot-mark sword-mark">🗡</span><span><small>Blade slot</small><strong>{equippedSword ? 'Barbarian sword' : 'Empty'}</strong></span>{(inventory.swords > 0 || equippedSword) && <button className="item-action" onClick={onToggleSword} data-testid="button-equipment-sword">{equippedSword ? 'Unequip' : 'Equip'}</button>}</div>
             {/* BUILD 882: full paperdoll — all 8 GeneratedItem slots (EO paperdoll.ehf layout). */}
             {(['weapon', 'offhand', 'helmet', 'armor', 'gloves', 'boots', 'ring', 'amulet'] as const).map((slot) => {
               const worn = equipment.find((i) => i.slot === slot && i.equipped);
@@ -4242,7 +4250,7 @@ function MiniMap({ chunk, position, onTap, mode = 'terrain', radarEntities = [] 
   );
 }
 
-function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onTaskStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, onResolveBounty, bounty, muted, onToggleMute, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onTaskStatesChange: (states: TaskState[]) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number, townId: string) => void; onResolveBounty: (townId: string) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void; getAaMaxHpBonus: () => number } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
+function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onTaskStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, onResolveBounty, bounty, muted, onToggleMute, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot, opts?: { bypassCarryLimit?: boolean }) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onTaskStatesChange: (states: TaskState[]) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number, townId: string) => void; onResolveBounty: (townId: string) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void; getAaMaxHpBonus: () => number; getAaCarryBonus: () => number } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
   // BUILD 476: equipment damage bonus from found items.
   const equipmentDamageBonus = totalEquipmentStats(equipment).damage ?? 0;
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
@@ -5104,19 +5112,26 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       // Undetected lift: no alert, no crime, sneak stays on.
       if (inputs.loot.kind === 'item' && isKnownBaseId(inputs.loot.baseId)) {
         const baseId = inputs.loot.baseId;
-        const owned = effectiveOwnedGear({ id: npc.id, archetype: npc.archetype || 'commoner', ownedGear: npc.ownedGear, wealthGoal: npc.wealthGoal });
-        const remaining = [...owned];
-        const idx = remaining.indexOf(baseId);
-        if (idx >= 0) remaining.splice(idx, 1);
-        // Store the explicit list: leaving ownedGear undefined would
-        // regenerate the seed-derived starting stash — and the stolen piece.
-        const updated = townsfolkRef.current.map((w) => w.id === npc.id ? { ...w, ownedGear: remaining } : w);
-        townsfolkRef.current = updated;
-        setTownsfolk(updated);
         const generated = generateItem(new ItemRng(Date.now() ^ baseId.split('').reduce((a, c) => a + c.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current), undefined, baseId);
-        onEquipmentChange((prev) => [...prev, withProvenance(generated, npc.name)]);
-        setLogs((cur) => [{ text: `Pickpocketed ${generated.name} from ${npc.name}!`, color: 'gold' }, ...cur].slice(0, 3));
-        spawnCombatText(generated.name, npc.position, 'reward');
+        // BUILD 950: carry-limit pre-gate — BEFORE the victim loses the
+        // piece, so a refused lift leaves it in their stash, not deleted.
+        // (Undetected outcome stands: no alert, the lift just fails on weight.)
+        if (carryNow().over) {
+          setLogs((cur) => [{ text: CARRY_OVER_MSG + ` You leave ${generated.name} where it is.`, color: 'red' }, ...cur].slice(0, 3));
+        } else {
+          const owned = effectiveOwnedGear({ id: npc.id, archetype: npc.archetype || 'commoner', ownedGear: npc.ownedGear, wealthGoal: npc.wealthGoal });
+          const remaining = [...owned];
+          const idx = remaining.indexOf(baseId);
+          if (idx >= 0) remaining.splice(idx, 1);
+          // Store the explicit list: leaving ownedGear undefined would
+          // regenerate the seed-derived starting stash — and the stolen piece.
+          const updated = townsfolkRef.current.map((w) => w.id === npc.id ? { ...w, ownedGear: remaining } : w);
+          townsfolkRef.current = updated;
+          setTownsfolk(updated);
+          onEquipmentChange((prev) => [...prev, withProvenance(generated, npc.name)]);
+          setLogs((cur) => [{ text: `Pickpocketed ${generated.name} from ${npc.name}!`, color: 'gold' }, ...cur].slice(0, 3));
+          spawnCombatText(generated.name, npc.position, 'reward');
+        }
       } else {
         // Gold fallback — steal from the victim's actual purse, don't mint.
         const maxSteal = Math.max(1, Math.floor(inputs.purse * (result.outcome === 'critical' ? 0.5 : 0.25)));
@@ -5876,6 +5891,27 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       : kind === 'potion' ? { kind: 'potion' as const }
       : itemId ? { kind: 'item' as const, itemId } : null;
     if (!selection) return;
+    // BUILD 950: carry-limit pre-gates — BEFORE the body is consumed, so a
+    // refused take leaves the loot on the body instead of destroying it.
+    // Gold is never gated (coins weigh 0). Potions and worn gear are.
+    if (kind === 'potion' && carryNow().over) {
+      setLogs((cur) => [{ text: CARRY_OVER_MSG, color: 'red' }, ...cur].slice(0, 3));
+      return;
+    }
+    // Generate the gear up front so the gate runs before consumption; the
+    // pre-generated item is appended below instead of regenerating.
+    let pregenerated: GeneratedItem | null = null;
+    if (kind === 'item' && selection.kind === 'item') {
+      const selectedItemId = selection.itemId;
+      const generated = isKnownBaseId(selectedItemId)
+        ? generateItem(new ItemRng(Date.now() ^ selectedItemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current), undefined, selectedItemId)
+        : generateItem(new ItemRng(Date.now() ^ selectedItemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current));
+      pregenerated = isKnownBaseId(selectedItemId) ? generated : { ...generated, name: selectedItemId.replace(/[-_]/g, ' ') };
+      if (carryNow().over) {
+        setLogs((cur) => [{ text: CARRY_OVER_MSG + ` Leave ${pregenerated!.name} on the body for now.`, color: 'red' }, ...cur].slice(0, 3));
+        return;
+      }
+    }
     const result = takeBodyLootSelection(body, selection);
     if (!result) return;
     const { taken, updatedBody } = result;
@@ -5892,10 +5928,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // that exact base, so a looted sword is the sword the NPC wore, not
         // a random item renamed after it. Unknown ids keep the old
         // random-generate-and-rename fallback instead of crashing.
-        const generated = isKnownBaseId(selectedItemId)
+        // BUILD 950: prefer the pre-generated item (gated before consumption).
+        const item = pregenerated && taken.items.length === 1 ? pregenerated : (isKnownBaseId(selectedItemId)
           ? generateItem(new ItemRng(Date.now() ^ selectedItemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current), undefined, selectedItemId)
-          : generateItem(new ItemRng(Date.now() ^ selectedItemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current));
-        const item = isKnownBaseId(selectedItemId) ? generated : { ...generated, name: selectedItemId.replace(/[-_]/g, ' ') };
+          : { ...generateItem(new ItemRng(Date.now() ^ selectedItemId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current)), name: selectedItemId.replace(/[-_]/g, ' ') });
         takenItemNames.push(item.name);
         onEquipmentChange((prev) => [...prev, withProvenance(item, body.npcName)]);
       }
@@ -6092,7 +6128,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       const maxHp = playerMaxHpForStats(playerStatsRef.current, aaBonusesRef.current.maxHp);
       setPlayerHp((current) => Math.min(maxHp, current + amount));
     };
-    menuBridgeRef.current = { openOptions: () => setOptionsOpen(true), openSkills: () => setSkillsOpen(true), getTime: () => time, acceptQuest, acceptTask, emitQuestEvent, getKingdomLabels: () => kingdomLabelPoints(ensureCiv()), getTradeRoutes: () => tradeRoutePolylines(ensureCiv()), healPlayer, getAaMaxHpBonus: () => aaBonusesRef.current.maxHp };
+    menuBridgeRef.current = { openOptions: () => setOptionsOpen(true), openSkills: () => setSkillsOpen(true), getTime: () => time, acceptQuest, acceptTask, emitQuestEvent, getKingdomLabels: () => kingdomLabelPoints(ensureCiv()), getTradeRoutes: () => tradeRoutePolylines(ensureCiv()), healPlayer, getAaMaxHpBonus: () => aaBonusesRef.current.maxHp, getAaCarryBonus: () => aaBonusesRef.current.carry };
   });
   const wildlifeRef = useRef<WildlifeState[]>(wildlife);
   useEffect(() => { waterLifeRef.current = waterLife; }, [waterLife]);
@@ -6213,6 +6249,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const playerXpRef = useRef(playerXp);
   const playerLevelRef = useRef(playerLevel);
   const playerStatsRef = useRef(playerStats);
+  // BUILD 950: current load from refs (fresh at event time) for gain gates.
+  // Block rule (items.ts): refuse gains ONLY while already over capacity.
+  const carryNow = () => {
+    const weight = carriedWeight(inventoryRef.current as unknown as Record<string, number>, equipmentRef.current);
+    const capacity = carryCapacity(playerStatsRef.current.str) + aaBonusesRef.current.carry;
+    return { weight, capacity, over: weight > capacity };
+  };
   const playerClassRef = useRef<PlayerClass>(playerClass);
   const interiorRef = useRef(interior);
   const interiorPositionRef = useRef(interiorPosition);
@@ -6649,7 +6692,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const host = window.location.hostname;
           if (host !== 'localhost' && host !== '127.0.0.1') return false;
           const count = Math.max(1, Math.floor(n) || 1);
-          onLoot({ [key]: count } as GoatLoot);
+          onLoot({ [key]: count } as GoatLoot, { bypassCarryLimit: true });
           return true;
         },
         // BUILD 697: iso zoom for tap-position math in tests.
@@ -8397,7 +8440,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // BUILD 477: bosses always drop epic+.
         const isElite = (attackTarget as GoatState).isElite === true;
         const isBoss = (attackTarget as GoatState).isBoss === true;
-        if (isElite || isBoss || Math.random() < 0.25) {
+        const dropRoll = isElite || isBoss || Math.random() < 0.25;
+        // BUILD 950: carry-limit gate — BEFORE the drop is created, so a
+        // refused drop is never generated (the dead beast holds no
+        // persistent loot container to leave it in).
+        if (dropRoll && carryNow().over) {
+          setLogs((currentLogs) => [{ text: CARRY_OVER_MSG + ' The spoils stay where they fell.', color: 'red' }, ...currentLogs].slice(0, 3));
+        } else if (dropRoll) {
           const itemRng = new ItemRng(Date.now() ^ Math.floor(Math.random() * 0xffffffff));
           const itemLevel = Math.max(1, playerLevelRef.current);
           // Elites get at least rare; bosses get epic or unique.
@@ -10004,6 +10053,14 @@ if (active) {
 
   const pickupDrop = (drop: DroppedLoot) => {
     if (drop.chunk.x !== chunkRef.current.x || drop.chunk.y !== chunkRef.current.y || Math.hypot(drop.position.x - positionRef.current.x, drop.position.y - positionRef.current.y) > 16) return;
+    // BUILD 950: carry-limit pre-gate — BEFORE the drop is removed, so a
+    // refused pickup leaves the loot on the ground for later.
+    if (carryNow().over) {
+      setLogs((currentLogs) => [{ text: CARRY_OVER_MSG, color: 'red' }, ...currentLogs].slice(0, 3));
+      setAttackFlash(CARRY_OVER_MSG);
+      window.setTimeout(() => setAttackFlash(null), 1200);
+      return;
+    }
     onLoot(drop.loot);
     setDroppedLoot((current) => current.filter((candidate) => candidate.id !== drop.id));
     // BUILD 888: announce every item looted (was goat-loot keys only — silk,
@@ -10035,10 +10092,10 @@ if (active) {
   };
 
   const completeQuest = (def: QuestDef) => {
-    if (def.rewards.coins) onLoot({ coins: def.rewards.coins });
+    if (def.rewards.coins) onLoot({ coins: def.rewards.coins }, { bypassCarryLimit: true });
     if (def.rewards.xp) grantQuestXp(def.rewards.xp);
     // 'Hunting bow' maps to the real bow item; other reward items are keepsakes named in the log.
-    if (def.rewards.items.includes('Hunting bow')) onLoot({ bow: 1 });
+    if (def.rewards.items.includes('Hunting bow')) onLoot({ bow: 1 }, { bypassCarryLimit: true });
     if (def.rewards.reputation) onQuestReputation(def.rewards.reputation);
     // BUILD 939: completing a quest for a faction's member raises standing
     // with that faction. Static givers all live in Mosslight Crossing;
@@ -10116,9 +10173,9 @@ if (active) {
   // BUILD 940: pay a task bundle through the same paths as quest rewards
   // (coins, XP, bow mapping + keepsakes, legacy reputation, 939 faction).
   const payTaskBundle = (bundle: TaskRewardBundle, questDef: QuestDef, isBonus: boolean) => {
-    if (bundle.coins) onLoot({ coins: bundle.coins });
+    if (bundle.coins) onLoot({ coins: bundle.coins }, { bypassCarryLimit: true });
     if (bundle.xp) grantQuestXp(bundle.xp);
-    if (bundle.items.includes('Hunting bow')) onLoot({ bow: 1 });
+    if (bundle.items.includes('Hunting bow')) onLoot({ bow: 1 }, { bypassCarryLimit: true });
     if (bundle.reputation) onQuestReputation(bundle.reputation);
     if (bundle.faction) adjustFactionStanding(bundle.faction.factionId, (s) => applyFactionGain(s, bundle.faction!.factionId, bundle.faction!.amount));
     const keepsakes = bundle.items.filter((name) => name !== 'Hunting bow');
@@ -10834,6 +10891,13 @@ if (active) {
       window.setTimeout(() => setAttackFlash(null), 1100);
       return;
     }
+    // BUILD 950: carry-limit pre-gate — BEFORE materials are consumed,
+    // so a refused craft keeps its materials instead of destroying them.
+    if (carryNow().over) {
+      setAttackFlash(CARRY_OVER_MSG);
+      window.setTimeout(() => setAttackFlash(null), 1100);
+      return;
+    }
     onLoot({
       goatHorns: -(recipe.cost.goatHorns || 0),
       fabric: -(recipe.cost.fabric || 0),
@@ -10878,6 +10942,8 @@ if (active) {
   // BUILD 480: buy health potion from Bram (10 gold).
   const buyPotion = () => {
     if (inventory.coins < 10) return;
+    // BUILD 950: carry-limit pre-gate — before gold moves.
+    if (carryNow().over) { setLogs((currentLogs) => [{ text: CARRY_OVER_MSG, color: 'red' }, ...currentLogs].slice(0, 3)); return; }
     onLoot({ coins: -10, healthPotion: 1 } as GoatLoot);
     setLogs((currentLogs) => [{ text: 'Bought a health potion for 10 gold.', color: 'blue' }, ...currentLogs].slice(0, 3));
   };
@@ -10914,6 +10980,12 @@ if (active) {
     // Restock check with the live game day — deterministic and idempotent.
     const state = restockStall(def, shopStocksRef.current[index], gameDayNow());
     const effectiveCoins = inventory.coins - shopReserveRef.current.coins;
+    // BUILD 950: carry-limit pre-gate — BEFORE stock/gold move, so a
+    // refused buy charges nothing and reserves nothing.
+    if (carryNow().over) {
+      setLogs((c) => [{ text: `${def.merchantName}: you're carrying too much to take that — ${CARRY_OVER_MSG}`, color: 'red' }, ...c].slice(0, 5));
+      return;
+    }
     const result = buyFromStall(def, state, itemKey, effectiveCoins);
     if (!result.ok) {
       const good = def.goods.find((g) => g.key === itemKey);
@@ -10973,11 +11045,15 @@ if (active) {
   const talkToBartender = () => { setTavernMenuOpen(true); };
   const tavernBuyBeer = () => {
     if (inventory.coins < BEER_PRICE) { setLogs((c) => [{ text: "You don't have enough gold for a beer.", color: 'red' }, ...c].slice(0, 5)); return; }
+    // BUILD 950: carry-limit pre-gate — before gold moves.
+    if (carryNow().over) { setLogs((c) => [{ text: CARRY_OVER_MSG, color: 'red' }, ...c].slice(0, 5)); return; }
     onLoot({ coins: -BEER_PRICE, beer: 1 } as GoatLoot);
     setLogs((c) => [{ text: 'Mira slides you a foaming mug. "Drink it from your inventory — it\'ll put fire in your arm."', color: 'green' }, ...c].slice(0, 5));
   };
   const tavernBuyLockpicks = () => {
     if (inventory.coins < LOCKPICK_PRICE) { setLogs((c) => [{ text: 'Lockpicks cost ' + LOCKPICK_PRICE + ' gold. Come back when you have the coin.', color: 'red' }, ...c].slice(0, 5)); return; }
+    // BUILD 950: carry-limit pre-gate — before gold moves.
+    if (carryNow().over) { setLogs((c) => [{ text: CARRY_OVER_MSG, color: 'red' }, ...c].slice(0, 5)); return; }
     onLoot({ coins: -LOCKPICK_PRICE, lockpicks: 1 } as GoatLoot);
     setLogs((c) => [{ text: 'Mira slides a set of picks across the bar. "No questions asked."', color: 'green' }, ...c].slice(0, 5));
   };
@@ -15268,7 +15344,7 @@ if (active) {
           {/* BUILD 884: carried weight widget (EO-style). Amber when heavy,
               red when over capacity. */}
           <div role="status" aria-label={'Carrying ' + carryUi.weight + ' of ' + carryUi.capacity} data-testid="hud-weight" style={{ position: 'absolute', right: 12, bottom: 88, zIndex: 10, fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: 'rgba(0,0,0,.45)', color: carryUi.tier === 'over' ? '#ff7b6b' : carryUi.tier === 'heavy' ? '#f0b35e' : '#cfe8cf' }}>
-            ⚖️ {carryUi.weight}/{carryUi.capacity}
+            ⚖️ {carryUi.weight}/{carryUi.capacity}{carryUi.tier === 'over' ? ' — OVER' : ''}
           </div>
           {/* BUILD 894: partner slot chip — visible whenever you have a partner. */}
           {partner && (
@@ -15609,7 +15685,7 @@ function Home() {
       clearTimeout(timeout);
     };
   }, [manualCheckToken]);
-  const menuBridgeRef = useRef<{ openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void; getAaMaxHpBonus: () => number } | null>(null);
+  const menuBridgeRef = useRef<{ openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void; getAaMaxHpBonus: () => number; getAaCarryBonus: () => number } | null>(null);
   const [muted, setMuted] = useState(false);
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
   // BUILD 517: Map reveal (fog of war) — track visited chunks.
@@ -15779,26 +15855,50 @@ function Home() {
       setHasLocalSave(false);
     }
   }, []);
-  const applyLoot = (loot: GoatLoot) => setInventory((current) => ({
-    coins: Math.max(0, current.coins + (loot.coins || 0)),
-    goatHorns: Math.max(0, current.goatHorns + (loot.goatHorns || 0)),
-    fabric: Math.max(0, current.fabric + (loot.fabric || 0)),
-    daggers: Math.max(0, current.daggers + (loot.daggers || 0)),
-    cloths: Math.max(0, current.cloths + (loot.cloths || 0)),
-    bone: Math.max(0, current.bone + (loot.bone || 0)),
-    pelt: Math.max(0, current.pelt + (loot.pelt || 0)),
-    fang: Math.max(0, current.fang + (loot.fang || 0)),
-    corn: Math.max(0, current.corn + (loot.corn || 0)),
-    wood: Math.max(0, current.wood + (loot.wood || 0)),
-    stone: Math.max(0, (current.stone || 0) + (loot.stone || 0)),
-    silk: Math.max(0, current.silk + (loot.silk || 0)),
-    bow: Math.max(0, current.bow + (loot.bow || 0)),
-    beer: Math.max(0, current.beer + (loot.beer || 0)),
-    lockpicks: Math.max(0, current.lockpicks + (loot.lockpicks || 0)),
-    shirts: Math.max(0, current.shirts + (loot.shirts || 0)),
-    swords: Math.max(0, current.swords + (loot.swords || 0)),
-    healthPotion: Math.max(0, current.healthPotion + ((loot as { healthPotion?: number }).healthPotion || 0)),
-  }));
+  // BUILD 950: carry-limit enforcement (completes BUILD 884). Refs mirror
+  // state so the gate reads fresh values at event time. Model (items.ts):
+  // refuse positive non-coin gains ONLY while already over capacity;
+  // spends and coins always apply (selling/spending must work, or an
+  // over-capacity player could never shed weight to recover); quest/task
+  // payouts pass bypassCarryLimit so a finished quest's reward never
+  // vanishes. Refused gains are dropped from the delta — the call sites
+  // that consume a source (corpse, ground, buys, crafts) pre-gate in
+  // GameField, so nothing is ever consumed-then-refused here.
+  const homeInventoryRef = useRef(inventory);
+  useEffect(() => { homeInventoryRef.current = inventory; }, [inventory]);
+  const homeEquipmentRef = useRef(equipment);
+  useEffect(() => { homeEquipmentRef.current = equipment; }, [equipment]);
+  const applyLoot = (loot: GoatLoot, opts?: { bypassCarryLimit?: boolean }) => {
+    const weight = carriedWeight(homeInventoryRef.current as unknown as Record<string, number>, homeEquipmentRef.current);
+    const capacity = carryCapacity(playerStats.str) + (menuBridgeRef.current?.getAaCarryBonus?.() ?? 0);
+    const { refused } = applyStackableGain(homeInventoryRef.current as unknown as Record<string, number>, loot as Record<string, number>, weight, capacity, opts?.bypassCarryLimit);
+    const accepted: Record<string, number> = {};
+    for (const [key, delta] of Object.entries(loot)) {
+      if (key in refused) continue;
+      accepted[key] = delta as number;
+    }
+    if (Object.keys(refused).length > 0) setSaveNotice(CARRY_OVER_MSG);
+    setInventory((current) => ({
+      coins: Math.max(0, current.coins + (accepted.coins || 0)),
+      goatHorns: Math.max(0, current.goatHorns + (accepted.goatHorns || 0)),
+      fabric: Math.max(0, current.fabric + (accepted.fabric || 0)),
+      daggers: Math.max(0, current.daggers + (accepted.daggers || 0)),
+      cloths: Math.max(0, current.cloths + (accepted.cloths || 0)),
+      bone: Math.max(0, current.bone + (accepted.bone || 0)),
+      pelt: Math.max(0, current.pelt + (accepted.pelt || 0)),
+      fang: Math.max(0, current.fang + (accepted.fang || 0)),
+      corn: Math.max(0, current.corn + (accepted.corn || 0)),
+      wood: Math.max(0, current.wood + (accepted.wood || 0)),
+      stone: Math.max(0, (current.stone || 0) + (accepted.stone || 0)),
+      silk: Math.max(0, current.silk + (accepted.silk || 0)),
+      bow: Math.max(0, current.bow + (accepted.bow || 0)),
+      beer: Math.max(0, current.beer + (accepted.beer || 0)),
+      lockpicks: Math.max(0, current.lockpicks + (accepted.lockpicks || 0)),
+      shirts: Math.max(0, current.shirts + (accepted.shirts || 0)),
+      swords: Math.max(0, current.swords + (accepted.swords || 0)),
+      healthPotion: Math.max(0, current.healthPotion + ((accepted as { healthPotion?: number }).healthPotion || 0)),
+    }));
+  };
 
   const toggleDagger = () => {
     if (equippedDagger) {
@@ -16233,7 +16333,7 @@ function Home() {
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} kingdomLabels={menuBridgeRef.current?.getKingdomLabels() ?? []} tradeRoutes={menuBridgeRef.current?.getTradeRoutes() ?? []} visitedChunks={visitedChunks} />}
-          {inventoryOpen && <InventorySheet inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} onDrinkPotion={drinkPotion} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onOpenSkills={() => menuBridgeRef.current?.openSkills()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} taskStates={taskStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onAcceptTask={(questId) => menuBridgeRef.current?.acceptTask(questId)} onWeaveBowstring={weaveBowstring} />}
+          {inventoryOpen && <InventorySheet inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} onDrinkPotion={drinkPotion} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onOpenSkills={() => menuBridgeRef.current?.openSkills()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} taskStates={taskStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onAcceptTask={(questId) => menuBridgeRef.current?.acceptTask(questId)} onWeaveBowstring={weaveBowstring} aaCarry={menuBridgeRef.current?.getAaCarryBonus?.() ?? 0} />}
           {journalOpen && (
             <div className="sheet journal-sheet" role="dialog" aria-label="Adventure journal" data-testid="journal-sheet">
               <div className="sheet-header">

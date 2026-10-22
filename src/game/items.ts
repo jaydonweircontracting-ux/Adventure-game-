@@ -85,76 +85,79 @@ export interface ItemBase {
   baseStats: ItemStats;
   /** Which affix categories can roll on this. */
   affixTags: Array<'melee' | 'ranged' | 'magic' | 'defense' | 'utility'>;
+  /** Drop-rarity weight for random rolls (lower = rarer). NOT a carry weight. */
   weight: number;
+  /** Carry weight in load units (BUILD 950). Real heft by slot/material. */
+  carryWeight: number;
 }
 
 // Original weapon/armor names (not copied from Diablo).
 export const ITEM_BASES: ItemBase[] = [
   // Weapons
-  { id: 'rusty_sword', name: 'Rusty Sword', slot: 'weapon', baseStats: { damage: 8 }, affixTags: ['melee'], weight: 20 },
-  { id: 'iron_sword', name: 'Iron Sword', slot: 'weapon', baseStats: { damage: 14 }, affixTags: ['melee'], weight: 15 },
-  { id: 'steel_blade', name: 'Steel Blade', slot: 'weapon', baseStats: { damage: 22 }, affixTags: ['melee'], weight: 10 },
-  { id: 'oak_bow', name: 'Oak Bow', slot: 'weapon', baseStats: { damage: 10 }, affixTags: ['ranged'], weight: 15 },
-  { id: 'hunting_bow', name: 'Hunting Bow', slot: 'weapon', baseStats: { damage: 18 }, affixTags: ['ranged'], weight: 10 },
-  { id: 'apprentice_staff', name: "Apprentice's Staff", slot: 'weapon', baseStats: { damage: 12, maxMana: 20 }, affixTags: ['magic'], weight: 12 },
-  { id: 'oak_staff', name: 'Oak Staff', slot: 'weapon', baseStats: { damage: 20, maxMana: 35 }, affixTags: ['magic'], weight: 8 },
-  { id: 'hand_axe', name: 'Hand Axe', slot: 'weapon', baseStats: { damage: 16 }, affixTags: ['melee'], weight: 12 },
-  { id: 'mace', name: 'Mace', slot: 'weapon', baseStats: { damage: 18 }, affixTags: ['melee'], weight: 10 },
-  { id: 'dagger', name: 'Dagger', slot: 'weapon', baseStats: { damage: 6, attackSpeed: 0.2 }, affixTags: ['melee'], weight: 18 },
+  { id: 'rusty_sword', name: 'Rusty Sword', slot: 'weapon', baseStats: { damage: 8 }, affixTags: ['melee'], weight: 20, carryWeight: 7 },
+  { id: 'iron_sword', name: 'Iron Sword', slot: 'weapon', baseStats: { damage: 14 }, affixTags: ['melee'], weight: 15, carryWeight: 8 },
+  { id: 'steel_blade', name: 'Steel Blade', slot: 'weapon', baseStats: { damage: 22 }, affixTags: ['melee'], weight: 10, carryWeight: 8 },
+  { id: 'oak_bow', name: 'Oak Bow', slot: 'weapon', baseStats: { damage: 10 }, affixTags: ['ranged'], weight: 15, carryWeight: 3 },
+  { id: 'hunting_bow', name: 'Hunting Bow', slot: 'weapon', baseStats: { damage: 18 }, affixTags: ['ranged'], weight: 10, carryWeight: 3.5 },
+  { id: 'apprentice_staff', name: "Apprentice's Staff", slot: 'weapon', baseStats: { damage: 12, maxMana: 20 }, affixTags: ['magic'], weight: 12, carryWeight: 3 },
+  { id: 'oak_staff', name: 'Oak Staff', slot: 'weapon', baseStats: { damage: 20, maxMana: 35 }, affixTags: ['magic'], weight: 8, carryWeight: 3.5 },
+  { id: 'hand_axe', name: 'Hand Axe', slot: 'weapon', baseStats: { damage: 16 }, affixTags: ['melee'], weight: 12, carryWeight: 5 },
+  { id: 'mace', name: 'Mace', slot: 'weapon', baseStats: { damage: 18 }, affixTags: ['melee'], weight: 10, carryWeight: 7 },
+  { id: 'dagger', name: 'Dagger', slot: 'weapon', baseStats: { damage: 6, attackSpeed: 0.2 }, affixTags: ['melee'], weight: 18, carryWeight: 1.5 },
   // Offhand
-  { id: 'wooden_shield', name: 'Wooden Shield', slot: 'offhand', baseStats: { armor: 8 }, affixTags: ['defense'], weight: 15 },
-  { id: 'iron_shield', name: 'Iron Shield', slot: 'offhand', baseStats: { armor: 15 }, affixTags: ['defense'], weight: 10 },
+  { id: 'wooden_shield', name: 'Wooden Shield', slot: 'offhand', baseStats: { armor: 8 }, affixTags: ['defense'], weight: 15, carryWeight: 4 },
+  { id: 'iron_shield', name: 'Iron Shield', slot: 'offhand', baseStats: { armor: 15 }, affixTags: ['defense'], weight: 10, carryWeight: 7 },
   // Armor
-  { id: 'cloth_hood', name: 'Cloth Hood', slot: 'helmet', baseStats: { armor: 4 }, affixTags: ['defense', 'magic'], weight: 15 },
-  { id: 'leather_cap', name: 'Leather Cap', slot: 'helmet', baseStats: { armor: 7 }, affixTags: ['defense'], weight: 12 },
-  { id: 'iron_helm', name: 'Iron Helm', slot: 'helmet', baseStats: { armor: 12 }, affixTags: ['defense'], weight: 8 },
-  { id: 'cloth_robe', name: 'Cloth Robe', slot: 'armor', baseStats: { armor: 6, maxMana: 15 }, affixTags: ['defense', 'magic'], weight: 14 },
-  { id: 'leather_armor', name: 'Leather Armor', slot: 'armor', baseStats: { armor: 12 }, affixTags: ['defense'], weight: 12 },
-  { id: 'chainmail', name: 'Chainmail', slot: 'armor', baseStats: { armor: 20 }, affixTags: ['defense'], weight: 8 },
-  { id: 'cloth_gloves', name: 'Cloth Gloves', slot: 'gloves', baseStats: { armor: 3 }, affixTags: ['defense', 'utility'], weight: 15 },
-  { id: 'leather_gloves', name: 'Leather Gloves', slot: 'gloves', baseStats: { armor: 6, attackSpeed: 0.05 }, affixTags: ['defense'], weight: 10 },
-  { id: 'worn_boots', name: 'Worn Boots', slot: 'boots', baseStats: { armor: 4, moveSpeed: 0.05 }, affixTags: ['defense', 'utility'], weight: 15 },
-  { id: 'leather_boots', name: 'Leather Boots', slot: 'boots', baseStats: { armor: 8, moveSpeed: 0.08 }, affixTags: ['defense'], weight: 10 },
+  { id: 'cloth_hood', name: 'Cloth Hood', slot: 'helmet', baseStats: { armor: 4 }, affixTags: ['defense', 'magic'], weight: 15, carryWeight: 0.5 },
+  { id: 'leather_cap', name: 'Leather Cap', slot: 'helmet', baseStats: { armor: 7 }, affixTags: ['defense'], weight: 12, carryWeight: 1 },
+  { id: 'iron_helm', name: 'Iron Helm', slot: 'helmet', baseStats: { armor: 12 }, affixTags: ['defense'], weight: 8, carryWeight: 3 },
+  { id: 'cloth_robe', name: 'Cloth Robe', slot: 'armor', baseStats: { armor: 6, maxMana: 15 }, affixTags: ['defense', 'magic'], weight: 14, carryWeight: 2 },
+  { id: 'leather_armor', name: 'Leather Armor', slot: 'armor', baseStats: { armor: 12 }, affixTags: ['defense'], weight: 12, carryWeight: 5 },
+  { id: 'chainmail', name: 'Chainmail', slot: 'armor', baseStats: { armor: 20 }, affixTags: ['defense'], weight: 8, carryWeight: 10 },
+  { id: 'cloth_gloves', name: 'Cloth Gloves', slot: 'gloves', baseStats: { armor: 3 }, affixTags: ['defense', 'utility'], weight: 15, carryWeight: 0.5 },
+  { id: 'leather_gloves', name: 'Leather Gloves', slot: 'gloves', baseStats: { armor: 6, attackSpeed: 0.05 }, affixTags: ['defense'], weight: 10, carryWeight: 1 },
+  { id: 'worn_boots', name: 'Worn Boots', slot: 'boots', baseStats: { armor: 4, moveSpeed: 0.05 }, affixTags: ['defense', 'utility'], weight: 15, carryWeight: 2 },
+  { id: 'leather_boots', name: 'Leather Boots', slot: 'boots', baseStats: { armor: 8, moveSpeed: 0.08 }, affixTags: ['defense'], weight: 10, carryWeight: 2 },
   // Jewelry
-  { id: 'copper_ring', name: 'Copper Ring', slot: 'ring', baseStats: {}, affixTags: ['utility', 'magic'], weight: 12 },
-  { id: 'silver_ring', name: 'Silver Ring', slot: 'ring', baseStats: {}, affixTags: ['utility', 'magic'], weight: 8 },
-  { id: 'bone_amulet', name: 'Bone Amulet', slot: 'amulet', baseStats: {}, affixTags: ['utility', 'magic'], weight: 10 },
-  { id: 'stone_amulet', name: 'Stone Amulet', slot: 'amulet', baseStats: {}, affixTags: ['defense', 'utility'], weight: 8 },
+  { id: 'copper_ring', name: 'Copper Ring', slot: 'ring', baseStats: {}, affixTags: ['utility', 'magic'], weight: 12, carryWeight: 0.2 },
+  { id: 'silver_ring', name: 'Silver Ring', slot: 'ring', baseStats: {}, affixTags: ['utility', 'magic'], weight: 8, carryWeight: 0.2 },
+  { id: 'bone_amulet', name: 'Bone Amulet', slot: 'amulet', baseStats: {}, affixTags: ['utility', 'magic'], weight: 10, carryWeight: 0.3 },
+  { id: 'stone_amulet', name: 'Stone Amulet', slot: 'amulet', baseStats: {}, affixTags: ['defense', 'utility'], weight: 8, carryWeight: 0.5 },
   // BUILD 481: expanded bases (50 total)
-  { id: 'bronze_sword', name: 'Bronze Sword', slot: 'weapon', baseStats: { damage: 11 }, affixTags: ['melee'], weight: 16 },
-  { id: 'soldier_blade', name: "Soldier's Blade", slot: 'weapon', baseStats: { damage: 26 }, affixTags: ['melee'], weight: 8 },
-  { id: 'war_axe', name: 'War Axe', slot: 'weapon', baseStats: { damage: 24 }, affixTags: ['melee'], weight: 8 },
-  { id: 'yew_bow', name: 'Yew Bow', slot: 'weapon', baseStats: { damage: 24 }, affixTags: ['ranged'], weight: 8 },
-  { id: 'longbow', name: 'Longbow', slot: 'weapon', baseStats: { damage: 28 }, affixTags: ['ranged'], weight: 6 },
-  { id: 'elder_staff', name: 'Elder Staff', slot: 'weapon', baseStats: { damage: 26, maxMana: 50 }, affixTags: ['magic'], weight: 6 },
-  { id: 'war_hammer', name: 'War Hammer', slot: 'weapon', baseStats: { damage: 30 }, affixTags: ['melee'], weight: 6 },
-  { id: 'rune_dagger', name: 'Rune Dagger', slot: 'weapon', baseStats: { damage: 10, attackSpeed: 0.25 }, affixTags: ['melee', 'magic'], weight: 10 },
-  { id: 'kite_shield', name: 'Kite Shield', slot: 'offhand', baseStats: { armor: 22 }, affixTags: ['defense'], weight: 6 },
-  { id: 'tower_shield', name: 'Tower Shield', slot: 'offhand', baseStats: { armor: 30 }, affixTags: ['defense'], weight: 4 },
-  { id: 'spellbook', name: 'Spellbook', slot: 'offhand', baseStats: { maxMana: 40 }, affixTags: ['magic'], weight: 8 },
-  { id: 'steel_helm', name: 'Steel Helm', slot: 'helmet', baseStats: { armor: 18 }, affixTags: ['defense'], weight: 6 },
-  { id: 'mage_hood', name: 'Mage Hood', slot: 'helmet', baseStats: { armor: 8, maxMana: 25 }, affixTags: ['defense', 'magic'], weight: 8 },
-  { id: 'plate_armor', name: 'Plate Armor', slot: 'armor', baseStats: { armor: 32 }, affixTags: ['defense'], weight: 5 },
-  { id: 'mage_robe', name: 'Mage Robe', slot: 'armor', baseStats: { armor: 10, maxMana: 40 }, affixTags: ['defense', 'magic'], weight: 8 },
-  { id: 'gauntlets', name: 'Gauntlets', slot: 'gloves', baseStats: { armor: 10 }, affixTags: ['defense'], weight: 8 },
-  { id: 'silk_gloves', name: 'Silk Gloves', slot: 'gloves', baseStats: { armor: 5, attackSpeed: 0.1 }, affixTags: ['defense', 'magic'], weight: 8 },
-  { id: 'swift_boots', name: 'Swift Boots', slot: 'boots', baseStats: { armor: 6, moveSpeed: 0.12 }, affixTags: ['defense', 'utility'], weight: 8 },
-  { id: 'iron_boots', name: 'Iron Boots', slot: 'boots', baseStats: { armor: 14 }, affixTags: ['defense'], weight: 6 },
-  { id: 'gold_ring', name: 'Gold Ring', slot: 'ring', baseStats: {}, affixTags: ['utility', 'magic'], weight: 6 },
-  { id: 'jade_ring', name: 'Jade Ring', slot: 'ring', baseStats: {}, affixTags: ['utility'], weight: 5 },
-  { id: 'silver_amulet', name: 'Silver Amulet', slot: 'amulet', baseStats: {}, affixTags: ['utility', 'magic'], weight: 7 },
-  { id: 'wolf_pendant', name: 'Wolf Pendant', slot: 'amulet', baseStats: { damage: 5 }, affixTags: ['utility'], weight: 5 },
-  { id: 'traveler_cloak', name: "Traveler's Cloak", slot: 'armor', baseStats: { armor: 8, moveSpeed: 0.05 }, affixTags: ['defense', 'utility'], weight: 10 },
+  { id: 'bronze_sword', name: 'Bronze Sword', slot: 'weapon', baseStats: { damage: 11 }, affixTags: ['melee'], weight: 16, carryWeight: 7 },
+  { id: 'soldier_blade', name: "Soldier's Blade", slot: 'weapon', baseStats: { damage: 26 }, affixTags: ['melee'], weight: 8, carryWeight: 8 },
+  { id: 'war_axe', name: 'War Axe', slot: 'weapon', baseStats: { damage: 24 }, affixTags: ['melee'], weight: 8, carryWeight: 9 },
+  { id: 'yew_bow', name: 'Yew Bow', slot: 'weapon', baseStats: { damage: 24 }, affixTags: ['ranged'], weight: 8, carryWeight: 3.5 },
+  { id: 'longbow', name: 'Longbow', slot: 'weapon', baseStats: { damage: 28 }, affixTags: ['ranged'], weight: 6, carryWeight: 4 },
+  { id: 'elder_staff', name: 'Elder Staff', slot: 'weapon', baseStats: { damage: 26, maxMana: 50 }, affixTags: ['magic'], weight: 6, carryWeight: 3.5 },
+  { id: 'war_hammer', name: 'War Hammer', slot: 'weapon', baseStats: { damage: 30 }, affixTags: ['melee'], weight: 6, carryWeight: 11 },
+  { id: 'rune_dagger', name: 'Rune Dagger', slot: 'weapon', baseStats: { damage: 10, attackSpeed: 0.25 }, affixTags: ['melee', 'magic'], weight: 10, carryWeight: 1.5 },
+  { id: 'kite_shield', name: 'Kite Shield', slot: 'offhand', baseStats: { armor: 22 }, affixTags: ['defense'], weight: 6, carryWeight: 6 },
+  { id: 'tower_shield', name: 'Tower Shield', slot: 'offhand', baseStats: { armor: 30 }, affixTags: ['defense'], weight: 4, carryWeight: 10 },
+  { id: 'spellbook', name: 'Spellbook', slot: 'offhand', baseStats: { maxMana: 40 }, affixTags: ['magic'], weight: 8, carryWeight: 2 },
+  { id: 'steel_helm', name: 'Steel Helm', slot: 'helmet', baseStats: { armor: 18 }, affixTags: ['defense'], weight: 6, carryWeight: 3.5 },
+  { id: 'mage_hood', name: 'Mage Hood', slot: 'helmet', baseStats: { armor: 8, maxMana: 25 }, affixTags: ['defense', 'magic'], weight: 8, carryWeight: 0.5 },
+  { id: 'plate_armor', name: 'Plate Armor', slot: 'armor', baseStats: { armor: 32 }, affixTags: ['defense'], weight: 5, carryWeight: 14 },
+  { id: 'mage_robe', name: 'Mage Robe', slot: 'armor', baseStats: { armor: 10, maxMana: 40 }, affixTags: ['defense', 'magic'], weight: 8, carryWeight: 2 },
+  { id: 'gauntlets', name: 'Gauntlets', slot: 'gloves', baseStats: { armor: 10 }, affixTags: ['defense'], weight: 8, carryWeight: 2.5 },
+  { id: 'silk_gloves', name: 'Silk Gloves', slot: 'gloves', baseStats: { armor: 5, attackSpeed: 0.1 }, affixTags: ['defense', 'magic'], weight: 8, carryWeight: 0.5 },
+  { id: 'swift_boots', name: 'Swift Boots', slot: 'boots', baseStats: { armor: 6, moveSpeed: 0.12 }, affixTags: ['defense', 'utility'], weight: 8, carryWeight: 1.5 },
+  { id: 'iron_boots', name: 'Iron Boots', slot: 'boots', baseStats: { armor: 14 }, affixTags: ['defense'], weight: 6, carryWeight: 4 },
+  { id: 'gold_ring', name: 'Gold Ring', slot: 'ring', baseStats: {}, affixTags: ['utility', 'magic'], weight: 6, carryWeight: 0.2 },
+  { id: 'jade_ring', name: 'Jade Ring', slot: 'ring', baseStats: {}, affixTags: ['utility'], weight: 5, carryWeight: 0.2 },
+  { id: 'silver_amulet', name: 'Silver Amulet', slot: 'amulet', baseStats: {}, affixTags: ['utility', 'magic'], weight: 7, carryWeight: 0.3 },
+  { id: 'wolf_pendant', name: 'Wolf Pendant', slot: 'amulet', baseStats: { damage: 5 }, affixTags: ['utility'], weight: 5, carryWeight: 0.3 },
+  { id: 'traveler_cloak', name: "Traveler's Cloak", slot: 'armor', baseStats: { armor: 8, moveSpeed: 0.05 }, affixTags: ['defense', 'utility'], weight: 10, carryWeight: 2 },
   // BUILD 921: bases for the NPC variantLook armor/headwear/arms folders
   // that previously had no item form, so a dead NPC's worn gear can drop
   // as the real item instead of staying on the corpse forever.
-  { id: 'gilded_breastplate', name: 'Gilded Breastplate', slot: 'armor', baseStats: { armor: 26 }, affixTags: ['defense'], weight: 5 },
-  { id: 'steel_breastplate', name: 'Steel Breastplate', slot: 'armor', baseStats: { armor: 24 }, affixTags: ['defense'], weight: 6 },
-  { id: 'dark_chestplate', name: 'Dark Chestplate', slot: 'armor', baseStats: { armor: 22 }, affixTags: ['defense'], weight: 7 },
-  { id: 'tribal_chestpiece', name: 'Tribal Chestpiece', slot: 'armor', baseStats: { armor: 16 }, affixTags: ['defense'], weight: 7 },
-  { id: 'padded_coif', name: 'Padded Coif', slot: 'helmet', baseStats: { armor: 9 }, affixTags: ['defense'], weight: 8 },
-  { id: 'dark_coif', name: 'Dark Coif', slot: 'helmet', baseStats: { armor: 11 }, affixTags: ['defense'], weight: 7 },
-  { id: 'tribal_shoulderpads', name: 'Tribal Shoulderpads', slot: 'gloves', baseStats: { armor: 7 }, affixTags: ['defense'], weight: 8 },
+  { id: 'gilded_breastplate', name: 'Gilded Breastplate', slot: 'armor', baseStats: { armor: 26 }, affixTags: ['defense'], weight: 5, carryWeight: 12 },
+  { id: 'steel_breastplate', name: 'Steel Breastplate', slot: 'armor', baseStats: { armor: 24 }, affixTags: ['defense'], weight: 6, carryWeight: 11 },
+  { id: 'dark_chestplate', name: 'Dark Chestplate', slot: 'armor', baseStats: { armor: 22 }, affixTags: ['defense'], weight: 7, carryWeight: 10 },
+  { id: 'tribal_chestpiece', name: 'Tribal Chestpiece', slot: 'armor', baseStats: { armor: 16 }, affixTags: ['defense'], weight: 7, carryWeight: 6 },
+  { id: 'padded_coif', name: 'Padded Coif', slot: 'helmet', baseStats: { armor: 9 }, affixTags: ['defense'], weight: 8, carryWeight: 1 },
+  { id: 'dark_coif', name: 'Dark Coif', slot: 'helmet', baseStats: { armor: 11 }, affixTags: ['defense'], weight: 7, carryWeight: 1.5 },
+  { id: 'tribal_shoulderpads', name: 'Tribal Shoulderpads', slot: 'gloves', baseStats: { armor: 7 }, affixTags: ['defense'], weight: 8, carryWeight: 1.5 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -416,10 +419,16 @@ export const INVENTORY_WEIGHTS: Record<string, number> = {
   shirts: 2, swords: 8, healthPotion: 0.5,
 };
 
-/** Weight of a generated item from its base definition (0 if unknown). */
+/**
+ * Carry weight of a generated item from its base definition.
+ * BUILD 950 fix: BUILD 884 returned base.weight here — but that field is
+ * the DROP-RARITY weight, so a rusty sword "weighed" 20 and plate armor 5.
+ * Carry weight now comes from the separate carryWeight field; an unknown
+ * base (corrupt/legacy item) defaults to 5 instead of weighing nothing.
+ */
 export function generatedItemWeight(item: GeneratedItem): number {
   const base = ITEM_BASES.find((b) => b.id === item.baseId);
-  return base ? base.weight : 0;
+  return base ? base.carryWeight : UNKNOWN_BASE_CARRY_WEIGHT;
 }
 
 /** Total carried weight: inventory stacks + all generated items. Pure. */
@@ -450,6 +459,77 @@ export function encumbranceTier(weight: number, capacity: number): EncumbranceTi
   if (ratio > 1) return 'over';
   if (ratio > 0.8) return 'heavy';
   return 'ok';
+}
+
+// ---------------------------------------------------------------------------
+// Carry-limit enforcement (BUILD 950 — completes BUILD 884)
+// ---------------------------------------------------------------------------
+// 884 built the capacity formula, the tiers, the movement/stamina
+// penalties, and the HUD widget — but nothing ever BLOCKED a gain, and
+// generated items "weighed" their rarity numbers. This block adds the
+// missing enforcement as pure functions; App.tsx wires them into the
+// gain paths. Model (one rule, everywhere):
+//   - Gains are refused ONLY while already over capacity (weight > capacity).
+//   - A gain that crosses capacity is accepted in full; the over-tier
+//     penalties (slow + stamina drain) and the block then apply until the
+//     player sheds weight. Over is a real state, not a wall.
+//   - Spends (negative deltas) and coins (weight 0) are never refused:
+//     selling, spending, and earning gold must always work, or an
+//     over-capacity player could never shed weight to recover.
+//   - Quest/task completion payouts bypass the block: a finished quest's
+//     reward must never vanish. The player lands over capacity and the
+//     voluntary block applies to further gains until they shed.
+
+/** Default carry weight for a stackable key with no table entry. */
+export const UNKNOWN_STACK_WEIGHT = 1;
+/** Default carry weight for a generated item whose base id is unknown. */
+export const UNKNOWN_BASE_CARRY_WEIGHT = 5;
+
+/** True when the player is over capacity (the only state that blocks gains). */
+export function isOverCarryLimit(weight: number, capacity: number): boolean {
+  return weight > capacity;
+}
+
+/** Weight of the positive part of a stackable gain (spends weigh nothing). */
+export function stackableGainWeight(loot: Record<string, number>): number {
+  let total = 0;
+  for (const [key, count] of Object.entries(loot)) {
+    if (!count || count <= 0) continue;
+    total += (INVENTORY_WEIGHTS[key] ?? UNKNOWN_STACK_WEIGHT) * count;
+  }
+  return Math.round(total * 10) / 10;
+}
+
+/**
+ * Apply a stackable gain under the carry limit. Pure — mirrors exactly
+ * what App.tsx's applyLoot does, so the standalone can prove it.
+ * Refused positive non-coin deltas are returned untouched (the caller
+ * leaves the source item where it was); spends and coins always apply.
+ */
+export function applyStackableGain(
+  current: Record<string, number>,
+  loot: Record<string, number>,
+  weight: number,
+  capacity: number,
+  bypass?: boolean,
+): { next: Record<string, number>; refused: Record<string, number> } {
+  const blocked = !bypass && isOverCarryLimit(weight, capacity);
+  const refused: Record<string, number> = {};
+  const next: Record<string, number> = { ...current };
+  for (const [key, delta] of Object.entries(loot)) {
+    if (!delta) continue;
+    if (delta > 0 && blocked && key !== 'coins') {
+      refused[key] = delta;
+      continue;
+    }
+    next[key] = Math.max(0, (next[key] ?? 0) + delta);
+  }
+  return { next, refused };
+}
+
+/** Whether a generated item may be taken right now (blocked only while over). */
+export function canTakeEquipment(weight: number, capacity: number): boolean {
+  return !isOverCarryLimit(weight, capacity);
 }
 
 // ---------------------------------------------------------------------------
