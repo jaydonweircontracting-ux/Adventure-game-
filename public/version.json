@@ -1,6 +1,6 @@
 {
-  "build": "951",
-  "note": "Food now looks like food: beer shows a proper mug and corn shows an ear of corn in your inventory, at market stalls, and in dungeon shops, and the market-stall counters display Kenney food — bread, burgers, pie, cooked meat, sushi, and tacos — instead of the old pixel sprites. Health potions keep their flask mark (the kit has no potion art), and prices, healing, and effects are unchanged. The other 192 food pictures from the kit sit in the game files ready for future dishes.",
-  "timestamp": "2026-10-22T01:37:45.154Z",
-  "cacheBuster": "mvivfxky"
+  "build": "952",
+  "note": "Wild animals now look like animals: the deer, bears, wolves, foxes, boars, and rabbits roaming the wilds are rendered from real 3D models instead of colored blobs and glitched sheets — deer come as stags and does, and rabbits and deer are back in the meadows and forests after their broken sprites kept them out. Owls, squirrels, and hedgehogs join them as new ambient wildlife. The animals also show up in the isometric view for the first time (they were invisible there before); stats, speeds, loot, and spawn rates are unchanged, and the fighting wolf monsters keep their animated sheets.",
+  "timestamp": "2026-10-22T02:05:56.974Z",
+  "cacheBuster": "mviwg6zy"
 }

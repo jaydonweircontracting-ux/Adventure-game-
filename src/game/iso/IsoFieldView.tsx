@@ -25,6 +25,7 @@ import { CharacterAnimator, drawIsoCharacter, preloadCharacterSprites, variantLo
 import { SNEAK_PLAYER_OPACITY } from '../sneak';
 import { lookWithoutLootedGear } from '../npcGear';
 import { artUrl } from '../artCache';
+import { animalSpriteFor, ANIMAL_DISPLAY_SIZE } from '../animalSprites';
 import { computeDirtPathGeometry, buildDirtPath2D, DIRT_LAYER_STYLE } from './dirtPaths';
 // BUILD 389: user-supplied landscape tileset + ambient critters.
 import {
@@ -265,6 +266,9 @@ interface IsoFieldViewProps {
   // the 2D field uses; traveling (delving) adventurers are never passed.
   adventurers?: Array<{ id: string; name: string; position: Point; facing: string; moving?: boolean }>;
   goats?: Array<{ id: number; kind: string; position: Point; facing: string; disposition: string }>; // BUILD 458: critter kinds
+  // BUILD 952: living-world wildlife (WildlifeState species) — rendered-pack
+  // PNGs, feet-anchored like critters. App passes the current chunk's list.
+  wildlife?: Array<{ id: number; species: string; position: Point; facing: string; moving?: boolean }>;
   monsters?: IsoMonster[];
   selectedMonsterId?: number | null;
   onSelectMonster?: (monster: IsoMonster | null) => void;
@@ -615,11 +619,11 @@ function roadBlendFor(road: string, lx: number, ly: number): number {
   return 0.3 + 0.7 * Math.min(1, Math.max(0, d) / 2.5);
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, adventurers, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, zoom, rotation = 0, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, adventurers, goats, wildlife, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, zoom, rotation = 0, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
-  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -2079,6 +2083,42 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           drawables.push({
             depth: dep(pose.x, pose.y) + 0.005,
             draw: (g2) => { drawCritter(g2, c, nowMs, isoToScreen, rotationRef.current); },
+          });
+        }
+      }
+
+      // BUILD 952: rendered-pack wildlife (WildlifeState species). Wildlife
+      // never rendered in the iso view before — the 2D DOM was its only
+      // surface — so this block is what makes the new animal sprites visible
+      // in the default view. Feet-anchored PNGs, same pattern as critters.
+      const liveWildlife = (live as { wildlife?: Array<{ id: number; species: string; position: Point; facing: string; moving?: boolean }> }).wildlife;
+      if (liveWildlife) {
+        const wImgs = (window as unknown as { __wildlifeImgs?: Record<string, HTMLImageElement> }).__wildlifeImgs || {};
+        for (const a of liveWildlife) {
+          const src = animalSpriteFor(a.species, a.id);
+          if (!src || wImgs[src]) continue;
+          const img = new Image(); img.src = artUrl(src); wImgs[src] = img;
+        }
+        (window as unknown as { __wildlifeImgs?: Record<string, HTMLImageElement> }).__wildlifeImgs = wImgs;
+        const wVhw = (wpx / 2) / zm, wVhh = (hpx / 2) / zm;
+        for (const a of liveWildlife) {
+          const src = animalSpriteFor(a.species, a.id);
+          if (!src) continue; // crab: no pack art, nothing to draw
+          const img = wImgs[src];
+          if (!img || !img.complete || img.naturalWidth === 0) continue;
+          const c = isoToScreen(a.position.x, a.position.y);
+          if (c.x < cam.x - wVhw - 50 || c.x > cam.x + wVhw + 50 || c.y < cam.y - wVhh - 50 || c.y > cam.y + wVhh + 80) continue;
+          const dh = ANIMAL_DISPLAY_SIZE[a.species] ?? 32;
+          const dw = dh * (img.naturalWidth / img.naturalHeight);
+          const depth = dep(a.position.x, a.position.y);
+          const sx = c.x, sy = c.y;
+          drawables.push({
+            depth,
+            draw: (g: CanvasRenderingContext2D) => {
+              g.fillStyle = 'rgba(0,0,0,0.25)';
+              g.beginPath(); g.ellipse(sx, sy, dh * 0.6, dh * 0.15, 0, 0, Math.PI * 2); g.fill();
+              g.drawImage(img, sx - dw / 2, sy - dh, dw, dh);
+            },
           });
         }
       }

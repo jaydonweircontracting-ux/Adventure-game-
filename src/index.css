@@ -2521,6 +2521,27 @@ body {
 .wildlife[data-facing='left'] { transform: scaleX(-1); }
 .wildlife.is-moving[data-facing='left'] { animation: wildlife-bob-flip .5s ease-in-out infinite; }
 @keyframes wildlife-bob-flip { 0%, 100% { transform: scaleX(-1) translateY(0); } 50% { transform: scaleX(-1) translateY(-2px); } }
+/* BUILD 952: rendered 3D-pack animals (CraftPix free pack, rendered to PNG).
+   Applies in 2D to species whose old art was a CSS blob (deer, bear) or a
+   glitched sheet (rabbit), plus the new owl/squirrel/hedgehog species.
+   Placed after the species rules so it wins the same-specificity ties.
+   The PNG faces right, so the generic left-flip above stays correct, and
+   the bob replaces the rabbit's hop (a single image has no hop frames).
+   Bottom-anchored: the image bottom sits at the animal's ground point. */
+.wildlife-animal {
+  width: 34px;
+  height: 34px;
+  margin: -34px 0 0 -17px;
+  background: none;
+  border-radius: 0;
+  background-image: var(--animal-sheet);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center bottom;
+  image-rendering: auto;
+}
+.wildlife-animal::before, .wildlife-animal::after { display: none; }
+.wildlife-animal.is-moving { animation: wildlife-bob .5s ease-in-out infinite; }
 .goat[data-facing='up'] .goat-sprite { background-position-y: -72px; }
 .goat[data-facing='left'] .goat-sprite { background-position-y: -24px; }
 .goat[data-facing='right'] .goat-sprite { background-position-y: -48px; }

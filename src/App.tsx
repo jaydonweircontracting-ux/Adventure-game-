@@ -6,6 +6,7 @@ import IsoRoomDemo from './game/iso/IsoRoom';
 import RpgPreview from './game/iso/RpgPreview';
 import IsoFieldView from './game/iso/IsoFieldView';
 import { type IsoRotation, sanitizeIsoRotation } from './game/iso/rotation';
+import { animalSpriteFor, ANIMAL_2D_SPECIES } from './game/animalSprites';
 import { RODWAN_SLICES, rodwanTreeIndexFor, RODWAN_LEAFY_SPRITES } from './game/rodwanTrees';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
 import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
@@ -165,7 +166,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '951';
+const BUILD_NUMBER = '952';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -196,6 +197,7 @@ const BUILD_NOTES: Record<string, string> = {
   '948': 'Adventurers now occasionally set out to delve dungeons on their own. Watch one walk out of Mosslight toward the wilds and check back later: they may return with gold and loot, come back empty-handed, or limp home injured. Their hauls stay on them for now, with chest and bank storage coming next, and you can follow each run in the game log and the adventurer list. Player dungeons, loot, and entrances work exactly as before.',
   '950': 'Carrying now has a real limit: every item has a true weight (plate armor finally weighs more than a rusty sword — the old numbers were rarity odds, not heft), and once you are over capacity you cannot pick up, loot, or buy more until you sell or use something. You still slow down past 80% and drain stamina past 100%, and quest rewards always land even if they push you over — nothing you earned ever vanishes. Your current load shows in the HUD and in the inventory.',
   '951': 'Food now looks like food: beer shows a proper mug and corn shows an ear of corn in your inventory, at market stalls, and in dungeon shops, and the market-stall counters display Kenney food — bread, burgers, pie, cooked meat, sushi, and tacos — instead of the old pixel sprites. Health potions keep their flask mark (the kit has no potion art), and prices, healing, and effects are unchanged. The other 192 food pictures from the kit sit in the game files ready for future dishes.',
+  '952': 'Wild animals now look like animals: the deer, bears, wolves, foxes, boars, and rabbits roaming the wilds are rendered from real 3D models instead of colored blobs and glitched sheets — deer come as stags and does, and rabbits and deer are back in the meadows and forests after their broken sprites kept them out. Owls, squirrels, and hedgehogs join them as new ambient wildlife. The animals also show up in the isometric view for the first time (they were invisible there before); stats, speeds, loot, and spawn rates are unchanged, and the fighting wolf monsters keep their animated sheets.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
@@ -1661,7 +1663,7 @@ type BirdState = {
   fleeing: boolean; // true while fleeing the player off screen
 };
 // Living-world wildlife: biome + danger-zone based spawning.
-type WildlifeSpecies = 'rabbit' | 'deer' | 'wolf' | 'boar' | 'bear' | 'fox' | 'crab';
+type WildlifeSpecies = 'rabbit' | 'deer' | 'wolf' | 'boar' | 'bear' | 'fox' | 'crab' | 'owl' | 'squirrel' | 'hedgehog';
 type WildlifeState = {
   id: number;
   species: WildlifeSpecies;
@@ -2501,15 +2503,17 @@ function wildlifeForChunk(chunk: Point): WildlifeState[] {
       target: null,
     });
   };
-  // Rabbits temporarily removed (sprites glitched) — uncomment to re-enable.
-  // if (terrain === 'meadow' || terrain === 'forest') {
-  //   const count = terrain === 'meadow' ? 3 : 2;
-  //   for (let i = 0; i < count; i++) spawn('rabbit', i, 1000);
-  // }
-  // Deer removed (brown-blob sprites) — uncomment to re-enable.
-  // if (terrain === 'forest' || terrain === 'meadow') {
-  //   for (let i = 0; i < 2; i++) spawn('deer', i, 2000);
-  // }
+  // BUILD 952: rabbits re-enabled — the old sheet glitched; the rendered
+  // pack rabbit replaces it (wildlife-animal class in 2D, render in iso).
+  if (terrain === 'meadow' || terrain === 'forest') {
+    const count = terrain === 'meadow' ? 3 : 2;
+    for (let i = 0; i < count; i++) spawn('rabbit', i, 1000);
+  }
+  // BUILD 952: deer re-enabled — the old CSS brown blob is replaced by the
+  // rendered stag/doe pair (id parity picks the variant).
+  if (terrain === 'forest' || terrain === 'meadow') {
+    for (let i = 0; i < 2; i++) spawn('deer', i, 2000);
+  }
   // Wolves: forests only, danger 2+ (never near the starting town).
   if (terrain === 'forest' && danger >= 2) {
     for (let i = 0; i < 2; i++) spawn('wolf', i, 3000);
@@ -2526,6 +2530,20 @@ function wildlifeForChunk(chunk: Point): WildlifeState[] {
   // BUILD 355: crabs — shorelines, any danger (kit sprite).
   if (terrain === 'shore') {
     for (let i = 0; i < 3; i++) spawn('crab', i, 7000);
+  }
+  // BUILD 952: owls, squirrels, hedgehogs — new ambient species from the
+  // rendered pack. They use every WildlifeState default (speed 0.8, HP 15,
+  // meat:1 loot); only their spawn rules and sprites are new. The owl model
+  // is a flying pose, so it reads as gliding rather than walking.
+  if (terrain === 'forest' && danger >= 1) {
+    spawn('owl', 0, 8000);
+  }
+  if ((terrain === 'forest' || terrain === 'meadow') && danger >= 1) {
+    const count = terrain === 'forest' ? 2 : 1;
+    for (let i = 0; i < count; i++) spawn('squirrel', i, 9000);
+  }
+  if ((terrain === 'forest' || terrain === 'meadow') && danger >= 1) {
+    spawn('hedgehog', 0, 9500);
   }
   // Bears: forests and mountains, danger 2+ only. Slow, solitary.
   if ((terrain === 'forest' || terrain === 'rock') && danger >= 2) {
@@ -12969,7 +12987,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView placedAssets={customPlacedAssets} editorPlacedObjects={placedObjects} playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} dispositions={disposition} chunk={chunk} position={position} townsfolk={townsfolk} adventurers={(chunk.x === TOWNSFOLK_CHUNK.x && chunk.y === TOWNSFOLK_CHUNK.y ? simulatedAdventurers.filter((a) => (a.location || 'field') === 'field').map((a) => ({ id: a.id, name: a.name, position: a.position, facing: a.facing, moving: a.moving })) : [])} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? monsters.filter((m) => m.stray || m.raid) : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash, stray: m.stray }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
+            <IsoFieldView placedAssets={customPlacedAssets} editorPlacedObjects={placedObjects} playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} dispositions={disposition} chunk={chunk} position={position} townsfolk={townsfolk} adventurers={(chunk.x === TOWNSFOLK_CHUNK.x && chunk.y === TOWNSFOLK_CHUNK.y ? simulatedAdventurers.filter((a) => (a.location || 'field') === 'field').map((a) => ({ id: a.id, name: a.name, position: a.position, facing: a.facing, moving: a.moving })) : [])} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} wildlife={wildlife.map((a) => ({ id: a.id, species: a.species, position: a.position, facing: a.facing, moving: a.moving }))} monsters={(isStartingSettlementSafetyZone(chunk) ? monsters.filter((m) => m.stray || m.raid) : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash, stray: m.stray }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               rotation={cameraRotation} zoom={isoZoom} onZoomChange={setIsoZoom} playerSneaking={sneaking}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {
@@ -13364,9 +13382,9 @@ if (active) {
             {wildlife.map((animal) => (
               <span
                 key={'wildlife-' + animal.species + '-' + animal.id}
-                className={'wildlife wildlife-' + animal.species + (KIT_WILDLIFE_SHEET[animal.species] ? ' wildlife-kit' : '') + (animal.moving ? ' is-moving' : '')}
+                className={'wildlife wildlife-' + animal.species + (KIT_WILDLIFE_SHEET[animal.species] ? ' wildlife-kit' : '') + (ANIMAL_2D_SPECIES.has(animal.species) ? ' wildlife-animal' : '') + (animal.moving ? ' is-moving' : '')}
                 data-facing={animal.facing}
-                style={{ left: fieldPct(animal.position.x), top: fieldPct(animal.position.y), ...(animal.species === 'wolf' ? { '--wolf-sheet': `url("${assetUrl('wolves/wolf_' + (['gray', 'brown', 'black'] as const)[Math.abs(animal.id) % 3] + '_full.png')}")` } : {}), ...(animal.species === 'rabbit' ? { '--rabbit-sheet': `url("${assetUrl('rabbits/rabbit_white_full.png')}")` } : {}), ...(KIT_WILDLIFE_SHEET[animal.species] ? { '--kit-sheet': `url("${assetUrl(KIT_WILDLIFE_SHEET[animal.species])}")` } : {}) } as CSSProperties}
+                style={{ left: fieldPct(animal.position.x), top: fieldPct(animal.position.y), ...(ANIMAL_2D_SPECIES.has(animal.species) ? { '--animal-sheet': `url("${assetUrl(animalSpriteFor(animal.species, animal.id) ?? '')}")` } : {}), ...(animal.species === 'wolf' ? { '--wolf-sheet': `url("${assetUrl('wolves/wolf_' + (['gray', 'brown', 'black'] as const)[Math.abs(animal.id) % 3] + '_full.png')}")` } : {}), ...(KIT_WILDLIFE_SHEET[animal.species] ? { '--kit-sheet': `url("${assetUrl(KIT_WILDLIFE_SHEET[animal.species])}")` } : {}) } as CSSProperties}
               />
             ))}
           </div>

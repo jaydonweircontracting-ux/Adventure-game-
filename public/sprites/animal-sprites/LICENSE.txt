@@ -1,0 +1,20 @@
+CraftPix "Free Wild Animal 3D Low Poly Models" pack
+(craftpix-net-636502-free-wild-animal-3d-low-poly-models.zip).
+
+Freebie license terms (verified at craftpix.net/file-licenses):
+use and modify in any number of personal and commercial projects;
+games may be sold with the assets; no attribution required (credit
+appreciated). FORBIDDEN: reselling or redistributing the source files
+themselves. §3 also forbids AI-training use of the assets.
+
+What ships here, and why it complies: the pack contains NO 2D sprites —
+only FBX models (Unity + Unreal variants) and one 64x64 texture atlas
+(wild_animals_map.png). This folder ships ONLY 2D PNGs rendered from the
+Unity FBX models with the pack's own atlas (three.js FBXLoader, local
+headless-Chromium render, mirrored to face right, trimmed to the content
+box so the image bottom is the feet). NO raw FBX/OBJ/GLB files ship in
+the repo or the built site. Rendering to sprites is permitted
+modify/include use, not redistribution of the source files.
+
+Files (10): bear, boar, deer_1 (stag), deer_2 (doe), fox, hedgehog
+(pack spells it "hedhog"), owl, rabbit, squirrel, wolf.
