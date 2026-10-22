@@ -70,6 +70,7 @@ import startingHouseOverlayUrl from '../../../game sprites/starting house/IMG_54
 // with the cutaway itself; interiors in the field are the authored two-layer
 // starter-house art for every building now.
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, type MonsterAnim, type MonsterSpriteDef } from '../monsterSprites';
+import { KNIGHT_STRIP_PATHS, KNIGHT_CELL, KNIGHT_DISPLAY_SIZE, KNIGHT_ANCHOR, knightStripRowForFacing, knightFrameFor } from '../knightSprites';
 // BUILD 369 (Phase 2b): authoritative water/bridges in the iso field.
 import { waterGridForChunk, waterDepthAt, waterKindAt, waterGridAt, type WaterGrid } from '../landscape';
 // BUILD 376: multi-chunk rendering so generated terrain fills the whole
@@ -2559,7 +2560,43 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       // survive the spawn filter and appear as skeletons or invisible humanoids.
       const liveMonsters = liveMonstersForActiveChunk(live.monsters, chunk);
       const monsterImgs = (window as unknown as { __isoMonsterImgs?: Record<string, HTMLImageElement> }).__isoMonsterImgs || {};
+      const knightImgs = (window as unknown as { __isoKnightImgs?: Record<string, HTMLImageElement> }).__isoKnightImgs || {};
+      (window as unknown as { __isoKnightImgs?: Record<string, HTMLImageElement> }).__isoKnightImgs = knightImgs;
       for (const monster of liveMonsters) {
+        // BUILD 962: the knight renders from its own strips (4-direction
+        // 15-frame downscaled HD sheets), not the 8x5 monster-sheet grid —
+        // the sheet def lookup below would miss it and draw the blob.
+        if (monster.kind === 'knight') {
+          const anim = animForMonsterState({ dead: monster.disposition === 'defeated', hitFlash: !!monster.hitFlash, attacking: !!monster.attacking, moving: !!monster.moving });
+          const stripPath = KNIGHT_STRIP_PATHS[anim];
+          let kimg = knightImgs[stripPath];
+          if (!kimg) { kimg = new Image(); kimg.src = artUrl(stripPath.replace(/^\/+/, '')); knightImgs[stripPath] = kimg; }
+          if (!kimg.complete || kimg.naturalWidth === 0) continue;
+          const mx = monster.position.x, my = monster.position.y;
+          const c = isoToScreen(mx, my);
+          const vhw = (wpx / 2) / zm, vhh = (hpx / 2) / zm;
+          if (c.x < cam.x - vhw - 48 || c.x > cam.x + vhw + 48 || c.y < cam.y - vhh - 80 || c.y > cam.y + vhh + 36) continue;
+          const frame = knightFrameFor(anim, nowMs, monster.id);
+          const row = knightStripRowForFacing(rotateFace8Angle(monster.facing as Face8, rotationRef.current));
+          const size = KNIGHT_DISPLAY_SIZE;
+          const left = c.x - size * KNIGHT_ANCHOR.x, top = c.y - size * KNIGHT_ANCHOR.y;
+          const isSelected = live.selectedMonsterId === monster.id;
+          if (isSelected) {
+            drawables.push({ depth: dep(mx, my) - 0.03, draw: (g) => { g.save(); g.strokeStyle = '#ffd34d'; g.fillStyle = 'rgba(255,197,45,0.16)'; g.lineWidth = 2.5; g.beginPath(); g.ellipse(c.x, c.y - 2, 22, 8, 0, 0, Math.PI * 2); g.fill(); g.stroke(); g.restore(); } });
+          }
+          drawables.push({ depth: dep(mx, my), draw: (g) => {
+            g.save();
+            g.globalAlpha = monster.disposition === 'defeated' ? 0.55 : 1;
+            // Baked shadow rides in the cell; no extra ellipse (alpha 0 by design).
+            g.drawImage(kimg, frame * KNIGHT_CELL, row * KNIGHT_CELL, KNIGHT_CELL, KNIGHT_CELL, left, top, size, size);
+            g.globalAlpha = 1;
+            if (monster.hp < monster.maxHp && monster.disposition !== 'defeated') {
+              const bw = 26, bh = 3; g.fillStyle = 'rgba(20,10,10,0.8)'; g.fillRect(c.x - bw / 2, top - 5, bw, bh); g.fillStyle = '#e34b4b'; g.fillRect(c.x - bw / 2, top - 5, bw * Math.max(0, monster.hp / Math.max(1, monster.maxHp)), bh);
+            }
+            g.restore();
+          } });
+          continue;
+        }
         const def = isoMonsterDef(monster.kind);
         if (!def) {
           // Legacy monster kinds still need a visible, targetable iso presence.

@@ -29,8 +29,8 @@
  *   -> uncommon; danger-1 or ambient-pool kinds -> common.
  *
  * Codex universe: every kind in the 934 behavior table and the 935
- * mitigation table (21 kinds — the two tables share keys, asserted in
- * the sim), PLUS the three wildlife-only kinds that flow through the
+ * mitigation table (22 kinds after BUILD 962 adds the knight — the two
+ * tables share keys, asserted in the sim), PLUS the three wildlife-only kinds that flow through the
  * wired wildlife kill branch (fox, bear, crab). Rabbit is omitted on
  * purpose: its spawns are commented out (sprites glitched), so it
  * cannot currently be killed and a rabbit entry would be fake.
@@ -80,7 +80,7 @@ export const BESTIARY_TIERS = [
 export const BESTIARY_CHARM_POINTS = 50;
 
 /**
- * The 24 codex kinds: 21 behavior/mitigation table kinds + 3
+ * The 25 codex kinds: 22 behavior/mitigation table kinds + 3
  * wildlife-only kinds (fox, bear, crab). Order is display order.
  */
 export const BESTIARY_ENTRIES: BestiaryEntry[] = [
@@ -99,6 +99,7 @@ export const BESTIARY_ENTRIES: BestiaryEntry[] = [
   { kind: 'boar', difficulty: 'easy', occurrence: 'common' },
   { kind: 'badger', difficulty: 'easy', occurrence: 'common' },
   { kind: 'soldier', difficulty: 'medium', occurrence: 'uncommon' },
+  { kind: 'knight', difficulty: 'medium', occurrence: 'uncommon' },
   { kind: 'bandit', difficulty: 'medium', occurrence: 'common' },
   { kind: 'dwarf', difficulty: 'medium', occurrence: 'uncommon' },
   { kind: 'orc', difficulty: 'medium', occurrence: 'uncommon' },

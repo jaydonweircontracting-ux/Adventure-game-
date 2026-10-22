@@ -37,6 +37,7 @@ export function bonesForMonster(kind: string): GearLoot {
     case 'goblin':
     case 'bandit':
     case 'soldier':
+    case 'knight':
     case 'orc':
     case 'skeleton':
     case 'troll':

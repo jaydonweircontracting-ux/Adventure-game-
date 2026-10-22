@@ -132,6 +132,7 @@ import { renderGroundDetail, type GroundDetailSpec, type GroundHills } from '@/g
 import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type ElevContext } from '@/game/elevation';
 import { ensureKitTileset, onKitTilesetLoaded } from '@/game/kitAssets';
 import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS, GOAT_CHASE_RANGE, gearForMonster, bonesForMonster } from '@/game/ai';
+import { classGearBaseIds } from '@/game/classLoot';
 import { behaviorForCreature, preferredRangeFor, shouldStand, shouldRetarget, voiceLine } from '@/game/creatureBehavior';
 import { multiStrikeCount, isEnraged, enragedDamageMult, enragedChaseSpeed, clampToTether, suppressForSneakBlind } from '@/game/creatureAbilities';
 // BUILD 935: two-stage mitigation + element percents + immunities + ranged falloff.
@@ -177,7 +178,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '961';
+const BUILD_NUMBER = '962';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -216,6 +217,7 @@ const BUILD_NOTES: Record<string, string> = {
   '957': 'The game now has real music and sound: a title theme, a tavern tune, a full town theme, a dungeon drone, and a looping fields theme that follow you as you move — tavern music takes over inside the tavern and hands back to the town theme when you step out, dungeons get their own track, and every other town plays the town theme while the wilds play the fields loop. Coins now clink when gold changes hands, attacks grunt (women fighters and men soldiers each sound like themselves), opening the map has its own sound, and Ember Bolt crackles with fire. The title screen is black with green buttons, and Options on the title screen opens the same music list and sound controls as in-game: every track listed with what is playing now, music and effects on their own on/off switches and volume sliders, all saved on this device. Music starts on your first tap, because browsers block sound before that.',
   '959': 'Mosslight is rebuilt from the ground up with the Kenney town kit: every house is now a different building assembled from real wall, door, window, roof, chimney, balcony, banner, and awning pieces — wide five-bay cottages and grand halls, two-story towers and tall townhouses, a balcony house, banner shops, and an awning shop — instead of one shared house picture. The town itself is re-laid: the six cottages now stand in two neat rows near the core instead of scattered at the edges, more roadside houses fill the town out, a windmill stands in town, and Rodwan trees line the streets and parks. Every house still works exactly as before: doors sit exactly where their triggers, exits, and path ends are, NPCs now sort correctly in front of and behind houses instead of clipping through them, and moving a house with the debug mover still moves its door with it. The tutorial house keeps its own art, and the watermill piece is in the game files but not placed yet because no town spot has water for it to sit beside.',
   '961': 'The minimap is now a real map: every kind of place gets its own icon — market stalls, the Rusty Tankard tavern, the Wayfarer Guild (with a little forge mark, since the smiths work there), the chapel, the inn, houses, dungeon entrances, carriage stations and stops, the town well, and the windmill — and the map itself shows far more detail, with real rivers and lakes, roads and town lanes, plazas, walls, and trees, all drawn where they actually are so the icons sit on the right ground. Tapping the minimap to walk somewhere works exactly as before. The map pictures come from a small fantasy map pack that ships no license file, so no license terms are claimed for it; there is no separate blacksmith building in the game, which is why the forge mark rides on the guild icon.',
+  '962': 'A new enemy walks the roads: armored knights patrol the deeper outskirts, sword and shield in hand, tougher than the sellswords they replace on those routes — and when one falls, it drops what a warrior would have carried: a real sword and a suit of heavy plate armor, generated with full stats and equippable from your inventory like any other gear. The same rule now covers the fighters you already meet: bandit, goblin, and orc archers drop a bow and cloth armor when they fall. Wizards would drop a staff and cloth robes, but no wizard enemy roams the wilds yet, so that part waits for the first spellcaster to appear — nothing is faked with knight art. Knights count toward the Creature Codex like any other beast, and a knight too heavy to carry stays on the ground with everything else until you make room. Also fixed while wiring the new drops: saves made with monster loot lying on the ground now load again — the save check was rejecting loot types like bone, so a save taken after a fight could refuse to load at all.',
   '960': 'Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.',
   '958': 'At level 10 you now choose a class that actually changes how you fight. Four teachers have moved into Mosslight: Dain teaches warriors at the Wayfarer Guild, Sable teaches mages, Puck teaches rogues, and Wynn teaches archers. They teach at the guild by day and wander to the Rusty Tankard in the evening, so talk to one when you reach level 10 — changing class later is free. Warriors hit 2 damage harder, rogues crit more often and strike from stealth three times as hard, archers shoot 25 percent harder, and mages open a Spells tab in the Skills panel with real magic: Ember Bolt throws fire at the nearest foe within range, Veil Step blinks you two paces in the direction you face, and Frost Ward hardens your skin with 3 extra armor until your next wound. Spells cost mana drawn from your intelligence, refill slowly on their own, and every cast plays a fire, frost, or veil animation on the field. Effect frames come from a user-supplied effects pack that ships no license file, so no license terms are claimed for them.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
@@ -1621,7 +1623,7 @@ type GameInventory = { coins: number; goatHorns: number; fabric: number; daggers
 type GoatLoot = Partial<GameInventory>;
 // BUILD 950: refusal message shared by every carry-limit gate.
 const CARRY_OVER_MSG = 'Too heavy to carry more — sell or use something first.';
-type DroppedLoot = { id: number; chunk: Point; position: Point; loot: GoatLoot };
+type DroppedLoot = { id: number; chunk: Point; position: Point; loot: GoatLoot; gearBaseIds?: string[]; sourceKind?: string };
 // Ranged combat: arrows fired by the player's bow and by bandit archers.
 type ArrowState = { id: number; chunk: Point; position: Point; dx: number; dy: number; traveled: number; damage: number; critical: boolean; hostile: boolean; kind?: string; level?: number };
 const ARROW_SPEED = 55; // field units per second
@@ -1666,7 +1668,7 @@ type GoatState = {
   isBoss?: boolean; // BUILD 477: boss (named, 10x HP, epic+ loot)
 };
 // Hostile mobs: goblins and bandits. Reuse the goat combat AI shape.
-type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'ogre' | 'elf' | 'dwarf' | 'snake' | 'spider' | 'dragon' | 'orc' | 'soldier' | 'wolf' | 'slime' | 'bat' | 'rat';
+type MonsterKind = 'goblin' | 'bandit' | 'skeleton' | 'troll' | 'ogre' | 'elf' | 'dwarf' | 'snake' | 'spider' | 'dragon' | 'orc' | 'soldier' | 'knight' | 'wolf' | 'slime' | 'bat' | 'rat';
 // BUILD 917: `stray` marks a deliberate town-edge stray (townStrays.ts).
 // The render suppression in the settlement safety zone lets flagged
 // strays through and keeps hiding everything else.
@@ -2021,12 +2023,21 @@ function isSimulatedAdventurerSave(value: unknown): value is SimulatedAdventurer
 }
 
 function isDroppedLootSave(value: unknown): value is DroppedLoot {
+  // BUILD 962 fix: the loot-key list was frozen at 8 keys while GoatLoot
+  // (= GameInventory) has 18 — every humanoid kill drops bone:1, so any
+  // save made with such a drop on the ground failed validation on load
+  // ("invalid save") and the whole save was refused. The list now covers
+  // the full inventory key space; this only ever makes MORE saves valid.
+  // gearBaseIds/sourceKind are optional additions (ignored by the old
+  // checks); when present they must be well-shaped strings.
   return isRecord(value)
     && isFiniteNumber(value.id)
     && isSavePoint(value.chunk)
     && isSavePoint(value.position)
     && isRecord(value.loot)
-    && Object.entries(value.loot).every(([key, amount]) => ['coins', 'goatHorns', 'fabric', 'daggers', 'cloths', 'wood', 'silk', 'bow'].includes(key) && isFiniteNumber(amount) && amount >= 0);
+    && Object.entries(value.loot).every(([key, amount]) => ['coins', 'goatHorns', 'fabric', 'daggers', 'cloths', 'wood', 'silk', 'bow', 'bone', 'pelt', 'fang', 'corn', 'stone', 'beer', 'lockpicks', 'shirts', 'swords', 'healthPotion'].includes(key) && isFiniteNumber(amount) && amount >= 0)
+    && (value.gearBaseIds === undefined || (Array.isArray(value.gearBaseIds) && value.gearBaseIds.every((g) => typeof g === 'string')))
+    && (value.sourceKind === undefined || typeof value.sourceKind === 'string');
 }
 
 function isBrainStateSave(value: unknown): value is RpgGameState {
@@ -2267,6 +2278,7 @@ function monsterLootForKind(kind: MonsterKind): GoatLoot {
     case 'dragon': return { pelt: 2, fang: 2, coins: 10 + Math.floor(Math.random() * 10) };
     case 'orc': return { pelt: 1, coins: 2 + Math.floor(Math.random() * 4) };
     case 'soldier': return { coins: 3 + Math.floor(Math.random() * 4), fabric: Math.random() < 0.5 ? 1 : 0 };
+    case 'knight': return { coins: 4 + Math.floor(Math.random() * 6), fabric: Math.random() < 0.5 ? 1 : 0 };
     case 'wolf': return { pelt: 1, fang: Math.random() < 0.5 ? 1 : 0 };
     case 'slime': return { coins: Math.random() < 0.4 ? 1 : 0 };
     case 'bat': return { fang: 1, coins: Math.random() < 0.2 ? 1 : 0 };
@@ -2403,6 +2415,15 @@ function monstersForChunk(chunk: Point, playerLevel = 1): MonsterState[] {
   // Soldiers: rogue sellswords ambushing roads in the outskirts (danger 1+), rarer than bandits.
   if (danger >= 1 && mapTileFor(chunk).road !== 'none' && Math.abs(chunk.x * 5 + chunk.y * 11) % 2 === 0) {
     spawn('soldier', 0, 13000, 1.1);
+  }
+  // BUILD 962: Knights — armored sword-and-shield fighters patrolling roads
+  // in the deeper outskirts (danger 2+). Rarer than soldiers (1-in-3 road
+  // chunks, own parity gate so they do not always co-spawn with soldiers),
+  // tougher (hpMult 1.4), never in the starting-settlement safety zone
+  // (monstersForChunk already returns [] there). Class gear rides the
+  // death drop via classGearBaseIds, not the counts gear table.
+  if (danger >= 2 && mapTileFor(chunk).road !== 'none' && Math.abs(chunk.x * 7 + chunk.y * 13) % 3 === 0) {
+    spawn('knight', 0, 14000, 1.4);
   }
   // Sprite-sheet monsters (wolf/slime/bat/rat): data-driven biome placement.
   for (const spec of MONSTER_SPAWN_TABLE) {
@@ -5131,7 +5152,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     cloths: 'Cloths', bone: 'Bones', pelt: 'Wolf Pelt', fang: 'Fangs', corn: 'Corn',
     wood: 'Wood', silk: 'Silk', bow: 'Bow', beer: 'Beer', lockpicks: 'Lockpicks',
   };
-  const dropExamineName = (loot: GoatLoot): string => {
+  const dropExamineName = (drop: DroppedLoot): string => {
+    // BUILD 962: a drop carrying class gear is named for the gear — the
+    // salient part — instead of its first count key.
+    if (drop.gearBaseIds && drop.gearBaseIds.length > 0) return gearNameForBaseId(drop.gearBaseIds[0]);
+    const loot = drop.loot;
     const key = (Object.keys(loot) as Array<keyof GameInventory>).find((k) => (loot[k] || 0) > 0);
     return key ? (DROP_EXAMINE_NAMES[key] || key) : 'Dropped Items';
   };
@@ -5202,7 +5227,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // 3. Ground drops.
     const drop = droppedLoot.find((d) => Math.hypot(d.position.x - p.x, d.position.y - p.y) < 3.5);
     if (drop) {
-      const ref: ExamineRef = { kind: 'item', id: 'drop-' + drop.id, name: dropExamineName(drop.loot), ctx: { itemType: 'loot' } };
+      const ref: ExamineRef = { kind: 'item', id: 'drop-' + drop.id, name: dropExamineName(drop), ctx: { itemType: 'loot' } };
       setContextMenu({ x: clientX, y: clientY, ref, actions: menuActionsFor(ref), target: { kind: 'drop', drop } });
       return;
     }
@@ -8732,7 +8757,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       setLogs((cur) => [{ text: defeated ? `${attackerName} killed the ${target.kind}!` : `${attackerName} hits the ${target.kind} for ${finalNpcDamage} damage.`, color: defeated ? 'blue' : 'red' }, ...cur].slice(0, 3));
       if (defeated) {
         const loot: GoatLoot = { ...monsterLootForKind(target.kind), ...target.gear, ...bonesForMonster(target.kind) };
-        const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: { ...target.position }, loot };
+        // BUILD 962: class gear rides the drop (counts gear stays counts).
+        const classGear = classGearBaseIds(target.kind, target.ranged ?? false);
+        const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: { ...target.position }, loot, sourceKind: target.kind, ...(classGear.length ? { gearBaseIds: classGear } : {}) };
         droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
       }
       return;
@@ -8790,7 +8817,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // RuneScape-style: the kill drops everything the monster was carrying
         // (wielded gear) plus bones for humanoids, on top of its normal loot.
         const loot: GoatLoot = { ...monsterLootForKind(monsterTarget.kind), ...monsterTarget.gear, ...bonesForMonster(monsterTarget.kind) };
-        const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot };
+        // BUILD 962: class gear rides the drop (counts gear stays counts).
+        const classGear = classGearBaseIds(monsterTarget.kind, monsterTarget.ranged ?? false);
+        const drop: DroppedLoot = { id: droppedLootIdRef.current++, chunk: { ...chunkRef.current }, position: hitPosition, loot, sourceKind: monsterTarget.kind, ...(classGear.length ? { gearBaseIds: classGear } : {}) };
         droppedLootRef.current = [...droppedLootRef.current, drop]; setDroppedLoot(droppedLootRef.current);
         // Quest hook: kills feed kill stages (rats, wolves, bandits, trolls).
         emitQuestEvent({ type: 'kill', target: monsterTarget.kind });
@@ -10544,10 +10573,24 @@ if (active) {
       return;
     }
     onLoot(drop.loot);
+    // BUILD 962: class gear generates exactly the dropped bases (same
+    // generateItem + withProvenance pattern as the BUILD 921 body-loot
+    // Take), so a looted sword is the sword the class carried, with
+    // catalog stats intact, equippable from the inventory tab. The
+    // 950 gate above already ran: a refused pickup never reaches here,
+    // so refused gear stays on the ground drop with the counts.
+    const gearNames: string[] = [];
+    for (const baseId of drop.gearBaseIds ?? []) {
+      if (!isKnownBaseId(baseId)) continue;
+      const item = generateItem(new ItemRng(Date.now() ^ baseId.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current), undefined, baseId);
+      gearNames.push(item.name);
+      onEquipmentChange((prev) => [...prev, withProvenance(item, 'the ' + (drop.sourceKind ?? 'fallen foe'))]);
+    }
     setDroppedLoot((current) => current.filter((candidate) => candidate.id !== drop.id));
     // BUILD 888: announce every item looted (was goat-loot keys only — silk,
     // swords, bows and potions picked up silently).
-    const message = `You looted: ${describeLoot(drop.loot as Record<string, number>)}.`;
+    const lootText = describeLoot(drop.loot as Record<string, number>);
+    const message = `You looted: ${[lootText, ...gearNames].filter(Boolean).join(', ')}.`;
     setLogs((currentLogs) => [{ text: message, color: 'blue' }, ...currentLogs].slice(0, 3));
     setAttackFlash(message);
     window.setTimeout(() => setAttackFlash(null), 1200);

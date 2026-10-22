@@ -286,6 +286,15 @@ const BEHAVIOR_TABLE: Record<string, CreatureBehavior> = {
       death: ['The soldier falls.'],
     },
   },
+  knight: {
+    preferredRange: 4, rangedPreferredRange: 14, standChance: 0.7,
+    retargetIntervalMs: 5000, retargetChance: 0.1, fleeHpRatio: 0.1, canFlee: true,
+    voices: {
+      acquire: ['The knight levels a sword and advances.'],
+      flee: ['The knight yields the field and retreats.'],
+      death: ['The knight falls, armor clattering.'],
+    },
+  },
   goat: {
     preferredRange: 4, rangedPreferredRange: 14, standChance: 0.3,
     retargetIntervalMs: 4000, retargetChance: 0.15, fleeHpRatio: 0.3, canFlee: true,

@@ -115,6 +115,7 @@ const MITIGATION_TABLE: Record<string, CreatureMitigation> = {
   ogre: { ...DEFAULT_MITIGATION },
   elf: { ...DEFAULT_MITIGATION },
   soldier: { ...DEFAULT_MITIGATION },
+  knight: { ...DEFAULT_MITIGATION },
   goat: { ...DEFAULT_MITIGATION },
   deer: { ...DEFAULT_MITIGATION },
   boar: { ...DEFAULT_MITIGATION },

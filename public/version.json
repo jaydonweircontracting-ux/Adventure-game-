@@ -1,6 +1,6 @@
 {
-  "build": "961",
-  "note": "The minimap is now a real map: every kind of place gets its own icon — market stalls, the Rusty Tankard tavern, the Wayfarer Guild (with a little forge mark, since the smiths work there), the chapel, the inn, houses, dungeon entrances, carriage stations and stops, the town well, and the windmill — and the map itself shows far more detail, with real rivers and lakes, roads and town lanes, plazas, walls, and trees, all drawn where they actually are so the icons sit on the right ground. Tapping the minimap to walk somewhere works exactly as before. The map pictures come from a small fantasy map pack that ships no license file, so no license terms are claimed for it; there is no separate blacksmith building in the game, which is why the forge mark rides on the guild icon.",
-  "timestamp": "2026-10-22T07:10:27.911Z",
-  "cacheBuster": "mvj7bsxz"
+  "build": "962",
+  "note": "A new enemy walks the roads: armored knights patrol the deeper outskirts, sword and shield in hand, tougher than the sellswords they replace on those routes — and when one falls, it drops what a warrior would have carried: a real sword and a suit of heavy plate armor, generated with full stats and equippable from your inventory like any other gear. The same rule now covers the fighters you already meet: bandit, goblin, and orc archers drop a bow and cloth armor when they fall. Wizards would drop a staff and cloth robes, but no wizard enemy roams the wilds yet, so that part waits for the first spellcaster to appear — nothing is faked with knight art. Knights count toward the Creature Codex like any other beast, and a knight too heavy to carry stays on the ground with everything else until you make room. Also fixed while wiring the new drops: saves made with monster loot lying on the ground now load again — the save check was rejecting loot types like bone, so a save taken after a fight could refuse to load at all.",
+  "timestamp": "2026-10-22T08:06:26.629Z",
+  "cacheBuster": "mvj9bsjq"
 }

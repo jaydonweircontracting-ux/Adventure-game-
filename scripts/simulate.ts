@@ -15,6 +15,8 @@ import { updateGoat, GOAT_CHASE_SPEED, GOAT_CHASE_RANGE, GOAT_FLEE_SPEED, type G
 import { traceLineBlocked, isInMeleeArc, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH } from '../src/game/combat';
 import { chooseCreatureTarget, pickGuardCreatureTarget, sneakEngagementRange, CREATURE_ACQUIRE_RANGE, CREATURE_LEASH_RANGE, SNEAK_CREATURE_ACQUIRE_RANGE, type CreatureTargetChoice, type GuardThreatCandidate } from '../src/game/creatureCombat';
 import { behaviorForCreature, behaviorKindKeys, preferredRangeFor, hashRoll, shouldStand, shouldRetarget, isBehaviorFleeing, voiceLine } from '../src/game/creatureBehavior';
+import { CLASS_LOOT, classForMonster, classGearBaseIds, classLootBasesAreKnown } from '../src/game/classLoot';
+import { KNIGHT_CELL, KNIGHT_FRAMES, KNIGHT_STRIP_ROWS, KNIGHT_STRIP_PATHS, KNIGHT_FRAME_MS, KNIGHT_DISPLAY_SIZE, KNIGHT_ANCHOR, knightStripRowForFacing, knightFrameFor } from '../src/game/knightSprites';
 import { DEFAULT_ABILITIES, multiStrikeCount, isEnraged, enragedDamageMult, enragedChaseSpeed, clampToTether, suppressForSneakBlind } from '../src/game/creatureAbilities';
 import { mitigateDamage, mitigationForCreature, mitigationKindKeys, creatureDefenseForLevel, creatureArmorForLevel, playerArmorForRoll, playerResistPercents, rangedBandFor, rangedHitChance, creatureArcherSkill, normalizeRangedSkill, RANGED_HIT_CHANCE_CAP } from '../src/game/mitigation';
 import { calcSpellEffectValue, calcBuffDuration, resolveBuffStack, slotFromStackingFormula } from '../src/game/spellFormulas';
@@ -2186,6 +2188,39 @@ console.log('Testing special-ability vocabulary (BUILD 943)...');
   assert(Math.abs(clamped.x - 15) < 1e-9 && Math.abs(clamped.y) < 1e-9, 'Ability943: tether pulls an outside position to the radius');
   assert(clampToTether({ x: 30, y: 0 }, home, 0).x === 30, 'Ability943: no tether means no clamp');
   assert(clampToTether({ x: 30, y: 0 }, undefined, 15).x === 30, 'Ability943: no spawn means no clamp');
+  // BUILD 962: knight kind + class death loot.
+  // Table: existing catalog bases only (no invented wand — the catalog
+  // has no wand base, so the wizard branch uses a staff).
+  assert(CLASS_LOOT.warrior.weapon === 'iron_sword' && CLASS_LOOT.warrior.armor === 'plate_armor', 'Class962: warrior drops sword + plate');
+  assert(CLASS_LOOT.wizard.weapon === 'apprentice_staff' && CLASS_LOOT.wizard.armor === 'cloth_robe', 'Class962: wizard drops staff + cloth');
+  assert(CLASS_LOOT.archer.weapon === 'oak_bow' && CLASS_LOOT.archer.armor === 'cloth_robe', 'Class962: archer drops bow + cloth');
+  assert(classLootBasesAreKnown(), 'Class962: every class-loot base exists in the catalog');
+  // Class assignment: knight is always a warrior; bow kinds are archers
+  // only when ranged; melee instances carry no class loot.
+  assert(classForMonster('knight', false) === 'warrior' && classForMonster('knight', true) === 'warrior', 'Class962: knight is a warrior');
+  assert(classForMonster('bandit', true) === 'archer' && classForMonster('goblin', true) === 'archer' && classForMonster('orc', true) === 'archer', 'Class962: ranged bow kinds are archers');
+  assert(classForMonster('bandit', false) === null && classForMonster('soldier', false) === null && classForMonster('soldier', true) === null, 'Class962: melee instances and soldiers carry no class loot');
+  assert(classGearBaseIds('knight', false).join(',') === 'iron_sword,plate_armor', 'Class962: knight drop is sword + plate');
+  assert(classGearBaseIds('bandit', true).join(',') === 'oak_bow,cloth_robe', 'Class962: ranged bandit drop is bow + cloth');
+  assert(classGearBaseIds('wolf', false).length === 0, 'Class962: unclassed kinds drop no gear');
+  // Wizard branch is data-ready only: no shipped kind maps to it.
+  for (const kind of behaviorKindKeys()) {
+    assert(classForMonster(kind, false) !== 'wizard' && classForMonster(kind, true) !== 'wizard', `Class962: no shipped kind is a wizard (checked ${kind})`);
+  }
+  // Knight table parity: behavior + mitigation + codex agree (the sweep
+  // invariant that every behavior kind has a mitigation entry).
+  assert(behaviorKindKeys().includes('knight') && mitigationKindKeys().includes('knight'), 'Class962: knight in behavior + mitigation tables');
+  const knightBeh = behaviorForCreature('knight');
+  assert(knightBeh.standChance === 0.7 && knightBeh.fleeHpRatio === 0.1 && knightBeh.voices.death.length > 0, 'Class962: knight behavior (stands ground, rare flee, death voice)');
+  assert(mitigationForCreature('knight').attackElement === 'none' && mitigationForCreature('knight').immunities.length === 0, 'Class962: knight mitigation neutral');
+  assert(isBestiaryKind('knight') && bestiaryEntryForKind('knight')?.difficulty === 'medium' && bestiaryEntryForKind('knight')?.occurrence === 'uncommon', 'Class962: knight codex entry medium/uncommon');
+  // Knight strips: 64px cells, 15 frames, 4 rows, 5 wired animations.
+  assert(KNIGHT_CELL === 64 && KNIGHT_FRAMES === 15 && KNIGHT_STRIP_ROWS.join(',') === 'down,left,right,up', 'Class962: knight strip geometry');
+  assert(Object.keys(KNIGHT_STRIP_PATHS).join(',') === 'idle,walk,attack,hurt,death', 'Class962: knight wired animations (no Run — monsters have no run state)');
+  assert(KNIGHT_FRAME_MS.walk === 140 && KNIGHT_DISPLAY_SIZE === 44 && KNIGHT_ANCHOR.x === 0.5 && KNIGHT_ANCHOR.y === 0.6, 'Class962: knight timing/size/anchor');
+  assert(knightStripRowForFacing('down') === 0 && knightStripRowForFacing('left') === 1 && knightStripRowForFacing('right') === 2 && knightStripRowForFacing('up') === 3, 'Class962: knight facing rows');
+  assert(knightStripRowForFacing('down-right') === 0 && knightStripRowForFacing('up-left') === 0, 'Class962: knight diagonal facings fall back to down (sheet convention)');
+  assert(knightFrameFor('walk', 0, 0) >= 0 && knightFrameFor('walk', 0, 0) < 15, 'Class962: knight frame column in range');
   // Acquisition with per-kind ranges: a dragon holds its lock to 60u
   // and acquires at 32u; the globals still hold for unassigned kinds.
   const dragonAb = behaviorForCreature('dragon').abilities;
