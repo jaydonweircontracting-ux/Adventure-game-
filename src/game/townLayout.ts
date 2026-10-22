@@ -70,6 +70,7 @@ export interface PinnedLot {
   kind: LotKind;
 }
 export type PropKind = 'fountain' | 'stall' | 'lamp' | 'barrel' | 'well' | 'gatehouse'
+  | 'windmill' | 'watermill'
   // BUILD 695: storybook market/garden kinds.
   | 'statue' | 'hedge' | 'cart';
 export interface TLProp {
@@ -1142,6 +1143,38 @@ export function generateTownLayout(seed: number, config?: Partial<TownGenConfig>
     .sort((a, b) => b.radius - a.radius)[0];
   if (park && !footprintAt(park.center.x, park.center.y, 2)) {
     addProp('well', park.center.x, park.center.y, 1.5, true, 'props/well.png');
+  }
+  // BUILD 959: windmill landmark — Kenney town-kit mill tower + sails,
+  // composited to sprites/town-sprites/windmill-composite.png (the kit
+  // ships only the rotor, no mill building). Placed by the same guards
+  // as other garden props (clear of roads, footprints, doors) plus 8u
+  // clearance from every existing prop, so it never crowds the well,
+  // statue, stalls, or hedge garden. Deterministic scan: park offsets
+  // first, then rings around the plaza; first passing spot wins. If no
+  // candidate passes, no windmill is placed (stated, not forced).
+  // The watermill composite ships in the catalog but is NOT placed: the
+  // town layout has no water feature to site it against, and a watermill
+  // on dry ground would be wrong. It lands when a water-adjacent town
+  // layout exists.
+  const millSpots: [number, number][] = [];
+  if (park) {
+    for (const [dx, dy] of [[14, 0], [-14, 0], [0, 14], [0, -14],
+        [10, 10], [-10, -10], [10, -10], [-10, 10]] as [number, number][]) {
+      millSpots.push([park.center.x + dx, park.center.y + dy]);
+    }
+  }
+  for (const radius of [plazaR + 26, plazaR + 40]) {
+    for (let a = 0; a < 8; a++) {
+      const ang = (a / 8) * Math.PI * 2;
+      millSpots.push([plazaC.x + radius * Math.cos(ang), plazaC.y + radius * Math.sin(ang)]);
+    }
+  }
+  for (const [mx, my] of millSpots) {
+    if (Math.abs(mx) > 140 || Math.abs(my) > 140) continue;
+    if (!propSpotOk(mx, my, 2.5, 1.5)) continue;
+    if (props.some((p) => Math.hypot(p.x - mx, p.y - my) < 8)) continue;
+    addProp('windmill', mx, my, 2.5, true, 'sprites/town-sprites/windmill-composite.png');
+    break;
   }
   // Gatehouse at the southernmost arterial exit, with flanking wall segments
   // (visual only — walls were never solid, matching the old plan).

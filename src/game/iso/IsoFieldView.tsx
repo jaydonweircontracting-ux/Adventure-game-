@@ -27,6 +27,7 @@ import { lookWithoutLootedGear } from '../npcGear';
 import { artUrl } from '../artCache';
 import { spellFramesFor } from '../classes';
 import { animalSpriteFor, ANIMAL_DISPLAY_SIZE } from '../animalSprites';
+import { drawKenneyHouse, kenneyCompositionFor, KENNEY_PIECE_PATHS, WINDMILL_ASSET, WATERMILL_ASSET } from '../townSprites';
 import { computeDirtPathGeometry, buildDirtPath2D, DIRT_LAYER_STYLE } from './dirtPaths';
 // BUILD 389: user-supplied landscape tileset + ambient critters.
 import {
@@ -675,6 +676,8 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       'props/stall-green.png', 'props/barrel.png', 'props/well.png',
       'props/fountain.png', 'props/lamp.png', 'props/hedge-straight.png',
       'props/cart-wood.png',
+      // BUILD 959: Kenney town-kit pieces + landmark composites.
+      ...KENNEY_PIECE_PATHS, WINDMILL_ASSET, WATERMILL_ASSET,
     ];
     for (const src of urls) {
       const img = new Image();
@@ -879,6 +882,9 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       'props/statue-angel.png': 'props/statue-angel.png',
       'props/hedge-straight.png': 'props/hedge-straight.png',
       'props/cart-wood.png': 'props/cart-wood.png',
+      // BUILD 959: Kenney town-kit landmark composites (townLayout props).
+      [WINDMILL_ASSET]: WINDMILL_ASSET,
+      [WATERMILL_ASSET]: WATERMILL_ASSET,
     };
     const propWindow = window as unknown as { __propImgs?: Record<string, HTMLImageElement> };
     const propImgs = propWindow.__propImgs || {};
@@ -1499,6 +1505,18 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         }
       }
       (window as unknown as { __bldImgs?: Record<string, HTMLImageElement> }).__bldImgs = bldImgs;
+      // BUILD 959: Kenney town-kit piece images, cached on window like
+      // bldImgs (same per-frame guard: images are created once, then reused).
+      // In scope for the farmstead reskin below as well as the buildings loop.
+      const kenneyImgs = (window as unknown as { __kenneyImgs?: Record<string, HTMLImageElement> }).__kenneyImgs || {};
+      for (const src of [...KENNEY_PIECE_PATHS, WINDMILL_ASSET, WATERMILL_ASSET]) {
+        if (!kenneyImgs[src]) {
+          const img = new Image();
+          img.src = artUrl(src);
+          kenneyImgs[src] = img;
+        }
+      }
+      (window as unknown as { __kenneyImgs?: Record<string, HTMLImageElement> }).__kenneyImgs = kenneyImgs;
       // BUILD 692: district-appropriate new art variants for filler lots.
       // Matches the rect against the engine's filler lots, then picks from
       // the district pool via the pure fillerVariantForLot (stable, no flicker).
@@ -1543,7 +1561,10 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             return ['blue-house', 'story-tower', 'plaster-house', 'tavern'][pinnedIndex];
           }
           if (pinnedIndex >= 10 && pinnedIndex < 18) {
-            return ['blue-house', 'tavern', 'green-shop', 'house-timber', 'shop-awning', 'blue-house', 'brick-shop', 'stone-cottage'][pinnedIndex - 10];
+            // BUILD 959: pinned town buildings wear Kenney variants —
+            // balcony house, banner shop, wide cottage, grand hall join
+            // the town alongside the tavern, timber house, and awning shop.
+            return ['house-balcony', 'tavern', 'shop-banner', 'house-timber', 'shop-awning', 'cottage-wide', 'brick-shop', 'hall-grand'][pinnedIndex - 10];
           }
           const v = cottageVariantForRect(b.rect);
           if (v) {
@@ -1559,7 +1580,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         // Stable hash: absolute chunk + local coords (both stable)
         // BUILD 614: expanded to 10 varieties for town diversity.
         const h = Math.abs(Math.sin((absCx * 1000 + lx) * 12.9898 + (absCy * 1000 + ly) * 78.233) * 43758.5453) % 1;
-        const kinds = ['green-cottage', 'plaster-house', 'blue-house', 'red-shop', 'green-cottage', 'shop-awning', 'house-timber', 'story-tower', 'tavern', 'blue-house'];
+        const kinds = ['green-cottage', 'plaster-house', 'blue-house', 'red-shop', 'cottage-wide', 'shop-awning', 'house-timber', 'story-tower', 'tavern', 'house-tall', 'shop-banner', 'house-balcony'];
         return kinds[Math.floor(h * kinds.length)];
       };
       for (const sc of scenes) {
@@ -1599,11 +1620,24 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         const wallH = 64;
         const top = (p: { x: number; y: number }) => ({ x: p.x, y: p.y - wallH });
         const t00 = top(p00), t10 = top(p10), t11 = top(p11), t01 = top(p01);
-        // BUILD 811: The starting-house artwork is oversized and extends far
-        // beyond its logical footprint. Always draw its sprite before the player
-        // so the player remains visible when walking across/over the house image.
-        // Collision and doorway logic remain tied to the original footprint.
-        const buildingDepth = dep(position.x, position.y) - 0.02;
+        // BUILD 959 (NPC layering fix): depth from THIS building's own
+        // front-most footprint corner — NOT the player's position. The
+        // old formula tied every building to playerDepth - 0.02, so an
+        // NPC south of a house but north of the player drew BEHIND the
+        // house (clipped under it), and an NPC north of a house but
+        // south of the player drew THROUGH it. dep() is the rotated
+        // painter depth, so the max over the four corners is the
+        // front-most corner at any camera angle. NPCs (dep + 0.01) now
+        // sort against each house's true base: feet south of the base
+        // draw in front, feet north draw behind. The player stays at
+        // +Infinity per BUILD 812 (always visible over oversized art) —
+        // that deliberate exception is unchanged, as is the under-roof
+        // hide that reveals interiors. Collision and doorway logic
+        // remain tied to the original footprint.
+        const buildingDepth = Math.max(
+          dep(r.left, r.top), dep(r.right, r.top),
+          dep(r.left, r.bottom), dep(r.right, r.bottom),
+        );
 
         // BUILD 910 (Phase A2): the BUILD 769 procedural floor-plan
         // cutaway is gone. Every building now uses the starter-house
@@ -1698,14 +1732,29 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               const playerUnderRoof = scenePx >= b.rect.left - 3 && scenePx <= b.rect.right + 3
                 && scenePy >= b.rect.top - 3 && scenePy <= b.rect.bottom + 3;
               if (!liveRef.current.inInterior && !playerUnderRoof) {
-                const overlay = bldImgs['starting-house-overlay'];
-                if (overlay && overlay.complete && overlay.naturalWidth > 0) {
-                  g2.save();
-                  g2.globalAlpha = 1;
-                  g2.globalCompositeOperation = 'source-over';
-                  g2.filter = 'none';
-                  g2.drawImage(overlay, cx - overlayW / 2, baseY - overlayH + overlaySink, overlayW, overlayH);
-                  g2.restore();
+                // BUILD 959: non-tutorial buildings wear a Kenney town-kit
+                // exterior now — walls + door + windows + roof + chimney
+                // assembled from kit pieces (townSprites), drawn in the
+                // SAME overlay box the starter art used (overlayW wide,
+                // bottom on the ground line baseY) and hidden under the
+                // SAME under-roof gate, so the base interior sprite, the
+                // roof-lift behavior, and the door trigger are untouched.
+                // The door piece is the composition's center cell, so the
+                // painted door sits on the footprint center — exactly where
+                // the trigger (50%/51% of rect width) and the exit spawn
+                // already are. The tutorial house keeps its authored art.
+                if (b.area.id === 'tutorial-house') {
+                  const overlay = bldImgs['starting-house-overlay'];
+                  if (overlay && overlay.complete && overlay.naturalWidth > 0) {
+                    g2.save();
+                    g2.globalAlpha = 1;
+                    g2.globalCompositeOperation = 'source-over';
+                    g2.filter = 'none';
+                    g2.drawImage(overlay, cx - overlayW / 2, baseY - overlayH + overlaySink, overlayW, overlayH);
+                    g2.restore();
+                  }
+                } else {
+                  drawKenneyHouse(g2, kenneyImgs, kenneyCompositionFor(kind), cx - overlayW / 2, baseY, overlayW);
                 }
               }
               return;
@@ -1817,23 +1866,19 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         drawables.push({
           depth: dep(f.x, f.y),
           draw: (g2) => {
-            const kind = f.barn ? 'house-timber' : 'hut-thatched';
-            const sprite = bldImgs[kind];
             const e0 = isoToScreen(f.x + 0.5, f.y + 0.5);
             const e1 = isoToScreen(f.x + 1.5, f.y + 0.5);
             const tileEdge = Math.hypot(e1.x - e0.x, e1.y - e0.y);
             const sw = tileEdge * 4.5;
-            const natW = sprite && sprite.complete && sprite.naturalWidth > 0 ? sprite.naturalWidth : 1600;
-            const natH = sprite && sprite.complete && sprite.naturalWidth > 0 ? sprite.naturalHeight : 1600;
-            const sh = sw * (natH / natW);
             // ground shadow (same treatment as town buildings)
             g2.fillStyle = 'rgba(0,0,0,0.20)';
             g2.beginPath();
             g2.ellipse(e0.x, e0.y, sw * 0.45, sw * 0.16, 0, 0, Math.PI * 2);
             g2.fill();
-            if (sprite && sprite.complete && sprite.naturalWidth > 0) {
-              g2.drawImage(sprite, e0.x - sw / 2, e0.y - sh, sw, sh);
-            }
+            // BUILD 959: farmsteads wear Kenney compositions too (barn vs
+            // farmhouse, same box the shared sprite used). Scenery only,
+            // as before: no doors, no triggers, no collision changes.
+            drawKenneyHouse(g2, kenneyImgs, kenneyCompositionFor(f.barn ? 'barn' : 'farmhouse'), e0.x - sw / 2, e0.y, sw);
           },
         });
       }

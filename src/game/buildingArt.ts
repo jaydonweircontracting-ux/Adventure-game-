@@ -5,9 +5,9 @@ import { BUILDING_VARIANTS } from './settlements';
 import { mosslightFillerLots } from './mosslightLayout';
 import type { Rect } from './settlements';
 export interface BuildingArt { variant: string; file: string; aspectRatio: '2 / 1' | '1 / 1' }
-const MOSSLIGHT_PINNED_VARIANTS = ['blue-house', 'story-tower', 'plaster-house', 'tavern', '', '', '', '', '', '', 'blue-house', 'tavern', 'green-shop', 'house-timber', 'shop-awning', 'blue-house', 'brick-shop', 'stone-cottage'] as const;
-const HOUSE_VARIANTS = ['blue-cottage', 'red-cottage', 'green-cottage', 'stone-cottage', 'blue-house', 'plaster-house', 'house-timber'] as const;
-const SHOP_VARIANTS = ['red-shop', 'green-shop', 'brick-shop', 'shop-awning'] as const;
+const MOSSLIGHT_PINNED_VARIANTS = ['blue-house', 'story-tower', 'plaster-house', 'tavern', '', '', '', '', '', '', 'house-balcony', 'tavern', 'shop-banner', 'house-timber', 'shop-awning', 'cottage-wide', 'brick-shop', 'hall-grand'] as const;
+const HOUSE_VARIANTS = ['blue-cottage', 'red-cottage', 'green-cottage', 'stone-cottage', 'blue-house', 'plaster-house', 'house-timber', 'cottage-wide', 'house-balcony', 'house-tall'] as const;
+const SHOP_VARIANTS = ['red-shop', 'green-shop', 'brick-shop', 'shop-awning', 'shop-banner'] as const;
 const AUDITED = new Set<string>(BUILDING_VARIANTS);
 export function buildingArtFor(chunk: { x: number; y: number }, index: number, rect: Rect): BuildingArt {
   let variant: string | undefined;

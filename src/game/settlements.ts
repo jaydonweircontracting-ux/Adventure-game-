@@ -116,6 +116,28 @@ export const BUILDING_VARIANTS = [
   // roof). Catalog registration only — Mosslight filler lots keep their own
   // district pools in mosslightLayout.ts.
   'story-tower',
+  // BUILD 959: Kenney town-kit house variants (see townSprites.ts). Appended
+  // so existing indices keep their meaning; hamlet/filler assignment pools
+  // below pick from these for genuinely different-looking houses.
+  'cottage-wide',
+  'hall-grand',
+  'house-balcony',
+  'house-tall',
+  'shop-banner',
+] as const;
+
+/** Cottage-appropriate variants for hamlet homes (no shops/tavern/hall). */
+export const COTTAGE_VARIANT_POOL = [
+  'blue-cottage',
+  'red-cottage',
+  'green-cottage',
+  'stone-cottage',
+  'blue-house',
+  'plaster-house',
+  'house-timber',
+  'cottage-wide',
+  'house-balcony',
+  'house-tall',
 ] as const;
 
 /**
@@ -170,6 +192,17 @@ export interface SettlementOptions {
   /** Rects (in generator space) that lanes must not cross.
    *  Lane points stop before entering them (with margin). */
   avoid?: Rect[];
+  /** BUILD 959: row placement — buildings in a straight line along the
+   *  axis ('x' = east-west row, 'y' = north-south column), centered on
+   *  `center`, spaced by building size + rowGap (default 3). Doors face
+   *  south as always; row mode replaces the ring + radial lanes with a
+   *  serving lane on the row's town side and a well + small green at
+   *  the row end. When set, the returned `center` is the row-end green
+   *  (not the row midpoint) and plazaRadius is 3. */
+  rowAxis?: 'x' | 'y';
+  rowGap?: number;
+  /** Override the sprite-variant pool (default BUILDING_VARIANTS). */
+  variantPool?: readonly string[];
 }
 
 /**
@@ -199,9 +232,12 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
   const centerFeature = count >= 3 ? PROP_ASSETS.well : null;
 
   // Generate lanes: 2-4 radial lanes depending on profile.
+  // BUILD 959: row mode skips radial lanes (they would cross the row's
+  // own houses) — the serving lane is added after buildings instead.
   const laneCount = profile === 'hamlet' ? 2 : profile === 'village' ? 3 : 4;
   const lanes: Lane[] = [];
   const laneBaseAngle = rng() * Math.PI * 2;
+  if (!opts.rowAxis) {
   for (let i = 0; i < laneCount; i++) {
     const angle = laneBaseAngle + (i / laneCount) * Math.PI * 2 + (rng() - 0.5) * 0.4;
     const points: { x: number; y: number }[] = [];
@@ -219,6 +255,7 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
     }
     lanes.push({ points, width: 3 });
   }
+  }
 
   // Place buildings in ring around plaza.
   // Distance: plazaRadius + building half-size + gap (3-6 units).
@@ -226,7 +263,8 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
   const baseAngle = rng() * Math.PI * 2;
 
   // Assign sprite variants: deterministic, no adjacent duplicates.
-  const variantCount = BUILDING_VARIANTS.length;
+  const variantPool = opts.variantPool ?? BUILDING_VARIANTS;
+  const variantCount = variantPool.length;
   let lastVariantIdx = -1;
 
   // BUILD 684: overlap rejection (uses shared rectsOverlap; BUILD 688 export).
@@ -246,6 +284,42 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
     };
   };
 
+  // Pick variant: avoid repeating the last one (shared by ring + row).
+  const pickVariant = (): string => {
+    let variantIdx = Math.floor(rng() * variantCount);
+    if (variantIdx === lastVariantIdx) {
+      variantIdx = (variantIdx + 1) % variantCount;
+    }
+    lastVariantIdx = variantIdx;
+    return variantPool[variantIdx];
+  };
+
+  if (opts.rowAxis) {
+    // BUILD 959: straight row, centered on `center`, spaced by building
+    // size + gap. Spacing exceeds building size by construction, so rows
+    // never overlap and need no rejection loop. Doors face south as
+    // always; the row's serving lane + well are added below.
+    const gap = opts.rowGap ?? 3;
+    const axis = opts.rowAxis;
+    for (let i = 0; i < count; i++) {
+      const b = opts.buildings[i];
+      const step = (axis === 'x' ? b.w : b.h) + gap;
+      const off = (i - (count - 1) / 2) * step;
+      const cx = axis === 'x' ? center.x + off : center.x;
+      const cy = axis === 'x' ? center.y : center.y + off;
+      buildings.push({
+        id: b.id,
+        rect: {
+          left: cx - b.w / 2, top: cy - b.h / 2,
+          right: cx + b.w / 2, bottom: cy + b.h / 2,
+        },
+        angleFromCenter: axis === 'x' ? 0 : Math.PI / 2,
+        distanceFromCenter: Math.abs(off),
+        district: b.district ?? 'residential',
+        spriteVariant: pickVariant(),
+      });
+    }
+  } else {
   for (let i = 0; i < count; i++) {
     const b = opts.buildings[i];
     const angle = baseAngle + (i / count) * Math.PI * 2 + (rng() - 0.5) * 0.5;
@@ -260,21 +334,15 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
       rect = placeRectAt(b, angle, distance);
     }
 
-    // Pick variant: avoid repeating the last one.
-    let variantIdx = Math.floor(rng() * variantCount);
-    if (variantIdx === lastVariantIdx) {
-      variantIdx = (variantIdx + 1) % variantCount;
-    }
-    lastVariantIdx = variantIdx;
-
     buildings.push({
       id: b.id,
       rect,
       angleFromCenter: angle,
       distanceFromCenter: distance,
       district: b.district ?? 'residential',
-      spriteVariant: BUILDING_VARIANTS[variantIdx],
+      spriteVariant: pickVariant(),
     });
+  }
   }
 
   // BUILD 684: prop placement must also clear building footprints. Nudge
@@ -303,13 +371,42 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
   let propId = 0;
   const nextPropId = () => `prop-${propId++}`;
 
-  // Well at center (if feature selected).
+  // BUILD 959: row mode — one serving lane on the row's town side
+  // (south side for east-west rows, where the doors face; east side for
+  // north-south columns, toward the town core) + the well + small green
+  // at the row end. Added before trimLanes so avoid rects still apply.
+  let rowEnd: { x: number; y: number } | null = null;
+  if (opts.rowAxis && buildings.length > 0) {
+    const first = buildings[0].rect;
+    const last = buildings[buildings.length - 1].rect;
+    if (opts.rowAxis === 'x') {
+      const y = center.y + opts.buildings[0].h / 2 + 2;
+      lanes.push({ points: [
+        { x: first.left - 4, y },
+        { x: (first.left + last.right) / 2, y },
+        { x: last.right + 4, y },
+      ], width: 3 });
+      rowEnd = { x: last.right + 4, y: center.y };
+    } else {
+      const x = center.x + opts.buildings[0].w / 2 + 2;
+      lanes.push({ points: [
+        { x, y: first.top - 4 },
+        { x, y: (first.top + last.bottom) / 2 },
+        { x, y: last.bottom + 4 },
+      ], width: 3 });
+      rowEnd = { x: center.x, y: last.bottom + 4 };
+    }
+  }
+
+  // Well at center (if feature selected) — at the row end in row mode.
   if (centerFeature) {
+    const wx = rowEnd ? rowEnd.x : center.x;
+    const wy = rowEnd ? rowEnd.y : center.y;
     props.push({
       id: nextPropId(),
       asset: centerFeature,
-      x: center.x,
-      y: center.y,
+      x: wx,
+      y: wy,
       radius: 1.5,
     });
   }
@@ -383,8 +480,10 @@ export function generateSettlementLayout(opts: SettlementOptions): SettlementLay
   const trimmedLanes = trimLanes(lanes);
 
   return {
-    center,
-    plazaRadius,
+    // BUILD 959: row mode reports the row-end green as its center (small
+    // plaza by the well) so the decor plaza never lands under a house.
+    center: rowEnd ?? center,
+    plazaRadius: rowEnd ? 3 : plazaRadius,
     centerFeature,
     buildings,
     lanes: trimmedLanes,
@@ -515,8 +614,9 @@ export const MOSSLIGHT_FIXED_RECTS_280: Rect[] = [
 /** The 4 main buildings (first 4 of the fixed rects). */
 export const MOSSLIGHT_MAIN_RECTS_280: Rect[] = MOSSLIGHT_FIXED_RECTS_280.slice(0, 4);
 
-const HAMLET_WEST = { center: { x: 17, y: 76 }, seed: 0x1a2b3c, ids: ['cottage-1', 'cottage-2', 'cottage-3'] };
-const HAMLET_NORTH = { center: { x: 79, y: 24 }, seed: 0x4d5e6f, ids: ['cottage-4', 'cottage-5', 'cottage-6'] };
+type HamletDef = { center: { x: number; y: number }; seed: number; ids: string[]; rowAxis: 'x' | 'y'; rowGap: number };
+const HAMLET_WEST: HamletDef = { center: { x: 30, y: 76 }, seed: 0x1a2b3c, ids: ['cottage-1', 'cottage-2', 'cottage-3'], rowAxis: 'y', rowGap: 3 };
+const HAMLET_NORTH: HamletDef = { center: { x: 60, y: 42 }, seed: 0x4d5e6f, ids: ['cottage-4', 'cottage-5', 'cottage-6'], rowAxis: 'x', rowGap: 15 };
 
 export function scaleRectToField(r: Rect): Rect {
   const s = SETTLEMENT_FIELD_SCALE;
@@ -541,6 +641,13 @@ export function mosslightHamletLayouts(): { west: SettlementLayout; north: Settl
       buildings: h.ids.map((id) => ({ id, w: 6, h: 4.5 })),
       profile: 'hamlet',
       avoid: avoid140,
+      // BUILD 959: cottages line up in rows near the town core (west
+      // column + north row) instead of scattered rings at the field
+      // edges — and hamlet homes draw from the cottage pool only, so a
+      // cottage never wears a shop/tavern/hall face.
+      rowAxis: h.rowAxis,
+      rowGap: h.rowGap,
+      variantPool: COTTAGE_VARIANT_POOL,
     });
     _hamletLayouts = { west: gen(HAMLET_WEST), north: gen(HAMLET_NORTH) };
   }

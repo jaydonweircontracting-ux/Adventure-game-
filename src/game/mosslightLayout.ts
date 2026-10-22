@@ -64,7 +64,9 @@ export function mosslightEngineLayout(): TownLayout {
       plazaCenter: { x: 4, y: 4 },
       plazaRadius: 13,
       pinnedLots: pinnedLots(),
-      maxFillerLots: 5, // BUILD 895: leave more green breathing room around the pinned, gameplay-critical buildings.
+      maxFillerLots: 8, // BUILD 959: denser town — was 5 (BUILD 895 left
+      // breathing room); the Kenney rework fills the town out with more
+      // roadside houses instead of empty green gaps.
       suburbs: false,
     });
   }
@@ -132,8 +134,8 @@ export function mosslightPinnedRects(): Rect[] {
  *  roadside filler lots. Commercial lots get shops, residential get cottages.
  *  All doors verified on the south face (left of image, ~38% width). */
 export const FILLER_VARIANT_POOLS: Record<string, readonly string[]> = {
-  commercial: ['green-shop', 'brick-shop'],
-  residential: ['green-cottage', 'stone-cottage', 'plaster-house'],
+  commercial: ['green-shop', 'brick-shop', 'shop-banner'],
+  residential: ['green-cottage', 'stone-cottage', 'plaster-house', 'cottage-wide', 'house-balcony', 'house-tall'],
 };
 const FILLER_VARIANT_FALLBACK = ['plaster-house', 'green-shop'] as const;
 
