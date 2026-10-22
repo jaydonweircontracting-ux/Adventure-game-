@@ -1523,6 +1523,10 @@
   image-rendering: pixelated;
 }
 .field-tree::after { content: none; }
+/* BUILD 945: Rodwan tree sprites — one 1400x152 sheet, 8 measured slices.
+   Position comes from inline backgroundPosition (slices are irregular, not
+   a grid); image comes from --rodwan-trees on the .field-trees container. */
+.rodwan-tree { background-image: var(--rodwan-trees); background-size: 1400px 152px; }
 /* Cornfields: clusters of harvestable corn stalks. Same sprite sheet as trees. */
 .field-corn { position: absolute; z-index: 3; inset: 0; pointer-events: none; }
 .field-corn-stalk {

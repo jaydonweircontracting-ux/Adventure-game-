@@ -15,6 +15,7 @@ import { startBrowserGameLoop, type BrowserGameLoop } from '../engine/browserGam
 import { drawProceduralGroundAccent, drawProceduralTree, drawProceduralTreeLod, drawProceduralPathDetail, drawBuildingGroundDress, drawProceduralBoulder } from '../engine/proceduralWorldArt';
 import { isoToScreen as isoToScreenBase, screenToTile, TILE_W, TILE_H } from './projection';
 import { rotateIsoScreen, unrotateIsoScreen, rotatedDepth, rotateFace8, rotatedGridBounds, rotatedVisibleTileRange, type IsoRotation } from './rotation';
+import { RODWAN_SLICES, RODWAN_SHEET_PATH, rodwanTreeIndexFor, rodwanIsoHeightPx, drawRodwanTree } from '../rodwanTrees';
 import { createBoundedCache } from '../rendering/boundedCache';
 import { FrameMetrics } from '../rendering/frameMetrics';
 import {
@@ -338,6 +339,19 @@ interface IsoChunkScene {
   tile: MapTile; water: WaterGrid;
   palette: { field: string; path: string; glow: string };
   road: string;
+}
+
+// BUILD 945: Rodwan tree sheet, loaded once and drawn from the live loop.
+// Until the sheet finishes loading, trees fall back to the procedural draw
+// (first frames only) so no tree ever renders blank.
+let rodwanSheetImg: HTMLImageElement | null = null;
+function rodwanSheetImage(): HTMLImageElement {
+  if (!rodwanSheetImg) {
+    rodwanSheetImg = new Image();
+    rodwanSheetImg.decoding = 'async';
+    rodwanSheetImg.src = artUrl(RODWAN_SHEET_PATH);
+  }
+  return rodwanSheetImg;
 }
 
 // BUILD 851: cache uploaded Asset Studio images once; draw them from the live world loop.
@@ -1854,11 +1868,19 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           const tx2 = t.x + bx, ty2 = t.y + by;
           const c = isoToScreen(tx2, ty2);
           // BUILD 712: include canopy height in viewport bounds.
-          if (!anchorVisible(c, 36, 104, 18)) continue;
+          // BUILD 945: marginX 40 (was 36) — the widest Rodwan crown spans
+          // ~75px at full size, so 36px would pop edge trees in late.
+          if (!anchorVisible(c, 40, 104, 18)) continue;
         const s = 0.7 + t.scale * 0.6;
         drawables.push({
           depth: dep(tx2, ty2), draw: (g2) => {
-            if (zm < 0.42 || adaptiveTreeLod) drawProceduralTreeLod(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
+            // BUILD 945: Rodwan sprite trees, trunk base on the same ground
+            // point the procedural tree used (c) — collision untouched.
+            // Procedural is the fallback until the sheet loads (first frames).
+            const img = rodwanSheetImage();
+            if (img.complete && img.naturalWidth > 0) {
+              drawRodwanTree(g2, img, RODWAN_SLICES[rodwanTreeIndexFor(chunk.x + sc.ox, chunk.y + sc.oy, t.id)], c.x, c.y, rodwanIsoHeightPx(t.scale), t.flip);
+            } else if (zm < 0.42 || adaptiveTreeLod) drawProceduralTreeLod(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
             else drawProceduralTree(g2, c.x, c.y, s, Math.round(tx2), Math.round(ty2));
           },
         });

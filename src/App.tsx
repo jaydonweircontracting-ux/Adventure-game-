@@ -6,6 +6,7 @@ import IsoRoomDemo from './game/iso/IsoRoom';
 import RpgPreview from './game/iso/RpgPreview';
 import IsoFieldView from './game/iso/IsoFieldView';
 import { type IsoRotation, sanitizeIsoRotation } from './game/iso/rotation';
+import { RODWAN_SLICES, rodwanTreeIndexFor, RODWAN_LEAFY_SPRITES } from './game/rodwanTrees';
 import IsoInteriorView, { type IsoRoomType, type IsoInteriorNpc } from './game/iso/IsoInteriorView';
 import { BARBARIAN_HAIRSTYLES, barbarianHairLabel } from './game/iso/barbarian';
 import { isoScreenSpeedScale, DIR_TEST_TABLE, type DirTestEntry } from './game/iso/isoSprites';
@@ -161,7 +162,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '944';
+const BUILD_NUMBER = '945';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -186,6 +187,7 @@ const BUILD_NOTES: Record<string, string> = {
   '942': 'Spells now run on a formula grammar instead of hardcoded numbers: every spell effect is a base value plus a numbered formula, so damage, range, and armor scale by rule rather than by special case. Ember Bolt still hits for 7 plus intellect at range 6, Veil Step still moves exactly 2 tiles, and Frost Ward still grants 3 armor — none of those numbers changed. What did change is Frost Ward itself: it is now a real buff, so recasting it refreshes instead of stacking more armor, and the next wound removes the bonus along with the ward instead of leaving the armor on forever. The tavern beer buff still lasts 60 seconds.',
   '943': 'Monsters now carry special abilities: wolves snap twice per attack, bandits land triple dagger strikes, ogres and trolls fly into a rage when badly hurt and hit harder and move faster, and dragons strike four times, hunt you across a wider territory, and ignore townsfolk to come for you alone. Slimes stay close to home and never notice a sneaking player, spiders also ignore sneaking prey, and rats, bats, snakes, and deer flee faster than before. Rampage is not in: the game has no multi-target melee to build it on, and no effect immunities exist yet because nothing overworld slows, stuns, or fears anything.',
   '944': 'The camera can now rotate: press the left or right arrow key to turn the view a quarter-turn at a time, or tap the small left and right arrow buttons under the zoom controls on the left side of the screen. Four turns bring you back to the starting view. Only the view turns — the world, your character, and everything in it stay exactly where they are, and tapping a spot still walks you to that spot at every angle. Your up and down arrows, WASD keys, on-screen D-pad, and tap-to-move all still move you exactly as before, and the game remembers which way you left the camera facing when you save and load.',
+  '945': 'The world’s trees now wear real hand-drawn art: eight tree shapes from the Rodwan pack grow across the wilds, each tree keeping the same shape every time you visit it. The new trees stand on exactly the same ground their old shapes did, so walking, chopping, and collision feel unchanged — only the leaves look better. Leafy trees in the field view and every tree in the iso view use the new art; desert cacti, snow pines, dead trees, and rocks keep their own looks. The tree art source is credited in the game files, and its author asks to be asked before any commercial use.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
   '925': 'Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported',
@@ -13329,7 +13331,7 @@ if (active) {
               );
             })}
           </div>
-          <div className="field-trees" aria-hidden="true" style={{ '--env-sprites': 'url("' + assetUrl('environment/FreePack.png') + '")' } as CSSProperties}>
+          <div className="field-trees" aria-hidden="true" style={{ '--env-sprites': 'url("' + assetUrl('environment/FreePack.png') + '")', '--rodwan-trees': 'url("' + assetUrl('sprites/rodwan-trees/Rodwan_Trees.png') + '")' } as CSSProperties}>
             {fieldTrees.map((tree) => {
               // Chopped-down trees render as stumps until they regrow.
               if (isTreeFelled(fieldTreeKey(chunk, tree.id))) {
@@ -13342,6 +13344,32 @@ if (active) {
                       top: 'calc(' + fieldPct(tree.y + 4 * tree.scale) + ' - 14px)',
                     }}
                     aria-hidden="true"
+                  />
+                );
+              }
+              // BUILD 945: leafy trees draw Rodwan sprite art, trunk base on
+              // the collision base. The flip mirrors around the TRUNK line
+              // (not slice center — Rodwan trunks are off-center, e.g. tree 6
+              // sits 8px right of center), so a flipped tree's trunk stays
+              // on its base. Left uses the unscaled trunk offset because the
+              // transform already scales around the trunk origin.
+              if ((RODWAN_LEAFY_SPRITES as readonly string[]).includes(tree.sprite)) {
+                const slice = RODWAN_SLICES[rodwanTreeIndexFor(chunk.x, chunk.y, tree.id)];
+                const anchorX = tree.x + 3.2 * tree.scale;
+                const anchorY = tree.y + 4 * tree.scale;
+                return (
+                  <span
+                    className="field-tree rodwan-tree"
+                    key={tree.id}
+                    style={{
+                      left: 'calc(' + fieldPct(anchorX) + ' - ' + slice.anchorXRel + 'px)',
+                      top: 'calc(' + fieldPct(anchorY) + ' - ' + slice.h * tree.scale + 'px)',
+                      width: slice.w,
+                      height: slice.h,
+                      transform: 'scale(' + (tree.flip ? -tree.scale : tree.scale) + ',' + tree.scale + ')',
+                      transformOrigin: (slice.anchorXRel / slice.w * 100) + '% top',
+                      backgroundPosition: '-' + slice.x + 'px -' + slice.y + 'px',
+                    }}
                   />
                 );
               }
