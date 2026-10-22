@@ -25,14 +25,19 @@ export type SimulatedAdventurer = {
   /** BUILD 948: dungeon-run state. `dungeonPhase` is only set while
    * outing === 'dungeon'; `dungeonEntrance` keeps the most recent delve site
    * after the run ends (log/inspector history). `coins` / `lootItems` are the
-   * adventurer's accumulated delve haul — dungeon 4/5 drains them into a
-   * family chest or the bank; this build only accumulates. `delvesCompleted`
-   * counts finished runs (all outcomes). All five fields are optional so old
-   * saves (which lack them) restore cleanly as never-having-delved. */
+   * adventurer's accumulated delve haul — BUILD 949 drains them into a
+   * family chest or the bank on the return tick (see npcStorage.ts), so
+   * they are 0 / [] outside the single return tick. `lastDelveHaul` is the
+   * most recent drained haul (return history for the inspector). All six
+   * fields are optional so old saves (which lack them) restore cleanly as
+   * never-having-delved. `delvesCompleted` counts finished runs
+   * (all outcomes). */
   dungeonPhase?: 'outbound' | 'delving';
   dungeonEntrance?: string;
   coins?: number;
   lootItems?: string[];
+  /** BUILD 949: most recent drained delve haul (history, not spendable). */
+  lastDelveHaul?: { coins: number; items: string[] };
   delvesCompleted?: number;
   /** Ticks remaining in the current outing phase. */
   outingTicks?: number;
@@ -249,6 +254,9 @@ const ADVENTURER_ROSTER: SimulatedAdventurer[] = [
   { id: 'soren', name: 'Soren Ash', className: 'Beginner', level: 1, goal: 'helping farmers with pests', activity: 'just logged in', position: { x: 62, y: 66 }, interiorPosition: { x: 42, y: 58 }, location: 'starting-house', facing: 'right', routeIndex: 0, status: 'healthy', reputation: 0 },
   { id: 'liora', name: 'Liora Fen', className: 'Beginner', level: 1, goal: 'searching for ancient artifacts', activity: 'just logged in', position: { x: 46, y: 38 }, interiorPosition: { x: 58, y: 58 }, location: 'starting-house', facing: 'left', routeIndex: 0, status: 'healthy', reputation: 0 },
 ];
+
+/** Roster ids, for storage enumeration (one family chest per adventurer). */
+export const ADVENTURER_IDS: string[] = ADVENTURER_ROSTER.map((member) => member.id);
 
 // First player is already logged in; the rest join one per minute.
 export const initialSimulatedAdventurers: SimulatedAdventurer[] = [

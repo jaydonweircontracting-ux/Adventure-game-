@@ -25,11 +25,12 @@ import { BESTIARY_ENTRIES, BESTIARY_TIERS, BESTIARY_CHARM_POINTS, bestiaryEntryF
 import { AA_ABILITIES, AA_CREDITS_PER_POINT, AA_EVEN_KILLS_PER_POINT, AA_TITLES, aaBonusesForRanks, aaBuyRank, aaCostForRank, aaCreditsForKill, aaTitleForSpent, accrueAaKill, createEmptyAa, sanitizeAa } from '../src/game/aa';
 import { tierForStanding, effectiveStanding, tierForNpc, standingFor, factionForNpc, factionForQuestLocation, applyFactionHarm, applyFactionQuestGain, factionExamineLine, factionDialogueLine, sanitizeFactionStandings } from '../src/game/faction';
 import { createAgent, stepAgent, AGENT_MOVE_SPEED, type AgentWorld } from '../src/game/gameplayAgent';
-import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS, dungeonEntranceNames, pickDungeonEntrance, canDelve, startDungeonRun, detectDungeonRunEvents, DUNGEON_PICK_CHANCE, DUNGEON_OUTBOUND_SPEED, DUNGEON_OUTBOUND_MAX_TICKS, DUNGEON_DELVE_TICKS, DUNGEON_SUCCESS_COINS_MIN, DUNGEON_SUCCESS_COINS_MAX, DUNGEON_LOOT_TABLE } from '../src/game/simulatedAdventurers';
+import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS, ADVENTURER_IDS, dungeonEntranceNames, pickDungeonEntrance, canDelve, startDungeonRun, detectDungeonRunEvents, DUNGEON_PICK_CHANCE, DUNGEON_OUTBOUND_SPEED, DUNGEON_OUTBOUND_MAX_TICKS, DUNGEON_DELVE_TICKS, DUNGEON_SUCCESS_COINS_MIN, DUNGEON_SUCCESS_COINS_MAX, DUNGEON_LOOT_TABLE } from '../src/game/simulatedAdventurers';
+import { adventurerHouseholdKey, bankBalanceFor, chestItemsFor, depositDelveHaul, drainUnbankedHaul, EMPTY_NPC_STORAGE, sanitizeNpcStorage, serializeNpcStorage, withdrawFromBank, withdrawFromChest, BANK_NAME } from '../src/game/npcStorage';
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
-import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, NPC_RESPAWN_TICKS, npcKillExperienceReward, killExperienceForLevel, NPC_FIGHT_ATTACK_COOLDOWN_MS, NPC_FIGHT_CHASE_STEP_MULT, shouldReplanFightPath, NPC_FIGHT_REPATH_INTERVAL_MS, NPC_FIGHT_REPATH_SHIFT, NPC_FIGHT_MAX_PLAN_FAILURES, marketRoutine, marketBrowseVisit, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
+import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, NPC_RESPAWN_TICKS, npcKillExperienceReward, killExperienceForLevel, NPC_FIGHT_ATTACK_COOLDOWN_MS, NPC_FIGHT_CHASE_STEP_MULT, shouldReplanFightPath, NPC_FIGHT_REPATH_INTERVAL_MS, NPC_FIGHT_REPATH_SHIFT, NPC_FIGHT_MAX_PLAN_FAILURES, marketRoutine, marketBrowseVisit, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, townsfolkRosterEntries, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
 
 /**
  * BUILD 699: Test anchors need all household homeKeys. Uses the real
@@ -3911,6 +3912,40 @@ console.log('Testing NPC dungeon runs (BUILD 948)...');
       assert(after[0].dungeonPhase === 'delving' && after[0].location === 'traveling', 'Dng948: outbound cap still enters the delve');
     }
   }
+}
+
+console.log('Testing family chests + bank storage (BUILD 949)...');
+{
+  // Household keys: townsfolk homeKeys + one adv: key per adventurer.
+  const homeKeys = [...new Set(townsfolkRosterEntries().map((e) => e.homeKey))];
+  assert(homeKeys.length > 0, 'St949sim: townsfolk households exist');
+  for (const key of homeKeys) {
+    assert(chestItemsFor(EMPTY_NPC_STORAGE, key).length === 0, `St949sim: household ${key} resolves an empty chest`);
+    assert(bankBalanceFor(EMPTY_NPC_STORAGE, key) === 0, `St949sim: household ${key} resolves a zero balance`);
+  }
+  assert(ADVENTURER_IDS.length === 10, 'St949sim: 10 adventurers');
+  assert(BANK_NAME === 'Mosslight bank', 'St949sim: the bank is the Mosslight bank ledger');
+  // Deposit rule: coins -> bank only, items -> chest only, per household.
+  const dep = depositDelveHaul(EMPTY_NPC_STORAGE, adventurerHouseholdKey('kael'), 17, ['dagger']);
+  assert(bankBalanceFor(dep.state, adventurerHouseholdKey('kael')) === 17, 'St949sim: coins banked');
+  assert(chestItemsFor(dep.state, adventurerHouseholdKey('kael')).join(',') === 'dagger', 'St949sim: item chested');
+  assert(bankBalanceFor(dep.state, adventurerHouseholdKey('sera')) === 0, 'St949sim: deposit isolated per household');
+  // Drain: returned haul moves, NPC zeroes, delving adventurers untouched.
+  const returned = { ...initialSimulatedAdventurers[0], location: 'field' as const, outing: 'wander' as const, coins: 17, lootItems: ['Health Potion'], delvesCompleted: 1 };
+  const drained = drainUnbankedHaul([returned], EMPTY_NPC_STORAGE);
+  assert(drained.deposits.length === 1, 'St949sim: drain emits one deposit');
+  assert(bankBalanceFor(drained.storage, adventurerHouseholdKey('kael')) === 17, 'St949sim: drained coins banked');
+  assert(drained.adventurers[0].coins === 0 && (drained.adventurers[0].lootItems ?? []).length === 0, 'St949sim: drained NPC zeroed');
+  const delving = { ...returned, outing: 'dungeon' as const, coins: 12, lootItems: ['dagger'] };
+  assert(drainUnbankedHaul([delving], EMPTY_NPC_STORAGE).deposits.length === 0, 'St949sim: delving adventurer never drained');
+  // Save round-trip + old-save restore + future-use withdrawal.
+  const saved = sanitizeNpcStorage(JSON.parse(JSON.stringify(serializeNpcStorage(dep.state))));
+  assert(bankBalanceFor(saved, adventurerHouseholdKey('kael')) === 17, 'St949sim: save round-trip keeps the bank');
+  assert(sanitizeNpcStorage(undefined).bank !== undefined && Object.keys(sanitizeNpcStorage(undefined).bank).length === 0, 'St949sim: old save restores to empty storage');
+  const withdrawn = withdrawFromBank(dep.state, adventurerHouseholdKey('kael'), 5);
+  assert(withdrawn.ok && bankBalanceFor(withdrawn.state, adventurerHouseholdKey('kael')) === 12, 'St949sim: future-use bank withdrawal works');
+  const chestOut = withdrawFromChest(dep.state, adventurerHouseholdKey('kael'), 'dagger');
+  assert(chestOut.ok && chestItemsFor(chestOut.state, adventurerHouseholdKey('kael')).length === 0, 'St949sim: future-use chest withdrawal works');
 }
 
 console.log('Testing ambient market life (BUILD 694)...');

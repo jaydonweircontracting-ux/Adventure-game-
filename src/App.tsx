@@ -128,6 +128,8 @@ import { multiStrikeCount, isEnraged, enragedDamageMult, enragedChaseSpeed, clam
 import { mitigateDamage, mitigationForCreature, creatureDefenseForLevel, creatureArmorForLevel, playerArmorForRoll, playerResistPercents, rangedHitChance, creatureArcherSkill, normalizeRangedSkill } from '@/game/mitigation';
 // BUILD 938: creature codex / bestiary (Tibia item 5) — kill counts, tiers, charm total.
 import { BESTIARY_ENTRIES, BESTIARY_TIERS, BESTIARY_CHARM_POINTS, bestiaryLabelForKind, bestiaryTierForKills, bestiaryCharmTotal, recordBestiaryKill, sanitizeBestiaryCounts, isBestiaryKind } from '@/game/bestiary';
+// BUILD 949: NPC loot storage — family chests + Mosslight bank ledger.
+import { drainUnbankedHaul, sanitizeNpcStorage, serializeNpcStorage, chestItemsFor, bankBalanceFor, adventurerHouseholdKey, BANK_NAME, type NpcStorageState } from '@/game/npcStorage';
 import { tierForStanding, standingFor, factionForNpc, factionForQuestLocation, applyFactionHarm, applyFactionQuestGain, factionExamineLine, factionDialogueLine, sanitizeFactionStandings } from './game/faction';
 import { STATION_DRIVERS, stopDriverFor, driverOnDuty, chunkDistance, carriagePrice, carriageTravelHours, carriageTravelTicks, serializeCarriage, deserializeCarriage, type CarriageStation, type CarriageStop, type CarriageDestination, type StationLayout } from '@/game/carriage';
 import { TAVERN_ANNEX_RECTS, BEER_PRICE, ROOM_PRICE, ESCORT_PRICE, LOCKPICK_PRICE, ESCORT_BONUS_XP, beerDamageMultiplier } from '@/game/tavern';
@@ -162,7 +164,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '948';
+const BUILD_NUMBER = '949';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -191,6 +193,7 @@ const BUILD_NOTES: Record<string, string> = {
   '946': 'The Ember Vault dungeon now wears Dungeon Pry stone: floors, walls, and doors are hand-painted tiles instead of flat colors, barrels, bookshelves, carpets, flasks, and tables dress the galleries, and loot lying on the ground shows as a closed chest. The look is new but the dungeon plays exactly as before — same layout, monsters, and loot, and stairs, altars, and shopkeepers keep their old art. The matching open-chest frame ships with the art and will appear once a loot interaction opens chests.',
   '947': 'Six new dungeon entrances now dot the world, from Thornwood Hollow in the far west to Greenbarrow in the far south, and every one of them opens on the world map as a stone-arch marker. Walk up to an entrance and tap Descend to enter a dungeon, exactly like the Sunken Crypt — the button now appears in the iso view too, where entrances also show a marked stone arch on the ground, so no entrance is hidden anymore. Each descent is still a fresh dungeon like before, and the old Sunken Crypt entry works exactly as it always did.',
   '948': 'Adventurers now occasionally set out to delve dungeons on their own. Watch one walk out of Mosslight toward the wilds and check back later: they may return with gold and loot, come back empty-handed, or limp home injured. Their hauls stay on them for now, with chest and bank storage coming next, and you can follow each run in the game log and the adventurer list. Player dungeons, loot, and entrances work exactly as before.',
+  '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
   '925': 'Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported',
@@ -1842,6 +1845,11 @@ type SaveGameData = {
   // BUILD 944: iso camera rotation (0..3). View-only; old saves carry no
   // field and restore to 0 (default view), never faked history.
   cameraRotation?: number;
+  // BUILD 949: NPC loot storage — family-chest item names + Mosslight bank
+  // ledger balances, keyed by household. Old saves carry no field and
+  // restore to empty — never faked history; leftover 948 haul on an NPC
+  // drains into storage on the first tick after load.
+  npcStorage?: NpcStorageState;
   goats: GoatState[];
   interiorId: string | null;
   interiorPosition: Point;
@@ -5689,6 +5697,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // New Game needs no extra reset: it runs through the title, which
   // unmounts GameField and drops this ref with it (the 926 pattern).
   const bestiaryRef = useRef<Record<string, number>>({});
+  // BUILD 949: NPC loot storage — family chests + Mosslight bank ledger.
+  // Ref is the source of truth (save reads it); no state mirror — nothing
+  // renders it reactively (log lines and the test hook read the ref).
+  // New Game needs no extra reset: it runs through the title, which
+  // unmounts GameField and drops this ref with it (the 926 pattern).
+  const npcStorageRef = useRef<NpcStorageState>({ chests: {}, bank: {} });
   // BUILD 939: EQEmu faction standings — per-player, per-faction numbers
   // (EQEmu ladder: Ally..Scowls). Ref is the source of truth (save reads
   // it); state mirrors it for the dialogue panel. SEPARATE from bounty
@@ -6270,7 +6284,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           return inv ? inv.coins : null;
         },
         // BUILD 948: adventurer dungeon-run hooks (testmode only).
-        getAdventurers: () => simulatedAdventurersRef.current.map((a) => ({ id: a.id, name: a.name, level: a.level, className: a.className, outing: a.outing ?? null, dungeonPhase: a.dungeonPhase ?? null, dungeonEntrance: a.dungeonEntrance ?? null, x: a.position.x, y: a.position.y, location: a.location ?? 'field', activity: a.activity, status: a.status ?? 'healthy', coins: a.coins ?? 0, lootItems: [...(a.lootItems ?? [])], delvesCompleted: a.delvesCompleted ?? 0 })),
+        // BUILD 949: extended with family-chest contents, bank balance,
+        // and last drained haul (coins/lootItems are 0/[] outside the
+        // single return tick — the drain moves them to storage).
+        getAdventurers: () => simulatedAdventurersRef.current.map((a) => ({ id: a.id, name: a.name, level: a.level, className: a.className, outing: a.outing ?? null, dungeonPhase: a.dungeonPhase ?? null, dungeonEntrance: a.dungeonEntrance ?? null, x: a.position.x, y: a.position.y, location: a.location ?? 'field', activity: a.activity, status: a.status ?? 'healthy', coins: a.coins ?? 0, lootItems: [...(a.lootItems ?? [])], delvesCompleted: a.delvesCompleted ?? 0, chestItems: chestItemsFor(npcStorageRef.current, adventurerHouseholdKey(a.id)), bankBalance: bankBalanceFor(npcStorageRef.current, adventurerHouseholdKey(a.id)), lastDelveHaul: a.lastDelveHaul ?? null })),
+        // BUILD 949: full NPC storage record for verification (read-only).
+        getNpcStorage: () => serializeNpcStorage(npcStorageRef.current),
         // Forces a delve through the REAL start transition (eligibility
         // still enforced); only the 12% trigger roll is bypassed, stated.
         forceAdventurerDelve: (id: string) => {
@@ -6835,6 +6854,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     aa: { ...aaStateRef.current, ranks: { ...aaStateRef.current.ranks } },
     // BUILD 944: persist camera rotation (view-only; old saves have none).
     cameraRotation: cameraRotationRef.current,
+    // BUILD 949: persist NPC loot storage (family chests + bank ledger).
+    npcStorage: serializeNpcStorage(npcStorageRef.current),
     // BUILD 881: Persist skill-master apprenticeships.
     apprenticeships: { ...apprenticeshipsRef.current },
     // BUILD 704: Persist player stamina.
@@ -6993,6 +7014,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // BUILD 944: restore camera rotation (old saves have none -> 0).
     const restoredRotation = sanitizeIsoRotation(loadState.cameraRotation);
     cameraRotationRef.current = restoredRotation; setCameraRotation(restoredRotation);
+    // BUILD 949: restore NPC loot storage (old saves have none -> empty;
+    // leftover 948 haul drains on the first tick after load, never lost).
+    npcStorageRef.current = sanitizeNpcStorage(loadState.npcStorage);
     interiorDoorwayIdRef.current = null;
     interiorEntryChunkRef.current = { x: loadState.chunk.x, y: loadState.chunk.y };
     interiorRef.current = null; setInterior(null);
@@ -7709,6 +7733,28 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     if (dungeonEvents.length > 0) {
       const colorForDungeonEvent = (kind: string) => kind === 'returned-loot' ? 'gold' : kind === 'returned-injured' ? 'orange' : kind === 'departed' ? 'blue' : 'gray';
       setLogs((cur) => [...dungeonEvents.map((e) => ({ text: e.text, color: colorForDungeonEvent(e.kind) })), ...cur].slice(0, 3));
+    }
+    // BUILD 949: drain unbanked delve haul into storage. Runs AFTER the
+    // event diff above (so return lines still see the haul) and on the
+    // return tick itself (the returned adventurer's outing is already
+    // 'wander'): coins -> the Mosslight bank ledger, items -> the
+    // adventurer's family chest. Also drains leftover 948 haul on the
+    // first tick after a load — stored loot is never lost, never
+    // double-counted (the drain zeroes the NPC fields it moves).
+    const drained = drainUnbankedHaul(next, npcStorageRef.current);
+    if (drained.deposits.length > 0) {
+      npcStorageRef.current = drained.storage;
+      simulatedAdventurersRef.current = drained.adventurers;
+      setSimulatedAdventurers(drained.adventurers);
+      const depositLines = drained.deposits.map((deposit) => {
+        const adventurer = next.find((a) => a.id === deposit.id);
+        const name = adventurer?.name ?? deposit.id;
+        const coinPart = deposit.coins > 0 ? `${deposit.coins} gold at the ${BANK_NAME}` : '';
+        const itemPart = deposit.items.length > 0 ? `${deposit.items.map((item) => `a ${item}`).join(', ')} in their family chest` : '';
+        const storedPart = [coinPart, itemPart].filter((part) => part.length > 0).join(' and ');
+        return { text: `${name} stored ${storedPart}.`, color: 'gold' };
+      });
+      setLogs((cur) => [...depositLines, ...cur].slice(0, 3));
     }
   };
 
@@ -10759,7 +10805,16 @@ if (active) {
     const displayGoal = (adventurer.location || 'field') === 'starting-house'
       ? 'setting out to begin their adventure'
       : adventurer.goal;
-    setLogs((currentLogs) => [{ text: `${adventurer.name}, level ${adventurer.level} ${adventurer.className}, is ${adventurer.activity}. Goal: ${displayGoal}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
+    // BUILD 949: inspector storage line — only when something is stored.
+    const inspectKey = adventurerHouseholdKey(adventurer.id);
+    const inspectChest = chestItemsFor(npcStorageRef.current, inspectKey);
+    const inspectBank = bankBalanceFor(npcStorageRef.current, inspectKey);
+    const storageParts = [
+      ...(inspectChest.length > 0 ? [`Family chest: ${inspectChest.join(', ')}`] : []),
+      ...(inspectBank > 0 ? [`${BANK_NAME}: ${inspectBank} gold`] : []),
+    ];
+    const storageSuffix = storageParts.length > 0 ? ` Stored: ${storageParts.join(' · ')}.` : '';
+    setLogs((currentLogs) => [{ text: `${adventurer.name}, level ${adventurer.level} ${adventurer.className}, is ${adventurer.activity}. Goal: ${displayGoal}.${storageSuffix}`, color: 'blue' }, ...currentLogs].slice(0, 3));
     setAttackFlash(`${adventurer.name}: ${displayGoal}`);
     window.setTimeout(() => setAttackFlash(null), 1600);
   };
