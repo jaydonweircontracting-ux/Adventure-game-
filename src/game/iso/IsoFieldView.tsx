@@ -2038,18 +2038,22 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       // dungeon chunk in view; never skipped at max zoom-out (landmarks
       // matter more than trees there). Rotation comes free: isoToScreen /
       // dep here are the rotation-aware shadows (953: continuous angle).
+      // BUILD 964: cave landmarks share the loop with a rocky mouth
+      // (brown rim + dark rounded opening, no steps), mirroring the
+      // atlas drawCave — same (50,44) stand point as dungeons.
       for (const sc of scenes) {
-        if (sc.tile.landmark?.kind !== 'dungeon') continue;
+        if (sc.tile.landmark?.kind !== 'dungeon' && sc.tile.landmark?.kind !== 'cave') continue;
         const mx = 50 + sc.ox * N, my = 44 + sc.oy * N;
         const c = isoToScreen(mx, my);
         if (!anchorVisible(c, 34, 64, 24)) continue;
-        const dungeonName = sc.tile.landmark.name;
+        const siteName = sc.tile.landmark.name;
+        const isCave = sc.tile.landmark.kind === 'cave';
         drawables.push({
           depth: dep(mx, my), draw: (g2) => {
             g2.save();
-            g2.fillStyle = '#4a4f55';
+            g2.fillStyle = isCave ? '#6b5d43' : '#4a4f55';
             g2.fillRect(c.x - 15, c.y - 30, 30, 30);
-            g2.fillStyle = '#2b2e33';
+            g2.fillStyle = isCave ? '#1a120c' : '#2b2e33';
             g2.beginPath();
             g2.moveTo(c.x - 8, c.y);
             g2.lineTo(c.x - 8, c.y - 14);
@@ -2057,14 +2061,16 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             g2.lineTo(c.x + 8, c.y);
             g2.closePath();
             g2.fill();
-            g2.fillStyle = '#1a1c1f';
-            for (let i = 0; i < 3; i++) g2.fillRect(c.x - 6 + i * 2, c.y - 8 + i * 2, 12 - i * 4, 2);
+            if (!isCave) {
+              g2.fillStyle = '#1a1c1f';
+              for (let i = 0; i < 3; i++) g2.fillRect(c.x - 6 + i * 2, c.y - 8 + i * 2, 12 - i * 4, 2);
+            }
             g2.font = 'bold 11px sans-serif';
             g2.textAlign = 'center';
             g2.lineWidth = 3; g2.strokeStyle = 'rgba(0,0,0,0.8)';
-            g2.strokeText(dungeonName, c.x, c.y - 36);
+            g2.strokeText(siteName, c.x, c.y - 36);
             g2.fillStyle = '#fff6dd';
-            g2.fillText(dungeonName, c.x, c.y - 36);
+            g2.fillText(siteName, c.x, c.y - 36);
             g2.restore();
           },
         });

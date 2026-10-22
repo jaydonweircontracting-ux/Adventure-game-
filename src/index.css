@@ -921,6 +921,11 @@
 .dungeon-descend-button:hover { transform: translate(-50%, -50%) scale(1.03); background: rgba(72, 58, 92, .98); }
 /* Dungeon POI: crypt entrance mound with a dark stairwell. */
 .field-dungeon-entrance { position: absolute; left: 38%; top: 34%; width: 24%; height: 20%; z-index: 3; }
+/* BUILD 964: cave mouth in the 2D field — rocky rim + dark rounded mouth. */
+.field-cave-entrance { position: absolute; left: 38%; top: 34%; width: 24%; height: 20%; z-index: 3; }
+.cave-mouth { position: absolute; inset: 0; background: linear-gradient(180deg, #7a6a4a 0%, #5d4f36 60%, #4a3f2b 100%); border: 2px solid #3a2f1e; border-radius: 45% 45% 8% 8% / 60% 60% 8% 8%; box-shadow: 2px 3px 0 rgba(30, 25, 15, .35); }
+.cave-mouth::after { content: ''; position: absolute; left: 50%; bottom: 6%; width: 52%; height: 62%; transform: translateX(-50%); background: #14100a; border: 2px solid #2b2114; border-bottom: none; border-radius: 50% 50% 0 0 / 45% 45% 0 0; }
+.cave-entrance-label { position: absolute; left: 50%; top: -16px; transform: translateX(-50%); white-space: nowrap; font-size: 10px; color: #e8e2d2; text-shadow: 1px 1px 0 #000; }
 .dungeon-mound { position: absolute; inset: 0; background: linear-gradient(180deg, #6b6f75 0%, #4a4f55 60%, #3a3e44 100%); border: 2px solid #2b2e33; border-radius: 45% 45% 8% 8% / 60% 60% 8% 8%; box-shadow: 2px 3px 0 rgba(30, 30, 35, .35); }
 .dungeon-stairs { position: absolute; left: 50%; bottom: 6%; width: 26%; height: 52%; transform: translateX(-50%); background: #141518; border: 2px solid #2b2e33; border-bottom: none; border-radius: 50% 50% 0 0 / 30% 30% 0 0; }
 .dungeon-stairs::after { content: ''; position: absolute; left: 15%; right: 15%; top: 30%; bottom: 0; background: repeating-linear-gradient(180deg, #2b2e33 0 3px, #0c0d0f 3px 6px); }

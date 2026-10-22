@@ -1,6 +1,6 @@
 {
-  "build": "963",
-  "note": "Every house now has a chest you can see and loot: a wooden chest stands beside each front door — in Mosslight and every other town, and at farmhouses out in the wilds — holding a few coins and some household goods like a dagger, a cap, or a pair of boots. Walk up and tap it to open it, then take what you want piece by piece; anything you leave stays in the chest, and anything too heavy to carry stays put with a warning instead of vanishing. Your own starting house chest is free to take from, but taking from any other home is theft: if a villager sees you, word travels to the guards through the usual witness reports and a bounty follows, while an unseen lift leaves no trace. Looted chests stay empty and stay put, old saves gain every chest at full contents, and the adventurer family chests and bank ledger from before work exactly as they did.",
-  "timestamp": "2026-10-22T08:36:13.965Z",
-  "cacheBuster": "mvjae3ny"
+  "build": "964",
+  "note": "Two real caves you can walk into: Mossback Cave west of Mosslight and Echo Hollow to the east, each marked on the world map, the atlas, and the minimap with its own cave-mouth icon. Walk up to the mouth and tap Enter cave to explore winding natural caverns built from the Kenney cave pieces — stone floors, rock walls, gates, and stairs — with the same monsters, loot, vaults, shops, and traps as a dungeon delve, but every floor is a rough cavern instead of built rooms. Mossback Cave moved a short way from its old spot because the old ground turned out to be a lake with nowhere dry to stand. Dungeons, towns, and your saves work exactly as before.",
+  "timestamp": "2026-10-22T08:46:29.206Z",
+  "cacheBuster": "mvjaradz"
 }

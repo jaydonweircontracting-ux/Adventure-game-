@@ -22,11 +22,12 @@ import {
   type SpellId,
 } from './stoneSoupEngine';
 import { PRY_CHEST_CLOSED, pryDecorFor, pryDoorTileFor, pryFloorTileFor, pryPlaceablePath, pryTilePath, pryWallTileFor } from './dungeonPry';
+import { caveDecorFor, caveDoorTileFor, caveFloorTileFor, caveKitPath, caveWallTileFor } from './caveKit';
 import { audioEngine } from './audio';
 import type { ShopItemKey } from './shops';
 import './stoneSoupDungeon.css';
 
-type Props = { onExit: () => void };
+type Props = { onExit: () => void; variant?: 'dungeon' | 'cave'; siteName?: string };
 
 const assetUrl = (path: string) => artUrl(path);
 
@@ -34,8 +35,8 @@ const glyphs: Record<GameState['tiles'][number][number]['kind'], string> = {
   wall: '', floor: '·', door: '+', stairs: '↓', altar: 'A', water: '≈', lava: '^',
 };
 
-export default function StoneSoupDungeon({ onExit }: Props) {
-  const [game, setGame] = useState<GameState>(() => createGame());
+export default function StoneSoupDungeon({ onExit, variant = 'dungeon', siteName = '' }: Props) {
+  const [game, setGame] = useState<GameState>(() => createGame(undefined, 0, 0, { variant, siteName }));
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
   // BUILD 927: testmode-only dungeon hooks (same precedent as the
   // __gameTest hooks in App.tsx) — vault verification in the harness.
@@ -46,6 +47,8 @@ export default function StoneSoupDungeon({ onExit }: Props) {
       (window as unknown as { __dungeonTest: unknown }).__dungeonTest = {
         getVaults: () => game.vaults ?? [],
         getLayout: () => game.layout,
+        getVariant: () => game.variant,
+        getSiteName: () => game.siteName,
         getFloor: () => game.floor,
         getPlayer: () => ({ x: game.player.x, y: game.player.y }),
         getLog: () => [...game.log],
@@ -118,7 +121,10 @@ export default function StoneSoupDungeon({ onExit }: Props) {
   const currentTile = game.tiles[game.player.y][game.player.x];
   const currentItem = getItemAtPlayer(game);
   const relic = game.player.inventory.some((item) => item.kind === 'relic');
-  const objective = game.floor === 1 ? 'Find the stairs and descend before the galleries wake.' : game.floor === 2 ? 'Survive the lower gallery. The First Flame is close.' : relic ? 'Carry the First Flame shard to the sealed altar.' : 'Search the lower vault for the First Flame shard.';
+  // BUILD 964: cave wording for the same mechanics (stairs / relic / altar).
+  const objective = game.variant === 'cave'
+    ? (game.floor === 1 ? 'Find the stairs and descend before the caverns wake.' : game.floor === 2 ? 'Survive the lower cavern. The First Flame is close.' : relic ? 'Carry the First Flame shard to the sealed altar.' : 'Search the lower cavern for the First Flame shard.')
+    : (game.floor === 1 ? 'Find the stairs and descend before the galleries wake.' : game.floor === 2 ? 'Survive the lower gallery. The First Flame is close.' : relic ? 'Carry the First Flame shard to the sealed altar.' : 'Search the lower vault for the First Flame shard.');
   const hpPercent = Math.max(0, game.player.hp / game.player.maxHp);
   const mpPercent = Math.max(0, game.player.mp / game.player.maxMp);
   const xpPercent = Math.min(1, game.player.xp / game.player.nextXp);
@@ -132,7 +138,7 @@ export default function StoneSoupDungeon({ onExit }: Props) {
     setSelectedItem(item.id);
     if (['food', 'potion', 'scroll'].includes(item.kind)) run((state) => useInventoryItem(state, item.id));
   };
-  const restart = () => setGame(createGame());
+  const restart = () => setGame(createGame(undefined, 0, 0, { variant, siteName }));
 
   return (
     <div
@@ -152,12 +158,12 @@ export default function StoneSoupDungeon({ onExit }: Props) {
       <div className="ssd-shell">
         <header className="ssd-header">
           <div className="ssd-brand"><span className="ssd-brand-mark">◈</span><span><strong>Stone Soup</strong><small>The Ember Vault</small></span></div>
-          <div className="ssd-header-right"><span className="ssd-live" /> depth {String(game.floor).padStart(2, '0')} / 03 <span>·</span> turn {game.turn}<button className="ssd-exit" onClick={onExit}>return to Mosslight</button></div>
+          <div className="ssd-header-right"><span className="ssd-live" /> depth {String(game.floor).padStart(2, '0')} / 03 <span>·</span> turn {game.turn}<button className="ssd-exit" onClick={onExit}>{game.variant === 'cave' ? 'return to the surface' : 'return to Mosslight'}</button></div>
         </header>
         <div className="ssd-layout">
           <main className="ssd-main">
-            <section className="ssd-panel ssd-hero"><div><span className="ssd-kicker">dungeon descent / procedural gallery</span><h1>{game.player.name}</h1><p>{game.player.species} · {game.player.background} · level {String(game.player.level).padStart(2, '0')}</p></div><div className="ssd-seed">seed {game.seed.toString(16).slice(-6).toUpperCase()}</div><div className="ssd-meters"><Meter label="vitality" value={game.player.hp + ' / ' + game.player.maxHp} percent={hpPercent} className="hp" /><Meter label="focus" value={game.player.mp + ' / ' + game.player.maxMp} percent={mpPercent} className="mp" /><Meter label="attunement" value={game.player.xp + ' / ' + game.player.nextXp} percent={xpPercent} className="xp" /></div></section>
-            <section className="ssd-panel ssd-map-panel"><div className="ssd-panel-head"><h2>The Cinder Galleries</h2><span>{alive.length} signatures · {LAYOUT_LABELS[game.layout] ?? game.layout} · fog of war active</span></div><div className="ssd-map-scroll"><div className="ssd-map" role="grid" aria-label="Dungeon map" style={{ gridTemplateColumns: 'repeat(' + game.width + ', minmax(17px, 1fr))' }}>{game.tiles.flatMap((row) => row.map((tile) => { const explored = tile.visible || tile.seen; const monster = game.monsters.find((entry) => entry.x === tile.x && entry.y === tile.y && entry.hp > 0); const item = game.groundItems.find((entry) => entry.x === tile.x && entry.y === tile.y); const shop = (game.shops ?? []).find((entry) => entry.x === tile.x && entry.y === tile.y); const player = game.player.x === tile.x && game.player.y === tile.y; const cellKey = tile.x + ':' + tile.y; const pryStyle: CSSProperties | undefined = (() => {
+            <section className="ssd-panel ssd-hero"><div><span className="ssd-kicker">{game.variant === 'cave' ? `cave descent / natural caverns — ${game.siteName}` : 'dungeon descent / procedural gallery'}</span><h1>{game.player.name}</h1><p>{game.player.species} · {game.player.background} · level {String(game.player.level).padStart(2, '0')}</p></div><div className="ssd-seed">seed {game.seed.toString(16).slice(-6).toUpperCase()}</div><div className="ssd-meters"><Meter label="vitality" value={game.player.hp + ' / ' + game.player.maxHp} percent={hpPercent} className="hp" /><Meter label="focus" value={game.player.mp + ' / ' + game.player.maxMp} percent={mpPercent} className="mp" /><Meter label="attunement" value={game.player.xp + ' / ' + game.player.nextXp} percent={xpPercent} className="xp" /></div></section>
+            <section className="ssd-panel ssd-map-panel"><div className="ssd-panel-head"><h2>{game.variant === 'cave' ? game.siteName : 'The Cinder Galleries'}</h2><span>{alive.length} signatures · {LAYOUT_LABELS[game.layout] ?? game.layout} · fog of war active</span></div><div className="ssd-map-scroll"><div className="ssd-map" role="grid" aria-label={game.variant === 'cave' ? 'Cave map' : 'Dungeon map'} style={{ gridTemplateColumns: 'repeat(' + game.width + ', minmax(17px, 1fr))' }}>{game.tiles.flatMap((row) => row.map((tile) => { const explored = tile.visible || tile.seen; const monster = game.monsters.find((entry) => entry.x === tile.x && entry.y === tile.y && entry.hp > 0); const item = game.groundItems.find((entry) => entry.x === tile.x && entry.y === tile.y); const shop = (game.shops ?? []).find((entry) => entry.x === tile.x && entry.y === tile.y); const player = game.player.x === tile.x && game.player.y === tile.y; const cellKey = tile.x + ':' + tile.y; const pryStyle: CSSProperties | undefined = (() => {
   // BUILD 946: Dungeon Pry art as inline backgrounds. Inline style beats
   // the tile classes, so it is ONLY set where no entity image must win:
   // never on unexplored cells (would pierce fog), never under a player /
@@ -165,6 +171,19 @@ export default function StoneSoupDungeon({ onExit }: Props) {
   // lava keep the old tileset art (no Pry match exists for them).
   if (!explored || player || monster || shop) return undefined;
   const seed = game.seed; const depth = game.floor;
+  // BUILD 964: cave variant swaps Pry tiles for Kenney cave-kit tiles.
+  // Same fog/entity rules as dungeons; ground loot keeps the Pry chest
+  // visual (the cave kit has no chest piece) so loot stays readable.
+  if (game.variant === 'cave') {
+    if (tile.kind === 'wall') return { backgroundImage: `url("${assetUrl(caveKitPath(caveWallTileFor(seed, depth, tile.x, tile.y)))}")`, backgroundSize: 'cover', backgroundPosition: 'center', imageRendering: 'auto' };
+    if (tile.kind === 'door') return { backgroundImage: `url("${assetUrl(caveKitPath(caveDoorTileFor(seed, depth, tile.x, tile.y)))}")`, backgroundSize: 'cover', backgroundPosition: 'center', imageRendering: 'auto' };
+    if (tile.kind !== 'floor') return undefined;
+    if (item && tile.visible) return { backgroundImage: `url("${assetUrl(pryPlaceablePath(PRY_CHEST_CLOSED))}")`, backgroundSize: 'cover', backgroundPosition: 'center', imageRendering: 'auto' };
+    const floorFile = caveFloorTileFor(seed, depth, tile.x, tile.y);
+    const decor = !item && !armedPlates.has(cellKey) && !spentPlates.has(cellKey) ? caveDecorFor(seed, depth, tile.x, tile.y) : null;
+    if (!decor) return { backgroundImage: `url("${assetUrl(caveKitPath(floorFile))}")`, backgroundSize: 'cover', backgroundPosition: 'center', imageRendering: 'auto' };
+    return { backgroundImage: `url("${assetUrl(caveKitPath(decor))}"), url("${assetUrl(caveKitPath(floorFile))}")`, backgroundSize: 'cover, cover', backgroundPosition: 'center, center', imageRendering: 'auto' };
+  }
   if (tile.kind === 'wall') return { backgroundImage: `url("${assetUrl(pryTilePath(pryWallTileFor(seed, depth, tile.x, tile.y)))}")`, backgroundSize: 'cover', backgroundPosition: 'center', imageRendering: 'auto' };
   if (tile.kind === 'door') return { backgroundImage: `url("${assetUrl(pryTilePath(pryDoorTileFor(seed, depth, tile.x, tile.y)))}")`, backgroundSize: 'cover', backgroundPosition: 'center', imageRendering: 'auto' };
   if (tile.kind !== 'floor') return undefined;

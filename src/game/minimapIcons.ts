@@ -29,8 +29,10 @@
 //  - blacksmith: no smithy building exists; smiths Tom/Jory work the forge
 //    at the guild doorstep in Mosslight, so the guild icon carries a small
 //    forge badge instead of a second pin at the same point.
-//  - caves: no field entrance point established (POI caves are scattered
-//    generated content; landmark caves have no (50,44)-style stand point).
+//  - caves (pre-964): no field entrance point established (POI caves are
+//    scattered generated content; landmark caves had no (50,44)-style stand
+//    point). BUILD 964 gives landmark caves the 947 stand point + Enter
+//    flow, so caves ARE icon'd from 964 on (see 'cave' below).
 //  - ruins: buildingDoorwaysFor returns [] for ruin chunks — no entrance.
 //  - BUILD 930 dungeon shop vaults: dungeon-interior only; the field
 //    minimap does not render inside dungeons.
@@ -66,6 +68,7 @@ export type MinimapIconType =
   | 'inn'
   | 'house'
   | 'dungeon'
+  | 'cave'
   | 'carriage'
   | 'well'
   | 'windmill';
@@ -115,6 +118,7 @@ export const MINIMAP_ICON_DEFS: Record<MinimapIconType, MinimapIconDef> = {
   inn: { fill: '#4cc400', stroke: '#1d3a00', label: 'Inn' },
   house: { fill: '#e8c87a', stroke: '#4a3410', label: 'House' },
   dungeon: { fill: '#1a1a1a', stroke: '#000000', label: 'Dungeon entrance' },
+  cave: { fill: '#3a2c1a', stroke: '#120c06', label: 'Cave entrance' },
   carriage: { fill: '#d8b878', stroke: '#4a3410', label: 'Carriage station / stop' },
   well: { fill: '#6fc4d8', stroke: '#12303a', label: 'Well' },
   windmill: { fill: '#f5f5f0', stroke: '#3a3a30', label: 'Windmill' },
@@ -185,6 +189,7 @@ export const MINIMAP_ICON_PRIORITY: Record<MinimapIconType, number> = {
   windmill: 2,
   carriage: 3,
   dungeon: 4,
+  cave: 4,
   shop: 5,
   inn: 6,
   chapel: 7,
@@ -283,6 +288,17 @@ export function drawMinimapIcon(
       g.lineTo(x + 3, y - 1);
       g.lineTo(x + 3, y + 3);
       g.stroke();
+      break;
+    case 'cave':
+      // Rounded mouth (arch + dark fill, distinct from the dungeon arch).
+      g.fillStyle = '#120c06';
+      g.beginPath();
+      g.moveTo(x - 3, y + 3);
+      g.lineTo(x - 3, y - 1);
+      g.arc(x, y - 1, 3, Math.PI, 0);
+      g.lineTo(x + 3, y + 3);
+      g.closePath();
+      g.fill();
       break;
     case 'carriage':
       // Wheel.

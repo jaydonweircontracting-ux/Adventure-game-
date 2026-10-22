@@ -60,7 +60,15 @@ export const LANDMARKS: Record<string, Landmark> = {
   '184,1': { name: 'Stonehollow Deep', kind: 'dungeon' },
   '144,38': { name: 'Greenbarrow', kind: 'dungeon' },
   // BUILD 516: Enterable caves (World Systems prompt — caves as separate spaces).
-  '2,9': { name: 'Mossback Cave', kind: 'cave' },
+  // BUILD 964: Mossback Cave MOVED from (2,9) to (-2,8). The 516 site was
+  // never enterable (no entry interaction existed), and its (50,44) stand
+  // disc is a lake (0/81 dry samples) — no dry ground to stand on. The new
+  // site validates like a 947 dungeon site: rock biome, no road segment,
+  // stand point dry, stand disc 81/81 dry. The name is referenced nowhere
+  // else in the codebase, so the move breaks no quest, save, or NPC anchor
+  // (landmarks are table-driven, not saved). Echo Hollow (7,5) validates
+  // as placed: forest, no road, stand disc 81/81 dry, and stays put.
+  '-2,8': { name: 'Mossback Cave', kind: 'cave' },
   '7,5': { name: 'Echo Hollow', kind: 'cave' },
 };
 

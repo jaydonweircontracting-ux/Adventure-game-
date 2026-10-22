@@ -151,6 +151,17 @@ export interface GameState {
    * A trap fires exactly once, on the player's own step onto an armed
    * plate — never on placement, sight, or monster wandering. */
   traps: PlacedTrap[];
+  /**
+   * BUILD 964: which skin this run wears. 'dungeon' is the 946-947 Stone
+   * Soup dungeon (Pry tiles, rolled layout); 'cave' is the Kenney cave
+   * variant (caveKit tiles, cellular-cavern layout on every floor).
+   * Same engine, same vaults/uniques/shops/traps/monsters/loot — the
+   * variant changes layout selection + tile art + panel wording only,
+   * never numbers. Preserved by descend like spawnedUniques.
+   */
+  variant: 'dungeon' | 'cave';
+  /** BUILD 964: field name of the entered site (caves show it in the panel). */
+  siteName: string;
 }
 
 /**
@@ -266,8 +277,8 @@ const key = (x: number, y: number) => `${x}:${y}`;
  * the GENERATED kind (a degenerate loops sample falls back to rooms
  * and says so), never just the selected one.
  */
-function makeMap(width: number, height: number, random: Random, floor: number, seed: number) {
-  const selected = selectLayoutKind(seed, floor);
+function makeMap(width: number, height: number, random: Random, floor: number, seed: number, forceLayout?: DungeonLayoutKind) {
+  const selected = forceLayout ?? selectLayoutKind(seed, floor);
   const generated = generateLayout(selected, width, height, random, floor);
   const tiles = generated.kinds.map((row, y) =>
     row.map((kind, x) => ({ x, y, kind, seen: false, visible: false })),
@@ -478,12 +489,14 @@ function forbiddenCellsFor(state: Pick<GameState, "tiles" | "player" | "monsters
   return forbidden;
 }
 
-export function createGame(seed = Math.floor(Date.now() % 1000000000), speciesIndex = 0, backgroundIndex = 0): GameState {
+export function createGame(seed = Math.floor(Date.now() % 1000000000), speciesIndex = 0, backgroundIndex = 0, opts?: { variant?: 'dungeon' | 'cave'; siteName?: string }): GameState {
+  const variant = opts?.variant ?? 'dungeon';
+  const siteName = opts?.siteName ?? '';
   const random = new Random(seed);
   const width = 31;
   const height = 19;
   const floor = 1;
-  const { tiles, layout } = makeMap(width, height, random, floor, seed);
+  const { tiles, layout } = makeMap(width, height, random, floor, seed, variant === 'cave' ? 'caves' : undefined);
   const chosenSpecies = species[speciesIndex] ?? species[0];
   const chosenBackground = backgrounds[backgroundIndex] ?? backgrounds[0];
   const player: Player = {
@@ -634,6 +647,8 @@ export function createGame(seed = Math.floor(Date.now() % 1000000000), speciesIn
     shops,
     activeShopId: null,
     traps,
+    variant,
+    siteName,
   };
   revealAround(state);
   return state;
@@ -994,7 +1009,7 @@ export function descend(state: GameState) {
   }
   state.floor += 1;
   const random = new Random(state.seed + state.floor * 7919);
-  const mapped = makeMap(state.width, state.height, random, state.floor, state.seed);
+  const mapped = makeMap(state.width, state.height, random, state.floor, state.seed, state.variant === 'cave' ? 'caves' : undefined);
   state.tiles = mapped.tiles;
   state.layout = mapped.layout;
   state.player.x = 5;

@@ -180,7 +180,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '963';
+const BUILD_NUMBER = '964';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -221,6 +221,7 @@ const BUILD_NOTES: Record<string, string> = {
   '961': 'The minimap is now a real map: every kind of place gets its own icon — market stalls, the Rusty Tankard tavern, the Wayfarer Guild (with a little forge mark, since the smiths work there), the chapel, the inn, houses, dungeon entrances, carriage stations and stops, the town well, and the windmill — and the map itself shows far more detail, with real rivers and lakes, roads and town lanes, plazas, walls, and trees, all drawn where they actually are so the icons sit on the right ground. Tapping the minimap to walk somewhere works exactly as before. The map pictures come from a small fantasy map pack that ships no license file, so no license terms are claimed for it; there is no separate blacksmith building in the game, which is why the forge mark rides on the guild icon.',
   '962': 'A new enemy walks the roads: armored knights patrol the deeper outskirts, sword and shield in hand, tougher than the sellswords they replace on those routes — and when one falls, it drops what a warrior would have carried: a real sword and a suit of heavy plate armor, generated with full stats and equippable from your inventory like any other gear. The same rule now covers the fighters you already meet: bandit, goblin, and orc archers drop a bow and cloth armor when they fall. Wizards would drop a staff and cloth robes, but no wizard enemy roams the wilds yet, so that part waits for the first spellcaster to appear — nothing is faked with knight art. Knights count toward the Creature Codex like any other beast, and a knight too heavy to carry stays on the ground with everything else until you make room. Also fixed while wiring the new drops: saves made with monster loot lying on the ground now load again — the save check was rejecting loot types like bone, so a save taken after a fight could refuse to load at all.',
   '963': 'Every house now has a chest you can see and loot: a wooden chest stands beside each front door — in Mosslight and every other town, and at farmhouses out in the wilds — holding a few coins and some household goods like a dagger, a cap, or a pair of boots. Walk up and tap it to open it, then take what you want piece by piece; anything you leave stays in the chest, and anything too heavy to carry stays put with a warning instead of vanishing. Your own starting house chest is free to take from, but taking from any other home is theft: if a villager sees you, word travels to the guards through the usual witness reports and a bounty follows, while an unseen lift leaves no trace. Looted chests stay empty and stay put, old saves gain every chest at full contents, and the adventurer family chests and bank ledger from before work exactly as they did.',
+  '964': 'Two real caves you can walk into: Mossback Cave west of Mosslight and Echo Hollow to the east, each marked on the world map, the atlas, and the minimap with its own cave-mouth icon. Walk up to the mouth and tap Enter cave to explore winding natural caverns built from the Kenney cave pieces — stone floors, rock walls, gates, and stairs — with the same monsters, loot, vaults, shops, and traps as a dungeon delve, but every floor is a rough cavern instead of built rooms. Mossback Cave moved a short way from its old spot because the old ground turned out to be a lake with nowhere dry to stand. Dungeons, towns, and your saves work exactly as before.',
   '960': 'Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.',
   '958': 'At level 10 you now choose a class that actually changes how you fight. Four teachers have moved into Mosslight: Dain teaches warriors at the Wayfarer Guild, Sable teaches mages, Puck teaches rogues, and Wynn teaches archers. They teach at the guild by day and wander to the Rusty Tankard in the evening, so talk to one when you reach level 10 — changing class later is free. Warriors hit 2 damage harder, rogues crit more often and strike from stealth three times as hard, archers shoot 25 percent harder, and mages open a Spells tab in the Skills panel with real magic: Ember Bolt throws fire at the nearest foe within range, Veil Step blinks you two paces in the direction you face, and Frost Ward hardens your skin with 3 extra armor until your next wound. Spells cost mana drawn from your intelligence, refill slowly on their own, and every cast plays a fire, frost, or veil animation on the field. Effect frames come from a user-supplied effects pack that ships no license file, so no license terms are claimed for them.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
@@ -879,6 +880,13 @@ function fieldHouseRects(kind: SettlementKind, startingArea = false, variantSeed
   // Points of interest don't get houses: a dungeon gets one crypt mound, a ruin
   // gets scattered broken walls. Collision + doorway logic reuse these rects.
   if (kind === 'dungeon') return [toBuilding({ left: 38, top: 34, right: 62, bottom: 54 })];
+  // BUILD 964: a cave gets one mouth rect (same footprint as the mound) and
+  // NO town houses. Before 964, 'cave' fell through to the town generator,
+  // so cave chunks rendered a ring of phantom town houses with doors (and
+  // 963 chests) for a settlement that does not exist. Cave chunks are not
+  // settlements: no NPC homes resolve there (housing is Mosslight-only),
+  // so dropping the phantom doors breaks no home, quest, or save.
+  if (kind === 'cave') return [toBuilding({ left: 38, top: 34, right: 62, bottom: 54 })];
   if (kind === 'ruin') return [
     toBuilding({ left: 28, top: 28, right: 43, bottom: 37 }),
     toBuilding({ left: 57, top: 42, right: 70, bottom: 51 }),
@@ -1353,7 +1361,8 @@ export function buildingDoorwaysFor(chunk: Point): Doorway[] {
     return 'south';
   };
   // Points of interest have no house doors (the dungeon gets its own entrance).
-  if (landmark && (landmark.kind === 'dungeon' || landmark.kind === 'ruin')) return [];
+  // BUILD 964: caves join them — the cave mouth is the entrance, not a door.
+  if (landmark && (landmark.kind === 'dungeon' || landmark.kind === 'ruin' || landmark.kind === 'cave')) return [];
   if (landmark) {
     // All doorway positions are computed fresh from the building rects every
     // call — no hardcoded positions, so triggers can never drift from visuals.
@@ -3335,6 +3344,20 @@ function renderMapOverlay(
     ctx.fillStyle = '#1a1c1f';
     for (let i = 0; i < 3; i++) ctx.fillRect(cx - 3 + i * 2, cy + 2 + i, 6 - i * 2, 1);
   };
+  const drawCave = (cx: number, cy: number) => {
+    // BUILD 964: rocky rim + dark rounded mouth — reads as a cave
+    // entrance, distinct from the dungeon's grey arch + stairwell.
+    ctx.fillStyle = '#6b5d43';
+    ctx.fillRect(cx - 8, cy - 6, 16, 12);
+    ctx.fillStyle = '#1a120c';
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, cy + 6);
+    ctx.lineTo(cx - 5, cy - 1);
+    ctx.arc(cx, cy - 1, 5, Math.PI, 0);
+    ctx.lineTo(cx + 5, cy + 6);
+    ctx.closePath();
+    ctx.fill();
+  };
   const drawRuin = (cx: number, cy: number) => {
     // Broken pillar stubs: reads as ancient ruins.
     ctx.fillStyle = '#8d8577';
@@ -3356,6 +3379,7 @@ function renderMapOverlay(
     const cy = py(tile.world.y) + T / 2;
     if (tile.landmark.kind === 'town') drawTown(cx, cy - 3);
     else if (tile.landmark.kind === 'dungeon') drawDungeon(cx, cy - 3);
+    else if (tile.landmark.kind === 'cave') drawCave(cx, cy - 3);
     else if (tile.landmark.kind === 'ruin') drawRuin(cx, cy - 3);
     else drawVillage(cx, cy - 3);
     const label = tile.landmark.name.toUpperCase();
@@ -4382,6 +4406,11 @@ function MiniMap({ chunk, position, onTap, mode = 'terrain', radarEntities = [] 
           if (landmark && landmark.kind === 'dungeon') {
             sources.push({ type: 'dungeon', dx: offX + DUNGEON_ENTRANCE_POINT.x, dy: offY + DUNGEON_ENTRANCE_POINT.y });
           }
+          // BUILD 964: caves share the 947 stand point, so they get a pin
+          // now that a field entrance point exists (see minimapIcons.ts).
+          if (landmark && landmark.kind === 'cave') {
+            sources.push({ type: 'cave', dx: offX + DUNGEON_ENTRANCE_POINT.x, dy: offY + DUNGEON_ENTRANCE_POINT.y });
+          }
           const station = getCarriageStation(cp);
           if (station) sources.push({ type: 'carriage', dx: offX + station.layout.sign.x, dy: offY + station.layout.sign.y });
           const stop = getCarriageStop(cp);
@@ -4441,7 +4470,7 @@ function MiniMap({ chunk, position, onTap, mode = 'terrain', radarEntities = [] 
   );
 }
 
-function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onTaskStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, onResolveBounty, bounty, muted, onToggleMute, audioSettings, onAudioSettingsChange, nowPlayingTrack, onPlayTrackManual, onTavernInteriorChange, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot, opts?: { bypassCarryLimit?: boolean }) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onTaskStatesChange: (states: TaskState[]) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number, townId: string) => void; onResolveBounty: (townId: string) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; audioSettings: AudioSettings; onAudioSettingsChange: (s: AudioSettings) => void; nowPlayingTrack: MusicTrackId | null; onPlayTrackManual: (id: MusicTrackId) => void; onTavernInteriorChange: (inTavern: boolean) => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void; getAaMaxHpBonus: () => number; getAaCarryBonus: () => number } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
+function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onTaskStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, onResolveBounty, bounty, muted, onToggleMute, audioSettings, onAudioSettingsChange, nowPlayingTrack, onPlayTrackManual, onTavernInteriorChange, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, onEnterCave, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot, opts?: { bypassCarryLimit?: boolean }) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onTaskStatesChange: (states: TaskState[]) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number, townId: string) => void; onResolveBounty: (townId: string) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; audioSettings: AudioSettings; onAudioSettingsChange: (s: AudioSettings) => void; nowPlayingTrack: MusicTrackId | null; onPlayTrackManual: (id: MusicTrackId) => void; onTavernInteriorChange: (inTavern: boolean) => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; onEnterCave?: (name: string) => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void; getAaMaxHpBonus: () => number; getAaCarryBonus: () => number } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
   // BUILD 476: equipment damage bonus from found items.
   const equipmentDamageBonus = totalEquipmentStats(equipment).damage ?? 0;
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
@@ -14403,6 +14432,14 @@ if (active) {
               <span className="dungeon-entrance-label" aria-hidden="true">{currentWorldTile.landmark.name}</span>
             </div>
           )}
+          {/* BUILD 964: cave mouth visual in the 2D field (same center rect
+              as the dungeon mound; the iso marker sits at (50,44)). */}
+          {currentWorldTile.landmark && currentWorldTile.landmark.kind === 'cave' && (
+            <div className="field-cave-entrance" aria-label={currentWorldTile.landmark.name + ' entrance'} data-testid="cave-entrance">
+              <span className="cave-mouth" aria-hidden="true" />
+              <span className="cave-entrance-label" aria-hidden="true">{currentWorldTile.landmark.name}</span>
+            </div>
+          )}
           {currentWorldTile.landmark && currentWorldTile.landmark.kind === 'ruin' && (
             <div className="field-ruin" aria-label={currentWorldTile.landmark.name} data-testid="ruin-remains">
               <span className="ruin-stone ruin-stone-1" aria-hidden="true" />
@@ -15194,11 +15231,14 @@ if (active) {
           ))}
           {(() => {
             // Dungeon POI entrance: offer Descend when the player is near the crypt stairs.
-            const dungeon = currentWorldTile.landmark && currentWorldTile.landmark.kind === 'dungeon' ? currentWorldTile.landmark : null;
-            if (!dungeon) return null;
+            // BUILD 964: cave landmarks share the same (50,44)/10 stand point
+            // and flow, with an "Enter cave" button into the cave variant.
+            const site = currentWorldTile.landmark && (currentWorldTile.landmark.kind === 'dungeon' || currentWorldTile.landmark.kind === 'cave') ? currentWorldTile.landmark : null;
+            if (!site) return null;
             const entrance = { x: 50, y: 44 };
             if (Math.hypot(position.x - entrance.x, position.y - entrance.y) > 10) return null;
-            return <button className="dungeon-descend-button" style={{ left: fieldPct((entrance.x + 16)), top: fieldPct(entrance.y) }} onClick={onEnterDungeon} aria-label={'Descend into ' + dungeon.name} data-testid="button-enter-field-dungeon">Descend</button>;
+            if (site.kind === 'cave') return <button className="dungeon-descend-button" style={{ left: fieldPct((entrance.x + 16)), top: fieldPct(entrance.y) }} onClick={() => onEnterCave?.(site.name)} aria-label={'Enter ' + site.name} data-testid="button-enter-field-cave">Enter cave</button>;
+            return <button className="dungeon-descend-button" style={{ left: fieldPct((entrance.x + 16)), top: fieldPct(entrance.y) }} onClick={onEnterDungeon} aria-label={'Descend into ' + site.name} data-testid="button-enter-field-dungeon">Descend</button>;
           })()}
           </div>
           {!mounted && !isoFieldBeta && <div ref={playerElementRef} className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
@@ -16052,6 +16092,22 @@ if (active) {
             </button>
           </div>
           )}
+          {/* BUILD 964: cave entry in iso mode — same (50,44)/10 stand point
+              as the dungeon HUD button, into the cave variant. */}
+          {isoFieldBeta && !interior && currentWorldTile.landmark?.kind === 'cave' && Math.hypot(position.x - 50, position.y - 44) <= 10 && (
+          <div style={{ display: 'flex', gap: 4, marginTop: 8, alignItems: 'center', pointerEvents: 'auto' }}>
+            <button
+              type="button"
+              onClick={() => onEnterCave?.(currentWorldTile.landmark!.name)}
+              disabled={inputLocked}
+              style={{ height: '40px', padding: '0 14px', fontSize: '15px', fontWeight: 'bold', background: 'rgba(0,0,0,0.85)', color: '#fff', border: '2px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
+              aria-label={'Enter ' + currentWorldTile.landmark.name}
+              data-testid="button-enter-field-cave-iso"
+            >
+              Enter cave
+            </button>
+          </div>
+          )}
           </div> {/* Close left column */}
           {/* BUILD 685: tutorial objective banner — top-center below the HUD,
               pointer-events none so it never blocks taps (only the × opts back in). */}
@@ -16706,6 +16762,8 @@ function Home() {
   const [playerSpriteUrl, setPlayerSpriteUrl] = useState<string | null>(null);
   const [playerAttackSpriteUrl, setPlayerAttackSpriteUrl] = useState<string | null>(null);
   const [dungeonOpen, setDungeonOpen] = useState(false);
+  // BUILD 964: which site the open delve belongs to (null = dungeon default).
+  const [dungeonSite, setDungeonSite] = useState<{ kind: 'dungeon' | 'cave'; name: string } | null>(null);
   // BUILD 957: audio settings (persisted in localStorage via audio.ts) +
   // music-zone state. nowPlayingTrack mirrors the engine's effective track
   // for the music list; manualTrack is a play-from-list override that the
@@ -17344,10 +17402,10 @@ function Home() {
       `}</style>
       <div className="game-layout">
             <GameCrashBoundary chunk={chunk}>
-            <GameField rpgConfig={{ look: playerRenderLook, forceIso: forceIsoField }} inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} mapOpen={mapOpen} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onTaskStatesChange={(states) => { setTaskStates(states); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} onResolveBounty={(townId) => setBounty((prev) => clearTownBounty(prev, townId))} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} audioSettings={audioSettings} onAudioSettingsChange={handleAudioSettingsChange} nowPlayingTrack={nowPlayingTrack} onPlayTrackManual={handlePlayTrackManual} onTavernInteriorChange={setInTavern} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
+            <GameField rpgConfig={{ look: playerRenderLook, forceIso: forceIsoField }} inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} mapOpen={mapOpen} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onTaskStatesChange={(states) => { setTaskStates(states); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} onResolveBounty={(townId) => setBounty((prev) => clearTownBounty(prev, townId))} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} audioSettings={audioSettings} onAudioSettingsChange={handleAudioSettingsChange} nowPlayingTrack={nowPlayingTrack} onPlayTrackManual={handlePlayTrackManual} onTavernInteriorChange={setInTavern} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => { setDungeonSite(null); setDungeonOpen(true); }} onEnterCave={(name) => { setDungeonSite({ kind: 'cave', name }); setDungeonOpen(true); }} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
             </GameCrashBoundary>
           </div>
-          {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}
+          {dungeonOpen && <StoneSoupDungeon variant={dungeonSite?.kind ?? 'dungeon'} siteName={dungeonSite?.name ?? ''} onExit={() => { setDungeonOpen(false); setDungeonSite(null); }} />}
           {mapOpen && <WorldMap chunk={chunk} onClose={() => setMapOpen(false)} kingdomLabels={menuBridgeRef.current?.getKingdomLabels() ?? []} tradeRoutes={menuBridgeRef.current?.getTradeRoutes() ?? []} visitedChunks={visitedChunks} />}
           {inventoryOpen && <InventorySheet inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} onDrinkPotion={drinkPotion} equippedDagger={equippedDagger} onToggleDagger={toggleDagger} equippedBow={equippedBow} onToggleBow={toggleBow} equippedShirt={equippedShirt} onToggleShirt={toggleShirt} equippedSword={equippedSword} onToggleSword={toggleSword} barbHair={barbHair} onCycleHair={cycleHair} playerStats={playerStats} statPoints={statPoints} onAssignStat={assignStatPoint} time={menuBridgeRef.current?.getTime() ?? ''} onOpenOptions={() => menuBridgeRef.current?.openOptions()} onOpenSkills={() => menuBridgeRef.current?.openSkills()} onClose={() => setInventoryOpen(false)} onDrinkBeer={drinkBeer} beerBuffActive={beerBuffActive} questStates={questStates} taskStates={taskStates} questPlayerLevel={questPlayerLevel} onAcceptQuest={(questId) => menuBridgeRef.current?.acceptQuest(questId)} onAcceptTask={(questId) => menuBridgeRef.current?.acceptTask(questId)} onWeaveBowstring={weaveBowstring} aaCarry={menuBridgeRef.current?.getAaCarryBonus?.() ?? 0} />}
           {journalOpen && (
