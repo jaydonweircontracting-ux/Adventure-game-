@@ -133,6 +133,7 @@ import { cellLevelAt, cliffBlocksMove, ELEV_CELL, ELEV_CELLS_PER_CHUNK, type Ele
 import { ensureKitTileset, onKitTilesetLoaded } from '@/game/kitAssets';
 import { updateGoat, type GoatAIState, GOAT_ATTACK_WINDUP_MS, GOAT_CHASE_RANGE, gearForMonster, bonesForMonster } from '@/game/ai';
 import { classGearBaseIds } from '@/game/classLoot';
+import { questRewardBaseId } from '@/game/questRewards';
 import { behaviorForCreature, preferredRangeFor, shouldStand, shouldRetarget, voiceLine } from '@/game/creatureBehavior';
 import { multiStrikeCount, isEnraged, enragedDamageMult, enragedChaseSpeed, clampToTether, suppressForSneakBlind } from '@/game/creatureAbilities';
 // BUILD 935: two-stage mitigation + element percents + immunities + ranged falloff.
@@ -180,7 +181,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '967';
+const BUILD_NUMBER = '968';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -225,6 +226,7 @@ const BUILD_NOTES: Record<string, string> = {
   '965': 'Goblins, skeletons, slimes, and ogres now look like themselves: the monsters you meet in the wilds are drawn from new dedicated artwork instead of the old placeholder sheets — a goblin with its spear, a sword-and-shield skeleton, a bouncing green slime, and a club-wielding ogre that no longer borrows the troll picture. Their strength, behavior, and loot are exactly the same — only how they look has changed.',
   '966': 'Soldiers, bandits, and spiders now look like themselves: soldiers march in heavy plate with a longsword and bandits skulk in light leathers with a blade, instead of both showing as plain colored blobs, and spiders are drawn from a detailed new spider model with a full walk, attack, and death animation. One correction from the art itself: the pack labeled as a heavy armored character turned out to be that spider, so it reskins spiders rather than soldiers — no human was faked from it. Strength, behavior, and loot are exactly the same — only how they look has changed. Player and villager characters keep their current look: these new sheets do not cover their animations.',
   '967': 'Sneaking now slows you down, exactly as asked: while the eye is on, you move at half speed — on foot, on horseback, by keyboard, D-pad, or tap-to-move — and the moment you step out of the shadows you are back to full speed. Nothing else about sneaking changes: the same witnesses notice you at the same distances, and your first strike from the shadows still hits just as hard.',
+  '968': 'Fixed the vanishing quest rewards: finishing a quest used to tell you that you had received a sword, a suit of armor, gloves, and more — but none of those items ever arrived, so there was nothing to equip. Quest and task rewards that are weapons, armor, or jewelry now land in your equipment as real items with real stats, ready to equip from the Equipment tab. Coins, XP, and the hunting bow already worked and are unchanged, and a few story keepsakes (bread, maps, favors) stay as words in the log because they have no item form.',
   '960': 'Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.',
   '958': 'At level 10 you now choose a class that actually changes how you fight. Four teachers have moved into Mosslight: Dain teaches warriors at the Wayfarer Guild, Sable teaches mages, Puck teaches rogues, and Wynn teaches archers. They teach at the guild by day and wander to the Rusty Tankard in the evening, so talk to one when you reach level 10 — changing class later is free. Warriors hit 2 damage harder, rogues crit more often and strike from stealth three times as hard, archers shoot 25 percent harder, and mages open a Spells tab in the Skills panel with real magic: Ember Bolt throws fire at the nearest foe within range, Veil Step blinks you two paces in the direction you face, and Frost Ward hardens your skin with 3 extra armor until your next wound. Spells cost mana drawn from your intelligence, refill slowly on their own, and every cast plays a fire, frost, or veil animation on the field. Effect frames come from a user-supplied effects pack that ships no license file, so no license terms are claimed for them.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
@@ -6965,6 +6967,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         }),
         openHouseChestForTest: (chestId: string) => { openHouseChest(chestId); return true; },
         takeHouseChestForTest: (chestId: string, kind: 'coins' | 'item', baseId?: string) => { takeHouseChestItem(chestId, kind, baseId); return true; },
+        // BUILD 968: quest/task payout hooks (testmode only, like all
+        // __gameTest). Drive the REAL payout paths — completeQuest and
+        // payTaskBundle — skipping only stage gameplay, so the harness
+        // can prove reward gear lands in equipment and equips.
+        completeQuestForTest: (questId: string) => { const def = QUESTS.find((q) => q.id === questId); if (!def) return false; completeQuest(def); return true; },
+        payTaskBundleForTest: (questId: string) => { const def = QUESTS.find((q) => q.id === questId); if (!def) return false; payTaskBundle(taskBundleFor(def), def, false); return true; },
+        getEquipmentForTest: () => equipmentRef.current.map((it) => ({ name: it.name, baseId: it.baseId, slot: it.slot, equipped: it.equipped, stats: { ...it.stats }, instanceId: it.instanceId })),
         // BUILD 921: corpse gear state for verification — what the NPC wore,
         // what is already looted off the corpse, and what its body still
         // holds. Mirrors the data IsoFieldView strips from the corpse render.
@@ -10777,11 +10786,31 @@ if (active) {
     }
   };
 
+  // BUILD 968: quest/task reward gear actually arrives. Before this, only
+  // coins, XP, and the 'Hunting bow' bow count were granted — every other
+  // reward item was merely named in the completion log, so a promised
+  // sword or suit of armor never appeared in inventory to equip. Gear
+  // names map to existing catalog bases (questRewards.ts) and generate
+  // through the same 921/962 pattern (catalog stats intact, equippable
+  // from the Equipment tab). Like all quest payouts (BUILD 950) gear
+  // bypasses the carry gate: rewards always land. Non-gear names stay
+  // log-only keepsakes (no inventory form exists for them).
+  const grantQuestRewardGear = (items: readonly string[], giverName: string) => {
+    for (const name of items) {
+      const baseId = questRewardBaseId(name);
+      if (!baseId) continue;
+      const item = generateItem(new ItemRng(Date.now() ^ name.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current), undefined, baseId);
+      onEquipmentChange((prev) => [...prev, withProvenance(item, giverName)]);
+    }
+  };
+
   const completeQuest = (def: QuestDef) => {
     if (def.rewards.coins) onLoot({ coins: def.rewards.coins }, { bypassCarryLimit: true });
     if (def.rewards.xp) grantQuestXp(def.rewards.xp);
-    // 'Hunting bow' maps to the real bow item; other reward items are keepsakes named in the log.
+    // 'Hunting bow' maps to the real bow item; gear names grant generated
+    // equipment (BUILD 968); the rest are keepsakes named in the log.
     if (def.rewards.items.includes('Hunting bow')) onLoot({ bow: 1 }, { bypassCarryLimit: true });
+    grantQuestRewardGear(def.rewards.items, def.giver?.name ?? def.title);
     if (def.rewards.reputation) onQuestReputation(def.rewards.reputation);
     // BUILD 939: completing a quest for a faction's member raises standing
     // with that faction. Static givers all live in Mosslight Crossing;
@@ -10862,6 +10891,8 @@ if (active) {
     if (bundle.coins) onLoot({ coins: bundle.coins }, { bypassCarryLimit: true });
     if (bundle.xp) grantQuestXp(bundle.xp);
     if (bundle.items.includes('Hunting bow')) onLoot({ bow: 1 }, { bypassCarryLimit: true });
+    // BUILD 968: task bundles pay gear through the same grant as quests.
+    grantQuestRewardGear(bundle.items, questDef.giver?.name ?? questDef.title);
     if (bundle.reputation) onQuestReputation(bundle.reputation);
     if (bundle.faction) adjustFactionStanding(bundle.faction.factionId, (s) => applyFactionGain(s, bundle.faction!.factionId, bundle.faction!.amount));
     const keepsakes = bundle.items.filter((name) => name !== 'Hunting bow');

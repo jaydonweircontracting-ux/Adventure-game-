@@ -107,7 +107,8 @@ import { createMicroGrid, simulateMicroStep, igniteCell, countStates } from '../
 import { npcEntryPoint, facingForDelta } from '../src/game/npcEntry';
 import { findTalkTarget, TALK_RANGE } from '../src/game/talkTarget';
 import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, heldTouchDirections, clearTouchHolds, clearTouchHoldDirection, revalidateTouchHolds } from '../src/game/touchInput';
-import { markerForGiver, questById, type QuestState, type QuestDef, type QuestStorage } from '../src/game/quests';
+import { markerForGiver, questById, QUESTS, type QuestState, type QuestDef, type QuestStorage } from '../src/game/quests';
+import { QUEST_REWARD_BASES, questRewardBaseId, questRewardGearNames, questRewardKeepsakes } from '../src/game/questRewards';
 import { TASKS, taskDefForQuest, isTaskDriven, taskActivities, taskStorageKey, snapshotTaskProgress, activityMatchesEvent, settlementForChunk, eventZoneForChunk, zoneMatchesActivity, writeTaskEventToStorage, resetTaskKeys, startTask, taskComplete, evaluateTaskState, taskAvailability, availableTasks, markerForTaskGiver, taskBundleFor, taskActivityText, serializeTaskSave, parseTaskSave, migrateTaskStates, type TaskDef, type TaskState } from '../src/game/tasks';
 import { initialCellarRats, CELLAR_RAT_ID_BASE, CELLAR_RAT_HP, CELLAR_RAT_COUNT } from '../src/game/cellarRats';
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, adjustWanted } from '../src/game/dialogue';
@@ -2221,6 +2222,32 @@ console.log('Testing special-ability vocabulary (BUILD 943)...');
   assert(knightStripRowForFacing('down') === 0 && knightStripRowForFacing('left') === 1 && knightStripRowForFacing('right') === 2 && knightStripRowForFacing('up') === 3, 'Class962: knight facing rows');
   assert(knightStripRowForFacing('down-right') === 0 && knightStripRowForFacing('up-left') === 0, 'Class962: knight diagonal facings fall back to down (sheet convention)');
   assert(knightFrameFor('walk', 0, 0) >= 0 && knightFrameFor('walk', 0, 0) < 15, 'Class962: knight frame column in range');
+  // BUILD 968: quest/task reward gear actually arrives. Before this, only
+  // coins, XP, and the bow count were granted — every other reward item
+  // was log-only, so a promised sword or armor never reached inventory.
+  const PAPERDOLL_SLOTS = ['weapon', 'offhand', 'helmet', 'armor', 'gloves', 'boots', 'ring', 'amulet'];
+  for (const [name, baseId] of Object.entries(QUEST_REWARD_BASES)) {
+    const base = ITEM_BASES.find((b) => b.id === baseId);
+    assert(base !== undefined, `Quest968: reward '${name}' maps to a real catalog base (${baseId})`);
+    assert(base !== undefined && PAPERDOLL_SLOTS.includes(base.slot), `Quest968: reward '${name}' base slot ${base?.slot} is a paper-doll slot`);
+  }
+  assert(questRewardBaseId('Hunting bow') === undefined, 'Quest968: Hunting bow keeps its bow-count mapping, not a gear grant');
+  for (const def of QUESTS) {
+    for (const name of def.rewards.items) {
+      const classified = name === 'Hunting bow' || questRewardBaseId(name) !== undefined || questRewardKeepsakes([name]).length === 1;
+      assert(classified, `Quest968: every reward item of '${def.id}' is classified (bow, gear, or keepsake): '${name}'`);
+    }
+    const gear = questRewardGearNames(def.rewards.items);
+    for (const name of gear) {
+      const baseId = questRewardBaseId(name)!;
+      const item = generateItem(new ItemRng(7), 1, undefined, baseId);
+      assert(item.baseId === baseId && !item.equipped, `Quest968: '${name}' generates as ${baseId}, unequipped`);
+      const equipped = equipItem([item], item.instanceId);
+      assert(equipped[0].equipped, `Quest968: generated '${name}' equips from the list`);
+    }
+  }
+  assert(questRewardGearNames(['Rat-skin gloves', 'Bread']).join(',') === 'Rat-skin gloves', 'Quest968: gear/keepsake partition (gloves grant, bread stays a keepsake)');
+  assert(questRewardGearNames(['Blade of Aldoria', 'Aldorian plate armor']).length === 2, 'Quest968: a quest can pay both a weapon and an armor piece');
   // Acquisition with per-kind ranges: a dragon holds its lock to 60u
   // and acquires at 32u; the globals still hold for unassigned kinds.
   const dragonAb = behaviorForCreature('dragon').abilities;
