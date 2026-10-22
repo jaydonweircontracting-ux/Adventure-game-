@@ -1,6 +1,6 @@
 {
-  "build": "962",
-  "note": "A new enemy walks the roads: armored knights patrol the deeper outskirts, sword and shield in hand, tougher than the sellswords they replace on those routes — and when one falls, it drops what a warrior would have carried: a real sword and a suit of heavy plate armor, generated with full stats and equippable from your inventory like any other gear. The same rule now covers the fighters you already meet: bandit, goblin, and orc archers drop a bow and cloth armor when they fall. Wizards would drop a staff and cloth robes, but no wizard enemy roams the wilds yet, so that part waits for the first spellcaster to appear — nothing is faked with knight art. Knights count toward the Creature Codex like any other beast, and a knight too heavy to carry stays on the ground with everything else until you make room. Also fixed while wiring the new drops: saves made with monster loot lying on the ground now load again — the save check was rejecting loot types like bone, so a save taken after a fight could refuse to load at all.",
-  "timestamp": "2026-10-22T08:06:26.629Z",
-  "cacheBuster": "mvj9bsjq"
+  "build": "963",
+  "note": "Every house now has a chest you can see and loot: a wooden chest stands beside each front door — in Mosslight and every other town, and at farmhouses out in the wilds — holding a few coins and some household goods like a dagger, a cap, or a pair of boots. Walk up and tap it to open it, then take what you want piece by piece; anything you leave stays in the chest, and anything too heavy to carry stays put with a warning instead of vanishing. Your own starting house chest is free to take from, but taking from any other home is theft: if a villager sees you, word travels to the guards through the usual witness reports and a bounty follows, while an unseen lift leaves no trace. Looted chests stay empty and stay put, old saves gain every chest at full contents, and the adventurer family chests and bank ledger from before work exactly as they did.",
+  "timestamp": "2026-10-22T08:36:13.965Z",
+  "cacheBuster": "mvjae3ny"
 }

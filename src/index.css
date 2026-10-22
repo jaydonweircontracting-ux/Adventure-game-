@@ -5334,6 +5334,53 @@ body {
   white-space: nowrap;
 }
 .locked-chest .pickup-button { pointer-events: auto; }
+/* BUILD 963: visible house chests (2D field view). Same footprint as the
+   locked chest; looted chests stay drawn but dimmed and quiet. */
+.house-chest {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.house-chest-visual {
+  width: 36px;
+  height: 26px;
+  border-radius: 4px;
+  background: linear-gradient(#8a5a2b, #6b421e);
+  border: 2px solid #3d2612;
+  position: relative;
+}
+.house-chest-visual::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 8px;
+  border-top: 2px solid #3d2612;
+}
+.house-chest-visual::after {
+  content: '📦';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 14px;
+}
+.house-chest-label {
+  margin-top: 2px;
+  font-size: 10px;
+  color: #f8efd8;
+  background: rgba(23, 54, 46, .85);
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.house-chest .pickup-button { pointer-events: auto; }
+.house-chest.is-looted { opacity: 0.55; }
+.house-chest.is-looted .house-chest-visual::after { content: ''; }
 .lockpick-mark::before { content: '🗝'; font-size: 15px; }
 .quest-giver {
   position: absolute;

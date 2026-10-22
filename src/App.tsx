@@ -148,6 +148,8 @@ import { QUESTS, questById, startQuest, availableQuests, advanceQuestStage, ques
 import { TASKS, taskDefById, taskDefForQuest, isTaskDriven, taskActivities, taskActivityText, taskProgressText, taskBundleFor, taskAvailability, availableTasks, markerForTaskGiver, startTask, evaluateTaskState, writeTaskEventToStorage, resetTaskKeys, eventZoneForChunk, serializeTaskSave, parseTaskSave, migrateTaskStates, type TaskState, type TaskDef, type TaskRewardBundle, type TaskActivity } from '@/game/tasks';
 import { applyFactionGain } from '@/game/faction';
 import { chestsForChunk, attemptLockpick, serializeOpenedChests, parseOpenedChests, type LockedChest } from '@/game/lockpicking';
+// BUILD 963: visible, lootable house chests — one chest per house.
+import { houseChestForDoorway, remainingChestContents, chestFullyLooted, recordHouseChestTake, markChestTheftReported, serializeHouseChestTakes, parseHouseChestTakes, type HouseChest, type HouseChestTakes } from '@/game/houseChests';
 import { sitesForActiveStages, resolveSiteChunk, chunkSatisfiesStage, type ActiveQuestStage } from '@/game/questSites';
 import { playCombatSound } from '@/game/effects';
 import { audioEngine, loadAudioSettings, resolveMusicZone, saveAudioSettings, type AudioSettings, type MusicTrackId } from '@/game/audio';
@@ -178,7 +180,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '962';
+const BUILD_NUMBER = '963';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -218,6 +220,7 @@ const BUILD_NOTES: Record<string, string> = {
   '959': 'Mosslight is rebuilt from the ground up with the Kenney town kit: every house is now a different building assembled from real wall, door, window, roof, chimney, balcony, banner, and awning pieces — wide five-bay cottages and grand halls, two-story towers and tall townhouses, a balcony house, banner shops, and an awning shop — instead of one shared house picture. The town itself is re-laid: the six cottages now stand in two neat rows near the core instead of scattered at the edges, more roadside houses fill the town out, a windmill stands in town, and Rodwan trees line the streets and parks. Every house still works exactly as before: doors sit exactly where their triggers, exits, and path ends are, NPCs now sort correctly in front of and behind houses instead of clipping through them, and moving a house with the debug mover still moves its door with it. The tutorial house keeps its own art, and the watermill piece is in the game files but not placed yet because no town spot has water for it to sit beside.',
   '961': 'The minimap is now a real map: every kind of place gets its own icon — market stalls, the Rusty Tankard tavern, the Wayfarer Guild (with a little forge mark, since the smiths work there), the chapel, the inn, houses, dungeon entrances, carriage stations and stops, the town well, and the windmill — and the map itself shows far more detail, with real rivers and lakes, roads and town lanes, plazas, walls, and trees, all drawn where they actually are so the icons sit on the right ground. Tapping the minimap to walk somewhere works exactly as before. The map pictures come from a small fantasy map pack that ships no license file, so no license terms are claimed for it; there is no separate blacksmith building in the game, which is why the forge mark rides on the guild icon.',
   '962': 'A new enemy walks the roads: armored knights patrol the deeper outskirts, sword and shield in hand, tougher than the sellswords they replace on those routes — and when one falls, it drops what a warrior would have carried: a real sword and a suit of heavy plate armor, generated with full stats and equippable from your inventory like any other gear. The same rule now covers the fighters you already meet: bandit, goblin, and orc archers drop a bow and cloth armor when they fall. Wizards would drop a staff and cloth robes, but no wizard enemy roams the wilds yet, so that part waits for the first spellcaster to appear — nothing is faked with knight art. Knights count toward the Creature Codex like any other beast, and a knight too heavy to carry stays on the ground with everything else until you make room. Also fixed while wiring the new drops: saves made with monster loot lying on the ground now load again — the save check was rejecting loot types like bone, so a save taken after a fight could refuse to load at all.',
+  '963': 'Every house now has a chest you can see and loot: a wooden chest stands beside each front door — in Mosslight and every other town, and at farmhouses out in the wilds — holding a few coins and some household goods like a dagger, a cap, or a pair of boots. Walk up and tap it to open it, then take what you want piece by piece; anything you leave stays in the chest, and anything too heavy to carry stays put with a warning instead of vanishing. Your own starting house chest is free to take from, but taking from any other home is theft: if a villager sees you, word travels to the guards through the usual witness reports and a bounty follows, while an unseen lift leaves no trace. Looted chests stay empty and stay put, old saves gain every chest at full contents, and the adventurer family chests and bank ledger from before work exactly as they did.',
   '960': 'Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.',
   '958': 'At level 10 you now choose a class that actually changes how you fight. Four teachers have moved into Mosslight: Dain teaches warriors at the Wayfarer Guild, Sable teaches mages, Puck teaches rogues, and Wynn teaches archers. They teach at the guild by day and wander to the Rusty Tankard in the evening, so talk to one when you reach level 10 — changing class later is free. Warriors hit 2 damage harder, rogues crit more often and strike from stealth three times as hard, archers shoot 25 percent harder, and mages open a Spells tab in the Skills panel with real magic: Ember Bolt throws fire at the nearest foe within range, Veil Step blinks you two paces in the direction you face, and Frost Ward hardens your skin with 3 extra armor until your next wound. Spells cost mana drawn from your intelligence, refill slowly on their own, and every cast plays a fire, frost, or veil animation on the field. Effect frames come from a user-supplied effects pack that ships no license file, so no license terms are claimed for them.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
@@ -1917,6 +1920,8 @@ type SaveGameData = {
   // carry no field and restore to empty (migration runs on load).
   taskLog?: string;
   openedChests?: string;
+  // BUILD 963: what the player took from each visible house chest.
+  houseChestTakes?: string;
   lootedPois?: string;
   civ?: string;
   horses?: unknown;
@@ -2072,6 +2077,7 @@ function isSaveGameData(value: unknown): value is SaveGameData {
     && (value.equippedSword === undefined || typeof value.equippedSword === 'boolean')
     && (value.barbHair === undefined || typeof value.barbHair === 'string')
     && (value.droppedLoot === undefined || (Array.isArray(value.droppedLoot) && value.droppedLoot.every(isDroppedLootSave)))
+    && (value.houseChestTakes === undefined || typeof value.houseChestTakes === 'string')
     && (value.pickedUpGroundItems === undefined || (Array.isArray(value.pickedUpGroundItems) && value.pickedUpGroundItems.every((s) => typeof s === 'string')))
     && isFiniteNumber(value.playerHp)
     && isFiniteNumber(value.playerXp)
@@ -4478,6 +4484,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // Tap-to-move: selected house ID. Tap a house to pick it up, tap the field to place it.
   const [selectedHouse, setSelectedHouse] = useState<string | null>(null);
   const [deletedHouseIds, setDeletedHouseIds] = useState<string[]>([]);
+  const deletedHouseIdsRef = useRef<string[]>([]);
+  useEffect(() => { deletedHouseIdsRef.current = deletedHouseIds; }, [deletedHouseIds]);
   // BUILD 831: per-building render-layer offsets, editable in the debug mover and persisted locally.
   const [houseLayerOffsets, setHouseLayerOffsets] = useState<Record<string, number>>(() => {
     try { const raw = localStorage.getItem('ag-house-layer-offsets'); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
@@ -5751,6 +5759,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // Lockpicking: opened locked-chest ids (pure logic in src/game/lockpicking.ts).
   const [openedChests, setOpenedChests] = useState<string[]>([]);
   const openedChestsRef = useRef<string[]>([]);
+  // BUILD 963: takes from visible house chests (pure logic in
+  // src/game/houseChests.ts). Only takes persist — positions and contents
+  // derive from chunk + doorway id, so old saves gain full chests.
+  const [houseChestTakes, setHouseChestTakes] = useState<HouseChestTakes>({});
+  const houseChestTakesRef = useRef<HouseChestTakes>({});
+  useEffect(() => { houseChestTakesRef.current = houseChestTakes; }, [houseChestTakes]);
   // Civ phase 14: POI treasure looted once per POI id, persisted in the save.
   const [lootedPois, setLootedPois] = useState<string[]>([]);
   const lootedPoisRef = useRef<string[]>([]);
@@ -6174,6 +6188,99 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 907: corpse interaction opens a selective, persistent loot panel.
   const [activeLootBodyId, setActiveLootBodyId] = useState<string | null>(null);
   const activeLootBody = bodies.find((body) => body.id === activeLootBodyId && !body.looted && body.chunk.x === chunk.x && body.chunk.y === chunk.y) ?? null;
+  // BUILD 963: one visible chest per doorway in the current chunk, derived
+  // fresh every render (doorways are computed, never persisted) with the
+  // same mover offsets the 2D houses use, so a moved house moves its
+  // chest. Deleted editor houses get no chest. Shared by the 2D chest
+  // divs, the iso chest props, the chest panel, and the test hooks.
+  const computeHouseChests = (chunkVal: Point, offsets: Record<string, Point>, deleted: string[]): HouseChest[] => {
+    const doorways = buildingDoorwaysFor(chunkVal).filter((d) => !deleted.includes(d.id));
+    const rects = doorways.map((d) => {
+      const off = offsets[d.id] || { x: 0, y: 0 };
+      return { left: d.rect.left + off.x, top: d.rect.top + off.y, right: d.rect.right + off.x, bottom: d.rect.bottom + off.y };
+    });
+    return doorways.map((d) => {
+      const off = offsets[d.id] || { x: 0, y: 0 };
+      return houseChestForDoorway(chunkVal, {
+        id: d.id,
+        rect: { left: d.rect.left + off.x, top: d.rect.top + off.y, right: d.rect.right + off.x, bottom: d.rect.bottom + off.y },
+        position: { x: d.position.x + off.x, y: d.position.y + off.y },
+        areaName: d.area.name,
+      }, rects);
+    });
+  };
+  const houseChestsForChunk = useMemo(
+    () => computeHouseChests(chunk, houseOffsets, deletedHouseIds),
+    [chunk.x, chunk.y, houseOffsets, deletedHouseIds],
+  );
+  const [activeHouseChestId, setActiveHouseChestId] = useState<string | null>(null);
+  const activeHouseChest = houseChestsForChunk.find((c) => c.id === activeHouseChestId) ?? null;
+  const openHouseChest = (chestId: string) => {
+    if (inputLocked || optionsOpen || waitingRef.current) return;
+    const chest = houseChestsForChunk.find((c) => c.id === chestId);
+    if (!chest) return;
+    setActiveHouseChestId(chest.id);
+  };
+  const takeHouseChestItem = (chestId: string, kind: 'coins' | 'item', baseId?: string) => {
+    const chest = houseChestsForChunk.find((c) => c.id === chestId);
+    if (!chest) return;
+    const remaining = remainingChestContents(chest, houseChestTakesRef.current);
+    if (kind === 'coins' && remaining.coins <= 0) return;
+    if (kind === 'item' && (!baseId || !remaining.baseIds.includes(baseId))) return;
+    // BUILD 950: carry-limit pre-gate for items — BEFORE the take is
+    // recorded, so a refused item stays in the chest. Coins weigh 0.
+    if (kind === 'item' && carryNow().over) {
+      setLogs((cur) => [{ text: CARRY_OVER_MSG + ` Leave ${gearNameForBaseId(baseId!)} in the chest for now.`, color: 'red' }, ...cur].slice(0, 3));
+      return;
+    }
+    const recorded = recordHouseChestTake(houseChestTakesRef.current, chest, kind, baseId);
+    if (!recorded.ok) return;
+    let next = recorded.takes;
+    // BUILD 963 theft rule: the first take from a non-own chest is theft
+    // (opening is never a crime). Witnesses follow the 926/932 rules —
+    // radius 25, 12 while sneaking — and only where townsfolk live
+    // (Mosslight): any other chunk has nobody to see it, so no report
+    // can form, the same outcome as unwitnessed crime anywhere. One
+    // report per chest: the theftReported mark resolves it either way.
+    const prevTake = houseChestTakesRef.current[chest.id];
+    if (!chest.ownHouse && !prevTake?.theftReported) {
+      next = markChestTheftReported(next, chest.id);
+      try {
+        const clock = brainRef.current?.worldCore.getClock();
+        const day = clock ? Math.floor(clock.day) : 1;
+        const tick = clock?.tick ?? 0;
+        const wasSneaking = sneakingRef.current;
+        const inTownsfolkChunk = chunkRef.current.x === TOWNSFOLK_CHUNK.x && chunkRef.current.y === TOWNSFOLK_CHUNK.y;
+        const rawWitnesses = inTownsfolkChunk
+          ? findWitnesses({ position: chest.position }, townsfolkRef.current.filter((w) => !isNpcDead(w, tick)).map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } })))
+          : [];
+        const witnesses = wasSneaking
+          ? filterSneakWitnesses(rawWitnesses, townsfolkRef.current.map((w) => ({ id: w.id, position: { x: w.position.x, y: w.position.y } })), chest.position)
+          : rawWitnesses;
+        if (witnesses.length > 0) {
+          const crime = createCrime('crime-' + Date.now().toString(36), 'theft', chunkRef.current, { ...chest.position }, day);
+          const updated = townsfolkRef.current.map((w) => (witnesses.some((x) => x.npcId === w.id) ? addNPCMemory(w, crimeMemoryEvent(crime), day, crimeMemoryImportance(crime)) : w));
+          townsfolkRef.current = updated; setTownsfolk(updated);
+          registerPlayerCrime(crime.id, crime.severity, witnesses, day);
+          witnesses.forEach((x) => markNpcAlerted(x.npcId));
+          breakSneak();
+          setLogs((cur) => [{ text: `Someone saw you take from the ${chest.houseName} chest. Word will reach the guards.`, color: 'red' }, ...cur].slice(0, 3));
+        } else {
+          setLogs((cur) => [{ text: 'Nobody saw that.', color: 'blue' }, ...cur].slice(0, 3));
+        }
+      } catch { /* crime consequences must not interrupt looting */ }
+    }
+    houseChestTakesRef.current = next; setHouseChestTakes(next);
+    if (kind === 'coins') {
+      onLoot({ coins: chest.coins } as GoatLoot);
+      setLogs((cur) => [{ text: `Took ${chest.coins} coins from the ${chest.houseName} chest.`, color: 'gold' }, ...cur].slice(0, 3));
+    } else {
+      const item = generateItem(new ItemRng(Date.now() ^ baseId!.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)), Math.max(1, playerLevelRef.current), undefined, baseId);
+      onEquipmentChange((prev) => [...prev, withProvenance(item, chest.houseName + ' chest')]);
+      setLogs((cur) => [{ text: `Took ${item.name} from the ${chest.houseName} chest.`, color: 'gold' }, ...cur].slice(0, 3));
+    }
+    if (chestFullyLooted(chest, next)) setActiveHouseChestId(null);
+  };
   // BUILD 921: gear already looted from each NPC's corpse, by NPC id — the
   // iso view strips exactly these layers from the dead NPC's render, so
   // looting visibly unequips the corpse. Last body per NPC wins (a
@@ -6819,6 +6926,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // BUILD 921: open a corpse's loot panel deterministically (the
         // production path is tapping the corpse sprite on the canvas).
         openLootBodyForTest: (bodyId: string) => { lootTownspersonBody(bodyId); return true; },
+        // BUILD 963: house-chest hooks (testmode only, like all __gameTest).
+        getHouseChests: () => computeHouseChests(chunkRef.current, houseOffsetsRef.current, deletedHouseIdsRef.current).map((c) => {
+          const remaining = remainingChestContents(c, houseChestTakesRef.current);
+          return { id: c.id, houseName: c.houseName, x: c.position.x, y: c.position.y, ownHouse: c.ownHouse, coins: remaining.coins, items: [...remaining.baseIds] };
+        }),
+        openHouseChestForTest: (chestId: string) => { openHouseChest(chestId); return true; },
+        takeHouseChestForTest: (chestId: string, kind: 'coins' | 'item', baseId?: string) => { takeHouseChestItem(chestId, kind, baseId); return true; },
         // BUILD 921: corpse gear state for verification — what the NPC wore,
         // what is already looted off the corpse, and what its body still
         // holds. Mirrors the data IsoFieldView strips from the corpse render.
@@ -7238,6 +7352,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     questLog: serializeQuestSave(questStatesRef.current, questStorageRef.current),
     taskLog: serializeTaskSave(taskStatesRef.current),
     openedChests: serializeOpenedChests(openedChestsRef.current),
+    houseChestTakes: serializeHouseChestTakes(houseChestTakesRef.current),
     lootedPois: serializeOpenedChests(lootedPoisRef.current),
     civ: civRef.current ? serializeCivilization(civRef.current) : undefined,
     horses: horsesRef.current ? serializeHorses(horsesRef.current.horses, horsesRef.current.stables) : undefined,
@@ -7475,6 +7590,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     taskStatesRef.current = migrated.taskStates; setTaskStates(migrated.taskStates);
     const restoredChests = parseOpenedChests(loadState.openedChests);
     openedChestsRef.current = restoredChests; setOpenedChests(restoredChests);
+    // BUILD 963: old saves carry no field and restore to empty takes —
+    // every chest is full on first load, never faked history.
+    const restoredTakes = parseHouseChestTakes(loadState.houseChestTakes);
+    houseChestTakesRef.current = restoredTakes; setHouseChestTakes(restoredTakes);
     const restoredLooted = parseOpenedChests(loadState.lootedPois);
     lootedPoisRef.current = restoredLooted; setLootedPois(restoredLooted);
     // Civilization: restore the simulated hierarchy, or rebuild it lazily.
@@ -13627,6 +13746,8 @@ if (active) {
               lootableBodies={bodies.filter((body) => !body.looted && body.chunk.x === chunk.x && body.chunk.y === chunk.y).map((body) => ({ id: body.id, npcName: body.npcName, position: body.position }))}
               corpseLootedBases={corpseLootedBases}
               onLootBody={(body) => lootTownspersonBody(body.id)}
+              houseChests={houseChestsForChunk.map((c) => ({ id: c.id, houseName: c.houseName, position: c.position, fullyLooted: chestFullyLooted(c, houseChestTakes) }))}
+              onLootHouseChest={(c) => openHouseChest(c.id)}
               playerMounted={mounted}
               playerHorse={mounted ? null : (horseHere ? { position: horse.position, facing: horseFacing } : null)}
               worldHorses={visibleHorses}
@@ -13724,6 +13845,33 @@ if (active) {
                         </section>
                       </div>
                     )}
+                    {/* House chest panel (BUILD 963): same take-one-at-a-time
+                        pattern as body loot. Opening is never a crime; only
+                        taking from a non-own chest is theft (see handler). */}
+                    {activeHouseChest && (() => {
+                      const remaining = remainingChestContents(activeHouseChest, houseChestTakes);
+                      return (
+                      <div className="body-loot-backdrop" role="presentation" onClick={() => setActiveHouseChestId(null)}>
+                        <section className="body-loot-panel" role="dialog" aria-modal="true" aria-label={`Loot ${activeHouseChest.houseName} chest`} onClick={(event) => event.stopPropagation()}>
+                          <header className="body-loot-header">
+                            <div><span className="body-loot-kicker">HOUSE CHEST</span><h3>{activeHouseChest.houseName}</h3></div>
+                            <button type="button" className="body-loot-close" aria-label="Close chest window" onClick={() => setActiveHouseChestId(null)}>×</button>
+                          </header>
+                          <p className="body-loot-hint">{activeHouseChest.ownHouse ? 'Your own chest — take freely.' : 'This chest belongs to this house. Taking from it is theft if anyone sees you.'}</p>
+                          <div className="body-loot-items">
+                            {remaining.coins > 0 && (
+                              <div className="body-loot-item"><span><strong>🪙 Coins</strong><small>{remaining.coins} coins</small></span><button type="button" onClick={() => takeHouseChestItem(activeHouseChest.id, 'coins')} data-testid={'button-house-chest-coins-' + activeHouseChest.id}>Take</button></div>
+                            )}
+                            {remaining.baseIds.map((baseId) => (
+                              <div className="body-loot-item" key={baseId}><span><strong>🎒 {gearNameForBaseId(baseId)}</strong><small>Household goods</small></span><button type="button" onClick={() => takeHouseChestItem(activeHouseChest.id, 'item', baseId)} data-testid={'button-house-chest-item-' + baseId}>Take</button></div>
+                            ))}
+                            {remaining.coins <= 0 && remaining.baseIds.length === 0 && <p className="body-loot-empty">Nothing left to take.</p>}
+                          </div>
+                          <button type="button" className="body-loot-done" onClick={() => setActiveHouseChestId(null)}>Done</button>
+                        </section>
+                      </div>
+                      );
+                    })()}
 <div className="field-world-layer" style={isoFieldBeta ? { display: 'none' } : (gameZoom !== 1 ? (() => {
             // BUILD 327: zoom centers the player in the viewport — the layer
             // is scaled around the top-left, then translated so the player's
@@ -14101,6 +14249,20 @@ if (active) {
                   </div>
                 );
               })}
+            {/* House chests (BUILD 963): one visible, lootable chest per
+                house, beside the door. Looted chests stay drawn but dim. */}
+            {houseChestsForChunk.map((chest) => {
+              const remaining = remainingChestContents(chest, houseChestTakes);
+              const nearby = Math.hypot(chest.position.x - position.x, chest.position.y - position.y) <= 16;
+              const looted = remaining.coins <= 0 && remaining.baseIds.length === 0;
+              return (
+                <div className={'house-chest' + (looted ? ' is-looted' : '')} key={'house-chest-' + chest.id} style={{ left: fieldPct(chest.position.x), top: fieldPct(chest.position.y) }}>
+                  <span className="house-chest-visual" aria-label={chest.houseName + ' chest'} title={chest.houseName + ' chest'} />
+                  {!looted && <span className="house-chest-label" aria-hidden="true">📦 Chest</span>}
+                  {nearby && <button className="pickup-button" onClick={() => openHouseChest(chest.id)} data-testid={'button-loot-house-chest-' + chest.id}>Loot chest</button>}
+                </div>
+              );
+            })}
           </div>
           {/* Arrows in flight: player bow shots and bandit-archer volleys. */}
           <div className="field-arrows" aria-hidden="true">

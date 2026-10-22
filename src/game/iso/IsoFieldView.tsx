@@ -294,6 +294,9 @@ interface IsoFieldViewProps {
   // BUILD 731: lootable NPC corpses are also rendered/interacted with in iso mode.
   lootableBodies?: Array<{ id: string; npcName: string; position: Point }>;
   onLootBody?: (body: { id: string; position: Point }) => void;
+  // BUILD 963: visible house chests (home chunk only, like bodies/drops).
+  houseChests?: Array<{ id: string; houseName: string; position: Point; fullyLooted: boolean }>;
+  onLootHouseChest?: (chest: { id: string; position: Point }) => void;
   // BUILD 921: gear already looted off each corpse, by NPC id (base ids from
   // App's corpseLootedBases memo). Dead NPCs render with exactly these
   // layers removed, so looting visibly unequips the corpse. Living NPCs
@@ -627,11 +630,11 @@ function roadBlendFor(road: string, lx: number, ly: number): number {
   return 0.3 + 0.7 * Math.min(1, Math.max(0, d) / 2.5);
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, adventurers, goats, wildlife, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, spellFx, zoom, rotationAngleRef, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, adventurers, goats, wildlife, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, houseChests, onLootHouseChest, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, spellFx, zoom, rotationAngleRef, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
-  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, houseChests, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, houseChests, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -689,8 +692,8 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
   const [selectedCritterId, setSelectedCritterId] = useState<number | null>(null);
   const greenBoxRef = useRef({ dx: 0, dy: 0, hw: 0.35, hh: 0.4 }); // offset and size in world units
   // tap callbacks via ref so the canvas listener always calls the latest
-  const tapRef = useRef({ onTapMove, onTapMine, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onLootBody, onShopStall });
-  tapRef.current = { onTapMove, onTapMine, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onLootBody, onShopStall };
+  const tapRef = useRef({ onTapMove, onTapMine, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onLootBody, onLootHouseChest, onShopStall });
+  tapRef.current = { onTapMove, onTapMine, onTalkTo, onSelectNpc, onSelectGoat, onSelectMonster, onPickupDrop, onLootBody, onLootHouseChest, onShopStall };
 
   const R = ISO_CHUNK_RENDER_RADIUS;
   const GRID = 2 * R + 1;
@@ -2188,6 +2191,45 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             });
           }
         }
+
+        // BUILD 963: house chests — wooden chest box south of each house,
+        // pulsing gold ring + label while loot remains, dimmed and quiet
+        // once fully looted. Home chunk only, like bodies and drops.
+        if (sc.ox === 0 && sc.oy === 0) {
+          for (const chest of liveRef.current.houseChests || []) {
+            const cx2 = chest.position.x + bx, cy2 = chest.position.y + by;
+            const cc = isoToScreen(cx2, cy2);
+            drawables.push({
+              depth: dep(cx2, cy2) + 0.001,
+              draw: (g2, now) => {
+                g2.save();
+                if (!chest.fullyLooted) {
+                  const pulse = 1 + Math.sin(now / 350) * 0.12;
+                  g2.strokeStyle = 'rgba(255, 205, 80, 0.6)';
+                  g2.lineWidth = 2;
+                  g2.beginPath(); g2.ellipse(cc.x, cc.y - 1, 14 * pulse, 6 * pulse, 0, 0, Math.PI * 2); g2.stroke();
+                  g2.font = 'bold 10px sans-serif';
+                  g2.textAlign = 'center';
+                  g2.textBaseline = 'middle';
+                  g2.lineWidth = 3;
+                  g2.strokeStyle = 'rgba(20, 16, 10, 0.85)';
+                  g2.strokeText('📦 Chest', cc.x, cc.y - 20);
+                  g2.fillStyle = '#ffd34d';
+                  g2.fillText('📦 Chest', cc.x, cc.y - 20);
+                }
+                g2.fillStyle = chest.fullyLooted ? 'rgba(90, 62, 36, 0.85)' : '#8a5a2b';
+                g2.fillRect(cc.x - 10, cc.y - 12, 20, 12);
+                g2.strokeStyle = '#3d2612'; g2.lineWidth = 1.5;
+                g2.strokeRect(cc.x - 10, cc.y - 12, 20, 12);
+                g2.fillStyle = '#5d3a1a';
+                g2.fillRect(cc.x - 10, cc.y - 7, 20, 2);
+                g2.fillStyle = '#ffd764';
+                g2.fillRect(cc.x - 2, cc.y - 6, 4, 3);
+                g2.restore();
+              },
+            });
+          }
+        }
       }
 
       // BUILD 389: ambient critters (badger/stag/boar) — deterministic home-
@@ -3123,6 +3165,28 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           const dist = Math.hypot(bestBody.position.x - player.px, bestBody.position.y - player.py);
           if (dist <= 16) { lootBodyAt(bestBody); return; }
           tapMove({ x: bestBody.position.x, y: bestBody.position.y }); return;
+        }
+      }
+      // BUILD 963: house-chest hit test — same 16-unit rule as bodies and
+      // drops: tap in range opens the chest panel, tap from afar walks
+      // to it. Runs before stalls and doors so a chest beside a door is
+      // not shadowed by the door test.
+      if (tapMove) {
+        const chests = liveRef.current.houseChests || [];
+        const { onLootHouseChest: lootChestAt } = tapRef.current;
+        let bestChest: { id: string; position: Point } | null = null; let bestChestD = 48;
+        for (const chest of chests) {
+          const w = isoToScreen(chest.position.x, chest.position.y);
+          const cxScreen = (w.x - cam.x) * zm + wpx / 2;
+          const cyScreen = (w.y - cam.y) * zm + hpx / 2;
+          const d = Math.hypot(cxScreen - sx, cyScreen - sy);
+          if (d < bestChestD) { bestChestD = d; bestChest = chest; }
+        }
+        if (bestChest && lootChestAt) {
+          const player = liveRef.current;
+          const dist = Math.hypot(bestChest.position.x - player.px, bestChest.position.y - player.py);
+          if (dist <= 16) { lootChestAt(bestChest); return; }
+          tapMove({ x: bestChest.position.x, y: bestChest.position.y }); return;
         }
       }
       // BUILD 721: stall hit test — only taps directly on the stall open its shop.
