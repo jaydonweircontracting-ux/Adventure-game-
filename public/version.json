@@ -1,6 +1,6 @@
 {
-  "build": "966",
-  "note": "Soldiers, bandits, and spiders now look like themselves: soldiers march in heavy plate with a longsword and bandits skulk in light leathers with a blade, instead of both showing as plain colored blobs, and spiders are drawn from a detailed new spider model with a full walk, attack, and death animation. One correction from the art itself: the pack labeled as a heavy armored character turned out to be that spider, so it reskins spiders rather than soldiers — no human was faked from it. Strength, behavior, and loot are exactly the same — only how they look has changed. Player and villager characters keep their current look: these new sheets do not cover their animations.",
-  "timestamp": "2026-10-22T09:28:57.384Z",
-  "cacheBuster": "mvjc9wko"
+  "build": "967",
+  "note": "Sneaking now slows you down, exactly as asked: while the eye is on, you move at half speed — on foot, on horseback, by keyboard, D-pad, or tap-to-move — and the moment you step out of the shadows you are back to full speed. Nothing else about sneaking changes: the same witnesses notice you at the same distances, and your first strike from the shadows still hits just as hard.",
+  "timestamp": "2026-10-22T09:37:11.739Z",
+  "cacheBuster": "mvjcki0r"
 }

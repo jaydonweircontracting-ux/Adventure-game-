@@ -20,7 +20,7 @@ import { moralityLine, npcMorality, mayInitiateLethalAggression, moralityTier } 
 import { addCrimeToBounty, wantedLevel, emptyBounty, bountyForTown, totalBounty, clearTownBounty, migrateBounty, townIdForChunk, createPendingReport, advancePendingReports, type BountyState, type PendingReport } from './game/bounty';
 import { pickpocketChance, resolvePickpocket } from './game/pickpocket';
 // BUILD 932: sneak mode — detection, witness filtering, stealth damage, stash pickpocketing.
-import { SNEAK_PICKPOCKET_RANGE, SNEAK_ALERTED_AWARENESS, SNEAK_PLAYER_OPACITY, sanitizeAlertedIds, isStealthUndetected, stealthDamage, filterSneakWitnesses, choosePickpocketLoot, canOfferPickpocket, type PickpocketLoot } from './game/sneak';
+import { SNEAK_PICKPOCKET_RANGE, SNEAK_ALERTED_AWARENESS, SNEAK_PLAYER_OPACITY, sneakSpeedMultiplier, sanitizeAlertedIds, isStealthUndetected, stealthDamage, filterSneakWitnesses, choosePickpocketLoot, canOfferPickpocket, type PickpocketLoot } from './game/sneak';
 import { examineEntity, menuActionsFor, markExamined, type ExamineRef, type MenuAction } from './game/examine';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { isRecord, isFiniteNumber } from '@/game/shared/guards';
@@ -180,7 +180,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '966';
+const BUILD_NUMBER = '967';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -224,6 +224,7 @@ const BUILD_NOTES: Record<string, string> = {
   '964': 'Two real caves you can walk into: Mossback Cave west of Mosslight and Echo Hollow to the east, each marked on the world map, the atlas, and the minimap with its own cave-mouth icon. Walk up to the mouth and tap Enter cave to explore winding natural caverns built from the Kenney cave pieces — stone floors, rock walls, gates, and stairs — with the same monsters, loot, vaults, shops, and traps as a dungeon delve, but every floor is a rough cavern instead of built rooms. Mossback Cave moved a short way from its old spot because the old ground turned out to be a lake with nowhere dry to stand. Dungeons, towns, and your saves work exactly as before.',
   '965': 'Goblins, skeletons, slimes, and ogres now look like themselves: the monsters you meet in the wilds are drawn from new dedicated artwork instead of the old placeholder sheets — a goblin with its spear, a sword-and-shield skeleton, a bouncing green slime, and a club-wielding ogre that no longer borrows the troll picture. Their strength, behavior, and loot are exactly the same — only how they look has changed.',
   '966': 'Soldiers, bandits, and spiders now look like themselves: soldiers march in heavy plate with a longsword and bandits skulk in light leathers with a blade, instead of both showing as plain colored blobs, and spiders are drawn from a detailed new spider model with a full walk, attack, and death animation. One correction from the art itself: the pack labeled as a heavy armored character turned out to be that spider, so it reskins spiders rather than soldiers — no human was faked from it. Strength, behavior, and loot are exactly the same — only how they look has changed. Player and villager characters keep their current look: these new sheets do not cover their animations.',
+  '967': 'Sneaking now slows you down, exactly as asked: while the eye is on, you move at half speed — on foot, on horseback, by keyboard, D-pad, or tap-to-move — and the moment you step out of the shadows you are back to full speed. Nothing else about sneaking changes: the same witnesses notice you at the same distances, and your first strike from the shadows still hits just as hard.',
   '960': 'Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.',
   '958': 'At level 10 you now choose a class that actually changes how you fight. Four teachers have moved into Mosslight: Dain teaches warriors at the Wayfarer Guild, Sable teaches mages, Puck teaches rogues, and Wynn teaches archers. They teach at the guild by day and wander to the Rusty Tankard in the evening, so talk to one when you reach level 10 — changing class later is free. Warriors hit 2 damage harder, rogues crit more often and strike from stealth three times as hard, archers shoot 25 percent harder, and mages open a Spells tab in the Skills panel with real magic: Ember Bolt throws fire at the nearest foe within range, Veil Step blinks you two paces in the direction you face, and Frost Ward hardens your skin with 3 extra armor until your next wound. Spells cost mana drawn from your intelligence, refill slowly on their own, and every cast plays a fire, frost, or veil animation on the field. Effect frames come from a user-supplied effects pack that ships no license file, so no license terms are claimed for them.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
@@ -10469,7 +10470,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           setFacing(direction);
          const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
          const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
-         const movement = { x: (input.x / length) * WALK_SPEED * elapsed * FIELD_SIZE / frameWidth, y: (input.y / length) * WALK_SPEED * elapsed * FIELD_SIZE / frameHeight };
+         // BUILD 967: sneak halves interior walk speed too (same 0.5x
+         // constant as the field branch; interiors are unreachable in
+         // normal play today, but the path exists and must not dodge it).
+         const movement = { x: (input.x / length) * WALK_SPEED * sneakSpeedMultiplier(sneakingRef.current) * elapsed * FIELD_SIZE / frameWidth, y: (input.y / length) * WALK_SPEED * sneakSpeedMultiplier(sneakingRef.current) * elapsed * FIELD_SIZE / frameHeight };
          const current = interiorPositionRef.current;
          const next = { x: Math.min(90, Math.max(10, current.x + movement.x)), y: current.y + movement.y };
          const horizontalStep = { x: next.x, y: current.y };
@@ -10526,6 +10530,13 @@ if (active) {
         if (isoFieldBetaRef.current && length > 0) {
           speed *= isoScreenSpeedScale(effInput.x / length, effInput.y / length);
         }
+        // BUILD 967: sneak halves movement speed — exactly 0.5x. Applied
+        // LAST (after run/encumbrance/iso scale) so the sneak/normal ratio
+        // is exactly 0.5 against every base, mounted included (horse 28 →
+        // 14), and toggling sneak off restores full speed with no residue.
+        // tap-to-move, minimap travel, and combat chase all steer through
+        // this same effInput block, so they slow down too.
+        speed *= sneakSpeedMultiplier(sneakingRef.current);
         const frameWidth = gameFrameRef.current?.clientWidth || window.innerWidth;
         const frameHeight = gameFrameRef.current?.clientHeight || window.innerHeight;
         const movement = {

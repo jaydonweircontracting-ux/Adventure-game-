@@ -61,6 +61,23 @@ export const SNEAK_ALERTED_AWARENESS = 0.9;
 export const SNEAK_PLAYER_OPACITY = 0.55;
 
 /**
+ * BUILD 967: movement speed multiplier while sneaking — exactly half speed
+ * (user order 2026-10-21: "move 2x slower"). This is the SINGLE source of
+ * truth for the sneak slowdown: every player movement path in App.tsx
+ * (field walk/run/mounted/tap-to-move + interior walk) multiplies its final
+ * speed by sneakSpeedMultiplier(), so the sneak/normal ratio is exactly 0.5
+ * against every base speed and the toggle on/off restores full speed with
+ * no stuck state. Detection ranges, stealth damage, crime, and NPC/creature
+ * speeds are untouched — this is movement only.
+ */
+export const SNEAK_SPEED_MULT = 0.5;
+
+/** 0.5 while sneaking, 1 otherwise — applied last, after run/encumbrance. */
+export function sneakSpeedMultiplier(sneaking: boolean): number {
+  return sneaking ? SNEAK_SPEED_MULT : 1;
+}
+
+/**
  * BUILD 933: sanitize a saved alerted-id list (the parallel save field in
  * App's SaveGameData). Old saves carry no field (→ empty); garbage entries
  * are dropped; duplicates collapse. The alerted set itself is a Set in App,
