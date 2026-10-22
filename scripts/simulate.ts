@@ -7,6 +7,8 @@ import { VAULT_CATALOG, eligibleVaults } from '../src/game/dungeonVaults';
 import { UNIQUE_DEFS, eligibleUniques } from '../src/game/dungeonUniques';
 import { SHOP_VAULT_DEFS, SHOP_FLOOR_CHANCE, DUNGEON_SHOP_ITEM } from '../src/game/dungeonShops';
 import { TRAP_VAULT_DEFS, TRAP_FLOOR_CHANCE, eligibleTrapVaults, trapDefGeometryValid } from '../src/game/dungeonTraps';
+// BUILD 946: Dungeon Pry sprite mapping (visuals only, Stone Soup dungeon).
+import { PRY_TILE_FILES, PRY_PLACEABLE_FILES, PRY_FLOOR_TILES, PRY_WALL_TILES, PRY_DOOR_TILES, PRY_UNMAPPED_TILES, PRY_CHEST_CLOSED, PRY_CHEST_OPEN, PRY_DECOR_PLACEABLES, pryHash, pryFloorTileFor, pryWallTileFor, pryDoorTileFor, pryDecorFor, pryTilePath, pryPlaceablePath } from '../src/game/dungeonPry';
 import { SHOP_CATALOG } from '../src/game/shops';
 import { generateLayout, layoutRng, selectLayoutKind } from '../src/game/dungeonLayouts';
 import { updateGoat, GOAT_CHASE_SPEED, GOAT_CHASE_RANGE, GOAT_FLEE_SPEED, type GoatAIEntity } from '../src/game/ai';
@@ -3742,6 +3744,59 @@ console.log('Testing dungeon trap vaults (BUILD 931)...');
     const oldTrapId = trap.id;
     descendOnce931(state!);
     assert(state!.traps.every((t) => t.id !== oldTrapId), `Trap931: ${kind} descend replaces the trap (fresh floor state)`);
+  }
+}
+
+console.log('Testing dungeon Pry sprites (BUILD 946)...');
+{
+  // Manifest accounting: every shipped file has exactly one role, and the
+  // showcase art (banners, dungeon_map) is nowhere in the manifest.
+  assert(PRY_TILE_FILES.length === 16, 'Pry946: 16 tiles in the manifest');
+  assert(PRY_PLACEABLE_FILES.length === 15, 'Pry946: 15 placeables in the manifest');
+  const mapped = [...PRY_FLOOR_TILES, ...PRY_WALL_TILES, ...PRY_DOOR_TILES, ...PRY_UNMAPPED_TILES];
+  assert(mapped.length === 16 && new Set(mapped).size === 16, 'Pry946: tile pools partition all 16 tiles with no overlap');
+  assert(mapped.every((f) => PRY_TILE_FILES.includes(f)), 'Pry946: every pooled tile is a shipped tile');
+  assert(PRY_UNMAPPED_TILES.join(',') === 'tile_05.png,tile_06.png,tile_07.png,tile_08.png', 'Pry946: only the thin-segment tiles are unmapped');
+  assert(PRY_DECOR_PLACEABLES.length === 13 && !PRY_DECOR_PLACEABLES.includes(PRY_CHEST_CLOSED) && !PRY_DECOR_PLACEABLES.includes(PRY_CHEST_OPEN), 'Pry946: decor pool is every placeable except the chest pair');
+  assert(PRY_PLACEABLE_FILES.includes(PRY_CHEST_CLOSED) && PRY_PLACEABLE_FILES.includes(PRY_CHEST_OPEN), 'Pry946: chest closed + open both shipped');
+  assert(![...PRY_TILE_FILES, ...PRY_PLACEABLE_FILES].join(' ').includes('banner') && ![...PRY_TILE_FILES, ...PRY_PLACEABLE_FILES].join(' ').includes('dungeon_map'), 'Pry946: no banner/showcase art in the manifest');
+  assert(pryTilePath('tile_01a.png') === 'sprites/dungeon-sprites-tiles/tiles/tile_01a.png', 'Pry946: tile path layout');
+  assert(pryPlaceablePath('chest_01.png') === 'sprites/dungeon-sprites-tiles/placeables/chest_01.png', 'Pry946: placeable path layout');
+  // Determinism: same inputs, same outputs — twice, and across seeds.
+  for (const [seed, floor] of [[1, 1], [12345, 2], [999999, 3]] as const) {
+    for (const [x, y] of [[0, 0], [5, 4], [17, 5], [30, 18]] as const) {
+      assert(pryFloorTileFor(seed, floor, x, y) === pryFloorTileFor(seed, floor, x, y), 'Pry946: floor mapping is deterministic');
+      assert(pryWallTileFor(seed, floor, x, y) === pryWallTileFor(seed, floor, x, y), 'Pry946: wall mapping is deterministic');
+      assert(pryDoorTileFor(seed, floor, x, y) === pryDoorTileFor(seed, floor, x, y), 'Pry946: door mapping is deterministic');
+      assert(pryDecorFor(seed, floor, x, y) === pryDecorFor(seed, floor, x, y), 'Pry946: decor mapping is deterministic');
+      assert(pryHash(seed, floor, x, y) === pryHash(seed, floor, x, y), 'Pry946: hash is deterministic');
+      assert(PRY_FLOOR_TILES.includes(pryFloorTileFor(seed, floor, x, y)), 'Pry946: floor pick is in the floor pool');
+      assert(PRY_WALL_TILES.includes(pryWallTileFor(seed, floor, x, y)), 'Pry946: wall pick is in the wall pool');
+      assert(PRY_DOOR_TILES.includes(pryDoorTileFor(seed, floor, x, y)), 'Pry946: door pick is in the door pool');
+      const decor = pryDecorFor(seed, floor, x, y);
+      assert(decor === null || PRY_DECOR_PLACEABLES.includes(decor), 'Pry946: decor pick is null or in the decor pool');
+    }
+  }
+  // Variety + sparsity over a full 31x19 dungeon floor: every pool shows
+  // up, decor stays a minority dressing (not a carpet of furniture).
+  {
+    const floors = new Set<string>(); const walls = new Set<string>(); const doors = new Set<string>(); const decors = new Set<string>();
+    let decorCells = 0; let cells = 0;
+    for (let y = 0; y < 19; y += 1) for (let x = 0; x < 31; x += 1) {
+      floors.add(pryFloorTileFor(4242, 1, x, y)); walls.add(pryWallTileFor(4242, 1, x, y)); doors.add(pryDoorTileFor(4242, 1, x, y));
+      const d = pryDecorFor(4242, 1, x, y); if (d) { decorCells += 1; decors.add(d); } cells += 1;
+    }
+    assert(floors.size === 4, 'Pry946: all 4 floor tiles occur on one floor');
+    assert(walls.size === 5, 'Pry946: all 5 wall tiles occur on one floor');
+    assert(doors.size === 3, 'Pry946: all 3 door tiles occur on one floor');
+    assert(decors.size >= 10, 'Pry946: decor variety across one floor');
+    const rate = decorCells / cells;
+    assert(rate > 0.08 && rate < 0.30, `Pry946: decor rate is sparse (got ${rate.toFixed(3)})`);
+  }
+  // Dungeon generation itself is untouched: same seed still builds.
+  {
+    const g = createGame(4242);
+    assert(g.tiles.length === 19 && g.tiles[0].length === 31, 'Pry946: dungeon grid unchanged by the art module');
   }
 }
 

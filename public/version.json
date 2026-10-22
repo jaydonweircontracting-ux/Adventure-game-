@@ -1,6 +1,6 @@
 {
-  "build": "945",
-  "note": "The world’s trees now wear real hand-drawn art: eight tree shapes from the Rodwan pack grow across the wilds, each tree keeping the same shape every time you visit it. The new trees stand on exactly the same ground their old shapes did, so walking, chopping, and collision feel unchanged — only the leaves look better. Leafy trees in the field view and every tree in the iso view use the new art; desert cacti, snow pines, dead trees, and rocks keep their own looks. The tree art source is credited in the game files, and its author asks to be asked before any commercial use.",
-  "timestamp": "2026-10-21T23:49:33.669Z",
-  "cacheBuster": "mvirkspx"
+  "build": "946",
+  "note": "The Ember Vault dungeon now wears Dungeon Pry stone: floors, walls, and doors are hand-painted tiles instead of flat colors, barrels, bookshelves, carpets, flasks, and tables dress the galleries, and loot lying on the ground shows as a closed chest. The look is new but the dungeon plays exactly as before — same layout, monsters, and loot, and stairs, altars, and shopkeepers keep their old art. The matching open-chest frame ships with the art and will appear once a loot interaction opens chests.",
+  "timestamp": "2026-10-22T00:16:34.886Z",
+  "cacheBuster": "mvisjjnq"
 }
