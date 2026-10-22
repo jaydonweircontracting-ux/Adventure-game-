@@ -1,6 +1,6 @@
 {
-  "build": "946",
-  "note": "The Ember Vault dungeon now wears Dungeon Pry stone: floors, walls, and doors are hand-painted tiles instead of flat colors, barrels, bookshelves, carpets, flasks, and tables dress the galleries, and loot lying on the ground shows as a closed chest. The look is new but the dungeon plays exactly as before — same layout, monsters, and loot, and stairs, altars, and shopkeepers keep their old art. The matching open-chest frame ships with the art and will appear once a loot interaction opens chests.",
-  "timestamp": "2026-10-22T00:16:34.886Z",
-  "cacheBuster": "mvisjjnq"
+  "build": "947",
+  "note": "Six new dungeon entrances now dot the world, from Thornwood Hollow in the far west to Greenbarrow in the far south, and every one of them opens on the world map as a stone-arch marker. Walk up to an entrance and tap Descend to enter a dungeon, exactly like the Sunken Crypt — the button now appears in the iso view too, where entrances also show a marked stone arch on the ground, so no entrance is hidden anymore. Each descent is still a fresh dungeon like before, and the old Sunken Crypt entry works exactly as it always did.",
+  "timestamp": "2026-10-22T00:32:44.928Z",
+  "cacheBuster": "mvit4c5c"
 }

@@ -45,6 +45,20 @@ export const LANDMARKS: Record<string, Landmark> = {
   '136,-12': { name: 'Sunken Crypt', kind: 'dungeon' },
   '188,20': { name: 'Ember Ruins', kind: 'ruin' },
   '150,6': { name: 'Whispering Stones', kind: 'ruin' },
+  // BUILD 947: dungeon entrances across the world. Every site was validated
+  // against DEFAULT_WORLD_SEED: inland biome (never ocean/shore), no road
+  // segment in the chunk, >=3 chunks from any settlement, >=4 chunks from
+  // any other landmark, and a dry stand disc around the (50,44) entrance
+  // point. Same entry flow as the Sunken Crypt: the field Descend button
+  // (2D) / HUD Descend button (iso) within 10 units of (50,44), and the
+  // atlas draws the dungeon arch marker at mid/near zoom. Names are
+  // original; no existing landmark name is reused.
+  '-7,-2': { name: 'Thornwood Hollow', kind: 'dungeon' },
+  '1,-6': { name: 'Frostfall Vault', kind: 'dungeon' },
+  '16,-2': { name: 'Dustfall Tomb', kind: 'dungeon' },
+  '141,-23': { name: 'Northpine Crypt', kind: 'dungeon' },
+  '184,1': { name: 'Stonehollow Deep', kind: 'dungeon' },
+  '144,38': { name: 'Greenbarrow', kind: 'dungeon' },
   // BUILD 516: Enterable caves (World Systems prompt — caves as separate spaces).
   '2,9': { name: 'Mossback Cave', kind: 'cave' },
   '7,5': { name: 'Echo Hollow', kind: 'cave' },

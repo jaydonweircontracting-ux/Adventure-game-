@@ -1887,6 +1887,51 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         } // end neighbor-chunk tree loop
       }
 
+      // BUILD 947: dungeon entrance markers in iso. The 2D field renders the
+      // mound + stairs visual and the Descend button for dungeon landmarks,
+      // but the iso canvas never rendered landmarks at all — so in the
+      // default view the crypt (and every new entrance) was invisible and
+      // unenterable by a real tap (the 946 harness clicked a hidden 2D DOM
+      // button). The marker sits exactly on the (50,44) stand point the
+      // Descend flow uses, so it also teaches where to stand. Drawn marker
+      // art (stone arch + steps + name), mirroring the atlas drawDungeon —
+      // NOT a sprite claim: the Pry tiles are iso-diorama dungeon-interior
+      // art and do not read as an overworld entrance. One draw call per
+      // dungeon chunk in view; never skipped at max zoom-out (landmarks
+      // matter more than trees there). Rotation comes free: isoToScreen /
+      // dep here are the 944 rotation-aware shadows.
+      for (const sc of scenes) {
+        if (sc.tile.landmark?.kind !== 'dungeon') continue;
+        const mx = 50 + sc.ox * N, my = 44 + sc.oy * N;
+        const c = isoToScreen(mx, my);
+        if (!anchorVisible(c, 34, 64, 24)) continue;
+        const dungeonName = sc.tile.landmark.name;
+        drawables.push({
+          depth: dep(mx, my), draw: (g2) => {
+            g2.save();
+            g2.fillStyle = '#4a4f55';
+            g2.fillRect(c.x - 15, c.y - 30, 30, 30);
+            g2.fillStyle = '#2b2e33';
+            g2.beginPath();
+            g2.moveTo(c.x - 8, c.y);
+            g2.lineTo(c.x - 8, c.y - 14);
+            g2.arc(c.x, c.y - 14, 8, Math.PI, 0);
+            g2.lineTo(c.x + 8, c.y);
+            g2.closePath();
+            g2.fill();
+            g2.fillStyle = '#1a1c1f';
+            for (let i = 0; i < 3; i++) g2.fillRect(c.x - 6 + i * 2, c.y - 8 + i * 2, 12 - i * 4, 2);
+            g2.font = 'bold 11px sans-serif';
+            g2.textAlign = 'center';
+            g2.lineWidth = 3; g2.strokeStyle = 'rgba(0,0,0,0.8)';
+            g2.strokeText(dungeonName, c.x, c.y - 36);
+            g2.fillStyle = '#fff6dd';
+            g2.fillText(dungeonName, c.x, c.y - 36);
+            g2.restore();
+          },
+        });
+      }
+
       // BUILD 724: one large, fixed landmark boulder just off the settlement.
       // Derive the anchor from authored town buildings so it stays near town
       // without relying on a magic world coordinate or changing collision.

@@ -10806,6 +10806,19 @@ console.log('Testing examine system...');
   assert(!isPartnerState({ npcId: 'a', npcName: 'A', day: 'x' }), 'Partner: bad day rejected');
 }
 
+// BUILD 947: dungeon entrances across the world.
+{
+  const { LANDMARKS, LANDMARK_LIST, landmarkAt } = await import('../src/game/landmarks');
+  const dungeons = LANDMARK_LIST.filter((l) => l.kind === 'dungeon');
+  assert(dungeons.length === 7, 'Entrances947: 7 dungeon landmarks (crypt + 6 new)');
+  assert(new Set(dungeons.map((d) => d.name)).size === 7, 'Entrances947: dungeon names unique');
+  assert(LANDMARKS['136,-12']?.name === 'Sunken Crypt', 'Entrances947: crypt untouched');
+  for (const [x, y, name] of [[-7, -2, 'Thornwood Hollow'], [1, -6, 'Frostfall Vault'], [16, -2, 'Dustfall Tomb'], [141, -23, 'Northpine Crypt'], [184, 1, 'Stonehollow Deep'], [144, 38, 'Greenbarrow']] as Array<[number, number, string]>) {
+    const lm = landmarkAt({ x, y });
+    assert(lm?.name === name && lm?.kind === 'dungeon', 'Entrances947: landmarkAt resolves ' + name);
+  }
+}
+
 // ---- Results ----
 console.log(`\n${'='.repeat(50)}`);
 console.log(`${'='.repeat(50)}`);
