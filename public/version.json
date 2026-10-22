@@ -1,6 +1,6 @@
 {
-  "build": "944",
-  "note": "The camera can now rotate: press the left or right arrow key to turn the view a quarter-turn at a time, or tap the small left and right arrow buttons under the zoom controls on the left side of the screen. Four turns bring you back to the starting view. Only the view turns — the world, your character, and everything in it stay exactly where they are, and tapping a spot still walks you to that spot at every angle. Your up and down arrows, WASD keys, on-screen D-pad, and tap-to-move all still move you exactly as before, and the game remembers which way you left the camera facing when you save and load.",
-  "timestamp": "2026-10-21T23:36:02.784Z",
-  "cacheBuster": "mvir3f1c"
+  "build": "945",
+  "note": "The world’s trees now wear real hand-drawn art: eight tree shapes from the Rodwan pack grow across the wilds, each tree keeping the same shape every time you visit it. The new trees stand on exactly the same ground their old shapes did, so walking, chopping, and collision feel unchanged — only the leaves look better. Leafy trees in the field view and every tree in the iso view use the new art; desert cacti, snow pines, dead trees, and rocks keep their own looks. The tree art source is credited in the game files, and its author asks to be asked before any commercial use.",
+  "timestamp": "2026-10-21T23:49:33.669Z",
+  "cacheBuster": "mvirkspx"
 }
