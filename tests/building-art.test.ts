@@ -12,7 +12,7 @@ assert.equal(pinned.length, 18, 'Mosslight pinned building order must remain sta
 const fixedVariants = ['blue-house', 'story-tower', 'plaster-house', 'tavern'];
 for (let i = 0; i < 4; i++) assert.equal(buildingArtFor({ x: 4, y: 7 }, i, pinned[i]).variant, fixedVariants[i]);
 for (let i = 4; i < 10; i++) assert.ok(BUILDING_VARIANTS.includes(buildingArtFor({ x: 4, y: 7 }, i, pinned[i]).variant as typeof BUILDING_VARIANTS[number]));
-const townVariants = ['blue-house', 'tavern', 'green-shop', 'house-timber', 'shop-awning', 'blue-house', 'brick-shop', 'stone-cottage'];
+const townVariants = ['house-balcony', 'tavern', 'shop-banner', 'house-timber', 'shop-awning', 'cottage-wide', 'brick-shop', 'hall-grand'];
 for (let i = 10; i < 18; i++) assert.equal(buildingArtFor({ x: 4, y: 7 }, i, pinned[i]).variant, townVariants[i - 10]);
 const fillers = mosslightFillerLots();
 for (let i = 0; i < fillers.length; i++) { const art = buildingArtFor({ x: 4, y: 7 }, 18 + i, fillers[i].rect); assert.ok(BUILDING_VARIANTS.includes(art.variant as typeof BUILDING_VARIANTS[number])); assert.equal(art.file, 'buildings/' + art.variant + '.png'); }
