@@ -1,0 +1,67 @@
+{
+  "anchor": {
+    "x": 0.5,
+    "y": 0.6
+  },
+  "animations": {
+    "attack": {
+      "frameMs": 110,
+      "frames": 2,
+      "row": "facing",
+      "startCol": 6
+    },
+    "death": {
+      "frameMs": 130,
+      "frames": 4,
+      "row": 4,
+      "startCol": 2
+    },
+    "hurt": {
+      "frameMs": 120,
+      "frames": 2,
+      "row": 4,
+      "startCol": 0
+    },
+    "idle": {
+      "frameMs": 450,
+      "frames": 2,
+      "row": "facing",
+      "startCol": 0
+    },
+    "walk": {
+      "frameMs": 140,
+      "frames": 4,
+      "row": "facing",
+      "startCol": 2
+    }
+  },
+  "biomes": [
+    "forest",
+    "meadow"
+  ],
+  "cell": 64,
+  "collision": {
+    "h": 0.78,
+    "w": 0.78
+  },
+  "cols": 8,
+  "displaySize": 40,
+  "facingRows": {
+    "down": 0,
+    "left": 1,
+    "right": 2,
+    "up": 3
+  },
+  "id": "bandit",
+  "minDanger": 1,
+  "rows": 5,
+  "shadow": {
+    "alpha": 0.25,
+    "dx": 2,
+    "dy": 3
+  },
+  "spriteSheet": "/mobs/bandit_sheet.png",
+  "variants": {
+    "default": {}
+  }
+}

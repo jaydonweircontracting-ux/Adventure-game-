@@ -12,6 +12,7 @@
  * grid — no renderer changes needed. To add a monster, add its JSON + PNG
  * and register it in MONSTER_SPRITE_DEFS.
  */
+import bandit from './bandit.json';
 import bat from './bat.json';
 import goblin from './goblin.json';
 import dwarf from './dwarf.json';
@@ -21,6 +22,7 @@ import orc from './orc.json';
 import rat from './rat.json';
 import skeleton from './skeleton.json';
 import slime from './slime.json';
+import soldier from './soldier.json';
 import spider from './spider.json';
 import troll from './troll.json';
 import wolf from './wolf.json';
@@ -55,6 +57,7 @@ export interface MonsterSpriteDef {
 }
 
 const DEFS: Record<string, MonsterSpriteDef> = {
+  bandit: bandit as MonsterSpriteDef,
   bat: bat as MonsterSpriteDef,
   goblin: goblin as MonsterSpriteDef,
   dwarf: dwarf as MonsterSpriteDef,
@@ -64,6 +67,7 @@ const DEFS: Record<string, MonsterSpriteDef> = {
   rat: rat as MonsterSpriteDef,
   skeleton: skeleton as MonsterSpriteDef,
   slime: slime as MonsterSpriteDef,
+  soldier: soldier as MonsterSpriteDef,
   spider: spider as MonsterSpriteDef,
   troll: troll as MonsterSpriteDef,
   wolf: wolf as MonsterSpriteDef,
@@ -72,8 +76,9 @@ const DEFS: Record<string, MonsterSpriteDef> = {
 /** Monster kinds that use the generated sprite-sheet system. */
 export const SHEET_KINDS: string[] = Object.keys(DEFS);
 
-/** Kinds with legacy hand-built CSS sprites (NOT part of the sheet system). */
-const LEGACY_KINDS: ReadonlySet<string> = new Set(['bandit', 'snake', 'dragon', 'soldier']);
+/** Kinds with legacy hand-built CSS sprites (NOT part of the sheet system).
+ * BUILD 966: soldier + bandit left this set -- they now have sheets. */
+const LEGACY_KINDS: ReadonlySet<string> = new Set(['snake', 'dragon']);
 
 /** Same-category siblings, used when a kind's own def is invalid. */
 const SPRITE_CATEGORIES: Record<string, string[]> = {

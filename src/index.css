@@ -2339,26 +2339,7 @@ body {
 /* Sheet-sprite monsters (goblin/skeleton/troll/spider/wolf/slime/bat/rat/orc):
    visuals now come from src/monster-sprites.gen.css (generated from
    src/game/monsterSprites/*.json). */
-/* Bandits use the player/NPC sprite sheet (rogue column, dark-red tint so they read hostile). */
-.monster-bandit .monster-sprite {
-  left: 50%; top: 50%;
-  width: 32px; height: 32px;
-  margin: -16px 0 0 -16px;
-  background-image: var(--player-sprite-url);
-  background-size: 192px 320px;
-  background-repeat: no-repeat;
-  image-rendering: pixelated;
-  border-radius: 0;
-  --npc-x: -128px;
-  --npc-row: 0;
-  --npc-walk-row: 3;
-  background-position: var(--npc-x) calc(var(--npc-row) * -32px);
-  filter: brightness(.78) sepia(.45) hue-rotate(-28deg) saturate(1.5);
-}
-.monster-bandit[data-facing='up'] .monster-sprite { --npc-row: 2; --npc-walk-row: 5; }
-.monster-bandit[data-facing='left'] .monster-sprite { --npc-row: 1; --npc-walk-row: 4; transform: scaleX(-1); }
-.monster-bandit[data-facing='right'] .monster-sprite { --npc-row: 1; --npc-walk-row: 4; transform: none; }
-.monster-bandit.is-moving .monster-sprite { animation: npc-step .5s step-end infinite; }
+/* Bandit sheet: see monster-sprites.gen.css (BUILD 966: composited light body + longsword; replaces the player-sheet rogue column). */
 /* Skeleton/troll sheets: see monster-sprites.gen.css. */
 .monster-snake { width: 22px; height: 14px; }
 .monster-snake .monster-sprite { background-image: url('/mobs/snake.png'); background-size: contain; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
@@ -4171,24 +4152,7 @@ body {
 .corn-mark::before { content: '🌽'; }
 /* Orc mob: generated sprite sheet (idle/walk/attack/hurt/death, 4 facings).
    See src/monster-sprites.gen.css. */
-/* Soldier mob: Tiny RPG soldier, 6-frame idle / 8-frame walk, 46x56. Faces right natively. */
-.monster-soldier .monster-sprite {
-  left: 50%; top: 50%;
-  width: 46px; height: 56px;
-  margin: -28px 0 0 -23px;
-  background-image: var(--soldier-idle-url);
-  background-size: 276px 56px;
-  background-repeat: no-repeat;
-  image-rendering: pixelated;
-  border-radius: 0;
-}
-.monster-soldier.is-moving .monster-sprite {
-  background-image: var(--soldier-walk-url);
-  background-size: 368px 56px;
-  animation: soldier-walk .7s steps(8, end) infinite;
-}
-@keyframes soldier-walk { from { background-position-x: 0; } to { background-position-x: -368px; } }
-.monster-soldier[data-facing="left"] .monster-sprite { transform: scaleX(-1); }
+/* Soldier sheet: see monster-sprites.gen.css (BUILD 966: composited heavy body + longsword; replaces the Tiny RPG strips). */
 /* New vegetation: corals for shores, fruit/berry accents for land. */
 .env-coral1 { width: 65px; height: 36px; background-position: -135px -199px; }
 .env-coral2 { width: 56px; height: 24px; background-position: -197px -211px; }

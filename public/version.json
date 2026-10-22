@@ -1,6 +1,6 @@
 {
-  "build": "965",
-  "note": "Goblins, skeletons, slimes, and ogres now look like themselves: the monsters you meet in the wilds are drawn from new dedicated artwork instead of the old placeholder sheets — a goblin with its spear, a sword-and-shield skeleton, a bouncing green slime, and a club-wielding ogre that no longer borrows the troll picture. Their strength, behavior, and loot are exactly the same — only how they look has changed.",
-  "timestamp": "2026-10-22T09:08:21.573Z",
-  "cacheBuster": "mvjbjf0l"
+  "build": "966",
+  "note": "Soldiers, bandits, and spiders now look like themselves: soldiers march in heavy plate with a longsword and bandits skulk in light leathers with a blade, instead of both showing as plain colored blobs, and spiders are drawn from a detailed new spider model with a full walk, attack, and death animation. One correction from the art itself: the pack labeled as a heavy armored character turned out to be that spider, so it reskins spiders rather than soldiers — no human was faked from it. Strength, behavior, and loot are exactly the same — only how they look has changed. Player and villager characters keep their current look: these new sheets do not cover their animations.",
+  "timestamp": "2026-10-22T09:28:57.384Z",
+  "cacheBuster": "mvjc9wko"
 }

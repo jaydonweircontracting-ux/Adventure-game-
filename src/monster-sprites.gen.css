@@ -4,6 +4,33 @@
    (cols 0-1 idle, 2-5 walk, 6-7 attack). Row 4 = hurt (cols 0-1) + death (cols 2-5).
    Extends the existing .monster button renderer; no architecture changes. */
 
+/* ===== bandit ===== */
+.monster-bandit { width: 40px; height: 40px; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, 0.25)); }
+.monster-bandit .monster-sprite {
+  width: 40px; height: 40px;
+  background-image: url('/mobs/bandit_sheet.png');
+  background-size: 320px 200px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  background-position: 0 calc(var(--mrow, 0) * -40px);
+  animation: bandit-idle 900ms steps(2, end) infinite;
+}
+.monster-bandit .monster-sprite::before, .monster-bandit .monster-sprite::after { content: none; }
+.monster-bandit[data-facing='down'] .monster-sprite { --mrow: 0; }
+.monster-bandit[data-facing='left'] .monster-sprite { --mrow: 1; }
+.monster-bandit[data-facing='right'] .monster-sprite { --mrow: 2; }
+.monster-bandit[data-facing='up'] .monster-sprite { --mrow: 3; }
+.monster-bandit.is-moving .monster-sprite { animation: bandit-walk 560ms steps(4, end) infinite; }
+.monster-bandit.is-attacking .monster-sprite { animation: bandit-attack 220ms steps(2, end) infinite; }
+.monster-bandit.is-hit .monster-sprite { --mrow: 4; animation: bandit-hurt 240ms steps(2, end) infinite; filter: brightness(1.8) saturate(0.5); }
+.monster-bandit.is-dead { cursor: default; }
+.monster-bandit.is-dead .monster-sprite { --mrow: 4; animation: bandit-die 520ms steps(4, end) 1 forwards; }
+@keyframes bandit-idle { from { background-position-x: 0px; } to { background-position-x: -80px; } }
+@keyframes bandit-walk { from { background-position-x: -80px; } to { background-position-x: -240px; } }
+@keyframes bandit-attack { from { background-position-x: -240px; } to { background-position-x: -320px; } }
+@keyframes bandit-hurt { from { background-position-x: 0px; } to { background-position-x: -80px; } }
+@keyframes bandit-die { from { background-position-x: -80px; } to { background-position-x: -240px; } }
+
 /* ===== bat ===== */
 .monster-bat { width: 30px; height: 30px; filter: drop-shadow(3px 7px 0 rgba(43, 61, 41, 0.16)); }
 .monster-bat .monster-sprite {
@@ -253,15 +280,42 @@
 @keyframes slime-hurt { from { background-position-x: 0px; } to { background-position-x: -60px; } }
 @keyframes slime-die { from { background-position-x: -60px; } to { background-position-x: -180px; } }
 
-/* ===== spider ===== */
-.monster-spider { width: 34px; height: 34px; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, 0.25)); }
-.monster-spider .monster-sprite {
-  width: 34px; height: 34px;
-  background-image: url('/mobs/spider_sheet.png');
-  background-size: 272px 170px;
+/* ===== soldier ===== */
+.monster-soldier { width: 40px; height: 40px; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, 0.25)); }
+.monster-soldier .monster-sprite {
+  width: 40px; height: 40px;
+  background-image: url('/mobs/soldier_sheet.png');
+  background-size: 320px 200px;
   background-repeat: no-repeat;
   image-rendering: pixelated;
-  background-position: 0 calc(var(--mrow, 0) * -34px);
+  background-position: 0 calc(var(--mrow, 0) * -40px);
+  animation: soldier-idle 900ms steps(2, end) infinite;
+}
+.monster-soldier .monster-sprite::before, .monster-soldier .monster-sprite::after { content: none; }
+.monster-soldier[data-facing='down'] .monster-sprite { --mrow: 0; }
+.monster-soldier[data-facing='left'] .monster-sprite { --mrow: 1; }
+.monster-soldier[data-facing='right'] .monster-sprite { --mrow: 2; }
+.monster-soldier[data-facing='up'] .monster-sprite { --mrow: 3; }
+.monster-soldier.is-moving .monster-sprite { animation: soldier-walk 560ms steps(4, end) infinite; }
+.monster-soldier.is-attacking .monster-sprite { animation: soldier-attack 220ms steps(2, end) infinite; }
+.monster-soldier.is-hit .monster-sprite { --mrow: 4; animation: soldier-hurt 240ms steps(2, end) infinite; filter: brightness(1.8) saturate(0.5); }
+.monster-soldier.is-dead { cursor: default; }
+.monster-soldier.is-dead .monster-sprite { --mrow: 4; animation: soldier-die 520ms steps(4, end) 1 forwards; }
+@keyframes soldier-idle { from { background-position-x: 0px; } to { background-position-x: -80px; } }
+@keyframes soldier-walk { from { background-position-x: -80px; } to { background-position-x: -240px; } }
+@keyframes soldier-attack { from { background-position-x: -240px; } to { background-position-x: -320px; } }
+@keyframes soldier-hurt { from { background-position-x: 0px; } to { background-position-x: -80px; } }
+@keyframes soldier-die { from { background-position-x: -80px; } to { background-position-x: -240px; } }
+
+/* ===== spider ===== */
+.monster-spider { width: 42px; height: 42px; filter: drop-shadow(2px 3px 0 rgba(43, 61, 41, 0.25)); }
+.monster-spider .monster-sprite {
+  width: 42px; height: 42px;
+  background-image: url('/mobs/spider_sheet.png');
+  background-size: 336px 210px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  background-position: 0 calc(var(--mrow, 0) * -42px);
   animation: spider-idle 900ms steps(2, end) infinite;
 }
 .monster-spider .monster-sprite::before, .monster-spider .monster-sprite::after { content: none; }
@@ -274,11 +328,11 @@
 .monster-spider.is-hit .monster-sprite { --mrow: 4; animation: spider-hurt 240ms steps(2, end) infinite; filter: brightness(1.8) saturate(0.5); }
 .monster-spider.is-dead { cursor: default; }
 .monster-spider.is-dead .monster-sprite { --mrow: 4; animation: spider-die 520ms steps(4, end) 1 forwards; }
-@keyframes spider-idle { from { background-position-x: 0px; } to { background-position-x: -68px; } }
-@keyframes spider-walk { from { background-position-x: -68px; } to { background-position-x: -204px; } }
-@keyframes spider-attack { from { background-position-x: -204px; } to { background-position-x: -272px; } }
-@keyframes spider-hurt { from { background-position-x: 0px; } to { background-position-x: -68px; } }
-@keyframes spider-die { from { background-position-x: -68px; } to { background-position-x: -204px; } }
+@keyframes spider-idle { from { background-position-x: 0px; } to { background-position-x: -84px; } }
+@keyframes spider-walk { from { background-position-x: -84px; } to { background-position-x: -252px; } }
+@keyframes spider-attack { from { background-position-x: -252px; } to { background-position-x: -336px; } }
+@keyframes spider-hurt { from { background-position-x: 0px; } to { background-position-x: -84px; } }
+@keyframes spider-die { from { background-position-x: -84px; } to { background-position-x: -252px; } }
 
 /* ===== troll ===== */
 .monster-troll { width: 78px; height: 78px; filter: drop-shadow(4px 6px 0 rgba(43, 61, 41, 0.3)); }
