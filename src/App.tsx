@@ -161,6 +161,7 @@ import { playCombatSound } from '@/game/effects';
 import { audioEngine, loadAudioSettings, resolveMusicZone, saveAudioSettings, type AudioSettings, type MusicTrackId } from '@/game/audio';
 import AudioOptions from '@/game/AudioOptions';
 import { createEmptySkills, awardXp, levelForXp, xpToNextLevel, SKILLS, WOODCUTTING_XP_PER_TREE, SKILL_MASTERS, masterForNpc, apprenticeshipCheck, apprenticeXpBonus, type SkillState } from '@/game/skills';
+import { TRACKED_SKILL_IDS, effectiveSkillXp, magicLevelForManaSpent, magicLevelProgress, magicManaBonus, maxManaForPlayer, recordSkillTry, sanitizeMagicManaSpent, sanitizeSkillTries, tryMultiplierFor } from '@/game/skillTracks';
 import { cornStalksForChunk, type CornStalk } from '@/game/cornfield';
 import { getSpriteState } from '@/game/animation';
 import { CURRENT_SAVE_VERSION, SAVE_FILE_FORMAT, migrateSave } from '@/game/persistence';
@@ -186,7 +187,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '970';
+const BUILD_NUMBER = '971';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -234,6 +235,7 @@ const BUILD_NOTES: Record<string, string> = {
   '968': 'Fixed the vanishing quest rewards: finishing a quest used to tell you that you had received a sword, a suit of armor, gloves, and more — but none of those items ever arrived, so there was nothing to equip. Quest and task rewards that are weapons, armor, or jewelry now land in your equipment as real items with real stats, ready to equip from the Equipment tab. Coins, XP, and the hunting bow already worked and are unchanged, and a few story keepsakes (bread, maps, favors) stay as words in the log because they have no item form.',
   '969': 'Monster loot now runs on one authored loot system: every creature kind has its own loot table with per-item chances and stack limits, so kills drop the same coins, pelts, fangs, and gear materials they always did — now from tables instead of scattered rolls. Nothing about what drops changed, only how the game decides it, which sets up richer loot tables later.',
   '970': 'Conversations now run as small topic machines: talk to Brand, the merchant who heads the town-s1 merchant household in Mosslight, and you can open a bank — deposit or withdraw gold, or store whole pieces of gear in the bank vault and take them back later (stored gear comes back unequipped, and taking anything back while you are over your carry limit is refused with the item safely left in the vault, never lost). You can also ask any townsperson about a relative and hear what the world actually knows about them. Your bank balance and stored gear are saved with your game and load back cleanly on old saves, and the town bank ledger that tracks NPC delve hauls is untouched — the two never share a coin.',
+  '971': 'Skills now track your effort and your spellcraft: every tree you fell and every ore you mine counts as a try, and once you pick a class at level 10 your class changes how fast those skills grow — a Warrior works wood and stone at full speed while a Mage is slower at manual labor, and Beginners learn everything at full speed. Separately, every point of mana you actually spend casting overworld spells feeds a magic level, and each magic level adds to your maximum mana. Dungeon casting does not feed it, and nothing about your XP, your kill progress, or your spell numbers changes.',
   '960': 'Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.',
   '958': 'At level 10 you now choose a class that actually changes how you fight. Four teachers have moved into Mosslight: Dain teaches warriors at the Wayfarer Guild, Sable teaches mages, Puck teaches rogues, and Wynn teaches archers. They teach at the guild by day and wander to the Rusty Tankard in the evening, so talk to one when you reach level 10 — changing class later is free. Warriors hit 2 damage harder, rogues crit more often and strike from stealth three times as hard, archers shoot 25 percent harder, and mages open a Spells tab in the Skills panel with real magic: Ember Bolt throws fire at the nearest foe within range, Veil Step blinks you two paces in the direction you face, and Frost Ward hardens your skin with 3 extra armor until your next wound. Spells cost mana drawn from your intelligence, refill slowly on their own, and every cast plays a fire, frost, or veil animation on the field. Effect frames come from a user-supplied effects pack that ships no license file, so no license terms are claimed for them.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
@@ -1924,6 +1926,12 @@ type SaveGameData = {
   // from npcStorage (NPC delve hauls) — never shared, never double-
   // counted. Old saves carry no field and restore to empty.
   playerBank?: PlayerBankState;
+  // BUILD 971: extras 3/6 — skill tries ledger (one try per real
+  // successful skill action, recorded inside awardSkillXp only) and
+  // total mana spent casting overworld spells (magic level derives from
+  // it). Old saves carry neither field and restore to empty / 0.
+  skillTries?: Record<string, number>;
+  magicManaSpent?: number;
   goats: GoatState[];
   interiorId: string | null;
   interiorPosition: Point;
@@ -6823,6 +6831,23 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         getNpcStorage: () => serializeNpcStorage(npcStorageRef.current),
         // BUILD 970: player bank depot inspection (testmode only).
         getPlayerBank: () => serializePlayerBank(playerBankRef.current),
+        // BUILD 971: skill-track verification hooks (testmode only).
+        getSkillTracks: () => {
+          const magicLevel = magicLevelForManaSpent(magicManaSpentRef.current);
+          const prog = magicLevelProgress(magicManaSpentRef.current);
+          return {
+            tries: { ...skillTriesRef.current },
+            playerClass: playerClassRef.current,
+            multipliers: Object.fromEntries(TRACKED_SKILL_IDS.map((id) => [id, tryMultiplierFor(playerClassRef.current, id)])),
+            magic: { level: magicLevel, manaSpent: magicManaSpentRef.current, needed: prog.needed, progress: prog.progress, manaBonus: magicManaBonus(magicLevel), maxMana: maxManaForPlayer(playerStatsRef.current.int, magicLevel) },
+          };
+        },
+        // Drives the REAL awardSkillXp funnel (same path as mining/chopping).
+        awardSkillTryForTest: (skillId: string, baseXp: number) => { awardSkillXp(skillId, baseXp); return true; },
+        // Fixture: mirror the teacher grant (ref + state) without dialogue.
+        setClassForTest: (nextClass: string) => { playerClassRef.current = nextClass as PlayerClass; setPlayerClass(nextClass as PlayerClass); return true; },
+        // Fixture: refill mana to the current max so repeated casting is testable.
+        refillManaForTest: () => { const max = maxManaForPlayer(playerStatsRef.current.int, magicLevelForManaSpent(magicManaSpentRef.current)); playerManaRef.current = max; setPlayerMana(max); return max; },
         // Forces a delve through the REAL start transition (eligibility
         // still enforced); only the 12% trigger roll is bypassed, stated.
         forceAdventurerDelve: (id: string) => {
@@ -7432,6 +7457,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     npcStorage: serializeNpcStorage(npcStorageRef.current),
     // BUILD 970: persist the PLAYER bank depot (separate from npcStorage).
     playerBank: serializePlayerBank(playerBankRef.current),
+    // BUILD 971: persist skill tries + mana spent casting (magic level
+    // derives from mana spent; skill levels still derive from XP).
+    skillTries: { ...skillTriesRef.current },
+    magicManaSpent: magicManaSpentRef.current,
     // BUILD 881: Persist skill-master apprenticeships.
     apprenticeships: { ...apprenticeshipsRef.current },
     // BUILD 704: Persist player stamina.
@@ -7495,6 +7524,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         }
       }
       skillsRef.current = restored; setSkills({ ...restored });
+      // BUILD 971: restore skill tries (old saves carry none -> empty).
+      { const restoredTries = sanitizeSkillTries(loadState.skillTries); skillTriesRef.current = restoredTries; setSkillTries(restoredTries); }
       // BUILD 881: restore apprenticeships (validate against known masters).
       {
         const ap: Record<string, string> = {};
@@ -7561,9 +7592,14 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     playerClassRef.current = loadState.playerClass; setPlayerClass(loadState.playerClass);
     const restoredStats = loadState.playerStats || initialPlayerStats;
     playerStatsRef.current = restoredStats; onPlayerStatsChange(restoredStats);
-    // BUILD 958: mana restores clamped to the int-derived max; old saves
+    // BUILD 958: mana restores clamped to the max; old saves
     // without the field load full. Frost Ward never restores (until-wound).
-    const restoredMana = sanitizePlayerMana(loadState.playerMana, maxManaForInt(restoredStats.int));
+    // BUILD 971: restore mana spent casting BEFORE the mana clamp, so
+    // old saves (no field -> 0 spent -> magic level 1 -> +0 max mana)
+    // keep the exact 958 behavior. The max is int-derived + magic bonus.
+    const restoredSpent = sanitizeMagicManaSpent(loadState.magicManaSpent);
+    magicManaSpentRef.current = restoredSpent; setMagicManaSpent(restoredSpent);
+    const restoredMana = sanitizePlayerMana(loadState.playerMana, maxManaForPlayer(restoredStats.int, magicLevelForManaSpent(restoredSpent)));
     playerManaRef.current = restoredMana; setPlayerMana(restoredMana);
     frostWardRef.current = false; setFrostWardActive(false);
     onStatPointsChange(Math.max(0, Math.floor(loadState.statPoints || 0)));
@@ -8049,11 +8085,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   useEffect(() => { playerManaRef.current = playerMana; }, [playerMana]);
   useEffect(() => { frostWardRef.current = frostWardActive; }, [frostWardActive]);
   // BUILD 958: mana regeneration — 1 per 10 real seconds, up to the
-  // int-derived max. Independent of the game tick so it also ticks
+  // int + magic-level max. Independent of the game tick so it also ticks
   // while standing still; throttled by the browser when backgrounded.
   useEffect(() => {
     const timer = window.setInterval(() => {
-      const max = maxManaForInt(playerStatsRef.current.int);
+      const max = maxManaForPlayer(playerStatsRef.current.int, magicLevelForManaSpent(magicManaSpentRef.current));
       if (playerManaRef.current < max) {
         const next = Math.min(max, playerManaRef.current + 1);
         playerManaRef.current = next; setPlayerMana(next);
@@ -8629,10 +8665,21 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // BUILD 881: skill-master apprenticeships (skillId -> master npcName).
   const [apprenticeships, setApprenticeships] = useState<Record<string, string>>({});
   const apprenticeshipsRef = useRef<Record<string, string>>({});
+  // BUILD 971: skill tries ledger + magic mana spent (extras 3/6).
+  const [skillTries, setSkillTries] = useState<Record<string, number>>({});
+  const skillTriesRef = useRef<Record<string, number>>({});
+  const [magicManaSpent, setMagicManaSpent] = useState<number>(0);
+  const magicManaSpentRef = useRef<number>(0);
   const awardSkillXp = (skillId: string, amount: number) => {
     // BUILD 881: masters multiply EARNED xp only (never grant free xp).
+    // BUILD 971: the class effort multiplier divides XP per try (Tibia
+    // shape: higher = slower); one try is recorded per real action HERE
+    // and nowhere else, so tries can never come from clicks or menus.
     const bonus = apprenticeXpBonus(apprenticeshipsRef.current, skillId);
-    const result = awardXp(skillsRef.current, skillId, Math.round(amount * bonus));
+    const effective = effectiveSkillXp(amount, playerClassRef.current, skillId, bonus);
+    const nextTries = recordSkillTry(skillTriesRef.current, skillId);
+    skillTriesRef.current = nextTries; setSkillTries(nextTries);
+    const result = awardXp(skillsRef.current, skillId, effective);
     setSkills({ ...skillsRef.current });
     if (result.leveledUp) {
       const def = SKILLS[skillId];
@@ -9100,6 +9147,12 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       }, f * 70);
     }
   };
+  // BUILD 971: magic level feeds on mana ACTUALLY spent casting overworld
+  // spells. Fizzles return before spendMana, so they feed nothing.
+  const recordMagicManaSpent = (cost: number) => {
+    const next = magicManaSpentRef.current + Math.max(0, Math.floor(cost));
+    magicManaSpentRef.current = next; setMagicManaSpent(next);
+  };
   const castOverworldSpell = (spellId: OverworldSpellId) => {
     const def = OVERWORLD_SPELLS[spellId];
     if (playerClassRef.current !== 'Mage') {
@@ -9132,6 +9185,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         return;
       }
       spendMana();
+      recordMagicManaSpent(def.cost);
       audioEngine.playSfx('fireball');
       spawnSpellFx('ember-bolt', target.position);
       const raw = emberBoltDamage(playerStatsRef.current.int);
@@ -9146,6 +9200,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         return;
       }
       spendMana();
+      recordMagicManaSpent(def.cost);
       cancelTapMove();
       spawnSpellFx('veil-step', dest);
       positionRef.current = dest; setPosition(dest);
@@ -9156,6 +9211,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // mana; the ward itself never persists in saves.
     const wasWardActive = frostWardRef.current;
     spendMana();
+    recordMagicManaSpent(def.cost);
     frostWardRef.current = true; setFrostWardActive(true);
     spawnSpellFx('frost-ward', positionRef.current);
     setLogs((currentLogs) => [{ text: `Frost Ward ${wasWardActive ? 'renews' : 'hardens'} your skin (+${frostWardArmor()} armor until your next wound).`, color: 'blue' }, ...currentLogs].slice(0, 3));
@@ -16343,7 +16399,7 @@ if (active) {
                  return (
                    <div className="log-row" key={def.id} data-testid={`skill-${def.id}`}>
                      <span aria-hidden="true">{def.icon}</span>
-                     <span><strong>{def.name}</strong> <small>Lv {s.level} • {s.xp} XP{prog.needed > 0 ? ` • ${prog.needed} to next` : ' • MAX'}</small></span>
+                     <span><strong>{def.name}</strong> <small>Lv {s.level} • {s.xp} XP{prog.needed > 0 ? ` • ${prog.needed} to next` : ' • MAX'} • {skillTries[def.id] ?? 0} tries • ×{tryMultiplierFor(playerClass, def.id)} effort</small></span>
                      <span style={{ width: 60, height: 6, background: '#333', borderRadius: 3, overflow: 'hidden' }} aria-hidden="true">
                        <span style={{ display: 'block', width: `${Math.round(prog.progress * 100)}%`, height: '100%', background: '#4caf50' }} />
                      </span>
@@ -16357,7 +16413,11 @@ if (active) {
              {skillsTab === 'spells' && (<div className="log-list">
                <div className="log-row" data-testid="spell-class-row">
                  <span aria-hidden="true">🎓</span>
-                 <span><strong>{playerClass === 'Beginner' ? 'No class yet' : playerClass}</strong> <small>Mana {playerMana}/{maxManaForInt(playerStats.int)} • Regen 1 per {MANA_REGEN_SECONDS}s{frostWardActive ? ' • 🛡️ Frost Ward active (+3 armor until your next wound)' : ''}</small></span>
+                 <span><strong>{playerClass === 'Beginner' ? 'No class yet' : playerClass}</strong> <small>Mana {playerMana}/{maxManaForPlayer(playerStats.int, magicLevelForManaSpent(magicManaSpent))} • Regen 1 per {MANA_REGEN_SECONDS}s{frostWardActive ? ' • 🛡️ Frost Ward active (+3 armor until your next wound)' : ''}</small></span>
+              </div>
+              <div className="log-row" data-testid="magic-level-row">
+                <span aria-hidden="true">✦</span>
+                <span><strong>Magic Lv {magicLevelForManaSpent(magicManaSpent)}</strong> <small>{magicManaSpent} mana spent casting • {magicLevelProgress(magicManaSpent).needed} to next • +{magicManaBonus(magicLevelForManaSpent(magicManaSpent))} max mana • Overworld casting only — dungeon casting does not feed this track</small></span>
                </div>
                {playerClass === 'Beginner' && (
                  <div className="log-row"><span><small>Classes unlock at level 10. Visit Dain, Sable, Puck, or Wynn at the Wayfarer Guild — they teach by day and wander to the Rusty Tankard in the evening.</small></span></div>

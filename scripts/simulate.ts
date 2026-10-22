@@ -115,6 +115,7 @@ import { initialCellarRats, CELLAR_RAT_ID_BASE, CELLAR_RAT_HP, CELLAR_RAT_COUNT 
 import { topicsFor, responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, adjustWanted } from '../src/game/dialogue';
 import { startMachine, machineView, advanceMachine, bankKeywordIntent, familyRelations } from '../src/game/topicMachines';
 import { EMPTY_PLAYER_BANK, isBankClerk, depositBankCoins, withdrawBankCoins, storeBankItem, takeBankItem, serializePlayerBank, sanitizePlayerBank } from '../src/game/playerBank';
+import { TRY_MULTIPLIERS, effectiveSkillXp, magicLevelForManaSpent, magicLevelProgress, magicManaBonus, magicManaRequiredForLevel, maxManaForPlayer, recordSkillTry, sanitizeMagicManaSpent, sanitizeSkillTries, tryMultiplierFor } from '../src/game/skillTracks';
 import { shouldBark, barkFor, seedForName } from '../src/game/npcBarks';
 import { appearanceForNpc, npcAppearanceStyle } from '../src/game/npcAppearance';
 import {
@@ -2305,6 +2306,27 @@ console.log('Testing special-ability vocabulary (BUILD 943)...');
   assert(takeBankItem(stored970.bank, 'i9', true).ok && takeBankItem(stored970.bank, 'i9', true).item?.baseId === 'iron_sword', 'Mach970: take returns the stored item');
   assert(serializePlayerBank(depBank970.bank).coins === 50 && sanitizePlayerBank(undefined).coins === 0, 'Mach970: bank serializes; old saves restore empty');
   assert(depositDelveHaul(EMPTY_NPC_STORAGE, 'adv:kael', 14, ['goat horn']).state.bank['adv:kael'] === 14, 'Mach970: 949 NPC storage unchanged');
+  // BUILD 971: skill tracks (extras 3/6) — tries multipliers per class +
+  // magic level fed by mana spent. Beginner is 1.0 everywhere, so
+  // pre-level-10 progression is identical to 970.
+  assert(tryMultiplierFor('Beginner', 'mining') === 1.0 && tryMultiplierFor('Beginner', 'woodcutting') === 1.0, 'Track971: Beginner is 1.0 everywhere');
+  assert(tryMultiplierFor('Warrior', 'mining') === 1.0 && tryMultiplierFor('Mage', 'mining') === 2.0 && tryMultiplierFor('Rogue', 'woodcutting') === 1.0 && tryMultiplierFor('Archer', 'fishing') === 1.0, 'Track971: class table carries the stated multipliers');
+  assert(tryMultiplierFor('Nobody', 'mining') === 1.0 && tryMultiplierFor('Mage', 'nope') === 1.0, 'Track971: unknown class/skill defaults to 1.0');
+  assert(effectiveSkillXp(25, 'Beginner', 'woodcutting', 1) === 25, 'Track971: Beginner tree pays full 25 XP');
+  assert(effectiveSkillXp(25, 'Mage', 'woodcutting', 1) === 13, 'Track971: Mage tree pays round(25/2) = 13 XP');
+  assert(effectiveSkillXp(10, 'Mage', 'mining', 1.5) === 8, 'Track971: apprentice bonus still multiplies before the class divisor');
+  assert(effectiveSkillXp(10, 'Warrior', 'mining', 1) === 10, 'Track971: Warrior ore pays full 10 XP');
+  const tries971a = recordSkillTry(recordSkillTry({}, 'mining'), 'mining');
+  assert(tries971a.mining === 2, 'Track971: two recorded tries count as two');
+  assert(recordSkillTry(tries971a, 'nope').mining === 2 && !('nope' in recordSkillTry(tries971a, 'nope')), 'Track971: unknown skill ids never mint tries');
+  assert(sanitizeSkillTries({ mining: 3, nope: 9, woodcutting: -2 }).mining === 3 && !('nope' in sanitizeSkillTries({ mining: 3, nope: 9 })), 'Track971: tries sanitize keeps known skills only');
+  assert(magicManaRequiredForLevel(1) === 0 && magicManaRequiredForLevel(2) === 40 && magicManaRequiredForLevel(3) === 104, 'Track971: magic thresholds are 0/40/104');
+  assert(magicLevelForManaSpent(0) === 1 && magicLevelForManaSpent(39) === 1 && magicLevelForManaSpent(40) === 2 && magicLevelForManaSpent(103) === 2 && magicLevelForManaSpent(104) === 3, 'Track971: magic level derives from mana spent');
+  assert(magicLevelProgress(40).level === 2 && magicLevelProgress(40).needed === 64, 'Track971: magic progress toward level 3 needs 64 more');
+  assert(magicManaBonus(1) === 0 && magicManaBonus(3) === 4, 'Track971: magic bonus is +2 per level above 1');
+  assert(maxManaForPlayer(4, 1) === 18 && maxManaForPlayer(4, 3) === 22, 'Track971: max mana is int base + magic bonus');
+  assert(sanitizeMagicManaSpent(undefined) === 0 && sanitizeMagicManaSpent(-5) === 0 && sanitizeMagicManaSpent(41) === 41, 'Track971: old saves restore 0 mana spent');
+  assert(TRY_MULTIPLIERS.Mage.mining === 2.0 && TRY_MULTIPLIERS.Warrior.smithing === 1.0, 'Track971: multiplier table shape holds');
   // Acquisition with per-kind ranges: a dragon holds its lock to 60u
   // and acquires at 32u; the globals still hold for unassigned kinds.
   const dragonAb = behaviorForCreature('dragon').abilities;
