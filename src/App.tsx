@@ -53,6 +53,7 @@ import { radarDots, RADAR_COLORS, RADAR_RANGE, type RadarEntity } from './game/m
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, describeLoot, withProvenance, provenanceLabel, applyStackableGain, type GeneratedItem, type EncumbranceTier } from './game/items';
 import { responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, applyPersonalityTone, newDialogueSession, visitTopic, sessionTopics, HAGGLE_MOVES, haggleMoveDelta, canHaggle, useHaggleMove, haggleReaction, priceMultiplierForDisposition, adjustedPrice, type DialogueTopicId, type DialogueSession, type HaggleMove } from './game/dialogue';
+import { portraitCharacterForNpc, portraitUrl, resolvePortraitMood } from './game/dialoguePortraits';
 import { canPropose, isPartner, isPartnerState, PROPOSAL_MIN_DISPOSITION, type PartnerState } from './game/partner';
 import { recognizeIntent, fallbackResponse } from './game/dialogueIntent';
 import { recordTopicDiscussed, recallRelevantMemories, formatMemoryRecall, hasConversationMemories } from './game/conversationMemory';
@@ -166,7 +167,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '955';
+const BUILD_NUMBER = '956';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -201,6 +202,7 @@ const BUILD_NOTES: Record<string, string> = {
   '953': 'The camera now spins: hold a camera button (or hold an arrow key) and the view slowly turns at 45 degrees per second, RuneScape-style, until you let go — the world turns around you while you stay centered. A quick tap still jumps exactly 90 degrees like before, and holding left and right together cancels out instead of fighting. Movement stays world-relative at every angle, and your exact camera angle is saved and restored (old saves keep their 90-degree step as 0/90/180/270).',
   '954': 'The camera now turns in finer, smoother steps: a quick tap turns it 45 degrees with a short smooth glide through the angles in between instead of jumping, so eight taps make a full turn and every stop lines up with a character facing direction. Holding a button still spins the view slowly and continuously at 45 degrees per second until you let go, and tapping one side while the other side is still held no longer fights the spin. Movement stays world-relative at every angle, and your exact camera angle is saved and restored as before.',
   '955': 'Conversations now go deeper: asking about someone, their work, rumors, or the town unlocks a follow-up question in the same conversation, so you can press further instead of hitting the same four topics — and closing the conversation resets the topics (everything is re-explorable next time) without ever resetting how much they like you. You can also haggle in conversation: compliments warm people up (+6), jokes land (+3) unless they already dislike you (−2), boasting annoys (−3), and insults sting (−10), each once per conversation — and how much they like you now shows in their prices and in what they will tell you (cold acquaintances withhold, warm friends share hints and charge less, admired friends charge 20% less). Merchant townsfolk finally sell from inside conversation: a Browse wares button opens their own goods, bought through the same shop system with the same weight limit — and anyone who is not a merchant has no shop at all. Faction standing is untouched and separate.',
+  '956': 'Conversations now look like the photo: a large portrait of the person you are talking to stands on the left with their name plate beneath it, and a wide text box below carries what they say, with the game still visible behind the panel. Every villager has a face — ten characters with six expressions each — and the face changes with the conversation: they smile at compliments and warm friendships, glare when insulted or cold toward you, look sad at bad news or a joke that falls flat, talk while they speak, and turn to profile when showing their wares. And what they say is now real: rumors come only from gossip they actually heard or things that actually happened to them — no more invented secrets — and a villager with a quest for you will mention it by name. Everything from before still works: topics that deepen, haggling, disposition prices, and merchant shops in conversation.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
@@ -5769,6 +5771,20 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [dialogueSession, setDialogueSession] = useState<DialogueSession>(() => newDialogueSession());
   const [dialogueSay, setDialogueSay] = useState<string | null>(null);
   const [dialogueMode, setDialogueMode] = useState<'talk' | 'shop'>('talk');
+  // BUILD 956: mood-face state. dialogueMoodMove is the last haggle move in
+  // THIS conversation (cleared on the next topic, so the reaction face does
+  // not stick); dialogueTalkBeat is the 900ms speaking beat after each new
+  // line. Both are presentation only — disposition is the only real stat.
+  const [dialogueMoodMove, setDialogueMoodMove] = useState<{ move: HaggleMove; delta: number } | null>(null);
+  const [dialogueTalkBeat, setDialogueTalkBeat] = useState(false);
+  const talkBeatTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!townsfolkDialogue || (!dialogueTopic && !dialogueSay)) return;
+    setDialogueTalkBeat(true);
+    if (talkBeatTimerRef.current !== null) window.clearTimeout(talkBeatTimerRef.current);
+    talkBeatTimerRef.current = window.setTimeout(() => setDialogueTalkBeat(false), 900);
+    return () => { if (talkBeatTimerRef.current !== null) window.clearTimeout(talkBeatTimerRef.current); };
+  }, [townsfolkDialogue, dialogueTopic, dialogueSay]);
   const dialogueNpcIdRef = useRef<string | null>(null);
   useEffect(() => {
     // Reset the session whenever the conversation opens, switches NPC, or
@@ -5780,6 +5796,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       setDialogueSession(newDialogueSession());
       setDialogueSay(null);
       setDialogueMode('talk');
+      setDialogueMoodMove(null);
     }
   }, [townsfolkDialogue]);
   const [disposition, setDisposition] = useState<Record<string, number>>({});
@@ -10819,13 +10836,22 @@ if (active) {
     const hearsay = (npc.memories ?? [])
       .filter((m) => m.event.startsWith('Heard from'))
       .map((m) => m.event);
+    // BUILD 956: the handler's ctx matches the panel's ctx exactly
+    // (memories + active quest titles), so the filed rumor and the
+    // displayed line can never disagree about what was said.
+    const activeQuestTitles = questStates
+      .filter((s) => s.status === 'active')
+      .map((s) => questById(s.questId))
+      .filter((d) => d && d.giver.name === npc.name)
+      .map((d) => d!.title);
     const resp = responseFor(
-      { name: npc.name, archetype: npc.archetype, activity: npc.activity, disposition: disp, townReputation: reputation.mosslight, seed: npc.seed, relationships: rels, hearsay, personality: npcPersonality(npc) },
+      { name: npc.name, archetype: npc.archetype, activity: npc.activity, disposition: disp, townReputation: reputation.mosslight, seed: npc.seed, relationships: rels, hearsay, memories: (npc.memories ?? []).map((m) => m.event), quests: activeQuestTitles, personality: npcPersonality(npc) },
       topic,
     );
     if (resp.rumor) onAddRumor(resp.rumor, npc.name);
     setDialogueTopic(topic);
     setDialogueSay(null);
+    setDialogueMoodMove(null);
     // BUILD 955: record the visit in THIS conversation's session — this is
     // what unlocks follow-up topics. Session only; disposition below and
     // quest state are untouched by session bookkeeping.
@@ -11195,6 +11221,8 @@ if (active) {
     setDialogueSession((s) => useHaggleMove(s, move));
     setDialogueTopic(null);
     setDialogueSay(haggleReaction(move, before, after));
+    // BUILD 956: the reaction face follows this move until the next topic.
+    setDialogueMoodMove({ move, delta });
     setDisposition((d) => ({ ...d, [npc.id]: after }));
     setLogs((cur) => [{ text: `${npc.name}'s disposition ${delta >= 0 ? '+' : ''}${delta} (${after}).`, color: delta >= 0 ? 'green' : 'orange' }, ...cur].slice(0, 3));
   };
@@ -15129,36 +15157,69 @@ if (active) {
         {townsfolkDialogue && (() => {
           const npc = townsfolkDialogue;
           const disp = disposition[npc.id] ?? defaultDisposition();
-          const ctx = { name: npc.name, archetype: npc.archetype, activity: npc.activity, disposition: disp, townReputation: reputation.mosslight, seed: npc.seed, personality: npcPersonality(npc) };
+          // BUILD 956: grounded ctx — real memories + real active quest
+          // titles, matching the topic handler's ctx exactly.
+          const panelQuestTitles = questStates
+            .filter((s) => s.status === 'active')
+            .map((s) => questById(s.questId))
+            .filter((d) => d && d.giver.name === npc.name)
+            .map((d) => d!.title);
+          const ctx = { name: npc.name, archetype: npc.archetype, activity: npc.activity, disposition: disp, townReputation: reputation.mosslight, seed: npc.seed, personality: npcPersonality(npc), memories: (npc.memories ?? []).map((m) => m.event), quests: panelQuestTitles };
           const resp = dialogueTopic ? responseFor(ctx, dialogueTopic) : null;
           // BUILD 955: this NPC's personal wares (merchants only) + the
           // disposition price multiplier for dialogue purchases.
           const shopDef = npc.archetype === 'merchant' ? merchantShopDef(npc.id, npc.name) : null;
           const shopState = shopDef ? restockStall(shopDef, npcShopStocks[npc.id], gameDayNow()) : null;
           const shopMult = priceMultiplierForDisposition(disp);
+          // BUILD 956: photo portrait + mood face. Character is seeded by
+          // NPC id (stable); the face follows disposition, the last haggle
+          // move, refusals, loss news, the speaking beat, and shop mode —
+          // never a second mood stat. onError falls back to CALM.
+          const portraitChar = portraitCharacterForNpc(npc.id);
+          const portraitMood = resolvePortraitMood({
+            disposition: disp,
+            lastMove: dialogueMoodMove?.move ?? null,
+            lastMoveDelta: dialogueMoodMove?.delta ?? 0,
+            isRefusal: resp?.refusal ?? false,
+            lineText: dialogueSay ?? resp?.text ?? '',
+            shopOpen: dialogueMode === 'shop',
+            talkBeat: dialogueTalkBeat,
+          });
+          const portraitSrc = portraitUrl(portraitChar.slug, portraitMood);
+          const portraitCalmSrc = portraitUrl(portraitChar.slug, 'calm');
           return (
             <div className="npc-dialogue-overlay" role="dialog" aria-modal="true" aria-labelledby="townsfolk-dialogue-title" data-testid="townsfolk-dialogue">
-              <div className="npc-dialogue-card townsfolk-dialogue">
-                <div className="dialogue-portrait is-face" style={npcAppearanceStyle(npc.id, npc.archetype) as CSSProperties}><span className="npc-sprite" /></div>
+              <div className="npc-dialogue-card townsfolk-dialogue dlg-photo-card">
+                <div className="dlg-photo-row">
+                  <div className="dlg-photo-col">
+                    <img className="dlg-photo" data-testid="dialogue-portrait" data-character={portraitChar.slug} data-expression={portraitMood} src={portraitSrc} alt={`${npc.name} portrait`} onError={(e) => { const t = e.currentTarget; if (t.src !== portraitCalmSrc) t.src = portraitCalmSrc; }} />
+                    <div className="dlg-nameplate" id="townsfolk-dialogue-title"><strong>{npc.name}</strong><span>{npc.archetype} · {npc.activity}</span></div>
+                  </div>
+                  <div className="dlg-standing-col">
+                    <div className="dialogue-standing">
+                      <span className="disposition-meter" role="img" aria-label={'Disposition ' + disp + ' of 100'}><i style={{ width: disp + '%' }} /></span>
+                      <span className="disposition-label">{dispositionLabel(dispositionTier(disp))} ({disp})</span>
+                    </div>
+                    <div className="dialogue-standing">
+                      <span>Mosslight rep: <strong className={reputation.mosslight >= 0 ? 'rep-positive' : 'rep-negative'}>{reputation.mosslight >= 0 ? '+' : ''}{reputation.mosslight}</strong></span>
+                      <span>Wanted: <strong>{wantedLabel(wantedMosslight)}</strong></span>
+                    </div>
+                    {/* BUILD 939: EQEmu faction standing — tier for THIS NPC
+                        (stored standing + their archetype entry), plus the
+                        raw stored standing. Separate from rep above and
+                        from bounty: it moves on harm/quest actions only. */}
+                    <div className="dialogue-standing" data-testid="faction-standing">
+                      <span>Faction: <strong>{factionDialogueLine(factionForNpc(npc), standingFor(factionStandings, factionForNpc(npc)), npc.archetype)}</strong></span>
+                    </div>
+                  </div>
+                </div>
                 <div className="npc-dialogue-copy">
-                  <span className="dialogue-kicker">{npc.archetype} · {npc.activity}</span>
-                  <h2 id="townsfolk-dialogue-title">{npc.name}</h2>
-                  <div className="dialogue-standing">
-                    <span className="disposition-meter" role="img" aria-label={'Disposition ' + disp + ' of 100'}><i style={{ width: disp + '%' }} /></span>
-                    <span className="disposition-label">{dispositionLabel(dispositionTier(disp))} ({disp})</span>
+                  {/* BUILD 956: the wide text box below the portrait row
+                      carries the spoken line; the game stays visible behind
+                      the translucent overlay (rgba .36, unchanged). */}
+                  <div className="dlg-textbox" data-testid="dialogue-textbox">
+                    {dialogueSay ? <p className="dialogue-response">“{dialogueSay}”</p> : resp ? <p className="dialogue-response">“{resp.text}”</p> : <p className="dlg-textbox-empty">…</p>}
                   </div>
-                  <div className="dialogue-standing">
-                    <span>Mosslight rep: <strong className={reputation.mosslight >= 0 ? 'rep-positive' : 'rep-negative'}>{reputation.mosslight >= 0 ? '+' : ''}{reputation.mosslight}</strong></span>
-                    <span>Wanted: <strong>{wantedLabel(wantedMosslight)}</strong></span>
-                  </div>
-                  {/* BUILD 939: EQEmu faction standing — tier for THIS NPC
-                      (stored standing + their archetype entry), plus the
-                      raw stored standing. Separate from rep above and
-                      from bounty: it moves on harm/quest actions only. */}
-                  <div className="dialogue-standing" data-testid="faction-standing">
-                    <span>Faction: <strong>{factionDialogueLine(factionForNpc(npc), standingFor(factionStandings, factionForNpc(npc)), npc.archetype)}</strong></span>
-                  </div>
-                  {dialogueSay ? <p className="dialogue-response">“{dialogueSay}”</p> : resp && <p className="dialogue-response">“{resp.text}”</p>}
                   {/* BUILD 654: Conversation history for free-text exchanges. */}
                   {dialogueHistory.length > 0 && (
                     <div className="dialogue-history" style={{ maxHeight: '120px', overflowY: 'auto', marginBottom: '8px', fontSize: '13px' }}>

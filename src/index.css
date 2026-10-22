@@ -2915,6 +2915,28 @@ body {
 .class-choice-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 13px; }
 /* BUILD 330: Oblivion-style townsfolk dialogue window. */
 .npc-dialogue-card.townsfolk-dialogue { position: relative; }
+/* BUILD 956: photo-portrait dialogue layout (reference-photo target):
+   LARGE 2D portrait on the left, name plate at its base, a wide dialogue
+   text box below carrying the spoken line, game visible behind the
+   translucent overlay (rgba .36, unchanged). The standing column
+   (disposition, rep, faction) sits beside the portrait; topics, haggle,
+   shop, history, and free-text all survive below the text box. */
+.npc-dialogue-card.townsfolk-dialogue.dlg-photo-card { display: block; width: min(680px, 100%); }
+.dlg-photo-row { display: flex; gap: 14px; align-items: flex-start; }
+.dlg-photo-col { flex: 0 0 190px; min-width: 0; }
+.dlg-photo { display: block; width: 100%; height: auto; border: 2px solid var(--ink); border-radius: 8px; background: #888; box-shadow: 3px 3px 0 rgba(25, 56, 47, .3); }
+.dlg-nameplate { margin-top: 6px; padding: 6px 8px; text-align: center; border: 2px solid var(--ink); background: var(--paper); box-shadow: 2px 2px 0 rgba(25, 56, 47, .25); }
+.dlg-nameplate strong { display: block; font-size: 17px; line-height: 1.2; }
+.dlg-nameplate span { display: block; margin-top: 2px; font: 9px var(--app-font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--clay); }
+.dlg-standing-col { flex: 1; min-width: 0; padding-top: 2px; }
+.dlg-standing-col .dialogue-standing { font-size: 12px; }
+.dlg-textbox { margin-top: 12px; padding: 12px 14px; border: 2px solid var(--ink); border-radius: 8px; background: rgba(216, 198, 153, .35); }
+.dlg-textbox .dialogue-response { margin: 0 !important; padding: 0; background: none; border-left: none; font-size: 15px; line-height: 1.5; }
+.dlg-textbox-empty { margin: 0; color: var(--ink-soft); font-size: 15px; }
+@media (max-width: 560px) {
+  .dlg-photo-col { flex-basis: 128px; }
+  .dlg-photo-row { gap: 10px; }
+}
 .dialogue-standing { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; font-size: 10px; color: var(--ink-soft); }
 .disposition-meter { display: inline-block; width: 90px; height: 8px; border: 1px solid var(--line); background: #c9b98f; }
 .disposition-meter i { display: block; height: 100%; background: var(--leaf); }

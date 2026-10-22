@@ -267,6 +267,13 @@ export interface DialogueContext {
   relationships?: Array<{ targetName: string; kind: string; affinity: number }>;
   /** BUILD 368: second-hand gossip the speaker has heard ("Heard from X: ..."). */
   hearsay?: string[];
+  /** BUILD 956: the speaker's raw memory event strings (villageLife NPCMemory).
+   * Only speakable ones are ever surfaced — internal codes are decoded to
+   * plain sentences, greeting chatter is skipped. Nothing is invented. */
+  memories?: string[];
+  /** BUILD 956: titles of ACTIVE quests this NPC gives. When present, the
+   * 'work' answer mentions the first one — a real quest, never a fake one. */
+  quests?: string[];
   /** BUILD 655: personality traits for tone. When present, responses reflect
    * sociability (verbosity/warmth), courage (directness), curiosity (questions). */
   personality?: { sociability: number; courage: number; curiosity: number };
@@ -276,6 +283,9 @@ export interface DialogueResponse {
   text: string;
   /** When set, the renderer should file this rumor in the journal. */
   rumor?: string;
+  /** BUILD 956: true when this line is a cold-gated refusal. The portrait
+   * mood model reads it (refusal -> AGGRESSION face). */
+  refusal?: boolean;
 }
 
 function hash2(a: number, b: number): number {
@@ -284,21 +294,76 @@ function hash2(a: number, b: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-const RUMORS: string[] = [
-  'They say the old well behind the chapel runs dry every third summer.',
-  'A merchant caravan from Eastmarch is due any day now — best prices of the season.',
-  "Bram's been working on something big at the forge. Won't say what.",
-  'Wolves have been seen near the north road after dark. Travel in daylight.',
-  'Mira waters her ale. Or so Dunstan claims after his third tankard.',
-  'The chapel bell cracked last winter. Father Aldous still rings it, crack and all.',
-  'Someone keeps leaving goat horns on the guild doorstep. Nobody admits to it.',
-  'The corn this year is the tallest anyone can remember.',
-];
+// BUILD 956: the canned rumor pools are DELETED, not moved. Every line they
+// held asserted a world fact the simulation never recorded (a well running
+// dry, a caravan due any day, a cracked bell, a loose board hiding spot).
+// Under the meaningful-dialogue rule, rumors now come only from real sim
+// state: hearsay the NPC actually heard (BUILD 368 gossip propagation) and
+// the NPC's own recorded memories, decoded from internal codes below.
+// With neither, the NPC says so honestly and files no rumor.
 
-const WARM_RUMORS: string[] = [
-  'Between you and me — there\'s a loose board under the guild hall rug. Don\'t tell Bram I told you.',
-  'If you\'re heading north, the old ruin past the treeline has more than rats in it. That\'s all I\'ll say.',
-];
+/**
+ * Decode an internal memory code into a speakable sentence about a real
+ * recorded event. Returns null for codes that are not speakable (the
+ * PLAYER_SUSPICIOUS flag) or for prose that needs no decoding. Pure.
+ */
+export function decodeMemoryCode(event: string): string | null {
+  switch (event) {
+    case 'PLAYER_KILLED_SOMEONE': return 'You killed someone once. I have not forgotten.';
+    case 'PLAYER_ATTACKED_ME': return 'You attacked me once. I have not forgotten.';
+    case 'PLAYER_STOLE_FROM_ME': return 'You stole from me once. I have not forgotten.';
+    case 'PLAYER_TRESPASSED': return 'You trespassed once. I have not forgotten.';
+    case 'PLAYER_VANDALIZED': return 'You vandalized something once. I have not forgotten.';
+    case 'NPC_KILLED_SOMEONE': return 'Someone was killed in town once.';
+    case 'NPC_ATTACKED_SOMEONE': return 'Someone was attacked in town once.';
+    case 'NPC_STOLE_FROM_SOMEONE': return 'Someone stole from another in town once.';
+    case 'NPC_TRESPASSED': return 'Someone trespassed in town once.';
+    case 'NPC_VANDALIZED': return 'Something was vandalized in town once.';
+    case 'I_COMMITTED_THEFT': return 'I stole once, and I am not proud of it.';
+    case 'I_WAS_ARRESTED': return 'I was arrested once. Not my finest day.';
+    case 'I_MARRIED_THE_PLAYER': return 'We got married, you and I — do not go forgetting it.';
+    case 'THE_PLAYER_LEFT_ME': return 'You left me once. I remember.';
+    default: return null;
+  }
+}
+
+/**
+ * Turn a hearsay string ("Heard from X: <inner>") into speakable form,
+ * decoding an inner code when one is present. Prose passes through. Pure.
+ */
+export function speakableHearsay(raw: string): string {
+  const m = /^Heard from (.+?): (.*)$/.exec(raw);
+  if (!m) return raw;
+  return `Heard from ${m[1]}: ${decodeMemoryCode(m[2]) ?? m[2]}`;
+}
+
+/**
+ * The NPC's own most notable speakable memory, or null. Skips greeting
+ * chatter ('Talked with the traveler.') and second-hand gossip (handled
+ * separately). Deterministic per NPC seed. Pure.
+ */
+export function speakableOwnMemory(events: string[], seed: number): string | null {
+  const candidates: string[] = [];
+  for (const event of events) {
+    if (event.startsWith('Heard from')) continue;
+    if (event === 'Talked with the traveler.' || event === 'Talked with the traveler') continue;
+    if (event.startsWith('Discussed ')) {
+      const topic = event.slice('Discussed '.length).replace(/ with traveler$/, '');
+      candidates.push(`We talked about ${topic} before.`);
+      continue;
+    }
+    if (event.startsWith('Told traveler: ')) {
+      const rest = event.slice('Told traveler: '.length);
+      const idx = rest.indexOf(': ');
+      candidates.push(`I told you before — ${idx >= 0 ? rest.slice(idx + 2) : rest}.`);
+      continue;
+    }
+    const decoded = decodeMemoryCode(event);
+    if (decoded) candidates.push(decoded);
+  }
+  if (candidates.length === 0) return null;
+  return candidates[Math.floor(hash2(seed, 9105) * candidates.length)];
+}
 
 const WORK_LINES: Record<string, { cold: string; warm: string }> = {
   farmer: {
@@ -307,11 +372,11 @@ const WORK_LINES: Record<string, { cold: string; warm: string }> = {
   },
   merchant: {
     cold: 'Buy something or move along.',
-    warm: 'Trade\'s been fair lately. The Eastmarch road brings coin, and Mosslight folk pay on time. Mostly.',
+    warm: 'Trade\'s been fair lately. The road brings coin, and Mosslight folk pay on time. Mostly.',
   },
   priest: {
     cold: 'The chapel is open to all. Even you.',
-    warm: 'The chapel has stood for sixty years. I sweep it myself every morning — the roots don\'t mind, and neither do I.',
+    warm: 'The chapel is my work. I sweep it myself every morning, and the doors stay open.',
   },
   guard: {
     cold: 'Nothing to report. Move along.',
@@ -323,7 +388,7 @@ const WORK_LINES: Record<string, { cold: string; warm: string }> = {
   },
   child: {
     cold: 'Go away, I\'m busy.',
-    warm: 'We\'re playing hide-and-seek! I\'m the best hider. Nobody found me behind the rain barrel yesterday.',
+    warm: 'We play hide-and-seek! I am the best hider in Mosslight.',
   },
 };
 
@@ -399,7 +464,7 @@ export function responseForBase(ctx: DialogueContext, topic: DialogueTopicId): D
       if (isTom && !cold) {
         return { text: `Tom, the smith. I keep the guards' blades sharp and the farmers' tools mended. If your sword needs work, you know where to find me.` };
       }
-      if (cold) return { text: `${ctx.name}. That's all you need to know.` };
+      if (cold) return { text: `${ctx.name}. That's all you need to know.`, refusal: true };
       const role = ctx.archetype === 'commoner' ? 'a resident of Mosslight' : `the town ${ctx.archetype}`;
       let text = `I'm ${ctx.name}, ${role}. Right now I'm ${ctx.activity.toLowerCase()}.`;
       // BUILD 368: name kin — the relationship graph becomes conversation.
@@ -415,24 +480,32 @@ export function responseForBase(ctx: DialogueContext, topic: DialogueTopicId): D
         cold: 'Work is work.',
         warm: 'It keeps me busy and the town fed. Not much more to tell.',
       };
-      return { text: cold ? lines.cold : lines.warm };
+      let text = cold ? lines.cold : lines.warm;
+      // BUILD 956: a real active quest this NPC gives is mentioned by title.
+      // Cold NPCs do not share it — same gating as everything else.
+      const quests = ctx.quests ?? [];
+      if (!cold && quests.length > 0) {
+        text += ` I'm waiting on word about "${quests[0]}" — that's mine to give, if you're the helping sort.`;
+      }
+      return { text };
     }
     case 'rumors': {
-      // BUILD 368: real village gossip first — things this NPC actually heard
-      // from someone, via propagateRumors. Falls back to canned rumors.
+      // BUILD 956 (meaningful dialogue): rumors come ONLY from real sim
+      // state. 1) hearsay this NPC actually heard (BUILD 368 gossip
+      // propagation), decoded to speakable form, filed in the journal.
+      // 2) the NPC's own recorded memories, decoded the same way — a
+      // personal recollection, so it is spoken but NOT filed as gossip.
+      // 3) neither: an honest no-news line. Nothing is invented.
+      if (cold) return { text: 'I don\'t gossip with strangers.', refusal: true };
       const heard = ctx.hearsay ?? [];
-      if (!cold && heard.length > 0 && hash2(ctx.seed, 9102) < 0.65) {
-        const gossip = heard[Math.floor(hash2(ctx.seed, 9103) * heard.length)];
-        return { text: `${gossip}. At least, that's what I heard.`, rumor: gossip };
+      if (heard.length > 0 && hash2(ctx.seed, 9102) < 0.65) {
+        const raw = heard[Math.floor(hash2(ctx.seed, 9103) * heard.length)];
+        const spoken = speakableHearsay(raw);
+        return { text: `${spoken}. At least, that's what I heard.`, rumor: spoken };
       }
-      const pool = tier === 'warm' || tier === 'admiring' ? [...RUMORS, ...WARM_RUMORS] : RUMORS;
-      const rumor = pool[Math.floor(hash2(ctx.seed, 9101) * pool.length)];
-      const lead = cold
-        ? 'I don\'t gossip with strangers.'
-        : tier === 'admiring'
-          ? 'For you? Anything. Here\'s one I don\'t tell just anyone: '
-          : 'Heard this going around: ';
-      return cold ? { text: lead } : { text: lead + rumor, rumor };
+      const own = speakableOwnMemory(ctx.memories ?? [], ctx.seed);
+      if (own) return { text: own };
+      return { text: `Nothing new reaches my ears lately. The town's been quiet on my end.` };
     }
     case 'town': {
       // BUILD 550: Mira gives practical directions for new players.
@@ -441,14 +514,14 @@ export function responseForBase(ctx: DialogueContext, topic: DialogueTopicId): D
         return { text: `Mosslight Crossing is northwest of here — just follow the road. You'll find the tavern, the smith, and the chapel there. The guards patrol the roads, so you should be safe.` };
       }
       // BUILD 955: disposition gates town talk — cold or wary NPCs withhold.
-      if (cold) return { text: 'Town business is not for strangers. Ask someone who likes you.' };
+      if (cold) return { text: 'Town business is not for strangers. Ask someone who likes you.', refusal: true };
       const rep = ctx.townReputation;
       const standing = rep >= 10
         ? 'Folk speak well of you here — you\'ve earned it.'
         : rep <= -10
           ? 'Folk whisper about you when you pass. Mind yourself.'
           : 'You\'re still a new face, but nobody minds you yet.';
-      return { text: `Mosslight Crossing has stood at this crossroads for generations. ${standing}` };
+      return { text: `Mosslight Crossing is the town at this crossroads. ${standing}` };
     }
     case 'bye': {
       switch (tier) {
@@ -465,7 +538,7 @@ export function responseForBase(ctx: DialogueContext, topic: DialogueTopicId): D
     case 'family': {
       const kin = (ctx.relationships ?? []).find((r) => r.kind === 'family' || r.kind === 'friend');
       if (cold || !kin) {
-        return { text: cold ? 'My family is none of your business.' : `It's just me and the work, mostly. Family's scattered — the road takes people.` };
+        return { text: cold ? 'My family is none of your business.' : `It's just me and the work, mostly.`, refusal: cold };
       }
       const bond = kin.kind === 'family' ? 'Blood is blood' : 'Closer than blood, some days';
       return { text: `${kin.kind === 'family' ? 'My kin' : 'My good friend'} ${kin.targetName} is around here too. ${bond} — we look out for each other.` };
@@ -474,32 +547,41 @@ export function responseForBase(ctx: DialogueContext, topic: DialogueTopicId): D
       const lines: Record<string, string> = {
         farmer: 'The trick is the rotation — corn one year, barley the next, never twice on the same strip. The soil pays you back if you let it rest.',
         merchant: 'Margins are thin on the road goods and fat on the local ones. Corn and beer move every day; blades move once a season but pay for the month.',
-        priest: 'The chapel roof leaks over the north pew. I catch it in a bucket and nobody has complained yet — the faithful are kind that way.',
-        guard: 'The night watch walks the north road in pairs. One carries the lantern, the other carries the spear, and they swap at the halfway stone.',
+        priest: 'The chapel is my work — I sweep it, I mend it, I keep the doors open.',
+        guard: 'The night watch walks in pairs. One carries the lantern, the other carries the spear.',
         smith: 'Quench in oil for a tool, in water for a blade, and never quench angry — the steel takes your mood with it, or so my master claimed.',
-        child: 'The best hiding spot is inside the old cart by the mill. But don\'t tell anyone I told you. Actually — tell everyone. Then they\'ll never check the rain barrel.',
+        child: 'Hide-and-seek is the best game. I count to a hundred and nobody ever finds me first.',
       };
       return { text: lines[ctx.archetype] ?? 'There is more to it than it looks. Give me a season and I could show you.' };
     }
     case 'rumorDetail': {
-      // BUILD 955: the deep rumor is the high-disposition content — cold or
-      // wary NPCs withhold, neutral NPCs repeat the ordinary pool, warm and
-      // admiring NPCs share a hint they tell few others.
-      if (cold) return { text: `I've told you enough. Come back when we're on better terms.` };
-      if (tier === 'warm' || tier === 'admiring') {
-        const hint = WARM_RUMORS[Math.floor(hash2(ctx.seed, 9203) * WARM_RUMORS.length)];
-        return { text: `Since we're speaking plainly: ${hint}`, rumor: hint };
+      // BUILD 956: the deep rumor is real content only. Cold or wary NPCs
+      // withhold. Otherwise: real hearsay first (filed), then the NPC's own
+      // recorded memories (spoken, not filed as gossip). With neither, an
+      // honest line — no invented secret, whatever the disposition.
+      if (cold) return { text: `I've told you enough. Come back when we're on better terms.`, refusal: true };
+      const heard = ctx.hearsay ?? [];
+      if (heard.length > 0) {
+        const raw = heard[Math.floor(hash2(ctx.seed, 9204) * heard.length)];
+        const spoken = speakableHearsay(raw);
+        return { text: `Since we're speaking plainly: ${spoken}`, rumor: spoken };
       }
-      const rumor = RUMORS[Math.floor(hash2(ctx.seed, 9202) * RUMORS.length)];
-      return { text: `That's really all I know. Well — ${rumor}`, rumor };
+      const own = speakableOwnMemory(ctx.memories ?? [], ctx.seed);
+      if (own) return { text: own };
+      if (tier === 'warm' || tier === 'admiring') {
+        return { text: `I wish I had something worth telling you. Ask around — someone always knows something.` };
+      }
+      return { text: `That's really all I know.` };
     }
     case 'townDetail': {
-      if (cold) return { text: 'I have said enough about the town.' };
+      if (cold) return { text: 'I have said enough about the town.', refusal: true };
+      // BUILD 956: structural only — places that exist in the game and what
+      // they are for. No invented history, no invented secrets.
       const details = [
-        'The Rusty Tankard pours the best ale this side of Eastmarch, and the worst gossip. Both are worth the price.',
-        'The guild hall takes in travelers with a trade and sends them out with work. If you have hands, they have a use for them.',
-        'The market stalls open with the sun. Get there early for corn, late for bargains — the merchants would rather sell cheap than haul it home.',
-        'The chapel bell still rings with its crack. Father Aldous says a cracked bell rings truer, because it has survived something.',
+        'The Rusty Tankard is the town tavern — drink, food, and talk after work.',
+        'The guild hall stands in town; travelers with a trade find work through it.',
+        'The market stalls are where Mosslight buys and sells.',
+        'The chapel doors are open to all, traveler.',
       ];
       return { text: details[Math.floor(hash2(ctx.seed, 9201) * details.length)] };
     }

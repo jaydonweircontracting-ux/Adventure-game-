@@ -1,6 +1,6 @@
 {
-  "build": "955",
-  "note": "Conversations now go deeper: asking about someone, their work, rumors, or the town unlocks a follow-up question in the same conversation, so you can press further instead of hitting the same four topics — and closing the conversation resets the topics (everything is re-explorable next time) without ever resetting how much they like you. You can also haggle in conversation: compliments warm people up (+6), jokes land (+3) unless they already dislike you (−2), boasting annoys (−3), and insults sting (−10), each once per conversation — and how much they like you now shows in their prices and in what they will tell you (cold acquaintances withhold, warm friends share hints and charge less, admired friends charge 20% less). Merchant townsfolk finally sell from inside conversation: a Browse wares button opens their own goods, bought through the same shop system with the same weight limit — and anyone who is not a merchant has no shop at all. Faction standing is untouched and separate.",
-  "timestamp": "2026-10-22T03:14:39.286Z",
-  "cacheBuster": "mviywjsm"
+  "build": "956",
+  "note": "Conversations now look like the photo: a large portrait of the person you are talking to stands on the left with their name plate beneath it, and a wide text box below carries what they say, with the game still visible behind the panel. Every villager has a face — ten characters with six expressions each — and the face changes with the conversation: they smile at compliments and warm friendships, glare when insulted or cold toward you, look sad at bad news or a joke that falls flat, talk while they speak, and turn to profile when showing their wares. And what they say is now real: rumors come only from gossip they actually heard or things that actually happened to them — no more invented secrets — and a villager with a quest for you will mention it by name. Everything from before still works: topics that deepen, haggling, disposition prices, and merchant shops in conversation.",
+  "timestamp": "2026-10-22T03:37:10.997Z",
+  "cacheBuster": "mvizpis5"
 }
