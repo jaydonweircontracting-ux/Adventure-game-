@@ -1,6 +1,6 @@
 {
-  "build": "960",
-  "note": "Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.",
-  "timestamp": "2026-10-22T06:42:41.488Z",
-  "cacheBuster": "mvj6c34g"
+  "build": "961",
+  "note": "The minimap is now a real map: every kind of place gets its own icon — market stalls, the Rusty Tankard tavern, the Wayfarer Guild (with a little forge mark, since the smiths work there), the chapel, the inn, houses, dungeon entrances, carriage stations and stops, the town well, and the windmill — and the map itself shows far more detail, with real rivers and lakes, roads and town lanes, plazas, walls, and trees, all drawn where they actually are so the icons sit on the right ground. Tapping the minimap to walk somewhere works exactly as before. The map pictures come from a small fantasy map pack that ships no license file, so no license terms are claimed for it; there is no separate blacksmith building in the game, which is why the forge mark rides on the guild icon.",
+  "timestamp": "2026-10-22T07:10:27.911Z",
+  "cacheBuster": "mvj7bsxz"
 }

@@ -50,6 +50,12 @@ import { createTouchHoldState, pressTouchHold, releaseTouchHold, isTouchHeld, cl
 // BUILD 704: stamina/energy for sprinting.
 import { createStamina, tickStamina, canRun, staminaFrac, type StaminaState } from './game/stamina';
 import { radarDots, RADAR_COLORS, RADAR_RANGE, type RadarEntity } from './game/minimapRadar';
+import {
+  MINIMAP_PX_PER_UNIT as MINIMAP_ICON_SCALE, MINIMAP_CHUNK_UNITS,
+  DUNGEON_ENTRANCE_POINT, MINIMAP_WATER_COLORS,
+  iconTypeForRoomType, minimapProject, placeMinimapIcons, sortMinimapIconsForDraw,
+  drawMinimapIcon, terrainColorFor, minimapWaterCells, type MinimapIconSource,
+} from './game/minimapIcons';
 import { npcAppearanceStyle } from './game/npcAppearance';
 import { generateItem, ItemRng, totalEquipmentStats, equipItem, unequipItem, carriedWeight, carryCapacity, encumbranceTier, describeLoot, withProvenance, provenanceLabel, applyStackableGain, type GeneratedItem, type EncumbranceTier } from './game/items';
 import { responseFor, dispositionTier, dispositionLabel, defaultDisposition, adjustDisposition, dispositionNameColor, wantedLabel, applyPersonalityTone, newDialogueSession, visitTopic, sessionTopics, HAGGLE_MOVES, haggleMoveDelta, canHaggle, useHaggleMove, haggleReaction, priceMultiplierForDisposition, adjustedPrice, type DialogueTopicId, type DialogueSession, type HaggleMove } from './game/dialogue';
@@ -171,7 +177,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '960';
+const BUILD_NUMBER = '961';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -209,6 +215,7 @@ const BUILD_NOTES: Record<string, string> = {
   '956': 'Conversations now look like the photo: a large portrait of the person you are talking to stands on the left with their name plate beneath it, and a wide text box below carries what they say, with the game still visible behind the panel. Every villager has a face — ten characters with six expressions each — and the face changes with the conversation: they smile at compliments and warm friendships, glare when insulted or cold toward you, look sad at bad news or a joke that falls flat, talk while they speak, and turn to profile when showing their wares. And what they say is now real: rumors come only from gossip they actually heard or things that actually happened to them — no more invented secrets — and a villager with a quest for you will mention it by name. Everything from before still works: topics that deepen, haggling, disposition prices, and merchant shops in conversation.',
   '957': 'The game now has real music and sound: a title theme, a tavern tune, a full town theme, a dungeon drone, and a looping fields theme that follow you as you move — tavern music takes over inside the tavern and hands back to the town theme when you step out, dungeons get their own track, and every other town plays the town theme while the wilds play the fields loop. Coins now clink when gold changes hands, attacks grunt (women fighters and men soldiers each sound like themselves), opening the map has its own sound, and Ember Bolt crackles with fire. The title screen is black with green buttons, and Options on the title screen opens the same music list and sound controls as in-game: every track listed with what is playing now, music and effects on their own on/off switches and volume sliders, all saved on this device. Music starts on your first tap, because browsers block sound before that.',
   '959': 'Mosslight is rebuilt from the ground up with the Kenney town kit: every house is now a different building assembled from real wall, door, window, roof, chimney, balcony, banner, and awning pieces — wide five-bay cottages and grand halls, two-story towers and tall townhouses, a balcony house, banner shops, and an awning shop — instead of one shared house picture. The town itself is re-laid: the six cottages now stand in two neat rows near the core instead of scattered at the edges, more roadside houses fill the town out, a windmill stands in town, and Rodwan trees line the streets and parks. Every house still works exactly as before: doors sit exactly where their triggers, exits, and path ends are, NPCs now sort correctly in front of and behind houses instead of clipping through them, and moving a house with the debug mover still moves its door with it. The tutorial house keeps its own art, and the watermill piece is in the game files but not placed yet because no town spot has water for it to sit beside.',
+  '961': 'The minimap is now a real map: every kind of place gets its own icon — market stalls, the Rusty Tankard tavern, the Wayfarer Guild (with a little forge mark, since the smiths work there), the chapel, the inn, houses, dungeon entrances, carriage stations and stops, the town well, and the windmill — and the map itself shows far more detail, with real rivers and lakes, roads and town lanes, plazas, walls, and trees, all drawn where they actually are so the icons sit on the right ground. Tapping the minimap to walk somewhere works exactly as before. The map pictures come from a small fantasy map pack that ships no license file, so no license terms are claimed for it; there is no separate blacksmith building in the game, which is why the forge mark rides on the guild icon.',
   '960': 'Rotating the camera no longer leaves a grid of dark diamonds across the field: ground tiles are now painted as their true rotated shape instead of the unrotated diamond, so terrain stays solid at every angle — quarter turns, 45° steps, mid-turn, and held spins — with no holes and no change to how the camera itself turns, how movement works, or what your saved camera angle is.',
   '958': 'At level 10 you now choose a class that actually changes how you fight. Four teachers have moved into Mosslight: Dain teaches warriors at the Wayfarer Guild, Sable teaches mages, Puck teaches rogues, and Wynn teaches archers. They teach at the guild by day and wander to the Rusty Tankard in the evening, so talk to one when you reach level 10 — changing class later is free. Warriors hit 2 damage harder, rogues crit more often and strike from stealth three times as hard, archers shoot 25 percent harder, and mages open a Spells tab in the Skills panel with real magic: Ember Bolt throws fire at the nearest foe within range, Veil Step blinks you two paces in the direction you face, and Frost Ward hardens your skin with 3 extra armor until your next wound. Spells cost mana drawn from your intelligence, refill slowly on their own, and every cast plays a fire, frost, or veil animation on the field. Effect frames come from a user-supplied effects pack that ships no license file, so no license terms are claimed for them.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
@@ -4211,42 +4218,151 @@ function MiniMap({ chunk, position, onTap, mode = 'terrain', radarEntities = [] 
       g.stroke();
       return;
     }
+    // BUILD 961: detailed minimap — terrain, water, roads, plazas, walls,
+    // trees and per-type location icons, ALL at the tap scale (0.214 px per
+    // field unit) so icons sit on the terrain they mark and taps land on
+    // them. Pre-961 terrain drew 7 chunks at 0.061 px/unit while buildings
+    // and taps used 0.214, so terrain and icons were misaligned. Visible
+    // span is now ~2 chunks instead of 7 — more detail, less area — and
+    // the tap mapping itself is unchanged.
     // Background (dark)
     g.fillStyle = '#1a2a1a';
     g.fillRect(0, 0, size, size);
-    // Draw nearby terrain (simplified: sample mapTileFor in a grid)
-    const range = 3; // chunks around player
-    const pxPerChunk = size / (range * 2 + 1);
-    for (let ox = -range; ox <= range; ox++) {
-      for (let oy = -range; oy <= range; oy++) {
+    const mScale = MINIMAP_ICON_SCALE;
+    const chunkPx = MINIMAP_CHUNK_UNITS * mScale; // 60px per chunk
+    // Terrain per chunk (current + neighbors in view).
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
         const cp = { x: chunk.x + ox, y: chunk.y + oy };
         const tile = mapTileFor(cp);
-        const cx = R + ox * pxPerChunk;
-        const cy = R + oy * pxPerChunk;
-        // Terrain color
-        let col = '#3a6a3a'; // meadow green
-        if (tile.terrain === 'forest') col = '#2a5a2a';
-        else if (tile.terrain === 'desert') col = '#c2a86a';
-        else if (tile.terrain === 'ocean') col = '#2a5aaa';
-        else if (tile.terrain === 'rock') col = '#6a6a6a';
-        g.fillStyle = col;
-        g.fillRect(cx - pxPerChunk / 2, cy - pxPerChunk / 2, pxPerChunk, pxPerChunk);
+        const x0 = R + (ox * MINIMAP_CHUNK_UNITS - position.x) * mScale;
+        const y0 = R + (oy * MINIMAP_CHUNK_UNITS - position.y) * mScale;
+        g.fillStyle = terrainColorFor(tile.terrain);
+        g.fillRect(x0, y0, chunkPx, chunkPx);
       }
     }
-    // Buildings in current chunk (brown dots)
+    // Water cells (rivers + lakes, 10-unit cells from the landscape grid).
     try {
-      const buildings = buildingDoorwaysFor(chunk);
-      g.fillStyle = '#8a6a4a';
-      for (const b of buildings) {
-        // Building pos relative to player, scaled to minimap
-        const dx = (b.rect.left + b.rect.right) / 2 - position.x;
-        const dy = (b.rect.top + b.rect.bottom) / 2 - position.y;
-        const scale = size / 280 / 2; // 280 = FIELD_SIZE, show ~2 chunks
-        const mx = R + dx * scale;
-        const my = R + dy * scale;
-        if (Math.hypot(mx - R, my - R) < R - 4) {
-          g.fillRect(mx - 2, my - 2, 4, 4);
+      for (const cell of minimapWaterCells(chunk, position)) {
+        const p = minimapProject(cell.dx, cell.dy);
+        if (Math.hypot(p.x - R, p.y - R) >= R - 2) continue;
+        g.fillStyle = MINIMAP_WATER_COLORS[cell.kind];
+        g.fillRect(p.x - 1.1, p.y - 1.1, 2.2, 2.2);
+      }
+    } catch { /* ignore */ }
+    // Roads: chunk road arms for chunks in view.
+    g.strokeStyle = '#c9a86a';
+    g.lineWidth = 2;
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        const cp = { x: chunk.x + ox, y: chunk.y + oy };
+        const road = mapTileFor(cp).road || '';
+        if (road === 'none') continue;
+        const ccx = R + (ox * MINIMAP_CHUNK_UNITS + 140 - position.x) * mScale;
+        const ccy = R + (oy * MINIMAP_CHUNK_UNITS + 140 - position.y) * mScale;
+        const edge = (arm: string): { x: number; y: number } | null => {
+          if (arm === 'n') return { x: ccx, y: R + (oy * MINIMAP_CHUNK_UNITS - position.y) * mScale };
+          if (arm === 's') return { x: ccx, y: R + (oy * MINIMAP_CHUNK_UNITS + 280 - position.y) * mScale };
+          if (arm === 'e') return { x: R + (ox * MINIMAP_CHUNK_UNITS + 280 - position.x) * mScale, y: ccy };
+          if (arm === 'w') return { x: R + (ox * MINIMAP_CHUNK_UNITS - position.x) * mScale, y: ccy };
+          return null;
+        };
+        g.beginPath();
+        for (const arm of ['n', 's', 'e', 'w']) {
+          if (!road.includes(arm)) continue;
+          const e = edge(arm);
+          if (!e) continue;
+          g.moveTo(ccx, ccy);
+          g.lineTo(e.x, e.y);
         }
+        g.stroke();
+      }
+    }
+    // Mosslight decor: lanes, plazas, walls (other chunks return empty).
+    try {
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          const decor = settlementDecorFor({ x: chunk.x + ox, y: chunk.y + oy });
+          const offX = ox * MINIMAP_CHUNK_UNITS - position.x;
+          const offY = oy * MINIMAP_CHUNK_UNITS - position.y;
+          const proj = (px: number, py: number) => ({ x: R + (offX + px) * mScale, y: R + (offY + py) * mScale });
+          g.strokeStyle = '#c9a86a';
+          for (const lane of decor.lanes) {
+            if (lane.points.length < 2) continue;
+            g.lineWidth = Math.max(1.5, (lane.width || 2) * mScale);
+            g.beginPath();
+            lane.points.forEach((pt, i) => { const p = proj(pt.x, pt.y); if (i === 0) g.moveTo(p.x, p.y); else g.lineTo(p.x, p.y); });
+            g.stroke();
+          }
+          g.fillStyle = '#d9c9a0';
+          for (const plaza of decor.plazas) {
+            const p = proj(plaza.x, plaza.y);
+            g.beginPath();
+            g.arc(p.x, p.y, Math.max(2, plaza.r * mScale), 0, Math.PI * 2);
+            g.fill();
+          }
+          g.strokeStyle = '#8a8a8a';
+          g.lineWidth = 1.5;
+          for (const wall of decor.walls) {
+            if (wall.points.length < 2) continue;
+            g.beginPath();
+            wall.points.forEach((pt, i) => { const p = proj(pt.x, pt.y); if (i === 0) g.moveTo(p.x, p.y); else g.lineTo(p.x, p.y); });
+            g.stroke();
+          }
+        }
+      }
+    } catch { /* ignore */ }
+    // Trees (real positions, current + neighbor chunks).
+    try {
+      g.fillStyle = '#1a3d1a';
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          for (const t of fieldTreesFor({ x: chunk.x + ox, y: chunk.y + oy })) {
+            const p = minimapProject(ox * MINIMAP_CHUNK_UNITS + t.x - position.x, oy * MINIMAP_CHUNK_UNITS + t.y - position.y);
+            if (Math.hypot(p.x - R, p.y - R) >= R - 2) continue;
+            g.fillRect(p.x - 0.75, p.y - 0.75, 1.5, 1.5);
+          }
+        }
+      }
+    } catch { /* ignore */ }
+    // Location icons (one per located place type — see minimapIcons.ts).
+    try {
+      const sources: MinimapIconSource[] = [];
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          const cp = { x: chunk.x + ox, y: chunk.y + oy };
+          const offX = ox * MINIMAP_CHUNK_UNITS - position.x;
+          const offY = oy * MINIMAP_CHUNK_UNITS - position.y;
+          for (const d of buildingDoorwaysFor(cp)) {
+            const type = iconTypeForRoomType(d.area.roomType);
+            if (!type) continue;
+            sources.push({
+              type,
+              dx: offX + (d.rect.left + d.rect.right) / 2,
+              dy: offY + (d.rect.top + d.rect.bottom) / 2,
+              forgeBadge: type === 'guild',
+            });
+          }
+          const decor = settlementDecorFor(cp);
+          for (const s of marketStallsFromDecor(decor.props)) {
+            sources.push({ type: 'shop', dx: offX + s.x, dy: offY + s.y });
+          }
+          for (const prop of decor.props) {
+            if (prop.asset.includes('windmill')) sources.push({ type: 'windmill', dx: offX + prop.x, dy: offY + prop.y });
+            else if (prop.asset.includes('well')) sources.push({ type: 'well', dx: offX + prop.x, dy: offY + prop.y });
+          }
+          const landmark = LANDMARKS[cp.x + ',' + cp.y];
+          if (landmark && landmark.kind === 'dungeon') {
+            sources.push({ type: 'dungeon', dx: offX + DUNGEON_ENTRANCE_POINT.x, dy: offY + DUNGEON_ENTRANCE_POINT.y });
+          }
+          const station = getCarriageStation(cp);
+          if (station) sources.push({ type: 'carriage', dx: offX + station.layout.sign.x, dy: offY + station.layout.sign.y });
+          const stop = getCarriageStop(cp);
+          if (stop) sources.push({ type: 'carriage', dx: offX + stop.sign.x, dy: offY + stop.sign.y });
+        }
+      }
+      for (const icon of sortMinimapIconsForDraw(placeMinimapIcons(sources))) {
+        drawMinimapIcon(g, icon.x, icon.y, icon.type, icon.forgeBadge);
       }
     } catch { /* ignore */ }
     // Player (white dot, center)
