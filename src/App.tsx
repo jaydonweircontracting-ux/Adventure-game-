@@ -112,7 +112,7 @@ import { roadCorridorsFor, pointInCorridors, waterAt, LANDSCAPE_FIELD_SIZE } fro
 import { spriteDefFor, animForMonsterState, monsterAnimFrameFor, resolveMonsterSprite } from '@/game/monsterSprites';
 import { probeMonsterSheets, isMonsterSheetFailed, onMonsterSheetFailure } from './game/monsterSprites/sheetProbe';
 import { MONSTER_SPAWN_TABLE } from '@/game/monsterSpawns';
-import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
+import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, detectDungeonRunEvents, startDungeonRun, canDelve, type SimulatedAdventurer } from '@/game/simulatedAdventurers';
 import { isInMeleeArc, traceLineBlocked, getDirection, PLAYER_MELEE_REACH, PLAYER_MELEE_TARGET_RADIUS, GOAT_MELEE_REACH, type CombatDirection } from '@/game/combat';
 import { chooseCreatureTarget, pickGuardCreatureTarget, creatureTargetKey, sneakEngagementRange, type CreatureTargetChoice, type GuardThreatCandidate } from '@/game/creatureCombat';
 import { strayGateDecision, strayKindForRoll, straySpawnPoints, pickStraySpawnPoint, TOWN_STRAY_CHECK_INTERVAL_MS, TOWN_STRAY_COOLDOWN_MS, TOWN_STRAY_ROAM_RADIUS } from '@/game/townStrays';
@@ -162,7 +162,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '947';
+const BUILD_NUMBER = '948';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -190,6 +190,7 @@ const BUILD_NOTES: Record<string, string> = {
   '945': 'The world’s trees now wear real hand-drawn art: eight tree shapes from the Rodwan pack grow across the wilds, each tree keeping the same shape every time you visit it. The new trees stand on exactly the same ground their old shapes did, so walking, chopping, and collision feel unchanged — only the leaves look better. Leafy trees in the field view and every tree in the iso view use the new art; desert cacti, snow pines, dead trees, and rocks keep their own looks. The tree art source is credited in the game files, and its author asks to be asked before any commercial use.',
   '946': 'The Ember Vault dungeon now wears Dungeon Pry stone: floors, walls, and doors are hand-painted tiles instead of flat colors, barrels, bookshelves, carpets, flasks, and tables dress the galleries, and loot lying on the ground shows as a closed chest. The look is new but the dungeon plays exactly as before — same layout, monsters, and loot, and stairs, altars, and shopkeepers keep their old art. The matching open-chest frame ships with the art and will appear once a loot interaction opens chests.',
   '947': 'Six new dungeon entrances now dot the world, from Thornwood Hollow in the far west to Greenbarrow in the far south, and every one of them opens on the world map as a stone-arch marker. Walk up to an entrance and tap Descend to enter a dungeon, exactly like the Sunken Crypt — the button now appears in the iso view too, where entrances also show a marked stone arch on the ground, so no entrance is hidden anymore. Each descent is still a fresh dungeon like before, and the old Sunken Crypt entry works exactly as it always did.',
+  '948': 'Adventurers now occasionally set out to delve dungeons on their own. Watch one walk out of Mosslight toward the wilds and check back later: they may return with gold and loot, come back empty-handed, or limp home injured. Their hauls stay on them for now, with chest and bank storage coming next, and you can follow each run in the game log and the adventurer list. Player dungeons, loot, and entrances work exactly as before.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
   '925': 'Horses stop shooting off like rockets: ridden horses now travel one continuous journey at their own speed instead of teleporting between the stable, the workplace, and the patrol circuit, the evening walk home runs at walking pace, and wild horses graze in a slow circle instead of vanishing to a random spot every few seconds. The fastest any NPC horse moves now is a calm ride, slower than your own horse. Your own horse still waits where you left it in Mosslight — walk up to it and press Mount to ride, and dismounting leaves you standing right there, never teleported',
@@ -6268,6 +6269,29 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const inv = inventoryRef.current;
           return inv ? inv.coins : null;
         },
+        // BUILD 948: adventurer dungeon-run hooks (testmode only).
+        getAdventurers: () => simulatedAdventurersRef.current.map((a) => ({ id: a.id, name: a.name, level: a.level, className: a.className, outing: a.outing ?? null, dungeonPhase: a.dungeonPhase ?? null, dungeonEntrance: a.dungeonEntrance ?? null, x: a.position.x, y: a.position.y, location: a.location ?? 'field', activity: a.activity, status: a.status ?? 'healthy', coins: a.coins ?? 0, lootItems: [...(a.lootItems ?? [])], delvesCompleted: a.delvesCompleted ?? 0 })),
+        // Forces a delve through the REAL start transition (eligibility
+        // still enforced); only the 12% trigger roll is bypassed, stated.
+        forceAdventurerDelve: (id: string) => {
+          const cur = simulatedAdventurersRef.current;
+          const adv = cur.find((a) => a.id === id);
+          if (!adv) return { ok: false, reason: 'not-found' };
+          if (!canDelve(adv)) return { ok: false, reason: 'ineligible' };
+          const started = startDungeonRun(adv, simulatedTickRef.current);
+          const next = cur.map((a) => (a.id === id ? started : a));
+          simulatedAdventurersRef.current = next;
+          setSimulatedAdventurers(next);
+          return { ok: true, entrance: started.dungeonEntrance };
+        },
+        // Drives the REAL living-sim tick function repeatedly (testmode
+        // only) so a forced delve can run to completion inside one harness
+        // run instead of ~5 real minutes of waiting.
+        stepLivingSimTicks: (n: number) => {
+          const count = Math.max(0, Math.min(1000, Math.floor(n) || 0));
+          for (let i = 0; i < count; i++) advanceLivingSimTickRef.current();
+          return { ticks: count };
+        },
         // BUILD 535: full movement validation (collision + cliffs + goats).
         // Returns true if the player could move from current pos by (dx, dy).
         canMove: (dx: number, dy: number) => {
@@ -7663,6 +7687,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     simulatedTickRef.current = nextTick;
     const liveGoats = goatsRef.current.filter((goat) => goat.disposition !== 'defeated' && goat.hp > 0);
     // A new "player" logs in every minute, up to 10.
+    // BUILD 948: pre-tick list for the dungeon-run log diff (departures and
+    // returns log exactly once, on the transition tick).
+    const prevAdventurers = simulatedAdventurersRef.current;
     const withSpawns = spawnDueAdventurer(simulatedAdventurersRef.current, nextTick);
     const nearAdventurers = chunkRef.current.x === TOWNSFOLK_CHUNK.x && chunkRef.current.y === TOWNSFOLK_CHUNK.y;
     // Authoritative world-clock minutes for the adventurer exodus deadline.
@@ -7676,6 +7703,13 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
     // no more "random" damage on goats across the map.
     simulatedAdventurersRef.current = next;
     setSimulatedAdventurers(next);
+    // BUILD 948: dungeon-run log lines (departure / loot return / empty /
+    // injured) — transition diff only, never per-tick spam.
+    const dungeonEvents = detectDungeonRunEvents(prevAdventurers, next);
+    if (dungeonEvents.length > 0) {
+      const colorForDungeonEvent = (kind: string) => kind === 'returned-loot' ? 'gold' : kind === 'returned-injured' ? 'orange' : kind === 'departed' ? 'blue' : 'gray';
+      setLogs((cur) => [...dungeonEvents.map((e) => ({ text: e.text, color: colorForDungeonEvent(e.kind) })), ...cur].slice(0, 3));
+    }
   };
 
   useEffect(() => {
@@ -12802,7 +12836,7 @@ if (active) {
               canvas rendering the same live state — same chunk, same player,
               same townsfolk sim. Input/HUD/quests/saves untouched. */}
           {isoFieldBeta && (
-            <IsoFieldView placedAssets={customPlacedAssets} editorPlacedObjects={placedObjects} playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} dispositions={disposition} chunk={chunk} position={position} townsfolk={townsfolk} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? monsters.filter((m) => m.stray || m.raid) : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash, stray: m.stray }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
+            <IsoFieldView placedAssets={customPlacedAssets} editorPlacedObjects={placedObjects} playerLook={rpgConfig.look} inInterior={Boolean(interior)} npcSpeechEnabled={false} dispositions={disposition} chunk={chunk} position={position} townsfolk={townsfolk} adventurers={(chunk.x === TOWNSFOLK_CHUNK.x && chunk.y === TOWNSFOLK_CHUNK.y ? simulatedAdventurers.filter((a) => (a.location || 'field') === 'field').map((a) => ({ id: a.id, name: a.name, position: a.position, facing: a.facing, moving: a.moving })) : [])} goats={goats.filter((g) => g.disposition !== 'defeated').map((g) => ({ id: g.id, kind: g.kind, position: g.position, facing: g.facing, disposition: g.disposition }))} monsters={(isStartingSettlementSafetyZone(chunk) ? monsters.filter((m) => m.stray || m.raid) : monsters).map((m) => ({ id: m.id, kind: m.kind, position: m.position, facing: m.facing, disposition: m.disposition, hp: m.hp, maxHp: m.maxHp, variant: m.variant, moving: m.moving, attacking: m.attacking, hitFlash: m.hitFlash, stray: m.stray }))} selectedMonsterId={targetMonsterId} onSelectMonster={(monster) => { targetNpcIdRef.current = null; targetNpcModeRef.current = null; setTargetNpcId(null); targetGoatIdRef.current = null; setTargetGoatId(null); tapMoveTargetRef.current = null; targetMonsterIdRef.current = monster?.id ?? null; setTargetMonsterId(monster?.id ?? null); }} collisionDebug={collisionDebugMode} onExit={toggleIsoFieldBeta}
               rotation={cameraRotation} zoom={isoZoom} onZoomChange={setIsoZoom} playerSneaking={sneaking}
               selectedNpcId={targetNpcId}
               onSelectNpc={(npc) => {

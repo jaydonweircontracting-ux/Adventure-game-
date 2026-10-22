@@ -1,6 +1,6 @@
 {
-  "build": "947",
-  "note": "Six new dungeon entrances now dot the world, from Thornwood Hollow in the far west to Greenbarrow in the far south, and every one of them opens on the world map as a stone-arch marker. Walk up to an entrance and tap Descend to enter a dungeon, exactly like the Sunken Crypt — the button now appears in the iso view too, where entrances also show a marked stone arch on the ground, so no entrance is hidden anymore. Each descent is still a fresh dungeon like before, and the old Sunken Crypt entry works exactly as it always did.",
-  "timestamp": "2026-10-22T00:32:44.928Z",
-  "cacheBuster": "mvit4c5c"
+  "build": "948",
+  "note": "Adventurers now occasionally set out to delve dungeons on their own. Watch one walk out of Mosslight toward the wilds and check back later: they may return with gold and loot, come back empty-handed, or limp home injured. Their hauls stay on them for now, with chest and bank storage coming next, and you can follow each run in the game log and the adventurer list. Player dungeons, loot, and entrances work exactly as before.",
+  "timestamp": "2026-10-22T00:54:36.312Z",
+  "cacheBuster": "mvitwg0r"
 }

@@ -25,7 +25,7 @@ import { BESTIARY_ENTRIES, BESTIARY_TIERS, BESTIARY_CHARM_POINTS, bestiaryEntryF
 import { AA_ABILITIES, AA_CREDITS_PER_POINT, AA_EVEN_KILLS_PER_POINT, AA_TITLES, aaBonusesForRanks, aaBuyRank, aaCostForRank, aaCreditsForKill, aaTitleForSpent, accrueAaKill, createEmptyAa, sanitizeAa } from '../src/game/aa';
 import { tierForStanding, effectiveStanding, tierForNpc, standingFor, factionForNpc, factionForQuestLocation, applyFactionHarm, applyFactionQuestGain, factionExamineLine, factionDialogueLine, sanitizeFactionStandings } from '../src/game/faction';
 import { createAgent, stepAgent, AGENT_MOVE_SPEED, type AgentWorld } from '../src/game/gameplayAgent';
-import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS } from '../src/game/simulatedAdventurers';
+import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdventurer, MAX_ADVENTURERS, ADVENTURER_SPAWN_INTERVAL_TICKS, dungeonEntranceNames, pickDungeonEntrance, canDelve, startDungeonRun, detectDungeonRunEvents, DUNGEON_PICK_CHANCE, DUNGEON_OUTBOUND_SPEED, DUNGEON_OUTBOUND_MAX_TICKS, DUNGEON_DELVE_TICKS, DUNGEON_SUCCESS_COINS_MIN, DUNGEON_SUCCESS_COINS_MAX, DUNGEON_LOOT_TABLE } from '../src/game/simulatedAdventurers';
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
@@ -3797,6 +3797,119 @@ console.log('Testing dungeon Pry sprites (BUILD 946)...');
   {
     const g = createGame(4242);
     assert(g.tiles.length === 19 && g.tiles[0].length === 31, 'Pry946: dungeon grid unchanged by the art module');
+  }
+}
+
+console.log('Testing NPC dungeon runs (BUILD 948)...');
+{
+  // Entrance table: the Sunken Crypt + the six BUILD 947 entrances, no others.
+  const entrances = dungeonEntranceNames();
+  assert(entrances.length === 7, `Dng948: 7 dungeon entrances (got ${entrances.length})`);
+  assert(entrances.includes('Sunken Crypt'), 'Dng948: Sunken Crypt is a delve target');
+  for (const name of ['Thornwood Hollow', 'Frostfall Vault', 'Dustfall Tomb', 'Northpine Crypt', 'Stonehollow Deep', 'Greenbarrow']) {
+    assert(entrances.includes(name), `Dng948: ${name} is a delve target`);
+  }
+  // Entrance pick is deterministic per (id, tick) and stays in the table.
+  for (const [id, tick] of [['kael', 100], ['sera', 250], ['kael', 100]] as const) {
+    assert(entrances.includes(pickDungeonEntrance(id, tick)), 'Dng948: picked entrance is in the table');
+  }
+  assert(pickDungeonEntrance('kael', 100) === pickDungeonEntrance('kael', 100), 'Dng948: entrance pick deterministic');
+  // Eligibility matrix.
+  const base = initialSimulatedAdventurers[0];
+  const fieldHealthy = { ...base, location: 'field' as const, status: 'healthy' as const, outing: 'wander' as const };
+  assert(canDelve(fieldHealthy), 'Dng948: healthy field adventurer can delve');
+  assert(!canDelve({ ...fieldHealthy, status: 'injured' as const }), 'Dng948: injured adventurer cannot delve');
+  assert(!canDelve({ ...fieldHealthy, location: 'starting-house' as const }), 'Dng948: starting-house adventurer cannot delve');
+  assert(!canDelve({ ...fieldHealthy, location: 'traveling' as const }), 'Dng948: traveling adventurer cannot delve (real trigger is field-only)');
+  assert(!canDelve({ ...fieldHealthy, location: 'tavern' as const }), 'Dng948: tavern adventurer cannot delve (real trigger is field-only)');
+  assert(!canDelve({ ...fieldHealthy, outing: 'exodus' as const }), 'Dng948: mid-exodus adventurer cannot delve');
+  assert(!canDelve({ ...fieldHealthy, outing: 'dungeon' as const }), 'Dng948: already-delving adventurer cannot delve again');
+  // Full lifecycle: start -> outbound walk (no jumps) -> delving (frozen) ->
+  // return (boundary, wander, loot or empty or injured, delves counted).
+  {
+    let adv = startDungeonRun({ ...fieldHealthy, position: { x: 140, y: 140 } }, 1000);
+    assert(adv.outing === 'dungeon' && adv.dungeonPhase === 'outbound' && entrances.includes(adv.dungeonEntrance ?? ''), 'Dng948: run starts outbound with a table entrance');
+    let prevPos = adv.position;
+    let guard = 0;
+    while (adv.outing === 'dungeon' && adv.dungeonPhase === 'outbound' && guard < DUNGEON_OUTBOUND_MAX_TICKS + 5) {
+      const list = advanceSimulatedAdventurers([adv], 2000 + guard, []);
+      adv = list[0];
+      const step = Math.hypot(adv.position.x - prevPos.x, adv.position.y - prevPos.y);
+      assert(step <= DUNGEON_OUTBOUND_SPEED + 0.001, `Dng948: outbound step is a walk, not a jump (got ${step})`);
+      prevPos = adv.position;
+      guard += 1;
+    }
+    assert(adv.outing === 'dungeon' && adv.dungeonPhase === 'delving' && adv.location === 'traveling', 'Dng948: outbound ends in delving/traveling');
+    const delvePos = adv.position;
+    guard = 0;
+    while (adv.outing === 'dungeon' && guard < DUNGEON_DELVE_TICKS + 5) {
+      const list = advanceSimulatedAdventurers([adv], 3000 + guard, []);
+      adv = list[0];
+      if (adv.outing === 'dungeon') assert(adv.position.x === delvePos.x && adv.position.y === delvePos.y, 'Dng948: position frozen while delving');
+      guard += 1;
+    }
+    assert(adv.outing === 'wander' && adv.location === 'field', 'Dng948: delve ends back in field wander');
+    assert((adv.delvesCompleted ?? 0) === 1, 'Dng948: delves counted');
+    assert(adv.position.x === 2 || adv.position.x === 278, 'Dng948: return reappears at a chunk boundary');
+    assert(adv.dungeonPhase === undefined, 'Dng948: phase cleared on return');
+    if (adv.status === 'injured') {
+      assert((adv.coins ?? 0) === 0 && (adv.lootItems ?? []).length === 0, 'Dng948: injured return carries no loot');
+    } else {
+      const coins = adv.coins ?? 0;
+      const items = adv.lootItems ?? [];
+      assert((coins === 0 && items.length === 0) || (coins >= DUNGEON_SUCCESS_COINS_MIN && coins <= DUNGEON_SUCCESS_COINS_MAX && items.length === 1 && (DUNGEON_LOOT_TABLE as readonly string[]).includes(items[0])), 'Dng948: return is empty or a valid success haul');
+    }
+    // No death: a delve never produces a dead adventurer.
+    assert(adv.status !== 'dead', 'Dng948: delves never kill');
+    // Return-to-schedule: the returned adventurer wanders normally and the
+    // return itself never calls pickOuting (at least one full wander outing
+    // separates runs — outingTicks is a full wander span, not a re-pick).
+    assert((adv.outingTicks ?? 0) >= 40, 'Dng948: returned adventurer wanders a full outing before any re-pick');
+  }
+  // Log events: exactly the transitions, with loot math matching the haul.
+  {
+    const before = [{ ...fieldHealthy, position: { x: 140, y: 140 } }];
+    const started = startDungeonRun(before[0], 5000);
+    const departed = detectDungeonRunEvents(before, [started]);
+    assert(departed.length === 1 && departed[0].kind === 'departed' && departed[0].text.includes(started.dungeonEntrance ?? ''), 'Dng948: departure event on run start');
+    const returned = { ...started, outing: 'wander' as const, dungeonPhase: undefined, coins: 17, lootItems: ['Health Potion'], delvesCompleted: 1 };
+    const lootEvents = detectDungeonRunEvents([started], [returned]);
+    assert(lootEvents.length === 1 && lootEvents[0].kind === 'returned-loot' && lootEvents[0].text.includes('17 gold') && lootEvents[0].text.includes('Health Potion'), 'Dng948: loot return event carries coins + item');
+    const emptyEvents = detectDungeonRunEvents([started], [{ ...started, outing: 'wander' as const, dungeonPhase: undefined, delvesCompleted: 1 }]);
+    assert(emptyEvents.length === 1 && emptyEvents[0].kind === 'returned-empty', 'Dng948: empty return event');
+    const hurtEvents = detectDungeonRunEvents([started], [{ ...started, outing: 'wander' as const, dungeonPhase: undefined, status: 'injured' as const, delvesCompleted: 1 }]);
+    assert(hurtEvents.length === 1 && hurtEvents[0].kind === 'returned-injured', 'Dng948: injured return event');
+    assert(detectDungeonRunEvents([started], [started]).length === 0, 'Dng948: no event without a transition');
+  }
+  // Pick rate: the dungeon band is exactly DUNGEON_PICK_CHANCE of picks for
+  // eligible adventurers (measured over deterministic ticks), and zero for
+  // ineligible ones.
+  {
+    let dungeonPicks = 0;
+    const trials = 2000;
+    for (let t = 0; t < trials; t++) {
+      // Drive one adventurer through wander expiries: force outing wander
+      // with 1 tick left so advance calls pickOuting immediately.
+      const probe = advanceSimulatedAdventurers([{ ...fieldHealthy, outing: 'wander' as const, outingTicks: 1 }], t, []);
+      if (probe[0].outing === 'dungeon') dungeonPicks += 1;
+    }
+    const rate = dungeonPicks / trials;
+    assert(rate > DUNGEON_PICK_CHANCE - 0.03 && rate < DUNGEON_PICK_CHANCE + 0.03, `Dng948: dungeon pick rate ~12% (got ${(rate * 100).toFixed(1)}%)`);
+    // An injured adventurer never picks dungeon WHILE still injured (a
+    // recovered one is healthy again and may legitimately pick it).
+    let injuredPicks = 0;
+    for (let t = 0; t < trials; t++) {
+      const probe = advanceSimulatedAdventurers([{ ...fieldHealthy, status: 'injured' as const, outing: 'wander' as const, outingTicks: 1 }], t, []);
+      if (probe[0].outing === 'dungeon' && probe[0].status === 'injured') injuredPicks += 1;
+    }
+    assert(injuredPicks === 0, 'Dng948: injured adventurers never pick dungeon while injured');
+    // Outbound cap path: an adventurer that cannot reach the boundary in
+    // time still enters the delve (same backstop as advanceTravel).
+    {
+      const capped = { ...fieldHealthy, position: { x: 140, y: 140 }, outing: 'dungeon' as const, dungeonPhase: 'outbound' as const, dungeonEntrance: 'Sunken Crypt', outingTicks: 1 };
+      const after = advanceSimulatedAdventurers([capped], 9001, []);
+      assert(after[0].dungeonPhase === 'delving' && after[0].location === 'traveling', 'Dng948: outbound cap still enters the delve');
+    }
   }
 }
 

@@ -259,6 +259,11 @@ interface IsoFieldViewProps {
   chunk: Point;
   position: Point; // player, field units (0..FIELD_SIZE)
   townsfolk: Townsperson[];
+  // BUILD 948: simulated adventurers (dungeon runs) — drawn with the same
+  // shared character renderer as townsfolk. App passes only field-located
+  // adventurers when the chunk is Mosslight Crossing (4,7), the same gate
+  // the 2D field uses; traveling (delving) adventurers are never passed.
+  adventurers?: Array<{ id: string; name: string; position: Point; facing: string; moving?: boolean }>;
   goats?: Array<{ id: number; kind: string; position: Point; facing: string; disposition: string }>; // BUILD 458: critter kinds
   monsters?: IsoMonster[];
   selectedMonsterId?: number | null;
@@ -610,11 +615,11 @@ function roadBlendFor(road: string, lx: number, ly: number): number {
   return 0.3 + 0.7 * Math.min(1, Math.max(0, d) / 2.5);
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, zoom, rotation = 0, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, adventurers, goats, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, zoom, rotation = 0, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
-  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, corpseLootedBases, damageTexts, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -789,6 +794,9 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
     // per frame. The animator also receives the interpolated position, so
     // its speed measurement stays smooth instead of spiky.
     const npcInterp = new Map<string, { px: number; py: number; cx: number; cy: number; t: number; duration: number }>();
+    // BUILD 948: same interpolation for adventurers (separate map — adventurer
+    // ids must never collide with townsfolk interp entries; bounded: max 10).
+    const advInterp = new Map<string, { px: number; py: number; cx: number; cy: number; t: number; duration: number }>();
     // BUILD 912: world-horse render interpolation + facing memory. Horse
     // positions resolve analytically from the world clock and are only
     // republished when App's clock string changes, so — exactly like NPCs
@@ -2237,6 +2245,48 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             },
           });
         }
+      }
+      // BUILD 948: simulated adventurers in the iso view (previously 2D-DOM
+      // only, invisible in the default view). Same shared character renderer
+      // as townsfolk, look = adventurer id (deterministic variant, the same
+      // mechanism townsfolk use when no gear is looted). Only field-located
+      // adventurers arrive via the prop (App gates on Mosslight + location);
+      // a return reappearance is a >5-unit jump, so it snaps (duration 0)
+      // instead of sliding across the map — the adventurer was off-field.
+      for (const adv of live.adventurers ?? []) {
+        let ix = adv.position.x, iy = adv.position.y;
+        const prev = advInterp.get(adv.id);
+        if (!prev || prev.cx !== adv.position.x || prev.cy !== adv.position.y) {
+          const jumped = prev && Math.hypot(adv.position.x - prev.cx, adv.position.y - prev.cy) > 5;
+          ix = prev && !jumped ? prev.cx : adv.position.x;
+          iy = prev && !jumped ? prev.cy : adv.position.y;
+          const observedTick = prev ? nowMs - prev.t : 120;
+          const duration = Math.max(70, Math.min(180, observedTick));
+          advInterp.set(adv.id, { px: ix, py: iy, cx: adv.position.x, cy: adv.position.y, t: nowMs, duration: jumped ? 0 : duration });
+        } else {
+          const k = prev.duration === 0 ? 1 : Math.min(1, Math.max(0, (nowMs - prev.t) / prev.duration));
+          ix = prev.px + (prev.cx - prev.px) * k;
+          iy = prev.py + (prev.cy - prev.py) * k;
+        }
+        const ac = isoToScreen(ix, iy);
+        if (ac.x < cam.x - npcVhw - 50 || ac.x > cam.x + npcVhw + 50 || ac.y < cam.y - npcVhh - 100 || ac.y > cam.y + npcVhh + 64) continue;
+        drawPerson(drawables, ix, iy, adv.facing as Face4, adv.moving ?? false, adv.id, nowMs, adv.id);
+        const nameX = ac.x, nameY = ac.y - 52;
+        drawables.push({
+          depth: dep(ix, iy) + 0.05,
+          draw: (g2) => {
+            g2.save();
+            g2.font = 'bold 11px sans-serif';
+            g2.textAlign = 'center';
+            g2.textBaseline = 'middle';
+            g2.lineWidth = 3;
+            g2.strokeStyle = 'rgba(20, 16, 10, 0.85)';
+            g2.strokeText(adv.name, nameX, nameY);
+            g2.fillStyle = '#ffffff';
+            g2.fillText(adv.name, nameX, nameY);
+            g2.restore();
+          },
+        });
       }
       // BUILD 451: goats in the iso view — simple canvas goat (body, head,
       // BUILD 457: deer (stag sprite) replaces the canvas goat. Uses the

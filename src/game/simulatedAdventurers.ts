@@ -1,3 +1,5 @@
+import { LANDMARK_LIST } from './landmarks';
+
 export type SimulatedAdventurer = {
   id: string;
   name: string;
@@ -19,7 +21,19 @@ export type SimulatedAdventurer = {
   horns?: number;
   daggersCrafted?: number;
   /** What the adventurer is currently out doing. */
-  outing?: 'wander' | 'hunt' | 'tavern' | 'guild' | 'travel' | 'exodus';
+  outing?: 'wander' | 'hunt' | 'tavern' | 'guild' | 'travel' | 'exodus' | 'dungeon';
+  /** BUILD 948: dungeon-run state. `dungeonPhase` is only set while
+   * outing === 'dungeon'; `dungeonEntrance` keeps the most recent delve site
+   * after the run ends (log/inspector history). `coins` / `lootItems` are the
+   * adventurer's accumulated delve haul — dungeon 4/5 drains them into a
+   * family chest or the bank; this build only accumulates. `delvesCompleted`
+   * counts finished runs (all outcomes). All five fields are optional so old
+   * saves (which lack them) restore cleanly as never-having-delved. */
+  dungeonPhase?: 'outbound' | 'delving';
+  dungeonEntrance?: string;
+  coins?: number;
+  lootItems?: string[];
+  delvesCompleted?: number;
   /** Ticks remaining in the current outing phase. */
   outingTicks?: number;
   /** Sim tick when this adventurer spawned (for the exodus deadline). */
@@ -42,6 +56,83 @@ type GoatTarget = { id: number; position: Point };
 // A new "player" logs in every minute (sim ticks every 1.9s), up to 10.
 export const ADVENTURER_SPAWN_INTERVAL_TICKS = 32;
 export const MAX_ADVENTURERS = 10;
+
+// BUILD 948: NPC dungeon runs. Honest architectural fact: NPCs cannot play
+// the player's DOM-grid Stone Soup mini-game, so a run is ABSTRACT
+// SIMULATION — walk to the chunk boundary (visible, same moveToward walk as
+// the exodus/travel outings), then a timed abstract delve, then a return at
+// a boundary point (same out-of-view return pattern as advanceTravel).
+// While the adventurer is in the starting field it always walks; the
+// abstract phase only begins after it has walked out of the visible field,
+// so no visible teleport ever occurs.
+// Trigger: pickOuting, the real outing picker — an eligible adventurer has a
+// 12% chance per outing pick to delve. Outings average ~100 ticks (~190s
+// real), so one adventurer delves roughly every ~26 real minutes; with 10
+// adventurers, typically 1–2 are delving at any time: "occasionally", measured.
+// Delve length: 150 ticks (~285s real ≈ 950 world-minutes ≈ 16 world-hours
+// at 10 world-minutes per 3 real seconds) plus the outbound walk.
+// Outcomes (seeded roll): success 60% (5–25 coins + 1 item), empty-handed
+// 25% (nothing), injured 15% (no loot, existing injured/rest path recovers
+// them). Death is EXCLUDED: no adventurer death handling exists anywhere
+// (fixed 10-roster, spawn roster, inspector, save assumptions) — removing
+// one would dangle all four, so a delve never kills.
+export const DUNGEON_PICK_CHANCE = 0.12;
+export const DUNGEON_OUTBOUND_SPEED = 3.4;
+export const DUNGEON_OUTBOUND_MAX_TICKS = 80;
+export const DUNGEON_DELVE_TICKS = 150;
+export const DUNGEON_SUCCESS_COINS_MIN = 5;
+export const DUNGEON_SUCCESS_COINS_MAX = 25;
+/** Delve loot: existing item types only (coins + Health Potion + goat horn +
+ * dagger — the 921 gear-drop / 522-907 placeholder-roll lineage). No new
+ * loot items: the loot-grammar build (extras 1/6) owns fuller tables. */
+export const DUNGEON_LOOT_TABLE = ['Health Potion', 'Health Potion', 'goat horn', 'dagger'] as const;
+export const DUNGEON_OUTCOME_SUCCESS = 0.6;
+export const DUNGEON_OUTCOME_EMPTY = 0.85; // roll < 0.60 success, < 0.85 empty, else injured
+
+/** Dungeon landmarks (kind === 'dungeon') in table order: the Sunken Crypt
+ * plus the six BUILD 947 entrances. Names only — adventurers never hold
+ * world-chunk positions, so the entrance is a named destination, not a
+ * field coordinate. */
+export function dungeonEntranceNames(): string[] {
+  return LANDMARK_LIST.filter((landmark) => landmark.kind === 'dungeon').map((landmark) => landmark.name);
+}
+
+/** Deterministic entrance pick for one run (seeded, no Math.random). */
+export function pickDungeonEntrance(id: string, tick: number): string {
+  const entrances = dungeonEntranceNames();
+  const rng = seededRandom(hashId(id) * 271 + tick);
+  return entrances[Math.floor(rng() * entrances.length)] ?? 'Sunken Crypt';
+}
+
+/** Whether this adventurer may start a delve right now. Townsfolk are never
+ * eligible (this module only advances simulated adventurers): they have
+ * jobs/schedules/homes and no world-travel system, and pulling a blacksmith
+ * off their schedule to delve has no reason in their need system. Location
+ * must be exactly the field: the real trigger (pickOuting) is only ever
+ * reached from field paths — traveling/tavern/guild/starting-house
+ * adventurers are routed elsewhere and can never roll the dungeon band. */
+export function canDelve(adventurer: SimulatedAdventurer): boolean {
+  if ((adventurer.status ?? 'healthy') !== 'healthy') return false;
+  if ((adventurer.location ?? 'field') !== 'field') return false;
+  if (adventurer.outing === 'exodus' || adventurer.outing === 'dungeon') return false;
+  return true;
+}
+
+/** Begin a run: the real transition the trigger and the test hook both use.
+ * Only the probability roll is bypassed by the hook — eligibility is still
+ * enforced by canDelve at the call site. */
+export function startDungeonRun(adventurer: SimulatedAdventurer, tick: number): SimulatedAdventurer {
+  const entrance = pickDungeonEntrance(adventurer.id, tick);
+  return {
+    ...adventurer,
+    outing: 'dungeon' as const,
+    dungeonPhase: 'outbound' as const,
+    dungeonEntrance: entrance,
+    outingTicks: DUNGEON_OUTBOUND_MAX_TICKS,
+    moving: true,
+    activity: `setting out to delve ${entrance}`,
+  };
+}
 
 // Field dimensions (must match FIELD_SIZE in App.tsx).
 const FIELD_SIZE = 280;
@@ -389,10 +480,18 @@ function pickOuting(adventurer: SimulatedAdventurer, tick: number): SimulatedAdv
   // Deterministic per adventurer + tick (no Math.random in the sim).
   const rng = seededRandom(hashId(adventurer.id) * 31 + tick);
   const roll = rng();
-  if (roll < 0.30) return { ...adventurer, outing: 'wander', outingTicks: 40 + Math.floor(rng() * 40), activity: 'wandering the crossing' };
-  if (roll < 0.58) return { ...adventurer, outing: 'hunt', outingTicks: 60 + Math.floor(rng() * 60), activity: 'looking for goats to hunt' };
-  if (roll < 0.72) return { ...adventurer, outing: 'tavern', outingTicks: 120, activity: 'heading to the Rusty Tankard' };
-  if (roll < 0.86) return { ...adventurer, outing: 'guild', outingTicks: 120, activity: 'heading to the Wayfarer Guild' };
+  // BUILD 948: dungeon band first (12%). Ineligible adventurers (injured,
+  // still in the starting house, mid-exodus) fall through to wander — the
+  // dungeon roll consumes no extra rng, so the fallback path draws exactly
+  // the ticks the old wander band drew.
+  if (roll < DUNGEON_PICK_CHANCE) {
+    if (canDelve(adventurer)) return startDungeonRun(adventurer, tick);
+    return { ...adventurer, outing: 'wander', outingTicks: 40 + Math.floor(rng() * 40), activity: 'wandering the crossing' };
+  }
+  if (roll < 0.39) return { ...adventurer, outing: 'wander', outingTicks: 40 + Math.floor(rng() * 40), activity: 'wandering the crossing' };
+  if (roll < 0.63) return { ...adventurer, outing: 'hunt', outingTicks: 60 + Math.floor(rng() * 60), activity: 'looking for goats to hunt' };
+  if (roll < 0.75) return { ...adventurer, outing: 'tavern', outingTicks: 120, activity: 'heading to the Rusty Tankard' };
+  if (roll < 0.87) return { ...adventurer, outing: 'guild', outingTicks: 120, activity: 'heading to the Wayfarer Guild' };
   return { ...adventurer, outing: 'travel', outingTicks: 200, activity: 'setting off for neighboring lands' };
 }
 
@@ -498,6 +597,116 @@ function advanceGuild(adventurer: SimulatedAdventurer, tick: number): SimulatedA
   return { ...adventurer, outingTicks: ticksLeft, moving: false, activity: flavor };
 }
 
+/** Resolve a finished delve: success / empty-handed / injured, loot applied
+ * to the NPC, and back to the normal outing cycle (wander — never a second
+ * delve immediately, so at least one full wander outing separates runs). */
+function resolveDungeonReturn(adventurer: SimulatedAdventurer, tick: number): SimulatedAdventurer {
+  const entrance = adventurer.dungeonEntrance ?? 'the dungeon';
+  const rng = seededRandom(hashId(adventurer.id) * 277 + tick);
+  const roll = rng();
+  const edgeX = rng() < 0.5 ? BOUNDARY_WEST : BOUNDARY_EAST;
+  const returnPosition = { x: edgeX, y: 20 + rng() * 100 };
+  const facing = (edgeX <= FIELD_SIZE / 2 ? 'right' : 'left') as 'right' | 'left';
+  const base = {
+    ...adventurer,
+    location: 'field' as const,
+    position: returnPosition,
+    moving: false,
+    facing,
+    outing: 'wander' as const,
+    outingTicks: 40 + Math.floor(rng() * 40),
+    dungeonPhase: undefined,
+    delvesCompleted: (adventurer.delvesCompleted ?? 0) + 1,
+  };
+  if (roll < DUNGEON_OUTCOME_SUCCESS) {
+    const coins = DUNGEON_SUCCESS_COINS_MIN + Math.floor(rng() * (DUNGEON_SUCCESS_COINS_MAX - DUNGEON_SUCCESS_COINS_MIN + 1));
+    const item = DUNGEON_LOOT_TABLE[Math.floor(rng() * DUNGEON_LOOT_TABLE.length)];
+    return {
+      ...base,
+      coins: (adventurer.coins ?? 0) + coins,
+      lootItems: [...(adventurer.lootItems ?? []), item],
+      activity: `returned from ${entrance} with loot!`,
+    };
+  }
+  if (roll < DUNGEON_OUTCOME_EMPTY) {
+    return { ...base, activity: `returned from ${entrance} empty-handed` };
+  }
+  // Injured: no loot. The existing injured branch in
+  // advanceSimulatedAdventurers rests them (5%/tick) until recovered.
+  return { ...base, status: 'injured' as const, activity: `crawled back from ${entrance} injured` };
+}
+
+/** One tick of a dungeon run. Outbound: the visible walk to the nearest
+ * chunk boundary (same moveToward walk as advanceTravel, same 3.4 speed,
+ * same arrival-or-cap backstop — the cap only fires for far positions or
+ * far-sim 1/8 ticking while the player is in another chunk). Delving: the
+ * abstract timed phase — position frozen, location 'traveling' (not
+ * rendered, exactly like the existing travel outing). */
+function advanceDungeon(adventurer: SimulatedAdventurer, tick: number): SimulatedAdventurer {
+  const entrance = adventurer.dungeonEntrance ?? pickDungeonEntrance(adventurer.id, tick);
+  if ((adventurer.dungeonPhase ?? 'outbound') === 'delving') {
+    const ticksLeft = (adventurer.outingTicks ?? 1) - 1;
+    if (ticksLeft <= 0) return resolveDungeonReturn(adventurer, tick);
+    return { ...adventurer, dungeonEntrance: entrance, outingTicks: ticksLeft, moving: false, activity: `delving into ${entrance}…` };
+  }
+  const edgeX = adventurer.position.x < FIELD_SIZE / 2 ? BOUNDARY_WEST : BOUNDARY_EAST;
+  const moved = moveToward(adventurer.position, { x: edgeX, y: adventurer.position.y }, DUNGEON_OUTBOUND_SPEED);
+  const ticksLeft = (adventurer.outingTicks ?? 1) - 1;
+  if (moved.distance < 2.5 || ticksLeft <= 0) {
+    return {
+      ...adventurer,
+      location: 'traveling' as const,
+      position: moved.position,
+      moving: false,
+      dungeonPhase: 'delving' as const,
+      dungeonEntrance: entrance,
+      outingTicks: DUNGEON_DELVE_TICKS,
+      activity: `delving into ${entrance}…`,
+    };
+  }
+  return {
+    ...adventurer,
+    position: moved.position,
+    facing: facingToward(adventurer.position, { x: edgeX, y: adventurer.position.y }),
+    moving: true,
+    outingTicks: ticksLeft,
+    activity: `heading out to delve ${entrance}`,
+  };
+}
+
+export type DungeonRunEvent = {
+  kind: 'departed' | 'returned-loot' | 'returned-empty' | 'returned-injured';
+  text: string;
+};
+
+/** Pure transition detector for the game log: App diffs the pre-tick and
+ * post-tick adventurer lists each living-sim tick and logs exactly the
+ * transitions (never per-tick spam). */
+export function detectDungeonRunEvents(prev: SimulatedAdventurer[], next: SimulatedAdventurer[]): DungeonRunEvent[] {
+  const events: DungeonRunEvent[] = [];
+  for (const after of next) {
+    const before = prev.find((a) => a.id === after.id);
+    if (!before) continue;
+    if (before.outing !== 'dungeon' && after.outing === 'dungeon') {
+      events.push({ kind: 'departed', text: `${after.name} sets out to delve ${after.dungeonEntrance ?? 'a dungeon'}.` });
+    }
+    if (before.outing === 'dungeon' && after.outing !== 'dungeon') {
+      const entrance = before.dungeonEntrance ?? 'the dungeon';
+      const coinsGained = (after.coins ?? 0) - (before.coins ?? 0);
+      const itemsGained = (after.lootItems ?? []).length - (before.lootItems ?? []).length;
+      if (after.status === 'injured') {
+        events.push({ kind: 'returned-injured', text: `${after.name} crawled back from ${entrance} injured and empty-handed.` });
+      } else if (coinsGained > 0 || itemsGained > 0) {
+        const item = (after.lootItems ?? [])[(after.lootItems ?? []).length - 1];
+        events.push({ kind: 'returned-loot', text: `${after.name} returned from ${entrance} with ${coinsGained} gold${item ? ` and a ${item}` : ''}!` });
+      } else {
+        events.push({ kind: 'returned-empty', text: `${after.name} returned from ${entrance} empty-handed.` });
+      }
+    }
+  }
+  return events;
+}
+
 function advanceTravel(adventurer: SimulatedAdventurer, tick: number): SimulatedAdventurer {
   if ((adventurer.location || 'field') !== 'traveling') {
     const edgeX = adventurer.position.x < FIELD_SIZE / 2 ? BOUNDARY_WEST : BOUNDARY_EAST;
@@ -557,6 +766,10 @@ export function advanceSimulatedAdventurers(
     const outing = withGoal.outing || 'wander';
     if ((withGoal.location || 'field') === 'tavern' || outing === 'tavern') return advanceTavern(withGoal, tick);
     if ((withGoal.location || 'field') === 'guild' || outing === 'guild') return advanceGuild(withGoal, tick);
+    // BUILD 948: dungeon BEFORE the traveling/travel branch — a delving
+    // adventurer has location 'traveling' and would otherwise be routed into
+    // advanceTravel and lose the run.
+    if (outing === 'dungeon') return advanceDungeon(withGoal, tick);
     if ((withGoal.location || 'field') === 'traveling' || outing === 'travel') return advanceTravel(withGoal, tick);
     if (outing === 'hunt') return advanceHunt(withGoal, tick, goatTargets);
     return advanceWander(withGoal, tick);
