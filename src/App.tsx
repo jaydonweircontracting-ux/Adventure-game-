@@ -196,7 +196,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '976';
+const BUILD_NUMBER = '977';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -245,6 +245,7 @@ const BUILD_NOTES: Record<string, string> = {
   '969': 'Monster loot now runs on one authored loot system: every creature kind has its own loot table with per-item chances and stack limits, so kills drop the same coins, pelts, fangs, and gear materials they always did — now from tables instead of scattered rolls. Nothing about what drops changed, only how the game decides it, which sets up richer loot tables later.',
   '970': 'Conversations now run as small topic machines: talk to Brand, the merchant who heads the town-s1 merchant household in Mosslight, and you can open a bank — deposit or withdraw gold, or store whole pieces of gear in the bank vault and take them back later (stored gear comes back unequipped, and taking anything back while you are over your carry limit is refused with the item safely left in the vault, never lost). You can also ask any townsperson about a relative and hear what the world actually knows about them. Your bank balance and stored gear are saved with your game and load back cleanly on old saves, and the town bank ledger that tracks NPC delve hauls is untouched — the two never share a coin.',
   '972': 'Your starting house now has a deed: the house you begin in is formally yours — open its chest and the panel says so — and that deed is what makes taking from your own chest free while every other home stays someone else\u2019s, exactly as before. The deed is saved with your game, so old saves gain it automatically. Rent, eviction, and selling houses are not in: there is no landlord to pay, no one to buy a house from, and no one to sell one to in a single-player world, so those parts were left out rather than invented.',
+  '977': 'You can walk into buildings again: walk up to any house door in Mosslight — or any farmhouse out in the wilds — and tap Enter to step inside its real interior, with its furniture, its people, and (in the Rusty Tankard) Mira behind the bar and the cellar hatch behind her. Step back out through the exit and you land right outside the same door you entered, even if the house was moved. The tavern finally sounds like a tavern: stepping into the Rusty Tankard switches the music to the tavern tune, and stepping out hands back to the town theme. Nothing else changes: doors, paths, chests, and NPC homes all work exactly as before.',
   '976': 'The world now has a real day and night: as the in-game clock turns, daylight fades into dusk, night settles over Mosslight, and dawn brings the light back — the same clock that already ran your days and NPC schedules, now visible in the sky itself. Nights never go pitch black: the dark stops well short of hiding anything, so you, the villagers, doors, and markers all stay readable after dark, and the little sun or moon by the clock tells you which part of the day you are in. Interiors keep their own lamplight and the atlas map is untouched, and nothing about shops, monsters, quests, or sneaking changes at night — this is light and shadow only, driven by the clock you already had.',
   '975': 'Mosslight now carries a second, portable description of itself: the town layout can be written out as a standard village-layout document and read back into placed houses, trees, roads, and fields — the same idea as the Procgen Arcana village importer, rebuilt here in the game\u2019s own code with the town\u2019s real Kenney-kit houses instead of placeholder shapes. Nothing you see changes: every house still stands where it stood, its door still opens where its trigger is, and its path still ends at that door — the new layout is checked against those doors before it counts. What it does not do is just as plain: it cannot describe the wider realm, caves, or dungeons, which keep their own systems, and a forest clearing is only trees with a gap in them until the game says more. Realm, cave, and dungeon layouts are untouched.',
   '974': 'Quests now leave a trail other systems can follow: accepting, advancing, and finishing a quest emits a proper quest event instead of just a log line, and finishing one earns you a title from that quest itself \u2014 Rat-Catcher for the cellar rats, Troll-Slayer for the bridge troll, Hero of Aldoria for the story quest, and more, shown on the Completed tab of the quest log. These are earned by finishing quests, not by spending AA points, so they sit beside the spend titles in the Skills panel rather than replacing them. The game also keeps a small book of world marks now: accepting or finishing a quest, finishing a task, or sleeping at the Mosslight tavern is remembered across saves, so dialogue and quests can build on what you have actually done. Corpse decay and resurrection are not in: dying ends your run at the title screen with no XP loss and no way back, so there is no death penalty for a resurrection to restore \u2014 inventing one would have been a new punishment, not a missing half.',
@@ -1482,6 +1483,14 @@ const playtestInteriorArea: InteriorArea | null = (() => {
   if (!id) return null;
   const found = buildingDoorwaysFor({ x: 4, y: 7 }).find((doorway) => doorway.area.id === id);
   return found ? found.area : null;
+})();
+// BUILD 977: the doorway id for the playtest interior above, so exiting it
+// resolves the same doorway (previously the const above was computed but
+// never used anywhere, and the initial interior was always null).
+const playtestInteriorDoorwayId: string | null = (() => {
+  if (!playtestInteriorArea) return null;
+  const found = buildingDoorwaysFor({ x: 4, y: 7 }).find((doorway) => doorway.area.id === playtestInteriorArea.id);
+  return found ? found.id : null;
 })();
 // Playtest tooling (?playtestMount=1): start in the field already mounted on the
 // horse, so mounted-sprite sizing can be checked without walking to the horse.
@@ -6712,8 +6721,10 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const [attackSequence, setAttackSequence] = useState(0);
   const [attackFlash, setAttackFlash] = useState<string | null>(null);
   // BUILD 793: start directly in the outdoor world; interiors are entered only through doors.
-  // BUILD 794: house interiors are disabled; always begin in the outdoor world.
-  const [interior, setInterior] = useState<InteriorArea | null>(null);
+  // BUILD 977: restores that rule — the ?playtestInterior param (previously
+  // computed but never used) is the only exception, starting inside the
+  // named interior for visual checks. Normal play still begins outdoors.
+  const [interior, setInterior] = useState<InteriorArea | null>(playtestInteriorArea);
   // BUILD 326: the interior to return to when leaving the tankard cellar
   // (the tavern), and the cellar's rats. Rats persist for the session once
   // spawned so leaving mid-quest and coming back keeps the remaining rats.
@@ -6824,7 +6835,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   const interiorPositionRef = useRef(interiorPosition);
   // BUILD 571: iso tile position for cellar melee range (tile adjacency)
   const isoPlayerTileRef = useRef<{ tx: number; ty: number } | null>(null);
-  const interiorDoorwayIdRef = useRef<string | null>(STARTING_DOORWAY_ID);
+  const interiorDoorwayIdRef = useRef<string | null>(playtestInteriorDoorwayId ?? STARTING_DOORWAY_ID);
   // The chunk the player was in when they entered the current interior, so
   // exit can resolve the same doorway from the same chunk (not hardcoded 4,7).
   const interiorEntryChunkRef = useRef<Point>({ x: 4, y: 7 });
@@ -6879,6 +6890,26 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         })),
         // BUILD 534: interior state for real-game movement testing.
         isInInterior: () => interiorRef.current !== null,
+        // BUILD 977: interior-entry test hooks (same localhost gate as
+        // teleportPlayer). enterDoorwayForTest drives the REAL enterDoorway
+        // flow; isInTavernForTest reads the same roomType the BUILD 957
+        // music effect reads, so a tavern entry proves the track trigger.
+        enterDoorwayForTest: (doorwayId: string) => {
+          if (typeof window === 'undefined') return false;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return false;
+          if (interiorRef.current) return false;
+          const found = buildingDoorwaysFor(chunkRef.current).find((d) => d.id === doorwayId);
+          if (!found) return false;
+          enterDoorway(found, chunkRef.current);
+          return true;
+        },
+        exitInteriorForTest: () => {
+          if (!interiorRef.current) return false;
+          exitInteriorToField();
+          return true;
+        },
+        isInTavernForTest: () => interiorRef.current?.roomType === 'tavern',
         getInteriorPos: () => ({ ...interiorPositionRef.current }),
         // BUILD 587: expose current interior room type for exit verification.
         // Exiting cellar goes to tavern (both interiors), so isInInterior() stays true.
@@ -12364,11 +12395,25 @@ if (active) {
     setNpcDialogue({ name, title, role, position: { x: 50, y: 50 }, facing: 'down', moving: false, target: null });
     setLogs((currentLogs) => [{ text: `${name} turns to you: ${title}.`, color: 'blue' }, ...currentLogs].slice(0, 3));
   };
-  // BUILD 794: houses remain visible as exterior sprites; no separate room scene.
-  // Keep a small feedback message if an old interaction/save still invokes this.
-  const enterDoorway = (doorway: Doorway, _entryChunk: Point) => {
+  // BUILD 977: restores real interior entry (BUILD 794 had reduced this to
+  // a log line, leaving every entry path dead: the context-menu Enter
+  // action, the iso door walk-to, and ?playtestInterior). The interior
+  // renderer and the exit path (exitInteriorToField) already exist and are
+  // reused untouched: entry records the doorway id + entry chunk so exit
+  // resolves the same doorway from the same chunk, cancels any tap-move,
+  // and spawns the player on clear interior floor (50,78 — the default
+  // spawn, clear of the furniture collision rects). Entering the tavern
+  // (roomType 'tavern') fires the existing BUILD 957 effect, which reports
+  // tavern presence to App and switches music zoning to the tavern track.
+  const enterDoorway = (doorway: Doorway, entryChunk: Point) => {
     setContextMenu(null);
-    setLogs((currentLogs) => [{ text: doorway.area.name + ' has no separate interior.', color: 'blue' }, ...currentLogs].slice(0, 3));
+    cancelTapMove();
+    interiorDoorwayIdRef.current = doorway.id;
+    interiorEntryChunkRef.current = entryChunk;
+    interiorRef.current = doorway.area; setInterior(doorway.area);
+    interiorPositionRef.current = { x: 50, y: 78 }; setInteriorPosition({ x: 50, y: 78 });
+    setMoving(false);
+    setLogs((currentLogs) => [{ text: 'You step inside ' + doorway.area.name + '.', color: 'blue' }, ...currentLogs].slice(0, 3));
   };
   // BUILD 326: descend into the Tankard Cellar through the tavern hatch.
   // Unlike field doorways, the cellar exits back up to the tavern (tracked in
@@ -16560,6 +16605,31 @@ if (active) {
               +
             </button>
           </div>
+          {/* BUILD 977: Enter button when standing at a doorway — the same
+              doorwayNear trigger the 2D field and the game loop already use
+              (front-edge zone, offset-aware so moved houses follow), in
+              BOTH views: iso never had an entry button (its door tap only
+              walked to the door) and the 2D button was removed by BUILD
+              794. Same enterDoorway flow as the context-menu Enter action,
+              so all three paths agree. Hidden while inside an interior. */}
+          {!interior && (() => {
+            const near = doorwayNear(position, chunk, houseOffsets);
+            if (!near) return null;
+            return (
+              <div style={{ display: 'flex', gap: 4, marginTop: 8, alignItems: 'center', pointerEvents: 'auto' }}>
+                <button
+                  type="button"
+                  onClick={() => enterDoorway(near, chunk)}
+                  disabled={inputLocked}
+                  style={{ height: '40px', padding: '0 14px', fontSize: '15px', fontWeight: 'bold', background: 'rgba(0,0,0,0.85)', color: '#fff', border: '2px solid #fff', borderRadius: '8px', cursor: 'pointer' }}
+                  aria-label={'Enter ' + near.area.name}
+                  data-testid="button-enter-building"
+                >
+                  Enter {near.area.name}
+                </button>
+              </div>
+            );
+          })()}
           {/* BUILD 944: camera rotation row, under the zoom row in the left
               column — same 40×40 black/white-border buttons, same tight-row
               styling. Iso field view only (rotation does not apply to the
