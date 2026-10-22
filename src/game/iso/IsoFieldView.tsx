@@ -315,6 +315,11 @@ interface IsoFieldViewProps {
   /** The player's parked horse in the home chunk (null when mounted or in another chunk). */
   playerHorse?: { position: Point; facing: string } | null;
   worldHorses?: Array<{ id: string; name: string; color: string; activity: string; owner: string; position: Point }>;
+  // BUILD 976: day/night darkness alpha (0..0.55) from the existing world
+  // clock, computed by App via src/game/dayNight.ts. Drawn as a full-canvas
+  // veil just before the floating combat text pass, so damage numbers sit
+  // above it; forced to 0 while inInterior (interiors have own lighting).
+  darknessAlpha?: number;
   // BUILD 684: floating combat text — rendered in iso (were 2D-DOM only).
   damageTexts?: Array<{ id: number; text: string; position: Point; kind: string }>;
   // BUILD 958: spell-effect overlays — App-owned frame lists, drawn in iso
@@ -634,11 +639,11 @@ function roadBlendFor(road: string, lx: number, ly: number): number {
   return 0.3 + 0.7 * Math.min(1, Math.max(0, d) / 2.5);
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, adventurers, goats, wildlife, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, houseChests, onLootHouseChest, traps, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, spellFx, zoom, rotationAngleRef, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, adventurers, goats, wildlife, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, houseChests, onLootHouseChest, traps, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, spellFx, zoom, rotationAngleRef, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook, darknessAlpha = 0 }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, houseChests, traps, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses });
-  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, houseChests, traps, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses };
+  const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, houseChests, traps, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses, darknessAlpha });
+  liveRef.current = { chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, houseChests, traps, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses, darknessAlpha };
   // BUILD 711: render-time interpolation between the 30 Hz authoritative
   // position samples. A render buffer (previous/current sample + timestamps)
   // lets the canvas draw intermediate positions at the display refresh rate,
@@ -2969,6 +2974,27 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           g.drawImage(img, w.x - size / 2, w.y - size / 2 - 20, size, size);
         }
         (window as unknown as { __spellFxImgs?: Record<string, HTMLImageElement> }).__spellFxImgs = fxImgs;
+      }
+
+      // BUILD 976: day/night darkness veil — one full-canvas navy fill at the
+      // clock-driven alpha (0 day, 0.55 night cap, linear dawn/dusk ramps;
+      // see src/game/dayNight.ts). Drawn AFTER the whole world + entities
+      // and BEFORE the combat-text pass, so damage numbers sit above the
+      // veil while name labels / selection rings under it stay readable
+      // through the 0.55 cap. Forced off while inInterior (interiors have
+      // their own lighting). Screen-space fill (identity transform over
+      // device pixels) so camera zoom/rotation can never shift it, and it
+      // cannot move, hide, or misalign any door, trigger, or path — it is
+      // a pure post-pass with no hit-testing. One fillRect: no FPS cost.
+      {
+        const veilAlpha = liveRef.current.inInterior ? 0 : Math.max(0, Math.min(0.55, liveRef.current.darknessAlpha || 0));
+        if (veilAlpha > 0) {
+          g.save();
+          g.setTransform(1, 0, 0, 1, 0, 0);
+          g.fillStyle = `rgba(8,12,40,${veilAlpha})`;
+          g.fillRect(0, 0, canvas.width, canvas.height);
+          g.restore();
+        }
       }
 
       // BUILD 684: floating combat text in iso (damage numbers were 2D-DOM

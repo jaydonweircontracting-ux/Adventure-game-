@@ -32,6 +32,7 @@ import { advanceSimulatedAdventurers, initialSimulatedAdventurers, spawnDueAdven
 import { adventurerHouseholdKey, bankBalanceFor, chestItemsFor, depositDelveHaul, drainUnbankedHaul, EMPTY_NPC_STORAGE, sanitizeNpcStorage, serializeNpcStorage, withdrawFromBank, withdrawFromChest, BANK_NAME } from '../src/game/npcStorage';
 import { cornStalksForChunk } from '../src/game/cornfield';
 import { WorldCore, formatClockDisplay, ticksUntilHour, MINUTES_PER_TICK } from '../src/game/worldCore';
+import { darknessAlphaForMinutes, darknessAlphaForClock, dayNightPhaseForMinutes, darknessOverlayFill, DAY_NIGHT_MAX_ALPHA } from '../src/game/dayNight';
 import { buildRoadLinks, travelersForChunk, type PlacedLandmark } from '../src/game/travelers';
 import { advanceTownsfolk, createTownsfolk, reanchorTownsfolk, snapTownsfolk, townsfolkHash, townsfolkTarget, shouldReplanPath, separateCrowd, buildMosslightHousing, cottageDoorways, mosslightHouseholdDoorways, mosslightObstacles, serializeTownsfolk, restoreTownsfolk, indoorRestSpot, interiorWanderSpot, interiorAreaIdForCottage, cottageRectFor, startNpcFlee, screamFor, NPC_FLEE_DURATION_TICKS, damageNpc, damageNpcByCreature, npcHp, npcMaxHp, isNpcDead, isNpcJailed, arrestNpc, NPC_JAIL_TICKS, NPC_RESPAWN_TICKS, npcKillExperienceReward, killExperienceForLevel, NPC_FIGHT_ATTACK_COOLDOWN_MS, NPC_FIGHT_CHASE_STEP_MULT, shouldReplanFightPath, NPC_FIGHT_REPATH_INTERVAL_MS, NPC_FIGHT_REPATH_SHIFT, NPC_FIGHT_MAX_PLAN_FAILURES, marketRoutine, marketBrowseVisit, marketStallsFromDecor, arterialWaypointsFromDecor, stallBrowseSpot, faceToward, townsfolkRosterEntries, type TownsfolkAnchors, type TownsfolkNavContext, type TownsfolkPoint } from '../src/game/townsfolk';
 
@@ -955,6 +956,39 @@ console.log('Testing world clock display + wait math...');
   // display for PM hours
   const pm = { ...c0, hour: 20, minuteOfDay: 20 * 60 + 37, day: 14, year: 127 };
   assert(formatClockDisplay(pm) === '8:37 PM · Day 14 · Y127', `PM display mismatch: ${formatClockDisplay(pm)}`);
+}
+
+// ---- 12b. Day/night darkness curve (BUILD 976) — driven by the clock above,
+// no second clock. Full day 07:00–18:00, full night 20:00–05:00 at the 0.55
+// readability cap, linear 2-hour dawn/dusk ramps. ----
+console.log('Testing day/night darkness curve...');
+{
+  const close = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+  assert(darknessAlphaForMinutes(12 * 60) === 0, 'noon must be full day (0)');
+  assert(darknessAlphaForMinutes(7 * 60) === 0, '07:00 boundary must be 0');
+  assert(darknessAlphaForMinutes(18 * 60) === 0, '18:00 boundary must be 0');
+  assert(darknessAlphaForMinutes(0) === DAY_NIGHT_MAX_ALPHA, 'midnight must be full night (cap)');
+  assert(darknessAlphaForMinutes(20 * 60) === DAY_NIGHT_MAX_ALPHA, '20:00 boundary must be cap');
+  assert(darknessAlphaForMinutes(5 * 60) === DAY_NIGHT_MAX_ALPHA, '05:00 boundary must be cap');
+  assert(close(darknessAlphaForMinutes(6 * 60), 0.275), `dawn midpoint 06:00 must be 0.275, got ${darknessAlphaForMinutes(6 * 60)}`);
+  assert(close(darknessAlphaForMinutes(19 * 60), 0.275), `dusk midpoint 19:00 must be 0.275, got ${darknessAlphaForMinutes(19 * 60)}`);
+  assert(close(darknessAlphaForMinutes(5 * 60 + 30), 0.4125), '05:30 must be 0.4125');
+  assert(close(darknessAlphaForMinutes(18 * 60 + 30), 0.1375), '18:30 must be 0.1375');
+  assert(DAY_NIGHT_MAX_ALPHA === 0.55, 'night cap must be 0.55 (readability)');
+  for (let m = 0; m < 1440; m += 10) assert(darknessAlphaForMinutes(m) <= DAY_NIGHT_MAX_ALPHA, `alpha at ${m} exceeds cap`);
+  assert(dayNightPhaseForMinutes(12 * 60) === 'day', 'noon phase day');
+  assert(dayNightPhaseForMinutes(6 * 60) === 'dawn', '06:00 phase dawn');
+  assert(dayNightPhaseForMinutes(19 * 60) === 'dusk', '19:00 phase dusk');
+  assert(dayNightPhaseForMinutes(0) === 'night', 'midnight phase night');
+  assert(darknessOverlayFill(0.55) === 'rgba(8,12,40,0.55)', 'veil fill string mismatch');
+  assert(darknessOverlayFill(9) === 'rgba(8,12,40,0.55)', 'veil fill must clamp to cap');
+  // The curve follows the REAL clock: advancing WorldCore from its 06:00
+  // start by 108 ticks (18h) lands at midnight with full-night darkness.
+  const wc = new WorldCore(7);
+  for (let i = 0; i < 108; i++) wc.advance(1);
+  const midnight = wc.getClock();
+  assert(midnight.hour === 0, `108 ticks from 06:00 must be 00:00, got ${midnight.hour}`);
+  assert(darknessAlphaForClock(midnight) === DAY_NIGHT_MAX_ALPHA, 'real-clock midnight must be full night');
 }
 
 
