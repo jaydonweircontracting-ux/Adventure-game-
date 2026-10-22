@@ -1,6 +1,6 @@
 {
-  "build": "956",
-  "note": "Conversations now look like the photo: a large portrait of the person you are talking to stands on the left with their name plate beneath it, and a wide text box below carries what they say, with the game still visible behind the panel. Every villager has a face — ten characters with six expressions each — and the face changes with the conversation: they smile at compliments and warm friendships, glare when insulted or cold toward you, look sad at bad news or a joke that falls flat, talk while they speak, and turn to profile when showing their wares. And what they say is now real: rumors come only from gossip they actually heard or things that actually happened to them — no more invented secrets — and a villager with a quest for you will mention it by name. Everything from before still works: topics that deepen, haggling, disposition prices, and merchant shops in conversation.",
-  "timestamp": "2026-10-22T03:37:10.997Z",
-  "cacheBuster": "mvizpis5"
+  "build": "957",
+  "note": "The game now has real music and sound: a title theme, a tavern tune, a full town theme, a dungeon drone, and a looping fields theme that follow you as you move — tavern music takes over inside the tavern and hands back to the town theme when you step out, dungeons get their own track, and every other town plays the town theme while the wilds play the fields loop. Coins now clink when gold changes hands, attacks grunt (women fighters and men soldiers each sound like themselves), opening the map has its own sound, and Ember Bolt crackles with fire. The title screen is black with green buttons, and Options on the title screen opens the same music list and sound controls as in-game: every track listed with what is playing now, music and effects on their own on/off switches and volume sliders, all saved on this device. Music starts on your first tap, because browsers block sound before that.",
+  "timestamp": "2026-10-22T03:58:22.169Z",
+  "cacheBuster": "mvj0grmh"
 }

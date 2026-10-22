@@ -22,6 +22,7 @@ import {
   type SpellId,
 } from './stoneSoupEngine';
 import { PRY_CHEST_CLOSED, pryDecorFor, pryDoorTileFor, pryFloorTileFor, pryPlaceablePath, pryTilePath, pryWallTileFor } from './dungeonPry';
+import { audioEngine } from './audio';
 import type { ShopItemKey } from './shops';
 import './stoneSoupDungeon.css';
 
@@ -66,6 +67,13 @@ export default function StoneSoupDungeon({ onExit }: Props) {
     });
   }, []);
   const move = useCallback((dx: number, dy: number) => run((state) => step(state, dx, dy)), [run]);
+  // BUILD 957: Ember Bolt crackles with the fireball SFX (dungeon-only
+  // scope — spells are dungeon-only today, so this is the only cast path).
+  // The sound plays on the CAST, even if the bolt fizzles with no target.
+  const castWithSound = useCallback((spellId: SpellId) => {
+    if (spellId === 'ember-bolt') audioEngine.playSfx('fireball');
+    run((state) => castSpell(state, spellId));
+  }, [run]);
   const handleKey = useCallback((event: KeyboardEvent) => {
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
     const directions: Record<string, [number, number]> = {
@@ -79,7 +87,7 @@ export default function StoneSoupDungeon({ onExit }: Props) {
     if (event.key === '>' || event.key === '.') { run(descend); return; }
     if (event.key === '1' || event.key === '2' || event.key === '3') {
       const spell = game.player.spells[Number(event.key) - 1];
-      if (spell) run((state) => castSpell(state, spell));
+      if (spell) castWithSound(spell);
       return;
     }
     if (event.key === 'i' || event.key === 'I') {
@@ -169,7 +177,7 @@ export default function StoneSoupDungeon({ onExit }: Props) {
             {activeShop && <section className="ssd-panel ssd-shop"><div className="ssd-panel-head"><h2>{activeShop.shopName}</h2><span>{activeShop.keeperName} · gold {game.player.gold}</span></div><p>{activeShop.keeperName} waves you over: “{activeShop.flavor}”</p><div className="ssd-shop-rows">{activeShop.def.goods.map((good) => { const display = dungeonShopDisplay(good.key as ShopItemKey); const left = Math.max(0, Math.floor(activeShop.stock.stock[good.key as ShopItemKey] ?? 0)); const afford = game.player.gold >= good.buyPrice; return <div className="ssd-shop-row" key={good.key}>{foodIconUrl(good.key) ? <img src={foodIconUrl(good.key)!} alt="" className="inventory-item-img" /> : <b style={{ color: display.color }}>{display.glyph}</b>}<span><strong>{display.name}</strong><small>{display.description}</small></span><em>{good.buyPrice}g · {left} left</em><button disabled={left < 1 || !afford || game.phase !== 'playing'} onClick={() => run((state) => buyFromDungeonShop(state, activeShop.id, good.key as ShopItemKey))}>Buy</button></div>; })}</div><button className="ssd-shop-close" onClick={() => run(closeDungeonShop)}>Close shop</button></section>}
             <section className="ssd-panel ssd-log"><div className="ssd-panel-head"><h2>Field readout</h2><span>one turn at a time</span></div>{game.log.map((entry, index) => <div className={'ssd-log-row ' + (index === 0 ? 'latest' : '')} key={entry + index}><time>t.{String(Math.max(1, game.turn - index)).padStart(2, '0')}</time><span>{entry}</span></div>)}</section>
           </main>
-          <aside className="ssd-side"><section className="ssd-panel ssd-card"><span className="ssd-kicker">next decision</span><h2>Bearing</h2><p>{objective}</p><div className="ssd-stats"><span>gold <b>{game.player.gold}</b></span><span>kills <b>{game.player.kills}</b></span><span>armor <b>{game.player.armor}</b></span></div></section><section className="ssd-panel ssd-card"><div className="ssd-card-head"><h2>Ember rites</h2><span>mana {game.player.mp}</span></div>{(Object.keys(spellBook) as SpellId[]).map((spellId, index) => { const spell = spellBook[spellId]; const learned = game.player.spells.includes(spellId); return <button className="ssd-spell" key={spellId} disabled={!learned || game.player.mp < spell.cost || game.phase !== 'playing'} onClick={() => run((state) => castSpell(state, spellId))}><b>{index + 1}</b><span><strong>{spell.name}</strong><small>{learned ? spell.description : 'not learned in this calling'}</small></span><em>{spell.cost} fp</em></button>; })}</section><section className="ssd-panel ssd-card"><div className="ssd-card-head"><h2>Satchel</h2><span>{game.player.inventory.length} items</span></div><div className="ssd-inventory">{game.player.inventory.map((item) => <button key={item.id} className={'ssd-item ' + (selectedItem === item.id ? 'selected' : '')} onClick={() => useItem(item)} title={item.description}><b>{item.glyph}</b><small>{item.name}</small></button>)}</div><p className="ssd-item-note">{itemDescription}</p></section><section className="ssd-panel ssd-card ssd-controls"><p><kbd>WASD</kbd> / arrows · move</p><p><kbd>1 2 3</kbd> · rites · <kbd>E</kbd> · collect</p><p><kbd>space</kbd> · wait · <kbd>&gt;</kbd> · descend</p></section></aside>
+          <aside className="ssd-side"><section className="ssd-panel ssd-card"><span className="ssd-kicker">next decision</span><h2>Bearing</h2><p>{objective}</p><div className="ssd-stats"><span>gold <b>{game.player.gold}</b></span><span>kills <b>{game.player.kills}</b></span><span>armor <b>{game.player.armor}</b></span></div></section><section className="ssd-panel ssd-card"><div className="ssd-card-head"><h2>Ember rites</h2><span>mana {game.player.mp}</span></div>{(Object.keys(spellBook) as SpellId[]).map((spellId, index) => { const spell = spellBook[spellId]; const learned = game.player.spells.includes(spellId); return <button className="ssd-spell" key={spellId} disabled={!learned || game.player.mp < spell.cost || game.phase !== 'playing'} onClick={() => castWithSound(spellId)}><b>{index + 1}</b><span><strong>{spell.name}</strong><small>{learned ? spell.description : 'not learned in this calling'}</small></span><em>{spell.cost} fp</em></button>; })}</section><section className="ssd-panel ssd-card"><div className="ssd-card-head"><h2>Satchel</h2><span>{game.player.inventory.length} items</span></div><div className="ssd-inventory">{game.player.inventory.map((item) => <button key={item.id} className={'ssd-item ' + (selectedItem === item.id ? 'selected' : '')} onClick={() => useItem(item)} title={item.description}><b>{item.glyph}</b><small>{item.name}</small></button>)}</div><p className="ssd-item-note">{itemDescription}</p></section><section className="ssd-panel ssd-card ssd-controls"><p><kbd>WASD</kbd> / arrows · move</p><p><kbd>1 2 3</kbd> · rites · <kbd>E</kbd> · collect</p><p><kbd>space</kbd> · wait · <kbd>&gt;</kbd> · descend</p></section></aside>
         </div>
         {(game.phase === 'defeat' || game.phase === 'victory') && <div className="ssd-result"><div><span className="ssd-kicker">{game.phase === 'victory' ? 'the ember vault opens' : 'the dark has its due'}</span><h2>{game.phase === 'victory' ? 'The vault remembers you.' : 'Your light goes out.'}</h2><p>{game.phase === 'victory' ? 'You carry the First Flame back into the living world.' : 'The galleries close over your footprints. Another wayfinder can try again.'}</p><button onClick={restart}>new descent</button></div></div>}
       </div>

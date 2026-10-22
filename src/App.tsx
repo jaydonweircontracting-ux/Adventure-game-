@@ -141,6 +141,8 @@ import { applyFactionGain } from '@/game/faction';
 import { chestsForChunk, attemptLockpick, serializeOpenedChests, parseOpenedChests, type LockedChest } from '@/game/lockpicking';
 import { sitesForActiveStages, resolveSiteChunk, chunkSatisfiesStage, type ActiveQuestStage } from '@/game/questSites';
 import { playCombatSound } from '@/game/effects';
+import { audioEngine, loadAudioSettings, resolveMusicZone, saveAudioSettings, type AudioSettings, type MusicTrackId } from '@/game/audio';
+import AudioOptions from '@/game/AudioOptions';
 import { createEmptySkills, awardXp, levelForXp, xpToNextLevel, SKILLS, WOODCUTTING_XP_PER_TREE, SKILL_MASTERS, masterForNpc, apprenticeshipCheck, apprenticeXpBonus, type SkillState } from '@/game/skills';
 import { cornStalksForChunk, type CornStalk } from '@/game/cornfield';
 import { getSpriteState } from '@/game/animation';
@@ -167,7 +169,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '956';
+const BUILD_NUMBER = '957';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -203,6 +205,7 @@ const BUILD_NOTES: Record<string, string> = {
   '954': 'The camera now turns in finer, smoother steps: a quick tap turns it 45 degrees with a short smooth glide through the angles in between instead of jumping, so eight taps make a full turn and every stop lines up with a character facing direction. Holding a button still spins the view slowly and continuously at 45 degrees per second until you let go, and tapping one side while the other side is still held no longer fights the spin. Movement stays world-relative at every angle, and your exact camera angle is saved and restored as before.',
   '955': 'Conversations now go deeper: asking about someone, their work, rumors, or the town unlocks a follow-up question in the same conversation, so you can press further instead of hitting the same four topics — and closing the conversation resets the topics (everything is re-explorable next time) without ever resetting how much they like you. You can also haggle in conversation: compliments warm people up (+6), jokes land (+3) unless they already dislike you (−2), boasting annoys (−3), and insults sting (−10), each once per conversation — and how much they like you now shows in their prices and in what they will tell you (cold acquaintances withhold, warm friends share hints and charge less, admired friends charge 20% less). Merchant townsfolk finally sell from inside conversation: a Browse wares button opens their own goods, bought through the same shop system with the same weight limit — and anyone who is not a merchant has no shop at all. Faction standing is untouched and separate.',
   '956': 'Conversations now look like the photo: a large portrait of the person you are talking to stands on the left with their name plate beneath it, and a wide text box below carries what they say, with the game still visible behind the panel. Every villager has a face — ten characters with six expressions each — and the face changes with the conversation: they smile at compliments and warm friendships, glare when insulted or cold toward you, look sad at bad news or a joke that falls flat, talk while they speak, and turn to profile when showing their wares. And what they say is now real: rumors come only from gossip they actually heard or things that actually happened to them — no more invented secrets — and a villager with a quest for you will mention it by name. Everything from before still works: topics that deepen, haggling, disposition prices, and merchant shops in conversation.',
+  '957': 'The game now has real music and sound: a title theme, a tavern tune, a full town theme, a dungeon drone, and a looping fields theme that follow you as you move — tavern music takes over inside the tavern and hands back to the town theme when you step out, dungeons get their own track, and every other town plays the town theme while the wilds play the fields loop. Coins now clink when gold changes hands, attacks grunt (women fighters and men soldiers each sound like themselves), opening the map has its own sound, and Ember Bolt crackles with fire. The title screen is black with green buttons, and Options on the title screen opens the same music list and sound controls as in-game: every track listed with what is playing now, music and effects on their own on/off switches and volume sliders, all saved on this device. Music starts on your first tap, because browsers block sound before that.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
@@ -4281,7 +4284,7 @@ function MiniMap({ chunk, position, onTap, mode = 'terrain', radarEntities = [] 
   );
 }
 
-function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onTaskStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, onResolveBounty, bounty, muted, onToggleMute, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot, opts?: { bypassCarryLimit?: boolean }) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onTaskStatesChange: (states: TaskState[]) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number, townId: string) => void; onResolveBounty: (townId: string) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void; getAaMaxHpBonus: () => number; getAaCarryBonus: () => number } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
+function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, equippedBow, equippedShirt, equippedSword, barbHair, playerStats, statPoints, characterChoices, rpgConfig, onPlayerStatsChange, onStatPointsChange, onLoot, onOpenMap, onOpenInventory, onOpenJournal, onDiscoverLocation, onRestorePrison, onRestoreJournal, onRestoreReputation, onQuestStatesChange, onTaskStatesChange, onQuestReputation, onAddRumor, onEscapeSpawnConsumed, onChunkChange, onCrimeCommitted, onResolveBounty, bounty, muted, onToggleMute, audioSettings, onAudioSettingsChange, nowPlayingTrack, onPlayTrackManual, onTavernInteriorChange, inputLocked, mapOpen, saveStateRef, loadState, onSave, onDownloadSave, onOpenLoad, onOpenMenu, onEnterDungeon, menuBridgeRef, inPrison, prisonState, journal, reputation, escapeSpawn, beerBuffUntil }: { inventory: GameInventory; equipment: GeneratedItem[]; onEquipmentChange: (items: GeneratedItem[] | ((prev: GeneratedItem[]) => GeneratedItem[])) => void; equippedDagger: boolean; equippedBow: boolean; equippedShirt: boolean; equippedSword: boolean; barbHair: string; playerStats: PlayerStats; statPoints: number; characterChoices: CharacterChoices | null; onPlayerStatsChange: (stats: PlayerStats) => void; onStatPointsChange: (points: number | ((current: number) => number)) => void; onLoot: (loot: GoatLoot, opts?: { bypassCarryLimit?: boolean }) => void; onOpenMap: () => void; onOpenInventory: () => void; onOpenJournal: () => void; onDiscoverLocation: (name: string, kind: string, chunk: Point) => void; onRestorePrison: (inPrison: boolean, prisonState: PrisonState | undefined) => void; onRestoreJournal: (journal: JournalState | undefined) => void; onRestoreReputation: (reputation: ReputationState | undefined) => void; onQuestStatesChange: (states: QuestState[], playerLevel: number) => void; onTaskStatesChange: (states: TaskState[]) => void; onQuestReputation: (points: number) => void; onAddRumor: (text: string, source: string) => void; onEscapeSpawnConsumed: () => void; onChunkChange: (chunk: Point) => void; onCrimeCommitted: (crimeId: string, severity: number, witnessCount: number, day: number, townId: string) => void; onResolveBounty: (townId: string) => void; bounty: BountyState; muted: boolean; onToggleMute: () => void; audioSettings: AudioSettings; onAudioSettingsChange: (s: AudioSettings) => void; nowPlayingTrack: MusicTrackId | null; onPlayTrackManual: (id: MusicTrackId) => void; onTavernInteriorChange: (inTavern: boolean) => void; inputLocked: boolean; mapOpen: boolean; saveStateRef: { current: (() => SaveGameData) | null }; loadState: SaveGameData | null; onSave: () => void; onDownloadSave: () => void; onOpenLoad: () => void; onOpenMenu: () => void; onEnterDungeon: () => void; menuBridgeRef: { current: { openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void; getAaMaxHpBonus: () => number; getAaCarryBonus: () => number } | null }; inPrison: boolean; prisonState: PrisonState; journal: JournalState; reputation: ReputationState; escapeSpawn: EscapeSpawn | null; beerBuffUntil: number; rpgConfig: { look: RpgLook; forceIso: boolean } }) {
   // BUILD 476: equipment damage bonus from found items.
   const equipmentDamageBonus = totalEquipmentStats(equipment).damage ?? 0;
   const [position, setPosition] = useState<Point>({ x: FIELD_SIZE / 2 + 1, y: FIELD_SIZE / 2 + 2 });
@@ -6476,6 +6479,16 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
           const inv = inventoryRef.current;
           return inv ? inv.coins : null;
         },
+        // BUILD 957: testmode coin grant through the REAL loot path
+        // (onLoot -> applyLoot -> inventory.coins), so the harness can
+        // drive the coin-SFX watcher. Localhost only, like spawnTestGoat.
+        grantTestCoins: (n: number) => {
+          if (typeof window === 'undefined') return false;
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1') return false;
+          onLoot({ coins: Math.max(0, Math.floor(n) || 0) });
+          return true;
+        },
         // BUILD 948: adventurer dungeon-run hooks (testmode only).
         // BUILD 949: extended with family-chest contents, bank balance,
         // and last drained haul (coins/lootItems are 0/[] outside the
@@ -7615,6 +7628,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
             return refreshed;
           }
           pendingNpcCreatureHits.push({ entityKind: npc.fightBackCreatureKind, creatureId: npc.fightBackCreatureId, damage: npc.archetype === 'guard' || npc.archetype === 'smith' ? 7 : 4, attackerName: npc.name });
+          // BUILD 957: NPC melee grunt, gendered pool from the NPC record.
+          audioEngine.playAttackGrunt(npc.gender);
           changed = true;
           return { ...refreshed, fightBackNextAttackAtMs: nowMs + NPC_FIGHT_ATTACK_COOLDOWN_MS, moving: false, running: false, activity: 'Attacking the creature!' };
         }
@@ -7629,6 +7644,8 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         // that lasts now actually trades blows instead of one hit and silence.
         damageTaken += npc.archetype === 'guard' || npc.archetype === 'smith' ? 7 : 4;
         attackerName = npc.name;
+        // BUILD 957: NPC melee grunt on the landed fight-back hit.
+        audioEngine.playAttackGrunt(npc.gender);
         changed = true;
         return { ...refreshed, fightBackNextAttackAtMs: nowMs + NPC_FIGHT_ATTACK_COOLDOWN_MS, moving: false, running: false, activity: 'Attacking the player' };
       });
@@ -7664,6 +7681,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   useEffect(() => { playerClassRef.current = playerClass; }, [playerClass]);
   useEffect(() => { facingRef.current = facing; }, [facing]);
   useEffect(() => { interiorRef.current = interior; }, [interior]);
+  // BUILD 957: report tavern-interior presence to App for music zoning
+  // (roomType 'tavern' only; other interiors keep the area track).
+  useEffect(() => { onTavernInteriorChange(interior?.roomType === 'tavern'); }, [interior, onTavernInteriorChange]);
   useEffect(() => { interiorPositionRef.current = interiorPosition; }, [interiorPosition]);
   useEffect(() => { simulatedAdventurersRef.current = simulatedAdventurers; }, [simulatedAdventurers]);
   useEffect(() => {
@@ -8915,6 +8935,9 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
                 playerAttackStateRef.current = { active: true, direction: faceDir, targetId: null, elapsed: 0, hitApplied: false, ranged: false };
                 playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS;
                 setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS);
+                // BUILD 957: player melee grunt on the swing (the player
+                // carries no gender data, so the neutral fallback pool).
+                audioEngine.playAttackGrunt(null);
               }
             }
           }
@@ -10184,6 +10207,8 @@ if (active) {
     playerAttackCooldownRef.current = PLAYER_ATTACK_COOLDOWN_MS;
     setAttackCooldownMs(PLAYER_ATTACK_COOLDOWN_MS);
     playAttackAnimation(currentFacing);
+    // BUILD 957: melee grunt on the swing; bow shots stay silent (not melee).
+    if (!playerAttackStateRef.current.ranged) audioEngine.playAttackGrunt(null);
   };
 
   // BUILD 326: tap a cellar rat to swing at it (mirrors the field monster tap).
@@ -14753,6 +14778,8 @@ if (active) {
                 </div>
                 <button className="options-sound-toggle" onClick={onToggleMute} aria-pressed={muted} data-testid="button-options-sound">{muted ? 'Turn on' : 'Mute'}</button>
               </div>
+              {/* BUILD 957: shared audio section — same component as the title-screen options. */}
+              <AudioOptions settings={audioSettings} onSettingsChange={onAudioSettingsChange} nowPlayingId={nowPlayingTrack} onPlayTrack={onPlayTrackManual} />
               <div className="options-sound-control" style={{ display: 'block' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                   <strong>World zoom</strong><span aria-live="polite">{Math.round(gameZoom * 100)}%</span>
@@ -16040,6 +16067,7 @@ function Home() {
   }, [manualCheckToken]);
   const menuBridgeRef = useRef<{ openOptions: () => void; openSkills: () => void; getTime: () => string; acceptQuest: (questId: string) => void; acceptTask: (questId: string) => void; emitQuestEvent: (event: QuestEvent) => void; getKingdomLabels: () => { text: string; x: number; y: number }[]; getTradeRoutes: () => { id: string; name: string; points: { x: number; y: number }[] }[]; healPlayer: (amount: number) => void; getAaMaxHpBonus: () => number; getAaCarryBonus: () => number } | null>(null);
   const [muted, setMuted] = useState(false);
+
   const [chunk, setChunk] = useState({ x: 4, y: 7 });
   // BUILD 517: Map reveal (fog of war) — track visited chunks.
   const [visitedChunks, setVisitedChunks] = useState<Set<string>>(new Set(['4,7']));
@@ -16137,6 +16165,79 @@ function Home() {
   const [playerSpriteUrl, setPlayerSpriteUrl] = useState<string | null>(null);
   const [playerAttackSpriteUrl, setPlayerAttackSpriteUrl] = useState<string | null>(null);
   const [dungeonOpen, setDungeonOpen] = useState(false);
+  // BUILD 957: audio settings (persisted in localStorage via audio.ts) +
+  // music-zone state. nowPlayingTrack mirrors the engine's effective track
+  // for the music list; manualTrack is a play-from-list override that the
+  // next zone change clears, resuming zone music.
+  const [audioSettings, setAudioSettings] = useState<AudioSettings>(() => loadAudioSettings());
+  const [nowPlayingTrack, setNowPlayingTrack] = useState<MusicTrackId | null>(null);
+  const [manualTrack, setManualTrack] = useState<MusicTrackId | null>(null);
+  const [inTavern, setInTavern] = useState(false);
+  const [titleOptionsOpen, setTitleOptionsOpen] = useState(false);
+  const prevZoneRef = useRef<MusicTrackId | null>(null);
+  const prevCoinsRef = useRef(0);
+  const suppressCoinSfxRef = useRef(false);
+  const audioUnlockedRef = useRef(false);
+  const handleAudioSettingsChange = (next: AudioSettings) => { setAudioSettings(next); saveAudioSettings(next); };
+  const handlePlayTrackManual = (id: MusicTrackId) => {
+    setManualTrack(id);
+    if (!audioSettings.musicOn) handleAudioSettingsChange({ ...audioSettings, musicOn: true });
+  };
+  // BUILD 957: master mute gates the file-audio engine too (the synth
+  // blips already read the same flag via their own prop).
+  useEffect(() => { audioEngine.setMasterMuted(muted); }, [muted]);
+  // BUILD 957: browsers block audio before any gesture — the title track
+  // starts on the FIRST tap anywhere on the title screen.
+  useEffect(() => {
+    if (!menuOpen) return;
+    if (audioUnlockedRef.current) return;
+    const unlock = () => { audioUnlockedRef.current = true; audioEngine.unlock(); };
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => { window.removeEventListener('pointerdown', unlock); window.removeEventListener('keydown', unlock); };
+  }, [menuOpen]);
+  // BUILD 957: one music stream at a time, resolved from the zone.
+  // (Zone is computed inside the effect, not during render, so this
+  // block stays valid wherever the App states are declared.)
+  useEffect(() => {
+    const zone = resolveMusicZone({ menuOpen, dungeonOpen, inTavern, townId: townIdForChunk(chunk) });
+    let effective = manualTrack ?? zone;
+    if (prevZoneRef.current !== zone) {
+      prevZoneRef.current = zone;
+      effective = zone;
+      if (manualTrack !== null) setManualTrack(null);
+    }
+    audioEngine.setTrack(audioSettings.musicOn ? effective : null, audioSettings);
+    setNowPlayingTrack(audioSettings.musicOn ? effective : null);
+  }, [menuOpen, dungeonOpen, inTavern, chunk, manualTrack, audioSettings]);
+  // BUILD 957: any player coin balance change while in game clinks —
+  // loot, quest rewards, sells (gains) and shop buys (spends) all flow
+  // through inventory.coins. Load/new-game baselines are silent (the
+  // suppress flag) and the menu itself never clinks.
+  useEffect(() => {
+    const prev = prevCoinsRef.current;
+    prevCoinsRef.current = inventory.coins;
+    if (menuOpen) return;
+    if (suppressCoinSfxRef.current) { suppressCoinSfxRef.current = false; return; }
+    if (inventory.coins !== prev) audioEngine.playSfx('coin');
+  }, [inventory.coins, menuOpen]);
+  // BUILD 957: the map-open sound, on every path that opens the atlas.
+  useEffect(() => { if (mapOpen) audioEngine.playSfx('map-open'); }, [mapOpen]);
+  // BUILD 957: audio test hooks (testmode only, like __gameTest).
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      if (!window.location.search.includes('testmode=1')) return;
+      (window as unknown as { __audioTest: unknown }).__audioTest = {
+        getTrack: () => audioEngine.getCurrentTrack(),
+        isMusicPlaying: () => audioEngine.isMusicPlaying(),
+        getLastSfx: () => audioEngine.getLastSfx(),
+        getSettings: () => loadAudioSettings(),
+        playSfx: (id: 'coin' | 'map-open' | 'fireball') => audioEngine.playSfx(id),
+        unlock: () => audioEngine.unlock(),
+      };
+    } catch { /* test hook only */ }
+  }, []);
   const [loadedSave, setLoadedSave] = useState<SaveGameData | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   // Journal: discovered locations, quests, rumors, notes
@@ -16308,6 +16409,7 @@ function Home() {
   };
 
   const startNewGame = () => {
+    suppressCoinSfxRef.current = true;
     setLoadedSave(null);
     setInventory(initialInventory);
     setPlayerStats(initialPlayerStats);
@@ -16467,6 +16569,7 @@ function Home() {
       setPlayerSpriteUrl(null);
       setPlayerAttackSpriteUrl(null);
     }
+    suppressCoinSfxRef.current = true;
     setMapOpen(false); setInventoryOpen(false); setSaveNotice(notice); setMenuOpen(false);
   };
 
@@ -16655,6 +16758,7 @@ function Home() {
             <span className="main-menu-kicker">THE FAR MEADOW · BUILD {BUILD_NUMBER}{buildNoteFor(BUILD_NUMBER) ? ` (${buildNoteFor(BUILD_NUMBER)})` : ''}</span>
             <h1>Adventure Game</h1>
             <p>Follow the roads, learn the first hunt, and choose the path that carries you beyond Mosslight Crossing.</p>
+            <p style={{ fontSize: 11, opacity: 0.85 }}>🎵 Title theme: Finding Mithral — music starts on your first tap.</p>
             <div className="main-menu-actions">
               {/* BUILD 455: character creation removed for now — New Game starts directly */}
               <button className="main-menu-button" onClick={() => setCreatingCharacter(true)} data-testid="button-new-game">New Game</button>
@@ -16664,6 +16768,8 @@ function Home() {
               {showMenuSaveButton && <button className="main-menu-button" onClick={saveGame} data-testid="button-save-menu">💾 Save Game</button>}
               {/* BUILD 626: Changelog — verify updates are live. */}
               <button className="main-menu-button" onClick={() => setChangelogOpen((v) => !v)} data-testid="button-changelog">📋 Changelog</button>
+              {/* BUILD 957: title-screen options — same audio controls as in-game. */}
+              <button className="main-menu-button" onClick={() => setTitleOptionsOpen(true)} data-testid="button-title-options">⚙️ Options</button>
             </div>
             {changelogOpen && (
               <IssueTrackerPanel buildNumber={BUILD_NUMBER} changelog={CHANGELOG} updateStatus={updateStatus} onSaveGame={saveGame} showMenuSaveButton={showMenuSaveButton} onToggleMenuSaveButton={toggleMenuSaveButton} />
@@ -16671,6 +16777,22 @@ function Home() {
             <p className="main-menu-note">Use Load Game for this browser, or Import Save File for a downloaded backup.</p>
             {saveNotice && <div className="save-notice" role="status">{saveNotice}</div>}
           </div>
+          {/* BUILD 957: title-screen options overlay — the shared audio
+           * section (same component as the in-game options panel), plus
+           * the master mute. The full in-game panel's debug/game actions
+           * need a mounted game and cannot render pre-game. */}
+          {titleOptionsOpen && (
+            <div role="dialog" aria-label="Title options" data-testid="title-options-panel" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.85)', display: 'grid', placeItems: 'center', padding: 20 }}>
+              <div style={{ width: 'min(520px, 100%)', maxHeight: '90vh', overflow: 'auto', background: '#101512', color: '#e8f0e9', border: '1px solid #2e7d4f', borderRadius: 12, padding: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h2 style={{ margin: 0, color: '#fff' }}>Options</h2>
+                  <button onClick={() => setTitleOptionsOpen(false)} aria-label="Close options" data-testid="button-close-title-options" style={{ background: '#1e7d46', color: '#fff', border: '1px solid #2e9e5b', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>✕ Close</button>
+                </div>
+                <p style={{ opacity: 0.8, fontSize: 13 }}>Music starts on your first tap — browsers block sound before that.</p>
+                <AudioOptions settings={audioSettings} onSettingsChange={handleAudioSettingsChange} nowPlayingId={nowPlayingTrack} onPlayTrack={handlePlayTrackManual} masterMuted={muted} onToggleMasterMute={() => setMuted((v) => !v)} />
+              </div>
+            </div>
+          )}
         </section>
       ) : (
         <>
@@ -16681,7 +16803,7 @@ function Home() {
       `}</style>
       <div className="game-layout">
             <GameCrashBoundary chunk={chunk}>
-            <GameField rpgConfig={{ look: playerRenderLook, forceIso: forceIsoField }} inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} mapOpen={mapOpen} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onTaskStatesChange={(states) => { setTaskStates(states); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} onResolveBounty={(townId) => setBounty((prev) => clearTownBounty(prev, townId))} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
+            <GameField rpgConfig={{ look: playerRenderLook, forceIso: forceIsoField }} inventory={inventory} equipment={equipment} onEquipmentChange={setEquipment} equippedDagger={equippedDagger} equippedBow={equippedBow} equippedShirt={equippedShirt} equippedSword={equippedSword} barbHair={barbHair} playerStats={playerStats} statPoints={statPoints} characterChoices={characterChoices} onPlayerStatsChange={setPlayerStats} onStatPointsChange={setStatPoints} onLoot={applyLoot} onOpenMap={() => setMapOpen(true)} mapOpen={mapOpen} onOpenInventory={() => setInventoryOpen(true)} onOpenJournal={() => setJournalOpen(true)} onDiscoverLocation={discoverLocation} onRestorePrison={restorePrison} onRestoreJournal={restoreJournal} onRestoreReputation={restoreReputation} onQuestStatesChange={(states, level) => { setQuestStates(states); setQuestPlayerLevel(level); }} onTaskStatesChange={(states) => { setTaskStates(states); }} onQuestReputation={questReputationReward} onAddRumor={addRumor} onEscapeSpawnConsumed={() => setEscapeSpawn(null)} onChunkChange={handleChunkChange} onCrimeCommitted={handleCrimeCommitted} onResolveBounty={(townId) => setBounty((prev) => clearTownBounty(prev, townId))} bounty={bounty} muted={muted} onToggleMute={() => setMuted((value) => !value)} audioSettings={audioSettings} onAudioSettingsChange={handleAudioSettingsChange} nowPlayingTrack={nowPlayingTrack} onPlayTrackManual={handlePlayTrackManual} onTavernInteriorChange={setInTavern} inputLocked={mapOpen || inventoryOpen || dungeonOpen || journalOpen} saveStateRef={saveStateRef} loadState={loadedSave} onSave={saveGame} onDownloadSave={downloadSave} onOpenLoad={openLoadPicker} onOpenMenu={() => { setSaveNotice(null); setMenuOpen(true); }} onEnterDungeon={() => setDungeonOpen(true)} beerBuffUntil={beerBuffUntil} menuBridgeRef={menuBridgeRef} inPrison={inPrison} prisonState={prisonState} journal={journal} reputation={reputation} escapeSpawn={escapeSpawn} />
             </GameCrashBoundary>
           </div>
           {dungeonOpen && <StoneSoupDungeon onExit={() => setDungeonOpen(false)} />}

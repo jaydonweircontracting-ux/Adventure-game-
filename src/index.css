@@ -5874,3 +5874,38 @@ body {
 .body-loot-item button, .body-loot-done { min-height: 40px; padding: 7px 14px; border: 1px solid #6d583c; border-radius: 8px; background: #6d583c; color: #fff7e8; font: inherit; font-size: 13px; font-weight: 700; flex-shrink: 0; }
 .body-loot-empty { padding: 12px 4px; color: #735f49; text-align: center; }
 .body-loot-done { width: 100%; margin-top: 12px; background: #493a2a; }
+
+/* BUILD 957: black title screen, green buttons (title only — scoped to
+ * menu-mode so in-game/prison buttons are untouched). */
+.menu-mode .main-menu {
+  background: #000;
+}
+.menu-mode .main-menu-card {
+  background: #0c0f0d;
+  border-color: #2e7d4f;
+  color: #e8f0e9;
+}
+.menu-mode .main-menu-card h1 {
+  color: #ffffff;
+}
+.menu-mode .main-menu-card > p:not(.main-menu-note) {
+  color: #b9c9bd;
+}
+.menu-mode .main-menu-kicker {
+  color: #7ddc9a;
+}
+.menu-mode .main-menu-button {
+  background: #1e7d46;
+  border-color: #2e9e5b;
+  color: #ffffff;
+}
+.menu-mode .main-menu-button:hover {
+  background: #27a35c;
+  border-color: #7ddc9a;
+}
+.menu-mode .main-menu-button:disabled {
+  opacity: 0.55;
+}
+.menu-mode .main-menu-note {
+  color: #8fa398;
+}
