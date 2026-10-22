@@ -320,6 +320,13 @@ interface IsoFieldViewProps {
   // veil just before the floating combat text pass, so damage numbers sit
   // above it; forced to 0 while inInterior (interiors have own lighting).
   darknessAlpha?: number;
+  // BUILD 978: debug-mover house offsets (same record App's 2D field,
+  // collision, triggers, exits, and chests already follow). Without this
+  // the iso visual stayed at the generated spot after a move — the 959
+  // mover-visual desync. Applied to the home scene only (the mover works
+  // on the current chunk); sprite-kind lookup still uses the unshifted
+  // rect so a moved house keeps its art.
+  houseOffsets?: Record<string, Point>;
   // BUILD 684: floating combat text — rendered in iso (were 2D-DOM only).
   damageTexts?: Array<{ id: number; text: string; position: Point; kind: string }>;
   // BUILD 958: spell-effect overlays — App-owned frame lists, drawn in iso
@@ -639,7 +646,7 @@ function roadBlendFor(road: string, lx: number, ly: number): number {
   return 0.3 + 0.7 * Math.min(1, Math.max(0, d) / 2.5);
 }
 
-export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, adventurers, goats, wildlife, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, houseChests, onLootHouseChest, traps, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, spellFx, zoom, rotationAngleRef, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook, darknessAlpha = 0 }: IsoFieldViewProps): React.JSX.Element {
+export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = false, dispositions, chunk, position, townsfolk, adventurers, goats, wildlife, placedAssets = [], editorPlacedObjects = [], onExit, onTapMove, onTapMine, onTalkTo, selectedNpcId, onSelectNpc, selectedGoatId, onSelectGoat, monsters, selectedMonsterId, onSelectMonster, onShopStall, droppedLoot, onPickupDrop, lootableBodies, onLootBody, houseChests, onLootHouseChest, traps, corpseLootedBases, playerMounted, playerHorse, worldHorses, damageTexts, spellFx, zoom, rotationAngleRef, onZoomChange, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, collisionDebug, playerRunning, playerSneaking, playerLook, darknessAlpha = 0, houseOffsets }: IsoFieldViewProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef({ chunk, px: position.x, py: position.y, folk: townsfolk, adventurers, goats, wildlife, placedAssets, editorPlacedObjects, monsters, selectedNpcId, selectedGoatId, selectedMonsterId, barbOutfit, barbWeapon, barbHair, barbAttackSequence, debugFacing, droppedLoot, lootableBodies, houseChests, traps, corpseLootedBases, damageTexts, spellFx, playerRunning, playerSneaking, playerLook, npcSpeechEnabled, inInterior, dispositions, playerMounted, playerHorse, worldHorses, darknessAlpha });
@@ -723,7 +730,23 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
           // pushed (and therefore drawn) after northern ones — with every
           // building wearing the oversized two-layer art, unsorted overlaps
           // painted northern interiors over southern roofs.
-          buildings: buildingDoorwaysFor(cp).slice().sort((a, b2) => (a.position.x + a.position.y) - (b2.position.x + b2.position.y)),
+          // BUILD 978: home-scene buildings follow their mover offset
+          // (position, rect, and exit spawn all shift together, exactly
+          // like the 2D field's doorwayNear/exit logic). Neighbor scenes
+          // keep generated positions — the mover only moves the current
+          // chunk's houses. Kind lookup un-shifts before matching pinned
+          // rects (see bldKindForBuilding), so art never changes on move.
+          buildings: buildingDoorwaysFor(cp).slice().sort((a, b2) => (a.position.x + a.position.y) - (b2.position.x + b2.position.y)).map((b) => {
+            if (ox !== 0 || oy !== 0) return b;
+            const off = houseOffsets?.[b.id];
+            if (!off || (off.x === 0 && off.y === 0)) return b;
+            return {
+              ...b,
+              position: { x: b.position.x + off.x, y: b.position.y + off.y },
+              rect: { left: b.rect.left + off.x, top: b.rect.top + off.y, right: b.rect.right + off.x, bottom: b.rect.bottom + off.y },
+              area: { ...b.area, exteriorPosition: { x: b.area.exteriorPosition.x + off.x, y: b.area.exteriorPosition.y + off.y } },
+            };
+          }),
           trees: fieldTreesFor(cp),
           ores: fieldOresFor(cp),
           tile,
@@ -734,7 +757,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       }
     }
     return list;
-  }, [chunk.x, chunk.y]);
+  }, [chunk.x, chunk.y, houseOffsets]);
   const homeScene = scenes[R * GRID + R];
   // BUILD 697: market-stall positions from the LIVE settlement decor (same
   // source as the NPC browsers) — never hardcoded. Ref-mirrored so the tap
@@ -1568,9 +1591,14 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       // BUILD 603: Stable sprite assignment using absolute chunk + local coords.
       // Previous BUILD 602 used r.left/r.top which include scene offset that
       // changes as player moves between chunks → flicker.
-      const bldKindForBuilding = (b: { rect: { left: number; top: number; right: number; bottom: number } }, scOx: number, scOy: number): string => {
+      const bldKindForBuilding = (b: { id?: string; rect: { left: number; top: number; right: number; bottom: number } }, scOx: number, scOy: number): string => {
         const absCx = chunk.x + scOx, absCy = chunk.y + scOy;
-        const lx = b.rect.left, ly = b.rect.top;
+        // BUILD 978: kind lookup runs on the GENERATED rect, not the
+        // mover-shifted one — otherwise moving a house would also change
+        // its art (pinned/variant matching is rect-exact).
+        const off = (scOx === 0 && scOy === 0 && b.id) ? houseOffsets?.[b.id] : undefined;
+        const ur = off ? { left: b.rect.left - off.x, top: b.rect.top - off.y, right: b.rect.right - off.x, bottom: b.rect.bottom - off.y } : b.rect;
+        const lx = ur.left, ly = ur.top;
         // Special buildings: starting chunk (0,0) by local positions
         if (absCx === 0 && absCy === 0) {
           if (Math.abs(lx - 85.9) < 1 && Math.abs(ly - 108.8) < 1) return 'tavern';
@@ -1583,15 +1611,15 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         // BUILD 692: the engine's roadside filler lots use district-appropriate
         // new art variants (commercial -> shops, residential -> cottages),
         // picked by stable hash so the assignment never flickers.
-        if (absCx === 4 && absCy === 7 && b.rect) {
+        if (absCx === 4 && absCy === 7 && ur) {
           // BUILD 768: Resolve the fixed Crossing buildings by the same stable
           // rect list used by doors and NPC homes. House 12 is the tavern.
           const pinnedRects = mosslightPinnedRects();
           const pinnedIndex = pinnedRects.findIndex((r) =>
-            Math.abs(r.left - b.rect.left) < 0.01
-            && Math.abs(r.top - b.rect.top) < 0.01
-            && Math.abs(r.right - b.rect.right) < 0.01
-            && Math.abs(r.bottom - b.rect.bottom) < 0.01
+            Math.abs(r.left - ur.left) < 0.01
+            && Math.abs(r.top - ur.top) < 0.01
+            && Math.abs(r.right - ur.right) < 0.01
+            && Math.abs(r.bottom - ur.bottom) < 0.01
           );
           if (pinnedIndex >= 0 && pinnedIndex < 4) {
             return ['blue-house', 'story-tower', 'plaster-house', 'tavern'][pinnedIndex];
@@ -1602,13 +1630,13 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
             // the town alongside the tavern, timber house, and awning shop.
             return ['house-balcony', 'tavern', 'shop-banner', 'house-timber', 'shop-awning', 'cottage-wide', 'brick-shop', 'hall-grand'][pinnedIndex - 10];
           }
-          const v = cottageVariantForRect(b.rect);
+          const v = cottageVariantForRect(ur);
           if (v) {
             // BUILD 767: use authored detailed PNGs; the SVG replacements were crude
             // and inconsistent in scale with the town's existing architectural style.
             return v === 'hut-thatched' ? 'green-cottage' : v;
           }
-          const fv = fillerVariantForRect(b.rect);
+          const fv = fillerVariantForRect(ur);
           if (fv) {
             return fv === 'hut-thatched' ? 'green-cottage' : fv;
           }
@@ -2638,6 +2666,10 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
       // survive the spawn filter and appear as skeletons or invisible humanoids.
       const liveMonsters = liveMonstersForActiveChunk(live.monsters, chunk);
       const monsterImgs = (window as unknown as { __isoMonsterImgs?: Record<string, HTMLImageElement> }).__isoMonsterImgs || {};
+      // BUILD 978: write the cache back (the knight cache below already
+      // did; this one never did, so every frame rebuilt fresh Image
+      // objects for every monster sheet).
+      (window as unknown as { __isoMonsterImgs?: Record<string, HTMLImageElement> }).__isoMonsterImgs = monsterImgs;
       const knightImgs = (window as unknown as { __isoKnightImgs?: Record<string, HTMLImageElement> }).__isoKnightImgs || {};
       (window as unknown as { __isoKnightImgs?: Record<string, HTMLImageElement> }).__isoKnightImgs = knightImgs;
       for (const monster of liveMonsters) {
