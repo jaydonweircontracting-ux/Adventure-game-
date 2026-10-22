@@ -318,8 +318,12 @@ export function lpcSprite(file: string): HTMLImageElement | undefined {
   return im && im.complete && im.naturalWidth > 0 ? im : undefined;
 }
 
-// Ghostpixxells pixel food for market stall counters
-const FOOD_FILES = ['07_bread', '15_burger', '05_apple_pie', '95_steak', '97_sushi', '99_taco'];
+import { STALL_COUNTER_FILES } from '../foodSprites';
+// Kenney Food Kit 2.0 sprites for market stall counters (BUILD 951 —
+// replaces the Ghostpixxells pixel food; same 6 counter slots, same draw
+// code in IsoRoom, only this loader table changes). public/iso-food
+// files stay on disk, unused, in case of revert.
+const FOOD_FILES = [...STALL_COUNTER_FILES];
 const foodCache: Record<string, HTMLImageElement> = {};
 let foodPreloaded = false;
 export function preloadFoodSprites() {
@@ -327,7 +331,7 @@ export function preloadFoodSprites() {
   foodPreloaded = true;
   for (const f of FOOD_FILES) {
     const img = new Image();
-    img.src = artUrl(`iso-food/${f}.png`);
+    img.src = artUrl(`sprites/food-sprites/${f}`);
     foodCache[f] = img;
   }
 }

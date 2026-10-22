@@ -1,6 +1,6 @@
 {
-  "build": "950",
-  "note": "Carrying now has a real limit: every item has a true weight (plate armor finally weighs more than a rusty sword — the old numbers were rarity odds, not heft), and once you are over capacity you cannot pick up, loot, or buy more until you sell or use something. You still slow down past 80% and drain stamina past 100%, and quest rewards always land even if they push you over — nothing you earned ever vanishes. Your current load shows in the HUD and in the inventory.",
-  "timestamp": "2026-10-22T01:26:51.324Z",
-  "cacheBuster": "mviv1x31"
+  "build": "951",
+  "note": "Food now looks like food: beer shows a proper mug and corn shows an ear of corn in your inventory, at market stalls, and in dungeon shops, and the market-stall counters display Kenney food — bread, burgers, pie, cooked meat, sushi, and tacos — instead of the old pixel sprites. Health potions keep their flask mark (the kit has no potion art), and prices, healing, and effects are unchanged. The other 192 food pictures from the kit sit in the game files ready for future dishes.",
+  "timestamp": "2026-10-22T01:37:45.154Z",
+  "cacheBuster": "mvivfxky"
 }

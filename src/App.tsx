@@ -148,6 +148,7 @@ import { RPG_DEFAULT_LOOK, preloadRpgLayers, type RpgLook } from '@/game/iso/rpg
 import { composePlayerLook } from '@/game/iso/equipmentArt';
 import { compositeAttackSprite, compositeCharacterSheet, sanitizeCharacterChoices, type CharacterChoices } from '@/game/characterCreator';
 import { artUrl } from '@/game/artCache';
+import { foodIconUrl } from '@/game/foodSprites';
 import { determineUpdateStatus, parseBuildMarker } from '@/game/updateVersion';
 import { initWorldNoise, shouldPlaceVegetation, vegetationDensity } from '@/game/noise';
 const PLAYER_SPRITE_URL = artUrl('assets/cute-fantasy/player.png');
@@ -164,7 +165,7 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '950';
+const BUILD_NUMBER = '951';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
@@ -194,6 +195,7 @@ const BUILD_NOTES: Record<string, string> = {
   '947': 'Six new dungeon entrances now dot the world, from Thornwood Hollow in the far west to Greenbarrow in the far south, and every one of them opens on the world map as a stone-arch marker. Walk up to an entrance and tap Descend to enter a dungeon, exactly like the Sunken Crypt — the button now appears in the iso view too, where entrances also show a marked stone arch on the ground, so no entrance is hidden anymore. Each descent is still a fresh dungeon like before, and the old Sunken Crypt entry works exactly as it always did.',
   '948': 'Adventurers now occasionally set out to delve dungeons on their own. Watch one walk out of Mosslight toward the wilds and check back later: they may return with gold and loot, come back empty-handed, or limp home injured. Their hauls stay on them for now, with chest and bank storage coming next, and you can follow each run in the game log and the adventurer list. Player dungeons, loot, and entrances work exactly as before.',
   '950': 'Carrying now has a real limit: every item has a true weight (plate armor finally weighs more than a rusty sword — the old numbers were rarity odds, not heft), and once you are over capacity you cannot pick up, loot, or buy more until you sell or use something. You still slow down past 80% and drain stamina past 100%, and quest rewards always land even if they push you over — nothing you earned ever vanishes. Your current load shows in the HUD and in the inventory.',
+  '951': 'Food now looks like food: beer shows a proper mug and corn shows an ear of corn in your inventory, at market stalls, and in dungeon shops, and the market-stall counters display Kenney food — bread, burgers, pie, cooked meat, sushi, and tacos — instead of the old pixel sprites. Health potions keep their flask mark (the kit has no potion art), and prices, healing, and effects are unchanged. The other 192 food pictures from the kit sit in the game files ready for future dishes.',
   '949': 'Adventurers now store their dungeon hauls: when one returns from a delve, their gold goes to the Mosslight bank and their loot goes into their family chest — every house has one, and the log tells you exactly what went where. Nothing vanishes: every coin and item from a run is accounted for in a chest or the bank, and old saves gain empty chests automatically. Stored loot stays put for now — it is not spent, traded, or withdrawn yet — and your own dungeons, loot, and inventory work exactly as before.',
   '934': 'Monsters now have personalities: every creature type fights its own way. Wolves circle and switch targets, rats panic and run when hurt, slimes and skeletons never run at all, ogres and trolls plant their feet and trade blows, and bandit archers hold their distance and keep shooting instead of closing to melee. Wounded beasts flee when their kind would flee — but a fleeing beast can still be chased down and killed, never escapes forever — and creatures growl, squeak, and roar as they spot you, flee, or fall. Sneak detection is unchanged: monsters still only notice a sneaking player within 12 paces.',
   '931': 'The Sunken Crypt dungeon now has trap vaults: step on a marked pressure plate and the walls may crumble — The Gnawed Warren releases beasts from the walls, and The Sealed Cache (depth 2+) opens a hidden stash of potions, scrolls, and rations. Plates are clearly marked, each trap fires only once, and released monsters fight and drop loot like any dungeon monster.',
@@ -3676,14 +3678,14 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
     { key: 'bone', label: 'Bone', detail: 'Skeleton remains', mark: '☠', className: 'bone-mark' },
     { key: 'pelt', label: 'Pelt', detail: 'Thick animal hide', mark: '❖', className: 'pelt-mark' },
     { key: 'fang', label: 'Fang', detail: 'Sharp monster fang', mark: '⸙', className: 'fang-mark' },
-    { key: 'corn', label: 'Corn', detail: 'Harvested crop', mark: '🌽', className: 'corn-mark' },
+    { key: 'corn', label: 'Corn', detail: 'Harvested crop', mark: '🌽', className: 'corn-mark', img: foodIconUrl('corn') },
     { key: 'wood', label: 'Wood', detail: 'Chopped from trees', mark: '🪵', className: 'wood-mark' },
     { key: 'stone', label: 'Stone', detail: 'Mined from stone deposits', mark: '🪨', className: 'stone-mark' },
     { key: 'silk', label: 'Silk', detail: 'Spider silk for bowstrings', mark: '🕸', className: 'silk-mark' },
     { key: 'bow', label: 'Hunting bow', detail: 'Ranged weapon', mark: '🏹', className: 'bow-mark' },
     { key: 'shirts', label: 'Blue shirt', detail: 'Crafted shirt — equip to wear', mark: '👕', className: 'shirt-mark' },
     { key: 'swords', label: 'Barbarian sword', detail: 'Heavy blade · +35% damage', mark: '🗡', className: 'sword-mark', img: (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL + 'items/sword-inventory.png' },
-    { key: 'beer', label: 'Beer', detail: '+50% attack for 1 min', mark: '🍺', className: 'beer-mark' },
+    { key: 'beer', label: 'Beer', detail: '+50% attack for 1 min', mark: '🍺', className: 'beer-mark', img: foodIconUrl('beer') },
     { key: 'healthPotion', label: 'Health Potion', detail: 'Restores 50% HP', mark: '🧪', className: 'potion-mark' },
     { key: 'lockpicks', label: 'Lockpicks', detail: 'For locked chests', mark: '🗝', className: 'lockpick-mark' },
   ].filter((item) => inventory[item.key as keyof GameInventory] > 0);
@@ -14777,7 +14779,7 @@ if (active) {
                           disabled={stock < 1 || !afford}
                           data-testid={'button-shop-buy-' + g.key}
                           title={stock < 1 ? 'Sold out' : !afford ? "You don't have enough gold" : `Buy ${g.label} for ${g.buyPrice} gold`}>
-                          <span><b>{g.mark} {g.label}</b><small>{g.description} · Stock {stock}</small></span>
+                          <span><b>{foodIconUrl(g.key) ? <img src={foodIconUrl(g.key)!} alt="" className="inventory-item-img" /> : g.mark} {g.label}</b><small>{g.description} · Stock {stock}</small></span>
                           <em>{g.buyPrice} gold</em>
                         </button>
                       );
@@ -14796,7 +14798,7 @@ if (active) {
                             disabled={have < 1}
                             data-testid={'button-shop-sell-' + g.key}
                             title={`Sell ${g.label} for ${g.sellPrice} gold`}>
-                            <span><b>{g.mark} {g.label}</b><small>You have {inventory[g.key] ?? 0}</small></span>
+                            <span><b>{foodIconUrl(g.key) ? <img src={foodIconUrl(g.key)!} alt="" className="inventory-item-img" /> : g.mark} {g.label}</b><small>You have {inventory[g.key] ?? 0}</small></span>
                             <em>+{g.sellPrice} gold</em>
                           </button>
                         );
