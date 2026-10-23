@@ -1836,38 +1836,34 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               // The gate is now interior-state only (BUILD 826's
               // transition behavior is preserved in the else branch).
               if (!liveRef.current.inInterior) {
-                // BUILD 959: non-tutorial buildings wear a Kenney town-kit
-                // exterior now — walls + door + windows + roof + chimney
-                // assembled from kit pieces (townSprites), drawn in the
-                // SAME overlay box the starter art used (overlayW wide,
-                // bottom on the ground line baseY) and hidden under the
-                // SAME under-roof gate, so the base interior sprite, the
-                // roof-lift behavior, and the door trigger are untouched.
-                // The door piece is the composition's center cell, so the
-                // painted door sits on the footprint center — exactly where
-                // the trigger (50%/51% of rect width) and the exit spawn
-                // already are. The tutorial house keeps its authored art.
-                if (b.area.id === 'tutorial-house') {
-                  const overlay = bldImgs['starting-house-overlay'];
-                  if (overlay && overlay.complete && overlay.naturalWidth > 0) {
-                    g2.save();
-                    g2.globalAlpha = 1;
-                    g2.globalCompositeOperation = 'source-over';
-                    g2.filter = 'none';
-                    g2.drawImage(overlay, cx - overlayW / 2, baseY - overlayH + overlaySink, overlayW, overlayH);
-                    g2.restore();
-                  } else {
-                    drawBase();
-                  }
+                // BUILD 983: use the user's authored starter-house exterior
+                // overlay (IMG_5424) on every existing building in the
+                // starting town, including NPC homes and shop/guild lots,
+                // until dedicated exteriors are added. Preserve the existing
+                // building footprints, door triggers, roads, and collision.
+                // Keep non-tutorial lots at footprint scale so neighboring
+                // roofs do not blanket each other; the tutorial house retains
+                // its authored oversized framing and existing roof-base sink.
+                const overlay = bldImgs['starting-house-overlay'];
+                if (overlay && overlay.complete && overlay.naturalWidth > 0) {
+                  const overlayScale = b.area.id === 'tutorial-house' ? 1.6 : 1;
+                  const houseOverlayW = sw * overlayScale;
+                  const houseOverlayH = sh * overlayScale;
+                  const houseOverlaySink = sh * 0.34;
+                  g2.save();
+                  g2.globalAlpha = 1;
+                  g2.globalCompositeOperation = 'source-over';
+                  g2.filter = 'none';
+                  g2.drawImage(
+                    overlay,
+                    cx - houseOverlayW / 2,
+                    baseY - houseOverlayH + houseOverlaySink,
+                    houseOverlayW,
+                    houseOverlayH,
+                  );
+                  g2.restore();
                 } else {
-                  // BUILD 980: Kenney exteriors draw at the FOOTPRINT
-                  // width sw (not the 1.6x overlay box): the 1.6x
-                  // oversize blanketed neighbours in one unreadable
-                  // roof pile. The Kenney wall band spans sw, so the
-                  // house sits on its lot and the painted door (center
-                  // cell, x + sw/2 = cx) still matches the trigger.
-                  const kenneyOk = drawKenneyHouse(g2, kenneyImgs, kenneyCompositionFor(kind), cx - sw / 2, baseY, sw);
-                  if (!kenneyOk) drawBase();
+                  drawBase();
                 }
               } else {
                 // Interior active: keep the old base backdrop (BUILD 826).
