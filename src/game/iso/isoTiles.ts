@@ -344,6 +344,15 @@ export function lodClassCacheSize(): number {
 
 const groundImgs = new Map<number, HTMLImageElement>();
 const decorImgs = new Map<number, HTMLImageElement>();
+// Optional source materials supplied in game sprites/world tiles.
+const WORLD_TEXTURE_FILES = {
+  grass: 'grassland.png',
+  path: 'path.png',
+  rock: 'rock_diffuse.png',
+  water: 'water.png',
+} as const;
+type WorldTextureKey = keyof typeof WORLD_TEXTURE_FILES;
+const worldTextureImgs = new Map<WorldTextureKey, HTMLImageElement>();
 const warnedUrls = new Set<string>();
 const failedImgs = new Set<HTMLImageElement>();
 let preloadStarted = false;
@@ -377,6 +386,14 @@ export function preloadIsoTiles(): void {
   for (const list of Object.values(DECOR_TILES)) for (const n of list) dseen.add(n);
   // Count first so cached images cannot complete before the total is known.
   pendingImages = seen.size + dseen.size;
+  // These material maps are optional overlays; a missing image never blocks
+  // the existing tileset or the game's first render.
+  for (const [key, file] of Object.entries(WORLD_TEXTURE_FILES) as Array<[WorldTextureKey, string]>) {
+    const texture = new Image();
+    texture.decoding = 'async';
+    texture.src = `${base}game%20sprites/world%20tiles/${file}`;
+    worldTextureImgs.set(key, texture);
+  }
   for (const n of seen) {
     const url = `${base}${ISO_TILES_BASE}/ground/tile_${String(n).padStart(3, '0')}.png`;
     groundImgs.set(n, loadImg(url, () => {}));
@@ -411,10 +428,38 @@ function withCrisp(g: CanvasRenderingContext2D, fn: () => void): void {
  * Draw a ground tile centered on (x, y) at 2x. Returns false when the image
  * isn't ready (caller falls back to the procedural fill).
  */
+function worldTextureForGroundTile(n: number): WorldTextureKey | null {
+  if (n >= 24 && n <= 40) return 'grass';
+  if (n === 12) return 'path';
+  if (n >= 13 && n <= 21) return 'rock';
+  if (n >= 86 && n <= 95) return 'water';
+  return null;
+}
+
+/** Draw the existing tile and blend in a subtle user-supplied material. */
 export function drawGroundTile(g: CanvasRenderingContext2D, n: number, x: number, y: number): boolean {
   const im = groundImgs.get(n);
   if (!imgReady(im)) return false;
-  withCrisp(g, () => { g.drawImage(im, Math.round(x - 32), Math.round(y - 32), 64, 64); });
+  withCrisp(g, () => {
+    const left = Math.round(x - 32);
+    g.drawImage(im, left, Math.round(y - 32), 64, 64);
+    const key = worldTextureForGroundTile(n);
+    const texture = key ? worldTextureImgs.get(key) : undefined;
+    if (!imgReady(texture)) return;
+    // Keep the texture within the visible diamond; preserve existing tile art.
+    g.save();
+    g.beginPath();
+    g.moveTo(x, y - 16);
+    g.lineTo(x + 32, y);
+    g.lineTo(x, y + 16);
+    g.lineTo(x - 32, y);
+    g.closePath();
+    g.clip();
+    g.globalAlpha = 0.18;
+    g.globalCompositeOperation = 'soft-light';
+    g.drawImage(texture, left, Math.round(y - 16), 64, 32);
+    g.restore();
+  });
   return true;
 }
 
