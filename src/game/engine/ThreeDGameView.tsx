@@ -97,6 +97,7 @@ export default function ThreeDGameView({ position, townsfolk = [], monsters = []
     }
 
     const buffer = gl.createBuffer();
+    const actorBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
     const stride = 6 * Float32Array.BYTES_PER_ELEMENT;
@@ -145,12 +146,16 @@ export default function ThreeDGameView({ position, townsfolk = [], monsters = []
       latest.current.townsfolk.slice(0,120).forEach(a=>actorBox(a.position.x,a.position.y,[0.24,0.55,0.84]));
       latest.current.monsters.slice(0,80).forEach(a=>actorBox(a.position.x,a.position.y,[0.75,0.18,0.16]));
       actorBox(px,pz,[0.96,0.78,0.25]);
+      gl.bindBuffer(gl.ARRAY_BUFFER, actorBuffer);
       gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(actors),gl.DYNAMIC_DRAW);
+      gl.vertexAttribPointer(posLoc,3,gl.FLOAT,false,stride,0);
+      gl.vertexAttribPointer(colorLoc,3,gl.FLOAT,false,stride,3*Float32Array.BYTES_PER_ELEMENT);
       gl.drawArrays(gl.TRIANGLES,0,actors.length/6);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       raf=requestAnimationFrame(draw);
     };
     draw();
-    return ()=>{cancelAnimationFrame(raf);gl.deleteBuffer(buffer);gl.deleteProgram(program);};
+    return ()=>{cancelAnimationFrame(raf);gl.deleteBuffer(buffer);if(actorBuffer)gl.deleteBuffer(actorBuffer);gl.deleteProgram(program);};
   }, []);
 
   const handleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
