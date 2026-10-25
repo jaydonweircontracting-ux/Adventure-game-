@@ -40,7 +40,8 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
       quad([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0],color.map(v=>Math.min(1,v*1.15)));
       quad([x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],color.map(v=>v*.55));
     };
-    for(const [x,z] of [[-5,-4],[-7,2],[5,-5],[7,3],[-5,7],[6,8],[3,-9]]){
+    const treePositions: Array<[number, number]> = [[-5,-4],[-7,2],[5,-5],[7,3],[-5,7],[6,8],[3,-9]];
+    for(const [x,z] of treePositions){
       cube(x,.7,z,.3,1.4,.3,[.36,.23,.12]);cube(x,1.7,z,1.15,1.25,1.15,[.12,.38,.16]);
     }
     const world=new Float32Array(data);
@@ -69,10 +70,18 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
       const ratio=Math.min(window.devicePixelRatio||1,2),w=Math.max(1,Math.floor(canvas.clientWidth*ratio)),h=Math.max(1,Math.floor(canvas.clientHeight*ratio));
       if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}gl.viewport(0,0,w,h);
       const s=.11;
-      if(keys.has('w')||keys.has('arrowup')){px-=Math.sin(yaw)*s;pz-=Math.cos(yaw)*s;}
-      if(keys.has('s')||keys.has('arrowdown')){px+=Math.sin(yaw)*s;pz+=Math.cos(yaw)*s;}
-      if(keys.has('a')||keys.has('arrowleft')){px-=Math.cos(yaw)*s;pz+=Math.sin(yaw)*s;}
-      if(keys.has('d')||keys.has('arrowright')){px+=Math.cos(yaw)*s;pz-=Math.sin(yaw)*s;}
+      let dx=0,dz=0;
+      if(keys.has('w')||keys.has('arrowup')){dx-=Math.sin(yaw)*s;dz-=Math.cos(yaw)*s;}
+      if(keys.has('s')||keys.has('arrowdown')){dx+=Math.sin(yaw)*s;dz+=Math.cos(yaw)*s;}
+      if(keys.has('a')||keys.has('arrowleft')){dx-=Math.cos(yaw)*s;dz+=Math.sin(yaw)*s;}
+      if(keys.has('d')||keys.has('arrowright')){dx+=Math.cos(yaw)*s;dz-=Math.sin(yaw)*s;}
+      // Keep the prototype player on the ground plane and prevent walking through trees.
+      const canOccupy=(x:number,z:number)=>{
+        if(x < -13.4 || x > 13.4 || z < -13.4 || z > 13.4) return false;
+        return treePositions.every(([tx,tz])=>Math.hypot(x-tx,z-tz)>.78);
+      };
+      if(canOccupy(px+dx,pz)) px+=dx;
+      if(canOccupy(px,pz+dz)) pz+=dz;
       gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(program);
       const eye=[px+Math.sin(yaw)*Math.cos(pitch)*zoom,Math.sin(pitch)*zoom+2,pz+Math.cos(yaw)*Math.cos(pitch)*zoom];
       gl.uniformMatrix4fv(mLoc,false,new Float32Array(mul(perspective(Math.PI/3,w/h,.1,120),view(eye,[px,0,pz]))));
