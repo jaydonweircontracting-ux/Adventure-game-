@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 /** Isolated WebGL test scene. It does not touch either legacy renderer. */
 export default function Engine3DView({ onExit }: { onExit?: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cameraControlRef = useRef<((direction: 'up' | 'down' | 'left' | 'right') => void) | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -75,6 +76,7 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
     // Explicit camera controls remain usable in embedded previews where touch gestures
     // may be intercepted by the host container before reaching the canvas.
     const cameraStep=(direction:'up'|'down'|'left'|'right')=>{if(direction==='up')pitch=Math.max(.18,pitch-.09);if(direction==='down')pitch=Math.min(1.4,pitch+.09);if(direction==='left')yaw-=.12;if(direction==='right')yaw+=.12;};
+    cameraControlRef.current = cameraStep;
     const wheel=(e:WheelEvent)=>{e.preventDefault();e.stopPropagation();zoom=Math.max(4,Math.min(22,zoom+e.deltaY*.012));};
     window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);
     canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);canvas.addEventListener('wheel',wheel,{passive:false});
@@ -115,7 +117,7 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
       raf=requestAnimationFrame(frame);
     };
     raf=requestAnimationFrame(frame);
-    return ()=>{disposed=true;cancelAnimationFrame(raf);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('touchmove',stopPageTouch);window.removeEventListener('gesturestart',stopGesture);window.removeEventListener('gesturechange',stopGesture);html.style.overflow=previousHtml.overflow;html.style.touchAction=previousHtml.touchAction;html.style.overscrollBehavior=previousHtml.overscrollBehavior;body.style.overflow=previousBody.overflow;body.style.touchAction=previousBody.touchAction;body.style.overscrollBehavior=previousBody.overscrollBehavior;body.style.position=previousBody.position;body.style.width=previousBody.width;canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);gl.deleteBuffer(worldBuffer);gl.deleteBuffer(playerBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);};
+    return ()=>{cameraControlRef.current=null;disposed=true;cancelAnimationFrame(raf);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('touchmove',stopPageTouch);window.removeEventListener('gesturestart',stopGesture);window.removeEventListener('gesturechange',stopGesture);html.style.overflow=previousHtml.overflow;html.style.touchAction=previousHtml.touchAction;html.style.overscrollBehavior=previousHtml.overscrollBehavior;body.style.overflow=previousBody.overflow;body.style.touchAction=previousBody.touchAction;body.style.overscrollBehavior=previousBody.overscrollBehavior;body.style.position=previousBody.position;body.style.width=previousBody.width;canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);gl.deleteBuffer(worldBuffer);gl.deleteBuffer(playerBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);};
   },[]);
   return <div style={{position:'fixed',inset:0,zIndex:20000,background:'#18251d',color:'white',fontFamily:'system-ui,sans-serif',overflow:'hidden',touchAction:'none',overscrollBehavior:'none',userSelect:'none',WebkitUserSelect:'none'}}>
     <canvas ref={canvasRef} aria-label="Adventure 3D test scene" style={{width:'100%',height:'100%',display:'block',touchAction:'none',overscrollBehavior:'none',userSelect:'none',WebkitUserSelect:'none',WebkitTapHighlightColor:'transparent'}}/>
@@ -125,7 +127,7 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
     </div>
     <div style={{position:'absolute',right:12,bottom:76,display:'grid',gridTemplateColumns:'repeat(3,46px)',gridTemplateRows:'repeat(2,46px)',gap:6,pointerEvents:'auto',touchAction:'none',userSelect:'none',WebkitUserSelect:'none'}} onContextMenu={(e)=>e.preventDefault()}>
       <span />
-      {(['up'] as const).map(dir=><button key={dir} aria-label="Camera look up" onPointerDown={e=>{e.preventDefault();e.stopPropagation();cameraStep(dir);}} style={{gridColumn:2,gridRow:1,width:46,height:46,border:0,borderRadius:10,background:'#101913dd',color:'white',fontSize:22,touchAction:'none',userSelect:'none',WebkitUserSelect:'none'}}>↑</button>)}
+      {(['up'] as const).map(dir=><button key={dir} aria-label="Camera look up" onPointerDown={e=>{e.preventDefault();e.stopPropagation();cameraControlRef.current?.(dir);}} style={{gridColumn:2,gridRow:1,width:46,height:46,border:0,borderRadius:10,background:'#101913dd',color:'white',fontSize:22,touchAction:'none',userSelect:'none',WebkitUserSelect:'none'}}>↑</button>)}
       {(['left','down','right'] as const).map((dir,i)=><button key={dir} aria-label={'Camera look '+dir} onPointerDown={e=>{e.preventDefault();e.stopPropagation();cameraStep(dir);}} style={{gridColumn:i+1,gridRow:2,width:46,height:46,border:0,borderRadius:10,background:'#101913dd',color:'white',fontSize:22,touchAction:'none',userSelect:'none',WebkitUserSelect:'none'}}>{dir==='left'?'←':dir==='down'?'↓':'→'}</button>)}
     </div>
     <div style={{position:'absolute',bottom:12,left:12,maxWidth:340,padding:12,borderRadius:8,background:'#101913dd',fontSize:13,lineHeight:1.5}}>WASD / arrows: move · Drag: orbit camera · Scroll: zoom<br/><span style={{opacity:.8}}>Isolated renderer test scene. Existing 2D/2.5D are unchanged; gameplay systems are not connected yet.</span></div>
