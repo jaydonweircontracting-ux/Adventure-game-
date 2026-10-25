@@ -3871,7 +3871,7 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
         <div className="inventory-body">
           {activeTab === 'inventory' ? (
             <>
-              <div className="inventory-count">{itemCount > 0 ? itemCount + ' items carried' : 'Menu is empty'} · {inventory.coins} gold · <span data-testid="inventory-weight">{sheetWeightText}</span></div>
+              <div className="inventory-count">{itemCount + equipment.length > 0 ? (itemCount + equipment.length) + ' items carried' : 'Menu is empty'} · {inventory.coins} gold · <span data-testid="inventory-weight">{sheetWeightText}</span></div>
               <div className="inventory-grid">
                 <div className="inventory-item" data-testid="inventory-coins"><span className="inventory-item-mark coin-mark" aria-hidden="true" /><span><strong>Coins</strong><small>Spendable gold</small></span><b>{inventory.coins}</b></div>
                 {visibleItems.map((item) => {
@@ -3879,7 +3879,31 @@ function InventorySheet({ inventory, equipment, onEquipmentChange, onDrinkPotion
                   return <div className="inventory-item" key={item.key} data-testid={'inventory-' + item.key}><span className={'inventory-item-mark ' + item.className} aria-hidden="true">{(item as { img?: string }).img ? <img src={(item as { img?: string }).img} alt="" className="inventory-item-img" /> : item.mark}</span><span><strong>{item.label}</strong><small>{item.detail}</small></span><b>{count}</b>{item.key === 'daggers' && <button className={'item-action ' + (equippedDagger ? 'is-equipped' : '')} onClick={onToggleDagger} data-testid="button-toggle-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}{item.key === 'bow' && <button className={'item-action ' + (equippedBow ? 'is-equipped' : '')} onClick={onToggleBow} data-testid="button-toggle-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}{item.key === 'shirts' && <button className={'item-action ' + (equippedShirt ? 'is-equipped' : '')} onClick={onToggleShirt} data-testid="button-toggle-shirt">{equippedShirt ? 'Unequip' : 'Equip'}</button>}{item.key === 'swords' && <button className={'item-action ' + (equippedSword ? 'is-equipped' : '')} onClick={onToggleSword} data-testid="button-toggle-sword">{equippedSword ? 'Unequip' : 'Equip'}</button>}{item.key === 'beer' && <button className="item-action" onClick={onDrinkBeer} data-testid="button-drink-beer">Drink</button>}{item.key === 'healthPotion' && <button className="item-action" onClick={onDrinkPotion} data-testid="button-drink-potion">Drink</button>}</div>;
                 })}
               </div>
-              {itemCount === 0 && <div className="inventory-empty"><Backpack size={30} strokeWidth={1.5} /><strong>Menu is empty</strong></div>}
+              {equipment.length > 0 && (
+                <div className="found-items inventory-found-equipment" data-testid="inventory-found-equipment">
+                  <h4>Looted &amp; Carried Gear ({equipment.length})</h4>
+                  <p className="equipment-hint">Weapons, armor, and other gear taken from NPCs appear here. Equip an item directly from your inventory.</p>
+                  {equipment.map((item) => {
+                    const prov = provenanceLabel(item);
+                    return (
+                      <div key={item.instanceId} className="found-item" style={{ borderLeftColor: item.quality === 'unique' ? '#c9a24a' : item.quality === 'epic' ? '#9a4ac9' : item.quality === 'rare' ? '#4a7ec9' : item.quality === 'uncommon' ? '#4a9e4a' : '#9a9a9a' }}>
+                        <strong>{item.name}</strong>
+                        <small>{item.slot} · Lv {item.level} · {item.quality}{item.equipped ? ' · EQUIPPED' : ''}</small>
+                        {prov && <small style={{ display: 'block', fontStyle: 'italic' }}>{prov}</small>}
+                        <div className="found-item-stats">
+                          {Object.entries(item.stats).map(([k, v]) => (
+                            <span key={k}>{k}: {typeof v === 'number' && v < 1 && v > 0 ? Math.round(v * 100) + '%' : v}</span>
+                          ))}
+                        </div>
+                        <button className="item-action" onClick={() => onEquipmentChange((prev) => item.equipped ? unequipItem(prev, item.instanceId) : equipItem(prev, item.instanceId))} data-testid={'button-inventory-equip-' + item.instanceId}>
+                          {item.equipped ? 'Unequip' : 'Equip'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {itemCount === 0 && equipment.length === 0 && <div className="inventory-empty"><Backpack size={30} strokeWidth={1.5} /><strong>Menu is empty</strong></div>}
             </>
           ) : activeTab === 'equipment' ? (
             <div className="equipment-panel" role="tabpanel" aria-label="Equipment"><div className="inventory-count">Equipped gear changes your character · <span data-testid="inventory-weight">{sheetWeightText}</span></div><div className="paper-doll-wrap"><div className="paper-doll" role="img" aria-label={'Paper doll: ' + (equippedDagger ? 'dagger in hand' : 'no weapon') + ', ' + (equippedBow ? 'bow on back' : 'no bow')} data-testid="paper-doll"><span className="paper-doll-head" aria-hidden="true" /><span className="paper-doll-torso" aria-hidden="true" /><span className="paper-doll-arm arm-left" aria-hidden="true" /><span className="paper-doll-arm arm-right" aria-hidden="true" /><span className="paper-doll-leg leg-left" aria-hidden="true" /><span className="paper-doll-leg leg-right" aria-hidden="true" />{equippedBow && <span className="paper-doll-bow" aria-hidden="true">🏹</span>}{equippedDagger && <span className="paper-doll-dagger" aria-hidden="true">†</span>}</div><div className="paper-doll-slots"><div className={'equipment-slot ' + (equippedDagger ? 'is-equipped' : '')} data-testid="equipment-weapon-slot"><span className="equipment-slot-mark dagger-mark">†</span><span><small>Weapon slot</small><strong>{equippedDagger ? 'Goat-horn dagger' : 'Empty'}</strong></span>{(inventory.daggers > 0 || equippedDagger) && <button className="item-action" onClick={onToggleDagger} data-testid="button-equipment-dagger">{equippedDagger ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedBow ? 'is-equipped' : '')} data-testid="equipment-ranged-slot"><span className="equipment-slot-mark bow-mark">🏹</span><span><small>Ranged slot</small><strong>{equippedBow ? 'Hunting bow' : 'Empty'}</strong></span>{(inventory.bow > 0 || equippedBow) && <button className="item-action" onClick={onToggleBow} data-testid="button-equipment-bow">{equippedBow ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedShirt ? 'is-equipped' : '')} data-testid="equipment-shirt-slot"><span className="equipment-slot-mark shirt-mark">👕</span><span><small>Shirt slot</small><strong>{equippedShirt ? 'Blue shirt' : 'Empty'}</strong></span>{(inventory.shirts > 0 || equippedShirt) && <button className="item-action" onClick={onToggleShirt} data-testid="button-equipment-shirt">{equippedShirt ? 'Unequip' : 'Equip'}</button>}</div><div className={'equipment-slot ' + (equippedSword ? 'is-equipped' : '')} data-testid="equipment-sword-slot"><span className="equipment-slot-mark sword-mark">🗡</span><span><small>Blade slot</small><strong>{equippedSword ? 'Barbarian sword' : 'Empty'}</strong></span>{(inventory.swords > 0 || equippedSword) && <button className="item-action" onClick={onToggleSword} data-testid="button-equipment-sword">{equippedSword ? 'Unequip' : 'Equip'}</button>}</div>
