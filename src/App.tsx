@@ -5669,7 +5669,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   };
   // BUILD 406: ref mirror of the iso-field flag for the frame loop — its
   // useEffect deps don't include isoFieldBeta, so the loop reads the ref.
-  useEffect(() => { if (rpgConfig.forceIso && !isoFieldBeta) { setIsoFieldBeta(true); try { localStorage.setItem('ag-view-mode', '2.5d'); } catch { /* view state still updates */ } } }, [rpgConfig.forceIso, isoFieldBeta]);
+  useEffect(() => { if (rpgConfig.forceIso && !isoFieldBeta) setGameViewMode('2.5d'); }, [rpgConfig.forceIso, isoFieldBeta]);
   const isoFieldBetaRef = useRef(isoFieldBeta);
   useEffect(() => { isoFieldBetaRef.current = isoFieldBeta; }, [isoFieldBeta]);
   // BUILD 372: the main black zoom buttons drive the iso camera when the 2.5D
