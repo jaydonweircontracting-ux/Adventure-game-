@@ -107,7 +107,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       const current=stateRef.current,player=current.position;
       if(needsWorldRebuild.current){upload(worldBuffer,buildWorldVertices(world,player));needsWorldRebuild.current=false}
       gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-      const ex=player.x+Math.sin(yaw)*zoom,ez=player.y+Math.cos(yaw)*zoom,ey=player.y+zoom*.8;
+      const ex=player.x+Math.sin(yaw)*zoom,ez=player.y+Math.cos(yaw)*zoom,ey=zoom*.8+2;
       const mat=mul(perspective(Math.PI/3,w/h,.1,120),lookAt([ex,ey,ez],[player.x,0.8,player.y]));
       gl.uniformMatrix4fv(mLoc,false,new Float32Array(mat));
       gl.bindBuffer(gl.ARRAY_BUFFER,worldBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
