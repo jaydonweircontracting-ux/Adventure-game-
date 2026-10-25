@@ -54,12 +54,13 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
     gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(.48,.67,.82,1);
     let px=0,pz=0,yaw=.55,pitch=.72,zoom=11,drag=false,lx=0,ly=0,raf=0,disposed=false;
     const keys=new Set<string>();
-    const keydown=(e:KeyboardEvent)=>keys.add(e.key.toLowerCase()),keyup=(e:KeyboardEvent)=>keys.delete(e.key.toLowerCase());
+    const movementKeys=new Set(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright']);
+    const keydown=(e:KeyboardEvent)=>{const key=e.key.toLowerCase();if(movementKeys.has(key)){e.preventDefault();keys.add(key);}},keyup=(e:KeyboardEvent)=>keys.delete(e.key.toLowerCase());
     const down=(e:PointerEvent)=>{drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture?.(e.pointerId);};
     const move=(e:PointerEvent)=>{if(!drag)return;yaw-=(e.clientX-lx)*.006;pitch=Math.max(.18,Math.min(1.4,pitch+(e.clientY-ly)*.005));lx=e.clientX;ly=e.clientY;};
-    const up=()=>drag=false,wheel=(e:WheelEvent)=>zoom=Math.max(4,Math.min(22,zoom+e.deltaY*.012));
+    const up=()=>drag=false,wheel=(e:WheelEvent)=>{e.preventDefault();zoom=Math.max(4,Math.min(22,zoom+e.deltaY*.012));};
     window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);
-    canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);canvas.addEventListener('wheel',wheel,{passive:true});
+    canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);canvas.addEventListener('wheel',wheel,{passive:false});
     const perspective=(f:number,a:number,n:number,far:number)=>{const t=1/Math.tan(f/2),nf=1/(n-far);return [t/a,0,0,0,0,t,0,0,0,0,(far+n)*nf,-1,0,0,2*far*n*nf,0];};
     const view=(eye:number[],center:number[])=>{
       const norm=(v:number[])=>{const l=Math.hypot(...v)||1;return v.map(q=>q/l);};
@@ -99,8 +100,8 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
     raf=requestAnimationFrame(frame);
     return ()=>{disposed=true;cancelAnimationFrame(raf);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);gl.deleteBuffer(worldBuffer);gl.deleteBuffer(playerBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);};
   },[]);
-  return <div style={{position:'fixed',inset:0,zIndex:20000,background:'#18251d',color:'white',fontFamily:'system-ui,sans-serif'}}>
-    <canvas ref={canvasRef} aria-label="Adventure 3D test scene" style={{width:'100%',height:'100%',display:'block',touchAction:'none'}}/>
+  return <div style={{position:'fixed',inset:0,zIndex:20000,background:'#18251d',color:'white',fontFamily:'system-ui,sans-serif',overflow:'hidden',touchAction:'none',overscrollBehavior:'none',userSelect:'none',WebkitUserSelect:'none'}}>
+    <canvas ref={canvasRef} aria-label="Adventure 3D test scene" style={{width:'100%',height:'100%',display:'block',touchAction:'none',overscrollBehavior:'none',userSelect:'none',WebkitUserSelect:'none',WebkitTapHighlightColor:'transparent'}}/>
     <div style={{position:'absolute',top:12,left:12,right:12,display:'flex',alignItems:'center',gap:8,pointerEvents:'none'}}>
       <strong style={{background:'#101913dd',padding:'9px 12px',borderRadius:8}}>Adventure · 3D Experimental</strong><span style={{background:'#101913dd',padding:'9px 12px',borderRadius:8,fontSize:12}}>WebGL prototype</span><span style={{flex:1}}/>
       {onExit&&<button onClick={onExit} style={{pointerEvents:'auto',padding:'10px 14px',border:0,borderRadius:8,background:'#f1c75b',fontWeight:700}}>Exit 3D</button>}
