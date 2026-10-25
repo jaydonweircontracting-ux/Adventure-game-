@@ -20,14 +20,15 @@ export default function Engine3DTouchControls() {
       key={key}
       type="button"
       aria-label={label}
-      onPointerDown={(event) => { event.preventDefault(); press(key); }}
+      onPointerDown={(event) => { event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); press(key); }}
       onPointerUp={() => release(key)}
       onPointerCancel={() => release(key)}
       onPointerLeave={() => release(key)}
+      onContextMenu={(event) => event.preventDefault()}
       style={{
         gridColumn, gridRow, width: 52, height: 48, borderRadius: 10,
         border: '1px solid #c4d1bd', background: '#172c23e8', color: '#fff',
-        fontSize: 20, fontWeight: 800, touchAction: 'none', userSelect: 'none',
+        fontSize: 20, fontWeight: 800, touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', WebkitTapHighlightColor: 'transparent', outline: 'none',
       }}
     >{key === 'w' ? '▲' : key === 'a' ? '◀' : key === 's' ? '▼' : '▶'}</button>
   );
