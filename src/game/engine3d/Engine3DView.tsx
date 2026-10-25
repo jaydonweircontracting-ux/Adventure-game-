@@ -46,7 +46,7 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
     const world=new Float32Array(data);
     const buffer=gl.createBuffer()!;
     const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m');
-    gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.clearColor(.48,.67,.82,1);
+    gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(.48,.67,.82,1);
     let px=0,pz=0,yaw=.55,pitch=.72,zoom=11,drag=false,lx=0,ly=0,raf=0,disposed=false;
     const keys=new Set<string>();
     const keydown=(e:KeyboardEvent)=>keys.add(e.key.toLowerCase()),keyup=(e:KeyboardEvent)=>keys.delete(e.key.toLowerCase());
