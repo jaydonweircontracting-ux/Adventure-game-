@@ -69,9 +69,13 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
     const keys=new Set<string>();
     const movementKeys=new Set(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright']);
     const keydown=(e:KeyboardEvent)=>{const key=e.key.toLowerCase();if(movementKeys.has(key)){e.preventDefault();keys.add(key);}},keyup=(e:KeyboardEvent)=>keys.delete(e.key.toLowerCase());
-    const down=(e:PointerEvent)=>{drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture?.(e.pointerId);};
-    const move=(e:PointerEvent)=>{if(!drag)return;yaw-=(e.clientX-lx)*.006;pitch=Math.max(.18,Math.min(1.4,pitch+(e.clientY-ly)*.005));lx=e.clientX;ly=e.clientY;};
-    const up=()=>drag=false,wheel=(e:WheelEvent)=>{e.preventDefault();zoom=Math.max(4,Math.min(22,zoom+e.deltaY*.012));};
+    const down=(e:PointerEvent)=>{drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture?.(e.pointerId);e.preventDefault();};
+    const move=(e:PointerEvent)=>{if(!drag)return;e.preventDefault();yaw-=(e.clientX-lx)*.006;pitch=Math.max(.18,Math.min(1.4,pitch+(e.clientY-ly)*.005));lx=e.clientX;ly=e.clientY;};
+    const up=(e?:PointerEvent)=>{drag=false;if(e?.pointerId!==undefined&&canvas.hasPointerCapture?.(e.pointerId))canvas.releasePointerCapture(e.pointerId);};
+    // Explicit camera controls remain usable in embedded previews where touch gestures
+    // may be intercepted by the host container before reaching the canvas.
+    const cameraStep=(direction:'up'|'down'|'left'|'right')=>{if(direction==='up')pitch=Math.max(.18,pitch-.09);if(direction==='down')pitch=Math.min(1.4,pitch+.09);if(direction==='left')yaw-=.12;if(direction==='right')yaw+=.12;};
+    const wheel=(e:WheelEvent)=>{e.preventDefault();e.stopPropagation();zoom=Math.max(4,Math.min(22,zoom+e.deltaY*.012));};
     window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);
     canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);canvas.addEventListener('wheel',wheel,{passive:false});
     const perspective=(f:number,a:number,n:number,far:number)=>{const t=1/Math.tan(f/2),nf=1/(n-far);return [t/a,0,0,0,0,t,0,0,0,0,(far+n)*nf,-1,0,0,2*far*n*nf,0];};
@@ -118,6 +122,11 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
     <div style={{position:'absolute',top:12,left:12,right:12,display:'flex',alignItems:'center',gap:8,pointerEvents:'none'}}>
       <strong style={{background:'#101913dd',padding:'9px 12px',borderRadius:8}}>Adventure · 3D Experimental</strong><span style={{background:'#101913dd',padding:'9px 12px',borderRadius:8,fontSize:12}}>WebGL prototype</span><span style={{flex:1}}/>
       {onExit&&<button onClick={onExit} style={{pointerEvents:'auto',padding:'10px 14px',border:0,borderRadius:8,background:'#f1c75b',fontWeight:700}}>Exit 3D</button>}
+    </div>
+    <div style={{position:'absolute',right:12,bottom:76,display:'grid',gridTemplateColumns:'repeat(3,46px)',gridTemplateRows:'repeat(2,46px)',gap:6,pointerEvents:'auto',touchAction:'none',userSelect:'none',WebkitUserSelect:'none'}} onContextMenu={(e)=>e.preventDefault()}>
+      <span />
+      {(['up'] as const).map(dir=><button key={dir} aria-label="Camera look up" onPointerDown={e=>{e.preventDefault();e.stopPropagation();cameraStep(dir);}} style={{gridColumn:2,gridRow:1,width:46,height:46,border:0,borderRadius:10,background:'#101913dd',color:'white',fontSize:22,touchAction:'none',userSelect:'none',WebkitUserSelect:'none'}}>↑</button>)}
+      {(['left','down','right'] as const).map((dir,i)=><button key={dir} aria-label={'Camera look '+dir} onPointerDown={e=>{e.preventDefault();e.stopPropagation();cameraStep(dir);}} style={{gridColumn:i+1,gridRow:2,width:46,height:46,border:0,borderRadius:10,background:'#101913dd',color:'white',fontSize:22,touchAction:'none',userSelect:'none',WebkitUserSelect:'none'}}>{dir==='left'?'←':dir==='down'?'↓':'→'}</button>)}
     </div>
     <div style={{position:'absolute',bottom:12,left:12,maxWidth:340,padding:12,borderRadius:8,background:'#101913dd',fontSize:13,lineHeight:1.5}}>WASD / arrows: move · Drag: orbit camera · Scroll: zoom<br/><span style={{opacity:.8}}>Isolated renderer test scene. Existing 2D/2.5D are unchanged; gameplay systems are not connected yet.</span></div>
     {error&&<div role="alert" style={{position:'absolute',left:'8%',right:'8%',top:'30%',padding:18,background:'#301d1d',borderRadius:10}}>{error}</div>}
