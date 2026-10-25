@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import App from '../../App';
-import Engine3DView from './Engine3DView';
-import Engine3DTouchControls from './Engine3DTouchControls';
+import Engine3DWorldView from './Engine3DWorldView';
 import type { GraphicsMode } from './engine3d';
 
 const MODE_KEY = 'ag-graphics-mode-v1';
@@ -47,15 +46,14 @@ export default function GraphicsModeHost() {
 
   if (mode === '3d') {
     return <>
-      <Engine3DView onExit={() => choose('2.5d')} />
-      <Engine3DTouchControls />
+      <Engine3DWorldView onExit={() => choose('2.5d')} />
       <button
         type="button"
         onClick={() => setOptionsOpen(v => !v)}
         aria-label="Open graphics options"
-        style={{position:'fixed',right:12,bottom:'max(16px, env(safe-area-inset-bottom))',zIndex:30002,padding:'11px 14px',border:'1px solid #8c9b8d',borderRadius:10,background:'#172c23ee',color:'#fff',fontWeight:700}}
+        style={{position:'fixed',right:12,top:'max(12px, env(safe-area-inset-top))',zIndex:30002,padding:'11px 14px',border:'1px solid #8c9b8d',borderRadius:10,background:'#172c23ee',color:'#fff',fontWeight:700}}
       >Options</button>
-      {optionsOpen && <section role="dialog" aria-label="Graphics options" style={{position:'fixed',right:12,bottom:'max(64px, calc(env(safe-area-inset-bottom) + 56px))',zIndex:30003,width:230,padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',boxShadow:'0 6px 24px #0007',fontFamily:'system-ui,sans-serif',color:'#fff'}}>
+      {optionsOpen && <section role="dialog" aria-label="Graphics options" style={{position:'fixed',right:12,top:'max(58px, calc(env(safe-area-inset-top) + 50px))',zIndex:30003,width:230,padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',boxShadow:'0 6px 24px #0007',fontFamily:'system-ui,sans-serif',color:'#fff'}}>
         <strong style={{display:'block',marginBottom:10}}>Graphics Mode</strong>
         {(['2d','2.5d','3d'] as GraphicsMode[]).map(value =>
           <button key={value} type="button" onClick={() => choose(value)} aria-pressed={value === mode} style={{display:'block',width:'100%',textAlign:'left',marginTop:6,padding:10,borderRadius:8,border:'1px solid #8c9b8d',background:value===mode?'#526d42':'#22392d',color:'#fff',fontWeight:value===mode?700:500}}>
@@ -63,7 +61,7 @@ export default function GraphicsModeHost() {
             {value === mode ? ' ✓' : ''}
           </button>
         )}
-        <p style={{fontSize:11,lineHeight:1.4,opacity:.82,marginBottom:0}}>3D is a separate experimental renderer. Existing 2D/2.5D remains available.</p>
+        <p style={{fontSize:11,lineHeight:1.4,opacity:.82,marginBottom:0}}>3D now reads the data-driven tile world and uses collision-checked movement. Existing 2D/2.5D remains available.</p>
       </section>}
     </>;
   }
