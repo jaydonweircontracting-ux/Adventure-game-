@@ -45,8 +45,12 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
       cube(x,.7,z,.3,1.4,.3,[.36,.23,.12]);cube(x,1.7,z,1.15,1.25,1.15,[.12,.38,.16]);
     }
     const world=new Float32Array(data);
-    const buffer=gl.createBuffer()!;
+    // Keep immutable terrain in its own GPU buffer; only the player mesh changes each frame.
+    const worldBuffer=gl.createBuffer()!;
+    const playerBuffer=gl.createBuffer()!;
     const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m');
+    gl.bindBuffer(gl.ARRAY_BUFFER,worldBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER,world,gl.STATIC_DRAW);
     gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(.48,.67,.82,1);
     let px=0,pz=0,yaw=.55,pitch=.72,zoom=11,drag=false,lx=0,ly=0,raf=0,disposed=false;
     const keys=new Set<string>();
@@ -85,14 +89,15 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
       gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(program);
       const eye=[px+Math.sin(yaw)*Math.cos(pitch)*zoom,Math.sin(pitch)*zoom+2,pz+Math.cos(yaw)*Math.cos(pitch)*zoom];
       gl.uniformMatrix4fv(mLoc,false,new Float32Array(mul(perspective(Math.PI/3,w/h,.1,120),view(eye,[px,0,pz]))));
-      gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,world,gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER,worldBuffer);
       gl.enableVertexAttribArray(pLoc);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.enableVertexAttribArray(cLoc);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);gl.drawArrays(gl.TRIANGLES,0,world.length/6);
       data.length=0;cube(px,.75,pz,.55,1.5,.55,[.95,.72,.2]);
-      gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.DYNAMIC_DRAW);gl.drawArrays(gl.TRIANGLES,0,data.length/6);
+      gl.bindBuffer(gl.ARRAY_BUFFER,playerBuffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.DYNAMIC_DRAW);
+      gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);gl.drawArrays(gl.TRIANGLES,0,data.length/6);
       raf=requestAnimationFrame(frame);
     };
     raf=requestAnimationFrame(frame);
-    return ()=>{disposed=true;cancelAnimationFrame(raf);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);gl.deleteBuffer(buffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);};
+    return ()=>{disposed=true;cancelAnimationFrame(raf);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);gl.deleteBuffer(worldBuffer);gl.deleteBuffer(playerBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);};
   },[]);
   return <div style={{position:'fixed',inset:0,zIndex:20000,background:'#18251d',color:'white',fontFamily:'system-ui,sans-serif'}}>
     <canvas ref={canvasRef} aria-label="Adventure 3D test scene" style={{width:'100%',height:'100%',display:'block',touchAction:'none'}}/>
