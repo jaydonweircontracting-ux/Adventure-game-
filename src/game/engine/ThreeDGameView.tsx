@@ -106,7 +106,10 @@ export default function ThreeDGameView({ position, townsfolk = [], monsters = []
     gl.enableVertexAttribArray(posLoc); gl.vertexAttribPointer(posLoc,3,gl.FLOAT,false,stride,0);
     gl.enableVertexAttribArray(colorLoc); gl.vertexAttribPointer(colorLoc,3,gl.FLOAT,false,stride,3*Float32Array.BYTES_PER_ELEMENT);
     const matrixLoc = gl.getUniformLocation(program, 'uViewProjection');
-    gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+    gl.enable(gl.DEPTH_TEST);
+    // Ground and roof faces use two-sided quads in this low-poly blockout.
+    // Keep them visible from the follow camera instead of culling their winding.
+    gl.disable(gl.CULL_FACE);
 
     const perspective = (fovy: number, aspect: number, near: number, far: number) => {
       const f=1/Math.tan(fovy/2), nf=1/(near-far);
