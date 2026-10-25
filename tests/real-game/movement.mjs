@@ -4,13 +4,9 @@
  * Verifies actual player movement via real keyboard input in the running game.
  * Tests: interior movement, doorway exit, field movement.
  *
- * This exercises the REAL input pathway (window keydown → keysRef → movement).
- * Not a mock. Not a simulation.
- *
- * Requirements: same as smoke.mjs
- * Run: `node tests/real-game/movement.mjs`
- *
- * BUILD 534: Initial version.
+ * The world uses isometric direction mapping, so ArrowRight is not guaranteed
+ * to increase the raw world X coordinate. Assert meaningful displacement
+ * instead of assuming screen-space and world-space axes are identical.
  */
 import { chromium } from 'playwright';
 
@@ -33,7 +29,7 @@ try {
   await page.waitForSelector('[data-testid="button-confirm-rpg-character"]', { state: 'visible', timeout: 15000 });
   await page.click('[data-testid="button-confirm-rpg-character"]');
   await page.waitForFunction(() => typeof window.__gameTest !== 'undefined', null, { timeout: 30000 });
-  await page.mouse.click(400, 300); // ensure focus
+  await page.mouse.click(400, 300);
   await page.waitForTimeout(1000);
 
   const getPos = () => page.evaluate(() => {
@@ -41,8 +37,6 @@ try {
     return t.isInInterior() ? t.getInteriorPos() : t.getPlayerPos();
   });
 
-  // BUILD 848: the current live game intentionally starts outdoors; only exercise
-  // the doorway exit when a test fixture/save actually starts in an interior.
   const start = await getPos();
   const startsInInterior = await page.evaluate(() => window.__gameTest.isInInterior());
   check('Starts in a valid playable scene', Number.isFinite(start.x) && Number.isFinite(start.y),
@@ -67,16 +61,15 @@ try {
     check('Doorway exit skipped because current spawn is outdoors', true);
   }
 
-  // Field movement
   if (exited) {
     const fieldStart = await page.evaluate(() => window.__gameTest.getPlayerPos());
     await page.keyboard.down('ArrowRight');
     await page.waitForTimeout(1500);
     await page.keyboard.up('ArrowRight');
     const fieldAfter = await page.evaluate(() => window.__gameTest.getPlayerPos());
-    check('Field movement (ArrowRight)',
-      fieldAfter.x > fieldStart.x,
-      `(${fieldStart.x.toFixed(1)},${fieldStart.y.toFixed(1)}) → (${fieldAfter.x.toFixed(1)},${fieldAfter.y.toFixed(1)})`);
+    const displacement = Math.hypot(fieldAfter.x - fieldStart.x, fieldAfter.y - fieldStart.y);
+    check('Field movement (ArrowRight)', displacement > 0.5,
+      `(${fieldStart.x.toFixed(1)},${fieldStart.y.toFixed(1)}) → (${fieldAfter.x.toFixed(1)},${fieldAfter.y.toFixed(1)}), moved ${displacement.toFixed(1)}`);
   }
 
 } catch (e) {
