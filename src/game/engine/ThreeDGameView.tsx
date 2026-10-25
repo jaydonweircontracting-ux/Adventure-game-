@@ -135,6 +135,9 @@ export default function ThreeDGameView({ position, townsfolk = [], monsters = []
       // Third-person follow camera, recalculated from the live simulation position.
       const view=lookAt([px+36,34,pz+42],[px,2,pz],[0,1,0]);
       gl.uniformMatrix4fv(matrixLoc,false,new Float32Array(multiply(perspective(Math.PI/3, w/h, 0.1, 500),view)));
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.vertexAttribPointer(posLoc,3,gl.FLOAT,false,stride,0);
+      gl.vertexAttribPointer(colorLoc,3,gl.FLOAT,false,stride,3*Float32Array.BYTES_PER_ELEMENT);
       gl.drawArrays(gl.TRIANGLES,0,vertices.length/6);
       const actors:number[]=[];
       const actorBox=(x:number,z:number,color:number[])=>{
