@@ -7,6 +7,19 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // iOS Safari can still scroll the document behind a fixed canvas unless the page
+    // itself is locked while this full-screen mode is mounted.
+    const html = document.documentElement;
+    const body = document.body;
+    const previousHtml = { overflow: html.style.overflow, touchAction: html.style.touchAction, overscrollBehavior: html.style.overscrollBehavior };
+    const previousBody = { overflow: body.style.overflow, touchAction: body.style.touchAction, overscrollBehavior: body.style.overscrollBehavior, position: body.style.position, width: body.style.width };
+    html.style.overflow = 'hidden'; html.style.touchAction = 'none'; html.style.overscrollBehavior = 'none';
+    body.style.overflow = 'hidden'; body.style.touchAction = 'none'; body.style.overscrollBehavior = 'none'; body.style.position = 'fixed'; body.style.width = '100%';
+    const stopPageTouch = (e: TouchEvent) => { if (e.cancelable) e.preventDefault(); };
+    const stopGesture = (e: Event) => e.preventDefault();
+    window.addEventListener('touchmove', stopPageTouch, { passive: false });
+    window.addEventListener('gesturestart', stopGesture, { passive: false });
+    window.addEventListener('gesturechange', stopGesture, { passive: false });
     const gl = canvas.getContext('webgl', { antialias: true });
     if (!gl) { setError('WebGL is unavailable on this device.'); return; }
     const vs = gl.createShader(gl.VERTEX_SHADER)!;
@@ -98,7 +111,7 @@ export default function Engine3DView({ onExit }: { onExit?: () => void }) {
       raf=requestAnimationFrame(frame);
     };
     raf=requestAnimationFrame(frame);
-    return ()=>{disposed=true;cancelAnimationFrame(raf);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);gl.deleteBuffer(worldBuffer);gl.deleteBuffer(playerBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);};
+    return ()=>{disposed=true;cancelAnimationFrame(raf);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('touchmove',stopPageTouch);window.removeEventListener('gesturestart',stopGesture);window.removeEventListener('gesturechange',stopGesture);html.style.overflow=previousHtml.overflow;html.style.touchAction=previousHtml.touchAction;html.style.overscrollBehavior=previousHtml.overscrollBehavior;body.style.overflow=previousBody.overflow;body.style.touchAction=previousBody.touchAction;body.style.overscrollBehavior=previousBody.overscrollBehavior;body.style.position=previousBody.position;body.style.width=previousBody.width;canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);gl.deleteBuffer(worldBuffer);gl.deleteBuffer(playerBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);};
   },[]);
   return <div style={{position:'fixed',inset:0,zIndex:20000,background:'#18251d',color:'white',fontFamily:'system-ui,sans-serif',overflow:'hidden',touchAction:'none',overscrollBehavior:'none',userSelect:'none',WebkitUserSelect:'none'}}>
     <canvas ref={canvasRef} aria-label="Adventure 3D test scene" style={{width:'100%',height:'100%',display:'block',touchAction:'none',overscrollBehavior:'none',userSelect:'none',WebkitUserSelect:'none',WebkitTapHighlightColor:'transparent'}}/>
