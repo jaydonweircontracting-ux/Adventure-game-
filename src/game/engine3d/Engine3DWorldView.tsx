@@ -4,6 +4,8 @@ import { isWalkableWorld, loadWorld, terrainAt, type IsoWorld } from '../iso/iso
 type Vec3 = [number, number, number];
 type Vertex = number[];
 const SAVE_KEY = 'ag-3d-player-v1';
+const NPC_SAVE_KEY = 'ag-3d-npcs-v1';
+type NpcActor3D = { name: string; x: number; y: number; waypoint: number };
 const COLORS: Record<string, Vec3> = {
   grass: [0.25, 0.43, 0.23], dirt: [0.47, 0.36, 0.23], sand: [0.68, 0.59, 0.39],
   stone: [0.48, 0.49, 0.46], water: [0.12, 0.36, 0.57],
@@ -19,6 +21,22 @@ function savedPosition(world: IsoWorld): Position {
     }
   } catch { /* use the world's authored spawn */ }
   return { x: world.playerStart.tx, y: world.playerStart.ty };
+}
+
+function savedNpcActors(world: IsoWorld): NpcActor3D[] {
+  try {
+    const raw = localStorage.getItem(NPC_SAVE_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw) as NpcActor3D[];
+      if (Array.isArray(saved)) return world.npcSpawns.map((npc, i) => {
+        const actor = saved.find(a => a.name === npc.name) || saved[i];
+        return actor && Number.isFinite(actor.x) && Number.isFinite(actor.y)
+          ? { name: npc.name, x: actor.x, y: actor.y, waypoint: Number.isFinite(actor.waypoint) ? actor.waypoint : 0 }
+          : { name: npc.name, x: npc.x, y: npc.y, waypoint: 0 };
+      });
+    }
+  } catch { /* use authored NPC spawn positions */ }
+  return world.npcSpawns.map(npc => ({ name: npc.name, x: npc.x, y: npc.y, waypoint: 0 }));
 }
 
 function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
@@ -67,10 +85,12 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
   const [position,setPosition]=useState<Position>(()=>savedPosition(loadWorld()));
   const stateRef=useRef({position,world:loadWorld()});
   const needsWorldRebuild=useRef(true);
+  const npcActorsRef=useRef<NpcActor3D[]>([]);
   stateRef.current={position,world:stateRef.current.world};
   useEffect(()=>{
     const canvas=canvasRef.current;if(!canvas)return;
     const world=loadWorld();stateRef.current.world=world;
+    npcActorsRef.current=savedNpcActors(world);
     const html=document.documentElement,body=document.body;
     const oldHtml={overflow:html.style.overflow,touchAction:html.style.touchAction,overscrollBehavior:html.style.overscrollBehavior};
     const oldBody={overflow:body.style.overflow,touchAction:body.style.touchAction,overscrollBehavior:body.style.overscrollBehavior,position:body.style.position,width:body.style.width};
@@ -114,23 +134,39 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       gl.drawArrays(gl.TRIANGLES,0,gl.getBufferParameter(gl.ARRAY_BUFFER,gl.BUFFER_SIZE)/24);
       const actors:Vertex=[];
       const cube=(x:number,z:number,color:Vec3,h=1.25)=>{const x0=x-.22,x1=x+.22,z0=z-.22,z1=z+.22,y0=0,y1=h;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};const q=(a:Vec3,b:Vec3,c:Vec3,d:Vec3)=>{tri(a,b,c);tri(a,c,d)};q([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]);q([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]);q([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0]);q([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1]);q([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0])};
-      for(const npc of world.npcSpawns) if(Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)cube(npc.x+.5,npc.y+.5,[.22,.55,.86],1.3);
+      for(const npc of npcActorsRef.current) if(Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)cube(npc.x+.5,npc.y+.5,[.22,.55,.86],1.3);
       cube(player.x+.5,player.y+.5,[.96,.77,.22],1.55);
       upload(actorBuffer,new Float32Array(actors));gl.drawArrays(gl.TRIANGLES,0,actors.length/6);
       raf=requestAnimationFrame(draw);
     };
-    const tryMove=(dx:number,dy:number)=>{const nextX=Math.round(stateRef.current.position.x+dx),nextY=Math.round(stateRef.current.position.y+dy);if(isWalkableWorld(world,world.crates,nextX,nextY)){const next={x:nextX,y:nextY};stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true}};
-    const action=(e:KeyboardEvent)=>{if(e.type!=='keydown')return;const k=e.key.toLowerCase();if(k==='e'){const p=stateRef.current.position;const near=world.npcSpawns.find(n=>Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1);setMessage(near?'Nearby resident: '+near.name:'No one close enough to interact');return}const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])};
+    const tryMove=(dx:number,dy:number)=>{const nextX=Math.round(stateRef.current.position.x+dx),nextY=Math.round(stateRef.current.position.y+dy);const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===nextX&&Math.round(n.y)===nextY);if(!occupied&&isWalkableWorld(world,world.crates,nextX,nextY)){const next={x:nextX,y:nextY};stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true}};
+    const action=(e:KeyboardEvent)=>{if(e.type!=='keydown')return;const k=e.key.toLowerCase();if(k==='e'){const p=stateRef.current.position;const near=npcActorsRef.current.find(n=>Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1);setMessage(near?'You speak with '+near.name+'. They are going about their day.':'No one close enough to interact');return}const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])};
     window.addEventListener('keydown',action);
     draw();
+    const npcTimer=window.setInterval(()=>{
+      const actors=npcActorsRef.current;
+      actors.forEach((actor,i)=>{
+        const authored=world.npcSpawns.find(n=>n.name===actor.name);
+        if(!authored?.waypoints.length)return;
+        const target=authored.waypoints[((actor.waypoint%authored.waypoints.length)+authored.waypoints.length)%authored.waypoints.length];
+        const dx=target.tx-actor.x,dy=target.ty-actor.y;
+        if(Math.abs(dx)<0.05&&Math.abs(dy)<0.05){actor.waypoint=(actor.waypoint+1)%authored.waypoints.length;return;}
+        const sx=Math.abs(dx)>=Math.abs(dy)?Math.sign(dx):0,sy=sx===0?Math.sign(dy):0;
+        const nx=Math.round(actor.x+sx),ny=Math.round(actor.y+sy);
+        const player=stateRef.current.position;
+        const occupied=(Math.round(player.x)===nx&&Math.round(player.y)===ny)||actors.some((other,j)=>j!==i&&Math.round(other.x)===nx&&Math.round(other.y)===ny);
+        if(!occupied&&isWalkableWorld(world,world.crates,nx,ny)){actor.x=nx;actor.y=ny;if(nx===target.tx&&ny===target.ty)actor.waypoint=(actor.waypoint+1)%authored.waypoints.length;}
+      });
+      try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}
+    },900);
     const timer=window.setInterval(()=>{if(keys.size){const k=[...keys].at(-1)!;const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])}},130);
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(timer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(timer);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
-  const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const next={x:Math.round(position.x+dx),y:Math.round(position.y+dy)};if(isWalkableWorld(world,world.crates,next.x,next.y)){stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true }};
+  const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const next={x:Math.round(position.x+dx),y:Math.round(position.y+dy)};const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===next.x&&Math.round(n.y)===next.y);if(!occupied&&isWalkableWorld(world,world.crates,next.x,next.y)){stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true }};
   const pad=(dx:number,dy:number,label:string)=> <button key={label} type="button" aria-label={label} onPointerDown={e=>{e.preventDefault();move(dx,dy)}} style={{width:48,height:44,borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23e8',color:'#fff',fontSize:19,fontWeight:800,touchAction:'none'}}>{label==='Forward'?'▲':label==='Back'?'▼':label==='Left'?'◀':'▶'}</button>;
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>
     <canvas ref={canvasRef} aria-label="3D Adventure world" style={{width:'100%',height:'100%',display:'block',touchAction:'none'}}/>
-    <div style={{position:'absolute',left:10,top:10,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#f2f7f2',font:'700 11px/1.4 system-ui',pointerEvents:'none'}}>ADVENTURE 3D · WORLD LINKED <span style={{opacity:.8,fontWeight:400}}>Tile terrain · collision · saved position</span></div>
+    <div style={{position:'absolute',left:10,top:10,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#f2f7f2',font:'700 11px/1.4 system-ui',pointerEvents:'none'}}>ADVENTURE 3D · WORLD SIMULATION <span style={{opacity:.8,fontWeight:400}}>Editable terrain · collision · walking NPC schedules · saved progress</span></div>
     <div style={{position:'absolute',left:10,bottom:14,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>{message} · {Math.round(position.x)},{Math.round(position.y)}</div>
     <div style={{position:'absolute',right:12,bottom:12,display:'grid',gridTemplateColumns:'48px 48px 48px',gridTemplateRows:'44px 44px 44px',gap:4,touchAction:'none'}}>
       <div/><div>{pad(0,-1,'Forward')}</div><div/>
