@@ -26,6 +26,10 @@ export default function GraphicsModeHost() {
     try { localStorage.setItem(MODE_KEY, next); } catch {}
     if (next === '3d') { setMode('3d'); setMenuOpen(false); return; }
     try { localStorage.setItem('ag-view-mode', next === '2.5d' ? '2.5d' : '2d'); } catch {}
+    // Remove a direct-test query before reloading so it cannot force 3D again.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('mode');
+    window.history.replaceState({}, '', url.toString());
     // Legacy renderer reads its mode during boot; reload it cleanly.
     window.location.reload();
   };
