@@ -197,13 +197,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '980';
+const BUILD_NUMBER = '981';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '981': 'Add a selectable independent 3D WebGL mode in Debug and Options, keep it separate from 2D/2.5D rendering, map player and NPC coordinates correctly, and prevent the 2.5D preference from overriding 3D mode.',
   '922': 'Villagers now care about their gear: they want better weapons, save toward a gold goal, and buy upgrades at market stalls when they can afford them — a guard with a rusty sword will come home with a steel blade. They also sell spare gear back to stalls, but never at a cost to themselves: never their only weapon, never their last piece of armor, never the tool their job needs, and never a sale that leaves them worse equipped. Examine a villager to see what they want and what they are saving for, and watch for the ones doing well enough to enjoy the tavern life',
   '923': 'Villagers now have a sense of character: most folk will never start a lethal fight with another villager — only a rare unsettled few ever would. Guards, priests, and children never start one at all. Self-defense, guard duty, and creature fights are unchanged. Examine a villager to see what kind of character they are',
   '926': 'Bounty is now witness-driven and per-town: killing someone with no surviving witness leaves no bounty at all, and when a witness does report you to a guard, the bounty is posted in that guard’s town only — guards in other towns will not come after you for it. A witness who dies before reaching a guard cannot report you, and a guard who sees the crime himself reports it on the spot. Also fixed: starting a New Game after the defeat screen no longer carries your old life with it — bounty, gear, quests, journal, reputation and explored map all reset exactly like a fresh start, instead of only resetting on a page refresh',
@@ -5669,7 +5670,7 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   };
   // BUILD 406: ref mirror of the iso-field flag for the frame loop — its
   // useEffect deps don't include isoFieldBeta, so the loop reads the ref.
-  useEffect(() => { if (rpgConfig.forceIso && !isoFieldBeta) setGameViewMode('2.5d'); }, [rpgConfig.forceIso, isoFieldBeta]);
+  useEffect(() => { if (rpgConfig.forceIso && !isoFieldBeta && !threeDMode) setGameViewMode('2.5d'); }, [rpgConfig.forceIso, isoFieldBeta, threeDMode]);
   const isoFieldBetaRef = useRef(isoFieldBeta);
   useEffect(() => { isoFieldBetaRef.current = isoFieldBeta; }, [isoFieldBeta]);
   // BUILD 372: the main black zoom buttons drive the iso camera when the 2.5D
@@ -14418,10 +14419,10 @@ if (active) {
           {/* BUILD 3D-ENGINE-001: independent WebGL renderer. The simulation still
               runs in App; this canvas replaces the visible 2D/2.5D world while selected. */}
           {threeDMode && <ThreeDGameView
-            position={position}
-            townsfolk={townsfolk.filter((npc) => !npc.indoors && npc.hp !== 0).map((npc) => ({ id: npc.id, position: npc.position }))}
-            monsters={monsters.filter((monster) => monster.hp > 0).map((monster) => ({ id: monster.id, position: monster.position }))}
-            onTapMove={(point) => { tapMoveTargetRef.current = point; tapMovePathRef.current = null; }}
+            position={{ x: Math.max(0, Math.min(100, (position.x / FIELD_SIZE) * 100)), y: Math.max(0, Math.min(100, (position.y / FIELD_SIZE) * 100)) }}
+            townsfolk={townsfolk.filter((npc) => !npc.indoors && npc.hp !== 0).map((npc) => ({ id: npc.id, position: { x: Math.max(0, Math.min(100, (npc.position.x / FIELD_SIZE) * 100)), y: Math.max(0, Math.min(100, (npc.position.y / FIELD_SIZE) * 100)) } }))}
+            monsters={monsters.filter((monster) => monster.hp > 0).map((monster) => ({ id: monster.id, position: { x: Math.max(0, Math.min(100, (monster.position.x / FIELD_SIZE) * 100)), y: Math.max(0, Math.min(100, (monster.position.y / FIELD_SIZE) * 100)) } }))}
+            onTapMove={(point) => { tapMoveTargetRef.current = { x: point.x * FIELD_SIZE / 100, y: point.y * FIELD_SIZE / 100 }; tapMovePathRef.current = null; }}
           />}
           {/* BUILD 422: debug direction test — red numbered arrows, one per
               movement direction. Tapping an arrow shows that direction's sprite
@@ -14536,7 +14537,7 @@ if (active) {
                       </div>
                       );
                     })()}
-<div className="field-world-layer" style={isoFieldBeta ? { display: 'none' } : (gameZoom !== 1 ? (() => {
+<div className="field-world-layer" style={(isoFieldBeta || threeDMode) ? { display: 'none' } : (gameZoom !== 1 ? (() => {
             // BUILD 327: zoom centers the player in the viewport — the layer
             // is scaled around the top-left, then translated so the player's
             // field position lands at 50%/50% of the frame.
@@ -15876,7 +15877,7 @@ if (active) {
             return <button className="dungeon-descend-button" style={{ left: fieldPct((entrance.x + 16)), top: fieldPct(entrance.y) }} onClick={onEnterDungeon} aria-label={'Descend into ' + site.name} data-testid="button-enter-field-dungeon">Descend</button>;
           })()}
           </div>
-          {!mounted && !isoFieldBeta && <div ref={playerElementRef} className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
+          {!mounted && !isoFieldBeta && !threeDMode && <div ref={playerElementRef} className={'player ' + (!mounted && moving ? 'is-moving ' : '') + (attacking ? 'is-attacking' : '')}
              data-state={attacking ? 'attack' : moving ? 'run' : 'idle'} style={{ left: gameZoom !== 1 ? playerScreenPct(position.x / FIELD_SIZE, gameZoom) + '%' : fieldPct(position.x), top: gameZoom !== 1 ? playerScreenPct(position.y / FIELD_SIZE, gameZoom) + '%' : fieldPct(position.y), '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, ...(gameZoom !== 1 ? { transform: `translate(-50%, -50%) scale(${gameZoom})` } : {}), ...(sneaking ? { opacity: SNEAK_PLAYER_OPACITY } : {}) } as CSSProperties} data-facing={playerRenderFacing} data-testid="player-character">
             <span className="player-sprite" />
             {attacking && <span key={attackSequence} className="player-attack-sprite" aria-hidden="true" style={{ '--attack-y': `${-attackDirectionRow[playerRenderFacing] * 48}px`, backgroundImage: `url("${assetUrl('assets/gameplay/shining-fields/characters/player/attack.png')}")` } as CSSProperties} />}
@@ -15985,6 +15986,10 @@ if (active) {
                 <button className="options-action" onClick={() => { setOptionsOpen(false); setDebugHubOpen(true); }} data-testid="button-debug-control-center">
                   <span className="options-action-icon"><Settings size={17} /></span>
                   <span><strong>🧰 Debug Control Center</strong><small>Search tools, inspect live counts, validate world data, export diagnostics</small></span>
+                </button>
+                <button className="options-action" onClick={() => { setOptionsOpen(false); setGameViewMode(threeDMode ? '2.5d' : '3d'); }} data-testid="button-debug-3d-mode" aria-pressed={threeDMode}>
+                  <span className="options-action-icon">🌐</span>
+                  <span><strong>Debug: 3D Mode{threeDMode ? ' (On)' : ''}</strong><small>{threeDMode ? 'Return to the 2.5D world' : 'Switch to the independent WebGL 3D engine'}</small></span>
                 </button>
                 <button className="options-action" onClick={() => { setOptionsOpen(false); toggleMapBuilder(); }} data-testid="button-debug-world-editor">
                   <span className="options-action-icon"><Settings size={17} /></span>
