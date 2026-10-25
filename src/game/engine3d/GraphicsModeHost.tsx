@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import App from '../../App';
 import Engine3DView from './Engine3DView';
+import Engine3DTouchControls from './Engine3DTouchControls';
 import type { GraphicsMode } from './engine3d';
 
 const MODE_KEY = 'ag-graphics-mode-v1';
@@ -34,7 +35,10 @@ export default function GraphicsModeHost() {
     window.location.reload();
   };
 
-  if (mode === '3d') return <Engine3DView onExit={() => choose('2.5d')} />;
+  if (mode === '3d') return <>
+    <Engine3DView onExit={() => choose('2.5d')} />
+    <Engine3DTouchControls />
+  </>;
 
   return <>
     <App />
@@ -43,7 +47,7 @@ export default function GraphicsModeHost() {
       {menuOpen && <div role="dialog" aria-label="Graphics mode setting" style={{marginTop:6,width:220,padding:12,borderRadius:10,background:'#172c23f5',border:'1px solid #8c9b8d',boxShadow:'0 6px 24px #0007'}}>
         <strong style={{display:'block',marginBottom:9}}>Graphics Mode</strong>
         {(['2d','2.5d','3d'] as GraphicsMode[]).map(value=><button key={value} type="button" onClick={()=>choose(value)} style={{display:'block',width:'100%',textAlign:'left',marginTop:6,padding:10,borderRadius:7,border:'1px solid #8c9b8d',background:value===mode?'#425b3d':'#22392d',color:'#fff'}}>{value==='2.5d'?'2.5D Isometric':value==='3d'?'3D Experimental':'2D'}</button>)}
-        <p style={{fontSize:11,lineHeight:1.4,opacity:.8,marginBottom:0}}>3D opens the separate WebGL test scene. Legacy modes reload using their existing renderer.</p>
+        <p style={{fontSize:11,lineHeight:1.4,opacity:.8,marginBottom:0}}>3D opens the separate WebGL prototype. Touch controls are enabled for phones; legacy modes reload using their existing renderer.</p>
       </div>}
     </div>}
   </>;
