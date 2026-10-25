@@ -5,6 +5,7 @@ import DevConsole from './game/dev/DevConsole';
 import IsoRoomDemo from './game/iso/IsoRoom';
 import RpgPreview from './game/iso/RpgPreview';
 import IsoFieldView from './game/iso/IsoFieldView';
+import ThreeDGameView from './game/engine/ThreeDGameView';
 import { normalizeAngleDeg, sanitizeIsoRotation, CAMERA_TAP_STEP_DEG, CAMERA_TAP_TWEEN_MS, CAMERA_HOLD_THRESHOLD_MS, CAMERA_SPIN_DEG_PER_SEC, tapTweenAngle, tapStepOnRelease } from './game/iso/rotation';
 import { animalSpriteFor, ANIMAL_2D_SPECIES } from './game/animalSprites';
 import { RODWAN_SLICES, rodwanTreeIndexFor, RODWAN_LEAFY_SPRITES } from './game/rodwanTrees';
@@ -5652,10 +5653,19 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
       return stored === null ? true : stored === '2.5d';
     } catch { return true; }
   });
+  // BUILD 3D-ENGINE-001: third rendering mode is independent of the 2D DOM and
+  // 2.5D isometric canvas. The existing game simulation/state remains authoritative.
+  const [threeDMode, setThreeDMode] = useState(() => {
+    try { return localStorage.getItem('ag-view-mode') === '3d'; } catch { return false; }
+  });
+  const setGameViewMode = (mode: '2d' | '2.5d' | '3d') => {
+    setIsoFieldBeta(mode === '2.5d');
+    setThreeDMode(mode === '3d');
+    try { localStorage.setItem('ag-view-mode', mode); } catch { /* view still changes this session */ }
+  };
   const toggleIsoFieldBeta = () => {
     const next = !isoFieldBeta;
-    setIsoFieldBeta(next);
-    try { localStorage.setItem('ag-view-mode', next ? '2.5d' : '2d'); } catch { /* ignore */ }
+    setGameViewMode(next ? '2.5d' : '2d');
   };
   // BUILD 406: ref mirror of the iso-field flag for the frame loop — its
   // useEffect deps don't include isoFieldBeta, so the loop reads the ref.
@@ -13837,6 +13847,13 @@ if (active) {
                 </div>
               </div>
               <div style={{ overflowY: 'auto', padding: 8, minHeight: 0, flex: 1 }}>
+                <strong>Engine Modes</strong>
+                <p style={{ margin: '4px 0 7px', color: '#bdc9c0', fontSize: 11 }}>Switch renderers without replacing the shared world simulation. Your selection is saved on this device.</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
+                  <button type="button" className="editor-btn" aria-pressed={!isoFieldBeta && !threeDMode} onClick={() => setGameViewMode('2d')} style={{ minHeight: 42, border: !isoFieldBeta && !threeDMode ? '2px solid #f0c46b' : undefined, whiteSpace: 'normal' }}>2D Mode</button>
+                  <button type="button" className="editor-btn" aria-pressed={isoFieldBeta && !threeDMode} onClick={() => setGameViewMode('2.5d')} style={{ minHeight: 42, border: isoFieldBeta && !threeDMode ? '2px solid #f0c46b' : undefined, whiteSpace: 'normal' }}>2.5D Mode</button>
+                  <button type="button" className="editor-btn" aria-pressed={threeDMode} onClick={() => setGameViewMode('3d')} style={{ minHeight: 42, border: threeDMode ? '2px solid #f0c46b' : undefined, whiteSpace: 'normal' }}>🌐 3D Mode</button>
+                </div>
                 <strong>World Studio</strong>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6, margin: '6px 0 12px' }}>
                   {([{ name: 'Muse Dev Console', keywords: 'ai chat code assistant github commit update engine development', action: () => { setDevConsoleOpen(true); setDevConsoleMinimized(false); setDebugHubOpen(false); } }, { name: 'World Object Coordinates', keywords: 'placed objects select move coordinate x y chunk house tree rock road', action: () => { setWorldObjectCoordinatesOpen(true); setWorldObjectCoordinatesMinimized(false); setDebugHubOpen(false); } }, { name: 'Chunk Zone Selector', keywords: 'chunk zones map coordinates outline red select inspect', action: () => { setChunkSelectorPoint(chunk); setChunkSelectorOpen(true); setChunkSelectorMinimized(false); setDebugHubOpen(false); } }, { name: 'World Editor', keywords: 'world map terrain object place', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }, { name: 'Little World Generator', keywords: 'procedural world generator tectonic plates erosion rivers climate temperature biomes forests overlay save load map', action: () => { setLittleWorldGeneratorOpen(true); setDebugHubOpen(false); } }, { name: 'Tile Paint', keywords: 'tile ground grass pathway paint', action: () => { setDebugHubOpen(false); if (!tileEditMode) toggleTileEditMode(); else { setMapBuilderMode(true); setMapBuilderMin(false); } } }, { name: 'Asset Studio', keywords: 'asset sprite upload crop rotate flip', action: () => { setDebugHubOpen(false); setAssetStudioOpen(true); setAssetStudioMinimized(false); } }, { name: 'Building Mover', keywords: 'building house resize move', action: () => { setDebugHubOpen(false); if (!moverMode) toggleMoverMode(); } }, { name: 'Collision Overlay', keywords: 'collision hitbox bounds', action: () => { setCollisionDebugMode((v) => !v); setDebugHubOpen(false); } }, { name: 'Chunk Templates', keywords: 'chunk save template load', action: () => { setDebugHubOpen(false); setMapBuilderMode(true); setMapBuilderMin(false); } }] as const).filter((t) => (t.name + ' ' + t.keywords).toLowerCase().includes(debugHubSearch.toLowerCase())).map((tool) => <button key={tool.name} type="button" className="editor-btn" onClick={tool.action} style={{ minHeight: 42, whiteSpace: 'normal' }}>{tool.name}</button>)}
@@ -14398,6 +14415,14 @@ if (active) {
               debugFacing={dirTestMode ? (dirTestFacing?.face ?? null) : null}
               playerRunning={playerRunningUi} />
           )}
+          {/* BUILD 3D-ENGINE-001: independent WebGL renderer. The simulation still
+              runs in App; this canvas replaces the visible 2D/2.5D world while selected. */}
+          {threeDMode && <ThreeDGameView
+            position={position}
+            townsfolk={townsfolk.filter((npc) => !npc.indoors && npc.hp !== 0).map((npc) => ({ id: npc.id, position: npc.position }))}
+            monsters={monsters.filter((monster) => monster.hp > 0).map((monster) => ({ id: monster.id, position: monster.position }))}
+            onTapMove={(point) => { tapMoveTargetRef.current = point; tapMovePathRef.current = null; }}
+          />}
           {/* BUILD 422: debug direction test — red numbered arrows, one per
               movement direction. Tapping an arrow shows that direction's sprite
               sheet on the player with the walk cycle playing. */}
