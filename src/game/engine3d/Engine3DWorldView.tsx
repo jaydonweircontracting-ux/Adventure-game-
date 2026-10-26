@@ -230,6 +230,8 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     gl.useProgram(program);
     const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!;
     const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m');
+    if(pLoc<0||cLoc<0||!mLoc){setMessage('3D renderer missing required shader attributes');return;}
+    gl.enableVertexAttribArray(pLoc);gl.enableVertexAttribArray(cLoc);
     gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(.45,.63,.76,1);
     let yaw=.65,pitch=.7,zoom=12,drag=false,lx=0,ly=0,raf=0;
     const keys=new Set<string>();
