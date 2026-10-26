@@ -185,11 +185,42 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
   // Walls and stall counters use the editor-authored collision geometry.
   for(const wall of world.walls) if(wall.x>=minX&&wall.x<=maxX&&wall.y>=minY&&wall.y<=maxY) cube(wall.x+.5,wall.y+.5,1,.85,1,[.43,.39,.32]);
   for(const stall of world.stalls) if(stall.y0>=minY&&stall.y0<=maxY) for(let x=stall.x0;x<=stall.x1;x++) if(x>=minX&&x<=maxX) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16]);
+  // Render proper low-poly medieval cottages instead of the old plain boxes.
+  // The uploaded pack is FBX-only; these web-native meshes keep the 3D mode
+  // playable now while the source models are staged for GLB/glTF conversion.
+  const houseWallColors: Vec3[] = [[.62,.47,.32],[.68,.57,.41],[.52,.43,.34],[.72,.62,.46],[.55,.48,.38]];
+  const roofColors: Vec3[] = [[.34,.14,.11],[.43,.22,.14],[.28,.25,.22],[.39,.18,.13],[.31,.20,.16]];
+  const houseBox=(x:number,z:number,w:number,h:number,d:number,y0:number,color:Vec3)=>{
+    const x0=x-w/2,x1=x+w/2,z0=z-d/2,z1=z+d/2,y1=y0+h;
+    quad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],color);
+    quad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],color.map(v=>v*.78) as Vec3);
+    quad([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],color.map(v=>v*.88) as Vec3);
+    quad([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],color.map(v=>v*.72) as Vec3);
+  };
+  let houseIndex=0;
   for(const hut of world.huts) {
     if(hut.x1<minX||hut.x0>maxX||hut.y1<minY||hut.y0>maxY) continue;
-    const x=(hut.x0+hut.x1+1)/2,z=(hut.y0+hut.y1+1)/2,w=hut.x1-hut.x0+1,d=hut.y1-hut.y0+1;
-    cube(x,z,w,2.4,d,[.61,.43,.28]);
-    cube(x, z, w+0.25, .7, d+0.25,[.36,.18,.14]);
+    const x=(hut.x0+hut.x1+1)/2,z=(hut.y0+hut.y1+1)/2,w=Math.max(2,hut.x1-hut.x0+1),d=Math.max(2,hut.y1-hut.y0+1);
+    const wallH=Math.min(2.65,1.75+Math.min(w,d)*.12),ridgeY=wallH+.8;
+    const wall=houseWallColors[houseIndex%houseWallColors.length],roof=roofColors[houseIndex%roofColors.length];
+    houseIndex++;
+    houseBox(x,z,w,wallH,d,0,wall);
+    // Two sloped roof planes meet at a ridge, with a slight eave overhang.
+    const x0=x-w/2-.16,x1=x+w/2+.16,z0=z-d/2-.16,z1=z+d/2+.16;
+    const ridgeZ=z-d*.08;
+    quad([x0,wallH,z0],[x1,wallH,z0],[x1,ridgeY,ridgeZ],[x0,ridgeY,ridgeZ],roof);
+    quad([x0,wallH,z1],[x0,ridgeY,ridgeZ],[x1,ridgeY,ridgeZ],[x1,wallH,z1],roof.map(v=>Math.min(1,v*1.13)) as Vec3);
+    // Timber gables close the front and back ends of the pitched roof.
+    tri([x-w*.48,wallH,z1],[x+w*.48,wallH,z1],[x,ridgeY,z1-.04],[wall.map(v=>Math.min(1,v*1.12)) as Vec3][0]);
+    tri([x-w*.48,wallH,z0],[x,ridgeY,z0+.04],[x+w*.48,wallH,z0],wall.map(v=>v*.82) as Vec3);
+    // Front door and two small blue-glass windows.
+    const doorX=x,frontZ=z+d/2+.012;
+    houseBox(doorX,frontZ,.48,1.02,.06,0,[.22,.12,.075]);
+    houseBox(doorX-.62,frontZ,.39,.48,.055,1.05,[.24,.47,.58]);
+    houseBox(doorX+.62,frontZ,.39,.48,.055,1.05,[.24,.47,.58]);
+    // Dark timber crossbars make the windows read clearly at normal zoom.
+    houseBox(doorX-.62,frontZ-.012,.055,.48,.07,1.05,[.18,.16,.12]);
+    houseBox(doorX+.62,frontZ-.012,.055,.48,.07,1.05,[.18,.16,.12]);
   }
   for(const t of world.trees) if(t.tx>=minX&&t.tx<=maxX&&t.ty>=minY&&t.ty<=maxY) {
     cube(t.tx+.5,t.ty+.5,.22,1.3,.22,[.36,.23,.12]);
