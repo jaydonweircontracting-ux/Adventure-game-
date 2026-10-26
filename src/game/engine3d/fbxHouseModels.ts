@@ -261,13 +261,14 @@ export function loadHouseModelLibrary(): Promise<number> {
             if (!part.isMesh) return;
             const materials = Array.isArray(part.material) ? part.material : [part.material];
             for (const material of materials) {
-              // FBXLoader can leave a map object behind whose image did not
-              // resolve from the original authoring-machine path. Treat that
-              // the same as a missing map and use the bundled atlas instead.
-              if (material && !material.map?.image) {
-                material.map = atlas;
-                material.needsUpdate = true;
-              }
+              if (!material) continue;
+              // These houses share the bundled atlas. FBXLoader may resolve an
+              // authoring-machine texture path to a different placeholder or
+              // stale image that technically loads but has the wrong colours.
+              // Force the known project asset atlas so UV sampling below reads
+              // the actual uploaded house textures consistently on GitHub Pages.
+              material.map = atlas;
+              material.needsUpdate = true;
             }
           });
         }
