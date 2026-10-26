@@ -448,6 +448,10 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
           if(npc.looted||!npc.alive||Math.abs(npc.x-player.x)>=22||Math.abs(npc.y-player.y)>=22)return;
           drawNpcSprite(npc.x+.5,npc.y+.5,npcBases[index%npcBases.length],(index+Math.floor(performance.now()/900))%4);
         });
+        const moving=walkingNow||[...keys].some(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
+        const anim:RpgAnim=moving?'Walk':'Idle';
+        const frameCount=moving?11:4;
+        const frameIndex=moving?Math.floor(performance.now()/85)%frameCount:Math.floor(performance.now()/650)%frameCount;
         const px=player.x+.5,pz=player.y+.5,half=.34,height=1.48;
         // Use the source frame's measured opaque-foot anchor. The texture's
         // transparent rows are cropped away, so the visible feet touch y=0
@@ -469,10 +473,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         // Camera-relative eight-way facing matches the RPG pack's CAM0-7
         // mapping. Cycle through actual idle/walk frames rather than two
         // nonexistent placeholder URLs.
-                const moving=walkingNow||[...keys].some(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
-        const anim:RpgAnim=moving?'Walk':'Idle';
-        const frameCount=moving?11:4;
-        const frameIndex=moving?Math.floor(performance.now()/85)%frameCount:Math.floor(performance.now()/650)%frameCount;
+
         const frame=rpgSprite('BaseHumanMale',anim,face,frameIndex);
         if(frame?.complete&&frame.naturalWidth>0){gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,frame);}
         gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);
