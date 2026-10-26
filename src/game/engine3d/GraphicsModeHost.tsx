@@ -6,14 +6,13 @@ import type { GraphicsMode } from './engine3d';
 const MODE_KEY = 'ag-graphics-mode-v1';
 
 function initialMode(): GraphicsMode {
+  // Always boot into the established 2.5D game. Players can still switch to
+  // 2D or experimental 3D from Options during the session.
   try {
-    const query = new URLSearchParams(window.location.search).get('mode');
-    if (query === '3d') return '3d';
-    const saved = localStorage.getItem(MODE_KEY);
-    return saved === '3d' ? '3d' : saved === '2d' ? '2d' : '2.5d';
-  } catch {
-    return '2.5d';
-  }
+    localStorage.setItem(MODE_KEY, '2.5d');
+    localStorage.setItem('ag-view-mode', '2.5d');
+  } catch {}
+  return '2.5d';
 }
 
 /**
@@ -63,7 +62,7 @@ export default function GraphicsModeHost() {
         )}
         <p style={{fontSize:11,lineHeight:1.4,opacity:.82,marginBottom:0}}>3D now reads the data-driven tile world and uses collision-checked movement. Existing 2D/2.5D remains available.</p>
       </section>}
-    </>;
+    </>
   }
 
   return <>
