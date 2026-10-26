@@ -309,14 +309,52 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(.45,.63,.76,1);
     let yaw=.65,pitch=.7,zoom=12,drag=false,lx=0,ly=0,raf=0;
     const pointers=new Map<number,{x:number;y:number}>();let pinchDistance=0;
+    // Continuous click-to-move target, in the same free world-space units as
+    // the base game's tapMove system (not tile-by-tile stepping).
+    let moveTarget:{x:number;y:number}|null=null;
+    let gestureMoved=false,gestureStartX=0,gestureStartY=0;
+    let lastFrameTime=performance.now(),lastPositionPublish=0,lastPositionSave=0;
+    let walkingNow=false;
+    const walkableAt=(x:number,y:number)=>{
+      const gx=Math.round(x),gy=Math.round(y);
+      if(npcActorsRef.current.some(n=>n.alive&&Math.hypot(n.x-x,n.y-y)<.42))return false;
+      return isWalkableWorld(world,world.crates,gx,gy);
+    };
+    const pickGround=(clientX:number,clientY:number)=>{
+      const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return null;
+      const nx=((clientX-rect.left)/rect.width)*2-1,ny=1-((clientY-rect.top)/rect.height)*2;
+      const p=stateRef.current.position;
+      const tx=p.x+.5,tz=p.y+.5,ty=.8;
+      const eyeX=tx+Math.sin(yaw)*zoom*Math.cos(pitch),eyeZ=tz+Math.cos(yaw)*zoom*Math.cos(pitch),eyeY=ty+zoom*Math.sin(pitch);
+      const forward=[-Math.sin(yaw)*Math.cos(pitch),-Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch)];
+      const right=[Math.cos(yaw),0,-Math.sin(yaw)];
+      const up=[right[1]*forward[2]-right[2]*forward[1],right[2]*forward[0]-right[0]*forward[2],right[0]*forward[1]-right[1]*forward[0]];
+      const scale=Math.tan(Math.PI/6),aspect=rect.width/rect.height;
+      const dx=forward[0]+right[0]*nx*scale*aspect+up[0]*ny*scale;
+      const dy=forward[1]+right[1]*nx*scale*aspect+up[1]*ny*scale;
+      const dz=forward[2]+right[2]*nx*scale*aspect+up[2]*ny*scale;
+      if(dy>=-0.001)return null;
+      const t=-eyeY/dy;if(t<=0)return null;
+      const x=eyeX+dx*t-.5,y=eyeZ+dz*t-.5;
+      if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>=world.w||y>=world.h)return null;
+      return {x,y};
+    };
     const wheel=(e:WheelEvent)=>{e.preventDefault();zoom=Math.max(4,Math.min(32,zoom+e.deltaY*.012));};
     const keys=new Set<string>();
     const keydown=(e:KeyboardEvent)=>{const k=e.key.toLowerCase();if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','f',' '].includes(k)){e.preventDefault();keys.add(k);}};
     const keyup=(e:KeyboardEvent)=>keys.delete(e.key.toLowerCase());
-    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;lx=e.clientX;ly=e.clientY;}else{drag=false;pinchDistance=pointerDistance();}canvas.setPointerCapture?.(e.pointerId)};
+    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;}else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();}canvas.setPointerCapture?.(e.pointerId)};
     const pointerDistance=()=>{const pts=[...pointers.values()];return pts.length<2?0:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y)};
-    const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)zoom=Math.max(4,Math.min(32,zoom+(pinchDistance-distance)*.025));pinchDistance=distance;return;}if(!drag)return;yaw+=(e.clientX-lx)*.008;pitch=Math.max(.22,Math.min(1.25,pitch+(e.clientY-ly)*.006));lx=e.clientX;ly=e.clientY};
-    const up=(e:PointerEvent)=>{pointers.delete(e.pointerId);drag=false;pinchDistance=0;if(pointers.size===1){const p=[...pointers.values()][0];lx=p.x;ly=p.y;drag=true;}};
+    const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)zoom=Math.max(4,Math.min(32,zoom+(pinchDistance-distance)*.025));pinchDistance=distance;return;}if(!drag)return;
+      if(Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)>7)gestureMoved=true;
+      if(!gestureMoved)return;
+      yaw+=(e.clientX-lx)*.008;pitch=Math.max(.22,Math.min(1.25,pitch+(e.clientY-ly)*.006));lx=e.clientX;ly=e.clientY;
+    };
+    const up=(e:PointerEvent)=>{const wasTap=pointers.size===1&&drag&&!gestureMoved&&Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)<=10;
+      pointers.delete(e.pointerId);drag=false;pinchDistance=0;
+      if(wasTap){const destination=pickGround(e.clientX,e.clientY);if(destination&&walkableAt(destination.x,destination.y)){moveTarget=destination;setMessage('Walking to destination');}else if(destination){setMessage('That destination is blocked');}}
+      if(pointers.size===1){const p=[...pointers.values()][0];lx=p.x;ly=p.y;drag=true;gestureMoved=true;}
+    };
     window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);
     canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);canvas.addEventListener('wheel',wheel,{passive:false});
     const perspective=(f:number,a:number,n:number,far:number)=>{const t=1/Math.tan(f/2),nf=1/(n-far);return [t/a,0,0,0,0,t,0,0,0,0,(far+n)*nf,-1,0,0,2*far*n*nf,0]};
@@ -324,9 +362,35 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     const mul=(a:number[],b:number[])=>{const o=new Array(16).fill(0);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)o[c*4+r]+=a[k*4+r]*b[c*4+k];return o};
     const upload=(buffer:WebGLBuffer,data:Float32Array)=>{gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12)};
     const draw=()=>{
+      const now=performance.now(),dt=Math.min(.05,Math.max(0,(now-lastFrameTime)/1000));lastFrameTime=now;
+      // Smooth, non-grid movement with collision checks along the path. A tap
+      // gives a continuous world-space destination and walking stops on release
+      // of the path target, like the 2.5D game's tap-to-move behaviour.
+      const current=stateRef.current;
+      let player=current.position;
+      walkingNow=false;
+      if(moveTarget){
+        const dx=moveTarget.x-player.x,dy=moveTarget.y-player.y,dist=Math.hypot(dx,dy);
+        if(dist<.08){moveTarget=null;}
+        else{
+          const step=Math.min(dist,3.15*dt),nx=player.x+dx/dist*step,ny=player.y+dy/dist*step;
+          if(walkableAt(nx,ny)){player={x:nx,y:ny};current.position=player;walkingNow=true;}
+          else{
+            // Allow sliding along a wall rather than snapping to grid cells.
+            const sx=player.x+dx/dist*step,sy=player.y;
+            const ax=player.x,ay=player.y+dy/dist*step;
+            if(walkableAt(sx,sy)){player={x:sx,y:sy};current.position=player;walkingNow=true;}
+            else if(walkableAt(ax,ay)){player={x:ax,y:ay};current.position=player;walkingNow=true;}
+            else{moveTarget=null;setMessage('Path blocked');}
+          }
+          if(Math.hypot(moveTarget.x-player.x,moveTarget.y-player.y)<.08)moveTarget=null;
+          if(walkingNow&&now-lastPositionPublish>90){lastPositionPublish=now;setPosition(player);}
+          if(walkingNow&&now-lastPositionSave>400){lastPositionSave=now;try{localStorage.setItem(SAVE_KEY,JSON.stringify(player));}catch{}}
+        }
+      }
       const dpr=Math.min(window.devicePixelRatio||1,1.5),w=Math.max(1,Math.floor(canvas.clientWidth*dpr)),h=Math.max(1,Math.floor(canvas.clientHeight*dpr));
       if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;needsWorldRebuild.current=true}
-      const current=stateRef.current,player=current.position;
+      player=stateRef.current.position;
       if(needsWorldRebuild.current){const terrainVertices=buildWorldVertices(world,player);if(terrainVertices.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,terrainVertices);setMessage('3D diagnostic: '+(terrainVertices.length/6).toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false}
       gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       // Orbit around the player's tile center, not its top-left grid corner.
@@ -389,7 +453,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         // Camera-relative eight-way facing matches the RPG pack's CAM0-7
         // mapping. Cycle through actual idle/walk frames rather than two
         // nonexistent placeholder URLs.
-                const moving=[...keys].some(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
+                const moving=walkingNow||[...keys].some(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
         const anim:RpgAnim=moving?'Walk':'Idle';
         const frameCount=moving?11:4;
         const frameIndex=moving?Math.floor(performance.now()/85)%frameCount:Math.floor(performance.now()/650)%frameCount;
@@ -452,7 +516,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     const timer=window.setInterval(()=>{if(keys.size){const k=[...keys].at(-1)!;if(k==='e'||k==='f'||k===' ')return;const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])}},130);
     return()=>{cancelAnimationFrame(raf);window.clearInterval(timer);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);if(playerSpriteTexture)gl.deleteTexture(playerSpriteTexture);if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
-  const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const next={x:Math.round(position.x+dx),y:Math.round(position.y+dy)};const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===next.x&&Math.round(n.y)===next.y);if(!occupied&&isWalkableWorld(world,world.crates,next.x,next.y)){stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true }};
+  const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(isWalkableWorld(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   const pad=(dx:number,dy:number,label:string)=> <button key={label} type="button" aria-label={label} onPointerDown={e=>{e.preventDefault();move(dx,dy)}} style={{width:48,height:44,borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23e8',color:'#fff',fontSize:19,fontWeight:800,touchAction:'none'}}>{label==='Forward'?'▲':label==='Back'?'▼':label==='Left'?'◀':'▶'}</button>;
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>
     <canvas ref={canvasRef} aria-label="3D Adventure world" style={{width:'100%',height:'100%',display:'block',touchAction:'none'}}/>
