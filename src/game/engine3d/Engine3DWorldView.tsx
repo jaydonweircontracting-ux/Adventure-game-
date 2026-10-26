@@ -276,8 +276,14 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       const current=stateRef.current,player=current.position;
       if(needsWorldRebuild.current){const terrainVertices=buildWorldVertices(world,player);if(terrainVertices.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,terrainVertices);setMessage('3D diagnostic: '+(terrainVertices.length/6).toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false}
       gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-      const ex=player.x+Math.sin(yaw)*zoom,ez=player.y+Math.cos(yaw)*zoom,ey=zoom*.8+2;
-      const mat=mul(perspective(Math.PI/3,w/h,.1,120),lookAt([ex,ey,ez],[player.x,0.8,player.y]));
+      // Orbit around the player's tile center, not its top-left grid corner.
+      // Keeping the camera target and orbit origin aligned prevents the player
+      // sprite drifting sideways while the camera rotates; pitch now controls
+      // the actual orbit elevation as well.
+      const targetX=player.x+.5,targetZ=player.y+.5,targetY=.8;
+      const horizontal=zoom*Math.cos(pitch);
+      const ex=targetX+Math.sin(yaw)*horizontal,ez=targetZ+Math.cos(yaw)*horizontal,ey=targetY+zoom*Math.sin(pitch);
+      const mat=mul(perspective(Math.PI/3,w/h,.1,120),lookAt([ex,ey,ez],[targetX,targetY,targetZ]));
       gl.uniformMatrix4fv(mLoc,false,new Float32Array(mat));
       gl.bindBuffer(gl.ARRAY_BUFFER,worldBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
       gl.drawArrays(gl.TRIANGLES,0,gl.getBufferParameter(gl.ARRAY_BUFFER,gl.BUFFER_SIZE)/24);const renderError=gl.getError();if(renderError!==gl.NO_ERROR)setMessage('3D WebGL draw error: 0x'+renderError.toString(16));
