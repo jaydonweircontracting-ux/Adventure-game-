@@ -58,6 +58,11 @@ jobs:
             cp "game sprites/baseHumanMale/1_Idle_CAM${cam}_25.png" "public/game-sprites/baseHumanMale/idle-${cam}.png"
             cp "game sprites/baseHumanMale/5_Walk_CAM${cam}_190.png" "public/game-sprites/baseHumanMale/walk-${cam}.png"
           done
+      - name: Stage real low-poly FBX houses for the 3D runtime
+        run: |
+          mkdir -p public/3d-houses
+          cp House_01_full.fbx House_02_full.fbx House_03_full.fbx House_04_full.fbx public/3d-houses/
+          cp house_05_full.fbx house_06_full.fbx house_07_full.fbx house_08_full.fbx public/3d-houses/
       - name: Build site
         run: npm run build
       - name: Verify update notifier build-number consistency
