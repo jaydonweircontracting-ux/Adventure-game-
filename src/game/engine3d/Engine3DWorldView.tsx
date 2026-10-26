@@ -369,24 +369,32 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       const current=stateRef.current;
       let player=current.position;
       walkingNow=false;
+      let moveDx=0,moveDy=0,hasInput=false;
       if(moveTarget){
-        const dx=moveTarget.x-player.x,dy=moveTarget.y-player.y,dist=Math.hypot(dx,dy);
-        if(dist<.08){moveTarget=null;}
+        moveDx=moveTarget.x-player.x;moveDy=moveTarget.y-player.y;
+        if(Math.hypot(moveDx,moveDy)<.08){moveTarget=null;moveDx=0;moveDy=0;}
+        else hasInput=true;
+      }else{
+        const held=[...keys].filter(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
+        moveDx=(held.includes('d')||held.includes('arrowright')?1:0)-(held.includes('a')||held.includes('arrowleft')?1:0);
+        moveDy=(held.includes('s')||held.includes('arrowdown')?1:0)-(held.includes('w')||held.includes('arrowup')?1:0);
+        hasInput=moveDx!==0||moveDy!==0;
+      }
+      if(hasInput){
+        const dist=Math.hypot(moveDx,moveDy),step=Math.min(dist,3.15*dt);
+        const nx=player.x+moveDx/dist*step,ny=player.y+moveDy/dist*step;
+        if(walkableAt(nx,ny)){player={x:nx,y:ny};current.position=player;walkingNow=true;}
         else{
-          const step=Math.min(dist,3.15*dt),nx=player.x+dx/dist*step,ny=player.y+dy/dist*step;
-          if(walkableAt(nx,ny)){player={x:nx,y:ny};current.position=player;walkingNow=true;}
-          else{
-            // Allow sliding along a wall rather than snapping to grid cells.
-            const sx=player.x+dx/dist*step,sy=player.y;
-            const ax=player.x,ay=player.y+dy/dist*step;
-            if(walkableAt(sx,sy)){player={x:sx,y:sy};current.position=player;walkingNow=true;}
-            else if(walkableAt(ax,ay)){player={x:ax,y:ay};current.position=player;walkingNow=true;}
-            else{moveTarget=null;setMessage('Path blocked');}
-          }
-          if(Math.hypot(moveTarget.x-player.x,moveTarget.y-player.y)<.08)moveTarget=null;
-          if(walkingNow&&now-lastPositionPublish>90){lastPositionPublish=now;setPosition(player);}
-          if(walkingNow&&now-lastPositionSave>400){lastPositionSave=now;try{localStorage.setItem(SAVE_KEY,JSON.stringify(player));}catch{}}
+          // Slide along walls while retaining smooth world-space movement.
+          const sx=player.x+moveDx/dist*step,sy=player.y;
+          const ax=player.x,ay=player.y+moveDy/dist*step;
+          if(walkableAt(sx,sy)){player={x:sx,y:sy};current.position=player;walkingNow=true;}
+          else if(walkableAt(ax,ay)){player={x:ax,y:ay};current.position=player;walkingNow=true;}
+          else if(moveTarget){moveTarget=null;setMessage('Path blocked');}
         }
+        if(moveTarget&&Math.hypot(moveTarget.x-player.x,moveTarget.y-player.y)<.08)moveTarget=null;
+        if(walkingNow&&now-lastPositionPublish>90){lastPositionPublish=now;setPosition(player);}
+        if(walkingNow&&now-lastPositionSave>400){lastPositionSave=now;try{localStorage.setItem(SAVE_KEY,JSON.stringify(player));}catch{}}
       }
       const dpr=Math.min(window.devicePixelRatio||1,1.5),w=Math.max(1,Math.floor(canvas.clientWidth*dpr)),h=Math.max(1,Math.floor(canvas.clientHeight*dpr));
       if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;needsWorldRebuild.current=true}
@@ -493,7 +501,9 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         if(tree){world.trees=world.trees.filter(c=>c!==tree);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+2};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
         setMessage('Nothing close enough to interact with');return
       }
-      const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])};
+      // Directional keys are integrated continuously by the render loop;
+      // never quantize movement into one-tile jumps.
+    };
     window.addEventListener('keydown',action);
     draw();
     const npcTimer=window.setInterval(()=>{
@@ -513,8 +523,8 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       });
       try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}
     },900);
-    const timer=window.setInterval(()=>{if(keys.size){const k=[...keys].at(-1)!;if(k==='e'||k==='f'||k===' ')return;const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])}},130);
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(timer);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);if(playerSpriteTexture)gl.deleteTexture(playerSpriteTexture);if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);if(playerSpriteTexture)gl.deleteTexture(playerSpriteTexture);if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(isWalkableWorld(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   const pad=(dx:number,dy:number,label:string)=> <button key={label} type="button" aria-label={label} onPointerDown={e=>{e.preventDefault();move(dx,dy)}} style={{width:48,height:44,borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23e8',color:'#fff',fontSize:19,fontWeight:800,touchAction:'none'}}>{label==='Forward'?'▲':label==='Back'?'▼':label==='Left'?'◀':'▶'}</button>;
