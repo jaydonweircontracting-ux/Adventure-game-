@@ -174,11 +174,35 @@ export function loadHouseModelLibrary(): Promise<number> {
   if(loadPromise)return loadPromise;
   loadPromise=(async()=>{
     const loader=new FBXLoader();
+    let atlas: THREE.Texture | undefined;
+    try {
+      // The uploaded source pack includes its shared texture atlas. FBXLoader
+      // can miss the original relative texture path on GitHub Pages, so load
+      // the atlas explicitly and attach it to materials that lost their map.
+      const atlasUrl = `${import.meta.env.BASE_URL}game%20sprites/starting%20house/House_texture_atlas.png`;
+      atlas = await new THREE.TextureLoader().loadAsync(atlasUrl);
+      atlas.colorSpace = THREE.SRGBColorSpace;
+      atlas.needsUpdate = true;
+    } catch (error) {
+      console.warn('[Adventure 3D] House texture atlas could not be loaded', error);
+    }
     let loaded=0;
     for(let i=0;i<HOUSE_FILES.length;i++){
       try{
         const url=`${import.meta.env.BASE_URL}3d-houses/${HOUSE_FILES[i]}`;
         const object=await loader.loadAsync(url);
+        if (atlas) {
+          object.traverse((part: any) => {
+            if (!part.isMesh) return;
+            const materials = Array.isArray(part.material) ? part.material : [part.material];
+            for (const material of materials) {
+              if (material && !material.map) {
+                material.map = atlas;
+                material.needsUpdate = true;
+              }
+            }
+          });
+        }
         const packed=packFbxObject(object,THREE);
         if(packed.length){houseModels[i]=packed;loaded++;}
       }catch(error){
