@@ -99,14 +99,30 @@ function packFbxObject(root: any, THREE: any, modelIndex: number): Float32Array 
     const position=geometry.attributes.position;
     const index=geometry.index;
     const materials=Array.isArray(object.material)?object.material:[object.material];
+    // Saturated, clearly distinguishable paint colours: these are intentionally
+    // stronger than the source FBX materials because the lightweight renderer
+    // does not apply scene lighting or original PBR texture maps.
     const wallPalettes = [
-      {r:0.78,g:0.66,b:0.48}, {r:0.72,g:0.78,b:0.67}, {r:0.72,g:0.58,b:0.48},
-      {r:0.63,g:0.73,b:0.79}, {r:0.82,g:0.74,b:0.57}, {r:0.70,g:0.65,b:0.78},
-      {r:0.78,g:0.62,b:0.64}, {r:0.61,g:0.72,b:0.56}
+      {r:0.92,g:0.76,b:0.24}, // golden yellow
+      {r:0.22,g:0.68,b:0.34}, // green
+      {r:0.92,g:0.34,b:0.28}, // red
+      {r:0.22,g:0.58,b:0.92}, // blue
+      {r:0.96,g:0.86,b:0.62}, // warm cream
+      {r:0.62,g:0.36,b:0.88}, // purple
+      {r:0.94,g:0.48,b:0.62}, // rose
+      {r:0.20,g:0.72,b:0.68}, // teal
+      {r:0.96,g:0.58,b:0.18}, // orange
+      {r:0.68,g:0.82,b:0.30}  // lime
     ];
     const roofPalettes = [
-      {r:0.58,g:0.16,b:0.12}, {r:0.30,g:0.35,b:0.40}, {r:0.48,g:0.25,b:0.12},
-      {r:0.25,g:0.32,b:0.22}, {r:0.43,g:0.18,b:0.24}, {r:0.34,g:0.29,b:0.22}
+      {r:0.72,g:0.08,b:0.08}, // red
+      {r:0.10,g:0.22,b:0.72}, // deep blue
+      {r:0.26,g:0.12,b:0.08}, // dark brown
+      {r:0.08,g:0.42,b:0.18}, // green
+      {r:0.48,g:0.08,b:0.30}, // burgundy
+      {r:0.12,g:0.16,b:0.20}, // charcoal
+      {r:0.78,g:0.34,b:0.06}, // burnt orange
+      {r:0.28,g:0.12,b:0.52}  // purple
     ];
     const materialColor=(groupIndex:number)=>{
       const material=materials[groupIndex]||materials[0];
@@ -124,7 +140,9 @@ function packFbxObject(root: any, THREE: any, modelIndex: number): Float32Array 
         /glass|window/.test(name) ? {r:0.20,g:0.48,b:0.72} :
         /dark|shadow|iron|metal/.test(name) ? {r:0.16,g:0.17,b:0.19} :
         wallPalettes[modelIndex % wallPalettes.length];
-      if(color && Math.min(color.r,color.g,color.b) < 0.88) return {r:color.r,g:color.g,b:color.b};
+      // Never preserve the FBX diffuse swatch for ordinary walls: many
+      // source materials are neutral/tan placeholders and were flattening all
+      // buildings to the same colour. Use the named material category instead.
       return palette;
     };
     const groups=geometry.groups?.length?geometry.groups:[{start:0,count:index?index.count:position.count,materialIndex:0}];
@@ -167,9 +185,10 @@ function packFbxObject(root: any, THREE: any, modelIndex: number): Float32Array 
           faceFallback={r:0.24,g:0.15,b:0.09};
         } else if(/stone|brick|chimney|foundation/.test(materialName)) {
           faceFallback={r:0.52,g:0.49,b:0.43};
-        } else if(colorIsNeutral || material?.map?.image) {
+        } else {
+          // Force every non-roof, non-trim face into the per-building paint
+          // palette, even if the FBX has a baked tan/brown diffuse material.
           faceFallback=wallPalettes[modelIndex % wallPalettes.length];
-          if(Math.abs(normal.y)<0.12) faceFallback=wallPalettes[modelIndex % wallPalettes.length];
         }
         // The canvas renderer has flat vertex-colour triangles, not texture sampling.
         // Sampling a different atlas texel at each corner creates ugly colour
