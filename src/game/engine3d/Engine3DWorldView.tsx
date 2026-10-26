@@ -3,7 +3,7 @@ import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type IsoW
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { rpgSprite, preloadRpgBase, type RpgAnim, type RpgBase } from '../iso/rpgSprites';
 import type { Face8 } from '../iso/isoSprites';
-import { getHouseModelTriangles, loadHouseModelLibrary } from './fbxHouseModels';
+import { getHouseModelTriangles, isHouseModelLibrarySettled, loadHouseModelLibrary } from './fbxHouseModels';
 
 type Vec3 = [number, number, number];
 type Vertex = number[];
@@ -204,6 +204,10 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
     const x=(hut.x0+hut.x1+1)/2,z=(hut.y0+hut.y1+1)/2,w=Math.max(2,hut.x1-hut.x0+1),d=Math.max(2,hut.y1-hut.y0+1);
     const wallH=Math.min(2.65,1.75+Math.min(w,d)*.12),ridgeY=wallH+.8;
     const modelIndex=houseIndex++%20;
+    // Do not draw the old procedural placeholder or a partial mix of old/new
+    // houses while the FBX pack is still loading. Reveal the finished model set
+    // together after all 20 files have either loaded or failed.
+    if(!isHouseModelLibrarySettled()) continue;
     const modelTriangles=getHouseModelTriangles(modelIndex);
     if(modelTriangles && modelTriangles.length){
       // Imported FBX geometry is normalized to its own bounds by the loader,
