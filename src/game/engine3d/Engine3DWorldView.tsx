@@ -229,6 +229,21 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     if(!gl.getProgramParameter(program,gl.LINK_STATUS)){setMessage(gl.getProgramInfoLog(program)||'3D renderer setup failed');return}
     gl.useProgram(program);
     const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!;
+    const playerSpriteProgram=gl.createProgram();
+    let playerSpriteBuffer:WebGLBuffer|null=null,playerSpriteTexture:WebGLTexture|null=null;
+    if(playerSpriteProgram){
+      const spriteVs=gl.createShader(gl.VERTEX_SHADER)!,spriteFs=gl.createShader(gl.FRAGMENT_SHADER)!;
+      gl.shaderSource(spriteVs,'attribute vec3 p;attribute vec2 uv;uniform mat4 m;varying vec2 vUv;void main(){gl_Position=m*vec4(p,1.0);vUv=uv;}');gl.compileShader(spriteVs);
+      gl.shaderSource(spriteFs,'precision mediump float;uniform sampler2D tex;varying vec2 vUv;void main(){vec4 color=texture2D(tex,vUv);if(color.a<0.08)discard;gl_FragColor=color;}');gl.compileShader(spriteFs);
+      if(gl.getShaderParameter(spriteVs,gl.COMPILE_STATUS)&&gl.getShaderParameter(spriteFs,gl.COMPILE_STATUS)){
+        gl.attachShader(playerSpriteProgram,spriteVs);gl.attachShader(playerSpriteProgram,spriteFs);gl.linkProgram(playerSpriteProgram);
+        if(gl.getProgramParameter(playerSpriteProgram,gl.LINK_STATUS)){
+          playerSpriteBuffer=gl.createBuffer();playerSpriteTexture=gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+          const spriteImage=new Image();spriteImage.onload=()=>{if(!playerSpriteTexture)return;gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,spriteImage);};spriteImage.onerror=()=>setMessage('Player sprite failed to load: baseHumanMale idle');spriteImage.src='/Adventure-game-/game%20sprites/baseHumanMale/1_Idle_CAM3_25.png';
+        }
+      }
+    }
     const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m');
     if(pLoc<0||cLoc<0||!mLoc){setMessage('3D renderer missing required shader attributes');return;}
     gl.enableVertexAttribArray(pLoc);gl.enableVertexAttribArray(cLoc);
@@ -260,16 +275,28 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       const actors:Vertex=[];
       const cube=(x:number,z:number,color:Vec3,h=1.25)=>{const x0=x-.22,x1=x+.22,z0=z-.22,z1=z+.22,y0=0,y1=h;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};const q=(a:Vec3,b:Vec3,c:Vec3,d:Vec3)=>{tri(a,b,c);tri(a,c,d)};q([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]);q([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]);q([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0]);q([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1]);q([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0])};
       for(const npc of npcActorsRef.current) if(!npc.looted&&Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)cube(npc.x+.5,npc.y+.5,npc.alive?[.22,.55,.86]:[.38,.18,.16],npc.alive?1.3:.22);
-      // Render the player as a small humanoid assembled from 3D primitives rather than the debug yellow cube.
-      // Keep the body centered on the same authoritative 3D player tile so movement and collision stay unchanged.
-      const playerX=player.x+.5,playerZ=player.y+.5;
-      const playerPart=(x:number,z:number,w:number,h:number,d:number,color:Vec3)=>{const x0=x-w/2,x1=x+w/2,z0=z-d/2,z1=z+d/2,y0=0,y1=h;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};const q=(a:Vec3,b:Vec3,c:Vec3,d:Vec3)=>{tri(a,b,c);tri(a,c,d)};q([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]);q([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]);q([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0]);q([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1]);q([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0])};
-      // Legs, tunic, arms, and head use the base game's warm adventurer palette.
-      playerPart(playerX-.11,playerZ,.13,.42,.16,[.22,.25,.31]);playerPart(playerX+.11,playerZ,.13,.42,.16,[.22,.25,.31]);
-      playerPart(playerX,playerZ,.34,.86,.23,[.42,.24,.15]);
-      playerPart(playerX-.25,playerZ,.11,.62,.13,[.66,.43,.27]);playerPart(playerX+.25,playerZ,.11,.62,.13,[.66,.43,.27]);
-      playerPart(playerX,playerZ,.24,1.12,.24,[.77,.57,.39]);
+      // Keep NPC placeholders, but render the actual baseHumanMale idle sprite for the player.
       upload(actorBuffer,new Float32Array(actors));gl.drawArrays(gl.TRIANGLES,0,actors.length/6);
+      if(playerSpriteProgram&&playerSpriteBuffer&&playerSpriteTexture){
+        const px=player.x+.5,pz=player.y+.5,half=.38,height=1.55;
+        const rightX=Math.cos(yaw),rightZ=-Math.sin(yaw);
+        const left=[px-rightX*half,0,pz-rightZ*half],right=[px+rightX*half,0,pz+rightZ*half];
+        const topLeft=[left[0],height,left[2]],topRight=[right[0],height,right[2]];
+        const spriteData=new Float32Array([
+          ...left,0,1, ...right,1,1, ...topRight,1,0,
+          ...left,0,1, ...topRight,1,0, ...topLeft,0,0
+        ]);
+        gl.useProgram(playerSpriteProgram);
+        const sp=gl.getAttribLocation(playerSpriteProgram,'p'),su=gl.getAttribLocation(playerSpriteProgram,'uv');
+        gl.bindBuffer(gl.ARRAY_BUFFER,playerSpriteBuffer);gl.bufferData(gl.ARRAY_BUFFER,spriteData,gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(sp);gl.vertexAttribPointer(sp,3,gl.FLOAT,false,20,0);
+        gl.enableVertexAttribArray(su);gl.vertexAttribPointer(su,2,gl.FLOAT,false,20,12);
+        gl.uniformMatrix4fv(gl.getUniformLocation(playerSpriteProgram,'m'),false,new Float32Array(mat));
+        gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);
+        gl.uniform1i(gl.getUniformLocation(playerSpriteProgram,'tex'),0);
+        gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
+        gl.drawArrays(gl.TRIANGLES,0,6);gl.depthMask(true);gl.disable(gl.BLEND);gl.useProgram(program);
+      }
       raf=requestAnimationFrame(draw);
     };
     const tryMove=(dx:number,dy:number)=>{const nextX=Math.round(stateRef.current.position.x+dx),nextY=Math.round(stateRef.current.position.y+dy);const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===nextX&&Math.round(n.y)===nextY);if(!occupied&&isWalkableWorld(world,world.crates,nextX,nextY)){const next={x:nextX,y:nextY};stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true}};
@@ -320,7 +347,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}
     },900);
     const timer=window.setInterval(()=>{if(keys.size){const k=[...keys].at(-1)!;if(k==='e'||k==='f'||k===' ')return;const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])}},130);
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(timer);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(timer);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);if(playerSpriteTexture)gl.deleteTexture(playerSpriteTexture);if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const next={x:Math.round(position.x+dx),y:Math.round(position.y+dy)};const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===next.x&&Math.round(n.y)===next.y);if(!occupied&&isWalkableWorld(world,world.crates,next.x,next.y)){stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true }};
   const pad=(dx:number,dy:number,label:string)=> <button key={label} type="button" aria-label={label} onPointerDown={e=>{e.preventDefault();move(dx,dy)}} style={{width:48,height:44,borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23e8',color:'#fff',fontSize:19,fontWeight:800,touchAction:'none'}}>{label==='Forward'?'▲':label==='Back'?'▼':label==='Left'?'◀':'▶'}</button>;
