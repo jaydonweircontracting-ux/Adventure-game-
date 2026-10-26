@@ -48,7 +48,7 @@ export function getHouseModelTriangles(index: number): PackedHouseTriangles | un
   return houseModels[((index % HOUSE_FILES.length) + HOUSE_FILES.length) % HOUSE_FILES.length];
 }
 
-function packFbxObject(root: any, THREE: any): Float32Array {
+function packFbxObject(root: any, THREE: any, modelIndex: number): Float32Array {
   root.updateMatrixWorld(true);
   // The lightweight world renderer accepts vertex colours, so sample each
   // FBX material's real diffuse texture at the mesh UVs before packing. This
@@ -99,7 +99,7 @@ function packFbxObject(root: any, THREE: any): Float32Array {
     const position=geometry.attributes.position;
     const index=geometry.index;
     const materials=Array.isArray(object.material)?object.material:[object.material];
-    const materialColor=(groupIndex:number)=>{
+    const wallPalettes = [\n      {r:0.78,g:0.66,b:0.48}, {r:0.72,g:0.78,b:0.67}, {r:0.72,g:0.58,b:0.48},\n      {r:0.63,g:0.73,b:0.79}, {r:0.82,g:0.74,b:0.57}, {r:0.70,g:0.65,b:0.78},\n      {r:0.78,g:0.62,b:0.64}, {r:0.61,g:0.72,b:0.56}\n    ];\n    const roofPalettes = [\n      {r:0.58,g:0.16,b:0.12}, {r:0.30,g:0.35,b:0.40}, {r:0.48,g:0.25,b:0.12},\n      {r:0.25,g:0.32,b:0.22}, {r:0.43,g:0.18,b:0.24}, {r:0.34,g:0.29,b:0.22}\n    ];\n    const materialColor=(groupIndex:number)=>{
       const material=materials[groupIndex]||materials[0];
       const color=material?.color;
       const name=String(material?.name||'').toLowerCase();
@@ -109,13 +109,12 @@ function packFbxObject(root: any, THREE: any): Float32Array {
       // into the game mesh: give texture-backed/white materials a readable
       // medieval palette based on their material names instead.
       const palette =
-        /roof|tile|shingle/.test(name) ? {r:0.38,g:0.16,b:0.12} :
-        /wood|beam|door|timber|frame/.test(name) ? {r:0.34,g:0.22,b:0.12} :
-        /stone|brick|chimney|foundation/.test(name) ? {r:0.48,g:0.44,b:0.37} :
-        /glass|window/.test(name) ? {r:0.28,g:0.43,b:0.48} :
-        /dark|shadow|iron|metal/.test(name) ? {r:0.22,g:0.20,b:0.17} :
-        // Stable fallback gives unnamed FBX materials warm wall/roof/wood tones.
-        [{r:0.72,g:0.61,b:0.45},{r:0.40,g:0.19,b:0.14},{r:0.35,g:0.25,b:0.16},{r:0.55,g:0.50,b:0.41}][groupIndex % 4];
+        /roof|tile|shingle/.test(name) ? roofPalettes[modelIndex % roofPalettes.length] :
+        /wood|beam|door|timber|frame/.test(name) ? {r:0.24,g:0.15,b:0.09} :
+        /stone|brick|chimney|foundation/.test(name) ? {r:0.52,g:0.49,b:0.43} :
+        /glass|window/.test(name) ? {r:0.20,g:0.48,b:0.72} :
+        /dark|shadow|iron|metal/.test(name) ? {r:0.16,g:0.17,b:0.19} :
+        wallPalettes[modelIndex % wallPalettes.length];
       if(color && Math.min(color.r,color.g,color.b) < 0.88) return {r:color.r,g:color.g,b:color.b};
       return palette;
     };
@@ -147,10 +146,21 @@ function packFbxObject(root: any, THREE: any): Float32Array {
         const colorIsNeutral=!material?.color ||
           (Math.max(material.color.r,material.color.g,material.color.b)-Math.min(material.color.r,material.color.g,material.color.b)<0.2);
         let faceFallback=fallbackColor;
-        if(colorIsNeutral && !material?.map?.image){
-          if(Math.abs(normal.y)>0.42) faceFallback={r:0.30,g:0.18,b:0.13};
-          else if(Math.abs(normal.y)<0.12) faceFallback={r:0.66,g:0.53,b:0.36};
-          else faceFallback={r:0.43,g:0.25,b:0.17};
+        const materialName=String(material?.name||'').toLowerCase();
+        // Use a deliberately colourful painted medieval palette in the
+        // lightweight renderer. The uploaded atlas is not consistently mapped
+        // across all 20 FBXs, and sampling it was washing every house to tan.
+        if(/roof|tile|shingle/.test(materialName) || Math.abs(normal.y)>0.42) {
+          faceFallback=roofPalettes[modelIndex % roofPalettes.length];
+        } else if(/glass|window/.test(materialName)) {
+          faceFallback={r:0.20,g:0.48,b:0.72};
+        } else if(/wood|beam|door|timber|frame/.test(materialName)) {
+          faceFallback={r:0.24,g:0.15,b:0.09};
+        } else if(/stone|brick|chimney|foundation/.test(materialName)) {
+          faceFallback={r:0.52,g:0.49,b:0.43};
+        } else if(colorIsNeutral || material?.map?.image) {
+          faceFallback=wallPalettes[modelIndex % wallPalettes.length];
+          if(Math.abs(normal.y)<0.12) faceFallback=wallPalettes[modelIndex % wallPalettes.length];
         }
         // The canvas renderer has flat vertex-colour triangles, not texture sampling.
         // Sampling a different atlas texel at each corner creates ugly colour
@@ -166,7 +176,9 @@ function packFbxObject(root: any, THREE: any): Float32Array {
           );
           sampled = texturePixel(material, centerUv);
         }
-        const faceColor = sampled || faceFallback;
+        // The atlas is retained and loaded for compatibility, but avoid its
+        // unreliable FBX UV mapping here; use the intentional per-model palette.
+        const faceColor = faceFallback;
         for(let j=0;j<3;j++) addVertex(vertices[j], faceColor);
       }
     }
@@ -225,7 +237,7 @@ export function loadHouseModelLibrary(): Promise<number> {
             }
           });
         }
-        const packed=packFbxObject(object,THREE);
+        const packed=packFbxObject(object,THREE,i);
         if(packed.length){houseModels[i]=packed;loaded++;}
       }catch(error){
         console.warn('[Adventure 3D] Failed to load house model '+HOUSE_FILES[i],error);
