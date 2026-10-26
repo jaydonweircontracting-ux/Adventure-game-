@@ -266,9 +266,15 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     void loadHouseModelLibrary().then((loaded)=>{
       if(loaded>0){
         needsWorldRebuild.current=true;
-        setMessage('Loaded '+loaded+' real low-poly FBX house models');
+        setMessage('Loaded '+loaded+' of 8 uploaded FBX house models');
+      } else {
+        setMessage('Uploaded FBX houses did not load; showing fallback houses. Check network access to the 3D model loader.');
+        console.error('[Adventure 3D] No uploaded FBX house models loaded; built-in fallback houses are active.');
       }
-    }).catch((error)=>console.warn('[Adventure 3D] FBX house library unavailable; using built-in houses.',error));
+    }).catch((error)=>{
+      setMessage('Uploaded FBX houses failed to load; showing fallback houses. Check the model-loader connection.');
+      console.warn('[Adventure 3D] FBX house library unavailable; using built-in houses.',error);
+    });
     const html=document.documentElement,body=document.body;
     const oldHtml={overflow:html.style.overflow,touchAction:html.style.touchAction,overscrollBehavior:html.style.overscrollBehavior};
     const oldBody={overflow:body.style.overflow,touchAction:body.style.touchAction,overscrollBehavior:body.style.overscrollBehavior,position:body.style.position,width:body.style.width};
