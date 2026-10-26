@@ -175,7 +175,7 @@ function packFbxObject(root: any, THREE: any, modelIndex: number): Float32Array 
         // Use a deliberately colourful painted medieval palette in the
         // lightweight renderer. The uploaded atlas is not consistently mapped
         // across all 20 FBXs, and sampling it was washing every house to tan.
-        if(/roof|tile|shingle/.test(materialName) || Math.abs(normal.y)>0.42) {
+        if(/roof|tile|shingle/.test(materialName)) {
           faceFallback=roofPalettes[modelIndex % roofPalettes.length];
         } else if(/glass|window/.test(materialName)) {
           faceFallback={r:0.20,g:0.48,b:0.72};
@@ -184,9 +184,19 @@ function packFbxObject(root: any, THREE: any, modelIndex: number): Float32Array 
         } else if(/stone|brick|chimney|foundation/.test(materialName)) {
           faceFallback={r:0.52,g:0.49,b:0.43};
         } else {
-          // Force every non-roof, non-trim face into the per-building paint
-          // palette, even if the FBX has a baked tan/brown diffuse material.
-          faceFallback=wallPalettes[modelIndex % wallPalettes.length];
+          // Keep non-roof horizontal surfaces (porches, ledges, ground-facing
+          // undersides) out of the roof palette. Shade the building paint by
+          // face orientation to restore visible depth in the flat triangle renderer.
+          const wall = wallPalettes[modelIndex % wallPalettes.length];
+          const shade = normal.y < -0.42 ? 0.52
+            : normal.y > 0.42 ? 1.12
+            : Math.abs(normal.x) > 0.65 ? 0.78
+            : Math.abs(normal.z) > 0.65 ? 0.90 : 1.0;
+          faceFallback = {
+            r: Math.min(1, wall.r * shade),
+            g: Math.min(1, wall.g * shade),
+            b: Math.min(1, wall.b * shade),
+          };
         }
         // The canvas renderer has flat vertex-colour triangles, not texture sampling.
         // Sampling a different atlas texel at each corner creates ugly colour
