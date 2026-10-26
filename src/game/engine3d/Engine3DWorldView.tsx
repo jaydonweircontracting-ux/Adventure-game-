@@ -260,7 +260,15 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       const actors:Vertex=[];
       const cube=(x:number,z:number,color:Vec3,h=1.25)=>{const x0=x-.22,x1=x+.22,z0=z-.22,z1=z+.22,y0=0,y1=h;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};const q=(a:Vec3,b:Vec3,c:Vec3,d:Vec3)=>{tri(a,b,c);tri(a,c,d)};q([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]);q([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]);q([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0]);q([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1]);q([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0])};
       for(const npc of npcActorsRef.current) if(!npc.looted&&Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)cube(npc.x+.5,npc.y+.5,npc.alive?[.22,.55,.86]:[.38,.18,.16],npc.alive?1.3:.22);
-      cube(player.x+.5,player.y+.5,[.96,.77,.22],1.55);
+      // Render the player as a small humanoid assembled from 3D primitives rather than the debug yellow cube.
+      // Keep the body centered on the same authoritative 3D player tile so movement and collision stay unchanged.
+      const playerX=player.x+.5,playerZ=player.y+.5;
+      const playerPart=(x:number,z:number,w:number,h:number,d:number,color:Vec3)=>{const x0=x-w/2,x1=x+w/2,z0=z-d/2,z1=z+d/2,y0=0,y1=h;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};const q=(a:Vec3,b:Vec3,c:Vec3,d:Vec3)=>{tri(a,b,c);tri(a,c,d)};q([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]);q([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]);q([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0]);q([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1]);q([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0])};
+      // Legs, tunic, arms, and head use the base game's warm adventurer palette.
+      playerPart(playerX-.11,playerZ,.13,.42,.16,[.22,.25,.31]);playerPart(playerX+.11,playerZ,.13,.42,.16,[.22,.25,.31]);
+      playerPart(playerX,playerZ,.34,.86,.23,[.42,.24,.15]);
+      playerPart(playerX-.25,playerZ,.11,.62,.13,[.66,.43,.27]);playerPart(playerX+.25,playerZ,.11,.62,.13,[.66,.43,.27]);
+      playerPart(playerX,playerZ,.24,1.12,.24,[.77,.57,.39]);
       upload(actorBuffer,new Float32Array(actors));gl.drawArrays(gl.TRIANGLES,0,actors.length/6);
       raf=requestAnimationFrame(draw);
     };
