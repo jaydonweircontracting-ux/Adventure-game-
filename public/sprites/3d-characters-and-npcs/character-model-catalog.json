@@ -1,0 +1,60 @@
+{
+  "pack": "Modular Character Outfits - Fantasy[Standard].zip",
+  "format": "glTF 2.0",
+  "runtimeStatus": "catalogued-not-yet-imported",
+  "models": [
+    {
+      "id": "male-peasant",
+      "source": "Exports/glTF (Godot-Unreal)/Outfits/Male_Peasant.gltf",
+      "role": "player-default",
+      "requires": [
+        "Male_Peasant.bin",
+        "T_Peasant_BaseColor.png",
+        "T_Peasant_Normal.png",
+        "T_Peasant_ORM.png",
+        "T_Regular_Male_Normal.png",
+        "T_Regular_Male_Dark_BaseColor.png",
+        "T_Regular_Male_Roughness.png"
+      ]
+    },
+    {
+      "id": "female-peasant",
+      "source": "Exports/glTF (Godot-Unreal)/Outfits/Female_Peasant.gltf",
+      "role": "civilian-npc",
+      "requires": [
+        "Female_Peasant.bin",
+        "T_Peasant_BaseColor.png",
+        "T_Peasant_Normal.png",
+        "T_Peasant_ORM.png"
+      ]
+    },
+    {
+      "id": "male-ranger",
+      "source": "Exports/glTF (Godot-Unreal)/Outfits/Male_Ranger.gltf",
+      "role": "ranger-archer-npc",
+      "requires": [
+        "Male_Ranger.bin",
+        "T_Ranger_BaseColor.png",
+        "T_Ranger_Normal.png",
+        "T_Ranger_ORM.png",
+        "T_Regular_Male_Normal.png",
+        "T_Regular_Male_Dark_BaseColor.png",
+        "T_Regular_Male_Roughness.png"
+      ]
+    },
+    {
+      "id": "female-ranger",
+      "source": "Exports/glTF (Godot-Unreal)/Outfits/Female_Ranger.gltf",
+      "role": "ranger-archer-npc",
+      "requires": [
+        "Female_Ranger.bin",
+        "T_Ranger_BaseColor.png",
+        "T_Ranger_Normal.png",
+        "T_Ranger_ORM.png",
+        "T_Regular_Female_Normal.png",
+        "T_Regular_Female_Dark_BaseColor.png",
+        "T_Regular_Female_Roughness.png"
+      ]
+    }
+  ]
+}
