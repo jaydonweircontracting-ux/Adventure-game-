@@ -201,7 +201,7 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
 export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
   const canvasRef=useRef<HTMLCanvasElement>(null);
   const [message,setMessage]=useState('Connected to the editable world map');
-  const [position,setPosition]=useState<Position>(()=>savedPosition(loadWorld()));
+  const [position,setPosition]=useState<Position>(()=>savedPosition(applyMosslightTownLayout(loadWorld())));
   const [inventory,setInventory]=useState<Inventory3D>(()=>readSaved<Inventory3D>(INVENTORY_KEY,{}));
   const [health,setHealth]=useState<number>(()=>{try{const n=Number(localStorage.getItem(HEALTH_KEY));return Number.isFinite(n)&&n>0?Math.min(100,n):100}catch{return 100}});
   const inventoryRef=useRef<Inventory3D>(inventory); inventoryRef.current=inventory;
