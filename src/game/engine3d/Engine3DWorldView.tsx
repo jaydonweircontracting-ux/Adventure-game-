@@ -203,7 +203,7 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
     if(hut.x1<minX||hut.x0>maxX||hut.y1<minY||hut.y0>maxY) continue;
     const x=(hut.x0+hut.x1+1)/2,z=(hut.y0+hut.y1+1)/2,w=Math.max(2,hut.x1-hut.x0+1),d=Math.max(2,hut.y1-hut.y0+1);
     const wallH=Math.min(2.65,1.75+Math.min(w,d)*.12),ridgeY=wallH+.8;
-    const modelIndex=houseIndex++%8;
+    const modelIndex=houseIndex++%20;
     const modelTriangles=getHouseModelTriangles(modelIndex);
     if(modelTriangles && modelTriangles.length){
       // Imported FBX geometry is normalized to its own bounds by the loader,
