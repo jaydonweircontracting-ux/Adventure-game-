@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { isWalkableWorld, loadWorld, saveWorld, terrainAt, type IsoWorld } from '../iso/isoWorld';
+import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type IsoWorld } from '../iso/isoWorld';
+import { mosslightEngineChunkLayout } from '../mosslightLayout';
 
 type Vec3 = [number, number, number];
 type Vertex = number[];
@@ -27,6 +28,97 @@ function savedPosition(world: IsoWorld): Position {
     }
   } catch { /* use the world's authored spawn */ }
   return { x: world.playerStart.tx, y: world.playerStart.ty };
+}
+
+/**
+ * Project the authored Mosslight Crossing town blueprint into the independent
+ * 3D map. The 2D/2.5D world renderer is untouched: this adapter only changes
+ * the 3D view's world snapshot. A fixed transform keeps the whole town inside
+ * the 200x200 3D map and keeps the layout deterministic across sessions.
+ */
+function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
+  const world: IsoWorld = {
+    ...source,
+    terrain: { ...source.terrain },
+    walls: source.walls.filter(w => Math.abs(w.x - 100) > 32 || Math.abs(w.y - 100) > 32),
+    huts: source.huts.filter(h => Math.abs((h.x0 + h.x1) / 2 - 100) > 32 || Math.abs((h.y0 + h.y1) / 2 - 100) > 32),
+    stalls: source.stalls.filter(st => Math.abs((st.x0 + st.x1) / 2 - 100) > 32 || Math.abs(st.y0 - 100) > 32),
+    trees: [...source.trees],
+    rocks: [...source.rocks],
+    crates: [...source.crates],
+    npcSpawns: source.npcSpawns.map(n => ({ ...n, waypoints: [...(n.waypoints || [])] })),
+  };
+  const layout = mosslightEngineChunkLayout();
+  const scale = 0.42;
+  const tile = (v: number) => 100 + (v - 140) * scale;
+  const clamp = (v: number) => Math.max(2, Math.min(197, Math.round(v)));
+  const setTerrain = (x: number, y: number, terrain: 'dirt' | 'sand') => {
+    if (x >= 0 && y >= 0 && x < world.w && y < world.h) world.terrain[terrainKey(x, y)] = terrain;
+  };
+
+  // Rasterize the actual generated road network into the 3D walk/collision grid.
+  for (const road of layout.roads) {
+    const pts = road.points.map(p => ({ x: tile(p.x), y: tile(p.y) }));
+    const radius = Math.max(0.55, road.width * scale / 2);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      const minX = Math.max(0, Math.floor(Math.min(a.x, b.x) - radius - 1));
+      const maxX = Math.min(world.w - 1, Math.ceil(Math.max(a.x, b.x) + radius + 1));
+      const minY = Math.max(0, Math.floor(Math.min(a.y, b.y) - radius - 1));
+      const maxY = Math.min(world.h - 1, Math.ceil(Math.max(a.y, b.y) + radius + 1));
+      const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+      for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
+        const t = len2 ? Math.max(0, Math.min(1, ((x + 0.5 - a.x) * dx + (y + 0.5 - a.y) * dy) / len2)) : 0;
+        if (Math.hypot(x + 0.5 - (a.x + t * dx), y + 0.5 - (a.y + t * dy)) <= radius) setTerrain(x, y, 'dirt');
+      }
+    }
+  }
+
+  // The generator's authored plaza becomes the town square, over the road fill.
+  for (const plaza of layout.plazas) {
+    const cx = tile(plaza.x), cy = tile(plaza.y), radius = Math.max(1, plaza.r * scale);
+    for (let y = Math.floor(cy - radius); y <= Math.ceil(cy + radius); y++)
+      for (let x = Math.floor(cx - radius); x <= Math.ceil(cx + radius); x++)
+        if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) <= radius) setTerrain(x, y, 'sand');
+  }
+
+  // Convert pinned story-critical buildings and generated filler lots to solid
+  // 3D footprints. Facing determines the doorway tile used by movement checks.
+  world.huts = [...world.huts];
+  for (const lot of layout.lots.filter(l => l.kind === 'building')) {
+    const r = lot.footprint;
+    const x0 = clamp(Math.floor(tile(r.left))), y0 = clamp(Math.floor(tile(r.top)));
+    const x1 = clamp(Math.max(x0, Math.floor(tile(r.right)))), y1 = clamp(Math.max(y0, Math.floor(tile(r.bottom))));
+    const midX = Math.round((x0 + x1) / 2), midY = Math.round((y0 + y1) / 2);
+    const door = lot.facing === 'north' ? { x: midX, y: y0 }
+      : lot.facing === 'south' ? { x: midX, y: y1 }
+      : lot.facing === 'west' ? { x: x0, y: midY } : { x: x1, y: midY };
+    world.huts.push({ x0, y0, x1, y1, doorX: door.x, doorY: door.y });
+  }
+
+  // Remove harvestables accidentally placed under the new building footprints.
+  const insideBuilding = (x: number, y: number) => world.huts.some(h =>
+    x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1);
+  world.trees = world.trees.filter(t => !insideBuilding(t.tx, t.ty));
+  world.rocks = world.rocks.filter(t => !insideBuilding(t.tx, t.ty));
+  world.crates = world.crates.filter(t => !insideBuilding(t.tx, t.ty));
+
+  // Keep existing 3D NPC save names/schedules, but nudge authored demo spawns
+  // off new building footprints so they can still walk around the town.
+  world.npcSpawns = world.npcSpawns.map((npc, index) => {
+    if (!insideBuilding(Math.round(npc.x), Math.round(npc.y))) return npc;
+    const originX = Math.round(npc.x), originY = Math.round(npc.y);
+    for (let radius = 1; radius <= 8; radius++) for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+      const x = originX + dx, y = originY + dy;
+      if (isWalkableWorld(world, world.crates, x, y)) {
+        const waypoints = (npc.waypoints || []).map((p, i) => i === 0 ? { tx: x, ty: y } : p);
+        return { ...npc, x, y, waypoints };
+      }
+    }
+    return { ...npc, x: 100 + index, y: 106 };
+  });
+  return world;
 }
 
 function savedNpcActors(world: IsoWorld): NpcActor3D[] {
@@ -99,7 +191,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
   stateRef.current={position,world:stateRef.current.world};
   useEffect(()=>{
     const canvas=canvasRef.current;if(!canvas)return;
-    const world=loadWorld();stateRef.current.world=world;
+    const world=applyMosslightTownLayout(loadWorld());stateRef.current.world=world;
     npcActorsRef.current=savedNpcActors(world);
     const html=document.documentElement,body=document.body;
     const oldHtml={overflow:html.style.overflow,touchAction:html.style.touchAction,overscrollBehavior:html.style.overscrollBehavior};
