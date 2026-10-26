@@ -99,12 +99,8 @@ function packFbxObject(root: any, THREE: any, modelIndex: number): Float32Array 
     const position=geometry.attributes.position;
     const index=geometry.index;
     const materials=Array.isArray(object.material)?object.material:[object.material];
-    // Saturated, clearly distinguishable paint colours: these are intentionally
-    // stronger than the source FBX materials because the lightweight renderer
-    // does not apply scene lighting or original PBR texture maps.
-    // Restrained medieval building finishes, not one bright colour per house.
-    // Small warm/stone variations keep the town coherent and let geometry define
-    // the building; the original FBX material names still control trim and glass.
+    // Fallback colours are used only when the FBX has no readable diffuse
+    // texture. Textured models use their own atlas/material colours below.
     const wallPalettes = [
       {r:0.76,g:0.69,b:0.56}, // limestone plaster
       {r:0.70,g:0.63,b:0.51}, // warm sand plaster
@@ -173,9 +169,7 @@ function packFbxObject(root: any, THREE: any, modelIndex: number): Float32Array 
         const normal=ab.cross(ac).normalize();
         let faceFallback=fallbackColor;
         const materialName=String(material?.name||'').toLowerCase();
-        // Use a deliberately colourful painted medieval palette in the
-        // lightweight renderer. The uploaded atlas is not consistently mapped
-        // across all 20 FBXs, and sampling it was washing every house to tan.
+        // Conservative fallback palette for untextured meshes only.
         if(/roof|tile|shingle/.test(materialName)) {
           faceFallback=roofPalettes[modelIndex % roofPalettes.length];
         } else if(/glass|window/.test(materialName)) {
@@ -213,9 +207,12 @@ function packFbxObject(root: any, THREE: any, modelIndex: number): Float32Array 
           );
           sampled = texturePixel(material, centerUv);
         }
-        // The atlas is retained and loaded for compatibility, but avoid its
-        // unreliable FBX UV mapping here; use the intentional per-model palette.
-        const faceColor = faceFallback;
+        // Prefer the actual diffuse texture sampled at the triangle's UV
+        // centre. Only use procedural material colours when this mesh has no
+        // readable texture (for example, an FBX with a missing external image).
+        // This keeps the uploaded asset's real roof, plaster, timber, stone and
+        // trim colours instead of repainting every house with a generated palette.
+        const faceColor = sampled ?? faceFallback;
         for(let j=0;j<3;j++) addVertex(vertices[j], faceColor);
       }
     }
