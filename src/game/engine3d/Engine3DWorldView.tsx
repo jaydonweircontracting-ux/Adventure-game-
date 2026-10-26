@@ -266,7 +266,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     void loadHouseModelLibrary().then((loaded)=>{
       if(loaded>0){
         needsWorldRebuild.current=true;
-        setMessage('Loaded '+loaded+' of 8 uploaded FBX house models');
+        setMessage('Loaded '+loaded+' of 20 uploaded FBX house models');
       } else {
         setMessage('Uploaded FBX houses did not load; showing fallback houses. Check network access to the 3D model loader.');
         console.error('[Adventure 3D] No uploaded FBX house models loaded; built-in fallback houses are active.');
