@@ -51,6 +51,10 @@ jobs:
         run: npm run test:body-loot
       - name: Character-creator equipment restriction regression test
         run: npm run test:character-creator
+      - name: Stage base player sprite for the 3D renderer
+        run: |
+          mkdir -p public/game-sprites/baseHumanMale
+          cp "game sprites/baseHumanMale/1_Idle_CAM3_25.png" public/game-sprites/baseHumanMale/player-idle.png
       - name: Build site
         run: npm run build
       - name: Verify update notifier build-number consistency
