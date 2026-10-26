@@ -102,27 +102,28 @@ function packFbxObject(root: any, THREE: any, modelIndex: number): Float32Array 
     // Saturated, clearly distinguishable paint colours: these are intentionally
     // stronger than the source FBX materials because the lightweight renderer
     // does not apply scene lighting or original PBR texture maps.
+    // Restrained medieval building finishes, not one bright colour per house.
+    // Small warm/stone variations keep the town coherent and let geometry define
+    // the building; the original FBX material names still control trim and glass.
     const wallPalettes = [
-      {r:0.92,g:0.76,b:0.24}, // golden yellow
-      {r:0.22,g:0.68,b:0.34}, // green
-      {r:0.92,g:0.34,b:0.28}, // red
-      {r:0.22,g:0.58,b:0.92}, // blue
-      {r:0.96,g:0.86,b:0.62}, // warm cream
-      {r:0.62,g:0.36,b:0.88}, // purple
-      {r:0.94,g:0.48,b:0.62}, // rose
-      {r:0.20,g:0.72,b:0.68}, // teal
-      {r:0.96,g:0.58,b:0.18}, // orange
-      {r:0.68,g:0.82,b:0.30}  // lime
+      {r:0.76,g:0.69,b:0.56}, // limestone plaster
+      {r:0.70,g:0.63,b:0.51}, // warm sand plaster
+      {r:0.79,g:0.74,b:0.64}, // pale cream
+      {r:0.62,g:0.60,b:0.53}, // grey-beige stone
+      {r:0.73,g:0.66,b:0.54}, // muted ochre plaster
+      {r:0.67,g:0.65,b:0.57}, // weathered stone
+      {r:0.78,g:0.70,b:0.61}, // dusty rose stone
+      {r:0.68,g:0.67,b:0.58}  // sage-grey plaster
     ];
     const roofPalettes = [
-      {r:0.72,g:0.08,b:0.08}, // red
-      {r:0.10,g:0.22,b:0.72}, // deep blue
-      {r:0.26,g:0.12,b:0.08}, // dark brown
-      {r:0.08,g:0.42,b:0.18}, // green
-      {r:0.48,g:0.08,b:0.30}, // burgundy
-      {r:0.12,g:0.16,b:0.20}, // charcoal
-      {r:0.78,g:0.34,b:0.06}, // burnt orange
-      {r:0.28,g:0.12,b:0.52}  // purple
+      {r:0.43,g:0.19,b:0.15}, // weathered terracotta
+      {r:0.24,g:0.28,b:0.31}, // slate
+      {r:0.32,g:0.23,b:0.17}, // dark brown shingle
+      {r:0.35,g:0.32,b:0.25}, // weathered olive-brown
+      {r:0.39,g:0.22,b:0.22}, // muted red tile
+      {r:0.29,g:0.31,b:0.32}, // charcoal slate
+      {r:0.48,g:0.29,b:0.19}, // aged clay
+      {r:0.31,g:0.27,b:0.23}  // dark weathered shingle
     ];
     const materialColor=(groupIndex:number)=>{
       const material=materials[groupIndex]||materials[0];
