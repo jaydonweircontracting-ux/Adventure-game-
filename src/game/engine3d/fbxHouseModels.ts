@@ -2,11 +2,14 @@
  * Runtime loader for the actual low-poly medieval house FBX pack.
  *
  * The main game renderer remains its existing lightweight WebGL renderer.
- * FBXLoader is loaded lazily from esm.sh so the normal app bundle does not
- * gain a large 3D-engine dependency. The parsed geometry is converted into
+ * Three.js and FBXLoader are bundled locally with the app. This avoids
+ * external-module/CORS failures on mobile browsers and GitHub Pages. Parsed geometry is converted into
  * normalized, flat-shaded triangles that the existing renderer can draw.
  * If the remote loader or a model fails, the game keeps its procedural house.
  */
+import * as THREE from 'three';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+
 export type PackedHouseTriangles = Float32Array;
 
 const HOUSE_FILES = [
@@ -107,13 +110,7 @@ function packFbxObject(root: any, THREE: any): Float32Array {
 export function loadHouseModelLibrary(): Promise<number> {
   if(loadPromise)return loadPromise;
   loadPromise=(async()=>{
-    // Variable URLs with Vite's ignore directive intentionally keep these
-    // optional runtime imports out of the compile-time module graph.
-    const threeUrl='https://esm.sh/three@0.180.0';
-    const loaderUrl='https://esm.sh/three@0.180.0/examples/jsm/loaders/FBXLoader.js';
-    const THREE=await import(/* @vite-ignore */ threeUrl);
-    const loaderModule=await import(/* @vite-ignore */ loaderUrl);
-    const loader=new loaderModule.FBXLoader();
+    const loader=new FBXLoader();
     let loaded=0;
     for(let i=0;i<HOUSE_FILES.length;i++){
       try{
