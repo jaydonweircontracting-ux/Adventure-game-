@@ -661,12 +661,20 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
     previousX: position.x, previousY: position.y,
     currentX: position.x, currentY: position.y,
     previousAt: 0, currentAt: 0,
+    // Keep the authoritative movement vector for facing. Render interpolation
+    // runs at display refresh rate and can produce tiny/noisy deltas that
+    // select the wrong camera direction on touch-driven click-to-move.
+    facingDX: 0, facingDY: 0,
   });
   if (playerRenderRef.current.currentX !== position.x || playerRenderRef.current.currentY !== position.y) {
     const sample = playerRenderRef.current;
     const sampleAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const dx = position.x - sample.currentX;
     const dy = position.y - sample.currentY;
+    if (Math.abs(dx) + Math.abs(dy) <= 8 && (Math.abs(dx) > 1e-5 || Math.abs(dy) > 1e-5)) {
+      sample.facingDX = dx;
+      sample.facingDY = dy;
+    }
     // Large changes are teleports/chunk restores, not walk movement. Snap
     // both endpoints so interpolation never slides across the entire map.
     if (Math.abs(dx) + Math.abs(dy) > 8 || sample.currentAt === 0) {
@@ -1057,7 +1065,11 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         if (pa) pa.setState('attack');
       }
       // player facing from movement delta
-      const mdx = playerX - prevP.x, mdy = playerY - prevP.y;
+      // Use the latest real world-position step for facing, not the tiny
+      // per-render interpolation delta. The latter can be near zero or noisy
+      // between 30 Hz movement updates and make the sprite face sideways/back.
+      const mdx = playerRenderRef.current.facingDX;
+      const mdy = playerRenderRef.current.facingDY;
       // BUILD 422: debug direction test overrides facing and forces the walk
       // cycle so each numbered arrow shows its direction's sprite sheet.
       const dbgFace = live.debugFacing ?? null;
