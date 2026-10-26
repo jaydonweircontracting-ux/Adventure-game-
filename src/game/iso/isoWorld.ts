@@ -4,7 +4,7 @@ import type { TilePoint } from './projection';
 
 export type Terrain = 'grass' | 'dirt' | 'sand' | 'stone' | 'water';
 
-export interface HutRect { x0: number; y0: number; x1: number; y1: number }
+export interface HutRect { x0: number; y0: number; x1: number; y1: number; doorX?: number; doorY?: number }
 export interface StallRect { x0: number; y0: number; x1: number }
 export interface WallTile { x: number; y: number; h: boolean } // h=true: horizontal (north-wall style); false: vertical
 export interface WallRun { x0: number; y0: number; x1: number; y1: number; h: boolean }
@@ -62,7 +62,7 @@ export function isWalkableWorld(w: IsoWorld, crates: TilePoint[], x: number, y: 
   const hut = hutAt(w, x, y);
   if (hut) {
     // only the doorway tile (SE corner) is enterable
-    if (!(x === hut.x1 && y === hut.y1)) return false;
+    if (!(x === (hut.doorX ?? hut.x1) && y === (hut.doorY ?? hut.y1))) return false;
   }
   for (const s of w.stalls) if (y === s.y0 && x >= s.x0 && x <= s.x1) return false;
   for (const t of w.trees) if (t.tx === x && t.ty === y) return false;
