@@ -5,7 +5,13 @@ type Vec3 = [number, number, number];
 type Vertex = number[];
 const SAVE_KEY = 'ag-3d-player-v1';
 const NPC_SAVE_KEY = 'ag-3d-npcs-v1';
-type NpcActor3D = { name: string; x: number; y: number; waypoint: number };
+const INVENTORY_KEY = 'ag-3d-inventory-v1';
+const HEALTH_KEY = 'ag-3d-health-v1';
+type NpcActor3D = { name: string; x: number; y: number; waypoint: number; hp: number; alive: boolean };
+type Inventory3D = Record<string, number>;
+function readSaved<T>(key: string, fallback: T): T {
+  try { const value = localStorage.getItem(key); return value ? { ...fallback, ...JSON.parse(value) } : fallback; } catch { return fallback; }
+}
 const COLORS: Record<string, Vec3> = {
   grass: [0.25, 0.43, 0.23], dirt: [0.47, 0.36, 0.23], sand: [0.68, 0.59, 0.39],
   stone: [0.48, 0.49, 0.46], water: [0.12, 0.36, 0.57],
@@ -31,12 +37,12 @@ function savedNpcActors(world: IsoWorld): NpcActor3D[] {
       if (Array.isArray(saved)) return world.npcSpawns.map((npc, i) => {
         const actor = saved.find(a => a.name === npc.name) || saved[i];
         return actor && Number.isFinite(actor.x) && Number.isFinite(actor.y)
-          ? { name: npc.name, x: actor.x, y: actor.y, waypoint: Number.isFinite(actor.waypoint) ? actor.waypoint : 0 }
-          : { name: npc.name, x: npc.x, y: npc.y, waypoint: 0 };
+          ? { name: npc.name, x: actor.x, y: actor.y, waypoint: Number.isFinite(actor.waypoint) ? actor.waypoint : 0, hp: Number.isFinite(actor.hp) ? actor.hp : 100, alive: actor.alive !== false }
+          : { name: npc.name, x: npc.x, y: npc.y, waypoint: 0, hp: 100, alive: true };
       });
     }
   } catch { /* use authored NPC spawn positions */ }
-  return world.npcSpawns.map(npc => ({ name: npc.name, x: npc.x, y: npc.y, waypoint: 0 }));
+  return world.npcSpawns.map(npc => ({ name: npc.name, x: npc.x, y: npc.y, waypoint: 0, hp: 100, alive: true }));
 }
 
 function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
@@ -83,6 +89,8 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
   const canvasRef=useRef<HTMLCanvasElement>(null);
   const [message,setMessage]=useState('Connected to the editable world map');
   const [position,setPosition]=useState<Position>(()=>savedPosition(loadWorld()));
+  const [inventory,setInventory]=useState<Inventory3D>(()=>readSaved<Inventory3D>(INVENTORY_KEY,{}));
+  const [health,setHealth]=useState<number>(()=>{try{const n=Number(localStorage.getItem(HEALTH_KEY));return Number.isFinite(n)&&n>0?Math.min(100,n):100}catch{return 100}});
   const stateRef=useRef({position,world:loadWorld()});
   const needsWorldRebuild=useRef(true);
   const npcActorsRef=useRef<NpcActor3D[]>([]);
@@ -110,7 +118,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(.45,.63,.76,1);
     let yaw=.65,pitch=.7,zoom=12,drag=false,lx=0,ly=0,raf=0;
     const keys=new Set<string>();
-    const keydown=(e:KeyboardEvent)=>{const k=e.key.toLowerCase();if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e'].includes(k)){e.preventDefault();keys.add(k);}};
+    const keydown=(e:KeyboardEvent)=>{const k=e.key.toLowerCase();if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','f',' '].includes(k)){e.preventDefault();keys.add(k);}};
     const keyup=(e:KeyboardEvent)=>keys.delete(e.key.toLowerCase());
     const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture?.(e.pointerId)};
     const move=(e:PointerEvent)=>{if(!drag)return;yaw+=(e.clientX-lx)*.008;pitch=Math.max(.22,Math.min(1.25,pitch+(e.clientY-ly)*.006));lx=e.clientX;ly=e.clientY};
@@ -134,18 +142,43 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       gl.drawArrays(gl.TRIANGLES,0,gl.getBufferParameter(gl.ARRAY_BUFFER,gl.BUFFER_SIZE)/24);
       const actors:Vertex=[];
       const cube=(x:number,z:number,color:Vec3,h=1.25)=>{const x0=x-.22,x1=x+.22,z0=z-.22,z1=z+.22,y0=0,y1=h;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};const q=(a:Vec3,b:Vec3,c:Vec3,d:Vec3)=>{tri(a,b,c);tri(a,c,d)};q([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]);q([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]);q([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0]);q([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1]);q([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0])};
-      for(const npc of npcActorsRef.current) if(Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)cube(npc.x+.5,npc.y+.5,[.22,.55,.86],1.3);
+      for(const npc of npcActorsRef.current) if(Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)cube(npc.x+.5,npc.y+.5,npc.alive?[.22,.55,.86]:[.38,.18,.16],npc.alive?1.3:.22);
       cube(player.x+.5,player.y+.5,[.96,.77,.22],1.55);
       upload(actorBuffer,new Float32Array(actors));gl.drawArrays(gl.TRIANGLES,0,actors.length/6);
       raf=requestAnimationFrame(draw);
     };
     const tryMove=(dx:number,dy:number)=>{const nextX=Math.round(stateRef.current.position.x+dx),nextY=Math.round(stateRef.current.position.y+dy);const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===nextX&&Math.round(n.y)===nextY);if(!occupied&&isWalkableWorld(world,world.crates,nextX,nextY)){const next={x:nextX,y:nextY};stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true}};
-    const action=(e:KeyboardEvent)=>{if(e.type!=='keydown')return;const k=e.key.toLowerCase();if(k==='e'){const p=stateRef.current.position;const near=npcActorsRef.current.find(n=>Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1);setMessage(near?'You speak with '+near.name+'. They are going about their day.':'No one close enough to interact');return}const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])};
+    const action=(e:KeyboardEvent)=>{if(e.type!=='keydown')return;const k=e.key.toLowerCase();const p=stateRef.current.position;
+      if(k==='f'||k===' '){
+        const target=npcActorsRef.current.filter(n=>n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
+        if(!target){setMessage('No living target in melee range');return}
+        target.hp=Math.max(0,target.hp-25);
+        if(target.hp===0){target.alive=false;setMessage(target.name+' defeated. Press E beside them to loot the body.')}
+        else setMessage(target.name+' hit · '+target.hp+' HP remaining');
+        try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(npcActorsRef.current))}catch{}
+        return;
+      }
+      if(k==='e'){
+        const dead=npcActorsRef.current.find(n=>!n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1);
+        if(dead){const next={...inventory,gold:(inventory.gold||0)+5,[dead.name+' loot']:(inventory[dead.name+' loot']||0)+1};setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}npcActorsRef.current=npcActorsRef.current.filter(n=>n!==dead);try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(npcActorsRef.current))}catch{}setMessage('Looted '+dead.name+': 5 gold and 1 keepsake');return}
+        const near=npcActorsRef.current.find(n=>n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1);
+        if(near){setMessage('You speak with '+near.name+'. They are going about their day.');return}
+        const key=(x:number,y:number)=>Math.abs(x-p.x)<=1&&Math.abs(y-p.y)<=1;
+        const crate=world.crates.find(c=>key(c.tx,c.ty));
+        if(crate){world.crates=world.crates.filter(c=>c!==crate);const next={...inventory,wood:(inventory.wood||0)+1};setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Collected 1 wood from the crate');return}
+        const rock=world.rocks.find(c=>key(c.tx,c.ty));
+        if(rock){world.rocks=world.rocks.filter(c=>c!==rock);const next={...inventory,stone:(inventory.stone||0)+1};setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
+        const tree=world.trees.find(c=>key(c.tx,c.ty));
+        if(tree){world.trees=world.trees.filter(c=>c!==tree);const next={...inventory,wood:(inventory.wood||0)+2};setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
+        setMessage('Nothing close enough to interact with');return
+      }
+      const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])};
     window.addEventListener('keydown',action);
     draw();
     const npcTimer=window.setInterval(()=>{
       const actors=npcActorsRef.current;
       actors.forEach((actor,i)=>{
+        if(!actor.alive)return;
         const authored=world.npcSpawns.find(n=>n.name===actor.name);
         if(!authored?.waypoints.length)return;
         const target=authored.waypoints[((actor.waypoint%authored.waypoints.length)+authored.waypoints.length)%authored.waypoints.length];
@@ -159,7 +192,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       });
       try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}
     },900);
-    const timer=window.setInterval(()=>{if(keys.size){const k=[...keys].at(-1)!;const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])}},130);
+    const timer=window.setInterval(()=>{if(keys.size){const k=[...keys].at(-1)!;if(k==='e'||k==='f'||k===' ')return;const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])}},130);
     return()=>{cancelAnimationFrame(raf);window.clearInterval(timer);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const next={x:Math.round(position.x+dx),y:Math.round(position.y+dy)};const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===next.x&&Math.round(n.y)===next.y);if(!occupied&&isWalkableWorld(world,world.crates,next.x,next.y)){stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true }};
@@ -167,10 +200,12 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>
     <canvas ref={canvasRef} aria-label="3D Adventure world" style={{width:'100%',height:'100%',display:'block',touchAction:'none'}}/>
     <div style={{position:'absolute',left:10,top:10,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#f2f7f2',font:'700 11px/1.4 system-ui',pointerEvents:'none'}}>ADVENTURE 3D · WORLD SIMULATION <span style={{opacity:.8,fontWeight:400}}>Editable terrain · collision · walking NPC schedules · saved progress</span></div>
-    <div style={{position:'absolute',left:10,bottom:14,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>{message} · {Math.round(position.x)},{Math.round(position.y)}</div>
+    <div style={{position:'absolute',left:10,bottom:14,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>{message} · {Math.round(position.x)},{Math.round(position.y)}<div style={{marginTop:5}}>HP {health}/100 · Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</div><div style={{opacity:.8,marginTop:3}}>E: interact / gather / loot · F or Space: melee attack</div></div>
     <div style={{position:'absolute',right:12,bottom:12,display:'grid',gridTemplateColumns:'48px 48px 48px',gridTemplateRows:'44px 44px 44px',gap:4,touchAction:'none'}}>
       <div/><div>{pad(0,-1,'Forward')}</div><div/>
       {pad(-1,0,'Left')}{pad(0,1,'Back')}{pad(1,0,'Right')}
+      <button type="button" aria-label="Interact" onPointerDown={e=>{e.preventDefault();const event=new KeyboardEvent('keydown',{key:'e'});window.dispatchEvent(event)}} style={{gridColumn:'1 / span 3',height:38,borderRadius:9,border:'1px solid #c4d1bd',background:'#34563d',color:'#fff',fontWeight:700,touchAction:'none'}}>Interact / Loot (E)</button>
+      <button type="button" aria-label="Attack" onPointerDown={e=>{e.preventDefault();window.dispatchEvent(new KeyboardEvent('keydown',{key:'f'}))}} style={{gridColumn:'1 / span 3',height:38,borderRadius:9,border:'1px solid #d9a39a',background:'#672d28',color:'#fff',fontWeight:700,touchAction:'none'}}>Attack (F)</button>
     </div>
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
   </div>;
