@@ -189,8 +189,14 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
   // Render proper low-poly medieval cottages instead of the old plain boxes.
   // The uploaded pack is FBX-only; these web-native meshes keep the 3D mode
   // playable now while the source models are staged for GLB/glTF conversion.
-  const houseWallColors: Vec3[] = [[.62,.47,.32],[.68,.57,.41],[.52,.43,.34],[.72,.62,.46],[.55,.48,.38]];
-  const roofColors: Vec3[] = [[.34,.14,.11],[.43,.22,.14],[.28,.25,.22],[.39,.18,.13],[.31,.20,.16]];
+  const houseWallColors: Vec3[] = [
+    [.78,.66,.48], [.72,.78,.67], [.72,.58,.48], [.63,.73,.79],
+    [.82,.74,.57], [.70,.65,.78], [.78,.62,.64], [.61,.72,.56]
+  ];
+  const roofColors: Vec3[] = [
+    [.58,.16,.12], [.30,.35,.40], [.48,.25,.12], [.25,.32,.22],
+    [.43,.18,.24], [.34,.29,.22], [.19,.30,.38], [.52,.31,.12]
+  ];
   const houseBox=(x:number,z:number,w:number,h:number,d:number,y0:number,color:Vec3)=>{
     const x0=x-w/2,x1=x+w/2,z0=z-d/2,z1=z+d/2,y1=y0+h;
     quad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],color);
