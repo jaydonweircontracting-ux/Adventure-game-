@@ -4,7 +4,7 @@
  * The main game renderer remains its existing lightweight WebGL renderer.
  * Three.js and FBXLoader are bundled locally with the app. This avoids
  * external-module/CORS failures on mobile browsers and GitHub Pages. Parsed geometry is converted into
- * normalized, flat-shaded triangles that the existing renderer can draw.
+ * normalized triangles with their real FBX diffuse texture colours baked from UVs, so the existing renderer can draw them.
  * If the remote loader or a model fails, the game keeps its procedural house.
  */
 import * as THREE from 'three';
@@ -44,6 +44,40 @@ export function getHouseModelTriangles(index: number): PackedHouseTriangles | un
 
 function packFbxObject(root: any, THREE: any): Float32Array {
   root.updateMatrixWorld(true);
+  // The lightweight world renderer accepts vertex colours, so sample each
+  // FBX material's real diffuse texture at the mesh UVs before packing. This
+  // preserves the uploaded house atlas/material appearance without replacing
+  // the established renderer or requiring a second scene renderer.
+  const pixelCache = new WeakMap<object, { data: Uint8ClampedArray; width: number; height: number }>();
+  const texturePixel = (material: any, uv: any): { r:number; g:number; b:number } | undefined => {
+    const image = material?.map?.image;
+    if (!image || !uv || !(image.width || image.videoWidth) || !(image.height || image.videoHeight)) return;
+    try {
+      let pixels = pixelCache.get(image);
+      if (!pixels) {
+        const width = image.width || image.videoWidth, height = image.height || image.videoHeight;
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) return;
+        context.drawImage(image, 0, 0, width, height);
+        pixels = { data: context.getImageData(0, 0, width, height).data, width, height };
+        pixelCache.set(image, pixels);
+      }
+      const repeat = material.map?.repeat;
+      const offset = material.map?.offset;
+      const u = (((uv.x * (repeat?.x ?? 1) + (offset?.x ?? 0)) % 1) + 1) % 1;
+      const v = (((uv.y * (repeat?.y ?? 1) + (offset?.y ?? 0)) % 1) + 1) % 1;
+      const x = Math.min(pixels.width - 1, Math.floor(u * pixels.width));
+      const y = Math.min(pixels.height - 1, Math.floor((1 - v) * pixels.height));
+      const at = (y * pixels.width + x) * 4;
+      if (pixels.data[at + 3] < 16) return;
+      return { r: pixels.data[at] / 255, g: pixels.data[at + 1] / 255, b: pixels.data[at + 2] / 255 };
+    } catch {
+      // Cross-origin or unsupported images safely fall back to material colours.
+      return;
+    }
+  };
   const raw: Array<{ x:number; y:number; z:number; r:number; g:number; b:number }> = [];
   let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
   const addVertex=(v:any,color:any)=>{
@@ -81,13 +115,16 @@ function packFbxObject(root: any, THREE: any): Float32Array {
     };
     const groups=geometry.groups?.length?geometry.groups:[{start:0,count:index?index.count:position.count,materialIndex:0}];
     for(const group of groups){
-      const color=materialColor(group.materialIndex||0);
+      const material=materials[group.materialIndex||0]||materials[0];
+      const fallbackColor=materialColor(group.materialIndex||0);
+      const uvAttribute=geometry.attributes.uv;
       const end=group.start+group.count;
       for(let i=group.start;i+2<end;i+=3){
         for(let j=0;j<3;j++){
           const at=index?index.getX(i+j):i+j;
           const v=new THREE.Vector3(position.getX(at),position.getY(at),position.getZ(at)).applyMatrix4(object.matrixWorld);
-          addVertex(v,color);
+          const uv=uvAttribute ? new THREE.Vector2(uvAttribute.getX(at), uvAttribute.getY(at)) : undefined;
+          addVertex(v, texturePixel(material, uv) || fallbackColor);
         }
       }
     }
