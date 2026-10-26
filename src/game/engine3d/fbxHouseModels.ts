@@ -93,13 +93,16 @@ function packFbxObject(root: any, THREE: any): Float32Array {
     }
   });
   if(!raw.length||!Number.isFinite(minX)||maxX-minX<1e-5||maxY-minY<1e-5||maxZ-minZ<1e-5) return new Float32Array();
-  const sx=maxX-minX,sy=maxY-minY,sz=maxZ-minZ;
+  // Keep source proportions: independently normalizing X, Y and Z squashes
+  // real houses into identical boxes and makes imported meshes look mangled.
+  const span=Math.max(maxX-minX,maxZ-minZ);
+  const centerX=(minX+maxX)/2,centerZ=(minZ+maxZ)/2;
   const packed=new Float32Array(raw.length*6);
   for(let i=0;i<raw.length;i++){
     const v=raw[i],o=i*6;
-    packed[o]=(v.x-minX)/sx;
-    packed[o+1]=(v.y-minY)/sy;
-    packed[o+2]=(v.z-minZ)/sz;
+    packed[o]=0.5+(v.x-centerX)/span;
+    packed[o+1]=(v.y-minY)/span;
+    packed[o+2]=0.5+(v.z-centerZ)/span;
     packed[o+3]=Math.max(0,Math.min(1,v.r));
     packed[o+4]=Math.max(0,Math.min(1,v.g));
     packed[o+5]=Math.max(0,Math.min(1,v.b));
