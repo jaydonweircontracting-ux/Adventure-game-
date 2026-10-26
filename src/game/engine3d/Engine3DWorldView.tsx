@@ -186,16 +186,16 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
   // Walls and stall counters use the editor-authored collision geometry.
   for(const wall of world.walls) if(wall.x>=minX&&wall.x<=maxX&&wall.y>=minY&&wall.y<=maxY) cube(wall.x+.5,wall.y+.5,1,.85,1,[.43,.39,.32]);
   for(const stall of world.stalls) if(stall.y0>=minY&&stall.y0<=maxY) for(let x=stall.x0;x<=stall.x1;x++) if(x>=minX&&x<=maxX) cube(x+.5,stall.y0+.5,1,.75,1,[.57,.31,.16]);
-  // Render proper low-poly medieval cottages instead of the old plain boxes.
-  // The uploaded pack is FBX-only; these web-native meshes keep the 3D mode
-  // playable now while the source models are staged for GLB/glTF conversion.
+  // Daggerfall-inspired town architecture: restrained plaster/stone walls,
+  // dark timber, steep weathered roofs, stone plinths and narrow dark windows.
+  // Avoid the bright rainbow palette and preserve the chunky low-poly silhouette.
   const houseWallColors: Vec3[] = [
-    [.78,.66,.48], [.72,.78,.67], [.72,.58,.48], [.63,.73,.79],
-    [.82,.74,.57], [.70,.65,.78], [.78,.62,.64], [.61,.72,.56]
+    [.66,.58,.43], [.60,.61,.51], [.70,.64,.51], [.55,.54,.47],
+    [.68,.57,.44], [.62,.59,.49], [.72,.66,.54], [.57,.59,.49]
   ];
   const roofColors: Vec3[] = [
-    [.58,.16,.12], [.30,.35,.40], [.48,.25,.12], [.25,.32,.22],
-    [.43,.18,.24], [.34,.29,.22], [.19,.30,.38], [.52,.31,.12]
+    [.35,.16,.12], [.25,.28,.29], [.31,.23,.17], [.28,.27,.21],
+    [.38,.18,.15], [.27,.28,.29], [.34,.22,.16], [.29,.27,.22]
   ];
   const houseBox=(x:number,z:number,w:number,h:number,d:number,y0:number,color:Vec3)=>{
     const x0=x-w/2,x1=x+w/2,z0=z-d/2,z1=z+d/2,y1=y0+h;
@@ -215,20 +215,43 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
     // successful FBX models replace their matching fallback on the next rebuild.
     const modelTriangles=isHouseModelLibrarySettled() ? getHouseModelTriangles(modelIndex) : undefined;
     if(modelTriangles && modelTriangles.length){
-      // Imported FBX geometry is normalized to its own bounds by the loader,
-      // then fitted to each authored building footprint in the 3D world.
+      // Fit the imported house uniformly in X/Z instead of stretching every
+      // FBX to the lot's exact width and depth. Independent scaling was making
+      // rooflines and facades look like flattened tan blobs. The source packer
+      // stores X/Z in a shared normalized scale, so these extents preserve ratio.
+      let modelMinX=Infinity,modelMaxX=-Infinity,modelMinZ=Infinity,modelMaxZ=-Infinity,modelMaxY=0;
+      for(let i=0;i+17<modelTriangles.length;i+=18) for(const offset of [0,6,12]){
+        modelMinX=Math.min(modelMinX,modelTriangles[i+offset]);
+        modelMaxX=Math.max(modelMaxX,modelTriangles[i+offset]);
+        modelMinZ=Math.min(modelMinZ,modelTriangles[i+offset+2]);
+        modelMaxZ=Math.max(modelMaxZ,modelTriangles[i+offset+2]);
+        modelMaxY=Math.max(modelMaxY,modelTriangles[i+offset+1]);
+      }
+      const spanX=Math.max(.01,modelMaxX-modelMinX),spanZ=Math.max(.01,modelMaxZ-modelMinZ);
+      const fitScale=Math.min((w-.22)/spanX,(d-.22)/spanZ);
+      const modelCenterX=(modelMinX+modelMaxX)/2,modelCenterZ=(modelMinZ+modelMaxZ)/2;
+      const modelHeight=Math.min(4.8,Math.max(2.0,modelMaxY*fitScale));
       for(let i=0;i+17<modelTriangles.length;i+=18){
-        const a:Vec3=[x-w/2+modelTriangles[i]*w,modelTriangles[i+1]*3.6, z-d/2+modelTriangles[i+2]*d];
-        const b:Vec3=[x-w/2+modelTriangles[i+6]*w,modelTriangles[i+7]*3.6, z-d/2+modelTriangles[i+8]*d];
-        const c:Vec3=[x-w/2+modelTriangles[i+12]*w,modelTriangles[i+13]*3.6, z-d/2+modelTriangles[i+14]*d];
-        // Preserve the distinct per-face palette baked from the uploaded FBX
-        // material groups instead of flattening every model to tan.
+        const a:Vec3=[x+(modelTriangles[i]-modelCenterX)*fitScale,modelTriangles[i+1]*fitScale, z+(modelTriangles[i+2]-modelCenterZ)*fitScale];
+        const b:Vec3=[x+(modelTriangles[i+6]-modelCenterX)*fitScale,modelTriangles[i+7]*fitScale, z+(modelTriangles[i+8]-modelCenterZ)*fitScale];
+        const c:Vec3=[x+(modelTriangles[i+12]-modelCenterX)*fitScale,modelTriangles[i+13]*fitScale, z+(modelTriangles[i+14]-modelCenterZ)*fitScale];
+        // Keep source diffuse colours, but gently tone down over-bright texture
+        // samples to match Daggerfall's weathered medieval palette.
         const color:Vec3=[
-          Math.min(1,Math.max(.035,modelTriangles[i+3])),
-          Math.min(1,Math.max(.035,modelTriangles[i+4])),
-          Math.min(1,Math.max(.035,modelTriangles[i+5]))
+          Math.min(1,Math.max(.025,modelTriangles[i+3]*.92)),
+          Math.min(1,Math.max(.025,modelTriangles[i+4]*.92)),
+          Math.min(1,Math.max(.025,modelTriangles[i+5]*.92))
         ];
         tri(a,b,c,color);
+      }
+      // Give imported buildings the readable, grounded Daggerfall silhouette:
+      // a dark stone plinth at ground level and a small chimney on a rear corner.
+      const plinthH=Math.min(.24,modelHeight*.09);
+      houseBox(x,z,w*.78,plinthH,d*.78,0,[.31,.29,.25]);
+      if(modelIndex%3!==1){
+        const chimneyX=x+w*.22, chimneyZ=z-d*.22;
+        houseBox(chimneyX,chimneyZ,Math.max(.22,w*.13),Math.max(.5,modelHeight*.24),Math.max(.22,d*.13),modelHeight*.68,[.38,.34,.29]);
+        houseBox(chimneyX,chimneyZ,.28,.12,.28,modelHeight*.91,[.22,.20,.18]);
       }
       continue;
     }
