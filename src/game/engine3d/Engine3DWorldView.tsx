@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type IsoWorld } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
-import { rpgSprite, preloadRpgBase, type RpgAnim, type RpgBase } from '../iso/rpgSprites';
+import { rpgSprite, rpgAnchorFor, preloadRpgBase, type RpgAnim, type RpgBase } from '../iso/rpgSprites';
 import type { Face8 } from '../iso/isoSprites';
 
 type Vec3 = [number, number, number];
@@ -418,18 +418,6 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       gl.bindBuffer(gl.ARRAY_BUFFER,worldBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
       gl.drawArrays(gl.TRIANGLES,0,gl.getBufferParameter(gl.ARRAY_BUFFER,gl.BUFFER_SIZE)/24);const renderError=gl.getError();if(renderError!==gl.NO_ERROR)setMessage('3D WebGL draw error: 0x'+renderError.toString(16));
       const actors:number[]=[];
-      // Soft, flattened ground shadow makes the billboard character read as
-      // standing in the 3D scene instead of hovering above the terrain.
-      const addGroundShadow=(x:number,z:number,rx:number,rz:number)=>{
-        const color:Vec3=[.105,.125,.095],segments=14;
-        for(let i=0;i<segments;i++){
-          const a=i*Math.PI*2/segments,b=(i+1)*Math.PI*2/segments;
-          actors.push(x,.012,z,color[0],color[1],color[2],
-            x+Math.cos(a)*rx,.012,z+Math.sin(a)*rz,color[0],color[1],color[2],
-            x+Math.cos(b)*rx,.012,z+Math.sin(b)*rz,color[0],color[1],color[2]);
-        }
-      };
-      addGroundShadow(player.x+.5,player.y+.5,.34,.23);
       const corpse=(x:number,z:number)=>{const color:Vec3=[.38,.18,.16],x0=x-.28,x1=x+.28,z0=z-.28,z1=z+.28,y0=0,y1=.18;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};tri([x0,y0,z1],[x1,y0,z1],[x1,y1,z1]);tri([x0,y0,z1],[x1,y1,z1],[x0,y1,z1]);};
       for(const npc of npcActorsRef.current) if(!npc.looted&&!npc.alive&&Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)corpse(npc.x+.5,npc.y+.5);
       upload(actorBuffer,new Float32Array(actors));gl.drawArrays(gl.TRIANGLES,0,actors.length/6);
@@ -460,14 +448,17 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
           if(npc.looted||!npc.alive||Math.abs(npc.x-player.x)>=22||Math.abs(npc.y-player.y)>=22)return;
           drawNpcSprite(npc.x+.5,npc.y+.5,npcBases[index%npcBases.length],(index+Math.floor(performance.now()/900))%4);
         });
-        const px=player.x+.5,pz=player.y+.5,half=.405,height=1.62,groundOffset=-.13;
-        // Lower the entire sprite slightly to compensate for transparent
-        // padding in the source sheet; keep the feet planted at ground level.
-        const left=[px-rightX*half,groundOffset,pz-rightZ*half],right=[px+rightX*half,groundOffset,pz+rightZ*half];
-        const topLeft=[left[0],height+groundOffset,left[2]],topRight=[right[0],height+groundOffset,right[2]];
+        const px=player.x+.5,pz=player.y+.5,half=.34,height=1.48;
+        // Use the source frame's measured opaque-foot anchor. The texture's
+        // transparent rows are cropped away, so the visible feet touch y=0
+        // instead of floating above the ground.
+        const frameAnchor=rpgAnchorFor('BaseHumanMale',moving?'Walk':'Idle',face,frameIndex);
+        const bottomV=Math.max(.72,Math.min(1,frameAnchor.cb/130));
+        const left=[px-rightX*half,0,pz-rightZ*half],right=[px+rightX*half,0,pz+rightZ*half];
+        const topLeft=[left[0],height,left[2]],topRight=[right[0],height,right[2]];
         const spriteData=new Float32Array([
-          ...left,0,1, ...right,1,1, ...topRight,1,0,
-          ...left,0,1, ...topRight,1,0, ...topLeft,0,0
+          ...left,0,bottomV, ...right,1,bottomV, ...topRight,1,0,
+          ...left,0,bottomV, ...topRight,1,0, ...topLeft,0,0
         ]);
         gl.useProgram(playerSpriteProgram);
         const sp=gl.getAttribLocation(playerSpriteProgram,'p'),su=gl.getAttribLocation(playerSpriteProgram,'uv');
