@@ -37,6 +37,12 @@ const HOUSE_FILES = [
 
 const houseModels: Array<PackedHouseTriangles | undefined> = new Array(HOUSE_FILES.length);
 let loadPromise: Promise<number> | undefined;
+let houseLibrarySettled = false;
+
+/** True only after every FBX has either loaded or failed, preventing fallback meshes flashing in first. */
+export function isHouseModelLibrarySettled(): boolean {
+  return houseLibrarySettled;
+}
 
 export function getHouseModelTriangles(index: number): PackedHouseTriangles | undefined {
   return houseModels[((index % HOUSE_FILES.length) + HOUSE_FILES.length) % HOUSE_FILES.length];
@@ -209,7 +215,11 @@ export function loadHouseModelLibrary(): Promise<number> {
         console.warn('[Adventure 3D] Failed to load house model '+HOUSE_FILES[i],error);
       }
     }
+    houseLibrarySettled = true;
     return loaded;
-  })();
+  })().catch((error) => {
+    houseLibrarySettled = true;
+    throw error;
+  });
   return loadPromise;
 }
