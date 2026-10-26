@@ -3,6 +3,7 @@ import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type IsoW
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { rpgSprite, preloadRpgBase, type RpgAnim, type RpgBase } from '../iso/rpgSprites';
 import type { Face8 } from '../iso/isoSprites';
+import { getHouseModelTriangles, loadHouseModelLibrary } from './fbxHouseModels';
 
 type Vec3 = [number, number, number];
 type Vertex = number[];
@@ -202,8 +203,21 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
     if(hut.x1<minX||hut.x0>maxX||hut.y1<minY||hut.y0>maxY) continue;
     const x=(hut.x0+hut.x1+1)/2,z=(hut.y0+hut.y1+1)/2,w=Math.max(2,hut.x1-hut.x0+1),d=Math.max(2,hut.y1-hut.y0+1);
     const wallH=Math.min(2.65,1.75+Math.min(w,d)*.12),ridgeY=wallH+.8;
-    const wall=houseWallColors[houseIndex%houseWallColors.length],roof=roofColors[houseIndex%roofColors.length];
-    houseIndex++;
+    const modelIndex=houseIndex++%8;
+    const modelTriangles=getHouseModelTriangles(modelIndex);
+    if(modelTriangles && modelTriangles.length){
+      // Imported FBX geometry is normalized to its own bounds by the loader,
+      // then fitted to each authored building footprint in the 3D world.
+      for(let i=0;i+17<modelTriangles.length;i+=18){
+        const a:Vec3=[x-w/2+modelTriangles[i]*w,modelTriangles[i+1]*3.6, z-d/2+modelTriangles[i+2]*d];
+        const b:Vec3=[x-w/2+modelTriangles[i+6]*w,modelTriangles[i+7]*3.6, z-d/2+modelTriangles[i+8]*d];
+        const c:Vec3=[x-w/2+modelTriangles[i+12]*w,modelTriangles[i+13]*3.6, z-d/2+modelTriangles[i+14]*d];
+        const color:Vec3=[modelTriangles[i+3],modelTriangles[i+4],modelTriangles[i+5]];
+        tri(a,b,c,color);
+      }
+      continue;
+    }
+    const wall=houseWallColors[modelIndex%houseWallColors.length],roof=roofColors[modelIndex%roofColors.length];
     houseBox(x,z,w,wallH,d,0,wall);
     // Two sloped roof planes meet at a ridge, with a slight eave overhang.
     const x0=x-w/2-.16,x1=x+w/2+.16,z0=z-d/2-.16,z1=z+d/2+.16;
@@ -247,6 +261,14 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     const canvas=canvasRef.current;if(!canvas)return;
     const world=applyMosslightTownLayout(loadWorld());stateRef.current.world=world;
     npcActorsRef.current=savedNpcActors(world);
+    // Load real FBX cottages asynchronously; procedural cottages remain the
+    // safe fallback until each model has parsed successfully.
+    void loadHouseModelLibrary().then((loaded)=>{
+      if(loaded>0){
+        needsWorldRebuild.current=true;
+        setMessage('Loaded '+loaded+' real low-poly FBX house models');
+      }
+    }).catch((error)=>console.warn('[Adventure 3D] FBX house library unavailable; using built-in houses.',error));
     const html=document.documentElement,body=document.body;
     const oldHtml={overflow:html.style.overflow,touchAction:html.style.touchAction,overscrollBehavior:html.style.overscrollBehavior};
     const oldBody={overflow:body.style.overflow,touchAction:body.style.touchAction,overscrollBehavior:body.style.overscrollBehavior,position:body.style.position,width:body.style.width};
