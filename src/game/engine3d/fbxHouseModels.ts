@@ -193,7 +193,7 @@ export function loadHouseModelLibrary(): Promise<number> {
   if(loadPromise)return loadPromise;
   loadPromise=(async()=>{
     const loader=new FBXLoader();
-    let atlas: THREE.Texture | undefined;
+    let atlas: any;
     try {
       // The uploaded source pack includes its shared texture atlas. FBXLoader
       // can miss the original relative texture path on GitHub Pages, so load
