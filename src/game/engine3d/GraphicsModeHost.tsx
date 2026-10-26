@@ -6,11 +6,19 @@ import type { GraphicsMode } from './engine3d';
 const MODE_KEY = 'ag-graphics-mode-v1';
 
 function initialMode(): GraphicsMode {
-  // Always boot into the established 2.5D game. Players can still switch to
-  // 2D or experimental 3D from Options during the session.
+  // Always boot into the established 2.5D game, regardless of a previously
+  // saved 3D choice or a stale ?mode=3d test URL. Players can switch modes
+  // manually from Options after the game has loaded.
   try {
     localStorage.setItem(MODE_KEY, '2.5d');
     localStorage.setItem('ag-view-mode', '2.5d');
+  } catch {}
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('mode')) {
+      url.searchParams.delete('mode');
+      window.history.replaceState({}, '', url.toString());
+    }
   } catch {}
   return '2.5d';
 }
