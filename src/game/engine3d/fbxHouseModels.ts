@@ -18,6 +18,18 @@ const HOUSE_FILES = [
   'house_06_full.fbx',
   'house_07_full.fbx',
   'house_08_full.fbx',
+  'House_09_full.fbx',
+  'House_10_full.fbx',
+  'house_11_full.fbx',
+  'House_12_full.fbx',
+  'House_13_full.fbx',
+  'house_14_full.fbx',
+  'house_15_full.fbx',
+  'House_16_full.fbx',
+  'House_17_full.fbx',
+  'House_18_Full.fbx',
+  'House_19_full.fbx',
+  'house_20_full.fbx',
 ] as const;
 
 const houseModels: Array<PackedHouseTriangles | undefined> = new Array(HOUSE_FILES.length);
