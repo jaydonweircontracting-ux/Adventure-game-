@@ -240,7 +240,13 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         if(gl.getProgramParameter(playerSpriteProgram,gl.LINK_STATUS)){
           playerSpriteBuffer=gl.createBuffer();playerSpriteTexture=gl.createTexture();
           gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-          const spriteImage=new Image();spriteImage.onload=()=>{if(!playerSpriteTexture)return;gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,spriteImage);};spriteImage.onerror=()=>setMessage('Player sprite failed to load: baseHumanMale idle');spriteImage.src='/Adventure-game-/game-sprites/baseHumanMale/player-idle.png';
+          const spriteFrames:HTMLImageElement[][]=[[],[]];
+          for(let cam=0;cam<8;cam++) for(let mode=0;mode<2;mode++){
+            const image=new Image();image.onload=()=>{if(mode===0&&cam===3&&playerSpriteTexture){gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);}};
+            image.onerror=()=>{if(cam===3&&mode===0)setMessage('Player sprite failed to load: baseHumanMale idle');};
+            image.src='/Adventure-game-/game-sprites/baseHumanMale/'+(mode===0?'idle-':'walk-')+cam+'.png';spriteFrames[mode][cam]=image;
+          }
+          (window as any).__ag3dSpriteFrames=spriteFrames;
         }
       }
     }
@@ -249,14 +255,17 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     gl.enableVertexAttribArray(pLoc);gl.enableVertexAttribArray(cLoc);
     gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);gl.clearColor(.45,.63,.76,1);
     let yaw=.65,pitch=.7,zoom=12,drag=false,lx=0,ly=0,raf=0;
+    const pointers=new Map<number,{x:number;y:number}>();let pinchDistance=0;
+    const wheel=(e:WheelEvent)=>{e.preventDefault();zoom=Math.max(4,Math.min(32,zoom+e.deltaY*.012));};
     const keys=new Set<string>();
     const keydown=(e:KeyboardEvent)=>{const k=e.key.toLowerCase();if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','f',' '].includes(k)){e.preventDefault();keys.add(k);}};
     const keyup=(e:KeyboardEvent)=>keys.delete(e.key.toLowerCase());
-    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture?.(e.pointerId)};
-    const move=(e:PointerEvent)=>{if(!drag)return;yaw+=(e.clientX-lx)*.008;pitch=Math.max(.22,Math.min(1.25,pitch+(e.clientY-ly)*.006));lx=e.clientX;ly=e.clientY};
-    const up=()=>{drag=false};
+    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;lx=e.clientX;ly=e.clientY;}else{drag=false;pinchDistance=pointerDistance();}canvas.setPointerCapture?.(e.pointerId)};
+    const pointerDistance=()=>{const pts=[...pointers.values()];return pts.length<2?0:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y)};
+    const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)zoom=Math.max(4,Math.min(32,zoom+(pinchDistance-distance)*.025));pinchDistance=distance;return;}if(!drag)return;yaw+=(e.clientX-lx)*.008;pitch=Math.max(.22,Math.min(1.25,pitch+(e.clientY-ly)*.006));lx=e.clientX;ly=e.clientY};
+    const up=(e:PointerEvent)=>{pointers.delete(e.pointerId);drag=false;pinchDistance=0;if(pointers.size===1){const p=[...pointers.values()][0];lx=p.x;ly=p.y;drag=true;}};
     window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);
-    canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);
+    canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);canvas.addEventListener('wheel',wheel,{passive:false});
     const perspective=(f:number,a:number,n:number,far:number)=>{const t=1/Math.tan(f/2),nf=1/(n-far);return [t/a,0,0,0,0,t,0,0,0,0,(far+n)*nf,-1,0,0,2*far*n*nf,0]};
     const lookAt=(eye:number[],center:number[])=>{const norm=(v:number[])=>{const l=Math.hypot(...v)||1;return v.map(n=>n/l)};const cross=(a:number[],b:number[])=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];const sub=(a:number[],b:number[])=>a.map((n,i)=>n-b[i]);const z=norm(sub(eye,center)),x=norm(cross([0,1,0],z)),y=cross(z,x);return [x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]),-(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]),-(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]),1]};
     const mul=(a:number[],b:number[])=>{const o=new Array(16).fill(0);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)o[c*4+r]+=a[k*4+r]*b[c*4+k];return o};
@@ -292,6 +301,11 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         gl.enableVertexAttribArray(sp);gl.vertexAttribPointer(sp,3,gl.FLOAT,false,20,0);
         gl.enableVertexAttribArray(su);gl.vertexAttribPointer(su,2,gl.FLOAT,false,20,12);
         gl.uniformMatrix4fv(gl.getUniformLocation(playerSpriteProgram,'m'),false,new Float32Array(mat));
+        const frames=(window as any).__ag3dSpriteFrames as HTMLImageElement[][]|undefined;
+        const cameraSide=((Math.round((yaw/(Math.PI*2))*8)%8)+8)%8;
+        const walking=[...keys].some(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
+        const frame=frames?.[walking?1:0]?.[cameraSide];
+        if(frame?.complete&&frame.naturalWidth>0){gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,frame);}
         gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);
         gl.uniform1i(gl.getUniformLocation(playerSpriteProgram,'tex'),0);
         gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
@@ -347,7 +361,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}
     },900);
     const timer=window.setInterval(()=>{if(keys.size){const k=[...keys].at(-1)!;if(k==='e'||k==='f'||k===' ')return;const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])}},130);
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(timer);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);if(playerSpriteTexture)gl.deleteTexture(playerSpriteTexture);if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(timer);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);if(playerSpriteTexture)gl.deleteTexture(playerSpriteTexture);if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const next={x:Math.round(position.x+dx),y:Math.round(position.y+dy)};const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===next.x&&Math.round(n.y)===next.y);if(!occupied&&isWalkableWorld(world,world.crates,next.x,next.y)){stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true }};
   const pad=(dx:number,dy:number,label:string)=> <button key={label} type="button" aria-label={label} onPointerDown={e=>{e.preventDefault();move(dx,dy)}} style={{width:48,height:44,borderRadius:9,border:'1px solid #c4d1bd',background:'#172c23e8',color:'#fff',fontSize:19,fontWeight:800,touchAction:'none'}}>{label==='Forward'?'▲':label==='Back'?'▼':label==='Left'?'◀':'▶'}</button>;
@@ -360,6 +374,10 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       {pad(-1,0,'Left')}{pad(0,1,'Back')}{pad(1,0,'Right')}
       <button type="button" aria-label="Interact" onPointerDown={e=>{e.preventDefault();window.dispatchEvent(new KeyboardEvent('keydown',{key:'e'}));window.dispatchEvent(new KeyboardEvent('keyup',{key:'e'}))}} style={{gridColumn:'1 / span 3',height:38,borderRadius:9,border:'1px solid #c4d1bd',background:'#34563d',color:'#fff',fontWeight:700,touchAction:'none'}}>Interact / Loot (E)</button>
       <button type="button" aria-label="Attack" onPointerDown={e=>{e.preventDefault();window.dispatchEvent(new KeyboardEvent('keydown',{key:'f'}));window.dispatchEvent(new KeyboardEvent('keyup',{key:'f'}))}} style={{gridColumn:'1 / span 3',height:38,borderRadius:9,border:'1px solid #d9a39a',background:'#672d28',color:'#fff',fontWeight:700,touchAction:'none'}}>Attack (F)</button>
+    </div>
+    <div style={{position:'absolute',left:10,top:58,zIndex:5,display:'flex',gap:6}}>
+      <button type="button" aria-label="Zoom in" onPointerDown={e=>{e.preventDefault();canvasRef.current?.dispatchEvent(new WheelEvent('wheel',{deltaY:-160,cancelable:true,bubbles:true}))}} style={{width:42,height:40,border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontSize:24,fontWeight:800,touchAction:'none'}}>+</button>
+      <button type="button" aria-label="Zoom out" onPointerDown={e=>{e.preventDefault();canvasRef.current?.dispatchEvent(new WheelEvent('wheel',{deltaY:160,cancelable:true,bubbles:true}))}} style={{width:42,height:40,border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontSize:24,fontWeight:800,touchAction:'none'}}>−</button>
     </div>
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
   </div>;
