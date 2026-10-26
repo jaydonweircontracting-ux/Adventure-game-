@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type IsoWorld } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
+import { rpgSprite, preloadRpgBase, type RpgAnim } from '../iso/rpgSprites';
+import type { Face8 } from '../iso/isoSprites';
 
 type Vec3 = [number, number, number];
 type Vertex = number[];
@@ -240,13 +242,11 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         if(gl.getProgramParameter(playerSpriteProgram,gl.LINK_STATUS)){
           playerSpriteBuffer=gl.createBuffer();playerSpriteTexture=gl.createTexture();
           gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-          const spriteFrames:HTMLImageElement[][]=[[],[]];
-          for(let cam=0;cam<8;cam++) for(let mode=0;mode<2;mode++){
-            const image=new Image();image.onload=()=>{if(mode===0&&cam===3&&playerSpriteTexture){gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);}};
-            image.onerror=()=>{if(cam===3&&mode===0)setMessage('Player sprite failed to load: baseHumanMale idle');};
-            image.src='/Adventure-game-/game-sprites/baseHumanMale/'+(mode===0?'idle-':'walk-')+cam+'.png';spriteFrames[mode][cam]=image;
-          }
-          (window as any).__ag3dSpriteFrames=spriteFrames;
+          // Use the real RPG pack already shipped in public/rpg. The old
+          // game-sprites/baseHumanMale URL did not exist, leaving the player
+          // as a blank/placeholder shape in the 3D mode.
+          preloadRpgBase('BaseHumanMale');
+          (window as any).__ag3dRpgSpriteReady=true;
         }
       }
     }
@@ -301,10 +301,17 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         gl.enableVertexAttribArray(sp);gl.vertexAttribPointer(sp,3,gl.FLOAT,false,20,0);
         gl.enableVertexAttribArray(su);gl.vertexAttribPointer(su,2,gl.FLOAT,false,20,12);
         gl.uniformMatrix4fv(gl.getUniformLocation(playerSpriteProgram,'m'),false,new Float32Array(mat));
-        const frames=(window as any).__ag3dSpriteFrames as HTMLImageElement[][]|undefined;
+        // Camera-relative eight-way facing matches the RPG pack's CAM0-7
+        // mapping. Cycle through actual idle/walk frames rather than two
+        // nonexistent placeholder URLs.
         const cameraSide=((Math.round((yaw/(Math.PI*2))*8)%8)+8)%8;
-        const walking=[...keys].some(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
-        const frame=frames?.[walking?1:0]?.[cameraSide];
+        const faceByCam:Face8[]=['downleft','left','upleft','up','upright','right','downright','down'];
+        const face=faceByCam[cameraSide];
+        const moving=[...keys].some(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
+        const anim:RpgAnim=moving?'Walk':'Idle';
+        const frameCount=moving?11:4;
+        const frameIndex=moving?Math.floor(performance.now()/85)%frameCount:Math.floor(performance.now()/650)%frameCount;
+        const frame=rpgSprite('BaseHumanMale',anim,face,frameIndex);
         if(frame?.complete&&frame.naturalWidth>0){gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,frame);}
         gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);
         gl.uniform1i(gl.getUniformLocation(playerSpriteProgram,'tex'),0);
