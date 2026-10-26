@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { isWalkableWorld, loadWorld, terrainAt, type IsoWorld } from '../iso/isoWorld';
+import { isWalkableWorld, loadWorld, saveWorld, terrainAt, type IsoWorld } from '../iso/isoWorld';
 
 type Vec3 = [number, number, number];
 type Vertex = number[];
@@ -169,11 +169,11 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         if(near){setMessage('You speak with '+near.name+'. They are going about their day.');return}
         const key=(x:number,y:number)=>Math.abs(x-p.x)<=1&&Math.abs(y-p.y)<=1;
         const crate=world.crates.find(c=>key(c.tx,c.ty));
-        if(crate){world.crates=world.crates.filter(c=>c!==crate);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Collected 1 wood from the crate');return}
+        if(crate){world.crates=world.crates.filter(c=>c!==crate);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Collected 1 wood from the crate');return}
         const rock=world.rocks.find(c=>key(c.tx,c.ty));
-        if(rock){world.rocks=world.rocks.filter(c=>c!==rock);const currentInventory=inventoryRef.current;const next={...currentInventory,stone:(currentInventory.stone||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
+        if(rock){world.rocks=world.rocks.filter(c=>c!==rock);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,stone:(currentInventory.stone||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
         const tree=world.trees.find(c=>key(c.tx,c.ty));
-        if(tree){world.trees=world.trees.filter(c=>c!==tree);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+2};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
+        if(tree){world.trees=world.trees.filter(c=>c!==tree);saveWorld(world);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+2};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
         setMessage('Nothing close enough to interact with');return
       }
       const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])};
