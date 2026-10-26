@@ -59,8 +59,22 @@ function packFbxObject(root: any, THREE: any): Float32Array {
     const materialColor=(groupIndex:number)=>{
       const material=materials[groupIndex]||materials[0];
       const color=material?.color;
-      if(color)return {r:color.r,g:color.g,b:color.b};
-      return {r:0.58,g:0.47,b:0.35};
+      const name=String(material?.name||'').toLowerCase();
+      // The custom WebGL renderer stores vertex colours, not FBX texture maps.
+      // Many of the uploaded FBX materials are white because their original
+      // appearance lives in a texture atlas. Never bake that white placeholder
+      // into the game mesh: give texture-backed/white materials a readable
+      // medieval palette based on their material names instead.
+      const palette =
+        /roof|tile|shingle/.test(name) ? {r:0.38,g:0.16,b:0.12} :
+        /wood|beam|door|timber|frame/.test(name) ? {r:0.34,g:0.22,b:0.12} :
+        /stone|brick|chimney|foundation/.test(name) ? {r:0.48,g:0.44,b:0.37} :
+        /glass|window/.test(name) ? {r:0.28,g:0.43,b:0.48} :
+        /dark|shadow|iron|metal/.test(name) ? {r:0.22,g:0.20,b:0.17} :
+        // Stable fallback gives unnamed FBX materials warm wall/roof/wood tones.
+        [{r:0.72,g:0.61,b:0.45},{r:0.40,g:0.19,b:0.14},{r:0.35,g:0.25,b:0.16},{r:0.55,g:0.50,b:0.41}][groupIndex % 4];
+      if(color && Math.min(color.r,color.g,color.b) < 0.88) return {r:color.r,g:color.g,b:color.b};
+      return palette;
     };
     const groups=geometry.groups?.length?geometry.groups:[{start:0,count:index?index.count:position.count,materialIndex:0}];
     for(const group of groups){
