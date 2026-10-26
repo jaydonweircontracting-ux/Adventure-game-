@@ -3,7 +3,6 @@ import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type IsoW
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { rpgSprite, preloadRpgBase, type RpgAnim, type RpgBase } from '../iso/rpgSprites';
 import type { Face8 } from '../iso/isoSprites';
-import { getHouseModelTriangles, isHouseModelLibrarySettled, loadHouseModelLibrary } from './fbxHouseModels';
 
 type Vec3 = [number, number, number];
 type Vertex = number[];
@@ -262,20 +261,8 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     const canvas=canvasRef.current;if(!canvas)return;
     const world=applyMosslightTownLayout(loadWorld());stateRef.current.world=world;
     npcActorsRef.current=savedNpcActors(world);
-    // Load real FBX cottages asynchronously; procedural cottages remain the
-    // safe fallback until each model has parsed successfully.
-    void loadHouseModelLibrary().then((loaded)=>{
-      if(loaded>0){
-        needsWorldRebuild.current=true;
-        setMessage('Loaded '+loaded+' of 20 uploaded FBX house models');
-      } else {
-        setMessage('Uploaded FBX houses did not load; showing fallback houses. Check network access to the 3D model loader.');
-        console.error('[Adventure 3D] No uploaded FBX house models loaded; built-in fallback houses are active.');
-      }
-    }).catch((error)=>{
-      setMessage('Uploaded FBX houses failed to load; showing fallback houses. Check the model-loader connection.');
-      console.warn('[Adventure 3D] FBX house library unavailable; using built-in houses.',error);
-    });
+    // This mode uses the generated Daggerfall-inspired cottage meshes below.
+    // Do not load or render the separately uploaded FBX house pack here.
     const html=document.documentElement,body=document.body;
     const oldHtml={overflow:html.style.overflow,touchAction:html.style.touchAction,overscrollBehavior:html.style.overscrollBehavior};
     const oldBody={overflow:body.style.overflow,touchAction:body.style.touchAction,overscrollBehavior:body.style.overscrollBehavior,position:body.style.position,width:body.style.width};
