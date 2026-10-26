@@ -7,7 +7,7 @@ const SAVE_KEY = 'ag-3d-player-v1';
 const NPC_SAVE_KEY = 'ag-3d-npcs-v1';
 const INVENTORY_KEY = 'ag-3d-inventory-v1';
 const HEALTH_KEY = 'ag-3d-health-v1';
-type NpcActor3D = { name: string; x: number; y: number; waypoint: number; hp: number; alive: boolean };
+type NpcActor3D = { name: string; x: number; y: number; waypoint: number; hp: number; alive: boolean; looted?: boolean };
 type Inventory3D = Record<string, number>;
 function readSaved<T>(key: string, fallback: T): T {
   try { const value = localStorage.getItem(key); return value ? { ...fallback, ...JSON.parse(value) } : fallback; } catch { return fallback; }
@@ -34,7 +34,7 @@ function savedNpcActors(world: IsoWorld): NpcActor3D[] {
     const raw = localStorage.getItem(NPC_SAVE_KEY);
     if (raw) {
       const saved = JSON.parse(raw) as NpcActor3D[];
-      if (Array.isArray(saved)) return world.npcSpawns.map((npc, i) => {
+      if (Array.isArray(saved)) return world.npcSpawns.filter(npc => !saved.some(a => a.name === npc.name && a.looted)).map((npc, i) => {
         const actor = saved.find(a => a.name === npc.name) || saved[i];
         return actor && Number.isFinite(actor.x) && Number.isFinite(actor.y)
           ? { name: npc.name, x: actor.x, y: actor.y, waypoint: Number.isFinite(actor.waypoint) ? actor.waypoint : 0, hp: Number.isFinite(actor.hp) ? actor.hp : 100, alive: actor.alive !== false }
@@ -91,6 +91,8 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
   const [position,setPosition]=useState<Position>(()=>savedPosition(loadWorld()));
   const [inventory,setInventory]=useState<Inventory3D>(()=>readSaved<Inventory3D>(INVENTORY_KEY,{}));
   const [health,setHealth]=useState<number>(()=>{try{const n=Number(localStorage.getItem(HEALTH_KEY));return Number.isFinite(n)&&n>0?Math.min(100,n):100}catch{return 100}});
+  const inventoryRef=useRef<Inventory3D>(inventory); inventoryRef.current=inventory;
+  const healthRef=useRef<number>(health); healthRef.current=health;
   const stateRef=useRef({position,world:loadWorld()});
   const needsWorldRebuild=useRef(true);
   const npcActorsRef=useRef<NpcActor3D[]>([]);
@@ -142,7 +144,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       gl.drawArrays(gl.TRIANGLES,0,gl.getBufferParameter(gl.ARRAY_BUFFER,gl.BUFFER_SIZE)/24);
       const actors:Vertex=[];
       const cube=(x:number,z:number,color:Vec3,h=1.25)=>{const x0=x-.22,x1=x+.22,z0=z-.22,z1=z+.22,y0=0,y1=h;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};const q=(a:Vec3,b:Vec3,c:Vec3,d:Vec3)=>{tri(a,b,c);tri(a,c,d)};q([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]);q([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]);q([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0]);q([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1]);q([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0])};
-      for(const npc of npcActorsRef.current) if(Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)cube(npc.x+.5,npc.y+.5,npc.alive?[.22,.55,.86]:[.38,.18,.16],npc.alive?1.3:.22);
+      for(const npc of npcActorsRef.current) if(!npc.looted&&Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)cube(npc.x+.5,npc.y+.5,npc.alive?[.22,.55,.86]:[.38,.18,.16],npc.alive?1.3:.22);
       cube(player.x+.5,player.y+.5,[.96,.77,.22],1.55);
       upload(actorBuffer,new Float32Array(actors));gl.drawArrays(gl.TRIANGLES,0,actors.length/6);
       raf=requestAnimationFrame(draw);
@@ -153,23 +155,25 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         const target=npcActorsRef.current.filter(n=>n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];
         if(!target){setMessage('No living target in melee range');return}
         target.hp=Math.max(0,target.hp-25);
+        const nextHealth=Math.max(0,healthRef.current-5);healthRef.current=nextHealth;setHealth(nextHealth);try{localStorage.setItem(HEALTH_KEY,String(nextHealth))}catch{}
+        if(nextHealth===0){setMessage('You are exhausted. Health restored to 100.');healthRef.current=100;setHealth(100);try{localStorage.setItem(HEALTH_KEY,'100')}catch{}}
         if(target.hp===0){target.alive=false;setMessage(target.name+' defeated. Press E beside them to loot the body.')}
-        else setMessage(target.name+' hit · '+target.hp+' HP remaining');
+        else setMessage(target.name+' hit · '+target.hp+' HP remaining · they strike back for 5');
         try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(npcActorsRef.current))}catch{}
         return;
       }
       if(k==='e'){
         const dead=npcActorsRef.current.find(n=>!n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1);
-        if(dead){const next={...inventory,gold:(inventory.gold||0)+5,[dead.name+' loot']:(inventory[dead.name+' loot']||0)+1};setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}npcActorsRef.current=npcActorsRef.current.filter(n=>n!==dead);try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(npcActorsRef.current))}catch{}setMessage('Looted '+dead.name+': 5 gold and 1 keepsake');return}
+        if(dead){const currentInventory=inventoryRef.current;const next={...currentInventory,gold:(currentInventory.gold||0)+5,[dead.name+' loot']:(currentInventory[dead.name+' loot']||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}dead.looted=true;try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(npcActorsRef.current))}catch{}setMessage('Looted '+dead.name+': 5 gold and 1 keepsake');return}
         const near=npcActorsRef.current.find(n=>n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1);
         if(near){setMessage('You speak with '+near.name+'. They are going about their day.');return}
         const key=(x:number,y:number)=>Math.abs(x-p.x)<=1&&Math.abs(y-p.y)<=1;
         const crate=world.crates.find(c=>key(c.tx,c.ty));
-        if(crate){world.crates=world.crates.filter(c=>c!==crate);const next={...inventory,wood:(inventory.wood||0)+1};setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Collected 1 wood from the crate');return}
+        if(crate){world.crates=world.crates.filter(c=>c!==crate);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Collected 1 wood from the crate');return}
         const rock=world.rocks.find(c=>key(c.tx,c.ty));
-        if(rock){world.rocks=world.rocks.filter(c=>c!==rock);const next={...inventory,stone:(inventory.stone||0)+1};setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
+        if(rock){world.rocks=world.rocks.filter(c=>c!==rock);const currentInventory=inventoryRef.current;const next={...currentInventory,stone:(currentInventory.stone||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Mined 1 stone');return}
         const tree=world.trees.find(c=>key(c.tx,c.ty));
-        if(tree){world.trees=world.trees.filter(c=>c!==tree);const next={...inventory,wood:(inventory.wood||0)+2};setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
+        if(tree){world.trees=world.trees.filter(c=>c!==tree);const currentInventory=inventoryRef.current;const next={...currentInventory,wood:(currentInventory.wood||0)+2};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true;setMessage('Chopped tree · collected 2 wood');return}
         setMessage('Nothing close enough to interact with');return
       }
       const d:Record<string,[number,number]>={w:[0,-1],arrowup:[0,-1],s:[0,1],arrowdown:[0,1],a:[-1,0],arrowleft:[-1,0],d:[1,0],arrowright:[1,0]};const step=d[k];if(step)tryMove(step[0],step[1])};
@@ -204,8 +208,8 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     <div style={{position:'absolute',right:12,bottom:12,display:'grid',gridTemplateColumns:'48px 48px 48px',gridTemplateRows:'44px 44px 44px',gap:4,touchAction:'none'}}>
       <div/><div>{pad(0,-1,'Forward')}</div><div/>
       {pad(-1,0,'Left')}{pad(0,1,'Back')}{pad(1,0,'Right')}
-      <button type="button" aria-label="Interact" onPointerDown={e=>{e.preventDefault();const event=new KeyboardEvent('keydown',{key:'e'});window.dispatchEvent(event)}} style={{gridColumn:'1 / span 3',height:38,borderRadius:9,border:'1px solid #c4d1bd',background:'#34563d',color:'#fff',fontWeight:700,touchAction:'none'}}>Interact / Loot (E)</button>
-      <button type="button" aria-label="Attack" onPointerDown={e=>{e.preventDefault();window.dispatchEvent(new KeyboardEvent('keydown',{key:'f'}))}} style={{gridColumn:'1 / span 3',height:38,borderRadius:9,border:'1px solid #d9a39a',background:'#672d28',color:'#fff',fontWeight:700,touchAction:'none'}}>Attack (F)</button>
+      <button type="button" aria-label="Interact" onPointerDown={e=>{e.preventDefault();window.dispatchEvent(new KeyboardEvent('keydown',{key:'e'}));window.dispatchEvent(new KeyboardEvent('keyup',{key:'e'}))}} style={{gridColumn:'1 / span 3',height:38,borderRadius:9,border:'1px solid #c4d1bd',background:'#34563d',color:'#fff',fontWeight:700,touchAction:'none'}}>Interact / Loot (E)</button>
+      <button type="button" aria-label="Attack" onPointerDown={e=>{e.preventDefault();window.dispatchEvent(new KeyboardEvent('keydown',{key:'f'}));window.dispatchEvent(new KeyboardEvent('keyup',{key:'f'}))}} style={{gridColumn:'1 / span 3',height:38,borderRadius:9,border:'1px solid #d9a39a',background:'#672d28',color:'#fff',fontWeight:700,touchAction:'none'}}>Attack (F)</button>
     </div>
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
   </div>;
