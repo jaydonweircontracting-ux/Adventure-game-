@@ -250,13 +250,13 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       const dpr=Math.min(window.devicePixelRatio||1,1.5),w=Math.max(1,Math.floor(canvas.clientWidth*dpr)),h=Math.max(1,Math.floor(canvas.clientHeight*dpr));
       if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;needsWorldRebuild.current=true}
       const current=stateRef.current,player=current.position;
-      if(needsWorldRebuild.current){upload(worldBuffer,buildWorldVertices(world,player));needsWorldRebuild.current=false}
+      if(needsWorldRebuild.current){const terrainVertices=buildWorldVertices(world,player);if(terrainVertices.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,terrainVertices);setMessage('3D diagnostic: '+(terrainVertices.length/6).toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false}
       gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       const ex=player.x+Math.sin(yaw)*zoom,ez=player.y+Math.cos(yaw)*zoom,ey=zoom*.8+2;
       const mat=mul(perspective(Math.PI/3,w/h,.1,120),lookAt([ex,ey,ez],[player.x,0.8,player.y]));
       gl.uniformMatrix4fv(mLoc,false,new Float32Array(mat));
       gl.bindBuffer(gl.ARRAY_BUFFER,worldBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
-      gl.drawArrays(gl.TRIANGLES,0,gl.getBufferParameter(gl.ARRAY_BUFFER,gl.BUFFER_SIZE)/24);
+      gl.drawArrays(gl.TRIANGLES,0,gl.getBufferParameter(gl.ARRAY_BUFFER,gl.BUFFER_SIZE)/24);const renderError=gl.getError();if(renderError!==gl.NO_ERROR)setMessage('3D WebGL draw error: 0x'+renderError.toString(16));
       const actors:Vertex=[];
       const cube=(x:number,z:number,color:Vec3,h=1.25)=>{const x0=x-.22,x1=x+.22,z0=z-.22,z1=z+.22,y0=0,y1=h;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};const q=(a:Vec3,b:Vec3,c:Vec3,d:Vec3)=>{tri(a,b,c);tri(a,c,d)};q([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]);q([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]);q([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0]);q([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1]);q([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0])};
       for(const npc of npcActorsRef.current) if(!npc.looted&&Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)cube(npc.x+.5,npc.y+.5,npc.alive?[.22,.55,.86]:[.38,.18,.16],npc.alive?1.3:.22);
