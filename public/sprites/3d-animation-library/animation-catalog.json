@@ -1,0 +1,114 @@
+{
+  "name": "Universal Animation Library 2",
+  "sourceArchive": "Universal Animation Library 2[Standard].zip",
+  "license": "CC0 1.0 Universal (as stated by the supplied archive)",
+  "runtimeStatus": "catalogued-not-runtime-integrated",
+  "models": [
+    {
+      "path": "Unreal-Godot/UAL2_Standard.glb",
+      "sizeBytes": 8091444,
+      "rootMotion": false,
+      "animationCount": 43
+    },
+    {
+      "path": "Unreal-Godot/UAL2_Standard_RM.glb",
+      "sizeBytes": 8095936,
+      "rootMotion": true,
+      "animationCount": 43
+    },
+    {
+      "path": "Female Mannequin/Unreal-Godot/Mannequin_F.glb",
+      "sizeBytes": 1442824,
+      "purpose": "female mannequin rig for retargeting"
+    }
+  ],
+  "animations": [
+    "A_TPose",
+    "Chest_Open",
+    "ClimbUp_1m",
+    "Consume",
+    "Farm_Harvest",
+    "Farm_PlantSeed",
+    "Farm_Watering",
+    "Hit_Knockback",
+    "Idle_FoldArms_Loop",
+    "Idle_Lantern_Loop",
+    "Idle_No_Loop",
+    "Idle_Rail_Call",
+    "Idle_Rail_Loop",
+    "Idle_Shield_Break",
+    "Idle_Shield_Loop",
+    "Idle_TalkingPhone_Loop",
+    "LayToIdle",
+    "Melee_Hook",
+    "Melee_Hook_Rec",
+    "NinjaJump_Idle_Loop",
+    "NinjaJump_Land",
+    "NinjaJump_Start",
+    "OverhandThrow",
+    "Shield_Dash",
+    "Shield_OneShot",
+    "Slide_Exit",
+    "Slide_Loop",
+    "Slide_Start",
+    "Sword_Block",
+    "Sword_Dash",
+    "Sword_Heavy_Combo",
+    "Sword_Regular_A",
+    "Sword_Regular_A_Rec",
+    "Sword_Regular_B",
+    "Sword_Regular_B_Rec",
+    "Sword_Regular_C",
+    "Sword_Regular_Combo",
+    "TreeChopping_Loop",
+    "Walk_Carry_Loop",
+    "Yes",
+    "Zombie_Idle_Loop",
+    "Zombie_Scratch",
+    "Zombie_Walk_Fwd_Loop"
+  ],
+  "plannedGameplayBindings": {
+    "meleeAttack": [
+      "Melee_Hook",
+      "Sword_Regular_A",
+      "Sword_Regular_B",
+      "Sword_Regular_C",
+      "Sword_Regular_Combo",
+      "Sword_Heavy_Combo"
+    ],
+    "block": [
+      "Sword_Block",
+      "Shield_Dash",
+      "Shield_OneShot"
+    ],
+    "climb": [
+      "ClimbUp_1m"
+    ],
+    "farm": [
+      "Farm_Harvest",
+      "Farm_PlantSeed",
+      "Farm_Watering"
+    ],
+    "chopTree": [
+      "TreeChopping_Loop"
+    ],
+    "openChest": [
+      "Chest_Open"
+    ],
+    "consume": [
+      "Consume"
+    ],
+    "damageReaction": [
+      "Hit_Knockback"
+    ],
+    "zombieIdle": [
+      "Zombie_Idle_Loop"
+    ],
+    "zombieWalk": [
+      "Zombie_Walk_Fwd_Loop"
+    ],
+    "zombieAttack": [
+      "Zombie_Scratch"
+    ]
+  }
+}
