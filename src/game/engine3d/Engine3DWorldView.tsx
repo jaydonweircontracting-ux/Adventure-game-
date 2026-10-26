@@ -40,14 +40,22 @@ function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
   const world: IsoWorld = {
     ...source,
     terrain: { ...source.terrain },
-    walls: source.walls.filter(w => Math.abs(w.x - 100) > 32 || Math.abs(w.y - 100) > 32),
-    huts: source.huts.filter(h => Math.abs((h.x0 + h.x1) / 2 - 100) > 32 || Math.abs((h.y0 + h.y1) / 2 - 100) > 32),
-    stalls: source.stalls.filter(st => Math.abs((st.x0 + st.x1) / 2 - 100) > 32 || Math.abs(st.y0 - 100) > 32),
+    walls: source.walls.filter(w => Math.abs(w.x - 100) > 68 || Math.abs(w.y - 100) > 68),
+    huts: source.huts.filter(h => Math.abs((h.x0 + h.x1) / 2 - 100) > 68 || Math.abs((h.y0 + h.y1) / 2 - 100) > 68),
+    stalls: source.stalls.filter(st => Math.abs((st.x0 + st.x1) / 2 - 100) > 68 || Math.abs(st.y0 - 100) > 68),
     trees: [...source.trees],
     rocks: [...source.rocks],
     crates: [...source.crates],
     npcSpawns: source.npcSpawns.map(n => ({ ...n, waypoints: [...(n.waypoints || [])] })),
   };
+  // Remove the old demo's straight cross-road stamps; Mosslight's generated
+  // street network below replaces them while preserving the pond and other
+  // authored terrain outside those legacy road lines.
+  for (const [key, terrain] of Object.entries(world.terrain)) {
+    if (terrain !== 'dirt') continue;
+    const [x, y] = key.split(',').map(Number);
+    if (x === 99 || x === 100 || y === 99 || y === 100) delete world.terrain[key];
+  }
   const layout = mosslightEngineChunkLayout();
   const scale = 0.42;
   const tile = (v: number) => 100 + (v - 140) * scale;
@@ -94,6 +102,19 @@ function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
       : lot.facing === 'south' ? { x: midX, y: y1 }
       : lot.facing === 'west' ? { x: x0, y: midY } : { x: x1, y: midY };
     world.huts.push({ x0, y0, x1, y1, doorX: door.x, doorY: door.y });
+  }
+
+  // Bring the layout generator's authored market/utility props into the
+  // 3D collision grid. Stalls retain their counter collision; other solid
+  // props use the current 3D crate placeholder until dedicated prop meshes land.
+  for (const prop of layout.props) {
+    const x = clamp(tile(prop.x)), y = clamp(tile(prop.y));
+    if (!prop.solid || world.huts.some(h => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1)) continue;
+    if (prop.kind === 'stall') {
+      world.stalls.push({ x0: x, y0: y, x1: Math.min(world.w - 1, x + 1) });
+    } else if (!world.crates.some(c => c.tx === x && c.ty === y)) {
+      world.crates.push({ tx: x, ty: y });
+    }
   }
 
   // Remove harvestables accidentally placed under the new building footprints.
