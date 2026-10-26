@@ -315,6 +315,9 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     let gestureMoved=false,gestureStartX=0,gestureStartY=0;
     let lastFrameTime=performance.now(),lastPositionPublish=0,lastPositionSave=0;
     let walkingNow=false;
+    // Keep the last facing while idle; update it from the actual world-space
+    // movement vector, transformed into camera-relative screen directions.
+    let playerFace:Face8='down';
     const walkableAt=(x:number,y:number)=>{
       const gx=Math.round(x),gy=Math.round(y);
       if(npcActorsRef.current.some(n=>n.alive&&Math.hypot(n.x-x,n.y-y)<.42))return false;
@@ -381,6 +384,14 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         hasInput=moveDx!==0||moveDy!==0;
       }
       if(hasInput){
+        // The player sprite is a camera-facing billboard, so choose its RPG
+        // CAM direction from movement relative to the camera, not from camera
+        // yaw alone. Positive screen-y points toward the camera/front of sprite.
+        const screenDx=moveDx*Math.cos(yaw)-moveDy*Math.sin(yaw);
+        const screenDy=moveDx*Math.sin(yaw)+moveDy*Math.cos(yaw);
+        const octant=((Math.round(Math.atan2(screenDy,screenDx)/(Math.PI/4))%8)+8)%8;
+        const movementFaces:Face8[]=['right','downright','down','downleft','left','upleft','up','upright'];
+        playerFace=movementFaces[octant];
         const dist=Math.hypot(moveDx,moveDy),step=Math.min(dist,3.15*dt);
         const nx=player.x+moveDx/dist*step,ny=player.y+moveDy/dist*step;
         if(walkableAt(nx,ny)){player={x:nx,y:ny};current.position=player;walkingNow=true;}
@@ -418,9 +429,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       upload(actorBuffer,new Float32Array(actors));gl.drawArrays(gl.TRIANGLES,0,actors.length/6);
       if(playerSpriteProgram&&playerSpriteBuffer&&playerSpriteTexture){
         const rightX=Math.cos(yaw),rightZ=-Math.sin(yaw);
-        const faceByCam:Face8[]=['downleft','left','upleft','up','upright','right','downright','down'];
-        const cameraSide=((Math.round((yaw/(Math.PI*2))*8)%8)+8)%8;
-        const face=faceByCam[cameraSide];
+        const face=playerFace;
         const drawNpcSprite=(x:number,z:number,base:RpgBase,frameIndex:number)=>{
           const half=.34,height=1.42,left=[x-rightX*half,0,z-rightZ*half],right=[x+rightX*half,0,z+rightZ*half];
           const topLeft=[left[0],height,left[2]],topRight=[right[0],height,right[2]];
