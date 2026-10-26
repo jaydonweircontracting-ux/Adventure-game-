@@ -240,7 +240,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         if(gl.getProgramParameter(playerSpriteProgram,gl.LINK_STATUS)){
           playerSpriteBuffer=gl.createBuffer();playerSpriteTexture=gl.createTexture();
           gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-          const spriteImage=new Image();spriteImage.onload=()=>{if(!playerSpriteTexture)return;gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,spriteImage);};spriteImage.onerror=()=>setMessage('Player sprite failed to load: baseHumanMale idle');spriteImage.src='/Adventure-game-/game%20sprites/baseHumanMale/1_Idle_CAM3_25.png';
+          const spriteImage=new Image();spriteImage.onload=()=>{if(!playerSpriteTexture)return;gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,spriteImage);};spriteImage.onerror=()=>setMessage('Player sprite failed to load: baseHumanMale idle');spriteImage.src='/Adventure-game-/game-sprites/baseHumanMale/player-idle.png';
         }
       }
     }
