@@ -213,48 +213,11 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
     // Always keep visible buildings while FBX assets load. If a model is
     // still pending or fails, draw the detailed native cottage for that lot;
     // successful FBX models replace their matching fallback on the next rebuild.
-    const modelTriangles=isHouseModelLibrarySettled() ? getHouseModelTriangles(modelIndex) : undefined;
-    if(modelTriangles && modelTriangles.length){
-      // Fit the imported house uniformly in X/Z instead of stretching every
-      // FBX to the lot's exact width and depth. Independent scaling was making
-      // rooflines and facades look like flattened tan blobs. The source packer
-      // stores X/Z in a shared normalized scale, so these extents preserve ratio.
-      let modelMinX=Infinity,modelMaxX=-Infinity,modelMinZ=Infinity,modelMaxZ=-Infinity,modelMaxY=0;
-      for(let i=0;i+17<modelTriangles.length;i+=18) for(const offset of [0,6,12]){
-        modelMinX=Math.min(modelMinX,modelTriangles[i+offset]);
-        modelMaxX=Math.max(modelMaxX,modelTriangles[i+offset]);
-        modelMinZ=Math.min(modelMinZ,modelTriangles[i+offset+2]);
-        modelMaxZ=Math.max(modelMaxZ,modelTriangles[i+offset+2]);
-        modelMaxY=Math.max(modelMaxY,modelTriangles[i+offset+1]);
-      }
-      const spanX=Math.max(.01,modelMaxX-modelMinX),spanZ=Math.max(.01,modelMaxZ-modelMinZ);
-      const fitScale=Math.min((w-.22)/spanX,(d-.22)/spanZ);
-      const modelCenterX=(modelMinX+modelMaxX)/2,modelCenterZ=(modelMinZ+modelMaxZ)/2;
-      const modelHeight=Math.min(4.8,Math.max(2.0,modelMaxY*fitScale));
-      for(let i=0;i+17<modelTriangles.length;i+=18){
-        const a:Vec3=[x+(modelTriangles[i]-modelCenterX)*fitScale,modelTriangles[i+1]*fitScale, z+(modelTriangles[i+2]-modelCenterZ)*fitScale];
-        const b:Vec3=[x+(modelTriangles[i+6]-modelCenterX)*fitScale,modelTriangles[i+7]*fitScale, z+(modelTriangles[i+8]-modelCenterZ)*fitScale];
-        const c:Vec3=[x+(modelTriangles[i+12]-modelCenterX)*fitScale,modelTriangles[i+13]*fitScale, z+(modelTriangles[i+14]-modelCenterZ)*fitScale];
-        // Keep source diffuse colours, but gently tone down over-bright texture
-        // samples to match Daggerfall's weathered medieval palette.
-        const color:Vec3=[
-          Math.min(1,Math.max(.025,modelTriangles[i+3]*.92)),
-          Math.min(1,Math.max(.025,modelTriangles[i+4]*.92)),
-          Math.min(1,Math.max(.025,modelTriangles[i+5]*.92))
-        ];
-        tri(a,b,c,color);
-      }
-      // Give imported buildings the readable, grounded Daggerfall silhouette:
-      // a dark stone plinth at ground level and a small chimney on a rear corner.
-      const plinthH=Math.min(.24,modelHeight*.09);
-      houseBox(x,z,w*.78,plinthH,d*.78,0,[.31,.29,.25]);
-      if(modelIndex%3!==1){
-        const chimneyX=x+w*.22, chimneyZ=z-d*.22;
-        houseBox(chimneyX,chimneyZ,Math.max(.22,w*.13),Math.max(.5,modelHeight*.24),Math.max(.22,d*.13),modelHeight*.68,[.38,.34,.29]);
-        houseBox(chimneyX,chimneyZ,.28,.12,.28,modelHeight*.91,[.22,.20,.18]);
-      }
-      continue;
-    }
+    // This 3D mode intentionally uses the generated Daggerfall-inspired
+    // cottages below, not the separately uploaded FBX house pack. That pack
+    // has incompatible texture/material assumptions and was causing the tan
+    // blobs and distorted proportions. Keep the generated native geometry as
+    // the single source of truth for buildings in this mode.
     const wall=houseWallColors[modelIndex%houseWallColors.length],roof=roofColors[modelIndex%roofColors.length];
     houseBox(x,z,w,wallH,d,0,wall);
     // Two sloped roof planes meet at a ridge, with a slight eave overhang.
