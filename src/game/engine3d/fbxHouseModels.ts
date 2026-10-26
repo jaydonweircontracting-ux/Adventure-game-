@@ -152,9 +152,22 @@ function packFbxObject(root: any, THREE: any): Float32Array {
           else if(Math.abs(normal.y)<0.12) faceFallback={r:0.66,g:0.53,b:0.36};
           else faceFallback={r:0.43,g:0.25,b:0.17};
         }
-        for(let j=0;j<3;j++){
-          addVertex(vertices[j], texturePixel(material, uvs[j]) || faceFallback);
+        // The canvas renderer has flat vertex-colour triangles, not texture sampling.
+        // Sampling a different atlas texel at each corner creates ugly colour
+        // gradients and speckled seams across a single face. Use one stable
+        // representative texel per face so the uploaded atlas gives coherent
+        // wall/roof colours without the glitchy vertex interpolation.
+        const validUvs = uvs.filter((uv:any) => uv);
+        let sampled: {r:number;g:number;b:number} | undefined;
+        if(validUvs.length === 3) {
+          const centerUv = new THREE.Vector2(
+            (validUvs[0].x + validUvs[1].x + validUvs[2].x) / 3,
+            (validUvs[0].y + validUvs[1].y + validUvs[2].y) / 3
+          );
+          sampled = texturePixel(material, centerUv);
         }
+        const faceColor = sampled || faceFallback;
+        for(let j=0;j<3;j++) addVertex(vertices[j], faceColor);
       }
     }
   });
@@ -202,7 +215,10 @@ export function loadHouseModelLibrary(): Promise<number> {
             if (!part.isMesh) return;
             const materials = Array.isArray(part.material) ? part.material : [part.material];
             for (const material of materials) {
-              if (material && !material.map) {
+              // FBXLoader can leave a map object behind whose image did not
+              // resolve from the original authoring-machine path. Treat that
+              // the same as a missing map and use the bundled atlas instead.
+              if (material && !material.map?.image) {
                 material.map = atlas;
                 material.needsUpdate = true;
               }
