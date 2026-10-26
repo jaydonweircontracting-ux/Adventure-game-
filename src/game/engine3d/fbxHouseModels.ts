@@ -170,8 +170,6 @@ function packFbxObject(root: any, THREE: any, modelIndex: number): Float32Array 
         const ab=vertices[1].clone().sub(vertices[0]);
         const ac=vertices[2].clone().sub(vertices[0]);
         const normal=ab.cross(ac).normalize();
-        const colorIsNeutral=!material?.color ||
-          (Math.max(material.color.r,material.color.g,material.color.b)-Math.min(material.color.r,material.color.g,material.color.b)<0.2);
         let faceFallback=fallbackColor;
         const materialName=String(material?.name||'').toLowerCase();
         // Use a deliberately colourful painted medieval palette in the
