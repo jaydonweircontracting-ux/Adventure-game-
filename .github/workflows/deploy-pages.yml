@@ -29,6 +29,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Install local FBX loader for the 3D house models
+        run: npm install --no-save --package-lock=false three@0.180.0
       - name: Type check
         run: npm run typecheck
       - name: Isometric direction regression test
