@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type IsoWorld } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
-import { rpgSprite, preloadRpgBase, type RpgAnim } from '../iso/rpgSprites';
+import { rpgSprite, preloadRpgBase, type RpgAnim, type RpgBase } from '../iso/rpgSprites';
 import type { Face8 } from '../iso/isoSprites';
 
 type Vec3 = [number, number, number];
@@ -318,14 +318,40 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       gl.uniformMatrix4fv(mLoc,false,new Float32Array(mat));
       gl.bindBuffer(gl.ARRAY_BUFFER,worldBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
       gl.drawArrays(gl.TRIANGLES,0,gl.getBufferParameter(gl.ARRAY_BUFFER,gl.BUFFER_SIZE)/24);const renderError=gl.getError();if(renderError!==gl.NO_ERROR)setMessage('3D WebGL draw error: 0x'+renderError.toString(16));
-      const actors:Vertex=[];
-      const cube=(x:number,z:number,color:Vec3,h=1.25)=>{const x0=x-.22,x1=x+.22,z0=z-.22,z1=z+.22,y0=0,y1=h;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};const q=(a:Vec3,b:Vec3,c:Vec3,d:Vec3)=>{tri(a,b,c);tri(a,c,d)};q([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]);q([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]);q([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0]);q([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1]);q([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0])};
-      for(const npc of npcActorsRef.current) if(!npc.looted&&Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)cube(npc.x+.5,npc.y+.5,npc.alive?[.22,.55,.86]:[.38,.18,.16],npc.alive?1.3:.22);
-      // Keep NPC placeholders, but render the actual baseHumanMale idle sprite for the player.
+      const actors:Vertex[]=[];
+      const corpse=(x:number,z:number)=>{const color:Vec3=[.38,.18,.16],x0=x-.28,x1=x+.28,z0=z-.28,z1=z+.28,y0=0,y1=.18;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};tri([x0,y0,z1],[x1,y0,z1],[x1,y1,z1]);tri([x0,y0,z1],[x1,y1,z1],[x0,y1,z1]);};
+      for(const npc of npcActorsRef.current) if(!npc.looted&&!npc.alive&&Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)corpse(npc.x+.5,npc.y+.5);
       upload(actorBuffer,new Float32Array(actors));gl.drawArrays(gl.TRIANGLES,0,actors.length/6);
       if(playerSpriteProgram&&playerSpriteBuffer&&playerSpriteTexture){
-        const px=player.x+.5,pz=player.y+.5,half=.38,height=1.55;
         const rightX=Math.cos(yaw),rightZ=-Math.sin(yaw);
+        const faceByCam:Face8[]=['downleft','left','upleft','up','upright','right','downright','down'];
+        const cameraSide=((Math.round((yaw/(Math.PI*2))*8)%8)+8)%8;
+        const face=faceByCam[cameraSide];
+        const drawNpcSprite=(x:number,z:number,base:RpgBase,frameIndex:number)=>{
+          const half=.34,height=1.42,left=[x-rightX*half,0,z-rightZ*half],right=[x+rightX*half,0,z+rightZ*half];
+          const topLeft=[left[0],height,left[2]],topRight=[right[0],height,right[2]];
+          const data=new Float32Array([...left,0,1,...right,1,1,...topRight,1,0,...left,0,1,...topRight,1,0,...topLeft,0,0]);
+          const im=rpgSprite(base,'Idle',face,frameIndex);
+          if(!im?.complete||im.naturalWidth===0)return;
+          gl.useProgram(playerSpriteProgram);
+          const pAttr=gl.getAttribLocation(playerSpriteProgram,'p'),uvAttr=gl.getAttribLocation(playerSpriteProgram,'uv');
+          gl.bindBuffer(gl.ARRAY_BUFFER,playerSpriteBuffer);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);
+          gl.enableVertexAttribArray(pAttr);gl.vertexAttribPointer(pAttr,3,gl.FLOAT,false,20,0);
+          gl.enableVertexAttribArray(uvAttr);gl.vertexAttribPointer(uvAttr,2,gl.FLOAT,false,20,12);
+          gl.uniformMatrix4fv(gl.getUniformLocation(playerSpriteProgram,'m'),false,new Float32Array(mat));
+          gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);
+          gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,im);
+          gl.uniform1i(gl.getUniformLocation(playerSpriteProgram,'tex'),0);
+          gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
+          gl.drawArrays(gl.TRIANGLES,0,6);gl.depthMask(true);gl.disable(gl.BLEND);gl.useProgram(program);
+        };
+        // Use real RPG character sprites for the townspeople, not blue cubes.
+        const npcBases:RpgBase[]=['BaseHumanMale','BaseElf','BaseDwarf','BaseHumanBlank','BaseShaman','BaseSkeleton','BaseAhoul'];
+        npcActorsRef.current.forEach((npc,index)=>{
+          if(npc.looted||!npc.alive||Math.abs(npc.x-player.x)>=22||Math.abs(npc.y-player.y)>=22)return;
+          drawNpcSprite(npc.x+.5,npc.y+.5,npcBases[index%npcBases.length],(index+Math.floor(performance.now()/900))%4);
+        });
+        const px=player.x+.5,pz=player.y+.5,half=.38,height=1.55;
         const left=[px-rightX*half,0,pz-rightZ*half],right=[px+rightX*half,0,pz+rightZ*half];
         const topLeft=[left[0],height,left[2]],topRight=[right[0],height,right[2]];
         const spriteData=new Float32Array([
@@ -341,10 +367,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         // Camera-relative eight-way facing matches the RPG pack's CAM0-7
         // mapping. Cycle through actual idle/walk frames rather than two
         // nonexistent placeholder URLs.
-        const cameraSide=((Math.round((yaw/(Math.PI*2))*8)%8)+8)%8;
-        const faceByCam:Face8[]=['downleft','left','upleft','up','upright','right','downright','down'];
-        const face=faceByCam[cameraSide];
-        const moving=[...keys].some(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
+                const moving=[...keys].some(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
         const anim:RpgAnim=moving?'Walk':'Idle';
         const frameCount=moving?11:4;
         const frameIndex=moving?Math.floor(performance.now()/85)%frameCount:Math.floor(performance.now()/650)%frameCount;
