@@ -99,7 +99,16 @@ function packFbxObject(root: any, THREE: any, modelIndex: number): Float32Array 
     const position=geometry.attributes.position;
     const index=geometry.index;
     const materials=Array.isArray(object.material)?object.material:[object.material];
-    const wallPalettes = [\n      {r:0.78,g:0.66,b:0.48}, {r:0.72,g:0.78,b:0.67}, {r:0.72,g:0.58,b:0.48},\n      {r:0.63,g:0.73,b:0.79}, {r:0.82,g:0.74,b:0.57}, {r:0.70,g:0.65,b:0.78},\n      {r:0.78,g:0.62,b:0.64}, {r:0.61,g:0.72,b:0.56}\n    ];\n    const roofPalettes = [\n      {r:0.58,g:0.16,b:0.12}, {r:0.30,g:0.35,b:0.40}, {r:0.48,g:0.25,b:0.12},\n      {r:0.25,g:0.32,b:0.22}, {r:0.43,g:0.18,b:0.24}, {r:0.34,g:0.29,b:0.22}\n    ];\n    const materialColor=(groupIndex:number)=>{
+    const wallPalettes = [
+      {r:0.78,g:0.66,b:0.48}, {r:0.72,g:0.78,b:0.67}, {r:0.72,g:0.58,b:0.48},
+      {r:0.63,g:0.73,b:0.79}, {r:0.82,g:0.74,b:0.57}, {r:0.70,g:0.65,b:0.78},
+      {r:0.78,g:0.62,b:0.64}, {r:0.61,g:0.72,b:0.56}
+    ];
+    const roofPalettes = [
+      {r:0.58,g:0.16,b:0.12}, {r:0.30,g:0.35,b:0.40}, {r:0.48,g:0.25,b:0.12},
+      {r:0.25,g:0.32,b:0.22}, {r:0.43,g:0.18,b:0.24}, {r:0.34,g:0.29,b:0.22}
+    ];
+    const materialColor=(groupIndex:number)=>{
       const material=materials[groupIndex]||materials[0];
       const color=material?.color;
       const name=String(material?.name||'').toLowerCase();
