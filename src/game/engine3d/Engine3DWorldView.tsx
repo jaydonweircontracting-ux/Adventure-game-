@@ -212,16 +212,13 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
         const a:Vec3=[x-w/2+modelTriangles[i]*w,modelTriangles[i+1]*3.6, z-d/2+modelTriangles[i+2]*d];
         const b:Vec3=[x-w/2+modelTriangles[i+6]*w,modelTriangles[i+7]*3.6, z-d/2+modelTriangles[i+8]*d];
         const c:Vec3=[x-w/2+modelTriangles[i+12]*w,modelTriangles[i+13]*3.6, z-d/2+modelTriangles[i+14]*d];
-        // Do not trust the FBX material/texture colour channel in the
-        // lightweight renderer. Some exported FBX files contain white
-        // placeholder colours, so derive a stable opaque medieval palette
-        // from the mesh height and source variation instead of drawing white.
-        const avgY=(modelTriangles[i+1]+modelTriangles[i+7]+modelTriangles[i+13])/3;
-        const sourceShade=Math.min(1,Math.max(0,modelTriangles[i+3]*.35+modelTriangles[i+4]*.35+modelTriangles[i+5]*.30));
-        const variation=.88+sourceShade*.12;
-        const color:Vec3=avgY>.57
-          ? [.34*variation,.13*variation,.105*variation]
-          : [.68*variation,.53*variation,.38*variation];
+        // Preserve the distinct per-face palette baked from the uploaded FBX
+        // material groups instead of flattening every model to tan.
+        const color:Vec3=[
+          Math.min(1,Math.max(.035,modelTriangles[i+3])),
+          Math.min(1,Math.max(.035,modelTriangles[i+4])),
+          Math.min(1,Math.max(.035,modelTriangles[i+5]))
+        ];
         tri(a,b,c,color);
       }
       continue;
