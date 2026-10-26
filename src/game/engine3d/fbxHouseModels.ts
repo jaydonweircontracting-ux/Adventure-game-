@@ -120,11 +120,34 @@ function packFbxObject(root: any, THREE: any): Float32Array {
       const uvAttribute=geometry.attributes.uv;
       const end=group.start+group.count;
       for(let i=group.start;i+2<end;i+=3){
+        const points:number[]=[];
+        const vertices:any[]=[];
+        const uvs:any[]=[];
         for(let j=0;j<3;j++){
           const at=index?index.getX(i+j):i+j;
           const v=new THREE.Vector3(position.getX(at),position.getY(at),position.getZ(at)).applyMatrix4(object.matrixWorld);
-          const uv=uvAttribute ? new THREE.Vector2(uvAttribute.getX(at), uvAttribute.getY(at)) : undefined;
-          addVertex(v, texturePixel(material, uv) || fallbackColor);
+          vertices.push(v);
+          points.push(v.x,v.y,v.z);
+          uvs.push(uvAttribute ? new THREE.Vector2(uvAttribute.getX(at), uvAttribute.getY(at)) : undefined);
+        }
+        // Some of the uploaded FBXs reference external texture atlases that
+        // are not included alongside the FBX. If a neutral/white material has
+        // no readable texture, shade the actual model geometry by face angle
+        // so roof planes, walls and ground-facing surfaces remain distinct
+        // instead of collapsing into one tan silhouette.
+        const ab=vertices[1].clone().sub(vertices[0]);
+        const ac=vertices[2].clone().sub(vertices[0]);
+        const normal=ab.cross(ac).normalize();
+        const colorIsNeutral=!material?.color ||
+          (Math.max(material.color.r,material.color.g,material.color.b)-Math.min(material.color.r,material.color.g,material.color.b)<0.2);
+        let faceFallback=fallbackColor;
+        if(colorIsNeutral && !material?.map?.image){
+          if(Math.abs(normal.y)>0.42) faceFallback={r:0.30,g:0.18,b:0.13};
+          else if(Math.abs(normal.y)<0.12) faceFallback={r:0.66,g:0.53,b:0.36};
+          else faceFallback={r:0.43,g:0.25,b:0.17};
+        }
+        for(let j=0;j<3;j++){
+          addVertex(vertices[j], texturePixel(material, uvs[j]) || faceFallback);
         }
       }
     }
