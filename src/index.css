@@ -5891,37 +5891,47 @@ body {
 .body-loot-empty { padding: 12px 4px; color: #735f49; text-align: center; }
 .body-loot-done { width: 100%; margin-top: 12px; background: #493a2a; }
 
-/* BUILD 957: black title screen, green buttons (title only — scoped to
- * menu-mode so in-game/prison buttons are untouched). */
+/* BUILD 1630: crimson title menu theme, scoped to the title screen only. */
 .menu-mode .main-menu {
-  background: #000;
+  background:
+    radial-gradient(ellipse at 50% 28%, rgba(139, 18, 34, .32), transparent 52%),
+    linear-gradient(145deg, #170609 0%, #080304 55%, #21070b 100%);
 }
 .menu-mode .main-menu-card {
-  background: #0c0f0d;
-  border-color: #2e7d4f;
-  color: #e8f0e9;
+  background: linear-gradient(155deg, #260b10 0%, #120609 100%);
+  border-color: #a32636;
+  color: #fff0f0;
+  box-shadow: 0 0 0 1px rgba(225, 50, 70, .16), 0 12px 38px rgba(0, 0, 0, .5);
 }
 .menu-mode .main-menu-card h1 {
-  color: #ffffff;
+  color: #fff5f5;
+  text-shadow: 0 2px 0 #5b101b, 0 0 22px rgba(231, 38, 62, .22);
 }
 .menu-mode .main-menu-card > p:not(.main-menu-note) {
-  color: #b9c9bd;
+  color: #e2b8bd;
 }
 .menu-mode .main-menu-kicker {
-  color: #7ddc9a;
+  color: #ff6878;
 }
 .menu-mode .main-menu-button {
-  background: #1e7d46;
-  border-color: #2e9e5b;
-  color: #ffffff;
+  background: linear-gradient(180deg, #c9273d 0%, #8e1427 100%);
+  border-color: #f04a5e;
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 3px 0 #4c0b16;
+  transition: background .15s ease, border-color .15s ease, transform .15s ease;
 }
 .menu-mode .main-menu-button:hover {
-  background: #27a35c;
-  border-color: #7ddc9a;
+  background: linear-gradient(180deg, #ef3b51 0%, #b51b31 100%);
+  border-color: #ff9aa5;
+  transform: translateY(-1px);
+}
+.menu-mode .main-menu-button:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 1px 0 #4c0b16;
 }
 .menu-mode .main-menu-button:disabled {
   opacity: 0.55;
 }
 .menu-mode .main-menu-note {
-  color: #8fa398;
+  color: #b98b91;
 }
