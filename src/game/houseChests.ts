@@ -72,6 +72,16 @@
 
 import { ITEM_BASES } from './items';
 import { FIELD_SIZE } from './fieldCamera';
+import { BANK_DOORWAY_ID } from './mosslightLayout';
+
+// BUILD 982: the Mosslight Bank is not a house, so no 963 chest derives
+// from its doorway — stored items are reached only through the 970 bank
+// service, never by looting a room. (The converted filler's old generic
+// chest id stops deriving; any recorded takes against it remain as
+// orphaned entries in houseChestTakes, harmless and never displayed.)
+export function isHouseChestExcluded(doorwayId: string): boolean {
+  return doorwayId === BANK_DOORWAY_ID;
+}
 
 export type HouseChestRect = { left: number; top: number; right: number; bottom: number };
 export type HouseChestPoint = { x: number; y: number };

@@ -33,6 +33,40 @@ export const MOSSLIGHT_PINNED_NAMES = [
 /** Mosslight's chunk on the world map. */
 export const MOSSLIGHT_CHUNK = { cx: 4, cy: 7 } as const;
 
+// ---------------------------------------------------------------------------
+// BUILD 982: the physical Mosslight Bank — a converted roadside filler lot,
+// NOT a new pinned building. The 18 pinned rects (and the engine layout
+// they generate) are untouched, so the town's roads, lanes, props, and
+// 24-door set are exactly as 975 proved them. The lot is filler index 21
+// (the 4th filler): commercial district, the closest filler to the town
+// core once filler-1 (Sten & Aya's home) is excluded, directly south of
+// Brand's town-s1 home down the south road, lane endpoint 0.30u from its
+// door. Matched by rect (0.01 epsilon, same pattern as IsoFieldView's
+// fillerVariantForRect), never by filler index, so the identity follows
+// the lot even if the engine ever reorders fillers. Full-precision rect:
+// { left: 114.8015880218307, top: 214.95155006420293,
+//   right: 124.46786698573925, bottom: 222.26741105510348 }.
+// The bank's ONLY art file is public/buildings/bank.png (baked by
+// scripts/bake-bank-png.py) — the iso view draws that PNG directly, so
+// the bank survives any follow-up that removes old house art.
+/** Stable doorway id for the bank (replaces the generic 4,7-building-21). */
+export const BANK_DOORWAY_ID = 'mosslight-bank-door';
+/** Interior area id for the bank (generic building room, no vault, no loot). */
+export const BANK_AREA_ID = 'mosslight-bank';
+/** Door prompt / panel name for the bank building. Distinct from the
+ * 949 npcStorage BANK_NAME ('Mosslight bank', the NPC ledger) — same
+ * place in spirit, different string, different concept. */
+export const BANK_BUILDING_NAME = 'Mosslight Bank';
+/** The bank lot's rect (3-decimal; matched with 0.01 epsilon). */
+export const BANK_LOT_RECT: Rect = { left: 114.802, top: 214.952, right: 124.468, bottom: 222.267 };
+/** True when a Mosslight rect is the bank lot. */
+export function isBankLotRect(rect: Rect): boolean {
+  return Math.abs(rect.left - BANK_LOT_RECT.left) < 0.01
+    && Math.abs(rect.top - BANK_LOT_RECT.top) < 0.01
+    && Math.abs(rect.right - BANK_LOT_RECT.right) < 0.01
+    && Math.abs(rect.bottom - BANK_LOT_RECT.bottom) < 0.01;
+}
+
 function pinnedLots() {
   const rects = [
     ...MOSSLIGHT_FIXED_RECTS_280.slice(0, 4),

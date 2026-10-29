@@ -2,7 +2,7 @@
 // BUILD 761: Mosslight's replacement buildings use original vector pixel-art
 // sprites so the new vernacular reads consistently at every zoom level.
 import { BUILDING_VARIANTS } from './settlements';
-import { mosslightFillerLots } from './mosslightLayout';
+import { mosslightFillerLots, isBankLotRect } from './mosslightLayout';
 import type { Rect } from './settlements';
 export interface BuildingArt { variant: string; file: string; aspectRatio: '2 / 1' | '1 / 1' }
 const MOSSLIGHT_PINNED_VARIANTS = ['blue-house', 'story-tower', 'plaster-house', 'tavern', '', '', '', '', '', '', 'house-balcony', 'tavern', 'shop-banner', 'house-timber', 'shop-awning', 'cottage-wide', 'brick-shop', 'hall-grand'] as const;
@@ -12,7 +12,11 @@ const AUDITED = new Set<string>(BUILDING_VARIANTS);
 export function buildingArtFor(chunk: { x: number; y: number }, index: number, rect: Rect): BuildingArt {
   let variant: string | undefined;
   if (chunk.x === 4 && chunk.y === 7) {
-    if (index >= 0 && index < 4) variant = MOSSLIGHT_PINNED_VARIANTS[index];
+    // BUILD 982: the Mosslight Bank is matched by rect, not by index —
+    // its filler index (21) must keep the bank variant even if the
+    // engine ever reorders lots.
+    if (isBankLotRect(rect)) variant = 'bank';
+    else if (index >= 0 && index < 4) variant = MOSSLIGHT_PINNED_VARIANTS[index];
     else if (index >= 4 && index < 10) variant = HOUSE_VARIANTS[(index + 1) % HOUSE_VARIANTS.length];
     else if (index >= 10 && index < 18) variant = MOSSLIGHT_PINNED_VARIANTS[index];
     else if (index >= 18) {

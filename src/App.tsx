@@ -73,7 +73,7 @@ import { AA_ABILITIES, AA_CREDITS_PER_POINT, AA_EVEN_KILLS_PER_POINT, aaBonusesF
 import { CLASS_DESCRIPTIONS, MANA_REGEN_SECONDS, OVERWORLD_SPELLS, classArrowMultiplier, classCritBonus, classDamageBonus, classStealthMultiplier, emberBoltDamage, frostWardArmor, maxManaForInt, nearestSpellTarget, sanitizePlayerMana, spellFramesFor, spellsForClass, teacherClassForNpc, veilStepDestination, type OverworldSpellId } from '@/game/classes';
 // BUILD 683: unified Mosslight rects (single source in settlements.ts).
 import { MOSSLIGHT_FIXED_RECTS_280, mosslightCottageRects280, mosslightCottageVariantForRect, mosslightSettlementDecor } from '@/game/settlements';
-import { mosslightEngineChunkLayout, mosslightEngineLanes, mosslightEngineProps, mosslightFillerRects } from '@/game/mosslightLayout';
+import { mosslightEngineChunkLayout, mosslightEngineLanes, mosslightEngineProps, mosslightFillerRects, BANK_DOORWAY_ID, BANK_AREA_ID, BANK_BUILDING_NAME, isBankLotRect } from '@/game/mosslightLayout';
 import { mosslightTownTrees } from '@/game/townTrees';
 // BUILD 975: Procgen Arcana port — settlement layout interchange (pure module).
 import { townToArcanaCollection, mapSettlementLayout, checkDoorAgreement, SEVEN_SYSTEM_HANDLING } from '@/game/settlementLayout';
@@ -161,7 +161,7 @@ import { TASKS, taskDefById, taskDefForQuest, isTaskDriven, taskActivities, task
 import { applyFactionGain } from '@/game/faction';
 import { chestsForChunk, attemptLockpick, serializeOpenedChests, parseOpenedChests, type LockedChest } from '@/game/lockpicking';
 // BUILD 963: visible, lootable house chests — one chest per house.
-import { houseChestForDoorway, remainingChestContents, chestFullyLooted, recordHouseChestTake, markChestTheftReported, serializeHouseChestTakes, parseHouseChestTakes, type HouseChest, type HouseChestTakes } from '@/game/houseChests';
+import { houseChestForDoorway, remainingChestContents, chestFullyLooted, recordHouseChestTake, markChestTheftReported, serializeHouseChestTakes, parseHouseChestTakes, isHouseChestExcluded, type HouseChest, type HouseChestTakes } from '@/game/houseChests';
 import { createStartingDeeds, playerOwnsHouse, sanitizeHouseDeeds, serializeHouseDeeds, type HouseDeedsState } from '@/game/houseDeeds';
 import { deriveQuestProgressEvents, questAcceptedEvent, questCompletedEvent, type QuestLifecycleEvent } from '@/game/questEvents';
 import { questTitleForQuest, questTitlesForCompleted } from '@/game/questTitles';
@@ -197,13 +197,14 @@ const WORLD_TILE_BG: Record<string, string> = { ocean: '#2b2bd9', shore: '#e6d49
 // BUILD 375: single source of truth — the build marker injected into
 // index.html by scripts/prepare-build-entry.cjs. Never hardcode again.
 // BUILD 768: Bundle-owned version marker; don't trust the HTML marker in a cached bundle.
-const BUILD_NUMBER = '981';
+const BUILD_NUMBER = '982';
 const DEBUG_REPOSITORY_ASSETS = Object.entries(import.meta.glob<string>('../game sprites/**/*.{png,webp,jpg,jpeg}', { eager: true, import: 'default', query: '?url' }))
   .map(([path, src]) => ({ id: path, path, folder: path.split('/').slice(0, -1).join('/').replace('../', ''), src: String(src), name: path.split('/').pop() || path }))
   .sort((a, b) => a.name.localeCompare(b.name));
 // BUILD 626: Build notes + changelog — brief description per build, shown in
 // main menu so the user can verify updates are live.
 const BUILD_NOTES: Record<string, string> = {
+  '982': 'Mosslight now has a real bank building on the south road: a stone facade with a tall red roof, its own door, and a gold bank pin on the minimap. Brand the merchant minds the bank in the mornings and his market stall after lunch — talk to him at the bank (or anywhere you meet him) to deposit coins, withdraw, or store and take back gear, exactly as before, now with a place to go with it.',
   '981': 'Add a selectable independent 3D WebGL mode in Debug and Options, keep it separate from 2D/2.5D rendering, map player and NPC coordinates correctly, and prevent the 2.5D preference from overriding 3D mode.',
   '922': 'Villagers now care about their gear: they want better weapons, save toward a gold goal, and buy upgrades at market stalls when they can afford them — a guard with a rusty sword will come home with a steel blade. They also sell spare gear back to stalls, but never at a cost to themselves: never their only weapon, never their last piece of armor, never the tool their job needs, and never a sale that leaves them worse equipped. Examine a villager to see what they want and what they are saving for, and watch for the ones doing well enough to enjoy the tavern life',
   '923': 'Villagers now have a sense of character: most folk will never start a lethal fight with another villager — only a rare unsettled few ever would. Guards, priests, and children never start one at all. Self-defense, guard duty, and creature fights are unchanged. Examine a villager to see what kind of character they are',
@@ -1407,17 +1408,26 @@ export function buildingDoorwaysFor(chunk: Point): Doorway[] {
       const position = isNewStyleHouse ? newHouseDoorPosition(rect) : fieldDoorPosition(rect);
       // Stable IDs for the starting-area buildings so save games and the
       // starting interior keep working; positions are always computed.
-      const stableId = isStartingArea(chunk) && index === 0 ? 'tutorial-house-door'
+      // BUILD 982: the Mosslight Bank is a converted filler lot (matched
+      // by rect, checked FIRST so it never falls through to a generic
+      // 4,7-building-N id). Its door, trigger, exit, and path endpoint
+      // are the same computed values as every other filler doorway —
+      // only the identity is named, so the 24-door set is unchanged.
+      const isBank = isBankLotRect(rect);
+      const stableId = isBank ? BANK_DOORWAY_ID
+        : isStartingArea(chunk) && index === 0 ? 'tutorial-house-door'
         : isStartingArea(chunk) && index === 1 ? 'crafting-guild-door'
         : isStartingArea(chunk) && index === 2 ? 'chapel-door'
         : isStartingArea(chunk) && index === 3 ? 'fourth-house-door'
         : chunk.x + ',' + chunk.y + '-building-' + index;
-      const stableAreaId = isStartingArea(chunk) && index === 0 ? 'tutorial-house'
+      const stableAreaId = isBank ? BANK_AREA_ID
+        : isStartingArea(chunk) && index === 0 ? 'tutorial-house'
         : isStartingArea(chunk) && index === 1 ? 'wayfarer-guild'
         : isStartingArea(chunk) && index === 2 ? 'rootbound-chapel'
         : isStartingArea(chunk) && index === 3 ? 'fourth-house'
         : chunk.x + '-' + chunk.y + '-building-' + index;
-      const stableName = isStartingArea(chunk) && index === 0 ? 'Tutorial House'
+      const stableName = isBank ? BANK_BUILDING_NAME
+        : isStartingArea(chunk) && index === 0 ? 'Tutorial House'
         : isStartingArea(chunk) && index === 1 ? 'Wayfarer Guild'
         : isStartingArea(chunk) && index === 2 ? 'Rootbound Chapel'
         : isStartingArea(chunk) && index === 3 ? 'The Rusty Tankard'
@@ -1430,7 +1440,8 @@ export function buildingDoorwaysFor(chunk: Point): Doorway[] {
         area: {
           id: stableAreaId,
           name: stableName,
-          description: isStartingArea(chunk) && index === 0 ? 'A small safe house on the tutorial island.'
+          description: isBank ? 'The Mosslight Bank. Brand keeps the ledger here — deposits, withdrawals, and stored gear.'
+            : isStartingArea(chunk) && index === 0 ? 'A small safe house on the tutorial island.'
             : isStartingArea(chunk) && index === 1 ? 'A workbench, maps, and road-worn notices fill the guild hall.'
             : isStartingArea(chunk) && index === 2 ? 'Lanterns glow beneath old roots in the quiet town chapel.'
             : isStartingArea(chunk) && index === 3 ? 'A cozy tavern with a long oak bar. Mira serves ale and gossip.'
@@ -2917,6 +2928,10 @@ function townsfolkAnchors(offsets: Record<string, Point>): TownsfolkAnchors {
   points.guild = doorstep('crafting-guild-door');
   points.chapel = doorstep('chapel-door');
   points.tavern = doorstep('fourth-house-door');
+  // BUILD 982: the bank's doorstep — Brand's morning post. Built from the
+  // live bank doorway (like every doorstep anchor), so a moved bank moves
+  // Brand's post, and old saves gain it on load.
+  points.bank = doorstep(BANK_DOORWAY_ID);
   points.farm0 = { x: 30, y: 119 };
   points.farm1 = { x: 110, y: 119 };
   // BUILD 548: neighbor cottage near tutorial house — visible life at spawn.
@@ -4476,7 +4491,11 @@ function MiniMap({ chunk, position, onTap, mode = 'terrain', radarEntities = [] 
           const offX = ox * MINIMAP_CHUNK_UNITS - position.x;
           const offY = oy * MINIMAP_CHUNK_UNITS - position.y;
           for (const d of buildingDoorwaysFor(cp)) {
-            const type = iconTypeForRoomType(d.area.roomType);
+            // BUILD 982: the bank gets its own gold pin INSTEAD of the
+            // house dot its generic 'building' roomType would map to —
+            // one pin per doorway (the 10px bank diamond would cover
+            // the 4px house dot anyway).
+            const type = d.id === BANK_DOORWAY_ID ? 'bank' : iconTypeForRoomType(d.area.roomType);
             if (!type) continue;
             sources.push({
               type,
@@ -6393,7 +6412,11 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
   // chest. Deleted editor houses get no chest. Shared by the 2D chest
   // divs, the iso chest props, the chest panel, and the test hooks.
   const computeHouseChests = (chunkVal: Point, offsets: Record<string, Point>, deleted: string[]): HouseChest[] => {
-    const doorways = buildingDoorwaysFor(chunkVal).filter((d) => !deleted.includes(d.id));
+    // BUILD 982: the bank is not a house — no 963 chest derives from it
+    // (stored items are reached only through the 970 bank service, never
+    // by looting a room). Filtered before rects are built so the
+    // chest-position collision avoidance stays consistent.
+    const doorways = buildingDoorwaysFor(chunkVal).filter((d) => !deleted.includes(d.id) && !isHouseChestExcluded(d.id));
     const rects = doorways.map((d) => {
       const off = offsets[d.id] || { x: 0, y: 0 };
       return { left: d.rect.left + off.x, top: d.rect.top + off.y, right: d.rect.right + off.x, bottom: d.rect.bottom + off.y };
@@ -8496,9 +8519,17 @@ function GameField({ inventory, equipment, onEquipmentChange, equippedDagger, eq
         }
         const economyTargets = new Map((economy?.targets ?? []).map((target) => [target.npcId, target]));
         const resolveVillageTarget = (npc: Townsperson, anchors: TownsfolkAnchors, clock: WorldClockState) => {
+          // BUILD 982: the bank clerk's bank post outranks his economy
+          // stall assignment in the morning — without this, the economy
+          // pins Brand to the market stall all workday and the bank
+          // stands empty even though his schedule says 'Minding the
+          // bank'. Afternoons are untouched: the schedule says 'Minding
+          // the stall' then, so the economy target wins exactly as before.
+          const scheduled = villageTarget(npc, anchors, clock, foodAvailable);
+          if (scheduled.activity === 'Minding the bank' || scheduled.activity === 'Opening the bank') return scheduled;
           const work = economyTargets.get(npc.id);
           if (work) return { activity: work.activity, target: work.target, indoors: false };
-          return villageTarget(npc, anchors, clock, foodAvailable);
+          return scheduled;
         };
         const next = advanceTownsfolk(townsfolkRef.current, folkAnchors, folkClock, townsfolkNavRef.current!, 0.22, resolveVillageTarget);
         if (next.some((npc, index) => npc !== townsfolkRef.current[index])) {

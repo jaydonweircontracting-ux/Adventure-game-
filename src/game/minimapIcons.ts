@@ -71,7 +71,8 @@ export type MinimapIconType =
   | 'cave'
   | 'carriage'
   | 'well'
-  | 'windmill';
+  | 'windmill'
+  | 'bank';
 
 /** Doorway room types (subset of App's InteriorArea roomType union). */
 export type MinimapRoomType =
@@ -122,6 +123,8 @@ export const MINIMAP_ICON_DEFS: Record<MinimapIconType, MinimapIconDef> = {
   carriage: { fill: '#d8b878', stroke: '#4a3410', label: 'Carriage station / stop' },
   well: { fill: '#6fc4d8', stroke: '#12303a', label: 'Well' },
   windmill: { fill: '#f5f5f0', stroke: '#3a3a30', label: 'Windmill' },
+  // BUILD 982: Mosslight Bank — gold diamond, top-tier priority.
+  bank: { fill: '#c9a227', stroke: '#3a2c00', label: 'Bank' },
 };
 
 /** One icon source: player-relative field units (see coordinate contract). */
@@ -195,6 +198,7 @@ export const MINIMAP_ICON_PRIORITY: Record<MinimapIconType, number> = {
   chapel: 7,
   tavern: 8,
   guild: 9,
+  bank: 9,
 };
 
 /** Sort placed icons for drawing (lowest priority first). Stable copy. */
@@ -236,7 +240,7 @@ export function drawMinimapIcon(
   g.lineWidth = 1;
   g.stroke();
   // Glyph: dark on light fills, white on dark fills.
-  const lightFills: MinimapIconType[] = ['chapel', 'house', 'carriage', 'well', 'windmill'];
+  const lightFills: MinimapIconType[] = ['chapel', 'house', 'carriage', 'well', 'windmill', 'bank'];
   const glyph = lightFills.includes(type) ? '#20241e' : '#ffffff';
   switch (type) {
     case 'shop':
@@ -260,6 +264,15 @@ export function drawMinimapIcon(
       g.lineTo(x, y - 2.5);
       g.lineTo(x + 3, y + 2);
       g.stroke();
+      break;
+    case 'bank':
+      // BUILD 982: classical facade — lintel + three columns
+      // (dark glyph on the gold fill).
+      g.fillStyle = glyph;
+      g.fillRect(x - 3.5, y - 3, 7, 1.5);
+      g.fillRect(x - 3, y - 1.5, 1.5, 4.5);
+      g.fillRect(x - 0.75, y - 1.5, 1.5, 4.5);
+      g.fillRect(x + 1.5, y - 1.5, 1.5, 4.5);
       break;
     case 'chapel':
       // Cross.

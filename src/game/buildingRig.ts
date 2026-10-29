@@ -79,6 +79,12 @@ export const BUILDING_ASSET_META: Record<string, BuildingAssetMeta> = {
   // the tower body spans 41-59% of the canvas so 38% would fall outside the
   // tower). Dimensions audited from the actual PNG file.
   'story-tower':   { variant: 'story-tower',    file: 'buildings/story-tower.png',    w: 2240, h: 1120, anchor: 'base-center', kind: 'civic' },
+  // BUILD 982: Mosslight Bank — dims audited from the actual PNG
+  // (baked by scripts/bake-bank-png.py, a faithful drawKenneyHouse
+  // port). The bank carries its OWN correct meta; the 5 959 variants
+  // still lack meta (the 684 rig crash) — that fix is a separate user
+  // decision and is deliberately untouched here.
+  'bank':          { variant: 'bank',           file: 'buildings/bank.png',           w: 1138, h: 597, anchor: 'base-center', kind: 'civic' },
 };
 
 /** The authoritative per-instance building record. */

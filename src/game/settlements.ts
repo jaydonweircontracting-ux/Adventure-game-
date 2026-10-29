@@ -124,6 +124,10 @@ export const BUILDING_VARIANTS = [
   'house-balcony',
   'house-tall',
   'shop-banner',
+  // BUILD 982: Mosslight Bank — single self-contained baked PNG
+  // (public/buildings/bank.png). Appended so existing indices keep
+  // their meaning, per the 959 pattern.
+  'bank',
 ] as const;
 
 /** Cottage-appropriate variants for hamlet homes (no shops/tavern/hall). */

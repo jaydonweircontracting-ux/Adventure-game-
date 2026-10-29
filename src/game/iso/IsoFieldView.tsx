@@ -57,7 +57,7 @@ import { marketStallsFromDecor, npcMaxHp } from '../townsfolk';
 // BUILD 886: disposition-colored overhead name labels (EO-style).
 import { dispositionNameColor, defaultDisposition } from '../dialogue';
 // BUILD 692: district-appropriate art variants for the engine's filler lots.
-import { mosslightFillerLots, fillerVariantForLot, mosslightPinnedRects } from '../mosslightLayout';
+import { mosslightFillerLots, fillerVariantForLot, mosslightPinnedRects, isBankLotRect, BANK_AREA_ID } from '../mosslightLayout';
 // BUILD 684: single authoritative building asset catalog (was: hardcoded
 // kind->path maps duplicated in this file). Anchor/scale conventions documented
 // in src/game/buildingRig.ts.
@@ -439,6 +439,11 @@ const BLD_SRC_ENTRIES: Array<[string, string]> = [
   // Load the starter exterior explicitly so its sprite never depends on a generic variant.
   ['starting-house-exterior', sharedHouseSpriteUrl],
   ['starting-house-overlay', startingHouseOverlayUrl],
+  // BUILD 982: the bank's own baked PNG. Appended AFTER the meta spread
+  // above (which maps 'bank' to the shared sprite): the loader loop
+  // replaces on src mismatch, so this entry wins and the bank never
+  // wears the shared house sprite. The bank's ONLY art file is this PNG.
+  ['bank', 'buildings/bank.png'],
 ];
 
 const LOD_FARM_RGB: Array<[number, number, number]> = FARM_BASE_COLORS.map(
@@ -1645,6 +1650,11 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
         // new art variants (commercial -> shops, residential -> cottages),
         // picked by stable hash so the assignment never flickers.
         if (absCx === 4 && absCy === 7 && ur) {
+          // BUILD 982: the Mosslight Bank is matched by rect, not by
+          // pinned index — it is a converted filler lot, so it is
+          // checked before the pinned/filler chains below. (ur is the
+          // mover-un-shifted rect per 978, so a moved bank keeps its kind.)
+          if (isBankLotRect(ur)) return 'bank';
           // BUILD 768: Resolve the fixed Crossing buildings by the same stable
           // rect list used by doors and NPC homes. House 12 is the tavern.
           const pinnedRects = mosslightPinnedRects();
@@ -1848,6 +1858,27 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
               // The gate is now interior-state only (BUILD 826's
               // transition behavior is preserved in the else branch).
               if (!liveRef.current.inInterior) {
+                // BUILD 982: the Mosslight Bank wears its own dedicated
+                // exterior (the baked bank.png) instead of the shared
+                // starter overlay — the bank is the one building with a
+                // dedicated exterior, and its art file is self-contained
+                // (it must survive the follow-up that removes old house
+                // art). Drawn at footprint width (980 rule), bottom on
+                // baseY, aspect-preserved from the PNG itself.
+                if (b.area.id === BANK_AREA_ID) {
+                  const bankImg = bldImgs['bank'];
+                  if (bankImg && bankImg.complete && bankImg.naturalWidth > 0) {
+                    const bankAspect = bankImg.naturalHeight / bankImg.naturalWidth;
+                    g2.save();
+                    g2.globalAlpha = 1;
+                    g2.globalCompositeOperation = 'source-over';
+                    g2.filter = 'none';
+                    g2.drawImage(bankImg, cx - sw / 2, baseY - sw * bankAspect, sw, sw * bankAspect);
+                    g2.restore();
+                  } else {
+                    drawBase();
+                  }
+                } else {
                 // BUILD 983: use the user's authored starter-house exterior
                 // overlay (IMG_5424) on every existing building in the
                 // starting town, including NPC homes and shop/guild lots,
@@ -1877,6 +1908,7 @@ export default function IsoFieldView({ inInterior = false, npcSpeechEnabled = fa
                 } else {
                   drawBase();
                 }
+                } // BUILD 982: close the non-bank else opened above.
               } else {
                 // Interior active: keep the old base backdrop (BUILD 826).
                 drawBase();

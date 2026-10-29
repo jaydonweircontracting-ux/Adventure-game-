@@ -28,6 +28,7 @@ import { houseTypeForBuilding } from './houseTypes';
 import { mosslightCottageRects280, MOSSLIGHT_MAIN_RECTS_280, mosslightHamletLayouts, SETTLEMENT_FIELD_SCALE } from './settlements';
 // BUILD 699: household homes need pinned town-building + filler rects.
 import { mosslightPinnedRects, mosslightFillerRects } from './mosslightLayout';
+import { isBankClerk } from './playerBank';
 
 export type TownsfolkFacing = 'up' | 'down' | 'left' | 'right';
 export type TownsfolkArchetype = 'farmer' | 'merchant' | 'guard' | 'priest' | 'smith' | 'commoner' | 'child' | 'teacher';
@@ -269,6 +270,24 @@ export function townsfolkTarget(npc: Townsperson, anchors: TownsfolkAnchors, clo
     case 'merchant': {
       const open = 480 + jitter(5, 31); // 8:00–8:30
       if (atNight) return { activity: 'Sleeping', target: home, indoors: true };
+      // BUILD 982: Brand (the bank clerk) minds the BANK in the morning
+      // (open -> lunchStart) and his stall after lunch (lunchEnd ->
+      // workEnd); Tankard evenings and home nights are unchanged. The
+      // bank post is outdoors at the bank doorstep (field NPC,
+      // teachers' pattern from 958). Guarded on the anchor existing so
+      // sim tests without a bank keep the stall behavior. The 970
+      // service itself is never location-gated: talking to Brand anywhere
+      // (stall afternoons, Tankard evenings) opens the same bank machine,
+      // because it opens on the clerk, not on location.
+      if (isBankClerk(npc) && anchors.points.bank) {
+        const bankPost = gatherSpot(anchors.points.bank, 2009);
+        if (mins < open) return { activity: 'Opening the bank', target: homeSpot, indoors: false };
+        if (atLunch) return { activity: 'Having lunch', target: plazaSpot, indoors: false };
+        if (mins < lunchStart) return { activity: 'Minding the bank', target: bankPost, indoors: false };
+        if (mins < workEnd) return { activity: 'Minding the stall', target: stall, indoors: false };
+        if (mins < workEnd + 90) return { activity: 'Evening at the Tankard', target: tavernSpot, indoors: false };
+        return { activity: 'At home', target: homeSpot, indoors: true };
+      }
       if (mins < open) return { activity: 'Opening the stall', target: homeSpot, indoors: false };
       if (atLunch) return { activity: 'Having lunch', target: plazaSpot, indoors: false };
       if (mins < workEnd) return { activity: 'Minding the stall', target: stall, indoors: false };

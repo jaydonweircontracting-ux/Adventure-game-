@@ -14,6 +14,9 @@ composes live from the kit pieces.
 Inputs : public/sprites/town-sprites/<piece>.png (shipped kit Previews)
 Outputs: public/buildings/{cottage-wide,hall-grand,house-balcony,
          house-tall,shop-banner}.png
+NOTE: the bank PNG is NOT made by this script (its slab renderer floats
+roofs/chimneys — see the shipped 959 renders). The bank is baked by
+scripts/bake-bank-png.py, a faithful port of drawKenneyHouse.
 Run    : python3 scripts/make-variant-renders.py (from the repo root)
 """
 from PIL import Image
