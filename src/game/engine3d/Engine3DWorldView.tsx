@@ -6,6 +6,7 @@ import {
   houseDesignFor, streetSlabsFor, cobbleSquaresFor,
   SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR,
   GLASS_DARK, GLASS_LIT, DOOR_WOOD, GROUND_FLOOR_H, UPPER_FLOOR_H, roofRise,
+  SUN_SHADE, shadeRgb, groundTintDelta,
 } from './townLook';
 import {
   placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys,
@@ -30,6 +31,25 @@ const COLORS: Record<string, Vec3> = {
   grass: [0.31, 0.41, 0.22], dirt: DIRT_TAN, sand: [0.68, 0.59, 0.39],
   stone: [0.48, 0.49, 0.46], water: [0.12, 0.36, 0.57],
 };
+// BUILD 988: one camera FOV for both cameras + the ground picker. Was
+// 60 degrees (Math.PI/3) for both; 66 widens the view ~12% linearly
+// (tan33/tan30) without fisheye distortion (half-angle 33 < 45). 72 was
+// built first and measured a real town FPS regression in SwiftShader
+// (wider wedge = more triangles surviving frustum clipping), so the
+// step was cut to 66, the largest step that holds FPS at baseline.
+// The ground window stays 45x45 — at default zoom + street view the
+// window still covers the visible ground (verified by screenshot);
+// the new distance fog softens the far window edge instead of a hard
+// cutoff.
+export const WORLD_FOV_DEG = 66;
+export const WORLD_FOV_RAD = (WORLD_FOV_DEG * Math.PI) / 180;
+// BUILD 988 distance fog: ground-plane range (tiles from the player)
+// over which world geometry fades to the horizon colour. Near field
+// (<=14) stays crisp; the window edge (22) is half-faded; >=30 is fully
+// haze. Fog is measured from the PLAYER, not the camera, so orbit
+// zoom-out never fogs the town itself out.
+export const FOG_NEAR = 14;
+export const FOG_FAR = 30;
 type Position = { x: number; y: number };
 
 function savedPosition(world: IsoWorld): Position {
@@ -184,23 +204,53 @@ function savedNpcActors(world: IsoWorld): NpcActor3D[] {
 // proofs); the game itself calls it internally only.
 export function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
   const data: Vertex = [];
+  // BUILD 988 distance fog, BAKED (not shader-side): every emitted
+  // vertex colour is mixed toward the horizon colour by ground-plane
+  // distance from the build centre (the player position at rebuild
+  // time), smoothstep FOG_NEAR..FOG_FAR. Zero per-frame cost — the
+  // shader stays trivial — and the 45x45 window edge reads as haze
+  // instead of a hard cutoff, at any orbit zoom. Cost of baking: the
+  // fog centre goes stale as the player walks (rebuilds recentre it
+  // every >8 tiles), so far-field haze shifts subtly on rebuild; near
+  // field (<=14 tiles) is always unfogged, so nothing the player looks
+  // at ever pops. A shader-side fog was measured first and cost frames
+  // in SwiftShader, so it was replaced by this baked form.
+  const fogAt = (x: number, z: number) => {
+    const d = Math.hypot(x - (center.x + .5), z - (center.y + .5));
+    const t = Math.min(1, Math.max(0, (d - FOG_NEAR) / (FOG_FAR - FOG_NEAR)));
+    return t * t * (3 - 2 * t);
+  };
+  // BUILD 988: explicit 6-arg pushes, not spreads — the world rebuild
+  // emits ~60k vertices every time the player moves >8 tiles, and
+  // spreading small arrays in that loop was the rebuild's main cost.
+  // Fog is mixed inline per vertex (no temp arrays).
   const tri = (a: Vec3, b: Vec3, c: Vec3, color: Vec3) => {
-    for (const p of [a, b, c]) data.push(...p, ...color);
+    const fa = fogAt(a[0], a[2]), fb = fogAt(b[0], b[2]), fc = fogAt(c[0], c[2]);
+    data.push(a[0], a[1], a[2], color[0] + (SKY_HORIZON[0] - color[0]) * fa, color[1] + (SKY_HORIZON[1] - color[1]) * fa, color[2] + (SKY_HORIZON[2] - color[2]) * fa,
+      b[0], b[1], b[2], color[0] + (SKY_HORIZON[0] - color[0]) * fb, color[1] + (SKY_HORIZON[1] - color[1]) * fb, color[2] + (SKY_HORIZON[2] - color[2]) * fb,
+      c[0], c[1], c[2], color[0] + (SKY_HORIZON[0] - color[0]) * fc, color[1] + (SKY_HORIZON[1] - color[1]) * fc, color[2] + (SKY_HORIZON[2] - color[2]) * fc);
   };
   // BUILD 985: per-vertex-colour triangle for grass blades (the flat
   // tri() above forces one colour per triangle; grass needs the shader
   // gradient evaluated at each corner, interpolated by the rasterizer).
+  // BUILD 988: grass corners are fogged like everything else.
   const triV = (a: Vec3, ca: Vec3, b: Vec3, cb: Vec3, c: Vec3, cc: Vec3) => {
-    data.push(...a, ...ca, ...b, ...cb, ...c, ...cc);
+    const fa = fogAt(a[0], a[2]), fb = fogAt(b[0], b[2]), fc = fogAt(c[0], c[2]);
+    data.push(a[0], a[1], a[2], ca[0] + (SKY_HORIZON[0] - ca[0]) * fa, ca[1] + (SKY_HORIZON[1] - ca[1]) * fa, ca[2] + (SKY_HORIZON[2] - ca[2]) * fa,
+      b[0], b[1], b[2], cb[0] + (SKY_HORIZON[0] - cb[0]) * fb, cb[1] + (SKY_HORIZON[1] - cb[1]) * fb, cb[2] + (SKY_HORIZON[2] - cb[2]) * fb,
+      c[0], c[1], c[2], cc[0] + (SKY_HORIZON[0] - cc[0]) * fc, cc[1] + (SKY_HORIZON[1] - cc[1]) * fc, cc[2] + (SKY_HORIZON[2] - cc[2]) * fc);
   };
   const quad = (a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: Vec3) => { tri(a, b, c, color); tri(a, c, d, color); };
+  // BUILD 988: cube faces use the unified SUN_SHADE table (sun from
+  // northwest-high, matching the house shadow blobs): +z south shaded,
+  // -z north lit, -x west near-lit, +x east darkest, top brightest.
   const cube = (x: number, z: number, w: number, h: number, d: number, color: Vec3) => {
     const x0=x-w/2,x1=x+w/2,z0=z-d/2,z1=z+d/2,y0=0,y1=h;
-    quad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],color);
-    quad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],color.map(v=>v*.75) as Vec3);
-    quad([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],color.map(v=>v*.84) as Vec3);
-    quad([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],color.map(v=>v*.68) as Vec3);
-    quad([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0],color.map(v=>Math.min(1,v*1.15)) as Vec3);
+    quad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],shadeRgb(color, SUN_SHADE.south));
+    quad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],shadeRgb(color, SUN_SHADE.north));
+    quad([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],shadeRgb(color, SUN_SHADE.west));
+    quad([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],shadeRgb(color, SUN_SHADE.east));
+    quad([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0],shadeRgb(color, SUN_SHADE.top));
   };
   const minX=Math.max(0,Math.floor(center.x)-22), maxX=Math.min(world.w-1,Math.floor(center.x)+22);
   const minY=Math.max(0,Math.floor(center.y)-22), maxY=Math.min(world.h-1,Math.floor(center.y)+22);
@@ -210,8 +260,11 @@ export function buildWorldVertices(world: IsoWorld, center: Position): Float32Ar
   for(let y=minY;y<=maxY;y++) for(let x=minX;x<=maxX;x++) {
     const terrain=effTerrain(x,y);
     const c=COLORS[terrain]||COLORS.grass;
-    const shade=((x*13+y*7)&3)*.012;
-    quad([x,0,y],[x+1,0,y],[x+1,0,y+1],[x,0,y+1],[c[0]+shade,c[1]+shade,c[2]+shade]);
+    // BUILD 988: hue-varied deterministic ground tint (replaces the old
+    // brightness-only ((x*13+y*7)&3)*.012 wash) — lawns and dirt stop
+    // reading as flat paint. Baked here, zero runtime cost.
+    const tint=groundTintDelta(terrain,x,y);
+    quad([x,0,y],[x+1,0,y],[x+1,0,y+1],[x,0,y+1],[c[0]+tint[0],c[1]+tint[1],c[2]+tint[2]]);
     // BUILD 983 street: scattered stone slabs on dirt, grey cobble shoulders
     // on grass/stone tiles beside a dirt tile. Overlays sit slightly above
     // the ground (slabs staggered per index) so nothing z-fights.
@@ -234,12 +287,15 @@ export function buildWorldVertices(world: IsoWorld, center: Position): Float32Ar
   // BUILD 986: houseBox moved above the stall loop so the shared tree
   // renderer below can serve stalls and crates too (same scope, same
   // code — only its position in the function changed).
+  // BUILD 988: same unified SUN_SHADE table as cube() (houseBox used
+  // .78/.88/.72 before, disagreeing with both cube() and the shadow
+  // blobs). Trees, posts, beams and chimneys inherit it automatically.
   const houseBox=(x:number,z:number,w:number,h:number,d:number,y0:number,color:Vec3)=>{
     const x0=x-w/2,x1=x+w/2,z0=z-d/2,z1=z+d/2,y1=y0+h;
-    quad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],color);
-    quad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],color.map(v=>v*.78) as Vec3);
-    quad([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],color.map(v=>v*.88) as Vec3);
-    quad([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],color.map(v=>v*.72) as Vec3);
+    quad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],shadeRgb(color, SUN_SHADE.south));
+    quad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],shadeRgb(color, SUN_SHADE.north));
+    quad([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],shadeRgb(color, SUN_SHADE.west));
+    quad([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],shadeRgb(color, SUN_SHADE.east));
   };
   // BUILD 986: the exact 983 tapered-tier tree (trunk + 3 shrinking
   // foliage tiers), shared by real trees, converted crates and converted
@@ -387,17 +443,21 @@ export function buildWorldVertices(world: IsoWorld, center: Position): Float32Ar
     // timber gables at the ridge ends, ridge beam, optional chimney.
     const e=.18;
     const x0=x-w/2-e,x1=x+w/2+e,z0=z-d/2-e,z1=z+d/2+e;
+    // BUILD 988: roof slopes + gables follow the same sun table — the
+    // sun-facing slope keeps the warm full tint, the shaded slope takes
+    // its face shade (was: sun side full, shade side flat .85, with no
+    // relation to which compass face it was).
     if(design.roofAxis==='x'){
-      quad([x0,topY,z1],[x1,topY,z1],[x1,ridgeY,z],[x0,ridgeY,z],warmTint(design.roof));
-      quad([x0,topY,z0],[x0,ridgeY,z],[x1,ridgeY,z],[x1,topY,z0],design.roof.map(v=>v*.85) as Vec3);
-      tri([x-w/2,topY,z-d/2],[x-w/2,topY,z+d/2],[x-w/2,ridgeY,z],design.plaster);
-      tri([x+w/2,topY,z+d/2],[x+w/2,topY,z-d/2],[x+w/2,ridgeY,z],design.plaster.map(v=>v*.85) as Vec3);
+      quad([x0,topY,z1],[x1,topY,z1],[x1,ridgeY,z],[x0,ridgeY,z],shadeRgb(design.roof, SUN_SHADE.south));
+      quad([x0,topY,z0],[x0,ridgeY,z],[x1,ridgeY,z],[x1,topY,z0],warmTint(design.roof));
+      tri([x-w/2,topY,z-d/2],[x-w/2,topY,z+d/2],[x-w/2,ridgeY,z],shadeRgb(design.plaster, SUN_SHADE.west));
+      tri([x+w/2,topY,z+d/2],[x+w/2,topY,z-d/2],[x+w/2,ridgeY,z],shadeRgb(design.plaster, SUN_SHADE.east));
       houseBox(x,z,w+2*e,.1,.1,ridgeY,design.timber);
     } else {
-      quad([x1,topY,z1],[x1,topY,z0],[x,ridgeY,z0],[x,ridgeY,z1],warmTint(design.roof));
-      quad([x0,topY,z0],[x0,topY,z1],[x,ridgeY,z1],[x,ridgeY,z0],design.roof.map(v=>v*.85) as Vec3);
-      tri([x-w/2,topY,z-d/2],[x+w/2,topY,z-d/2],[x,ridgeY,z-d/2],design.plaster);
-      tri([x+w/2,topY,z+d/2],[x-w/2,topY,z+d/2],[x,ridgeY,z+d/2],design.plaster.map(v=>v*.85) as Vec3);
+      quad([x1,topY,z1],[x1,topY,z0],[x,ridgeY,z0],[x,ridgeY,z1],shadeRgb(design.roof, SUN_SHADE.east));
+      quad([x0,topY,z0],[x0,topY,z1],[x,ridgeY,z1],[x,ridgeY,z0],warmTint(design.roof));
+      tri([x-w/2,topY,z-d/2],[x+w/2,topY,z-d/2],[x,ridgeY,z-d/2],shadeRgb(design.plaster, SUN_SHADE.north));
+      tri([x+w/2,topY,z+d/2],[x-w/2,topY,z+d/2],[x,ridgeY,z+d/2],shadeRgb(design.plaster, SUN_SHADE.south));
       houseBox(x,z,.1,.1,d+2*e,ridgeY,design.timber);
     }
     if(design.chimney){
@@ -481,7 +541,30 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     gl.useProgram(program);
     const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!;
     const playerSpriteProgram=gl.createProgram();
-    let playerSpriteBuffer:WebGLBuffer|null=null,playerSpriteTexture:WebGLTexture|null=null;
+    let playerSpriteBuffer:WebGLBuffer|null=null;
+    // BUILD 988 sprite texture cache + hoisted sprite locations. The old
+    // code re-uploaded every sprite texture with texImage2D EVERY FRAME
+    // (player + each NPC) and re-fetched attrib/uniform locations per
+    // sprite. Textures are now uploaded once per (base, anim, face,
+    // frame) key and reused; the cache is capped at 512 entries (cleared
+    // on overflow) so it cannot leak.
+    const spriteTexCache=new Map<string,WebGLTexture>();
+    let spriteLocs:{p:number;uv:number;m:WebGLUniformLocation|null;tex:WebGLUniformLocation|null}|null=null;
+    const spriteTextureFor=(key:string,im:HTMLImageElement):WebGLTexture|null=>{
+      const hit=spriteTexCache.get(key);
+      if(hit)return hit;
+      if(spriteTexCache.size>=512)spriteTexCache.clear();
+      const tex=gl.createTexture();if(!tex)return null;
+      gl.bindTexture(gl.TEXTURE_2D,tex);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,im);
+      spriteTexCache.set(key,tex);
+      return tex;
+    };
     if(playerSpriteProgram){
       const spriteVs=gl.createShader(gl.VERTEX_SHADER)!,spriteFs=gl.createShader(gl.FRAGMENT_SHADER)!;
       gl.shaderSource(spriteVs,'attribute vec3 p;attribute vec2 uv;uniform mat4 m;varying vec2 vUv;void main(){gl_Position=m*vec4(p,1.0);vUv=uv;}');gl.compileShader(spriteVs);
@@ -489,8 +572,8 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       if(gl.getShaderParameter(spriteVs,gl.COMPILE_STATUS)&&gl.getShaderParameter(spriteFs,gl.COMPILE_STATUS)){
         gl.attachShader(playerSpriteProgram,spriteVs);gl.attachShader(playerSpriteProgram,spriteFs);gl.linkProgram(playerSpriteProgram);
         if(gl.getProgramParameter(playerSpriteProgram,gl.LINK_STATUS)){
-          playerSpriteBuffer=gl.createBuffer();playerSpriteTexture=gl.createTexture();
-          gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+          playerSpriteBuffer=gl.createBuffer();
+          spriteLocs={p:gl.getAttribLocation(playerSpriteProgram,'p'),uv:gl.getAttribLocation(playerSpriteProgram,'uv'),m:gl.getUniformLocation(playerSpriteProgram,'m'),tex:gl.getUniformLocation(playerSpriteProgram,'tex')};
           // Use the real RPG pack already shipped in public/rpg. The old
           // game-sprites/baseHumanMale URL did not exist, leaving the player
           // as a blank/placeholder shape in the 3D mode.
@@ -512,6 +595,11 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       -1,-1,1,...SKY_HORIZON, 1,-1,1,...SKY_HORIZON, 1,1,1,...SKY_TOP,
       -1,-1,1,...SKY_HORIZON, 1,1,1,...SKY_TOP, -1,1,1,...SKY_TOP,
     ]),gl.STATIC_DRAW);
+    // BUILD 988: hoisted sky identity matrix (was allocated fresh every
+    // frame) + cached world vertex count (was a per-frame
+    // getBufferParameter GL query).
+    const IDENTITY_MAT=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
+    let worldVertCount=0;
     let yaw=.65,pitch=.7,zoom=12,drag=false,lx=0,ly=0,raf=0;
     let lookPitch=.08,lastBuildX=stateRef.current.position.x,lastBuildY=stateRef.current.position.y;
     const pointers=new Map<number,{x:number;y:number}>();let pinchDistance=0;
@@ -548,7 +636,10 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       }
       const right=[Math.cos(yaw),0,-Math.sin(yaw)];
       const up=[right[1]*forward[2]-right[2]*forward[1],right[2]*forward[0]-right[0]*forward[2],right[0]*forward[1]-right[1]*forward[0]];
-      const scale=Math.tan(Math.PI/6),aspect=rect.width/rect.height;
+      // BUILD 988: pick math uses the same FOV as the projection (was a
+      // hardcoded tan(30 deg) for the old 60 deg FOV — changing the FOV
+      // without this would mis-pick every tap, the 984 bug all over).
+      const scale=Math.tan(WORLD_FOV_RAD/2),aspect=rect.width/rect.height;
       const dx=forward[0]+right[0]*nx*scale*aspect+up[0]*ny*scale;
       const dy=forward[1]+right[1]*nx*scale*aspect+up[1]*ny*scale;
       const dz=forward[2]+right[2]*nx*scale*aspect+up[2]*ny*scale;
@@ -667,12 +758,12 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       // the 45×45 window went stale after walking ~20 tiles. Rebuild when
       // the player moves >8 tiles from the last build centre.
       if(Math.hypot(player.x-lastBuildX,player.y-lastBuildY)>8)needsWorldRebuild.current=true;
-      if(needsWorldRebuild.current){const terrainVertices=buildWorldVertices(world,player);if(terrainVertices.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,terrainVertices);setMessage('3D diagnostic: '+(terrainVertices.length/6).toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y}
+      if(needsWorldRebuild.current){const terrainVertices=buildWorldVertices(world,player);if(terrainVertices.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,terrainVertices);worldVertCount=terrainVertices.length/6;setMessage('3D diagnostic: '+worldVertCount.toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y}
       gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       // Sky gradient pass (identity matrix, depth off), then the world.
       gl.disable(gl.DEPTH_TEST);
       gl.bindBuffer(gl.ARRAY_BUFFER,skyBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
-      gl.uniformMatrix4fv(mLoc,false,new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]));
+      gl.uniformMatrix4fv(mLoc,false,IDENTITY_MAT);
       gl.drawArrays(gl.TRIANGLES,0,6);
       gl.enable(gl.DEPTH_TEST);
       // Orbit around the player's tile center, not its top-left grid corner.
@@ -687,35 +778,53 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       // toward the castle backdrop). Far plane 200 so the castle ridge
       // (z=24, ~100 tiles north of town) stays inside the frustum.
       const mat=streetViewRef.current
-        ? mul(perspective(Math.PI/3,w/h,.1,200),lookAt([targetX,1.6,targetZ],[targetX-Math.sin(yaw)*Math.cos(lookPitch)*10,1.6+Math.sin(lookPitch)*10,targetZ-Math.cos(yaw)*Math.cos(lookPitch)*10]))
-        : mul(perspective(Math.PI/3,w/h,.1,200),lookAt([ex,ey,ez],[targetX,targetY,targetZ]));
+        ? mul(perspective(WORLD_FOV_RAD,w/h,.1,200),lookAt([targetX,1.6,targetZ],[targetX-Math.sin(yaw)*Math.cos(lookPitch)*10,1.6+Math.sin(lookPitch)*10,targetZ-Math.cos(yaw)*Math.cos(lookPitch)*10]))
+        : mul(perspective(WORLD_FOV_RAD,w/h,.1,200),lookAt([ex,ey,ez],[targetX,targetY,targetZ]));
       gl.uniformMatrix4fv(mLoc,false,new Float32Array(mat));
       gl.bindBuffer(gl.ARRAY_BUFFER,worldBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
-      gl.drawArrays(gl.TRIANGLES,0,gl.getBufferParameter(gl.ARRAY_BUFFER,gl.BUFFER_SIZE)/24);const renderError=gl.getError();if(renderError!==gl.NO_ERROR)setMessage('3D WebGL draw error: 0x'+renderError.toString(16));
+      // BUILD 988: no per-frame getError() here — it is a known
+      // pipeline-stall pitfall (it can force a sync every frame) and it
+      // bought nothing: setup failures are still caught by the shader
+      // compile + program link checks above, and the diagnostic still
+      // reports the vertex count every rebuild.
+      gl.drawArrays(gl.TRIANGLES,0,worldVertCount);
       const actors:number[]=[];
       const corpse=(x:number,z:number)=>{const color:Vec3=[.38,.18,.16],x0=x-.28,x1=x+.28,z0=z-.28,z1=z+.28,y0=0,y1=.18;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};tri([x0,y0,z1],[x1,y0,z1],[x1,y1,z1]);tri([x0,y0,z1],[x1,y1,z1],[x0,y1,z1]);};
       for(const npc of npcActorsRef.current) if(!npc.looted&&!npc.alive&&Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)corpse(npc.x+.5,npc.y+.5);
-      upload(actorBuffer,new Float32Array(actors));gl.drawArrays(gl.TRIANGLES,0,actors.length/6);
-      if(playerSpriteProgram&&playerSpriteBuffer&&playerSpriteTexture){
+      // BUILD 988: skip the actor upload + draw when there are no
+      // corpses (the common case) instead of uploading an empty buffer
+      // every frame.
+      if(actors.length){upload(actorBuffer,new Float32Array(actors));gl.drawArrays(gl.TRIANGLES,0,actors.length/6);}
+      // BUILD 988: one sprite-program session per frame. The old code
+      // switched programs, re-fetched locations AND re-uploaded the
+      // whole texture for every sprite, every frame. Now the program,
+      // locations and matrix are set once, textures come from the cache,
+      // and each sprite costs only one tiny quad upload.
+      if(playerSpriteProgram&&playerSpriteBuffer&&spriteLocs){
         const rightX=Math.cos(yaw),rightZ=-Math.sin(yaw);
         const face=playerFace;
+        gl.useProgram(playerSpriteProgram);
+        gl.bindBuffer(gl.ARRAY_BUFFER,playerSpriteBuffer);
+        gl.enableVertexAttribArray(spriteLocs.p);gl.vertexAttribPointer(spriteLocs.p,3,gl.FLOAT,false,20,0);
+        gl.enableVertexAttribArray(spriteLocs.uv);gl.vertexAttribPointer(spriteLocs.uv,2,gl.FLOAT,false,20,12);
+        gl.uniformMatrix4fv(spriteLocs.m,false,new Float32Array(mat));
+        gl.uniform1i(spriteLocs.tex,0);
+        gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
+        const blitSprite=(quad:number[],uv:number[],tex:WebGLTexture)=>{
+          const data=new Float32Array(30);
+          for(let i=0;i<6;i++){data[i*5]=quad[i*3];data[i*5+1]=quad[i*3+1];data[i*5+2]=quad[i*3+2];data[i*5+3]=uv[i*2];data[i*5+4]=uv[i*2+1];}
+          gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);
+          gl.bindTexture(gl.TEXTURE_2D,tex);
+          gl.drawArrays(gl.TRIANGLES,0,6);
+        };
         const drawNpcSprite=(x:number,z:number,base:RpgBase,frameIndex:number)=>{
-          const half=.34,height=1.42,left=[x-rightX*half,0,z-rightZ*half],right=[x+rightX*half,0,z+rightZ*half];
-          const topLeft=[left[0],height,left[2]],topRight=[right[0],height,right[2]];
-          const data=new Float32Array([...left,0,1,...right,1,1,...topRight,1,0,...left,0,1,...topRight,1,0,...topLeft,0,0]);
           const im=rpgSprite(base,'Idle',face,frameIndex);
           if(!im?.complete||im.naturalWidth===0)return;
-          gl.useProgram(playerSpriteProgram);
-          const pAttr=gl.getAttribLocation(playerSpriteProgram,'p'),uvAttr=gl.getAttribLocation(playerSpriteProgram,'uv');
-          gl.bindBuffer(gl.ARRAY_BUFFER,playerSpriteBuffer);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);
-          gl.enableVertexAttribArray(pAttr);gl.vertexAttribPointer(pAttr,3,gl.FLOAT,false,20,0);
-          gl.enableVertexAttribArray(uvAttr);gl.vertexAttribPointer(uvAttr,2,gl.FLOAT,false,20,12);
-          gl.uniformMatrix4fv(gl.getUniformLocation(playerSpriteProgram,'m'),false,new Float32Array(mat));
-          gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);
-          gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,im);
-          gl.uniform1i(gl.getUniformLocation(playerSpriteProgram,'tex'),0);
-          gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
-          gl.drawArrays(gl.TRIANGLES,0,6);gl.depthMask(true);gl.disable(gl.BLEND);gl.useProgram(program);
+          const tex=spriteTextureFor(base+'|Idle|'+face+'|'+frameIndex,im);
+          if(!tex)return;
+          const half=.34,height=1.42,left=[x-rightX*half,0,z-rightZ*half],right=[x+rightX*half,0,z+rightZ*half];
+          const topLeft=[left[0],height,left[2]],topRight=[right[0],height,right[2]];
+          blitSprite([...left,...right,...topRight,...left,...topRight,...topLeft],[0,1,1,1,1,0,0,1,1,0,0,0],tex);
         };
         // Use real RPG character sprites for the townspeople, not blue cubes.
         const npcBases:RpgBase[]=['BaseHumanMale','BaseElf','BaseDwarf','BaseHumanBlank','BaseShaman','BaseSkeleton','BaseAhoul'];
@@ -738,27 +847,19 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         const bottomV=Math.max(.72,Math.min(1,frameAnchor.cb/130));
         const left=[px-rightX*half,0,pz-rightZ*half],right=[px+rightX*half,0,pz+rightZ*half];
         const topLeft=[left[0],height,left[2]],topRight=[right[0],height,right[2]];
-        const spriteData=new Float32Array([
-          ...left,0,bottomV, ...right,1,bottomV, ...topRight,1,0,
-          ...left,0,bottomV, ...topRight,1,0, ...topLeft,0,0
-        ]);
-        gl.useProgram(playerSpriteProgram);
-        const sp=gl.getAttribLocation(playerSpriteProgram,'p'),su=gl.getAttribLocation(playerSpriteProgram,'uv');
-        gl.bindBuffer(gl.ARRAY_BUFFER,playerSpriteBuffer);gl.bufferData(gl.ARRAY_BUFFER,spriteData,gl.DYNAMIC_DRAW);
-        gl.enableVertexAttribArray(sp);gl.vertexAttribPointer(sp,3,gl.FLOAT,false,20,0);
-        gl.enableVertexAttribArray(su);gl.vertexAttribPointer(su,2,gl.FLOAT,false,20,12);
-        gl.uniformMatrix4fv(gl.getUniformLocation(playerSpriteProgram,'m'),false,new Float32Array(mat));
         // Camera-relative eight-way facing matches the RPG pack's CAM0-7
         // mapping. Cycle through actual idle/walk frames rather than two
         // nonexistent placeholder URLs.
-
         const frame=rpgSprite('BaseHumanMale',anim,face,frameIndex);
-        if(frame?.complete&&frame.naturalWidth>0){gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,frame);}
-        gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,playerSpriteTexture);
-        gl.uniform1i(gl.getUniformLocation(playerSpriteProgram,'tex'),0);
-        gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
-        gl.drawArrays(gl.TRIANGLES,0,6);gl.depthMask(true);gl.disable(gl.BLEND);gl.useProgram(program);
+        // BUILD 988: cached texture (was: full re-upload every frame, and
+        // a draw with a stale texture when the frame was not ready yet).
+        // An unready frame now skips its draw for that frame instead.
+        if(frame?.complete&&frame.naturalWidth>0){
+          const tex=spriteTextureFor('BaseHumanMale|'+anim+'|'+face+'|'+frameIndex,frame);
+          if(tex)blitSprite([...left,...right,...topRight,...left,...topRight,...topLeft],[0,bottomV,1,bottomV,1,0,0,bottomV,1,0,0,0],tex);
         }
+        }
+        gl.depthMask(true);gl.disable(gl.BLEND);gl.useProgram(program);
       }
       raf=requestAnimationFrame(draw);
     };
@@ -830,7 +931,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}
     },900);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(skyBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);if(playerSpriteTexture)gl.deleteTexture(playerSpriteTexture);if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(skyBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);spriteTexCache.forEach(t=>gl.deleteTexture(t));spriteTexCache.clear();if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>

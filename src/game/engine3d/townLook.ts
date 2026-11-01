@@ -177,3 +177,39 @@ export function isLavenderPink(c: Rgb): boolean {
   const [r, g, b] = c;
   return b > 0.55 && r > 0.5 && b > g + 0.12 && r > g + 0.05;
 }
+
+/** BUILD 988 unified sun: ONE fixed sun direction for every face-shaded
+ *  box, replacing the inconsistent per-renderer multipliers (cube() used
+ *  .75/.84/.68, houseBox() used .78/.88/.72, and neither agreed with the
+ *  house contact-shadow blobs). The blobs are offset +x/+z, so shadows
+ *  fall southeast and the sun stands northwest-high: north (-z) and west
+ *  (-x) faces catch the sun, south (+z) and east (+x) faces lie in shade,
+ *  tops are brightest. Average face brightness is 0.896 vs the old
+ *  cube average 0.884, so the scene does not net-darken. */
+export const SUN_SHADE = { north: 1.0, south: 0.75, west: 0.9, east: 0.68, top: 1.15 };
+
+/** Multiply an RGB colour by a scalar, clamped to 1. */
+export function shadeRgb(c: Rgb, s: number): Rgb {
+  return [Math.min(1, c[0] * s), Math.min(1, c[1] * s), Math.min(1, c[2] * s)];
+}
+
+/** BUILD 988 ground tint: deterministic per-tile colour variation so
+ *  lawns and dirt stop reading as flat paint. The old renderer added a
+ *  brightness-only ((x*13+y*7)&3)*.012 wash — barely visible and the
+ *  same on every terrain. This varies HUE inside each terrain's own
+ *  colour family (grass green↔yellow-green, dirt tan↔brown), seeded by
+ *  hash2(tile) so it is stable across rebuilds and cameras, and stays
+ *  far from lavender/pink (asserted). Water gets no tint: a flat water
+ *  plane reads better. Baked at build time — zero runtime cost. */
+export function groundTintDelta(terrain: string, x: number, y: number): Rgb {
+  const v = hash2(x * 3.1 + 7.7, y * 5.9 + 3.3) - 0.5; // -0.5..0.5
+  const v2 = hash2(x * 9.4 + 1.7, y * 4.2 + 8.1) - 0.5;
+  switch (terrain) {
+    case 'grass': return [v * 0.04, v * 0.06, v2 * 0.02];
+    case 'dirt': return [v * 0.05, v * 0.04, v2 * 0.03];
+    case 'sand': return [v * 0.04, v * 0.03, v2 * 0.02];
+    case 'stone': return [v * 0.03, v * 0.03, v * 0.03];
+    case 'water': return [0, 0, 0];
+    default: return [v * 0.03, v * 0.03, v * 0.03];
+  }
+}
