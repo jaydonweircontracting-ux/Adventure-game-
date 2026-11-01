@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type IsoWorld } from '../iso/isoWorld';
+import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { rpgSprite, rpgAnchorFor, preloadRpgBase, type RpgAnim, type RpgBase } from '../iso/rpgSprites';
 import {
@@ -14,6 +14,7 @@ import {
   type PaletteKind, type UndoEntry,
 } from './placements';
 import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
+import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import type { Face8 } from '../iso/isoSprites';
 
 type Vec3 = [number, number, number];
@@ -52,12 +53,22 @@ export const FOG_NEAR = 14;
 export const FOG_FAR = 30;
 type Position = { x: number; y: number };
 
-function savedPosition(world: IsoWorld): Position {
+// BUILD 990: interior occupancy is session-only. A saved tile strictly
+// inside a hut (not its walkable door tile) means the player quit while
+// inside — rescue to that hut's exit point instead of loading the tile
+// (the shell is solid again on a fresh load, so the saved tile would be
+// a trap). Door-tile saves are kept: door tiles are walkable outside.
+export function savedPosition(world: IsoWorld): Position {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
       const p = JSON.parse(raw) as Position;
-      if (Number.isFinite(p.x) && Number.isFinite(p.y) && walkableWithPlacements(world, world.crates, Math.round(p.x), Math.round(p.y))) return p;
+      if (Number.isFinite(p.x) && Number.isFinite(p.y)) {
+        const tx = Math.round(p.x), ty = Math.round(p.y);
+        const rescued = rescuePosition([...world.huts, ...placedHutRects(world)], tx, ty);
+        if (rescued) return rescued;
+        if (walkableWithPlacements(world, world.crates, tx, ty)) return p;
+      }
     }
   } catch { /* use the world's authored spawn */ }
   return { x: world.playerStart.tx, y: world.playerStart.ty };
@@ -208,7 +219,7 @@ function savedNpcActors(world: IsoWorld): NpcActor3D[] {
 
 // Exported for standalone build-verification asserts (synthetic render
 // proofs); the game itself calls it internally only.
-export function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
+export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut: HutRect | null = null): Float32Array {
   const data: Vertex = [];
   // BUILD 988 distance fog, BAKED (not shader-side): every emitted
   // vertex colour is mixed toward the horizon colour by ground-plane
@@ -303,6 +314,18 @@ export function buildWorldVertices(world: IsoWorld, center: Position): Float32Ar
     quad([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],shadeRgb(color, SUN_SHADE.west));
     quad([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],shadeRgb(color, SUN_SHADE.east));
   };
+  // BUILD 990: full box with a base height — cube() fixes y0=0 and
+  // houseBox() has no top face, but furniture sits on the interior
+  // floor (y0=INTERIOR_FLOOR_Y) and is seen from orbit above, so it
+  // needs both. Same SUN_SHADE faces as cube()/houseBox().
+  const box=(x:number,z:number,w:number,h:number,d:number,y0:number,color:Vec3)=>{
+    const x0=x-w/2,x1=x+w/2,z0=z-d/2,z1=z+d/2,y1=y0+h;
+    quad([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],shadeRgb(color, SUN_SHADE.south));
+    quad([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],shadeRgb(color, SUN_SHADE.north));
+    quad([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],shadeRgb(color, SUN_SHADE.west));
+    quad([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],shadeRgb(color, SUN_SHADE.east));
+    quad([x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0],shadeRgb(color, SUN_SHADE.top));
+  };
   // BUILD 986: the exact 983 tapered-tier tree (trunk + 3 shrinking
   // foliage tiers), shared by real trees, converted crates and converted
   // generated stalls — one renderer, never a second tree.
@@ -364,6 +387,21 @@ export function buildWorldVertices(world: IsoWorld, center: Position): Float32Ar
   for(const hut of [...world.huts, ...placedHutRects(world)]) {
     if(hut.x1<minX||hut.x0>maxX||hut.y1<minY||hut.y0>maxY) continue;
     const x=(hut.x0+hut.x1+1)/2,z=(hut.y0+hut.y1+1)/2,w=Math.max(2,hut.x1-hut.x0+1),d=Math.max(2,hut.y1-hut.y0+1);
+    // BUILD 990 shell-hide overlay: the entered house renders its
+    // generated interior INSTEAD of its shell — no walls, roof,
+    // windows, chimney, or shadow blobs. Only this hut (rect match);
+    // every other house in the window renders normally. Floor covers
+    // the footprint at INTERIOR_FLOOR_Y; furniture is seeded from the
+    // rect (interiors.ts) and is visual only, so the room is fully
+    // walkable. Generated and placed houses share this path.
+    if(enteredHut && sameHut(hut, enteredHut)) {
+      for(let fy=hut.y0;fy<=hut.y1;fy++) for(let fx=hut.x0;fx<=hut.x1;fx++) {
+        const fc=interiorFloorColor(fx,fy);
+        quad([fx,INTERIOR_FLOOR_Y,fy],[fx+1,INTERIOR_FLOOR_Y,fy],[fx+1,INTERIOR_FLOOR_Y,fy+1],[fx,INTERIOR_FLOOR_Y,fy+1],fc);
+      }
+      for(const b of interiorBoxes(hut)) box(b.x,b.z,b.w,b.h,b.d,b.y0,b.color);
+      continue;
+    }
     const hDoorX=(hut as {doorX?:number}).doorX ?? Math.round(x);
     const hDoorY=(hut as {doorY?:number}).doorY ?? hut.y1;
     const design=houseDesignFor(hut.x0,hut.y0,hut.x1,hut.y1,hDoorX,hDoorY);
@@ -545,6 +583,33 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage(msg);
   };
   const toolLabel=(p:PaletteKind|null,rm:boolean)=>rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'} as Record<PaletteKind,string>)[p]:'';
+  // BUILD 990: interior occupancy — session-only. insideHut is the hut
+  // whose shell is hidden (its interior renders instead); the ref
+  // mirrors it for the render-loop closures. Reloading always starts
+  // outside: savedPosition() rescues an inside-hut save to the exit
+  // point, so a fresh session never opens inside a hidden-shell state.
+  // While inside, Build placement/removal is disabled (taps move only)
+  // and Undo stays functional — it is world-level, not an interior edit.
+  const [insideHut,setInsideHut]=useState<HutRect|null>(null);
+  const insideHutRef=useRef<HutRect|null>(null);
+  const setInside=(h:HutRect|null)=>{insideHutRef.current=h;setInsideHut(h);};
+  const enterHut=(hut:HutRect)=>{
+    const door=hutDoor(hut);
+    const next={x:door.x,y:door.y};
+    stateRef.current.position=next;setPosition(next);setInside(hut);
+    try{localStorage.setItem(SAVE_KEY,JSON.stringify(next));}catch{}
+    needsWorldRebuild.current=true;setMessage('Inside — tap Exit to leave');
+  };
+  const exitHut=()=>{
+    const hut=insideHutRef.current;if(!hut)return;
+    const next=hutExitPoint(hut);
+    stateRef.current.position=next;setPosition(next);setInside(null);
+    try{localStorage.setItem(SAVE_KEY,JSON.stringify(next));}catch{}
+    needsWorldRebuild.current=true;setMessage('Outside');
+  };
+  // The Enter button's hut: the nearest door within one tile of the
+  // player tile, while not already inside. Recomputed every render.
+  const nearDoorHut=!insideHut?nearestDoorHut([...stateRef.current.world.huts,...placedHutRects(stateRef.current.world)],Math.round(position.x),Math.round(position.y)):null;
   // BUILD 989 refinement: aiming preview for Remove mode. A plain div
   // positioned by direct DOM writes (never React state per pointermove
   // — that would re-render the whole view at pointer frequency). It
@@ -650,6 +715,13 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     let playerFace:Face8='down';
     const walkableAt=(x:number,y:number)=>{
       const gx=Math.round(x),gy=Math.round(y);
+      // BUILD 990: inside the entered hut, every rect tile is walkable
+      // (interior furniture is visual only — interiors.ts). The NPC
+      // proximity check still applies; NPCs never enter (their
+      // movement uses walkableWithPlacements unchanged).
+      const inside=insideHutRef.current;
+      if(inside&&interiorWalkable(inside,gx,gy))
+        return !npcActorsRef.current.some(n=>n.alive&&Math.hypot(n.x-x,n.y-y)<.42);
       if(npcActorsRef.current.some(n=>n.alive&&Math.hypot(n.x-x,n.y-y)<.42))return false;
       return walkableWithPlacements(world,world.crates,gx,gy);
     };
@@ -763,7 +835,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       needsWorldRebuild.current=true;
       showRemovePreview(clientX,clientY);
     };
-    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);}else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}}canvas.setPointerCapture?.(e.pointerId)};
+    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current&&!insideHutRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);}else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}}canvas.setPointerCapture?.(e.pointerId)};
     const pointerDistance=()=>{const pts=[...pointers.values()];return pts.length<2?0:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y)};
     const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)zoom=Math.max(4,Math.min(32,zoom+(pinchDistance-distance)*.025));pinchDistance=distance;if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}return;}
       if(removeDragging){
@@ -790,7 +862,10 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         // walk branch below is the only other path, so suspended taps
         // and no-tool taps behave identically. D-pad movement never
         // consults buildRef, so it always walks regardless.
-        const toolActive=!walkRef.current&&(build.palette||build.removeMode);
+        // BUILD 990: while inside, Build placement/removal is disabled —
+        // taps move only, even with a tool selected (the Enter button
+        // is separate UI, so entry works regardless of the active tool).
+        const toolActive=!insideHutRef.current&&!walkRef.current&&(build.palette||build.removeMode);
         if(toolActive){
           // BUILD 984: a build-mode tap places or removes instead of
           // moving. Build taps never set moveTarget.
@@ -888,7 +963,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       // the 45×45 window went stale after walking ~20 tiles. Rebuild when
       // the player moves >8 tiles from the last build centre.
       if(Math.hypot(player.x-lastBuildX,player.y-lastBuildY)>8)needsWorldRebuild.current=true;
-      if(needsWorldRebuild.current){const terrainVertices=buildWorldVertices(world,player);if(terrainVertices.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,terrainVertices);worldVertCount=terrainVertices.length/6;setMessage('3D diagnostic: '+worldVertCount.toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y}
+      if(needsWorldRebuild.current){const terrainVertices=buildWorldVertices(world,player,insideHutRef.current);if(terrainVertices.length===0){setMessage('3D diagnostic: world generated zero terrain vertices');}else{upload(worldBuffer,terrainVertices);worldVertCount=terrainVertices.length/6;setMessage('3D diagnostic: '+worldVertCount.toLocaleString()+' terrain vertices · '+world.w+'×'+world.h+' map');}needsWorldRebuild.current=false;lastBuildX=player.x;lastBuildY=player.y}
       gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       // Sky gradient pass (identity matrix, depth off), then the world.
       gl.disable(gl.DEPTH_TEST);
@@ -1007,6 +1082,13 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         return;
       }
       if(k==='e'){
+        // BUILD 990: E enters/exits houses (the Enter/Exit buttons are
+        // the phone-first path; E is the desktop equivalent). Inside →
+        // exit first; near a door → enter; otherwise the existing
+        // loot/talk/harvest chain below.
+        if(insideHutRef.current){exitHut();return;}
+        const doorHut=nearestDoorHut([...world.huts,...placedHutRects(world)],Math.round(p.x),Math.round(p.y));
+        if(doorHut){enterHut(doorHut);return;}
         const dead=npcActorsRef.current.find(n=>!n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1);
         if(dead){const currentInventory=inventoryRef.current;const next={...currentInventory,gold:(currentInventory.gold||0)+5,[dead.name+' loot']:(currentInventory[dead.name+' loot']||0)+1};inventoryRef.current=next;setInventory(next);try{localStorage.setItem(INVENTORY_KEY,JSON.stringify(next))}catch{}dead.looted=true;try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(npcActorsRef.current))}catch{}setMessage('Looted '+dead.name+': 5 gold and 1 keepsake');return}
         const near=npcActorsRef.current.find(n=>n.alive&&Math.abs(n.x-p.x)<=1&&Math.abs(n.y-p.y)<=1);
@@ -1030,6 +1112,8 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       setLookPitch:(v:number)=>{lookPitch=v},
       setStreetView:(v:boolean)=>{streetViewRef.current=v;setStreetViewOn(v)},
       setPlayer:(x:number,y:number)=>{stateRef.current.position={x,y};setPosition({x,y});needsWorldRebuild.current=true},
+      // BUILD 990 test hook (read-only): the entered hut's rect, or null.
+      getInsideHut:()=>insideHutRef.current?{...insideHutRef.current}:null,
       getPlacements:()=>JSON.parse(JSON.stringify(stateRef.current.world.placements??[])),
       getPlayer:()=>({...stateRef.current.position}),
       // BUILD 989 refinement: project a tile centre to container pixel
@@ -1040,7 +1124,8 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       // BUILD 987 test hook (read-only): adapted-world summary for the
       // browser harness — hut rects, dirt keys, removed sets, placements.
       getWorldSummary:()=>({
-        huts: stateRef.current.world.huts.map(h=>({x0:h.x0,y0:h.y0,x1:h.x1,y1:h.y1})),
+        // BUILD 990: door coords for the browser harness (Enter-button probes).
+        huts: stateRef.current.world.huts.map(h=>({x0:h.x0,y0:h.y0,x1:h.x1,y1:h.y1,doorX:(h as {doorX?:number}).doorX??null,doorY:(h as {doorY?:number}).doorY??null})),
         dirtKeys: Object.entries(stateRef.current.world.terrain).filter(([,t])=>t==='dirt').map(([k])=>k),
         removedHuts: stateRef.current.world.removedHuts??[],
         removedPaths: stateRef.current.world.removedPaths??[],
@@ -1078,7 +1163,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>
     <canvas ref={canvasRef} aria-label="3D Adventure world" style={{width:'100%',height:'100%',display:'block',touchAction:'none'}}/>
     <div style={{position:'absolute',left:10,top:10,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#f2f7f2',font:'700 11px/1.4 system-ui',pointerEvents:'none'}}>ADVENTURE 3D · WORLD SIMULATION <span style={{opacity:.8,fontWeight:400}}>Editable terrain · collision · walking NPC schedules · saved progress</span></div>
-    <div style={{position:'absolute',left:10,bottom:14,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>{message} · {Math.round(position.x)},{Math.round(position.y)}<div style={{marginTop:5}}>HP {health}/100 · Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</div><div style={{opacity:.8,marginTop:3}}>Tap ground to move · drag to rotate · pinch to zoom · E: interact · F/Space: attack</div></div>
+    <div style={{position:'absolute',left:10,bottom:14,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>{message} · {Math.round(position.x)},{Math.round(position.y)}<div style={{marginTop:5}}>HP {health}/100 · Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</div><div style={{opacity:.8,marginTop:3}}>Tap ground to move · drag to rotate · pinch to zoom · E: interact · F/Space: attack · Enter: step inside at a door</div></div>
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
     <button type="button" data-testid="street-view-toggle" onClick={()=>{const v=!streetViewRef.current;streetViewRef.current=v;setStreetViewOn(v);}} style={{position:'absolute',right:12,top:58,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Street view: {streetViewOn?'On':'Off'}</button>
     {/* BUILD 984 placement tool: bottom-right, clear of Options (top-right),
@@ -1094,6 +1179,14 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
         rendered while the panel is open. */}
     {!buildOpen&&(palette||removeMode)&&<button type="button" data-testid="build-walk-toggle" onClick={()=>setWalk(!walkSuspended)} style={{position:'absolute',right:12,bottom:76,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:walkSuspended?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>{walkSuspended?(toolLabel(palette,removeMode)?'Resume '+toolLabel(palette,removeMode):'Resume'):'Walk'}</button>}
     {!buildOpen&&((palette||removeMode)||undoAvailable)&&<button type="button" data-testid="build-undo" disabled={!undoAvailable} onClick={doUndo} style={{position:'absolute',right:12,bottom:138,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:undoAvailable?1:0.45}}>Undo</button>}
+    {/* BUILD 990: phone-first interior entry/exit. Enter appears when a
+        house door is within one tile (nearest door wins); Exit shows
+        only while inside. Centered at bottom:110 — clear of the
+        minimized cluster (Build 14 / Walk 76 / Undo 138, right side)
+        and above the panel (zIndex 6 > panel 4) so entry works with
+        the panel open, regardless of the active Build tool. */}
+    {!insideHut&&nearDoorHut&&<button type="button" data-testid="interior-enter" onClick={()=>enterHut(nearDoorHut)} style={{position:'absolute',left:'50%',transform:'translateX(-50%)',bottom:110,zIndex:6,padding:'14px 22px',border:'1px solid #c4d1bd',borderRadius:12,background:'#526d42',color:'#fff',fontWeight:700,fontSize:16}}>Enter</button>}
+    {insideHut&&<button type="button" data-testid="interior-exit" onClick={exitHut} style={{position:'absolute',left:'50%',transform:'translateX(-50%)',bottom:110,zIndex:6,padding:'14px 22px',border:'1px solid #c4d1bd',borderRadius:12,background:'#526d42',color:'#fff',fontWeight:700,fontSize:16}}>Exit</button>}
     {/* BUILD 989 refinement: Remove aiming preview — gold ring + label
         at the snapped tile about to be removed. Positioned by direct
         DOM writes from the pointer handlers (never React state), so it
@@ -1115,7 +1208,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       </div>
       <button type="button" data-testid="build-remove-toggle" onClick={()=>{const next=!removeMode;setRemoveMode(next);if(next)setPalette(null);buildRef.current={palette:next?null:palette,removeMode:next};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
       <div data-testid="build-count" style={{fontSize:12,opacity:.85,marginTop:10}}>Placed: {placedCount}</div>
-      <div style={{fontSize:11,opacity:.7,marginTop:6,lineHeight:1.4}}>Placed houses are decorative for now — no interior yet. Placed items show in 3D mode; the 2.5D view does not show them yet.</div>
+      <div style={{fontSize:11,opacity:.7,marginTop:6,lineHeight:1.4}}>Houses have interiors now — stand by a door and tap Enter to step inside; Exit returns you to the doorstep. While inside, Build placement and removal are paused (taps move only). Placed items show in 3D mode; the 2.5D view does not show them yet.</div>
     </div>}
   </div>;
 }
