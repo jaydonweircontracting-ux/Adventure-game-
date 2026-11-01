@@ -206,7 +206,9 @@ export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | nu
  *  stroke = one `stroke` entry). `place` = a placement to delete;
  *  `unplace` = a placed item to restore at its exact index;
  *  `unhouse`/`unpath`/`untree` = a generated removal to reverse
- *  (removed-set entry dropped, content restored). BUILD 991: entries
+ *  (removed-set entry dropped, content restored). BUILD 995: `move` =
+ *  a placed item moved from oldItem to newItem (index = its list
+ *  position, so undo/redo restore the exact order). BUILD 991: entries
  *  are the unit of the undo AND redo stacks (see BuildHistory below)
  *  — the same entry undoes via applyUndo and redoes via applyRedo.
  *  Movement, E-key harvest, and tool selection changes are NOT
@@ -217,7 +219,8 @@ export type UndoEntry =
   | { kind: 'unhouse'; rect: HutRect; index: number }
   | { kind: 'unpath'; x: number; y: number }
   | { kind: 'untree'; tree: { tx: number; ty: number } | null; treeIndex: number; crate: { tx: number; ty: number } | null; crateIndex: number }
-  | { kind: 'stroke'; entries: UndoEntry[] };
+  | { kind: 'stroke'; entries: UndoEntry[] }
+  | { kind: 'move'; oldItem: PlacedItem; newItem: PlacedItem; index: number };
 
 /** BUILD 989 refinement: drag-to-remove (paint). Applies removeAt to
  *  each tile of a stroke, in order, with the SAME precedence,
@@ -316,6 +319,14 @@ export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
       }
       return 'Restored tree';
     }
+    case 'move': {
+      removeExactPlacement(w, entry.newItem);
+      if (!w.placements) w.placements = [];
+      const old = entry.oldItem;
+      const exists = w.placements.some((p) => p.kind === old.kind && p.x0 === old.x0 && p.y0 === old.y0 && p.x1 === old.x1 && p.y1 === old.y1);
+      if (!exists) w.placements.splice(Math.min(entry.index, w.placements.length), 0, old);
+      return 'Moved ' + old.kind + ' back';
+    }
   }
 }
 
@@ -377,6 +388,14 @@ export function applyRedo(w: IsoWorld, entry: UndoEntry): string {
         if (!w.removedCrates.includes(key)) w.removedCrates.push(key);
       }
       return 'Removed tree';
+    }
+    case 'move': {
+      removeExactPlacement(w, entry.oldItem);
+      if (!w.placements) w.placements = [];
+      const item = entry.newItem;
+      const exists = w.placements.some((p) => p.kind === item.kind && p.x0 === item.x0 && p.y0 === item.y0 && p.x1 === item.x1 && p.y1 === item.y1);
+      if (!exists) w.placements.splice(Math.min(entry.index, w.placements.length), 0, item);
+      return 'Moved ' + item.kind;
     }
   }
 }
@@ -503,6 +522,39 @@ export function validatePlacement(
         ? { kind, x0: tx, y0: ty, x1: tx + 1, y1: ty }
         : { kind, x0: tx, y0: ty, x1: tx, y1: ty };
   return { ok: true, item };
+}
+
+/** BUILD 995: move a PLACED item to a new tap tile, under the SAME
+ *  rules as placing it (validatePlacement). The item is lifted out
+ *  first, so a destination overlapping its own old rect validates
+ *  against the freed tiles, not against itself; on failure the
+ *  original item is restored at its exact index and nothing changes.
+ *  The drop tile has placement semantics: house = centre tile of the
+ *  3x3, stall = west tile of the 2x1, everything else = the tile.
+ *  Generated items are NOT movable here (they regenerate from layout;
+ *  a moved-set design is a follow-up) — callers only ever pass placed
+ *  items, and an item missing from the list refuses. Returns the new
+ *  item plus its list index so one undo entry restores exactly. */
+export function movePlacement(
+  w: IsoWorld,
+  item: PlacedItem,
+  destTx: number,
+  destTy: number,
+  playerTile: { x: number; y: number },
+  npcTiles: Array<{ x: number; y: number }>,
+): { ok: true; item: PlacedItem; index: number } | { ok: false; reason: string } {
+  const list = w.placements;
+  const index = list ? list.findIndex((p) => p.kind === item.kind && p.x0 === item.x0 && p.y0 === item.y0 && p.x1 === item.x1 && p.y1 === item.y1) : -1;
+  if (index < 0 || !list) return { ok: false, reason: 'item not found' };
+  const [lifted] = list.splice(index, 1);
+  const result = validatePlacement(w, item.kind, destTx, destTy, playerTile, npcTiles);
+  if (!result.ok) {
+    list.splice(Math.min(index, list.length), 0, lifted);
+    return { ok: false, reason: result.reason };
+  }
+  const at = Math.min(index, list.length);
+  list.splice(at, 0, result.item);
+  return { ok: true, item: result.item, index: at };
 }
 
 /** True when a placed house/stall/tree blocks the tile. Placed paths

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld } from '../iso/isoWorld';
+import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
 import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, NPC_SPEED } from './villagers';
 import {
@@ -13,7 +13,7 @@ import {
 import { applyZoomDelta } from './firstPerson';
 import {
   placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys,
-  validatePlacement, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
+  validatePlacement, movePlacement, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
   createBuildHistory, recordBuildChange, undoBuildChange, redoBuildChange,
   type PaletteKind, type UndoEntry, type BuildHistory,
 } from './placements';
@@ -598,8 +598,9 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   const [buildOpen,setBuildOpen]=useState(false);
   const [palette,setPalette]=useState<PaletteKind|null>(null);
   const [removeMode,setRemoveMode]=useState(false);
+  const [moveMode,setMoveMode]=useState(false);
   const [placedCount,setPlacedCount]=useState(0);
-  const buildRef=useRef<{palette:PaletteKind|null;removeMode:boolean}>({palette:null,removeMode:false});
+  const buildRef=useRef<{palette:PaletteKind|null;removeMode:boolean;moveMode:boolean}>({palette:null,removeMode:false,moveMode:false});
   // BUILD 989: Walk suspension. Suspension is a separate flag from the
   // tool itself: Walk pauses taps (they walk) while the preserved
   // selection stays stored in buildRef; tapping Walk again resumes it.
@@ -633,7 +634,32 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     const msg=redoBuildChange(world,historyRef.current);if(msg===null)return;
     syncHistory();saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage(msg);
   };
-  const toolLabel=(p:PaletteKind|null,rm:boolean)=>rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'} as Record<PaletteKind,string>)[p]:'';
+  const toolLabel=(p:PaletteKind|null,rm:boolean,mv?:boolean)=>mv?'Move':rm?'Remove':p?({path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'} as Record<PaletteKind,string>)[p]:'';
+  // BUILD 995: scrollable asset catalog (Sims/Forge-style). Categories
+  // group the five placeable kinds; tiles reuse each kind's own mesh
+  // colours as the preview swatch (path = dirt tan + cobble grey,
+  // house = plaster cream + roof brown, tree = foliage green + trunk
+  // brown, stall = brown counter cube, grass = tuft tip-to-base
+  // green). No search box: five kinds need categories, not search —
+  // search becomes justified when custom uploads (997) grow the list.
+  // Category selection is panel UI state: it persists while the view
+  // is mounted (minimize keeps it, like the tool selection); only the
+  // tool itself is cleared by close.
+  type CatalogCategory='all'|'terrain'|'buildings'|'plants'|'props';
+  const CATALOG_SECTIONS:{id:Exclude<CatalogCategory,'all'>;label:string;kinds:PaletteKind[]}[]=[
+    {id:'terrain',label:'Terrain',kinds:['path','grass']},
+    {id:'buildings',label:'Buildings',kinds:['house']},
+    {id:'plants',label:'Plants',kinds:['tree']},
+    {id:'props',label:'Props',kinds:['stall']},
+  ];
+  const KIND_META:Record<PaletteKind,{label:string;swatch:string}>={
+    path:{label:'Pathway',swatch:'linear-gradient(135deg,#bd914f 0 50%,#61615c 50% 100%)'},
+    house:{label:'House',swatch:'linear-gradient(135deg,#d6c799 0 50%,#6b452b 50% 100%)'},
+    tree:{label:'Tree',swatch:'linear-gradient(135deg,#295729 0 50%,#5c3b1f 50% 100%)'},
+    stall:{label:'Market Stall',swatch:'#914f29'},
+    grass:{label:'Grass',swatch:'linear-gradient(180deg,#a6bf66 0,#618538 100%)'},
+  };
+  const [catalogCategory,setCatalogCategory]=useState<CatalogCategory>('all');
   // BUILD 990: interior occupancy — session-only. insideHut is the hut
   // whose shell is hidden (its interior renders instead); the ref
   // mirrors it for the render-loop closures. Reloading always starts
@@ -668,6 +694,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
   // relative coordinates from projectTileCenter line up exactly.
   const removePreviewRef=useRef<HTMLDivElement|null>(null);
   const removePreviewLabelRef=useRef<HTMLSpanElement|null>(null);
+  const movePreviewRef=useRef<HTMLDivElement|null>(null);
+  const movePreviewLabelRef=useRef<HTMLSpanElement|null>(null);
   stateRef.current={position,world:stateRef.current.world};
   useEffect(()=>{
     const canvas=canvasRef.current;if(!canvas)return;
@@ -854,6 +882,49 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       pushHistory({kind:'stroke',entries});
       setMessage('Removed '+entries.length+(entries.length===1?' item':' items'));
     };
+    // BUILD 995: drag-to-move for PLACED items only. In Move mode, a
+    // drag that starts on a placed item moves that item (gold ring +
+    // label preview, same direct-DOM technique as Remove); a drag
+    // starting anywhere else orbits as usual, and a tap in Move mode
+    // does nothing special (taps never move items — only drags do, so
+    // Move never hijacks tap-to-walk). The move itself is atomic
+    // (movePlacement: lift, validate under the same placement rules,
+    // insert or restore) and occupies ONE undo entry. Pinch during a
+    // move-drag CANCELS it (item unmoved) — unlike a remove stroke,
+    // a half-dragged move has no partial progress worth keeping.
+    // While inside a house or Walk-suspended, move-drags never start
+    // (same gate as Remove). Generated items are NOT movable in V1:
+    // they regenerate from layout, so a drag starting on generated
+    // content orbits instead of moving anything.
+    let moveDragging:{item:PlacedItem}|null=null;
+    const hideMovePreview=()=>{const el=movePreviewRef.current;if(el)el.style.display='none';};
+    const showMovePreview=(clientX:number,clientY:number)=>{
+      const el=movePreviewRef.current;if(!el||!moveDragging)return;
+      const destination=pickGround(clientX,clientY);if(!destination){el.style.display='none';return;}
+      const proj=projectTileCenter(Math.round(destination.x),Math.round(destination.y));if(!proj){el.style.display='none';return;}
+      el.style.display='block';el.style.left=proj.cx+'px';el.style.top=proj.cy+'px';
+      const label=movePreviewLabelRef.current;
+      if(label)label.textContent='Move '+KIND_META[moveDragging.item.kind].label;
+    };
+    // BUILD 995: the caller (pointer-up) already cleared moveDragging
+    // and hid the preview before calling, so the dragged item arrives
+    // as a parameter — re-reading moveDragging here always saw null
+    // and silently dropped every move.
+    const finalizeMove=(clientX:number,clientY:number,drag:{item:PlacedItem})=>{
+      const destination=pickGround(clientX,clientY);
+      if(!destination){setMessage('Drag a placed item to move it');return;}
+      const world=stateRef.current.world;
+      const player=stateRef.current.position;
+      const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
+      const npcTiles=npcActorsRef.current.filter(n=>n.alive).map(n=>({x:Math.round(n.x),y:Math.round(n.y)}));
+      const res=movePlacement(world,drag.item,Math.round(destination.x),Math.round(destination.y),playerTile,npcTiles);
+      if(!res.ok){setMessage('Cannot move here: '+res.reason);return;}
+      const same=res.item.x0===drag.item.x0&&res.item.y0===drag.item.y0&&res.item.x1===drag.item.x1&&res.item.y1===drag.item.y1;
+      if(same)return; // dropped where it started: no change, no history
+      saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);
+      pushHistory({kind:'move',oldItem:drag.item,newItem:res.item,index:res.index});
+      setMessage('Moved '+res.item.kind);
+    };
     const paintRemoveAt=(clientX:number,clientY:number)=>{
       const destination=pickGround(clientX,clientY);if(!destination)return;
       const world=stateRef.current.world;
@@ -872,9 +943,14 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       needsWorldRebuild.current=true;
       showRemovePreview(clientX,clientY);
     };
-    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current&&!insideHutRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);}else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}}canvas.setPointerCapture?.(e.pointerId)};
+    const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current&&!insideHutRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);if(!removeDragging&&buildRef.current.moveMode&&!walkRef.current&&!insideHutRef.current){const dest=pickGround(e.clientX,e.clientY);if(dest){const w=stateRef.current.world;const fx=Math.round(dest.x),fy=Math.round(dest.y);const found=(w.placements??[]).find(p=>fx>=p.x0&&fx<=p.x1&&fy>=p.y0&&fy<=p.y1);if(found){moveDragging={item:found};showMovePreview(e.clientX,e.clientY);}}} }else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}}canvas.setPointerCapture?.(e.pointerId)};
     const pointerDistance=()=>{const pts=[...pointers.values()];return pts.length<2?0:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y)};
-    const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)applyZoom((pinchDistance-distance)*.025);pinchDistance=distance;if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}return;}
+    const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)applyZoom((pinchDistance-distance)*.025);pinchDistance=distance;if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}if(moveDragging){moveDragging=null;hideMovePreview();}return;}
+      if(moveDragging){
+        if(Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)>7)gestureMoved=true;
+        showMovePreview(e.clientX,e.clientY);
+        return;
+      }
       if(removeDragging){
         if(Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)>7)gestureMoved=true;
         paintRemoveAt(e.clientX,e.clientY);
@@ -890,8 +966,13 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     };
     const up=(e:PointerEvent)=>{const wasTap=pointers.size===1&&drag&&!gestureMoved&&Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)<=10;
       pointers.delete(e.pointerId);drag=false;pinchDistance=0;
+      const wasMoveDrag=moveDragging;moveDragging=null;hideMovePreview();
       const wasRemoveDrag=removeDragging;removeDragging=false;hideRemovePreview();
-      if(wasRemoveDrag&&removeStrokeEntries.length>0){finalizeRemoveStroke();}
+      if(wasMoveDrag){
+        if(gestureMoved)finalizeMove(e.clientX,e.clientY,wasMoveDrag);
+        else setMessage('Drag a placed item to move it');
+      }
+      else if(wasRemoveDrag&&removeStrokeEntries.length>0){finalizeRemoveStroke();}
       else if(wasTap){
         const build=buildRef.current;
         // BUILD 989: Walk suspension pauses the tool without clearing
@@ -910,7 +991,12 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
           if(!destination){setMessage('Tap the ground to place');}
           else{
             const world=stateRef.current.world;
-            const tx=Math.floor(destination.x),ty=Math.floor(destination.y);
+            // BUILD 995: round, not floor — pickGround already subtracts .5,
+            // so its output for a tile spans [tx-.5,tx+.5); floor would map
+            // the western/southern half of every tile one tile off, and a
+            // tile-centre tap sits exactly on a floor boundary (any
+            // sub-pixel click rounding flips it). Round is the exact inverse.
+            const tx=Math.round(destination.x),ty=Math.round(destination.y);
             if(build.removeMode){
               // BUILD 989: full chain — placed > generated house (whole
               // rect) > generated tree (real tree and/or crate on the
@@ -1222,8 +1308,8 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         First person now engages on full zoom; its setting lives in the
         Options dialog. BUILD 984 placement tool: bottom-right, clear of
         Options (top-right) and the diagnostic (bottom-left). */}
-    <button type="button" data-testid="build-toggle" onClick={()=>{if(!buildOpen)setWalk(false);setBuildOpen(v=>!v);}} style={{position:'absolute',right:12,bottom:14,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:(buildOpen||palette||removeMode)?'#526d42':'#172c23e8',color:'#fff',fontWeight:700,fontSize:16}}>Build</button>
-    {/* BUILD 989 minimized cluster, extended by 991: fixed stack above
+    <button type="button" data-testid="build-toggle" onClick={()=>{if(!buildOpen)setWalk(false);setBuildOpen(v=>!v);}} style={{position:'absolute',right:12,bottom:14,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:(buildOpen||palette||removeMode||moveMode)?'#526d42':'#172c23e8',color:'#fff',fontWeight:700,fontSize:16}}>Build</button>
+    {/* BUILD 989 minimized cluster, extended by 991 and 995: fixed stack above
         Build (Walk at bottom:76, Undo at bottom:138, Redo at
         bottom:200 — same 62px step) so positions never shift. Walk
         shows only when a tool is active (taps already walk otherwise);
@@ -1232,10 +1318,11 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         its stack is non-empty, else disabled + dimmed. Walk suspends
         the tool (label flips to Resume <tool>); Undo/Redo work
         regardless of suspension and while inside a house. Neither
-        button is rendered while the panel is open. */}
-    {!buildOpen&&(palette||removeMode)&&<button type="button" data-testid="build-walk-toggle" onClick={()=>setWalk(!walkSuspended)} style={{position:'absolute',right:12,bottom:76,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:walkSuspended?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>{walkSuspended?(toolLabel(palette,removeMode)?'Resume '+toolLabel(palette,removeMode):'Resume'):'Walk'}</button>}
-    {!buildOpen&&((palette||removeMode)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-undo" disabled={!undoAvailable} onClick={doUndo} style={{position:'absolute',right:12,bottom:138,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:undoAvailable?1:0.45}}>Undo</button>}
-    {!buildOpen&&((palette||removeMode)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-redo" disabled={!redoAvailable} onClick={doRedo} style={{position:'absolute',right:12,bottom:200,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:redoAvailable?1:0.45}}>Redo</button>}
+        button is rendered while the panel is open. Move counts as a
+        tool for all three buttons, exactly like palette and Remove. */}
+    {!buildOpen&&(palette||removeMode||moveMode)&&<button type="button" data-testid="build-walk-toggle" onClick={()=>setWalk(!walkSuspended)} style={{position:'absolute',right:12,bottom:76,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:walkSuspended?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:16}}>{walkSuspended?(toolLabel(palette,removeMode,moveMode)?'Resume '+toolLabel(palette,removeMode,moveMode):'Resume'):'Walk'}</button>}
+    {!buildOpen&&((palette||removeMode||moveMode)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-undo" disabled={!undoAvailable} onClick={doUndo} style={{position:'absolute',right:12,bottom:138,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:undoAvailable?1:0.45}}>Undo</button>}
+    {!buildOpen&&((palette||removeMode||moveMode)||undoAvailable||redoAvailable)&&<button type="button" data-testid="build-redo" disabled={!redoAvailable} onClick={doRedo} style={{position:'absolute',right:12,bottom:200,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,opacity:redoAvailable?1:0.45}}>Redo</button>}
     {/* BUILD 990: phone-first interior entry/exit. Enter appears when a
         house door is within one tile (nearest door wins); Exit shows
         only while inside. Centered at bottom:110 — clear of the
@@ -1253,17 +1340,35 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     <div ref={removePreviewRef} data-testid="build-remove-preview" style={{display:'none',position:'absolute',zIndex:5,pointerEvents:'none',transform:'translate(-50%,-50%)',width:52,height:52,border:'3px solid #ffd94d',borderRadius:'50%',boxShadow:'0 0 0 2px rgba(0,0,0,.55)'}}>
       <span ref={removePreviewLabelRef} style={{position:'absolute',left:'50%',top:56,transform:'translateX(-50%)',whiteSpace:'nowrap',padding:'3px 8px',borderRadius:8,background:'rgba(0,0,0,.75)',color:'#ffd94d',fontSize:12,fontWeight:700}}></span>
     </div>
+    {/* BUILD 995: Move aiming preview — same gold ring + label as
+        Remove, positioned by direct DOM writes from the pointer
+        handlers; pointerEvents none so it never eats a tap. */}
+    <div ref={movePreviewRef} data-testid="build-move-preview" style={{display:'none',position:'absolute',zIndex:5,pointerEvents:'none',transform:'translate(-50%,-50%)',width:52,height:52,border:'3px solid #ffd94d',borderRadius:'50%',boxShadow:'0 0 0 2px rgba(0,0,0,.55)'}}>
+      <span ref={movePreviewLabelRef} style={{position:'absolute',left:'50%',top:56,transform:'translateX(-50%)',whiteSpace:'nowrap',padding:'3px 8px',borderRadius:8,background:'rgba(0,0,0,.75)',color:'#ffd94d',fontSize:12,fontWeight:700}}></span>
+    </div>
     {buildOpen&&<div data-testid="build-panel" style={{position:'absolute',right:12,bottom:76,zIndex:4,width:248,maxHeight:'calc(100% - 90px)',overflowY:'auto',padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',color:'#fff',fontFamily:'system-ui,sans-serif'}}>
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         <strong style={{flex:1,fontSize:15}}>Build — free, no resource cost</strong>
         <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
-        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setRemoveMode(false);buildRef.current={palette:null,removeMode:false};setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
+        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setRemoveMode(false);setMoveMode(false);setCatalogCategory('all');buildRef.current={palette:null,removeMode:false,moveMode:false};setWalk(false);}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
       </div>
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Tap an item, then tap the ground to place it. Tap Remove, then an item, path, house, or tree to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo.</div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
-        {(['path','house','tree','stall','grass'] as PaletteKind[]).map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setRemoveMode(false);buildRef.current={palette:next,removeMode:false};}} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>{{path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'}[kind]}</button>)}
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Pick an item from the catalog, then tap the ground to place it. Tap Remove, then an item, path, house, or tree to take it down — taps snap to the nearest removable tile, and dragging in Remove mode clears a whole section at once (one Undo tap restores the whole drag). Tap Move, then drag an item you placed to a new spot — one Undo tap moves it back. Minimize (—) keeps your tool; close (×) clears it. While minimized, Walk pauses your tool so taps move you, Undo steps back through your changes one tap at a time, and Redo steps forward again — a new change clears Redo.</div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:10}}>
+        {(['all','terrain','buildings','plants','props'] as const).map(cat=><button key={cat} type="button" data-testid={'build-catalog-category-'+cat} onClick={()=>setCatalogCategory(cat)} style={{padding:'8px 10px',borderRadius:9,border:'1px solid #c4d1bd',background:catalogCategory===cat?'#526d42':'#22392d',color:'#fff',fontWeight:catalogCategory===cat?700:500,fontSize:13}}>{{all:'All',terrain:'Terrain',buildings:'Buildings',plants:'Plants',props:'Props'}[cat]}</button>)}
       </div>
-      <button type="button" data-testid="build-remove-toggle" onClick={()=>{const next=!removeMode;setRemoveMode(next);if(next)setPalette(null);buildRef.current={palette:next?null:palette,removeMode:next};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
+      <div data-testid="build-catalog-list" style={{maxHeight:280,overflowY:'auto',marginTop:10,paddingRight:2}}>
+        {CATALOG_SECTIONS.filter(sec=>catalogCategory==='all'||catalogCategory===sec.id).map(sec=><div key={sec.id}>
+          <div style={{fontSize:12,fontWeight:700,opacity:.8,marginTop:8}}>{sec.label}</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:6}}>
+            {sec.kinds.map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setRemoveMode(false);setMoveMode(false);buildRef.current={palette:next,removeMode:false,moveMode:false};}} style={{padding:'10px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>
+              <span style={{display:'block',height:26,borderRadius:6,background:KIND_META[kind].swatch,marginBottom:6,border:'1px solid rgba(255,255,255,.25)'}}></span>
+              {KIND_META[kind].label}
+            </button>)}
+          </div>
+        </div>)}
+      </div>
+      <button type="button" data-testid="build-remove-toggle" onClick={()=>{const next=!removeMode;setRemoveMode(next);if(next)setPalette(null);setMoveMode(false);buildRef.current={palette:next?null:palette,removeMode:next,moveMode:false};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
+      <button type="button" data-testid="build-move-toggle" onClick={()=>{const next=!moveMode;setMoveMode(next);if(next){setPalette(null);setRemoveMode(false);}buildRef.current={palette:next?null:palette,removeMode:next?false:removeMode,moveMode:next};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:moveMode?'#526d42':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Move: {moveMode?'On':'Off'}</button>
       <div data-testid="build-count" style={{fontSize:12,opacity:.85,marginTop:10}}>Placed: {placedCount}</div>
       <div style={{fontSize:11,opacity:.7,marginTop:6,lineHeight:1.4}}>Houses have interiors now — stand by a door and tap Enter to step inside; Exit returns you to the doorstep. While inside, Build placement and removal are paused (taps move only). Placed items show in 3D mode; the 2.5D view does not show them yet.</div>
     </div>}
