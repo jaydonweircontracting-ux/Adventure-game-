@@ -212,7 +212,12 @@ export function removeAt(w: IsoWorld, x: number, y: number): RemoveAtResult | nu
  *  are the unit of the undo AND redo stacks (see BuildHistory below)
  *  — the same entry undoes via applyUndo and redoes via applyRedo.
  *  Movement, E-key harvest, and tool selection changes are NOT
- *  changes and never enter the stacks. */
+ *  changes and never enter the stacks. BUILD 996: `paste` = a whole
+ *  chunk paste (one entry for every item that landed, in paste
+ *  order). Undo removes them in reverse order; redo re-appends them
+ *  in paste order, which preserves path-before-grass stacking.
+ *  Skipped items are never in the entry, so undo/redo touch exactly
+ *  what the paste added — nothing more, nothing less. */
 export type UndoEntry =
   | { kind: 'place'; item: PlacedItem }
   | { kind: 'unplace'; item: PlacedItem; index: number }
@@ -220,7 +225,8 @@ export type UndoEntry =
   | { kind: 'unpath'; x: number; y: number }
   | { kind: 'untree'; tree: { tx: number; ty: number } | null; treeIndex: number; crate: { tx: number; ty: number } | null; crateIndex: number }
   | { kind: 'stroke'; entries: UndoEntry[] }
-  | { kind: 'move'; oldItem: PlacedItem; newItem: PlacedItem; index: number };
+  | { kind: 'move'; oldItem: PlacedItem; newItem: PlacedItem; index: number }
+  | { kind: 'paste'; items: PlacedItem[] };
 
 /** BUILD 989 refinement: drag-to-remove (paint). Applies removeAt to
  *  each tile of a stroke, in order, with the SAME precedence,
@@ -327,6 +333,11 @@ export function applyUndo(w: IsoWorld, entry: UndoEntry): string {
       if (!exists) w.placements.splice(Math.min(entry.index, w.placements.length), 0, old);
       return 'Moved ' + old.kind + ' back';
     }
+    case 'paste': {
+      for (let i = entry.items.length - 1; i >= 0; i--) removeExactPlacement(w, entry.items[i]);
+      const n = entry.items.length;
+      return 'Undid paste (' + n + (n === 1 ? ' item' : ' items') + ')';
+    }
   }
 }
 
@@ -396,6 +407,15 @@ export function applyRedo(w: IsoWorld, entry: UndoEntry): string {
       const exists = w.placements.some((p) => p.kind === item.kind && p.x0 === item.x0 && p.y0 === item.y0 && p.x1 === item.x1 && p.y1 === item.y1);
       if (!exists) w.placements.splice(Math.min(entry.index, w.placements.length), 0, item);
       return 'Moved ' + item.kind;
+    }
+    case 'paste': {
+      if (!w.placements) w.placements = [];
+      for (const item of entry.items) {
+        const exists = w.placements.some((p) => p.kind === item.kind && p.x0 === item.x0 && p.y0 === item.y0 && p.x1 === item.x1 && p.y1 === item.y1);
+        if (!exists) w.placements.push(item);
+      }
+      const n = entry.items.length;
+      return 'Re-pasted ' + n + (n === 1 ? ' item' : ' items');
     }
   }
 }
