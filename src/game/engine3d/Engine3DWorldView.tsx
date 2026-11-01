@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { isWalkableWorld, loadWorld, saveWorld, terrainAt, terrainKey, type HutRect, type IsoWorld } from '../iso/isoWorld';
 import { mosslightEngineChunkLayout } from '../mosslightLayout';
-import { rpgSprite, rpgAnchorFor, preloadRpgBase, type RpgAnim, type RpgBase } from '../iso/rpgSprites';
+import { emitVillager, villagerSpecFor, PLAYER_SPEC, PHASE_PER_UNIT, NPC_SPEED } from './villagers';
 import {
   houseDesignFor, streetSlabsFor, cobbleSquaresFor,
   SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR,
@@ -20,7 +20,7 @@ import {
 import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
 import { hutDoor, hutExitPoint, sameHut, nearestDoorHut, interiorBoxes, interiorFloorColor, interiorWalkable, rescuePosition, INTERIOR_FLOOR_Y } from './interiors';
 import { ROSTER_3D, buildStaticAnchors, buildAnchors, scheduleTileFor, planPathNpc, npcWalkable, rosterArchetype, loadClock, saveClock } from './townsfolk3d';
-import type { Face8 } from '../iso/isoSprites';
+
 
 type Vec3 = [number, number, number];
 type Vertex = number[];
@@ -696,48 +696,6 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     if(!gl.getProgramParameter(program,gl.LINK_STATUS)){setMessage(gl.getProgramInfoLog(program)||'3D renderer setup failed');return}
     gl.useProgram(program);
     const worldBuffer=gl.createBuffer()!,actorBuffer=gl.createBuffer()!;
-    const playerSpriteProgram=gl.createProgram();
-    let playerSpriteBuffer:WebGLBuffer|null=null;
-    // BUILD 988 sprite texture cache + hoisted sprite locations. The old
-    // code re-uploaded every sprite texture with texImage2D EVERY FRAME
-    // (player + each NPC) and re-fetched attrib/uniform locations per
-    // sprite. Textures are now uploaded once per (base, anim, face,
-    // frame) key and reused; the cache is capped at 512 entries (cleared
-    // on overflow) so it cannot leak.
-    const spriteTexCache=new Map<string,WebGLTexture>();
-    let spriteLocs:{p:number;uv:number;m:WebGLUniformLocation|null;tex:WebGLUniformLocation|null}|null=null;
-    const spriteTextureFor=(key:string,im:HTMLImageElement):WebGLTexture|null=>{
-      const hit=spriteTexCache.get(key);
-      if(hit)return hit;
-      if(spriteTexCache.size>=512)spriteTexCache.clear();
-      const tex=gl.createTexture();if(!tex)return null;
-      gl.bindTexture(gl.TEXTURE_2D,tex);
-      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,1);
-      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,im);
-      spriteTexCache.set(key,tex);
-      return tex;
-    };
-    if(playerSpriteProgram){
-      const spriteVs=gl.createShader(gl.VERTEX_SHADER)!,spriteFs=gl.createShader(gl.FRAGMENT_SHADER)!;
-      gl.shaderSource(spriteVs,'attribute vec3 p;attribute vec2 uv;uniform mat4 m;varying vec2 vUv;void main(){gl_Position=m*vec4(p,1.0);vUv=uv;}');gl.compileShader(spriteVs);
-      gl.shaderSource(spriteFs,'precision mediump float;uniform sampler2D tex;varying vec2 vUv;void main(){vec4 color=texture2D(tex,vUv);if(color.a<0.08)discard;gl_FragColor=color;}');gl.compileShader(spriteFs);
-      if(gl.getShaderParameter(spriteVs,gl.COMPILE_STATUS)&&gl.getShaderParameter(spriteFs,gl.COMPILE_STATUS)){
-        gl.attachShader(playerSpriteProgram,spriteVs);gl.attachShader(playerSpriteProgram,spriteFs);gl.linkProgram(playerSpriteProgram);
-        if(gl.getProgramParameter(playerSpriteProgram,gl.LINK_STATUS)){
-          playerSpriteBuffer=gl.createBuffer();
-          spriteLocs={p:gl.getAttribLocation(playerSpriteProgram,'p'),uv:gl.getAttribLocation(playerSpriteProgram,'uv'),m:gl.getUniformLocation(playerSpriteProgram,'m'),tex:gl.getUniformLocation(playerSpriteProgram,'tex')};
-          // Use the real RPG pack already shipped in public/rpg. The old
-          // game-sprites/baseHumanMale URL did not exist, leaving the player
-          // as a blank/placeholder shape in the 3D mode.
-          preloadRpgBase('BaseHumanMale');
-          (window as any).__ag3dRpgSpriteReady=true;
-        }
-      }
-    }
     const pLoc=gl.getAttribLocation(program,'p'),cLoc=gl.getAttribLocation(program,'c'),mLoc=gl.getUniformLocation(program,'m');
     if(pLoc<0||cLoc<0||!mLoc){setMessage('3D renderer missing required shader attributes');return;}
     gl.enableVertexAttribArray(pLoc);gl.enableVertexAttribArray(cLoc);
@@ -775,9 +733,23 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
     let gestureMoved=false,gestureStartX=0,gestureStartY=0;
     let lastFrameTime=performance.now(),lastPositionPublish=0,lastPositionSave=0;
     let walkingNow=false;
-    // Keep the last facing while idle; update it from the actual world-space
-    // movement vector, transformed into camera-relative screen directions.
-    let playerFace:Face8='down';
+    // BUILD 994: per-figure walk state (player + NPCs). Session-only
+    // render state, never saved: last tile center, facing yaw, walk
+    // phase, and the last time the figure moved. Idle figures ease
+    // their phase to the nearest neutral (a multiple of 2π) instead
+    // of freezing mid-stride. Yaw follows the movement vector:
+    // forward = (sin yaw, cos yaw) in (x, z).
+    type FigureState={px:number;pz:number;yaw:number;phase:number;lastMove:number};
+    const figureState=new Map<string,FigureState>();
+    const figurePose=(key:string,x:number,z:number,now:number,dtMs:number,traveling:boolean,stepDist:number)=>{
+      let s=figureState.get(key);
+      if(!s){s={px:x,pz:z,yaw:Math.PI,phase:0,lastMove:0};figureState.set(key,s);}
+      if(x!==s.px||z!==s.pz){s.yaw=Math.atan2(x-s.px,z-s.pz);s.lastMove=now;}
+      s.px=x;s.pz=z;
+      if(traveling){s.phase+=stepDist*PHASE_PER_UNIT;}
+      else{const target=Math.round(s.phase/(2*Math.PI))*2*Math.PI;s.phase+=(target-s.phase)*Math.min(1,dtMs/1000*6);}
+      return {yaw:s.yaw,phase:s.phase};
+    };
     const walkableAt=(x:number,y:number)=>{
       const gx=Math.round(x),gy=Math.round(y);
       // BUILD 990: inside the entered hut, every rect tile is walkable
@@ -998,14 +970,6 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
         hasInput=moveDx!==0||moveDy!==0;
       }
       if(hasInput){
-        // The player sprite is a camera-facing billboard, so choose its RPG
-        // CAM direction from movement relative to the camera, not from camera
-        // yaw alone. Positive screen-y points toward the camera/front of sprite.
-        const screenDx=moveDx*Math.cos(yaw)-moveDy*Math.sin(yaw);
-        const screenDy=moveDx*Math.sin(yaw)+moveDy*Math.cos(yaw);
-        const octant=((Math.round(Math.atan2(screenDy,screenDx)/(Math.PI/4))%8)+8)%8;
-        const movementFaces:Face8[]=['right','downright','down','downleft','left','upleft','up','upright'];
-        playerFace=movementFaces[octant];
         const dist=Math.hypot(moveDx,moveDy),step=Math.min(dist,3.15*dt);
         const nx=player.x+moveDx/dist*step,ny=player.y+moveDy/dist*step;
         if(walkableAt(nx,ny)){player={x:nx,y:ny};current.position=player;walkingNow=true;}
@@ -1066,78 +1030,39 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       const actors:number[]=[];
       const corpse=(x:number,z:number)=>{const color:Vec3=[.38,.18,.16],x0=x-.28,x1=x+.28,z0=z-.28,z1=z+.28,y0=0,y1=.18;const tri=(a:Vec3,b:Vec3,c:Vec3)=>{for(const p of [a,b,c])actors.push(...p,...color)};tri([x0,y0,z1],[x1,y0,z1],[x1,y1,z1]);tri([x0,y0,z1],[x1,y1,z1],[x0,y1,z1]);};
       for(const npc of npcActorsRef.current) if(!npc.looted&&!npc.alive&&Math.abs(npc.x-player.x)<22&&Math.abs(npc.y-player.y)<22)corpse(npc.x+.5,npc.y+.5);
+      // BUILD 994: procedural low-poly villagers replace the billboard
+      // sprites (the packs are 2D PNGs — see villagers.ts). Figures are
+      // world-space triangles in this same actor buffer, so they
+      // depth-test against houses like any other geometry, in both
+      // cameras. Same 22-tile cull the sprites used; dead/looted NPCs
+      // keep the corpse rule above. NPCs move 1 tile per 900ms tick
+      // (993), so an NPC counts as traveling while it moved within the
+      // last 1000ms and its phase advances at the nominal 1.11 u/s;
+      // the player moves continuously, so its phase advances by the
+      // distance actually walked. Idle figures ease to neutral.
+      const nowMs=performance.now();
+      for(const npc of npcActorsRef.current){
+        if(npc.looted||!npc.alive||Math.abs(npc.x-player.x)>=22||Math.abs(npc.y-player.y)>=22)continue;
+        const nx=npc.x+.5,nz=npc.y+.5;
+        const prev=figureState.get(npc.name);
+        const moved=!prev||prev.px!==nx||prev.pz!==nz;
+        const traveling=moved||(prev!==undefined&&nowMs-prev.lastMove<1000);
+        const pose=figurePose(npc.name,nx,nz,nowMs,dt*1000,traveling,traveling?NPC_SPEED*dt:0);
+        emitVillager(actors,nx,nz,pose.yaw,pose.phase,villagerSpecFor(npc.name),rosterArchetype(npc.name)==='child');
+      }
+      // BUILD 992: in first person the camera IS the player — hide the
+      // player figure or it fills the frame. NPC figures still draw.
+      if(!firstPersonRef.current){
+        const px=player.x+.5,pz=player.y+.5;
+        const prev=figureState.get('__player');
+        const dist=prev?Math.hypot(px-prev.px,pz-prev.pz):0;
+        const pose=figurePose('__player',px,pz,nowMs,dt*1000,dist>0,dist);
+        emitVillager(actors,px,pz,pose.yaw,pose.phase,PLAYER_SPEC,false);
+      }
       // BUILD 988: skip the actor upload + draw when there are no
-      // corpses (the common case) instead of uploading an empty buffer
+      // actors (the common case) instead of uploading an empty buffer
       // every frame.
       if(actors.length){upload(actorBuffer,new Float32Array(actors));gl.drawArrays(gl.TRIANGLES,0,actors.length/6);}
-      // BUILD 988: one sprite-program session per frame. The old code
-      // switched programs, re-fetched locations AND re-uploaded the
-      // whole texture for every sprite, every frame. Now the program,
-      // locations and matrix are set once, textures come from the cache,
-      // and each sprite costs only one tiny quad upload.
-      if(playerSpriteProgram&&playerSpriteBuffer&&spriteLocs){
-        const rightX=Math.cos(yaw),rightZ=-Math.sin(yaw);
-        const face=playerFace;
-        gl.useProgram(playerSpriteProgram);
-        gl.bindBuffer(gl.ARRAY_BUFFER,playerSpriteBuffer);
-        gl.enableVertexAttribArray(spriteLocs.p);gl.vertexAttribPointer(spriteLocs.p,3,gl.FLOAT,false,20,0);
-        gl.enableVertexAttribArray(spriteLocs.uv);gl.vertexAttribPointer(spriteLocs.uv,2,gl.FLOAT,false,20,12);
-        gl.uniformMatrix4fv(spriteLocs.m,false,new Float32Array(mat));
-        gl.uniform1i(spriteLocs.tex,0);
-        gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
-        const blitSprite=(quad:number[],uv:number[],tex:WebGLTexture)=>{
-          const data=new Float32Array(30);
-          for(let i=0;i<6;i++){data[i*5]=quad[i*3];data[i*5+1]=quad[i*3+1];data[i*5+2]=quad[i*3+2];data[i*5+3]=uv[i*2];data[i*5+4]=uv[i*2+1];}
-          gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);
-          gl.bindTexture(gl.TEXTURE_2D,tex);
-          gl.drawArrays(gl.TRIANGLES,0,6);
-        };
-        const drawNpcSprite=(x:number,z:number,base:RpgBase,frameIndex:number,scale=1)=>{
-          const im=rpgSprite(base,'Idle',face,frameIndex);
-          if(!im?.complete||im.naturalWidth===0)return;
-          const tex=spriteTextureFor(base+'|Idle|'+face+'|'+frameIndex,im);
-          if(!tex)return;
-          const half=.34*scale,height=1.42*scale,left=[x-rightX*half,0,z-rightZ*half],right=[x+rightX*half,0,z+rightZ*half];
-          const topLeft=[left[0],height,left[2]],topRight=[right[0],height,right[2]];
-          blitSprite([...left,...right,...topRight,...left,...topRight,...topLeft],[0,1,1,1,1,0,0,1,1,0,0,0],tex);
-        };
-        // Use real RPG character sprites for the townspeople, not blue cubes.
-        const npcBases:RpgBase[]=['BaseHumanMale','BaseElf','BaseDwarf','BaseHumanBlank','BaseShaman','BaseSkeleton','BaseAhoul'];
-        npcActorsRef.current.forEach((npc,index)=>{
-          if(npc.looted||!npc.alive||Math.abs(npc.x-player.x)>=22||Math.abs(npc.y-player.y)>=22)return;
-          // BUILD 993: children render at 0.7 scale (the 979 iso rule).
-          const scale=rosterArchetype(npc.name)==='child'?0.7:1;
-          drawNpcSprite(npc.x+.5,npc.y+.5,npcBases[index%npcBases.length],(index+Math.floor(performance.now()/900))%4,scale);
-        });
-        // BUILD 983: in first person the camera IS the player — hide the
-        // player billboard or it fills the frame. NPC sprites still draw.
-        if(!firstPersonRef.current){
-        const moving=walkingNow||[...keys].some(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
-        const anim:RpgAnim=moving?'Walk':'Idle';
-        const frameCount=moving?11:4;
-        const frameIndex=moving?Math.floor(performance.now()/85)%frameCount:Math.floor(performance.now()/650)%frameCount;
-        const px=player.x+.5,pz=player.y+.5,half=.34,height=1.48;
-        // Use the source frame's measured opaque-foot anchor. The texture's
-        // transparent rows are cropped away, so the visible feet touch y=0
-        // instead of floating above the ground.
-        const frameAnchor=rpgAnchorFor('BaseHumanMale',moving?'Walk':'Idle',face,frameIndex);
-        const bottomV=Math.max(.72,Math.min(1,frameAnchor.cb/130));
-        const left=[px-rightX*half,0,pz-rightZ*half],right=[px+rightX*half,0,pz+rightZ*half];
-        const topLeft=[left[0],height,left[2]],topRight=[right[0],height,right[2]];
-        // Camera-relative eight-way facing matches the RPG pack's CAM0-7
-        // mapping. Cycle through actual idle/walk frames rather than two
-        // nonexistent placeholder URLs.
-        const frame=rpgSprite('BaseHumanMale',anim,face,frameIndex);
-        // BUILD 988: cached texture (was: full re-upload every frame, and
-        // a draw with a stale texture when the frame was not ready yet).
-        // An unready frame now skips its draw for that frame instead.
-        if(frame?.complete&&frame.naturalWidth>0){
-          const tex=spriteTextureFor('BaseHumanMale|'+anim+'|'+face+'|'+frameIndex,frame);
-          if(tex)blitSprite([...left,...right,...topRight,...left,...topRight,...topLeft],[0,bottomV,1,bottomV,1,0,0,bottomV,1,0,0,0],tex);
-        }
-        }
-        gl.depthMask(true);gl.disable(gl.BLEND);gl.useProgram(program);
-      }
       raf=requestAnimationFrame(draw);
     };
     const tryMove=(dx:number,dy:number)=>{const nextX=Math.round(stateRef.current.position.x+dx),nextY=Math.round(stateRef.current.position.y+dy);const occupied=npcActorsRef.current.some(n=>Math.round(n.x)===nextX&&Math.round(n.y)===nextY);if(!occupied&&walkableWithPlacements(world,world.crates,nextX,nextY)){const next={x:nextX,y:nextY};stateRef.current.position=next;setPosition(next);try{localStorage.setItem(SAVE_KEY,JSON.stringify(next))}catch{}needsWorldRebuild.current=true}};
@@ -1285,7 +1210,7 @@ export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: 
       try{localStorage.setItem(NPC_SAVE_KEY,JSON.stringify(actors))}catch{}
     },900);
 
-    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(skyBuffer);if(playerSpriteBuffer)gl.deleteBuffer(playerSpriteBuffer);spriteTexCache.forEach(t=>gl.deleteTexture(t));spriteTexCache.clear();if(playerSpriteProgram)gl.deleteProgram(playerSpriteProgram);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
+    return()=>{cancelAnimationFrame(raf);window.clearInterval(npcTimer);window.clearInterval(clockTimer);window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('keydown',action);window.removeEventListener('touchmove',stopTouch);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);canvas.removeEventListener('pointerup',up);canvas.removeEventListener('pointercancel',up);canvas.removeEventListener('wheel',wheel);html.style.overflow=oldHtml.overflow;html.style.touchAction=oldHtml.touchAction;html.style.overscrollBehavior=oldHtml.overscrollBehavior;body.style.overflow=oldBody.overflow;body.style.touchAction=oldBody.touchAction;body.style.overscrollBehavior=oldBody.overscrollBehavior;body.style.position=oldBody.position;body.style.width=oldBody.width;gl.deleteBuffer(worldBuffer);gl.deleteBuffer(actorBuffer);gl.deleteBuffer(skyBuffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs)};
   },[]);
   const move=(dx:number,dy:number)=>{const world=stateRef.current.world;const p=stateRef.current.position;const length=Math.hypot(dx,dy)||1;const target={x:Math.max(0,Math.min(world.w-1,p.x+dx/length*3)),y:Math.max(0,Math.min(world.h-1,p.y+dy/length*3))};if(walkableWithPlacements(world,world.crates,Math.round(target.x),Math.round(target.y))){try{localStorage.setItem(SAVE_KEY,JSON.stringify(target))}catch{}stateRef.current.position=target;setPosition(target);needsWorldRebuild.current=true }};
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>
