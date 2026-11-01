@@ -11,7 +11,7 @@
 
 import { isWalkableWorld, terrainAt, terrainKey, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 
-export type PaletteKind = 'path' | 'house' | 'tree' | 'stall';
+export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass';
 export type PlaceResult = { ok: true; item: PlacedItem } | { ok: false; reason: string };
 
 export function placementsOf(w: IsoWorld): PlacedItem[] {
@@ -58,11 +58,15 @@ function isWaypointTile(w: IsoWorld, x: number, y: number): boolean {
 /**
  * Validate a placement whose tap landed on tile (tx, ty).
  * Houses are 3x3 centred on the tap; stalls are 2x1 (tap + east);
- * paths/trees are single tiles. Standing rule: houses NEVER on paths
- * (dirt) or the square (sand); blocking items never on the player,
- * an NPC, or an NPC waypoint tile (an NPC that can never reach its
- * waypoint stalls forever). Paths are walkable ground, so they may be
- * placed under the player or an NPC.
+ * paths/trees/grass are single tiles. Standing rule: houses NEVER on
+ * paths (dirt) or the square (sand); blocking items never on the
+ * player, an NPC, or an NPC waypoint tile (an NPC that can never reach
+ * its waypoint stalls forever). Paths are walkable ground, so they may
+ * be placed under the player or an NPC. Grass (BUILD 985) is
+ * walk-through decor: it may be placed on paths, the square and lawns
+ * alike, under the player or an NPC, and on top of a placed path, but
+ * never on water, walls, buildings, stalls, trees, rocks or crates,
+ * and never twice on one tile. It never blocks movement.
  */
 export function validatePlacement(
   w: IsoWorld,
@@ -88,16 +92,30 @@ export function validatePlacement(
     if (terrain === 'water') return { ok: false, reason: 'water' };
     if (kind === 'path') {
       if (terrain === 'dirt') return { ok: false, reason: 'already a path or road' };
+    } else if (kind === 'grass') {
+      // No terrain rejection: grass grows on paths, squares and lawns.
     } else {
       if (terrain === 'dirt') return { ok: false, reason: 'a path or road' };
       if (terrain === 'sand') return { ok: false, reason: 'the town square' };
     }
     const gen = generatedBlock(w, t.x, t.y);
     if (gen) return { ok: false, reason: gen };
-    const pl = placedBlock(w, t.x, t.y);
-    if (pl) return { ok: false, reason: pl };
+    if (kind === 'grass') {
+      // Placed paths do not conflict (grass on a path is allowed);
+      // anything else covering the tile does.
+      for (const p of placementsOf(w)) {
+        if (t.x >= p.x0 && t.x <= p.x1 && t.y >= p.y0 && t.y <= p.y1) {
+          if (p.kind === 'path') continue;
+          if (p.kind === 'grass') return { ok: false, reason: 'grass already here' };
+          return { ok: false, reason: 'something you already placed' };
+        }
+      }
+    } else {
+      const pl = placedBlock(w, t.x, t.y);
+      if (pl) return { ok: false, reason: pl };
+    }
   }
-  if (kind !== 'path') {
+  if (kind !== 'path' && kind !== 'grass') {
     for (const t of tiles) {
       if (t.x === playerTile.x && t.y === playerTile.y) return { ok: false, reason: 'where you are standing' };
       if (npcTiles.some((n) => n.x === t.x && n.y === t.y)) return { ok: false, reason: 'where someone is standing' };
@@ -113,10 +131,11 @@ export function validatePlacement(
   return { ok: true, item };
 }
 
-/** True when a placed house/stall/tree blocks the tile. Placed paths never block. */
+/** True when a placed house/stall/tree blocks the tile. Placed paths
+ *  and grass never block. */
 export function isPlacedBlocking(w: IsoWorld, x: number, y: number): boolean {
   for (const p of placementsOf(w)) {
-    if (p.kind === 'path') continue;
+    if (p.kind === 'path' || p.kind === 'grass') continue;
     if (x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1) return true;
   }
   return false;
@@ -149,6 +168,13 @@ export function placedStallRects(w: IsoWorld): Array<{ x0: number; y0: number; x
   return placementsOf(w)
     .filter((p) => p.kind === 'stall')
     .map((p) => ({ x0: p.x0, y0: p.y0, x1: p.x1 }));
+}
+
+/** Placed grass tiles (BUILD 985). Single tiles, like placed paths. */
+export function placedGrassTiles(w: IsoWorld): Array<{ tx: number; ty: number }> {
+  return placementsOf(w)
+    .filter((p) => p.kind === 'grass')
+    .map((p) => ({ tx: p.x0, ty: p.y0 }));
 }
 
 /** Terrain keys of placed path tiles, for the terrain loop's effective terrain. */

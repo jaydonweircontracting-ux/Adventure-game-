@@ -12,6 +12,7 @@ import {
   validatePlacement, removePlacementAt, addPlacement, walkableWithPlacements,
   type PaletteKind,
 } from './placements';
+import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
 import type { Face8 } from '../iso/isoSprites';
 
 type Vec3 = [number, number, number];
@@ -174,6 +175,12 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
   const data: Vertex = [];
   const tri = (a: Vec3, b: Vec3, c: Vec3, color: Vec3) => {
     for (const p of [a, b, c]) data.push(...p, ...color);
+  };
+  // BUILD 985: per-vertex-colour triangle for grass blades (the flat
+  // tri() above forces one colour per triangle; grass needs the shader
+  // gradient evaluated at each corner, interpolated by the rasterizer).
+  const triV = (a: Vec3, ca: Vec3, b: Vec3, cb: Vec3, c: Vec3, cc: Vec3) => {
+    data.push(...a, ...ca, ...b, ...cb, ...c, ...cc);
   };
   const quad = (a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: Vec3) => { tri(a, b, c, color); tri(a, c, d, color); };
   const cube = (x: number, z: number, w: number, h: number, d: number, color: Vec3) => {
@@ -381,6 +388,14 @@ function buildWorldVertices(world: IsoWorld, center: Position): Float32Array {
     houseBox(t.tx+.5,t.ty+.5,.85,.7,.85,1.7,[.16,.34,.16]);
     houseBox(t.tx+.5,t.ty+.5,.55,.6,.55,2.2,[.19,.37,.18]);
   }
+  // BUILD 985: stylized grass tufts (StayAtHomeDev MIT meshes, baked in
+  // grassMeshes.ts, coloured by grassTufts.ts: base-to-tip gradient x
+  // world-XZ noise). Natural tufts seed by tile so they never reshuffle
+  // across window rebuilds; placed grass from the Build panel renders
+  // the same way. Emitted after trees so blades sit above the ground
+  // quads, before rocks/crates (draw order is irrelevant — one buffer).
+  emitNaturalGrass(triV, world, effTerrain, minX, maxX, minY, maxY);
+  emitPlacedGrass(triV, world, minX, maxX, minY, maxY);
   for(const r of world.rocks) if(r.tx>=minX&&r.tx<=maxX&&r.ty>=minY&&r.ty<=maxY) cube(r.tx+.5,r.ty+.5,.7,.6,.7,[.43,.45,.44]);
   for(const c of world.crates) if(c.tx>=minX&&c.tx<=maxX&&c.ty>=minY&&c.ty<=maxY) cube(c.tx+.5,c.ty+.5,.65,.7,.65,[.48,.29,.13]);
   // BUILD 984: the 983 castle backdrop group (7-peak silhouette + 4 foot
@@ -787,7 +802,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       <strong style={{display:'block',fontSize:15}}>Build — free, no resource cost</strong>
       <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Tap an item, then tap the ground to place it. Tap Remove, then a placed item, to take it back down.</div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
-        {(['path','house','tree','stall'] as PaletteKind[]).map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setRemoveMode(false);buildRef.current={palette:next,removeMode:false};}} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>{{path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall'}[kind]}</button>)}
+        {(['path','house','tree','stall','grass'] as PaletteKind[]).map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setRemoveMode(false);buildRef.current={palette:next,removeMode:false};}} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>{{path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'}[kind]}</button>)}
       </div>
       <button type="button" data-testid="build-remove-toggle" onClick={()=>{const next=!removeMode;setRemoveMode(next);if(next)setPalette(null);buildRef.current={palette:next?null:palette,removeMode:next};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
       <button type="button" data-testid="build-close" onClick={()=>{setBuildOpen(false);setPalette(null);setRemoveMode(false);buildRef.current={palette:null,removeMode:false};}} style={{display:'block',width:'100%',marginTop:8,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Done</button>
