@@ -9,7 +9,7 @@
 // Cost: FREE in V1. No Wood/Stone gate — the player's counters read 0,
 // so a gate would let him place nothing (future economy decision).
 
-import { isWalkableWorld, terrainAt, terrainKey, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
+import { hutAt, isWalkableWorld, terrainAt, terrainKey, type HutRect, type IsoWorld, type PlacedItem } from '../iso/isoWorld';
 
 export type PaletteKind = 'path' | 'house' | 'tree' | 'stall' | 'grass';
 export type PlaceResult = { ok: true; item: PlacedItem } | { ok: false; reason: string };
@@ -31,6 +31,39 @@ export function removePlacementAt(w: IsoWorld, x: number, y: number): PlacedItem
   if (idx < 0) return null;
   const [removed] = list.splice(idx, 1);
   return removed;
+}
+
+/** BUILD 987: remove a GENERATED thing at (x, y) — a whole hut rect or
+ *  one dirt path tile. Placed items are NOT handled here (the caller
+ *  tries removePlacementAt first); precedence is placed > house > path,
+ *  matching the existing first-match pattern. Generated town content is
+ *  rebuilt by the 3D adapter on every load, so removals are ALSO
+ *  recorded in removedHuts / removedPaths, which the adapter consults
+ *  — plain deletion alone would resurrect them on reload. Collision,
+ *  grass-tuft blocking and rendering all derive from huts/terrain, so
+ *  they update from this one mutation. Returns what was removed. */
+export type GeneratedRemoval =
+  | { kind: 'house'; rect: HutRect }
+  | { kind: 'path'; x: number; y: number };
+
+export function removeGeneratedAt(w: IsoWorld, x: number, y: number): GeneratedRemoval | null {
+  const hut = hutAt(w, x, y);
+  if (hut) {
+    w.huts = w.huts.filter((h) => h !== hut);
+    if (!w.removedHuts) w.removedHuts = [];
+    if (!w.removedHuts.some((r) => r.x0 === hut.x0 && r.y0 === hut.y0 && r.x1 === hut.x1 && r.y1 === hut.y1)) {
+      w.removedHuts.push({ x0: hut.x0, y0: hut.y0, x1: hut.x1, y1: hut.y1 });
+    }
+    return { kind: 'house', rect: hut };
+  }
+  if (terrainAt(w, x, y) === 'dirt') {
+    const key = terrainKey(x, y);
+    delete w.terrain[key];
+    if (!w.removedPaths) w.removedPaths = [];
+    if (!w.removedPaths.includes(key)) w.removedPaths.push(key);
+    return { kind: 'path', x, y };
+  }
+  return null;
 }
 
 /** Non-terrain generated block on a tile (walls, buildings, stalls, trees, rocks, crates). */

@@ -9,7 +9,7 @@ import {
 } from './townLook';
 import {
   placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys,
-  validatePlacement, removePlacementAt, addPlacement, walkableWithPlacements,
+  validatePlacement, removePlacementAt, removeGeneratedAt, addPlacement, walkableWithPlacements,
   type PaletteKind,
 } from './placements';
 import { emitNaturalGrass, emitPlacedGrass } from './grassTufts';
@@ -75,7 +75,11 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
   const scale = 0.42;
   const tile = (v: number) => 100 + (v - 140) * scale;
   const clamp = (v: number) => Math.max(2, Math.min(197, Math.round(v)));
+  // BUILD 987: paths the user removed stay removed — the road/plaza
+  // rasterizer below would otherwise re-stamp them on every load.
+  const removedPathKeys = new Set(world.removedPaths ?? []);
   const setTerrain = (x: number, y: number, terrain: 'dirt' | 'sand') => {
+    if (removedPathKeys.has(terrainKey(x, y))) return;
     if (x >= 0 && y >= 0 && x < world.w && y < world.h) world.terrain[terrainKey(x, y)] = terrain;
   };
 
@@ -112,6 +116,9 @@ export function applyMosslightTownLayout(source: IsoWorld): IsoWorld {
     const r = lot.footprint;
     const x0 = clamp(Math.floor(tile(r.left))), y0 = clamp(Math.floor(tile(r.top)));
     const x1 = clamp(Math.max(x0, Math.floor(tile(r.right)))), y1 = clamp(Math.max(y0, Math.floor(tile(r.bottom))));
+    // BUILD 987: houses the user removed stay removed — the generator
+    // would otherwise re-push the same footprint on every load.
+    if ((world.removedHuts ?? []).some(h => h.x0 === x0 && h.y0 === y0 && h.x1 === x1 && h.y1 === y1)) continue;
     const midX = Math.round((x0 + x1) / 2), midY = Math.round((y0 + y1) / 2);
     const door = lot.facing === 'north' ? { x: midX, y: y0 }
       : lot.facing === 'south' ? { x: midX, y: y1 }
@@ -578,9 +585,15 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
             const world=stateRef.current.world;
             const tx=Math.floor(destination.x),ty=Math.floor(destination.y);
             if(build.removeMode){
+              // BUILD 987: placed items first (existing behavior), then
+              // generated house (whole rect), then generated path tile.
               const removed=removePlacementAt(world,tx,ty);
               if(removed){saveWorld(world);needsWorldRebuild.current=true;setPlacedCount(world.placements?.length??0);setMessage('Removed '+removed.kind);}
-              else setMessage('Nothing placed here');
+              else{
+                const gen=removeGeneratedAt(world,tx,ty);
+                if(gen){saveWorld(world);needsWorldRebuild.current=true;setMessage(gen.kind==='house'?'Removed house':'Removed path');}
+                else setMessage('Nothing to remove here');
+              }
             } else if(build.palette){
               const player=stateRef.current.position;
               const playerTile={x:Math.round(player.x),y:Math.round(player.y)};
@@ -788,6 +801,15 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       setPlayer:(x:number,y:number)=>{stateRef.current.position={x,y};setPosition({x,y});needsWorldRebuild.current=true},
       getPlacements:()=>JSON.parse(JSON.stringify(stateRef.current.world.placements??[])),
       getPlayer:()=>({...stateRef.current.position}),
+      // BUILD 987 test hook (read-only): adapted-world summary for the
+      // browser harness — hut rects, dirt keys, removed sets, placements.
+      getWorldSummary:()=>({
+        huts: stateRef.current.world.huts.map(h=>({x0:h.x0,y0:h.y0,x1:h.x1,y1:h.y1})),
+        dirtKeys: Object.entries(stateRef.current.world.terrain).filter(([,t])=>t==='dirt').map(([k])=>k),
+        removedHuts: stateRef.current.world.removedHuts??[],
+        removedPaths: stateRef.current.world.removedPaths??[],
+        placements: JSON.parse(JSON.stringify(stateRef.current.world.placements??[])),
+      }),
     };
     draw();
     const npcTimer=window.setInterval(()=>{
@@ -819,15 +841,18 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     <button type="button" data-testid="street-view-toggle" onClick={()=>{const v=!streetViewRef.current;streetViewRef.current=v;setStreetViewOn(v);}} style={{position:'absolute',right:12,top:58,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Street view: {streetViewOn?'On':'Off'}</button>
     {/* BUILD 984 placement tool: bottom-right, clear of Options (top-right),
         the Street view toggle (top:58), and the diagnostic (bottom-left). */}
-    <button type="button" data-testid="build-toggle" onClick={()=>setBuildOpen(v=>!v)} style={{position:'absolute',right:12,bottom:14,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:buildOpen?'#526d42':'#172c23e8',color:'#fff',fontWeight:700,fontSize:16}}>Build</button>
+    <button type="button" data-testid="build-toggle" onClick={()=>setBuildOpen(v=>!v)} style={{position:'absolute',right:12,bottom:14,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:(buildOpen||palette||removeMode)?'#526d42':'#172c23e8',color:'#fff',fontWeight:700,fontSize:16}}>Build</button>
     {buildOpen&&<div data-testid="build-panel" style={{position:'absolute',right:12,bottom:76,zIndex:4,width:248,padding:14,borderRadius:12,background:'#172c23f5',border:'1px solid #8c9b8d',color:'#fff',fontFamily:'system-ui,sans-serif'}}>
-      <strong style={{display:'block',fontSize:15}}>Build — free, no resource cost</strong>
-      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Tap an item, then tap the ground to place it. Tap Remove, then a placed item, to take it back down.</div>
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <strong style={{flex:1,fontSize:15}}>Build — free, no resource cost</strong>
+        <button type="button" data-testid="build-minimize" title="Minimize (keeps your tool)" onClick={()=>setBuildOpen(false)} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>—</button>
+        <button type="button" data-testid="build-close" title="Close (clears your tool)" onClick={()=>{setBuildOpen(false);setPalette(null);setRemoveMode(false);buildRef.current={palette:null,removeMode:false};}} style={{padding:'12px 14px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:16,lineHeight:1}}>×</button>
+      </div>
+      <div style={{fontSize:12,opacity:.85,marginTop:4,lineHeight:1.4}}>Tap an item, then tap the ground to place it. Tap Remove, then an item, path, or house to take it down. Minimize (—) keeps your tool; close (×) clears it.</div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10}}>
         {(['path','house','tree','stall','grass'] as PaletteKind[]).map(kind=><button key={kind} type="button" data-testid={'build-palette-'+kind} onClick={()=>{const next=palette===kind?null:kind;setPalette(next);setRemoveMode(false);buildRef.current={palette:next,removeMode:false};}} style={{padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:palette===kind?'#526d42':'#22392d',color:'#fff',fontWeight:palette===kind?700:500,fontSize:14}}>{{path:'Pathway',house:'House',tree:'Tree',stall:'Market Stall',grass:'Grass'}[kind]}</button>)}
       </div>
       <button type="button" data-testid="build-remove-toggle" onClick={()=>{const next=!removeMode;setRemoveMode(next);if(next)setPalette(null);buildRef.current={palette:next?null:palette,removeMode:next};}} style={{display:'block',width:'100%',marginTop:10,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:removeMode?'#7a3b2e':'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Remove: {removeMode?'On':'Off'}</button>
-      <button type="button" data-testid="build-close" onClick={()=>{setBuildOpen(false);setPalette(null);setRemoveMode(false);buildRef.current={palette:null,removeMode:false};}} style={{display:'block',width:'100%',marginTop:8,padding:'12px 6px',borderRadius:9,border:'1px solid #c4d1bd',background:'#22392d',color:'#fff',fontWeight:700,fontSize:14}}>Done</button>
       <div data-testid="build-count" style={{fontSize:12,opacity:.85,marginTop:10}}>Placed: {placedCount}</div>
       <div style={{fontSize:11,opacity:.7,marginTop:6,lineHeight:1.4}}>Placed houses are decorative for now — no interior yet. Placed items show in 3D mode; the 2.5D view does not show them yet.</div>
     </div>}

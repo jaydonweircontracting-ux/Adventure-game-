@@ -31,6 +31,15 @@ export interface IsoWorld {
   npcSpawns: NpcSpawn[];
   playerStart: TilePoint;
   placements?: PlacedItem[];
+  /** BUILD 987: generated hut rects the user removed. The 3D adapter
+   *  regenerates town lots from the layout on every load, so plain
+   *  deletion from huts would resurrect them — the adapter skips lots
+   *  matching these rects. Old saves load with none. */
+  removedHuts?: HutRect[];
+  /** BUILD 987: terrain keys ("x,y") of generated dirt tiles the user
+   *  removed. The adapter's road/plaza rasterizer skips these keys, so
+   *  removed paths stay gone across reloads. Old saves load with none. */
+  removedPaths?: string[];
 }
 
 export interface Clipboard {
