@@ -7,7 +7,10 @@ import {
   SKY_TOP, SKY_HORIZON, DIRT_TAN, COBBLE_GAP, MORTAR,
   GLASS_DARK, GLASS_LIT, DOOR_WOOD, GROUND_FLOOR_H, UPPER_FLOOR_H, roofRise,
   SUN_SHADE, shadeRgb, groundTintDelta,
+  DOOR_W, DOOR_H, TREE_TIERS, FIRST_PERSON_EYE,
+  FP_PITCH_MIN, FP_PITCH_MAX, ZOOM_MIN,
 } from './townLook';
+import { applyZoomDelta } from './firstPerson';
 import {
   placedHutRects, placedTreeTiles, placedStallRects, placedPathKeys,
   validatePlacement, removeAt, removeAlongStroke, findRemovableNear, addPlacement, walkableWithPlacements,
@@ -330,11 +333,10 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   // BUILD 986: the exact 983 tapered-tier tree (trunk + 3 shrinking
   // foliage tiers), shared by real trees, converted crates and converted
   // generated stalls — one renderer, never a second tree.
+  // BUILD 992 proportion pass: tiers from townLook (total 4.44 =
+  // 3.00x character). Same tiles, same collision — only the mesh grows.
   const treeAt=(tx:number,ty:number)=>{
-    houseBox(tx+.5,ty+.5,.22,1.1,.22,0,[.36,.23,.12]);
-    houseBox(tx+.5,ty+.5,1.15,.9,1.15,1.0,[.13,.30,.14]);
-    houseBox(tx+.5,ty+.5,.85,.7,.85,1.7,[.16,.34,.16]);
-    houseBox(tx+.5,ty+.5,.55,.6,.55,2.2,[.19,.37,.18]);
+    for(const t of TREE_TIERS) houseBox(tx+.5,ty+.5,t.w,t.h,t.w,t.y0,t.color);
   };
   // Walls and stall counters use the editor-authored collision geometry.
   for(const wall of world.walls) if(wall.x>=minX&&wall.x<=maxX&&wall.y>=minY&&wall.y<=maxY) cube(wall.x+.5,wall.y+.5,1,.85,1,[.43,.39,.32]);
@@ -434,15 +436,17 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
       }
       if(face==='south'||face==='north')houseBox(x,facePlane(.06),w,.14,.14,GROUND_FLOOR_H-.14,design.timber);
       else houseBox(facePlane(.06),z,.14,.14,d,GROUND_FLOOR_H-.14,design.timber);
-      faceRect(face,aC+spanA*.28,.52,.53,1.06,facePlane(.03),DOOR_WOOD);
+      faceRect(face,aC+spanA*.28,DOOR_W,DOOR_H/2,DOOR_H,facePlane(.03),DOOR_WOOD);
     } else {
       // Door + timber lintel + stone step on the door face.
-      faceRect(face,aC,.52,.53,1.06,facePlane(.02),DOOR_WOOD);
-      faceRect(face,aC,.72,GROUND_FLOOR_H+.06,.12,facePlane(.02),design.timber);
-      if(face==='south')houseBox(x,z+d/2+.15,.72,.12,.3,0,design.stone);
-      else if(face==='north')houseBox(x,z-d/2-.15,.72,.12,.3,0,design.stone);
-      else if(face==='west')houseBox(x-w/2-.15,z,.12,.12,.72,0,design.stone);
-      else houseBox(x+w/2+.15,z,.12,.12,.72,0,design.stone);
+      // BUILD 992: door 0.87 x 1.78 (1.20x character); lintel + step
+      // span the wider door (1.21 = door + margin).
+      faceRect(face,aC,DOOR_W,DOOR_H/2,DOOR_H,facePlane(.02),DOOR_WOOD);
+      faceRect(face,aC,1.21,GROUND_FLOOR_H+.06,.12,facePlane(.02),design.timber);
+      if(face==='south')houseBox(x,z+d/2+.15,1.21,.12,.3,0,design.stone);
+      else if(face==='north')houseBox(x,z-d/2-.15,1.21,.12,.3,0,design.stone);
+      else if(face==='west')houseBox(x-w/2-.15,z,.12,.12,1.21,0,design.stone);
+      else houseBox(x+w/2+.15,z,.12,.12,1.21,0,design.stone);
     }
     // Upper floors: plaster boxes + timber corner posts + floor beams.
     for(let s=1;s<design.stories;s++){
@@ -538,14 +542,18 @@ export function buildWorldVertices(world: IsoWorld, center: Position, enteredHut
   return new Float32Array(data);
 }
 
-export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
+export default function Engine3DWorldView({ onExit, fpAuto = true }: { onExit?: () => void; fpAuto?: boolean }) {
   const canvasRef=useRef<HTMLCanvasElement>(null);
   const [message,setMessage]=useState('Connected to the editable world map');
-  // BUILD 983 street view: ground-level camera matching the reference
-  // street shot. The ref is what the render loop reads; the state only
-  // drives the toggle button label.
-  const [streetViewOn,setStreetViewOn]=useState(false);
-  const streetViewRef=useRef(false);
+  // BUILD 992: first person (was the 983 street view, now engaged by
+  // zooming all the way in). The ref is what the render loop reads;
+  // the state drives the first-person hint text. fpAuto comes from the
+  // Options dialog (GraphicsModeHost); the ref mirror keeps it live
+  // without re-running the render effect.
+  const [firstPersonOn,setFirstPersonOn]=useState(false);
+  const firstPersonRef=useRef(false);
+  const fpAutoRef=useRef(fpAuto);
+  useEffect(()=>{fpAutoRef.current=fpAuto;},[fpAuto]);
   const [position,setPosition]=useState<Position>(()=>savedPosition(applyMosslightTownLayout(loadWorld())));
   const [inventory,setInventory]=useState<Inventory3D>(()=>readSaved<Inventory3D>(INVENTORY_KEY,{}));
   const [health,setHealth]=useState<number>(()=>{try{const n=Number(localStorage.getItem(HEALTH_KEY));return Number.isFinite(n)&&n>0?Math.min(100,n):100}catch{return 100}});
@@ -714,7 +722,17 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     const IDENTITY_MAT=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
     let worldVertCount=0;
     let yaw=.65,pitch=.7,zoom=12,drag=false,lx=0,ly=0,raf=0;
-    let lookPitch=.08,lastBuildX=stateRef.current.position.x,lastBuildY=stateRef.current.position.y;
+    let lookPitch=0,lastBuildX=stateRef.current.position.x,lastBuildY=stateRef.current.position.y;
+    // BUILD 992: one zoom parameter for pinch + wheel, routed through
+    // the first-person state machine (firstPerson.ts). Reaching the
+    // minimum engages first person when auto is ON; zooming out past
+    // minimum + hysteresis returns to orbit AT the minimum first.
+    // Entering first person resets the look to level gaze.
+    const applyZoom=(d:number)=>{
+      const next=applyZoomDelta({zoom,firstPerson:firstPersonRef.current},d,fpAutoRef.current);
+      if(next.firstPerson!==firstPersonRef.current){firstPersonRef.current=next.firstPerson;setFirstPersonOn(next.firstPerson);if(next.firstPerson)lookPitch=0;}
+      zoom=next.zoom;
+    };
     const pointers=new Map<number,{x:number;y:number}>();let pinchDistance=0;
     // Continuous click-to-move target, in the same free world-space units as
     // the base game's tapMove system (not tile-by-tile stepping).
@@ -742,13 +760,13 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       const nx=((clientX-rect.left)/rect.width)*2-1,ny=1-((clientY-rect.top)/rect.height)*2;
       const p=stateRef.current.position;
       const tx=p.x+.5,tz=p.y+.5,ty=.8;
-      // BUILD 984: street view uses the eye-level camera, not the orbit
-      // camera — the old code always used orbit math, so street-view
+      // BUILD 984: first person uses the eye-level camera, not the orbit
+      // camera — the old code always used orbit math, so first-person
       // taps mis-picked (BUILD 983 delta #4). Branching here fixes both
-      // street-view tap-to-move and placement taps.
+      // first-person tap-to-move and placement taps.
       let eyeX:number,eyeZ:number,eyeY:number,forward:number[];
-      if(streetViewRef.current){
-        eyeX=tx;eyeZ=tz;eyeY=1.6;
+      if(firstPersonRef.current){
+        eyeX=tx;eyeZ=tz;eyeY=FIRST_PERSON_EYE;
         forward=[-Math.sin(yaw)*Math.cos(lookPitch),Math.sin(lookPitch),-Math.cos(yaw)*Math.cos(lookPitch)];
       } else {
         eyeX=tx+Math.sin(yaw)*zoom*Math.cos(pitch);eyeZ=tz+Math.cos(yaw)*zoom*Math.cos(pitch);eyeY=ty+zoom*Math.sin(pitch);
@@ -769,7 +787,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>=world.w||y>=world.h)return null;
       return {x,y};
     };
-    const wheel=(e:WheelEvent)=>{e.preventDefault();zoom=Math.max(4,Math.min(32,zoom+e.deltaY*.012));};
+    const wheel=(e:WheelEvent)=>{e.preventDefault();applyZoom(e.deltaY*.012);};
     const keys=new Set<string>();
     const keydown=(e:KeyboardEvent)=>{const k=e.key.toLowerCase();if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','e','f',' '].includes(k)){e.preventDefault();keys.add(k);}};
     const keyup=(e:KeyboardEvent)=>keys.delete(e.key.toLowerCase());
@@ -793,7 +811,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return null;
       const p=stateRef.current.position;const px=p.x+.5,pz=p.y+.5,py=.8;
       let eyeX:number,eyeZ:number,eyeY:number,forward:number[];
-      if(streetViewRef.current){eyeX=px;eyeZ=pz;eyeY=1.6;forward=[-Math.sin(yaw)*Math.cos(lookPitch),Math.sin(lookPitch),-Math.cos(yaw)*Math.cos(lookPitch)];}
+      if(firstPersonRef.current){eyeX=px;eyeZ=pz;eyeY=FIRST_PERSON_EYE;forward=[-Math.sin(yaw)*Math.cos(lookPitch),Math.sin(lookPitch),-Math.cos(yaw)*Math.cos(lookPitch)];}
       else{eyeX=px+Math.sin(yaw)*zoom*Math.cos(pitch);eyeZ=pz+Math.cos(yaw)*zoom*Math.cos(pitch);eyeY=py+zoom*Math.sin(pitch);forward=[-Math.sin(yaw)*Math.cos(pitch),-Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch)];}
       const right=[Math.cos(yaw),0,-Math.sin(yaw)];
       const up=[right[1]*forward[2]-right[2]*forward[1],right[2]*forward[0]-right[0]*forward[2],right[0]*forward[1]-right[1]*forward[0]];
@@ -849,7 +867,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
     };
     const down=(e:PointerEvent)=>{if((e.target as HTMLElement).closest('button'))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1){drag=true;gestureMoved=false;gestureStartX=e.clientX;gestureStartY=e.clientY;lx=e.clientX;ly=e.clientY;removeDragging=!!(buildRef.current.removeMode&&!walkRef.current&&!insideHutRef.current);removeStrokeEntries=[];removeStrokeTiles=new Set();removeStrokeRects=[];if(removeDragging)showRemovePreview(e.clientX,e.clientY);}else{drag=false;gestureMoved=true;pinchDistance=pointerDistance();if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}}canvas.setPointerCapture?.(e.pointerId)};
     const pointerDistance=()=>{const pts=[...pointers.values()];return pts.length<2?0:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y)};
-    const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)zoom=Math.max(4,Math.min(32,zoom+(pinchDistance-distance)*.025));pinchDistance=distance;if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}return;}
+    const move=(e:PointerEvent)=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size>=2){const distance=pointerDistance();if(pinchDistance>0&&distance>0)applyZoom((pinchDistance-distance)*.025);pinchDistance=distance;if(removeDragging){finalizeRemoveStroke();removeDragging=false;hideRemovePreview();}return;}
       if(removeDragging){
         if(Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)>7)gestureMoved=true;
         paintRemoveAt(e.clientX,e.clientY);
@@ -859,7 +877,7 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       if(Math.hypot(e.clientX-gestureStartX,e.clientY-gestureStartY)>7)gestureMoved=true;
       if(!gestureMoved)return;
       yaw+=(e.clientX-lx)*.008;
-      if(streetViewRef.current)lookPitch=Math.max(-.3,Math.min(.5,lookPitch+(e.clientY-ly)*.006));
+      if(firstPersonRef.current)lookPitch=Math.max(FP_PITCH_MIN,Math.min(FP_PITCH_MAX,lookPitch+(e.clientY-ly)*.006));
       else pitch=Math.max(.22,Math.min(1.25,pitch+(e.clientY-ly)*.006));
       lx=e.clientX;ly=e.clientY;
     };
@@ -990,12 +1008,17 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       const targetX=player.x+.5,targetZ=player.y+.5,targetY=.8;
       const horizontal=zoom*Math.cos(pitch);
       const ex=targetX+Math.sin(yaw)*horizontal,ez=targetZ+Math.cos(yaw)*horizontal,ey=targetY+zoom*Math.sin(pitch);
-      // BUILD 983 street view: eye-level camera at the player, looking
-      // along yaw with a slight up/down look pitch (yaw 0 faces north,
-      // toward the castle backdrop). Far plane 200 so the castle ridge
-      // (z=24, ~100 tiles north of town) stays inside the frustum.
-      const mat=streetViewRef.current
-        ? mul(perspective(WORLD_FOV_RAD,w/h,.1,200),lookAt([targetX,1.6,targetZ],[targetX-Math.sin(yaw)*Math.cos(lookPitch)*10,1.6+Math.sin(lookPitch)*10,targetZ-Math.cos(yaw)*Math.cos(lookPitch)*10]))
+      // BUILD 983 first-person camera: eye-level camera at the player,
+      // looking along yaw with a slight up/down look pitch (yaw 0 faces
+      // north). Far plane 200 so distant terrain stays inside the
+      // frustum. BUILD 992: eye at FIRST_PERSON_EYE (0.90x character),
+      // level gaze by default (lookPitch starts 0).
+      // BUILD 992: turning first-person-auto OFF while in first person
+      // drops back to orbit at the minimum distance (the zoom handlers
+      // alone cannot see the toggle flip).
+      if(firstPersonRef.current&&!fpAutoRef.current){firstPersonRef.current=false;setFirstPersonOn(false);zoom=ZOOM_MIN;}
+      const mat=firstPersonRef.current
+        ? mul(perspective(WORLD_FOV_RAD,w/h,.1,200),lookAt([targetX,FIRST_PERSON_EYE,targetZ],[targetX-Math.sin(yaw)*Math.cos(lookPitch)*10,FIRST_PERSON_EYE+Math.sin(lookPitch)*10,targetZ-Math.cos(yaw)*Math.cos(lookPitch)*10]))
         : mul(perspective(WORLD_FOV_RAD,w/h,.1,200),lookAt([ex,ey,ez],[targetX,targetY,targetZ]));
       gl.uniformMatrix4fv(mLoc,false,new Float32Array(mat));
       gl.bindBuffer(gl.ARRAY_BUFFER,worldBuffer);gl.vertexAttribPointer(pLoc,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(cLoc,3,gl.FLOAT,false,24,12);
@@ -1049,9 +1072,9 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
           if(npc.looted||!npc.alive||Math.abs(npc.x-player.x)>=22||Math.abs(npc.y-player.y)>=22)return;
           drawNpcSprite(npc.x+.5,npc.y+.5,npcBases[index%npcBases.length],(index+Math.floor(performance.now()/900))%4);
         });
-        // BUILD 983: in street view the camera IS the player — hide the
+        // BUILD 983: in first person the camera IS the player — hide the
         // player billboard or it fills the frame. NPC sprites still draw.
-        if(!streetViewRef.current){
+        if(!firstPersonRef.current){
         const moving=walkingNow||[...keys].some(k=>['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k));
         const anim:RpgAnim=moving?'Walk':'Idle';
         const frameCount=moving?11:4;
@@ -1118,11 +1141,16 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
       // never quantize movement into one-tile jumps.
     };
     window.addEventListener('keydown',action);
-    // BUILD 983 screenshot harness: drive the street camera without UI.
+    // BUILD 983 screenshot harness: drive the first-person camera
+    // without UI (renamed in 992: street view became first person on
+    // full zoom; setStreetView stays as a deprecated alias).
     (window as any).__ag3dTest={
       setYaw:(v:number)=>{yaw=v},
       setLookPitch:(v:number)=>{lookPitch=v},
-      setStreetView:(v:boolean)=>{streetViewRef.current=v;setStreetViewOn(v)},
+      setFirstPerson:(v:boolean)=>{firstPersonRef.current=v;setFirstPersonOn(v)},
+      setStreetView:(v:boolean)=>{firstPersonRef.current=v;setFirstPersonOn(v)},
+      getFirstPerson:()=>firstPersonRef.current,
+      getZoom:()=>zoom,
       setPlayer:(x:number,y:number)=>{stateRef.current.position={x,y};setPosition({x,y});needsWorldRebuild.current=true},
       // BUILD 990 test hook (read-only): the entered hut's rect, or null.
       getInsideHut:()=>insideHutRef.current?{...insideHutRef.current}:null,
@@ -1175,11 +1203,12 @@ export default function Engine3DWorldView({ onExit }: { onExit?: () => void }) {
   return <div data-testid="game-view-3d" style={{position:'fixed',inset:0,zIndex:20000,overflow:'hidden',background:'#789ebf',touchAction:'none',fontFamily:'system-ui,sans-serif'}}>
     <canvas ref={canvasRef} aria-label="3D Adventure world" style={{width:'100%',height:'100%',display:'block',touchAction:'none'}}/>
     <div style={{position:'absolute',left:10,top:10,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#f2f7f2',font:'700 11px/1.4 system-ui',pointerEvents:'none'}}>ADVENTURE 3D · WORLD SIMULATION <span style={{opacity:.8,fontWeight:400}}>Editable terrain · collision · walking NPC schedules · saved progress</span></div>
-    <div style={{position:'absolute',left:10,bottom:14,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>{message} · {Math.round(position.x)},{Math.round(position.y)}<div style={{marginTop:5}}>HP {health}/100 · Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</div><div style={{opacity:.8,marginTop:3}}>Tap ground to move · drag to rotate · pinch to zoom · E: interact · F/Space: attack · Enter: step inside at a door</div></div>
+    <div style={{position:'absolute',left:10,bottom:14,padding:'7px 10px',borderRadius:8,background:'#14241ddf',color:'#fff',fontSize:12}}>{message} · {Math.round(position.x)},{Math.round(position.y)}<div style={{marginTop:5}}>HP {health}/100 · Wood {inventory.wood||0} · Stone {inventory.stone||0} · Gold {inventory.gold||0}</div><div style={{opacity:.8,marginTop:3}}>{firstPersonOn?'Tap ground to move · drag to look · pinch to zoom out · E: interact · F/Space: attack · Enter: step inside at a door':'Tap ground to move · drag to rotate · pinch to zoom · E: interact · F/Space: attack · Enter: step inside at a door'}</div></div>
     <button type="button" onClick={onExit} style={{position:'absolute',right:12,top:12,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Exit 3D</button>
-    <button type="button" data-testid="street-view-toggle" onClick={()=>{const v=!streetViewRef.current;streetViewRef.current=v;setStreetViewOn(v);}} style={{position:'absolute',right:12,top:58,zIndex:4,padding:'10px 13px',border:'1px solid #c4d1bd',borderRadius:9,background:'#172c23e8',color:'#fff',fontWeight:700}}>Street view: {streetViewOn?'On':'Off'}</button>
-    {/* BUILD 984 placement tool: bottom-right, clear of Options (top-right),
-        the Street view toggle (top:58), and the diagnostic (bottom-left). */}
+    {/* BUILD 992: the 983 Street view toggle is removed from the main UI.
+        First person now engages on full zoom; its setting lives in the
+        Options dialog. BUILD 984 placement tool: bottom-right, clear of
+        Options (top-right) and the diagnostic (bottom-left). */}
     <button type="button" data-testid="build-toggle" onClick={()=>{if(!buildOpen)setWalk(false);setBuildOpen(v=>!v);}} style={{position:'absolute',right:12,bottom:14,zIndex:4,padding:'14px 18px',border:'1px solid #c4d1bd',borderRadius:12,background:(buildOpen||palette||removeMode)?'#526d42':'#172c23e8',color:'#fff',fontWeight:700,fontSize:16}}>Build</button>
     {/* BUILD 989 minimized cluster, extended by 991: fixed stack above
         Build (Walk at bottom:76, Undo at bottom:138, Redo at

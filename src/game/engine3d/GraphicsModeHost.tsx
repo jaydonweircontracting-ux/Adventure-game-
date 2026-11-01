@@ -4,6 +4,10 @@ import Engine3DWorldView from './Engine3DWorldView';
 import type { GraphicsMode } from './engine3d';
 
 const MODE_KEY = 'ag-graphics-mode-v1';
+// BUILD 992: first-person-auto setting (3D mode only). Default ON:
+// zooming all the way in steps into first person, zooming out returns
+// to orbit. Stored as '1'/'0'; any missing/unreadable value means ON.
+const FP_AUTO_KEY = 'ag-first-person-auto-v1';
 
 function initialMode(): GraphicsMode {
   // Always boot into the established 2.5D game, regardless of a previously
@@ -31,6 +35,9 @@ function initialMode(): GraphicsMode {
 export default function GraphicsModeHost() {
   const [mode, setMode] = useState<GraphicsMode>(initialMode);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [fpAuto, setFpAuto] = useState<boolean>(() => {
+    try { return localStorage.getItem(FP_AUTO_KEY) !== '0'; } catch { return true; }
+  });
 
   const choose = (next: GraphicsMode) => {
     try { localStorage.setItem(MODE_KEY, next); } catch {}
@@ -53,7 +60,7 @@ export default function GraphicsModeHost() {
 
   if (mode === '3d') {
     return <>
-      <Engine3DWorldView onExit={() => choose('2.5d')} />
+      <Engine3DWorldView onExit={() => choose('2.5d')} fpAuto={fpAuto} />
       <button
         type="button"
         onClick={() => setOptionsOpen(v => !v)}
@@ -69,6 +76,11 @@ export default function GraphicsModeHost() {
           </button>
         )}
         <p style={{fontSize:11,lineHeight:1.4,opacity:.82,marginBottom:0}}>3D now reads the data-driven tile world and uses collision-checked movement. Existing 2D/2.5D remains available.</p>
+        <strong style={{display:'block',marginTop:14,marginBottom:6}}>First person</strong>
+        <button type="button" data-testid="fp-auto-toggle" onClick={() => { const next = !fpAuto; try { localStorage.setItem(FP_AUTO_KEY, next ? '1' : '0'); } catch {} setFpAuto(next); }} aria-pressed={fpAuto} style={{display:'block',width:'100%',textAlign:'left',padding:10,borderRadius:8,border:'1px solid #8c9b8d',background:fpAuto?'#526d42':'#22392d',color:'#fff',fontWeight:fpAuto?700:500}}>
+          First person: auto on full zoom {fpAuto ? '✓' : ''}
+        </button>
+        <p style={{fontSize:11,lineHeight:1.4,opacity:.82,marginBottom:0}}>Zoom all the way in to step into first person and look around by dragging; zoom out to return to orbit. Turn this off to stay in orbit at full zoom.</p>
       </section>}
     </>
   }

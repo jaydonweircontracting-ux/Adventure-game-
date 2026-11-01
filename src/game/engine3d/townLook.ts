@@ -58,9 +58,44 @@ export const COBBLE_GAP: Rgb = [0.38, 0.38, 0.36];
 export const SKY_TOP: Rgb = [0.36, 0.62, 0.92];
 export const SKY_HORIZON: Rgb = [0.78, 0.87, 0.96];
 
-/** Story heights in world units. */
-export const GROUND_FLOOR_H = 1.25;
-export const UPPER_FLOOR_H = 1.1;
+/**
+ * BUILD 992 — proportion pass. ONE character-height scale anchors the
+ * whole town, measured from the player billboard (half-width .34,
+ * height 1.48; NPCs 1.42). Ratios match the low-poly street reference
+ * (a ratio target only — no reference assets are copied): door
+ * ~1.2x character, tree ~3.0x, 2-story house ~4.0x, first-person eye
+ * ~0.9x, level gaze by default. BEFORE (991): door 1.06 (0.72x —
+ * shorter than the character), tree 2.8 (1.89x), 2-story walls+roof
+ * 4.60 (3.11x), eye 1.6 (1.08x, looking down at doors). AFTER (992):
+ * door 1.78, tree 4.44, 2-story 5.95 at span 5, eye 1.33. VISUAL ONLY:
+ * footprints, door tiles, triggers, exits, paths, collision and layout
+ * are untouched — only rendered heights/widths change.
+ */
+export const CHARACTER_H = 1.48;
+/** Door: 1.78 tall (1.20x char), 0.87 wide (same 2.04:1 ratio as before). */
+export const DOOR_W = 0.87;
+export const DOOR_H = 1.78;
+/** Story heights in world units: ground clears the door + headroom. */
+export const GROUND_FLOOR_H = 2.1;
+export const UPPER_FLOOR_H = 1.6;
+
+/** Tree tiers (trunk + 3 foliage tiers): total 4.44 = 3.00x char. */
+export interface TreeTier { w: number; h: number; y0: number; color: Rgb; }
+export const TREE_TIERS: TreeTier[] = [
+  { w: 0.35, h: 1.74, y0: 0, color: [0.36, 0.23, 0.12] },
+  { w: 1.82, h: 1.43, y0: 1.59, color: [0.13, 0.30, 0.14] },
+  { w: 1.35, h: 1.11, y0: 2.70, color: [0.16, 0.34, 0.16] },
+  { w: 0.87, h: 0.95, y0: 3.49, color: [0.19, 0.37, 0.18] },
+];
+export const TREE_TOTAL_H = 4.44;
+/** First-person camera: eye at 0.90x char, level gaze by default. */
+export const FIRST_PERSON_EYE = 1.33;
+export const FP_PITCH_MIN = -1.2;
+export const FP_PITCH_MAX = 1.0;
+/** Orbit zoom range + first-person engage/exit (zoom units). */
+export const ZOOM_MIN = 4;
+export const ZOOM_MAX = 32;
+export const ZOOM_HYST = 1.5;
 
 /** Steep roof rise as a fraction of the cross-axis span. rise/run = 0.9,
  *  i.e. a ~42 degree pitch, matching the reference's steep roofs. */
